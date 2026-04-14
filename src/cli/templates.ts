@@ -596,17 +596,33 @@ Reason: $ARGUMENTS
 };
 
 // ---------------------------------------------------------------------------
-// AGENTS.md — universal governance ruleset
+// governance-mandates.md — universal governance ruleset (managed artifact)
 // ---------------------------------------------------------------------------
 
+/** Filename for the governance mandates artifact. */
+export const MANDATES_FILENAME = "governance-mandates.md";
+
 /**
- * Full content of the AGENTS.md governance ruleset.
+ * Returns the instruction entry path for opencode.json based on install scope.
  *
- * Written to the project root by the installer so that OpenCode loads it
- * as the top-level instruction file.
+ * - global: bare filename (resolved relative to ~/.config/opencode/)
+ * - repo:   .opencode/ prefixed path (resolved relative to project root where opencode.json lives)
  */
-export const AGENTS_MD = `\
-# Governance Rules
+export function mandatesInstructionEntry(scope: "global" | "repo"): string {
+  return scope === "global" ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
+}
+
+/** Legacy instruction entry that must be removed during migration. */
+export const LEGACY_INSTRUCTION_ENTRY = "AGENTS.md";
+
+/**
+ * Body of the governance mandates (without managed-artifact header).
+ *
+ * The header (version + digest) is prepended at install time by
+ * `buildMandatesContent()`.
+ */
+export const GOVERNANCE_MANDATES_BODY = `\
+# Governance Mandates
 
 This file defines universal governance mandates for AI-assisted development.
 These rules are always active when governance commands or tools are in use.
@@ -1024,6 +1040,65 @@ These principles apply across all mandates and all governance-controlled work:
 10. **Persistence** — Do not abandon tool-based investigation prematurely. If the first approach yields no results, try alternatives before concluding absence of evidence.
 `;
 
+/**
+ * Build the full governance-mandates.md content with managed-artifact header.
+ *
+ * Header layout:
+ *   Line 1: version + ownership marker
+ *   Line 2: content-digest over the body (everything after the header)
+ *
+ * Digest is SHA-256 hex over GOVERNANCE_MANDATES_BODY (the body without header).
+ * This avoids self-referential digest problems.
+ *
+ * @param version - Package version (e.g. "1.2.0")
+ * @param digest  - SHA-256 hex digest of GOVERNANCE_MANDATES_BODY
+ */
+export function buildMandatesContent(version: string, digest: string): string {
+  return `<!-- @governance/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${GOVERNANCE_MANDATES_BODY}`;
+}
+
+/**
+ * Extract the content-digest from a governance-mandates.md file.
+ * Returns null if the file does not have a valid managed-artifact header.
+ */
+export function extractManagedDigest(content: string): string | null {
+  const match = content.match(/^<!-- content-digest: sha256:([a-f0-9]{64}) -->$/m);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extract the version from a governance-mandates.md managed-artifact header.
+ * Returns null if the file does not have a valid managed-artifact header.
+ */
+export function extractManagedVersion(content: string): string | null {
+  const match = content.match(/^<!-- @governance\/core v([\d.]+) \| managed artifact/m);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Check if a file has a valid managed-artifact header.
+ */
+export function isManagedArtifact(content: string): boolean {
+  return /^<!-- @governance\/core v[\d.]+ \| managed artifact/.test(content);
+}
+
+/**
+ * Extract the body from a managed-artifact file (everything after the header).
+ *
+ * The header is 2 comment lines followed by an empty line:
+ *   Line 1: <!-- @governance/core ... -->
+ *   Line 2: <!-- content-digest: sha256:... -->
+ *   Line 3: (empty)
+ *   Line 4+: body
+ *
+ * Returns null if the file does not have a valid managed-artifact header.
+ */
+export function extractManagedBody(content: string): string | null {
+  if (!isManagedArtifact(content)) return null;
+  // Find the body after the header (two comment lines + blank line)
+  const match = content.match(/^<!-- @governance\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/);
+  return match?.[1] ?? null;
+}
 // ---------------------------------------------------------------------------
 // opencode.json skeleton
 // ---------------------------------------------------------------------------
@@ -1031,13 +1106,15 @@ These principles apply across all mandates and all governance-controlled work:
 /**
  * Minimal OpenCode configuration template.
  *
- * Points OpenCode at the AGENTS.md instruction file so governance rules
- * are loaded automatically on every session.
+ * Points OpenCode at the governance-mandates.md instruction file so governance
+ * mandates are loaded automatically on every session.
+ *
+ * @param instructionEntry - The instruction path (scope-dependent).
  */
-export const OPENCODE_JSON_TEMPLATE = `\
+export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md"]
+  "instructions": ["${instructionEntry}"]
 }
 `;
 
@@ -1048,6 +1125,10 @@ export const OPENCODE_JSON_TEMPLATE = `\
 /**
  * Returns a minimal `package.json` fragment declaring governance dependencies.
  *
+ * Only zod and @governance/core are required. The @opencode-ai/plugin
+ * dependency was removed — governance tools use plain ToolDefinition objects
+ * that OpenCode discovers without the plugin SDK.
+ *
  * @param version - The semver version of `@governance/core` to pin (e.g. `"1.2.3"`).
  * @returns A JSON string suitable for writing to `package.json`.
  */
@@ -1055,8 +1136,7 @@ export const PACKAGE_JSON_TEMPLATE = (version: string): string => `\
 {
   "dependencies": {
     "@governance/core": "^${version}",
-    "zod": "^3.23.0",
-    "@opencode-ai/plugin": "latest"
+    "zod": "^3.23.0"
   }
 }
 `;

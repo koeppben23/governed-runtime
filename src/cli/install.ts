@@ -4,44 +4,61 @@
  * @description CLI for installing/uninstalling governance into an OpenCode environment.
  *
  * Usage:
- *   npx @governance/core install  [--global|--project] [--mode solo|team|regulated] [--force]
- *   npx @governance/core uninstall [--global|--project]
- *   npx @governance/core doctor   [--global|--project]
+ *   npx @governance/core install  [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
+ *   npx @governance/core uninstall [--install-scope global|repo]
+ *   npx @governance/core doctor   [--install-scope global|repo]
  *
- * Targets:
- *   --global  (default)  ~/.config/opencode/
- *   --project            ./.opencode/ + ./opencode.json + ./AGENTS.md
+ * Install scopes:
+ *   --install-scope global  (default)  ~/.config/opencode/  — nothing in the customer repo
+ *   --install-scope repo               ./.opencode/         — governance layer committed to repo
  *
- * The installer writes thin wrappers that import from @governance/core.
- * All business logic lives in the npm package — wrappers are stable across
- * upgrades. `npm update @governance/core` is all that's needed to get new
- * features and fixes.
+ * Deprecated aliases (still work, emit warning):
+ *   --global  → --install-scope global
+ *   --project → --install-scope repo
+ *   --mode X  → --policy-mode X
  *
- * Design:
- * - Idempotent: running install twice without --force skips existing files.
- * - Non-destructive: AGENTS.md is never overwritten (may contain user rules).
- * - Merge-aware: package.json and opencode.json are merged, not replaced.
- * - Uninstall removes only governance-owned files, never user content.
+ * Architecture:
+ * - governance-mandates.md is a managed artifact: always replaced on install, digest-checked by doctor.
+ * - AGENTS.md is NEVER touched — it belongs to the user/project (OpenCode's instruction slot).
+ * - Thin wrappers (tools, plugins, commands) import from @governance/core.
+ * - opencode.json is merge-managed: governance instruction entry added, legacy entries migrated.
  *
- * @version v1
+ * Ownership matrix:
+ *   hard-managed:   governance-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md
+ *   merge-managed:  package.json, opencode.json
+ *   user-owned:     AGENTS.md (never touched)
+ *
+ * @version v2
  */
 
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, unlink, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
-  AGENTS_MD,
+  GOVERNANCE_MANDATES_BODY,
+  MANDATES_FILENAME,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
+  buildMandatesContent,
+  extractManagedDigest,
+  extractManagedVersion,
+  extractManagedBody,
+  isManagedArtifact,
+  mandatesInstructionEntry,
+  LEGACY_INSTRUCTION_ENTRY,
 } from "./templates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Supported governance policy modes. */
+/** Install scope: where governance artifacts are placed. */
+export type InstallScope = "global" | "repo";
+
+/** Governance policy mode (runtime behavior, NOT install location). */
 export type PolicyMode = "solo" | "team" | "regulated";
 
 /** CLI action. */
@@ -50,8 +67,8 @@ export type CliAction = "install" | "uninstall" | "doctor";
 /** Parsed CLI arguments. */
 export interface CliArgs {
   action: CliAction;
-  global: boolean;
-  mode: PolicyMode;
+  installScope: InstallScope;
+  policyMode: PolicyMode;
   force: boolean;
 }
 
@@ -67,15 +84,35 @@ export interface CliResult {
   target: string;
   ops: FileOp[];
   errors: string[];
+  warnings: string[];
+}
+
+/** Extended doctor check status for managed artifacts. */
+export type DoctorStatus =
+  | "ok"
+  | "missing"
+  | "modified"
+  | "unmanaged"
+  | "version_mismatch"
+  | "instruction_missing"
+  | "instruction_stale"
+  | "error";
+
+/** Status of a single doctor check. */
+export interface DoctorCheck {
+  file: string;
+  status: DoctorStatus;
+  detail?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Current package version — injected at build time or read from package.json. */
-const PACKAGE_VERSION = "1.1.0";
+const PACKAGE_VERSION = "2.0.0";
 
 /** Files owned by governance that uninstall may remove. */
-const GOVERNANCE_FILES = [
+const GOVERNANCE_OWNED_FILES = [
+  MANDATES_FILENAME,
   "tools/governance.ts",
   "plugins/governance-audit.ts",
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
@@ -86,14 +123,31 @@ const GOVERNANCE_FILES = [
 /**
  * Resolve the target directory for install/uninstall.
  *
- * @param global - If true, resolves to ~/.config/opencode/. Otherwise ./.opencode/.
+ * @param scope - "global" resolves to ~/.config/opencode/. "repo" resolves to ./.opencode/.
  * @returns Absolute path to the target directory.
  */
-export function resolveTarget(global: boolean): string {
-  if (global) {
+export function resolveTarget(scope: InstallScope): string {
+  if (scope === "global") {
     return join(homedir(), ".config", "opencode");
   }
   return resolve(".opencode");
+}
+
+// ─── Crypto Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Compute SHA-256 hex digest of a string.
+ */
+export function sha256(content: string): string {
+  return createHash("sha256").update(content, "utf-8").digest("hex");
+}
+
+/**
+ * Compute the canonical digest for governance-mandates.md body.
+ * This is the digest stored in the managed-artifact header.
+ */
+export function computeMandatesDigest(): string {
+  return sha256(GOVERNANCE_MANDATES_BODY);
 }
 
 // ─── File Helpers ─────────────────────────────────────────────────────────────
@@ -131,6 +185,8 @@ async function safeUnlink(filePath: string): Promise<boolean> {
 
 /**
  * Write a file only if it doesn't exist or --force is set.
+ * Used for hard-managed artifacts OTHER than governance-mandates.md
+ * (which is always replaced).
  */
 async function writeIfAbsent(
   filePath: string,
@@ -155,6 +211,7 @@ async function writeIfAbsent(
  * - If file exists, parse it and add/update the @governance/core dependency.
  * - If file doesn't exist, write the template.
  * - Never removes existing dependencies.
+ * - Removes legacy @opencode-ai/plugin dependency if present (no longer needed).
  */
 async function mergePackageJson(
   filePath: string,
@@ -173,7 +230,8 @@ async function mergePackageJson(
     const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
     deps["@governance/core"] = `^${version}`;
     if (!deps["zod"]) deps["zod"] = "^3.23.0";
-    if (!deps["@opencode-ai/plugin"]) deps["@opencode-ai/plugin"] = "latest";
+    // Remove legacy dependency that is no longer needed
+    delete deps["@opencode-ai/plugin"];
     parsed["dependencies"] = deps;
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
     return { path: filePath, action: "merged" };
@@ -187,38 +245,90 @@ async function mergePackageJson(
 /**
  * Merge governance config into an existing or new opencode.json.
  *
- * Strategy:
- * - If file exists, ensure "instructions" array includes "AGENTS.md".
- * - If file doesn't exist, write the template.
- * - Never removes existing config.
+ * Invariants (idempotent, enforced after every call):
+ * 1. instructions array contains exactly 1x the scope-appropriate mandate entry
+ * 2. instructions array does NOT contain the legacy "AGENTS.md" entry
+ * 3. Order of existing user entries is preserved
+ * 4. All other fields in opencode.json are preserved
+ * 5. $schema is set if missing
+ *
+ * @param filePath - Path to opencode.json
+ * @param scope    - Install scope (determines the instruction entry path)
  */
-async function mergeOpencodeJson(filePath: string): Promise<FileOp> {
+async function mergeOpencodeJson(
+  filePath: string,
+  scope: InstallScope,
+): Promise<FileOp> {
+  const entry = mandatesInstructionEntry(scope);
   const existing = await safeRead(filePath);
 
   if (!existing) {
     const dir = dirname(filePath);
     if (dir) await ensureDir(dir);
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE, "utf-8");
+    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), "utf-8");
     return { path: filePath, action: "written" };
   }
 
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
-    const instructions = Array.isArray(parsed["instructions"])
+    let instructions = Array.isArray(parsed["instructions"])
       ? (parsed["instructions"] as string[])
       : [];
-    if (!instructions.includes("AGENTS.md")) {
-      instructions.push("AGENTS.md");
-      parsed["instructions"] = instructions;
-    }
+
+    // Migration: remove legacy "AGENTS.md" entry (only the exact governance-owned one)
+    instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
+
+    // Deduplicate: remove our entry if already present, then add exactly once
+    instructions = instructions.filter((i) => i !== entry);
+    instructions.push(entry);
+
+    parsed["instructions"] = instructions;
+
     if (!parsed["$schema"]) {
       parsed["$schema"] = "https://opencode.ai/config.json";
     }
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
     return { path: filePath, action: "merged" };
   } catch {
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE, "utf-8");
+    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), "utf-8");
     return { path: filePath, action: "written", reason: "existing file was malformed JSON" };
+  }
+}
+
+/**
+ * Remove governance instruction entries from opencode.json during uninstall.
+ * Removes both current and legacy entries. Preserves everything else.
+ */
+async function removeFromOpencodeJson(
+  filePath: string,
+  scope: InstallScope,
+): Promise<FileOp> {
+  const existing = await safeRead(filePath);
+  if (!existing) {
+    return { path: filePath, action: "not_found" };
+  }
+
+  try {
+    const parsed = JSON.parse(existing) as Record<string, unknown>;
+    if (!Array.isArray(parsed["instructions"])) {
+      return { path: filePath, action: "skipped", reason: "no instructions array" };
+    }
+
+    const entry = mandatesInstructionEntry(scope);
+    const before = parsed["instructions"] as string[];
+    const after = before.filter(
+      (i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY,
+    );
+
+    if (after.length === before.length) {
+      return { path: filePath, action: "skipped", reason: "no governance entries found" };
+    }
+
+    parsed["instructions"] = after;
+    await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
+    return { path: filePath, action: "merged", reason: "removed governance instruction entries" };
+  } catch {
+    return { path: filePath, action: "skipped", reason: "malformed JSON" };
   }
 }
 
@@ -227,21 +337,21 @@ async function mergeOpencodeJson(filePath: string): Promise<FileOp> {
 /**
  * Install governance into the target directory.
  *
- * Creates:
- * - tools/governance.ts (thin wrapper)
- * - plugins/governance-audit.ts (thin wrapper)
- * - commands/*.md (9 slash-command prompts)
- * - package.json (merged with governance deps)
- * - opencode.json (merged with instructions, project mode only)
- * - AGENTS.md (only if not present — never overwrites user rules)
+ * Ownership semantics:
+ * - governance-mandates.md: ALWAYS replaced (hard-managed, versioned, digest-tracked)
+ * - tools/plugins/commands: write if absent, --force to replace (hard-managed)
+ * - package.json: merge (merge-managed)
+ * - opencode.json: merge with migration (merge-managed)
+ * - AGENTS.md: NEVER touched (user-owned)
  *
  * @param args - Parsed CLI arguments.
- * @returns Result with file operations and any errors.
+ * @returns Result with file operations, warnings, and any errors.
  */
 export async function install(args: CliArgs): Promise<CliResult> {
-  const target = resolveTarget(args.global);
+  const target = resolveTarget(args.installScope);
   const ops: FileOp[] = [];
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   try {
     // Ensure base directories
@@ -249,48 +359,46 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, "plugins"));
     await ensureDir(join(target, "commands"));
 
-    // 1. Tool wrapper
+    // 1. governance-mandates.md (always replace — managed artifact)
+    const digest = computeMandatesDigest();
+    const mandatesContent = buildMandatesContent(PACKAGE_VERSION, digest);
+    const mandatesPath = join(target, MANDATES_FILENAME);
+    await ensureDir(dirname(mandatesPath));
+    await writeFile(mandatesPath, mandatesContent, "utf-8");
+    ops.push({ path: mandatesPath, action: "written" });
+
+    // 2. Tool wrapper (write if absent, --force to replace)
     ops.push(
       await writeIfAbsent(join(target, "tools", "governance.ts"), TOOL_WRAPPER, args.force),
     );
 
-    // 2. Plugin wrapper
+    // 3. Plugin wrapper (write if absent, --force to replace)
     ops.push(
       await writeIfAbsent(join(target, "plugins", "governance-audit.ts"), PLUGIN_WRAPPER, args.force),
     );
 
-    // 3. Command files
+    // 4. Command files (write if absent, --force to replace)
     for (const [name, content] of Object.entries(COMMANDS)) {
       ops.push(
         await writeIfAbsent(join(target, "commands", name), content, args.force),
       );
     }
 
-    // 4. package.json (merge)
+    // 5. package.json (merge)
     ops.push(await mergePackageJson(join(target, "package.json"), PACKAGE_VERSION));
 
-    // 5. opencode.json (project mode only — global config at ~/.config/opencode/ may conflict)
-    if (!args.global) {
-      // For project mode, opencode.json goes in the project root (parent of .opencode/)
-      const projectRoot = resolve(".");
-      ops.push(await mergeOpencodeJson(join(projectRoot, "opencode.json")));
-    } else {
-      // For global mode, merge into ~/.config/opencode/opencode.json
-      ops.push(await mergeOpencodeJson(join(target, "opencode.json")));
-    }
-
-    // 6. AGENTS.md (never overwrite)
-    const agentsPath = args.global
-      ? join(target, "AGENTS.md")
-      : join(resolve("."), "AGENTS.md");
-    ops.push(
-      await writeIfAbsent(agentsPath, AGENTS_MD, false), // Never force — user content
-    );
+    // 6. opencode.json (merge with migration)
+    //    - global: merge into ~/.config/opencode/opencode.json
+    //    - repo: merge into ./opencode.json (project root, parent of .opencode/)
+    const opencodeJsonPath = args.installScope === "global"
+      ? join(target, "opencode.json")
+      : join(resolve("."), "opencode.json");
+    ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
-  return { target, ops, errors };
+  return { target, ops, errors, warnings };
 }
 
 // ─── Uninstall ────────────────────────────────────────────────────────────────
@@ -298,29 +406,43 @@ export async function install(args: CliArgs): Promise<CliResult> {
 /**
  * Uninstall governance from the target directory.
  *
- * Removes:
- * - tools/governance.ts
- * - plugins/governance-audit.ts
- * - commands/{hydrate,ticket,plan,...}.md (all 9)
- * - @governance/core from package.json dependencies
- *
- * Preserves:
- * - AGENTS.md (may contain user customizations)
- * - Other tools/plugins/commands in the same directories
- * - opencode.json (governance-specific entries are not critical to remove)
+ * Removes all governance-owned files including governance-mandates.md.
+ * Reports warnings for modified managed artifacts.
+ * Cleans governance instruction entries from opencode.json.
+ * Never touches AGENTS.md.
  *
  * @param args - Parsed CLI arguments.
- * @returns Result with file operations and any errors.
+ * @returns Result with file operations, warnings, and any errors.
  */
 export async function uninstall(args: CliArgs): Promise<CliResult> {
-  const target = resolveTarget(args.global);
+  const target = resolveTarget(args.installScope);
   const ops: FileOp[] = [];
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   try {
-    // Remove governance files
-    for (const relPath of GOVERNANCE_FILES) {
+    // Remove governance-owned files
+    for (const relPath of GOVERNANCE_OWNED_FILES) {
       const fullPath = join(target, relPath);
+
+      // For governance-mandates.md, check if modified before removing
+      if (relPath === MANDATES_FILENAME) {
+        const content = await safeRead(fullPath);
+        if (content !== null) {
+          if (isManagedArtifact(content)) {
+            const fileDigest = extractManagedDigest(content);
+            const expectedDigest = computeMandatesDigest();
+            const fileBody = extractManagedBody(content);
+            const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
+            if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
+              warnings.push(`${MANDATES_FILENAME} was locally modified — removed anyway`);
+            }
+          } else {
+            warnings.push(`${MANDATES_FILENAME} has no managed header — removed anyway`);
+          }
+        }
+      }
+
       const removed = await safeUnlink(fullPath);
       ops.push({
         path: fullPath,
@@ -336,58 +458,78 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
         const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
         const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
         delete deps["@governance/core"];
+        delete deps["@opencode-ai/plugin"]; // Clean up legacy dep too
         parsed["dependencies"] = deps;
         await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-        ops.push({ path: pkgPath, action: "merged", reason: "removed @governance/core" });
+        ops.push({ path: pkgPath, action: "merged", reason: "removed governance dependencies" });
       } catch {
         ops.push({ path: pkgPath, action: "skipped", reason: "malformed JSON" });
       }
     }
 
-    // Note about AGENTS.md
-    const agentsPath = args.global
-      ? join(target, "AGENTS.md")
-      : join(resolve("."), "AGENTS.md");
-    if (existsSync(agentsPath)) {
-      ops.push({
-        path: agentsPath,
-        action: "skipped",
-        reason: "may contain custom rules — remove manually if no longer needed",
-      });
-    }
+    // Remove governance instruction entries from opencode.json
+    const opencodeJsonPath = args.installScope === "global"
+      ? join(target, "opencode.json")
+      : join(resolve("."), "opencode.json");
+    ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
-  return { target, ops, errors };
+  return { target, ops, errors, warnings };
 }
 
 // ─── Doctor ───────────────────────────────────────────────────────────────────
 
-/** Status of a single doctor check. */
-export interface DoctorCheck {
-  file: string;
-  status: "ok" | "missing" | "modified" | "error";
-  detail?: string;
-}
-
 /**
  * Verify the governance installation is correct and complete.
  *
- * Checks:
- * - All governance files exist
- * - Thin wrappers match expected content (not modified)
- * - package.json has @governance/core dependency
- * - AGENTS.md exists (content not checked — user may customize)
+ * Extended status model for managed artifacts:
+ * - ok: file present, content/digest matches
+ * - missing: file not found
+ * - modified: file present, managed header found, digest mismatch
+ * - unmanaged: file present, no managed header
+ * - version_mismatch: file present, digest ok, header version != installed version
+ * - instruction_missing: governance-mandates.md ok but opencode.json doesn't reference it
+ * - instruction_stale: legacy "AGENTS.md" entry still in opencode.json instructions
+ * - error: other problems (e.g. malformed JSON)
  *
  * @param args - Parsed CLI arguments.
  * @returns Array of check results.
  */
 export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
-  const target = resolveTarget(args.global);
+  const target = resolveTarget(args.installScope);
   const checks: DoctorCheck[] = [];
 
-  // Check tool wrapper
+  // 1. Check governance-mandates.md (digest verification)
+  const mandatesPath = join(target, MANDATES_FILENAME);
+  const mandatesContent = await safeRead(mandatesPath);
+  if (!mandatesContent) {
+    checks.push({ file: mandatesPath, status: "missing" });
+  } else if (!isManagedArtifact(mandatesContent)) {
+    checks.push({ file: mandatesPath, status: "unmanaged", detail: "no managed-artifact header" });
+  } else {
+    const fileDigest = extractManagedDigest(mandatesContent);
+    const expectedDigest = computeMandatesDigest();
+    const fileVersion = extractManagedVersion(mandatesContent);
+    const fileBody = extractManagedBody(mandatesContent);
+
+    if (!fileDigest) {
+      checks.push({ file: mandatesPath, status: "error", detail: "managed header found but no digest" });
+    } else if (fileDigest !== expectedDigest) {
+      // Header claims a different digest than the canonical body — version/content drift
+      checks.push({ file: mandatesPath, status: "modified", detail: "content-digest mismatch — file was locally edited" });
+    } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
+      // Header digest matches canonical, but actual body was modified (e.g. appended)
+      checks.push({ file: mandatesPath, status: "modified", detail: "content-digest mismatch — file body was locally edited" });
+    } else if (fileVersion !== PACKAGE_VERSION) {
+      checks.push({ file: mandatesPath, status: "version_mismatch", detail: `header v${fileVersion} != installed v${PACKAGE_VERSION}` });
+    } else {
+      checks.push({ file: mandatesPath, status: "ok" });
+    }
+  }
+
+  // 2. Check tool wrapper
   const toolPath = join(target, "tools", "governance.ts");
   const toolContent = await safeRead(toolPath);
   if (!toolContent) {
@@ -398,7 +540,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     checks.push({ file: toolPath, status: "ok" });
   }
 
-  // Check plugin wrapper
+  // 3. Check plugin wrapper
   const pluginPath = join(target, "plugins", "governance-audit.ts");
   const pluginContent = await safeRead(pluginPath);
   if (!pluginContent) {
@@ -409,7 +551,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     checks.push({ file: pluginPath, status: "ok" });
   }
 
-  // Check command files
+  // 4. Check command files
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
     const cmdPath = join(target, "commands", name);
     const cmdContent = await safeRead(cmdPath);
@@ -422,7 +564,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // Check package.json
+  // 5. Check package.json
   const pkgPath = join(target, "package.json");
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) {
@@ -441,14 +583,46 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // Check AGENTS.md
-  const agentsPath = args.global
-    ? join(target, "AGENTS.md")
-    : join(resolve("."), "AGENTS.md");
-  if (existsSync(agentsPath)) {
-    checks.push({ file: agentsPath, status: "ok" });
-  } else {
-    checks.push({ file: agentsPath, status: "missing" });
+  // 6. Check opencode.json instruction entries
+  const opencodeJsonPath = args.installScope === "global"
+    ? join(target, "opencode.json")
+    : join(resolve("."), "opencode.json");
+  const opencodeContent = await safeRead(opencodeJsonPath);
+  if (opencodeContent) {
+    try {
+      const parsed = JSON.parse(opencodeContent) as Record<string, unknown>;
+      const instructions = Array.isArray(parsed["instructions"])
+        ? (parsed["instructions"] as string[])
+        : [];
+      const entry = mandatesInstructionEntry(args.installScope);
+
+      if (!instructions.includes(entry)) {
+        checks.push({
+          file: opencodeJsonPath,
+          status: "instruction_missing",
+          detail: `instructions array does not contain "${entry}"`,
+        });
+      }
+
+      if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
+        checks.push({
+          file: opencodeJsonPath,
+          status: "instruction_stale",
+          detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
+        });
+      }
+
+      // If both checks passed (no missing, no stale), report ok
+      const hasInstructionIssue = checks.some(
+        (c) => c.file === opencodeJsonPath &&
+          (c.status === "instruction_missing" || c.status === "instruction_stale"),
+      );
+      if (!hasInstructionIssue) {
+        checks.push({ file: opencodeJsonPath, status: "ok" });
+      }
+    } catch {
+      checks.push({ file: opencodeJsonPath, status: "error", detail: "malformed JSON" });
+    }
   }
 
   return checks;
@@ -456,54 +630,89 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
-const VALID_MODES: readonly PolicyMode[] = ["solo", "team", "regulated"] as const;
+const VALID_POLICY_MODES: readonly PolicyMode[] = ["solo", "team", "regulated"] as const;
+const VALID_SCOPES: readonly InstallScope[] = ["global", "repo"] as const;
 const VALID_ACTIONS: readonly CliAction[] = ["install", "uninstall", "doctor"] as const;
 
 /**
  * Parse CLI arguments from process.argv.
  *
+ * Supports both new flags (--install-scope, --policy-mode) and deprecated
+ * aliases (--global, --project, --mode) with warnings.
+ *
  * @param argv - Raw argv (typically process.argv.slice(2)).
- * @returns Parsed arguments, or null if invalid.
+ * @returns Parsed arguments and deprecation warnings, or null if invalid.
  */
-export function parseArgs(argv: string[]): CliArgs | null {
+export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string[] } | null {
   const action = argv[0] as CliAction | undefined;
   if (!action || !VALID_ACTIONS.includes(action)) {
     return null;
   }
 
-  let global = true;
-  let mode: PolicyMode = "solo";
+  let installScope: InstallScope = "global";
+  let policyMode: PolicyMode = "solo";
   let force = false;
+  const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
     switch (arg) {
-      case "--global":
-        global = true;
-        break;
-      case "--project":
-        global = false;
-        break;
-      case "--force":
-        force = true;
-        break;
-      case "--mode": {
+      // ── New flags ──────────────────────────────────────────
+      case "--install-scope": {
         const next = argv[i + 1];
-        if (next && VALID_MODES.includes(next as PolicyMode)) {
-          mode = next as PolicyMode;
+        if (next && VALID_SCOPES.includes(next as InstallScope)) {
+          installScope = next as InstallScope;
           i++;
         } else {
           return null;
         }
         break;
       }
+      case "--policy-mode": {
+        const next = argv[i + 1];
+        if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
+          policyMode = next as PolicyMode;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
+      case "--force":
+        force = true;
+        break;
+
+      // ── Deprecated aliases ─────────────────────────────────
+      case "--global":
+        installScope = "global";
+        deprecations.push("--global is deprecated, use --install-scope global");
+        break;
+      case "--project":
+        installScope = "repo";
+        deprecations.push("--project is deprecated, use --install-scope repo");
+        break;
+      case "--mode": {
+        const next = argv[i + 1];
+        if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
+          policyMode = next as PolicyMode;
+          deprecations.push("--mode is deprecated, use --policy-mode");
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
+
       default:
         // Unknown argument
         return null;
     }
   }
 
-  return { action, global, mode, force };
+  return {
+    args: { action, installScope, policyMode, force },
+    deprecations,
+  };
 }
 
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
@@ -529,6 +738,10 @@ export function formatResult(result: CliResult): string {
   if (skipped > 0) lines.push(`  Skipped: ${skipped} files`);
   if (removed > 0) lines.push(`  Removed: ${removed} files`);
 
+  for (const w of result.warnings) {
+    lines.push(`  [warn] ${w}`);
+  }
+
   if (result.errors.length > 0) {
     lines.push("");
     for (const err of result.errors) {
@@ -544,13 +757,20 @@ export function formatResult(result: CliResult): string {
  */
 export function formatDoctor(checks: DoctorCheck[]): string {
   const lines: string[] = [];
+  const iconMap: Record<DoctorStatus, string> = {
+    ok: "ok",
+    missing: "MISSING",
+    modified: "MODIFIED",
+    unmanaged: "UNMANAGED",
+    version_mismatch: "VERSION",
+    instruction_missing: "INSTR_MISSING",
+    instruction_stale: "INSTR_STALE",
+    error: "ERROR",
+  };
+
   for (const check of checks) {
     const suffix = check.detail ? ` — ${check.detail}` : "";
-    const icon =
-      check.status === "ok" ? "ok" :
-      check.status === "missing" ? "MISSING" :
-      check.status === "modified" ? "MODIFIED" : "ERROR";
-    lines.push(`  [${icon}] ${check.file}${suffix}`);
+    lines.push(`  [${iconMap[check.status]}] ${check.file}${suffix}`);
   }
 
   const ok = checks.filter((c) => c.status === "ok").length;
@@ -566,19 +786,23 @@ Usage: governance <command> [options]
 
 Commands:
   install     Install governance tools, plugins, and commands
-  uninstall   Remove governance files (preserves AGENTS.md)
+  uninstall   Remove governance files
   doctor      Verify installation is correct and complete
 
 Options:
-  --global    Install to ~/.config/opencode/ (default)
-  --project   Install to ./.opencode/ (project-local)
-  --mode      Default policy mode: solo (default), team, regulated
-  --force     Overwrite existing files
+  --install-scope  Where to install: global (default) or repo
+  --policy-mode    Governance policy: solo (default), team, regulated
+  --force          Overwrite all managed artifacts
+
+Deprecated (still work):
+  --global    → --install-scope global
+  --project   → --install-scope repo
+  --mode X    → --policy-mode X
 
 Examples:
   npx @governance/core install
-  npx @governance/core install --project --mode regulated
-  npx @governance/core uninstall --global
+  npx @governance/core install --install-scope repo --policy-mode regulated
+  npx @governance/core uninstall --install-scope global
   npx @governance/core doctor
 `;
 
@@ -587,19 +811,27 @@ Examples:
  * Only executes when this file is run directly (not when imported for testing).
  */
 export async function main(argv: string[]): Promise<number> {
-  const args = parseArgs(argv);
+  const parsed = parseArgs(argv);
 
-  if (!args) {
+  if (!parsed) {
     console.log(USAGE);
     return 1;
   }
 
-  const targetLabel = args.global ? "~/.config/opencode/" : "./.opencode/";
+  const { args, deprecations } = parsed;
+
+  // Emit deprecation warnings
+  for (const d of deprecations) {
+    console.error(`  [deprecated] ${d}`);
+  }
+
+  const targetLabel = args.installScope === "global" ? "~/.config/opencode/" : "./.opencode/";
 
   switch (args.action) {
     case "install": {
       console.log(`Installing governance to ${targetLabel}...`);
-      console.log(`  Default policy mode: ${args.mode}`);
+      console.log(`  Install scope: ${args.installScope}`);
+      console.log(`  Policy mode: ${args.policyMode}`);
       console.log("");
       const result = await install(args);
       console.log(formatResult(result));
