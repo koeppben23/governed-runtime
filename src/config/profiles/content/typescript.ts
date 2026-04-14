@@ -43,9 +43,9 @@ Once detected, these become constraints. If not detectable, mark as unknown and 
 - Prefer stricter settings: \`strict: true\`, \`noUncheckedIndexedAccess: true\`.
 
 ### 2.2 Type Safety
-- Do NOT use \`any\` unless absolutely necessary and documented with rationale.
-- Prefer \`unknown\` over \`any\` for untyped external data.
-- Use type narrowing (type guards, discriminated unions) instead of type assertions.
+- MUST NOT use \`any\` unless absolutely necessary and documented with rationale.
+- MUST prefer \`unknown\` over \`any\` for untyped external data.
+- MUST use type narrowing (type guards, discriminated unions) instead of type assertions.
 - Type assertions (\`as T\`) are a code smell — justify each use.
 
 ### 2.3 Zod / Runtime Validation
@@ -114,22 +114,22 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 - Side effects (I/O, network, file system) isolated at boundaries.
 
 ### 4.3 Error Handling
-- Use explicit error types (discriminated unions, custom Error classes).
-- Do NOT swallow errors with empty catch blocks.
-- Use \`Result<T, E>\` pattern or explicit error returns for expected failures.
+- MUST use explicit error types (discriminated unions, custom Error classes).
+- MUST NOT swallow errors with empty catch blocks.
+- SHOULD use \`Result<T, E>\` pattern or explicit error returns for expected failures.
 - Reserve \`throw\` for unexpected/unrecoverable errors.
-- Async functions: always handle rejections explicitly.
+- Async functions: MUST handle rejections explicitly.
 
 ### 4.4 Immutability
-- Prefer \`readonly\` properties and \`ReadonlyArray\` / \`ReadonlyMap\`.
-- Avoid mutation of shared state.
+- SHOULD prefer \`readonly\` properties and \`ReadonlyArray\` / \`ReadonlyMap\`.
+- MUST NOT mutate shared state.
 - Use spread/Object.assign for shallow copies; structuredClone for deep copies.
 
 ### 4.5 Async Patterns
-- Use \`async/await\` over raw Promises.
-- No floating promises (unhandled \`.then()\` without \`await\` or \`.catch()\`).
-- Use \`Promise.all\` for concurrent independent operations.
-- Timeouts on all external calls.
+- MUST use \`async/await\` over raw Promises.
+- MUST NOT leave floating promises (unhandled \`.then()\` without \`await\` or \`.catch()\`).
+- SHOULD use \`Promise.all\` for concurrent independent operations.
+- SHOULD add timeouts on all external calls.
 
 ---
 
@@ -185,4 +185,128 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-TS08 | Empty Catch Blocks | Silent error swallowing, undefined state, impossible debugging |
 | AP-TS09 | Synchronous I/O | Blocks event loop, degrades throughput, masks under low load |
 | AP-TS10 | Test Implementation Coupling | Tests break on refactor even when behavior unchanged |
+
+---
+
+## 8. Few-Shot Examples (Anti-Pattern Corrections)
+
+<examples>
+<example id="AP-TS01" type="anti-pattern">
+<bad_code>
+// PERVASIVE ANY — type checker disabled, bugs invisible
+function processData(data: any): any {
+  const result = data.items.map((item: any) => ({
+    name: item.name.toUpperCase(),
+    value: item.count * 2,
+  }));
+  return { processed: result, total: data.items.length };
+}
+</bad_code>
+<good_code>
+// Explicit types with runtime validation at boundary
+interface DataItem {
+  readonly name: string;
+  readonly count: number;
+}
+interface DataInput {
+  readonly items: readonly DataItem[];
+}
+interface DataOutput {
+  readonly processed: readonly { name: string; value: number }[];
+  readonly total: number;
+}
+function processData(data: DataInput): DataOutput {
+  const processed = data.items.map((item) => ({
+    name: item.name.toUpperCase(),
+    value: item.count * 2,
+  }));
+  return { processed, total: data.items.length };
+}
+</good_code>
+<why>\`any\` disables the type checker entirely. Property typos, wrong argument types, and structural mismatches become runtime errors instead of compile errors. Refactoring becomes unsafe because the compiler cannot track usage.</why>
+</example>
+
+<example id="AP-TS04" type="anti-pattern">
+<bad_code>
+// FLOATING PROMISE — unhandled async error, silent failure
+function saveUser(user: User): void {
+  db.insert(user).then(() => {
+    cache.invalidate(user.id);
+  });
+  // no await, no catch — if insert fails, nobody knows
+}
+</bad_code>
+<good_code>
+// Awaited with explicit error handling
+async function saveUser(user: User): Promise<void> {
+  await db.insert(user);
+  await cache.invalidate(user.id);
+}
+</good_code>
+<why>Floating promises swallow errors silently. The caller believes the operation succeeded while data may be lost. Unhandled rejections crash Node.js processes in production.</why>
+</example>
+
+<example id="AP-TS08" type="anti-pattern">
+<bad_code>
+// EMPTY CATCH — error swallowed, state undefined
+async function loadConfig(): Promise<Config> {
+  try {
+    const raw = await fs.readFile('config.json', 'utf-8');
+    return JSON.parse(raw);
+  } catch (e) {
+    // silently returns undefined — caller gets unexpected type
+    return {} as Config;
+  }
+}
+</bad_code>
+<good_code>
+// Explicit error with meaningful context
+async function loadConfig(path: string): Promise<Config> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(path, 'utf-8');
+  } catch (cause) {
+    throw new ConfigError(\`Failed to read config from \${path}\`, { cause });
+  }
+  try {
+    return JSON.parse(raw) as Config;
+  } catch (cause) {
+    throw new ConfigError(\`Invalid JSON in config file \${path}\`, { cause });
+  }
+}
+</good_code>
+<why>Empty catch blocks produce undefined state that propagates silently. Callers cannot distinguish "no config" from "disk failure" from "malformed JSON". Debugging becomes impossible.</why>
+</example>
+</examples>
+
+---
+
+## 9. Minimum Negative Tests per Change Type
+
+For every change, the following negative-path tests MUST exist:
+
+| Change Type | MUST Test (negative path) |
+|---|---|
+| Function/Module | null/undefined input, empty input ([] / '' / {}), invalid type at boundary, thrown error path |
+| Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |
+| API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |
+| Config/Environment | missing env var, malformed config file, invalid values |
+| State Management | initial state correctness, invalid state transition, concurrent mutation |
+
+---
+
+## 10. Stack-Specific Review Checklist
+
+When reviewing TypeScript changes, MUST verify:
+
+| Check | What to look for |
+|-------|-----------------|
+| \`any\` Usage | New \`any\` types without documented justification, \`as any\` casts |
+| Floating Promises | \`.then()\` without \`await\` or \`.catch()\`, missing \`async\` on functions that call async code |
+| Circular Dependencies | Barrel re-exports creating import cycles, new cross-module imports |
+| Empty Catch Blocks | \`catch (e) {}\` or \`catch { return defaultValue }\` without logging or re-throw |
+| Synchronous I/O | \`fs.readFileSync\`, \`execSync\` in non-startup code paths |
+| Type Assertions | \`as T\` without prior narrowing, especially \`as any\` chains |
+| Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
+| Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |
 `;

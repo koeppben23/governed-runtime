@@ -160,14 +160,14 @@ Security        -> Slice test: @WithMockUser + @WebMvcTest
 \`\`\`
 
 ### 5.4 Controllers
-Controllers must: validate input, map DTOs, delegate, handle HTTP concerns.
-Forbidden: business branching, persistence logic, transaction management.
+Controllers MUST: validate input, map DTOs, delegate, handle HTTP concerns.
+Controllers MUST NOT: contain business branching, persistence logic, or transaction management.
 
 ### 5.5 Services
-Services represent use cases, not entities. No god services. Domain invariants enforced in business logic.
+Services MUST represent use cases, not entities. No god services. Domain invariants MUST be enforced in business logic, not scattered across layers.
 
 ### 5.6 Transactions
-One transaction per use case. No external calls inside DB transactions unless compensated. Idempotency required for external triggers.
+One transaction per use case. MUST NOT make external calls inside DB transactions unless compensated. Idempotency MUST be ensured for external triggers.
 
 ### 5.7 Persistence Hygiene (if JPA present)
 - Prevent lazy-loading leaks across boundaries.
@@ -186,6 +186,8 @@ If OpenAPI/Pact exists:
 - Treat generated code as boundary. Map DTOs explicitly.
 
 Contract drift -> hard failure. No bypass without documented exception.
+
+If OpenAPI/Pact exists, contract MUST be treated as authoritative. Code MUST adapt to the contract, never the reverse. Generated code MUST NOT be edited. Business logic MUST NOT be placed in generated packages.
 
 ---
 
@@ -255,4 +257,118 @@ A change fails if any of these apply:
 | Persistence/Migration | migration validation + happy + violation tests for constraints |
 | Messaging | consumer idempotency/retry tests + schema validation (if exists) |
 | Pure Service | unit tests proving rules + slice/integration if boundary changed |
+
+---
+
+## 12. Few-Shot Examples (Anti-Pattern Corrections)
+
+<examples>
+<example id="AP-J01" type="anti-pattern">
+<bad_code>
+// FAT CONTROLLER — business logic in controller
+@PostMapping("/orders")
+public ResponseEntity<Order> createOrder(@RequestBody OrderRequest req) {
+    if (req.getItems().isEmpty()) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No items");
+    }
+    double total = 0;
+    for (var item : req.getItems()) {
+        var product = productRepo.findById(item.getProductId()).orElseThrow();
+        total += product.getPrice() * item.getQuantity();
+        if (product.getStock() < item.getQuantity()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Out of stock");
+        }
+        product.setStock(product.getStock() - item.getQuantity());
+        productRepo.save(product);
+    }
+    var order = new Order();
+    order.setTotal(total);
+    order.setItems(req.getItems());
+    return ResponseEntity.status(201).body(orderRepo.save(order));
+}
+</bad_code>
+<good_code>
+// Controller delegates to service, maps DTOs at boundary
+@PostMapping("/orders")
+public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderCreateRequest req) {
+    Order order = orderService.create(orderMapper.toDomain(req));
+    return ResponseEntity.status(HttpStatus.CREATED).body(orderMapper.toResponse(order));
+}
+</good_code>
+<why>Business rules in controllers are untestable without HTTP context, violate SRP, and scatter domain logic across layers.</why>
+</example>
+
+<example id="AP-J04" type="anti-pattern">
+<bad_code>
+// ENTITY EXPOSURE — JPA entity returned from controller
+@GetMapping("/users/{id}")
+public User getUser(@PathVariable Long id) {
+    return userRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+}
+</bad_code>
+<good_code>
+// Boundary DTO separates persistence schema from API contract
+@GetMapping("/users/{id}")
+public UserResponse getUser(@PathVariable Long id) {
+    User user = userService.findById(id);
+    return userMapper.toResponse(user);
+}
+</good_code>
+<why>Exposing JPA entities couples API consumers to the persistence schema. Any column rename, lazy-loading change, or @JsonIgnore slip leaks internal structure.</why>
+</example>
+
+<example id="AP-J05" type="anti-pattern">
+<bad_code>
+// SWALLOWED EXCEPTION — catch-log-ignore
+public Optional<User> findUser(Long id) {
+    try {
+        return Optional.of(userRepository.findById(id).orElseThrow());
+    } catch (Exception e) {
+        log.error("Error finding user", e);
+        return Optional.empty();
+    }
+}
+</bad_code>
+<good_code>
+// Explicit error handling — let expected failures propagate with domain meaning
+public User findById(Long id) {
+    return userRepository.findById(id)
+        .orElseThrow(() -> new UserNotFoundException(id));
+}
+</good_code>
+<why>Catching Exception and returning empty hides failures, masks bugs, and produces silent data corruption. Callers cannot distinguish "not found" from "database down".</why>
+</example>
+</examples>
+
+---
+
+## 13. Minimum Negative Tests per Change Type
+
+For every change, the following negative-path tests MUST exist:
+
+| Change Type | MUST Test (negative path) |
+|---|---|
+| Controller/API | invalid input -> 400, missing/invalid auth -> 401/403, resource not found -> 404, constraint violation -> 409 |
+| Service | null/empty input, business rule violation, concurrent modification (if applicable) |
+| Repository | unique constraint violation, empty result set, orphan reference (FK violation) |
+| Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |
+| Migration | rollback script executes without error, data integrity preserved after up+down |
+
+---
+
+## 14. Stack-Specific Review Checklist
+
+When reviewing Java changes, MUST verify:
+
+| Check | What to look for |
+|-------|-----------------|
+| N+1 Queries | \`findById\` inside loops, missing \`@EntityGraph\` or fetch joins for collections |
+| Transaction Boundaries | External HTTP/messaging calls inside \`@Transactional\`, missing \`readOnly = true\` for reads |
+| Entity Exposure | JPA entities in controller return types or request bodies |
+| Lombok Misuse | \`@Data\` on entities (generates equals/hashCode on mutable fields), \`@AllArgsConstructor\` on beans |
+| Constructor Injection | Field injection (\`@Autowired\` on fields) instead of constructor injection |
+| Exception Handling | Empty catch blocks, catching \`Exception\` instead of specific types, log-only handling |
+| Concurrency | Missing \`@Version\` on aggregates with concurrent writes, shared mutable state in singletons |
+| Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |
 `;

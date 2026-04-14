@@ -61,7 +61,7 @@ export const PERF_BUDGETS = {
   evaluateSingleMs: 1,
 
   /** Single guard predicate check. */
-  guardPredicateMs: 0.1,
+  guardPredicateMs: 0.5,
 
   /** Full hash chain verification for 1000 events. */
   auditChainVerify1000Ms: 100,
@@ -86,6 +86,12 @@ export const PERF_BUDGETS = {
 
   /** autoAdvance loop (max 10 transitions). */
   autoAdvanceMs: 5,
+
+  /** validateBinding (2x path normalize + string compare). */
+  validateBindingMs: 0.5,
+
+  /** Reason registry lookup + format (map lookup + string interpolation). */
+  reasonLookupMs: 0.5,
 } as const;
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

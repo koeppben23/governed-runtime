@@ -159,24 +159,24 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 ## 5. Implementation Standards
 
 ### Components
-- Keep focused: presentational vs container responsibilities.
-- No heavy computation in templates.
-- Use explicit inputs/outputs and typed view models.
+- MUST keep focused: presentational vs container responsibilities.
+- MUST NOT place heavy computation in templates.
+- MUST use explicit inputs/outputs and typed view models.
 
 ### Change Detection & Reactivity
-- Preserve repo default strategy. Use deterministic reactive composition.
-- No nested subscriptions. Use \`async\` pipe, signals, or repo-standard teardown.
+- MUST preserve repo default strategy. Use deterministic reactive composition.
+- MUST NOT use nested subscriptions. Use \`async\` pipe, signals, or repo-standard teardown.
 
 ### Forms
 - Use repo form pattern (typed reactive forms if present).
 - Validation messages must be predictable and testable.
 
 ### API Boundaries
-- Keep transport DTOs at boundaries. Map to view/domain models.
-- Do NOT leak raw backend payload shapes through UI layers.
+- MUST keep transport DTOs at boundaries. Map to view/domain models.
+- MUST NOT leak raw backend payload shapes through UI layers.
 
 ### Security
-- No secrets/PII in logs. Safe HTML binding (XSS-aware). Preserve CSP.
+- MUST NOT place secrets/PII in logs. MUST use safe HTML binding (XSS-aware). MUST preserve CSP.
 
 ---
 
@@ -222,4 +222,122 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-NG08 | Component Without OnPush | Performance degradation, hides reactivity bugs |
 | AP-NG09 | Class-Based Guards/Interceptors | Deprecated, unnecessary boilerplate |
 | AP-NG10 | Cross-App Imports in Nx | Violates boundaries, circular deps, blocks independent deployment |
+
+---
+
+## 9. Few-Shot Examples (Anti-Pattern Corrections)
+
+<examples>
+<example id="AP-NG01" type="anti-pattern">
+<bad_code>
+// BUSINESS LOGIC IN COMPONENT — orchestration, HTTP, and domain rules mixed into UI
+@Component({ selector: 'app-user-page', template: '...' })
+export class UserPageComponent {
+  users: User[] = [];
+  constructor(private http: HttpClient) {}
+  ngOnInit() {
+    this.http.get<User[]>('/api/users').subscribe(data => {
+      this.users = data.filter(u => u.role === 'admin' && u.active);
+    });
+  }
+  deactivate(user: User) {
+    if (user.role !== 'superadmin') {
+      this.http.patch(\`/api/users/\${user.id}\`, { active: false }).subscribe();
+    }
+  }
+}
+</bad_code>
+<good_code>
+// Container delegates to facade, presentational via input/output
+@Component({
+  selector: 'app-user-page',
+  template: \`<app-user-list [users]="vm()" (deactivate)="onDeactivate($event)" />\`,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class UserPageComponent {
+  private readonly facade = inject(UserFacade);
+  readonly vm = this.facade.activeAdmins;
+  onDeactivate(user: User) { this.facade.deactivate(user.id); }
+}
+</good_code>
+<why>Business logic in components is untestable without TestBed, not reusable, and tightly couples UI to API shape.</why>
+</example>
+
+<example id="AP-NG05" type="anti-pattern">
+<bad_code>
+// NESTED SUBSCRIPTIONS — memory leaks, race conditions
+ngOnInit() {
+  this.route.params.subscribe(params => {
+    this.userService.getUser(params['id']).subscribe(user => {
+      this.orderService.getOrders(user.id).subscribe(orders => {
+        this.orders = orders;
+      });
+    });
+  });
+}
+</bad_code>
+<good_code>
+// Flat reactive chain with proper teardown
+private readonly route = inject(ActivatedRoute);
+readonly orders$ = this.route.params.pipe(
+  switchMap(params => this.userService.getUser(params['id'])),
+  switchMap(user => this.orderService.getOrders(user.id)),
+);
+</good_code>
+<why>Nested subscriptions leak memory, race on rapid navigation, produce unpredictable error states, and are untestable.</why>
+</example>
+
+<example id="AP-NG07" type="anti-pattern">
+<bad_code>
+// UNTYPED REACTIVE FORM — all values are 'any', no compile-time checks
+this.form = this.fb.group({
+  name: [''],
+  email: [''],
+  age: [0],
+});
+const name = this.form.get('naem')?.value; // typo not caught at compile time
+</bad_code>
+<good_code>
+// Typed reactive form — compile-time field and type checking
+this.form = this.fb.nonNullable.group({
+  name: ['', Validators.required],
+  email: ['', [Validators.required, Validators.email]],
+  age: [0, [Validators.min(0), Validators.max(150)]],
+});
+const name: string = this.form.controls.name.value; // type-safe, typo = compile error
+</good_code>
+<why>Untyped forms bypass the type checker entirely. Field name typos, wrong value types, and missing validations become runtime bugs instead of compile errors.</why>
+</example>
+</examples>
+
+---
+
+## 10. Minimum Negative Tests per Change Type
+
+For every change, the following negative-path tests MUST exist:
+
+| Change Type | MUST Test (negative path) |
+|---|---|
+| Container Component | facade method called with wrong args, error state displayed, loading state handled |
+| Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |
+| Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |
+| Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |
+| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |
+
+---
+
+## 11. Stack-Specific Review Checklist
+
+When reviewing Angular changes, MUST verify:
+
+| Check | What to look for |
+|-------|-----------------|
+| OnPush Missing | New components without \`ChangeDetectionStrategy.OnPush\` |
+| Nested Subscriptions | \`.subscribe()\` inside another \`.subscribe()\` callback |
+| Boundary Violations | Feature lib importing from another feature lib, UI lib importing data-access |
+| Untyped Forms | \`FormGroup\` without typed controls, \`.get('field')\` instead of \`.controls.field\` |
+| Missing Teardown | Manual \`.subscribe()\` without \`takeUntilDestroyed()\`, \`async\` pipe, or explicit unsubscribe |
+| Leaked DTOs | Backend response interfaces used directly in component templates |
+| Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
+| A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |
 `;

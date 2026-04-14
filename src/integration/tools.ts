@@ -36,17 +36,42 @@
  * @version v2
  */
 
-import { tool, type ToolDefinition } from "@opencode-ai/plugin";
+import { z } from "zod";
 
 /**
- * Use the Zod instance bundled inside @opencode-ai/plugin (Zod v4).
+ * Tool definition shape expected by OpenCode.
  *
- * Why: The project depends on Zod v3 for state schemas, but the plugin's `tool()`
- * helper expects `z.ZodRawShape` from Zod v4. Using `tool.schema` gives us
- * the exact Zod v4 instance the plugin was compiled against, avoiding the
- * `_zod` property mismatch that occurs when mixing v3 and v4 types.
+ * OpenCode accepts plain objects with { description, args, execute }.
+ * The `tool()` helper from @opencode-ai/plugin is a passthrough (identity function)
+ * that only provides TypeScript type safety — it adds no runtime behavior.
+ *
+ * By defining ToolDefinition ourselves and exporting plain objects, we eliminate
+ * the runtime dependency on @opencode-ai/plugin. This is critical because:
+ * - The thin wrappers in .opencode/ use relative imports back into src/
+ * - .opencode/ resolves bare specifiers from .opencode/node_modules/
+ * - src/ resolves bare specifiers from the project root node_modules/
+ * - A freshly-cloned repo may not have root node_modules/ (no npm install yet)
+ * - OpenCode's bun install only runs on .opencode/package.json, not the root
+ *
+ * The @opencode-ai/plugin docs explicitly support plain object exports:
+ * "You can also import Zod directly and return a plain object"
  */
-const z = tool.schema;
+interface ToolContext {
+  sessionID: string;
+  messageID: string;
+  agent: string;
+  directory: string;
+  worktree: string;
+  abort: AbortSignal;
+  metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
+}
+
+type ToolDefinition = {
+  description: string;
+  args: Record<string, z.ZodTypeAny>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execute(args: any, context: ToolContext): Promise<string>;
+};
 
 // State & Machine
 import type { SessionState, Phase } from "../state/schema";
@@ -80,6 +105,7 @@ import type {
   CheckId,
   LoopVerdict,
   RevisionDelta,
+  ValidationResult,
 } from "../state/evidence";
 
 // Config: Policy, Reasons, Completeness
@@ -219,7 +245,7 @@ function extractSections(body: string): string[] {
 // Tool 1: governance_status — Read-Only State Check
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const status = tool({
+export const status: ToolDefinition = {
   description:
     "Read the current governance session state. Returns phase, evidence summary, " +
     "policy info, completeness matrix, and next action. " +
@@ -288,13 +314,13 @@ export const status = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 2: governance_hydrate — Bootstrap Session
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const hydrate: ToolDefinition = tool({
+export const hydrate: ToolDefinition = {
   description:
     "Bootstrap or reload the governance session. Creates a new session if none exists, " +
     "or returns the existing session unchanged (idempotent). " +
@@ -354,13 +380,13 @@ export const hydrate: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 3: governance_ticket — Record Task
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const ticket: ToolDefinition = tool({
+export const ticket: ToolDefinition = {
   description:
     "Record the task/ticket description for the governance session. " +
     "Clears all downstream evidence (plan, validation, implementation). " +
@@ -391,7 +417,7 @@ export const ticket: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 4: governance_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
@@ -411,7 +437,7 @@ export const ticket: ToolDefinition = tool({
 // On convergence: auto-advance to PLAN_REVIEW.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const plan: ToolDefinition = tool({
+export const plan: ToolDefinition = {
   description:
     "Submit a plan OR record a self-review verdict. Two modes:\n" +
     "Mode A (submit plan): provide planText. Records the plan and starts self-review loop.\n" +
@@ -604,13 +630,13 @@ export const plan: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 5: governance_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const decision: ToolDefinition = tool({
+export const decision: ToolDefinition = {
   description:
     "Record a human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). " +
     "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
@@ -651,7 +677,7 @@ export const decision: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 6: governance_implement — Record Implementation OR Impl Review Verdict
@@ -674,7 +700,7 @@ export const decision: ToolDefinition = tool({
 //   -> LLM makes more code changes, then calls governance_implement({}) again
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const implement: ToolDefinition = tool({
+export const implement: ToolDefinition = {
   description:
     "Record implementation evidence OR submit implementation review verdict. Two modes:\n" +
     "Mode A (record impl): no reviewVerdict. Auto-detects changed files via git. " +
@@ -843,13 +869,13 @@ export const implement: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 7: governance_validate — Record Validation Check Results
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const validate: ToolDefinition = tool({
+export const validate: ToolDefinition = {
   description:
     "Record validation check results. The LLM executes the checks (test analysis, " +
     "rollback safety analysis, etc.) and reports results here. " +
@@ -893,7 +919,7 @@ export const validate: ToolDefinition = tool({
       }
 
       // Validate that all active checks are covered
-      const submittedIds = new Set(args.results.map((r) => r.checkId));
+      const submittedIds = new Set(args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId));
       const missing = state.activeChecks.filter(
         (id) => !submittedIds.has(id),
       );
@@ -905,7 +931,7 @@ export const validate: ToolDefinition = tool({
 
       // Record results with timestamps
       const now = ctx.now();
-      const validationResults = args.results.map((r) => ({
+      const validationResults = args.results.map((r: { checkId: string; passed: boolean; detail: string }) => ({
         checkId: r.checkId as CheckId,
         passed: r.passed,
         detail: r.detail,
@@ -927,17 +953,17 @@ export const validate: ToolDefinition = tool({
       );
       await writeState(worktree, finalState);
 
-      const allPassed = validationResults.every((r) => r.passed);
+      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
       const failedChecks = validationResults
-        .filter((r) => !r.passed)
-        .map((r) => r.checkId);
+        .filter((r: ValidationResult) => !r.passed)
+        .map((r: ValidationResult) => r.checkId);
 
       return JSON.stringify({
         phase: finalState.phase,
         status: allPassed
           ? "All validation checks passed."
           : `Validation failed: ${failedChecks.join(", ")}.`,
-        results: validationResults.map((r) => ({
+        results: validationResults.map((r: ValidationResult) => ({
           checkId: r.checkId,
           passed: r.passed,
         })),
@@ -948,13 +974,13 @@ export const validate: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 8: governance_review — Generate Compliance Report (Read-Only)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const review = tool({
+export const review: ToolDefinition = {
   description:
     "Generate a standalone compliance review report with evidence completeness matrix " +
     "and four-eyes principle status. Always available in every phase. " +
@@ -998,13 +1024,13 @@ export const review = tool({
       return formatError(err);
     }
   },
-});
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tool 9: governance_abort_session — Emergency Termination
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const abort_session: ToolDefinition = tool({
+export const abort_session: ToolDefinition = {
   description:
     "Emergency termination of the governance session. Bypasses the state machine " +
     "and directly sets phase to COMPLETE with an ABORTED error marker. " +
@@ -1036,4 +1062,4 @@ export const abort_session: ToolDefinition = tool({
       return formatError(err);
     }
   },
-});
+};

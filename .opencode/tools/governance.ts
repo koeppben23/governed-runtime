@@ -6,6 +6,9 @@
  * Tool naming: OpenCode derives names as <filename>_<exportname>.
  * governance.ts + export const status -> governance_status
  *
+ * Prerequisites: Run `npm install` in the project root after cloning.
+ * The governance engine depends on zod (from root node_modules).
+ *
  * @see https://opencode.ai/docs/custom-tools
  */
 export {

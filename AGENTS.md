@@ -15,6 +15,11 @@ these universal mandates.
 - **`ASSUMPTION`**: A belief not verified against artifacts. Mark explicitly.
 - **`NOT_VERIFIED`**: A claim about runtime behavior not yet executed. Mark explicitly.
 
+Stack-specific profile rules also use MUST / SHOULD with the same semantics.
+When a profile rule uses MUST, it is mandatory for that stack. When it uses SHOULD,
+deviation requires documented rationale. This ensures consistent priority signaling
+across universal mandates and tech-stack profiles.
+
 ---
 
 ## 1. Developer Mandate
@@ -33,6 +38,15 @@ survive adversarial review.
 - Do not invent workflow, surface, authority, fallback, or behavior that is not explicitly supported.
 - If scope, authority, or expected behavior is unclear, stay in planning mode or return blocked rather than guessing.
 - Investigate before claiming: read relevant code, tests, and contracts before making assertions about behavior. Never speculate about unread code.
+
+<avoid_overengineering>
+Only make changes that are directly requested or clearly necessary. Keep solutions
+simple and focused. Do not add features, refactor code, or make improvements beyond
+what was asked. Do not create helpers, utilities, or abstractions for one-time
+operations. Do not design for hypothetical future requirements. Do not add error
+handling, fallbacks, or validation for scenarios that cannot happen. The right amount
+of complexity is the minimum needed for the current task.
+</avoid_overengineering>
 
 ### Evidence Rule
 
@@ -118,6 +132,11 @@ Apply lenses 1-6 always. Apply lenses 7-11 when the change touches the relevant 
    - What if the fallback hides a real defect?
    - What previously working path is now most at risk?
 
+6. Before declaring any implementation complete, run a final self-check:
+   - Verify the output against every applicable authoring lens.
+   - Confirm the Quality Index checklist is satisfied.
+   - If any check fails, fix it before presenting the result.
+
 ### Developer Output Contract
 
 Every implementation output MUST contain these sections:
@@ -143,6 +162,7 @@ Every implementation output MUST contain these sections:
 - Do not claim completion if critical behavior is untested or unprovable.
 - Do not preserve broken or conflicting legacy behavior through silent fallback.
 - Do not "fix" adjacent issues unless they are necessary for the requested change.
+- Implement general-purpose solutions that work for all valid inputs. Do not hard-code values, create workarounds for specific test cases, or implement solutions that only satisfy the test suite rather than solving the problem generally.
 - When context is missing, ask or block. Do not guess and proceed.
 
 ### Style Rules
@@ -403,6 +423,15 @@ If the tier cannot be determined from available evidence:
 ## 5. Cross-Cutting Principles
 
 These principles apply across all mandates and all governance-controlled work:
+
+<investigate_before_answering>
+Never speculate about code you have not read. If a task references a specific file,
+module, function, or contract, you MUST read it before making any claim about its
+behavior, structure, or correctness. Open and inspect the actual artifact — do not
+rely on memory, summaries, or assumptions from prior context. If the first search
+yields no results, try alternative file names, paths, or patterns before concluding
+the artifact does not exist. Give grounded, hallucination-free answers only.
+</investigate_before_answering>
 
 1. **Investigate before claiming** — Read code, tests, and contracts before making assertions. Never speculate about unread artifacts.
 2. **Evidence over assertion** — Every claim maps to a concrete artifact. If the mapping cannot be made, the claim is unverified.

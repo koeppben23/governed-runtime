@@ -416,14 +416,14 @@ describe("binding", () => {
 
   // ─── PERF ───────────────────────────────────────────────────
   describe("PERF", () => {
-    it("validateBinding < 0.1ms (p99 over 200 iterations)", () => {
+    it(`validateBinding < ${PERF_BUDGETS.validateBindingMs}ms (p99 over 200 iterations)`, () => {
       const worktree = path.resolve("/tmp/perf-repo");
       const state = makeState("TICKET", {
         binding: { sessionId: "s1", worktree, resolvedAt: FIXED_TIME },
       });
       const binding = { worktreeRoot: worktree, sessionId: "s1" };
       const { p99Ms } = benchmarkSync(() => validateBinding(state, binding), 200, 50);
-      expect(p99Ms).toBeLessThan(0.1);
+      expect(p99Ms).toBeLessThan(PERF_BUDGETS.validateBindingMs);
     });
   });
 });

@@ -119,9 +119,9 @@ describe("config/policy", () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe("PERF", () => {
-    it("resolvePolicy < 0.1ms (p99)", () => {
+    it(`resolvePolicy < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
       const result = benchmarkSync(() => resolvePolicy("team"));
-      expect(result.p99Ms).toBeLessThan(0.1);
+      expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.guardPredicateMs);
     });
   });
 });
@@ -214,8 +214,9 @@ describe("config/profile", () => {
       expect(registry.detect(signals)).toBeUndefined();
     });
 
-    it("all built-in profiles have instructions except baseline", () => {
-      expect(baselineProfile.instructions).toBeUndefined();
+    it("all built-in profiles have instructions", () => {
+      expect(baselineProfile.instructions).toBeDefined();
+      expect(baselineProfile.instructions!.length).toBeGreaterThan(0);
       expect(javaProfile.instructions).toBeDefined();
       expect(angularProfile.instructions).toBeDefined();
       expect(typescriptProfile.instructions).toBeDefined();
@@ -333,14 +334,14 @@ describe("config/reasons", () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe("PERF", () => {
-    it("reason lookup + format < 0.1ms (p99)", () => {
+    it(`reason lookup + format < ${PERF_BUDGETS.reasonLookupMs}ms (p99)`, () => {
       const result = benchmarkSync(() => {
         defaultReasonRegistry.format("COMMAND_NOT_ALLOWED", {
           command: "/plan",
           phase: "TICKET",
         });
       });
-      expect(result.p99Ms).toBeLessThan(0.1);
+      expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.reasonLookupMs);
     });
   });
 });

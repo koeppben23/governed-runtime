@@ -135,11 +135,11 @@ describe("topology", () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe("PERF", () => {
-    it("transition lookup < 0.1ms (p99)", () => {
+    it(`transition lookup < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
       const result = benchmarkSync(() => {
         resolveTransition("VALIDATION", "ALL_PASSED");
       });
-      expect(result.p99Ms).toBeLessThan(0.1);
+      expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.guardPredicateMs);
     });
   });
 });

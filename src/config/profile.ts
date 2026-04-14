@@ -27,6 +27,7 @@ import type { SessionState } from "../state/schema";
 import { profileRuleContent as javaRuleContent } from "./profiles/content/java";
 import { profileRuleContent as angularRuleContent } from "./profiles/content/angular";
 import { profileRuleContent as typescriptRuleContent } from "./profiles/content/typescript";
+import { profileRuleContent as baselineRuleContent } from "./profiles/content/baseline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,7 @@ export const baselineProfile: GovernanceProfile = {
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (_signals) => 0.1,
+  instructions: baselineRuleContent,
 };
 
 // ─── Java Profile ─────────────────────────────────────────────────────────────

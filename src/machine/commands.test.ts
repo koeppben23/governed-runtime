@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Command, isCommandAllowed } from "../machine/commands";
 import type { Phase } from "../state/schema";
-import { benchmarkSync } from "../test-policy";
+import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
 
 describe("commands", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -109,11 +109,11 @@ describe("commands", () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe("PERF", () => {
-    it("isCommandAllowed < 0.1ms (p99)", () => {
+    it(`isCommandAllowed < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
       const result = benchmarkSync(() => {
         isCommandAllowed("VALIDATION", Command.VALIDATE);
       });
-      expect(result.p99Ms).toBeLessThan(0.1);
+      expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.guardPredicateMs);
     });
   });
 });
