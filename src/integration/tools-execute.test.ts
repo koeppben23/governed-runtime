@@ -1,0 +1,898 @@
+/**
+ * @module integration/tools-execute.test
+ * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ *
+ * Tests each tool's execute() against real filesystem persistence with
+ * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
+ * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
+ * all other I/O (workspace init, state read/write, config) runs for real.
+ *
+ * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
+ * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs/promises";
+import {
+  createToolContext,
+  createTestWorkspace,
+  isTarAvailable,
+  parseToolResult,
+  isBlockedResult,
+  GIT_MOCK_DEFAULTS,
+  type TestToolContext,
+  type TestWorkspace,
+} from "./test-helpers";
+import {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  implement,
+  validate,
+  review,
+  abort_session,
+  archive,
+} from "./tools";
+import { readState, writeState } from "../adapters/persistence";
+import { makeState, makeProgressedState } from "../__fixtures__";
+
+// ─── Git Mock ────────────────────────────────────────────────────────────────
+
+vi.mock("../adapters/git", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../adapters/git")>();
+  return {
+    ...original,
+    remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
+    changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
+    listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+  };
+});
+
+// Lazy import for per-test overrides
+const gitMock = await import("../adapters/git");
+
+// ─── Capability Gates ────────────────────────────────────────────────────────
+
+const tarOk = await isTarAvailable();
+
+// ─── Test Setup ──────────────────────────────────────────────────────────────
+
+let ws: TestWorkspace;
+let ctx: TestToolContext;
+
+beforeEach(async () => {
+  ws = await createTestWorkspace();
+  ctx = createToolContext({
+    worktree: ws.tmpDir,
+    directory: ws.tmpDir,
+    sessionID: crypto.randomUUID(),
+  });
+});
+
+afterEach(async () => {
+  vi.clearAllMocks();
+  await ws.cleanup();
+});
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
+
+/** Hydrate a session and return parsed result. Convenience for setup. */
+async function hydrateSession(
+  overrides: { policyMode?: string; profileId?: string } = {},
+): Promise<Record<string, unknown>> {
+  const raw = await hydrate.execute(
+    { policyMode: overrides.policyMode ?? "solo", profileId: overrides.profileId ?? "baseline" },
+    ctx,
+  );
+  return parseToolResult(raw);
+}
+
+/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
+async function hydrateAndTicket(
+  ticketText = "Fix the auth bug",
+): Promise<void> {
+  await hydrateSession();
+  await ticket.execute({ text: ticketText, source: "user" }, ctx);
+}
+
+// =============================================================================
+// Tool 1: status
+// =============================================================================
+
+describe("status", () => {
+  describe("HAPPY", () => {
+    it("returns no-session message when no session exists", async () => {
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.phase).toBeNull();
+      expect(result.status).toContain("No FlowGuard session");
+    });
+
+    it("returns correct phase and fields after hydrate", async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.phase).toBe("TICKET");
+      expect(result.sessionId).toBeTruthy();
+      expect(result.policyMode).toBe("solo");
+      expect(result.hasTicket).toBe(false);
+      expect(result.evalKind).toBeTruthy();
+      expect(result.next).toBeTruthy();
+    });
+
+    it("includes completeness fields", async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.completeness).toBeDefined();
+      const comp = result.completeness as Record<string, unknown>;
+      expect(typeof comp.overallComplete).toBe("boolean");
+      expect(typeof comp.summary).toBe("object");
+    });
+  });
+
+  describe("BAD", () => {
+    it("handles missing worktree gracefully", async () => {
+      const badCtx = createToolContext({
+        worktree: "",
+        directory: "",
+        sessionID: ctx.sessionID,
+      });
+      // Should not throw — returns error or no-session
+      const raw = await status.execute({}, badCtx);
+      const result = parseToolResult(raw);
+      expect(result.phase === null || result.error === true).toBe(true);
+    });
+  });
+
+  describe("CORNER", () => {
+    it("reflects ticket state after ticket is recorded", async () => {
+      await hydrateAndTicket();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.hasTicket).toBe(true);
+      expect(result.phase).toBe("TICKET");
+    });
+  });
+});
+
+// =============================================================================
+// Tool 2: hydrate
+// =============================================================================
+
+describe("hydrate", () => {
+  describe("HAPPY", () => {
+    it("creates a new session with solo policy", async () => {
+      const result = await hydrateSession({ policyMode: "solo" });
+      expect(result.phase).toBe("TICKET");
+      expect(result.status).toBe("ok");
+      expect(result.profileDetected).toBe(true);
+    });
+
+    it("creates a new session with team policy", async () => {
+      const result = await hydrateSession({ policyMode: "team" });
+      expect(result.phase).toBe("TICKET");
+    });
+
+    it("persists state to session directory on disk", async () => {
+      await hydrateSession();
+      // Resolve the session dir and verify the file exists
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe("TICKET");
+      expect(state!.binding.fingerprint).toBe(fp.fingerprint);
+    });
+
+    it("auto-detects TypeScript profile from repo signals", async () => {
+      const result = await hydrateSession({ profileId: "baseline" });
+      // With tsconfig.json in signals, TypeScript profile should be detected
+      expect(result.profileId).toBe("typescript");
+      expect(result.profileName).toContain("TypeScript");
+    });
+
+    it("workspace and session directories exist on disk", async () => {
+      await hydrateSession();
+      const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+      await expect(fs.access(wsDir)).resolves.toBeUndefined();
+      await expect(fs.access(sessDir)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("BAD", () => {
+    it("returns error for completely invalid context", async () => {
+      const badCtx = createToolContext({
+        worktree: "",
+        directory: "",
+        sessionID: "",
+      });
+      const raw = await hydrate.execute(
+        { policyMode: "solo", profileId: "baseline" },
+        badCtx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+    });
+  });
+
+  describe("CORNER", () => {
+    it("is idempotent: second hydrate returns existing session", async () => {
+      const first = await hydrateSession();
+      const second = await hydrateSession();
+      // Both should succeed, second returns existing
+      expect(first.phase).toBe("TICKET");
+      expect(second.phase).toBe("TICKET");
+    });
+
+    it("idempotent hydrate preserves workspace metadata", async () => {
+      await hydrateSession();
+      await hydrateSession();
+      const { computeFingerprint, readWorkspaceInfo } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const info = await readWorkspaceInfo(fp.fingerprint);
+      expect(info).not.toBeNull();
+      expect(info!.fingerprint).toBe(fp.fingerprint);
+    });
+  });
+
+  describe("EDGE", () => {
+    it("works with repo without remote (path-based fingerprint)", async () => {
+      vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce(null);
+      const result = await hydrateSession();
+      expect(result.phase).toBe("TICKET");
+      expect(result.error).toBeUndefined();
+    });
+
+    it("two sessions in same workspace have independent state", async () => {
+      // Session 1
+      await hydrateSession();
+      const ctx1SessionID = ctx.sessionID;
+
+      // Session 2 with different sessionID
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: crypto.randomUUID(),
+      });
+      const raw2 = await hydrate.execute(
+        { policyMode: "solo", profileId: "baseline" },
+        ctx2,
+      );
+      const result2 = parseToolResult(raw2);
+      expect(result2.phase).toBe("TICKET");
+
+      // Ticket in session 1 only
+      await ticket.execute({ text: "Session 1 ticket", source: "user" }, ctx);
+      const s1 = parseToolResult(await status.execute({}, ctx));
+      const s2 = parseToolResult(await status.execute({}, ctx2));
+      expect(s1.hasTicket).toBe(true);
+      expect(s2.hasTicket).toBe(false);
+    });
+  });
+});
+
+// =============================================================================
+// Tool 3: ticket
+// =============================================================================
+
+describe("ticket", () => {
+  describe("HAPPY", () => {
+    it("records ticket text and stays in TICKET phase", async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        { text: "Fix the auth bug", source: "user" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe("TICKET");
+      expect(result.status).toBe("ok");
+    });
+
+    it("ticket is persisted in state on disk", async () => {
+      await hydrateSession();
+      await ticket.execute({ text: "Fix login flow", source: "user" }, ctx);
+      // Read state directly from disk
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket).not.toBeNull();
+      expect(state!.ticket!.text).toBe("Fix login flow");
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks with EMPTY_TICKET for empty text", async () => {
+      await hydrateSession();
+      const raw = await ticket.execute({ text: "", source: "user" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("EMPTY_TICKET");
+    });
+
+    it("blocks with NO_SESSION when no session exists", async () => {
+      const raw = await ticket.execute({ text: "Something", source: "user" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("re-ticketing in TICKET phase replaces ticket text", async () => {
+      await hydrateSession();
+      await ticket.execute({ text: "First ticket", source: "user" }, ctx);
+      await ticket.execute({ text: "Second ticket", source: "user" }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket!.text).toBe("Second ticket");
+    });
+
+    it("re-ticketing from non-TICKET phase is blocked", async () => {
+      await hydrateAndTicket("First ticket");
+      // Submit plan → phase advances from TICKET
+      await plan.execute({ planText: "## Plan\n1. Do stuff" }, ctx);
+      // Re-ticket should be blocked (not in TICKET phase)
+      const raw = await ticket.execute({ text: "Second ticket", source: "user" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+    });
+  });
+
+  describe("EDGE", () => {
+    it("accepts external source", async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        { text: "JIRA-1234: Fix bug", source: "external" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+    });
+  });
+});
+
+// =============================================================================
+// Tool 4: plan
+// =============================================================================
+
+describe("plan", () => {
+  describe("HAPPY", () => {
+    it("Mode A: records initial plan with digest", async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: "## Plan\n1. Fix auth\n2. Add tests" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.planDigest).toBeTruthy();
+      expect(result.selfReviewIteration).toBe(0);
+    });
+
+    it("Mode B: approve converges self-review", async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: "## Plan\n1. Fix" }, ctx);
+      const raw = await plan.execute(
+        { selfReviewVerdict: "approve" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      // In solo mode, max iterations is 1, so should converge
+      expect(
+        result.converged === true ||
+        result.phase === "PLAN_REVIEW" ||
+        result.phase === "VALIDATION"
+      ).toBe(true);
+    });
+
+    it("Mode B: changes_requested with revised plan", async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: "## Original Plan" }, ctx);
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: "changes_requested",
+          planText: "## Revised Plan\n1. Better approach",
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks with EMPTY_PLAN for empty planText", async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: "" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("EMPTY_PLAN");
+    });
+
+    it("blocks without ticket", async () => {
+      await hydrateSession();
+      const raw = await plan.execute({ planText: "## Plan" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("TICKET_REQUIRED");
+    });
+
+    it("blocks without session", async () => {
+      const raw = await plan.execute({ planText: "## Plan" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("Mode B changes_requested requires revised planText", async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: "## Plan" }, ctx);
+      const raw = await plan.execute(
+        { selfReviewVerdict: "changes_requested" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("REVISED_PLAN_REQUIRED");
+    });
+  });
+});
+
+// =============================================================================
+// Tool 5: decision (review-decision)
+// =============================================================================
+
+describe("decision", () => {
+  /** Helper: get to PLAN_REVIEW phase (solo auto-converges self-review). */
+  async function reachPlanReview(): Promise<void> {
+    await hydrateSession({ policyMode: "team" });
+    await ticket.execute({ text: "Fix bug", source: "user" }, ctx);
+    await plan.execute({ planText: "## Plan\n1. Fix" }, ctx);
+    // In team mode, we need to manually approve self-review
+    // Keep approving until convergence
+    for (let i = 0; i < 5; i++) {
+      const s = parseToolResult(await status.execute({}, ctx));
+      if (s.phase === "PLAN_REVIEW") break;
+      await plan.execute({ selfReviewVerdict: "approve" }, ctx);
+    }
+  }
+
+  describe("HAPPY", () => {
+    it("approve at PLAN_REVIEW advances to VALIDATION", async () => {
+      await reachPlanReview();
+      const raw = await decision.execute(
+        { verdict: "approve", rationale: "Looks good" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("VALIDATION");
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks at wrong phase", async () => {
+      await hydrateSession();
+      const raw = await decision.execute(
+        { verdict: "approve", rationale: "" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+    });
+
+    it("blocks without session", async () => {
+      const raw = await decision.execute(
+        { verdict: "approve", rationale: "" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("reject at PLAN_REVIEW returns to TICKET", async () => {
+      await reachPlanReview();
+      const raw = await decision.execute(
+        { verdict: "reject", rationale: "Need rethink" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("TICKET");
+    });
+
+    it("changes_requested at PLAN_REVIEW returns to PLAN", async () => {
+      await reachPlanReview();
+      const raw = await decision.execute(
+        { verdict: "changes_requested", rationale: "More detail needed" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("PLAN");
+    });
+  });
+});
+
+// =============================================================================
+// Tool 6: implement
+// =============================================================================
+
+describe("implement", () => {
+  /** Helper: reach IMPLEMENTATION phase via solo workflow. */
+  async function reachImplementation(): Promise<void> {
+    await hydrateAndTicket();
+    await plan.execute({ planText: "## Plan\n1. Fix auth" }, ctx);
+    // Solo: self-review auto-converges at max=1
+    await plan.execute({ selfReviewVerdict: "approve" }, ctx);
+    // Solo: PLAN_REVIEW auto-approves → VALIDATION
+    // Submit validation results
+    await validate.execute({
+      results: [
+        { checkId: "test_quality", passed: true, detail: "OK" },
+        { checkId: "rollback_safety", passed: true, detail: "OK" },
+      ],
+    }, ctx);
+  }
+
+  describe("HAPPY", () => {
+    it("Mode A: records changed files from git", async () => {
+      await reachImplementation();
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.changedFiles).toBeDefined();
+      expect(result.domainFiles).toBeDefined();
+    });
+
+    it("Mode B: approve review converges in solo", async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      const raw = await implement.execute(
+        { reviewVerdict: "approve" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(
+        result.converged === true ||
+        result.phase === "EVIDENCE_REVIEW" ||
+        result.phase === "COMPLETE"
+      ).toBe(true);
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks without session", async () => {
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+
+    it("blocks without plan/ticket", async () => {
+      await hydrateSession();
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+    });
+  });
+
+  describe("CORNER", () => {
+    it("filters out .opencode/ files from domain files", async () => {
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+        "src/foo.ts",
+        ".opencode/tools/flowguard.ts",
+        "node_modules/dep/index.js",
+      ]);
+      await reachImplementation();
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      const domain = result.domainFiles as string[];
+      expect(domain).toContain("src/foo.ts");
+      expect(domain).not.toContain(".opencode/tools/flowguard.ts");
+      expect(domain).not.toContain("node_modules/dep/index.js");
+    });
+  });
+});
+
+// =============================================================================
+// Tool 7: validate
+// =============================================================================
+
+describe("validate", () => {
+  /** Helper: reach VALIDATION phase. */
+  async function reachValidation(): Promise<void> {
+    await hydrateAndTicket();
+    await plan.execute({ planText: "## Plan" }, ctx);
+    await plan.execute({ selfReviewVerdict: "approve" }, ctx);
+    // Solo: auto-advances to VALIDATION
+  }
+
+  describe("HAPPY", () => {
+    it("ALL_PASSED advances to IMPLEMENTATION", async () => {
+      await reachValidation();
+      const raw = await validate.execute({
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("IMPLEMENTATION");
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks without session", async () => {
+      const raw = await validate.execute({
+        results: [{ checkId: "test_quality", passed: true, detail: "OK" }],
+      }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("CHECK_FAILED returns to PLAN", async () => {
+      await reachValidation();
+      const raw = await validate.execute({
+        results: [
+          { checkId: "test_quality", passed: false, detail: "Missing tests" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("PLAN");
+    });
+
+    it("blocks when required checks are missing", async () => {
+      await reachValidation();
+      const raw = await validate.execute({
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          // Missing rollback_safety
+        ],
+      }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("MISSING_CHECKS");
+    });
+
+    it("results are persisted in state", async () => {
+      await reachValidation();
+      await validate.execute({
+        results: [
+          { checkId: "test_quality", passed: true, detail: "Tests pass" },
+          { checkId: "rollback_safety", passed: true, detail: "Safe" },
+        ],
+      }, ctx);
+      const s = parseToolResult(await status.execute({}, ctx));
+      const vr = s.validationResults as Array<{ checkId: string; passed: boolean }>;
+      expect(vr).toHaveLength(2);
+      expect(vr[0].passed).toBe(true);
+    });
+  });
+});
+
+// =============================================================================
+// Tool 8: review
+// =============================================================================
+
+describe("review", () => {
+  describe("HAPPY", () => {
+    it("generates report without mutating state", async () => {
+      await hydrateAndTicket();
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("TICKET");
+      expect(result.completeness).toBeDefined();
+    });
+
+    it("report includes completeness matrix", async () => {
+      await hydrateAndTicket();
+      const result = parseToolResult(await review.execute({}, ctx));
+      const comp = result.completeness as Record<string, unknown>;
+      expect(typeof comp.overallComplete).toBe("boolean");
+      expect(comp.slots).toBeDefined();
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks without session", async () => {
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("state is unchanged after review", async () => {
+      await hydrateAndTicket();
+      const before = parseToolResult(await status.execute({}, ctx));
+      await review.execute({}, ctx);
+      const after = parseToolResult(await status.execute({}, ctx));
+      expect(before.phase).toBe(after.phase);
+      expect(before.hasTicket).toBe(after.hasTicket);
+    });
+  });
+});
+
+// =============================================================================
+// Tool 9: abort_session
+// =============================================================================
+
+describe("abort_session", () => {
+  describe("HAPPY", () => {
+    it("aborts session to COMPLETE", async () => {
+      await hydrateAndTicket();
+      const raw = await abort_session.execute(
+        { reason: "Testing abort" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe("COMPLETE");
+    });
+
+    it("abort is persisted on disk", async () => {
+      await hydrateSession();
+      await abort_session.execute({ reason: "Done" }, ctx);
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).toBe("COMPLETE");
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks without session", async () => {
+      const raw = await abort_session.execute({ reason: "No session" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("can abort from any non-terminal phase", async () => {
+      // Abort from TICKET phase (after hydrate)
+      await hydrateSession();
+      const raw = await abort_session.execute({ reason: "Cancel" }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe("COMPLETE");
+    });
+  });
+});
+
+// =============================================================================
+// Tool 10: archive
+// =============================================================================
+
+describe("archive", () => {
+  describe("HAPPY", () => {
+    it.skipIf(!tarOk)("archives a completed session to tar.gz", async () => {
+      await hydrateSession();
+      await abort_session.execute({ reason: "Complete for archive" }, ctx);
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toContain("archived");
+      expect(typeof result.archivePath).toBe("string");
+      // Verify tar.gz file exists on disk
+      await expect(
+        fs.access(result.archivePath as string),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("BAD", () => {
+    it("blocks without session", async () => {
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("NO_SESSION");
+    });
+
+    it("blocks when session is not COMPLETE", async () => {
+      await hydrateSession();
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("archive path follows expected pattern", async () => {
+      await hydrateSession();
+      await abort_session.execute({ reason: "Done" }, ctx);
+      // Even if tar is missing, the tool should at least try and produce
+      // a meaningful error or succeed. We test the path structure.
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      if (!result.error) {
+        expect(result.archivePath).toContain("sessions");
+        expect(result.archivePath).toContain("archive");
+        expect((result.archivePath as string).endsWith(".tar.gz")).toBe(true);
+      } else {
+        // If tar failed, we get ARCHIVE_FAILED — that's acceptable
+        expect(result.code).toBe("ARCHIVE_FAILED");
+      }
+    });
+  });
+});
+
+// =============================================================================
+// Cross-cutting
+// =============================================================================
+
+describe("cross-cutting", () => {
+  describe("EDGE", () => {
+    it("repo without remote uses path-based fingerprint", async () => {
+      vi.mocked(gitMock.remoteOriginUrl).mockResolvedValue(null);
+      const result = await hydrateSession();
+      expect(result.phase).toBe("TICKET");
+      // Verify the full tool chain works with path fingerprint
+      await ticket.execute({ text: "Path-based test", source: "user" }, ctx);
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.hasTicket).toBe(true);
+    });
+
+    it("idempotent hydrate on workspace level", async () => {
+      // First hydrate
+      await hydrateSession();
+      const { computeFingerprint, readWorkspaceInfo } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const info1 = await readWorkspaceInfo(fp.fingerprint);
+
+      // Second hydrate (same worktree, same sessionID)
+      await hydrateSession();
+      const info2 = await readWorkspaceInfo(fp.fingerprint);
+
+      // Workspace metadata should not be corrupted
+      expect(info2!.fingerprint).toBe(info1!.fingerprint);
+      expect(info2!.materialClass).toBe(info1!.materialClass);
+    });
+  });
+
+  describe("PERF", () => {
+    it("50x status calls complete in reasonable time", async () => {
+      await hydrateSession();
+      const start = performance.now();
+      for (let i = 0; i < 50; i++) {
+        await status.execute({}, ctx);
+      }
+      const elapsed = performance.now() - start;
+      // 50 calls with real FS I/O — generous budget of 10s
+      expect(elapsed).toBeLessThan(10_000);
+    });
+  });
+});
