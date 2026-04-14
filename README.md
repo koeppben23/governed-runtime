@@ -73,7 +73,7 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 
 - **Creates**: Session state at `.flowguard/session-state.json`
 - **Resolves**: Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
-- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo.
+- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo. If omitted, falls back to `policy.defaultMode` from `.flowguard/config.json` (if set), then to the built-in default.
 
 ### /ticket
 
@@ -251,6 +251,66 @@ Automated 7-check compliance assessment:
 
 ---
 
+## Configuration
+
+FlowGuard supports per-worktree configuration via `.flowguard/config.json`. The file is optional — when absent, all built-in defaults apply.
+
+### Config File Location
+
+```
+{worktree}/.flowguard/config.json
+```
+
+### Schema
+
+```json
+{
+  "schemaVersion": "v1",
+  "logging": {
+    "level": "info"
+  },
+  "policy": {
+    "defaultMode": "solo",
+    "maxSelfReviewIterations": 3,
+    "maxImplReviewIterations": 3
+  },
+  "profile": {
+    "defaultId": "typescript",
+    "activeChecks": ["test_quality", "rollback_safety"]
+  }
+}
+```
+
+| Section | Field | Type | Default | Description |
+|---------|-------|------|---------|-------------|
+| `logging` | `level` | `"debug"` \| `"info"` \| `"warn"` \| `"error"` \| `"silent"` | `"info"` | Minimum log level. Messages below this are suppressed. |
+| `policy` | `defaultMode` | `"solo"` \| `"team"` \| `"regulated"` | *(none)* | Default policy mode when `/hydrate` is called without explicit mode. |
+| `policy` | `maxSelfReviewIterations` | integer 1–10 | *(from policy preset)* | Override max self-review iterations (PLAN phase). |
+| `policy` | `maxImplReviewIterations` | integer 1–10 | *(from policy preset)* | Override max implementation review iterations. |
+| `profile` | `defaultId` | string | *(none)* | Default profile ID when `/hydrate` is called without explicit profile. |
+| `profile` | `activeChecks` | string[] | *(none)* | Override the set of active validation checks. |
+
+### Priority Chain
+
+Tool arguments > Config file > Policy preset > Built-in defaults
+
+### Logging
+
+FlowGuard uses structured logging that maps to the OpenCode SDK's `client.app.log()` API. The plugin is the only log writer — tools and rails do not log.
+
+Log levels: `debug`, `info`, `warn`, `error`, `silent`.
+
+Each log entry carries: `level`, `service` (caller identity), `message`, and optional `extra` (structured metadata). The `silent` level suppresses all output.
+
+### Doctor Check
+
+`npx @flowguard/core doctor` validates the config file as its 7th check:
+- Missing file: OK (defaults apply)
+- Valid file: parsed and reported
+- Invalid file: error with details
+
+---
+
 ## File Structure
 
 ```
@@ -258,7 +318,8 @@ your-project/
 ├── .flowguard/                    # Runtime artifacts (auto-created)
 │   ├── session-state.json          # Canonical state (Zod-validated, atomic writes)
 │   ├── review-report.json          # Latest compliance report
-│   └── audit.jsonl                 # Append-only hash-chained audit trail
+│   ├── audit.jsonl                 # Append-only hash-chained audit trail
+│   └── config.json                 # Per-worktree configuration (optional, Zod-validated)
 ├── .opencode/                      # OpenCode integration (or ~/.config/opencode/ for global)
 │   ├── package.json                # Plugin dependencies (includes @flowguard/core)
 │   ├── flowguard-mandates.md      # Managed artifact — FlowGuard mandates (SHA-256 digest-tracked)
@@ -271,8 +332,9 @@ your-project/
     ├── state/                      # Layer 1: Zod schemas
     ├── machine/                    # Layer 2: Pure state machine
     ├── rails/                      # Layer 3: Command orchestrators
-    ├── adapters/                   # Layer 4: I/O boundary
-    ├── config/                     # Extension points (profiles, policies, reasons)
+    ├── adapters/                   # Layer 4: I/O boundary (state, config, audit, git)
+    ├── config/                     # Layer 5: Extension points (profiles, policies, reasons, config schema)
+    ├── logging/                    # Layer 5b: Structured logging (logger interface + factories)
     ├── audit/                      # Layer 6: Audit subsystem
     ├── integration/                # Layer 7: OpenCode tools + plugin (9 tools, 1 plugin)
     └── cli/                        # CLI installer (install/uninstall/doctor)
@@ -331,7 +393,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (555 tests across 15 test files)
+# Run tests (662 tests across 17 test files)
 npm test
 
 # Build

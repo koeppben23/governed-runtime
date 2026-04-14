@@ -9,6 +9,7 @@
  *   +-- session-state.json    # Main state (atomic read/write, Zod-validated)
  *   +-- review-report.json    # Latest review report (atomic write)
  *   +-- audit.jsonl           # Append-only audit trail
+ *   +-- config.json           # Per-worktree configuration (atomic read/write, Zod-validated)
  *
  * Design:
  * - Zod validation on EVERY state write (fail-closed -- never persist invalid state)
@@ -36,6 +37,11 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { SessionState } from "../state/schema";
 import { AuditEvent, ReviewReport } from "../state/evidence";
+import {
+  FlowGuardConfigSchema,
+  DEFAULT_CONFIG,
+  type FlowGuardConfig,
+} from "../config/flowguard-config";
 
 // -- Constants ----------------------------------------------------------------
 
@@ -43,6 +49,7 @@ const FG_DIR = ".flowguard";
 const STATE_FILE = "session-state.json";
 const REPORT_FILE = "review-report.json";
 const AUDIT_FILE = "audit.jsonl";
+const CONFIG_FILE = "config.json";
 
 // -- Path Helpers -------------------------------------------------------------
 
@@ -64,6 +71,11 @@ export function reportPath(worktree: string): string {
 /** Resolve the audit trail file path. */
 export function auditPath(worktree: string): string {
   return path.join(worktree, FG_DIR, AUDIT_FILE);
+}
+
+/** Resolve the config file path. */
+export function configPath(worktree: string): string {
+  return path.join(worktree, FG_DIR, CONFIG_FILE);
 }
 
 // -- Error --------------------------------------------------------------------
@@ -354,6 +366,70 @@ export async function readAuditTrail(
   }
 
   return { events, skipped };
+}
+
+// -- Config Operations --------------------------------------------------------
+
+/**
+ * Read the FlowGuard config from .flowguard/config.json.
+ *
+ * Always returns a fully normalized FlowGuardConfig:
+ * - If the file does not exist → returns DEFAULT_CONFIG (all defaults applied).
+ * - If the file exists and is valid → returns Zod-parsed config (defaults filled).
+ * - If the file exists but is invalid JSON → throws PersistenceError(PARSE_FAILED).
+ * - If the file exists but fails schema validation → throws PersistenceError(SCHEMA_VALIDATION_FAILED).
+ * - If the file cannot be read → throws PersistenceError(READ_FAILED).
+ *
+ * Design: readConfig never returns null. Every caller sees a complete config
+ * object with all fields populated — no defensive checks needed downstream.
+ */
+export async function readConfig(worktree: string): Promise<FlowGuardConfig> {
+  const filePath = configPath(worktree);
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, "utf-8");
+  } catch (err: unknown) {
+    if (isEnoent(err)) return DEFAULT_CONFIG;
+    throw new PersistenceError(
+      "READ_FAILED",
+      `Failed to read config file: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new PersistenceError(
+      "PARSE_FAILED",
+      `Config file is not valid JSON: ${filePath}`,
+    );
+  }
+
+  const result = FlowGuardConfigSchema.safeParse(json);
+  if (!result.success) {
+    throw new PersistenceError(
+      "SCHEMA_VALIDATION_FAILED",
+      `Config file failed schema validation: ${result.error.message}`,
+    );
+  }
+
+  return result.data;
+}
+
+/**
+ * Write the default config file to .flowguard/config.json.
+ *
+ * Intended for the installer — creates a well-commented initial config.
+ * Uses atomic write for consistency with all other FlowGuard file operations.
+ *
+ * @throws PersistenceError if the write fails.
+ */
+export async function writeDefaultConfig(worktree: string): Promise<void> {
+  await ensureDir(worktree);
+  const json = JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n";
+  await atomicWrite(configPath(worktree), json);
 }
 
 // -- Internals ----------------------------------------------------------------

@@ -1124,8 +1124,8 @@ describe("cli/doctor", () => {
     it("returns correct check count", async () => {
       await install(repoArgs());
       const checks = await doctor(repoArgs({ action: "doctor" }));
-      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json
-      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1;
+      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config
+      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1;
       expect(checks.length).toBe(expectedChecks);
     });
   });

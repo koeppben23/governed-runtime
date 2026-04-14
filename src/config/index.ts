@@ -2,10 +2,11 @@
  * @module config
  * @description Barrel export for FlowGuard configuration modules.
  *
- * Three extension points:
+ * Four extension points:
  * 1. Profile — tech-stack-aware validation configuration
  * 2. Policy  — operating mode (solo / team / regulated)
  * 3. Reasons — structured error catalog with recovery guidance
+ * 4. Config  — per-worktree FlowGuard configuration schema and defaults
  *
  * @version v1
  */
@@ -44,3 +45,11 @@ export {
   defaultReasonRegistry,
   blocked,
 } from "./reasons";
+
+// ── Config ───────────────────────────────────────────────────────────────────
+export {
+  FlowGuardConfigSchema,
+  type FlowGuardConfig,
+  type LogLevel,
+  DEFAULT_CONFIG,
+} from "./flowguard-config";

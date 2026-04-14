@@ -6,9 +6,10 @@
  * - State: Phase, Event, SessionState, evidence types
  * - Machine: topology, guards, commands, evaluator
  * - Rails: all rail executors + types
- * - Config: policies, profiles, reasons
+ * - Adapters: persistence (state, config, audit), git, binding, context
+ * - Config: policies, profiles, reasons, FlowGuard config schema
+ * - Logging: logger interface + factories
  * - Audit: event types, integrity, query, summary, completeness
- * - Adapters: persistence, git, binding, context
  *
  * @version v1
  */
@@ -82,10 +83,13 @@ export {
   statePath,
   reportPath,
   auditPath,
+  configPath,
   stateExists,
   readReport,
   appendAuditEvent,
   readAuditTrail,
+  readConfig,
+  writeDefaultConfig,
   PersistenceError,
 } from "./adapters/persistence";
 export {
@@ -140,6 +144,23 @@ export {
   defaultReasonRegistry,
   blocked,
 } from "./config/reasons";
+
+export {
+  FlowGuardConfigSchema,
+  type FlowGuardConfig,
+  type LogLevel,
+  DEFAULT_CONFIG,
+} from "./config/flowguard-config";
+
+// ─── Layer 5b: Logging ───────────────────────────────────────────────────────
+
+export {
+  type FlowGuardLogger,
+  type LogEntry,
+  type LogSink,
+  createLogger,
+  createNoopLogger,
+} from "./logging/logger";
 
 // ─── Layer 6: Audit ──────────────────────────────────────────────────────────
 

@@ -10,6 +10,16 @@
  * - Conditional hash chaining via policy.audit.enableChainHash
  * - Lifecycle and error events are always emitted (structural, not operational)
  *
+ * Config-aware:
+ * - Reads .flowguard/config.json at plugin init (once, per worktree)
+ * - Config provides: logging level, default policy mode, iteration overrides
+ * - Missing/invalid config falls back to built-in defaults (never blocks)
+ *
+ * Logging:
+ * - Plugin is the ONLY OpenCode logger writer (via client.app.log)
+ * - Logger is created at plugin init from config + client sink
+ * - Tools and rails do NOT log — plugin logs around them
+ *
  * On each FlowGuard tool execution:
  * 1. Reads session state to resolve the governing policy
  * 2. Parses the tool result JSON to extract phase, transitions, and status
@@ -38,7 +48,7 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v2
+ * @version v3
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
@@ -46,6 +56,7 @@ import {
   readState,
   appendAuditEvent,
   readAuditTrail,
+  readConfig,
 } from "../adapters/persistence";
 import {
   createToolCallEvent,
@@ -59,6 +70,9 @@ import {
 import { getLastChainHash } from "../audit/integrity";
 import { resolvePolicy } from "../config/policy";
 import type { FlowGuardPolicy } from "../config/policy";
+import type { FlowGuardConfig } from "../config/flowguard-config";
+import { DEFAULT_CONFIG } from "../config/flowguard-config";
+import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from "../logging/logger";
 import type { Phase, Event } from "../state/schema";
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
@@ -92,6 +106,43 @@ export const FlowGuardAuditPlugin: Plugin = async ({
 }) => {
   // Capture worktree from plugin context (project-level, stable)
   const auditWorktree = worktree || directory;
+
+  // ── Config + Logger initialization ──────────────────────────────────────
+  // Read config once at plugin init. Failures fall back to defaults — never block.
+  let config: FlowGuardConfig;
+  try {
+    config = auditWorktree ? await readConfig(auditWorktree) : DEFAULT_CONFIG;
+  } catch {
+    config = DEFAULT_CONFIG;
+  }
+
+  // Create logger: delegates to client.app.log if available, filtered by config level.
+  // The sink maps LogEntry fields 1:1 to the OpenCode SDK's client.app.log() body shape:
+  //   { body: { service, level, message, extra? } }
+  // This ensures the correct log level reaches OpenCode (not always "info").
+  let log: FlowGuardLogger;
+  if (client?.app?.log) {
+    const clientLog = client.app.log.bind(client.app);
+    log = createLogger(config.logging.level, (entry: LogEntry) => {
+      // Fire-and-forget — logger errors must never block the plugin
+      clientLog({
+        body: {
+          service: entry.service,
+          level: entry.level,
+          message: entry.message,
+          ...(entry.extra ? { extra: entry.extra } : {}),
+        },
+      }).catch(() => {});
+    });
+  } else {
+    log = createNoopLogger();
+  }
+
+  log.info("plugin", "initialized", {
+    worktree: auditWorktree ?? "none",
+    logLevel: config.logging.level,
+    hasConfigFile: config !== DEFAULT_CONFIG,
+  });
 
   // Hash chain state — cached in closure, initialized on first audit call.
   // Only updated when policy.audit.enableChainHash is true.
@@ -149,37 +200,33 @@ export const FlowGuardAuditPlugin: Plugin = async ({
   /**
    * Log an audit error without blocking the workflow.
    */
-  async function logError(message: string, err: unknown): Promise<void> {
-    if (client?.app?.log) {
-      await client.app.log({
-        body: {
-          service: "flowguard-audit",
-          level: "error",
-          message,
-          extra: {
-            error: err instanceof Error ? err.message : String(err),
-          },
-        },
-      });
-    }
+  function logError(message: string, err: unknown): void {
+    log.error("audit", message, {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   /**
    * Resolve the FlowGuard policy for the current session.
    *
-   * Reads session state from persistence to extract policySnapshot.mode,
-   * then resolves the full policy (including actorClassification and audit controls).
+   * Resolution chain:
+   * 1. Session state policySnapshot.mode (if session exists)
+   * 2. Config policy.defaultMode (per-worktree config file)
+   * 3. resolvePolicy(undefined) → TEAM_POLICY (built-in default)
    *
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
    */
   async function resolveSessionPolicy(): Promise<FlowGuardPolicy> {
     try {
-      if (!auditWorktree) return resolvePolicy(undefined);
+      if (!auditWorktree) return resolvePolicy(config.policy.defaultMode);
       const state = await readState(auditWorktree);
-      return resolvePolicy(state?.policySnapshot?.mode);
+      const mode = state?.policySnapshot?.mode ?? config.policy.defaultMode;
+      log.debug("policy", "resolved session policy", { mode: mode ?? "default" });
+      return resolvePolicy(mode);
     } catch {
-      return resolvePolicy(undefined);
+      log.warn("policy", "failed to resolve session policy, using default");
+      return resolvePolicy(config.policy.defaultMode);
     }
   }
 
@@ -196,6 +243,13 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         const policy = await resolveSessionPolicy();
         const { emitToolCalls, emitTransitions, enableChainHash } =
           policy.audit;
+
+        log.debug("audit", "processing tool call", {
+          tool: toolName,
+          emitToolCalls,
+          emitTransitions,
+          enableChainHash,
+        });
 
         // Actor classification from policy — not hardcoded.
         // E.g., REGULATED classifies flowguard_decision as "human",
@@ -266,10 +320,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({
           );
           await appendAndTrack(toolCallEvt, enableChainHash);
           if (enableChainHash) prevHash = toolCallEvt.chainHash;
+          log.debug("audit", "emitted tool_call event", { tool: toolName, phase });
         }
 
         // ── 2. Emit transition events (conditional on policy) ───────────
-        if (emitTransitions) {
+        if (emitTransitions && transitions.length > 0) {
+          log.debug("audit", "emitting transition events", { count: transitions.length });
           for (let i = 0; i < transitions.length; i++) {
             const t = transitions[i]!;
             const transEvt = createTransitionEvent(
@@ -296,6 +352,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         // traceability that's needed even in solo/minimal-audit modes.
         const lifecycleAction = LIFECYCLE_TOOLS[toolName];
         if (lifecycleAction) {
+          log.info("audit", "lifecycle event", { action: lifecycleAction, tool: toolName });
           // Determine final phase from transitions or parsed result
           const finalPhase =
             transitions.length > 0
@@ -344,6 +401,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         // Error events are always emitted. Suppressing errors from the
         // audit trail would be a compliance gap in any mode.
         if (!success && errorMessage) {
+          log.warn("audit", "tool reported error", { tool: toolName, errorMessage });
           const errorEvt = createErrorEvent(
             sessionId,
             {
@@ -359,7 +417,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         }
       } catch (err) {
         // Fire-and-forget: log but never block the workflow
-        await logError(`Failed to write audit events for ${toolName}`, err);
+        logError(`Failed to write audit events for ${toolName}`, err);
       }
     },
   };

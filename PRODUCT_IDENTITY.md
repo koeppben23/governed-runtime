@@ -182,10 +182,11 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **4. Adapters** | I/O boundary (filesystem, git, OpenCode context) | `adapters/persistence.ts`, `git.ts`, `binding.ts`, `context.ts` |
 | **5. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
 | **6. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
-| **7. Config** | Extension points (profiles, policies, reason codes) | `config/policy.ts`, `profile.ts`, `reasons.ts` |
-| **8. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
+| **7. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
+| **8. Logging** | Structured logging (logger interface + factories) | `logging/logger.ts` |
+| **9. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
 
-Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. No circular dependencies.
+Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
 ### Deployment Model
 
@@ -294,7 +295,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas
-- **Test Coverage:** 555 tests across 15 test files, 5 mandatory categories
+- **Test Coverage:** 662 tests across 17 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---
