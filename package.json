@@ -1,0 +1,38 @@
+{
+  "name": "@governance/core",
+  "version": "1.0.0",
+  "description": "Governance runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
+  },
+  "files": [
+    "dist",
+    "src",
+    "AGENTS.md"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}

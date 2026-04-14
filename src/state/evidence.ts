@@ -1,0 +1,268 @@
+/**
+ * @module evidence
+ * @description All evidence and artifact types for the governance state model.
+ *              Zod schemas — single source of truth for runtime validation and TypeScript types.
+ *
+ * Dependency: leaf module — no imports from other governance modules.
+ *
+ * @version v1
+ */
+
+import { z } from "zod";
+
+// ─── Closed Enums ─────────────────────────────────────────────────────────────
+
+/**
+ * Validation check identifier.
+ *
+ * Open string — profile registry validates at runtime which IDs are valid.
+ * This replaces the closed z.enum() to support extensible profiles:
+ * - Profiles register their check IDs (e.g., "test_quality", "rollback_safety")
+ * - Custom profiles can add any check ID (e.g., "sast_scan", "license_check")
+ * - Runtime validation happens at hydrate time (profile registry) and
+ *   at validation time (submitted check IDs must be in activeChecks)
+ *
+ * Known base IDs (from baseline profile): "test_quality", "rollback_safety".
+ */
+export const CheckId = z.string().min(1);
+export type CheckId = z.infer<typeof CheckId>;
+
+/** User review verdict at a User Gate (approve, request changes, or reject). */
+export const ReviewVerdict = z.enum([
+  "approve",
+  "changes_requested",
+  "reject",
+]);
+export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
+
+/** Revision delta between iterations (digest comparison result). */
+export const RevisionDelta = z.enum(["none", "minor", "major"]);
+export type RevisionDelta = z.infer<typeof RevisionDelta>;
+
+/**
+ * Self-review / impl-review loop verdict.
+ * Only approve or changes_requested — no reject (that's a human-only action).
+ */
+export const LoopVerdict = z.enum(["approve", "changes_requested"]);
+export type LoopVerdict = z.infer<typeof LoopVerdict>;
+
+// ─── Binding ──────────────────────────────────────────────────────────────────
+
+/**
+ * Workspace binding resolved during init().
+ * Links an OpenCode session to a git worktree.
+ * Populated by context.sessionID and context.worktree from the Custom Tool API.
+ */
+export const BindingInfo = z.object({
+  sessionId: z.string().uuid(),
+  worktree: z.string().min(1),
+  resolvedAt: z.string().datetime(),
+});
+export type BindingInfo = z.infer<typeof BindingInfo>;
+
+// ─── Ticket ───────────────────────────────────────────────────────────────────
+
+/** Evidence produced by /ticket — the user's task description. */
+export const TicketEvidence = z.object({
+  text: z.string().min(1),
+  digest: z.string().min(1),
+  source: z.enum(["user", "external"]),
+  createdAt: z.string().datetime(),
+});
+export type TicketEvidence = z.infer<typeof TicketEvidence>;
+
+// ─── Plan ─────────────────────────────────────────────────────────────────────
+
+/** A single plan version (immutable snapshot). */
+export const PlanEvidence = z.object({
+  body: z.string().min(1),
+  digest: z.string().min(1),
+  sections: z.array(z.string()),
+  createdAt: z.string().datetime(),
+});
+export type PlanEvidence = z.infer<typeof PlanEvidence>;
+
+/**
+ * Plan record with version history.
+ * Compliance requirement for regulated environments (banks, DATEV):
+ * every plan revision must be preserved for audit trail.
+ *
+ * - current: the active plan version
+ * - history: all previous versions (newest first)
+ */
+export const PlanRecord = z.object({
+  current: PlanEvidence,
+  history: z.array(PlanEvidence),
+});
+export type PlanRecord = z.infer<typeof PlanRecord>;
+
+// ─── Self-Review Loop ─────────────────────────────────────────────────────────
+
+/**
+ * State of the PLAN phase self-review loop.
+ * Convergence: iteration >= maxIterations OR (revisionDelta === "none" AND verdict === "approve").
+ * This is the "digest-stop" mechanism.
+ */
+export const SelfReviewLoop = z.object({
+  iteration: z.number().int().nonnegative(),
+  maxIterations: z.number().int().positive(),
+  prevDigest: z.string().nullable(),
+  currDigest: z.string().min(1),
+  revisionDelta: RevisionDelta,
+  verdict: LoopVerdict,
+});
+export type SelfReviewLoop = z.infer<typeof SelfReviewLoop>;
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+/** Result of a single validation check. */
+export const ValidationResult = z.object({
+  checkId: CheckId,
+  passed: z.boolean(),
+  detail: z.string(),
+  executedAt: z.string().datetime(),
+});
+export type ValidationResult = z.infer<typeof ValidationResult>;
+
+// ─── Implementation ───────────────────────────────────────────────────────────
+
+/** Evidence produced by /implement — what files were changed. */
+export const ImplEvidence = z.object({
+  changedFiles: z.array(z.string()),
+  domainFiles: z.array(z.string()),
+  digest: z.string().min(1),
+  executedAt: z.string().datetime(),
+});
+export type ImplEvidence = z.infer<typeof ImplEvidence>;
+
+// ─── Implementation Review ────────────────────────────────────────────────────
+
+/**
+ * Result of an implementation review iteration (IMPL_REVIEW phase).
+ * Same convergence logic as SelfReviewLoop: digest-stop.
+ */
+export const ImplReviewResult = z.object({
+  iteration: z.number().int().nonnegative(),
+  maxIterations: z.number().int().positive(),
+  prevDigest: z.string().nullable(),
+  currDigest: z.string().min(1),
+  revisionDelta: RevisionDelta,
+  verdict: LoopVerdict,
+  executedAt: z.string().datetime(),
+});
+export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
+
+// ─── Review Decision ──────────────────────────────────────────────────────────
+
+/** Human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). */
+export const ReviewDecision = z.object({
+  verdict: ReviewVerdict,
+  rationale: z.string(),
+  decidedAt: z.string().datetime(),
+  decidedBy: z.string().min(1),
+});
+export type ReviewDecision = z.infer<typeof ReviewDecision>;
+
+// ─── Error ────────────────────────────────────────────────────────────────────
+
+/** Fail-closed error state with recovery info. */
+export const ErrorInfo = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  recoveryHint: z.string(),
+  occurredAt: z.string().datetime(),
+});
+export type ErrorInfo = z.infer<typeof ErrorInfo>;
+
+// ─── Policy Snapshot ──────────────────────────────────────────────────────────
+
+/**
+ * Immutable policy snapshot embedded in SessionState.
+ *
+ * Stores all governance-critical fields so auditors can verify which rules
+ * governed a session — even after policy presets are updated.
+ *
+ * The hash is SHA-256 of the canonical JSON of the full GovernancePolicy.
+ * Non-repudiation: hash matches → policy is authentic and unmodified.
+ *
+ * Lives in state layer (not config) because it is part of SessionState —
+ * the innermost layer must not depend on outer layers.
+ */
+export const PolicySnapshotSchema = z.object({
+  /** Policy mode identifier. */
+  mode: z.string(),
+  /** SHA-256 hash of the canonical JSON of the full GovernancePolicy. */
+  hash: z.string(),
+  /** When the policy was resolved and frozen. */
+  resolvedAt: z.string().datetime(),
+
+  // ── Governance-critical fields (frozen copy) ───────────────
+  requireHumanGates: z.boolean(),
+  maxSelfReviewIterations: z.number().int().positive(),
+  maxImplReviewIterations: z.number().int().positive(),
+  allowSelfApproval: z.boolean(),
+  audit: z.object({
+    emitTransitions: z.boolean(),
+    emitToolCalls: z.boolean(),
+    enableChainHash: z.boolean(),
+  }),
+});
+export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
+
+// ─── Audit Event ──────────────────────────────────────────────────────────────
+
+/**
+ * Single audit event — appended to JSONL audit trail.
+ * Phase is a plain string (forward-compatible: new phases don't break old logs).
+ *
+ * Hash chain fields (prevHash, chainHash) are optional for backward compatibility:
+ * - Legacy events (pre-chain) omit these fields
+ * - New events always include them
+ * - The integrity verifier handles mixed trails gracefully
+ */
+export const AuditEvent = z.object({
+  id: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  phase: z.string(),
+  event: z.string(),
+  timestamp: z.string().datetime(),
+  actor: z.string(),
+  detail: z.record(z.unknown()),
+  /** Hash of the previous event in the chain (or "genesis" for the first event). */
+  prevHash: z.string().optional(),
+  /** SHA-256(prevHash + canonical JSON of this event). Tamper-evident chain link. */
+  chainHash: z.string().optional(),
+});
+export type AuditEvent = z.infer<typeof AuditEvent>;
+
+// ─── Review Report (Standalone Compliance Artifact) ───────────────────────────
+
+/**
+ * Standalone review report — written as a separate file, NOT embedded in state.
+ * Own schema version for independent evolution.
+ * Generated by /review (read-only, always available).
+ */
+export const ReviewReport = z.object({
+  schemaVersion: z.literal("governance-review-report.v1"),
+  sessionId: z.string().uuid(),
+  generatedAt: z.string().datetime(),
+  phase: z.string(),
+  planDigest: z.string().nullable(),
+  implDigest: z.string().nullable(),
+  validationSummary: z.array(
+    z.object({
+      checkId: CheckId,
+      passed: z.boolean(),
+      detail: z.string(),
+    }),
+  ),
+  findings: z.array(
+    z.object({
+      severity: z.enum(["info", "warning", "error"]),
+      category: z.string(),
+      message: z.string(),
+    }),
+  ),
+  overallStatus: z.enum(["clean", "warnings", "issues"]),
+});
+export type ReviewReport = z.infer<typeof ReviewReport>;

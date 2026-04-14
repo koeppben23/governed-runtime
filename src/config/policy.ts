@@ -1,0 +1,241 @@
+/**
+ * @module config/policy
+ * @description Governance policy — operating mode configuration.
+ *
+ * Three presets:
+ * - SOLO:      Single developer, no human gates, minimal ceremony
+ * - TEAM:      Collaborative workflow, human gates, self-approval allowed
+ * - REGULATED: Full governance, four-eyes principle, complete audit trail
+ *
+ * Policy lifecycle:
+ * 1. Resolved at session creation (/hydrate) via `resolvePolicy(mode)`
+ * 2. Frozen as an immutable PolicySnapshot in SessionState
+ * 3. Governs the session for its entire lifetime — never mutated mid-session
+ *
+ * The PolicySnapshot stores governance-critical fields so auditors can verify
+ * which rules governed a session — even if the policy presets are updated later.
+ * The snapshot hash provides non-repudiation: if the hash matches a known policy,
+ * the policy is authentic.
+ *
+ * Regulatory context:
+ * - MaRisk AT 7.2: REGULATED enforces separation of duties via four-eyes
+ * - ISO 27001 A.8.32: All modes enforce change management controls
+ * - GoBD §146: TEAM/REGULATED enable tamper-evident hash chain
+ * - DORA Art. 9: REGULATED provides full ICT change management governance
+ *
+ * Dependency: imports PolicySnapshot from state layer (inner → outer is correct).
+ *
+ * @version v1
+ */
+
+import type { PolicySnapshot } from "../state/evidence";
+
+// ─── Audit Policy ─────────────────────────────────────────────────────────────
+
+/** Controls which audit events are emitted and how. */
+export interface AuditPolicy {
+  /** Emit per-transition audit events (one per state change). */
+  readonly emitTransitions: boolean;
+  /** Emit per-tool-call audit events. */
+  readonly emitToolCalls: boolean;
+  /** Enable SHA-256 hash chain for tamper detection. */
+  readonly enableChainHash: boolean;
+}
+
+// ─── Governance Policy ────────────────────────────────────────────────────────
+
+/**
+ * Full governance policy configuration.
+ *
+ * Determines:
+ * - Whether human gates require explicit human decisions
+ * - Max iterations for self-review and impl-review loops
+ * - Whether the session initiator can approve their own work (four-eyes)
+ * - Which audit events are emitted and how
+ * - How actors are classified in the audit trail
+ */
+export interface GovernancePolicy {
+  /** Policy mode identifier. */
+  readonly mode: "solo" | "team" | "regulated";
+
+  /**
+   * Whether User Gate phases require explicit human decisions.
+   * false → auto-approve at gates (solo mode).
+   * true → machine waits for /review-decision (team/regulated).
+   */
+  readonly requireHumanGates: boolean;
+
+  /** Max self-review iterations in PLAN phase before force-convergence. */
+  readonly maxSelfReviewIterations: number;
+
+  /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
+  readonly maxImplReviewIterations: number;
+
+  /**
+   * Whether the session initiator can approve at User Gates.
+   * false → four-eyes principle enforced (regulated).
+   *         Session initiator !== review decision maker.
+   * true  → self-approval allowed (solo/team).
+   */
+  readonly allowSelfApproval: boolean;
+
+  /** Audit event emission controls. */
+  readonly audit: AuditPolicy;
+
+  /**
+   * Actor classification per tool name.
+   * Maps governance tool names to actor labels for the audit trail.
+   * Tools not listed default to "system".
+   */
+  readonly actorClassification: Readonly<Record<string, string>>;
+}
+
+// ─── Presets ──────────────────────────────────────────────────────────────────
+
+/**
+ * SOLO mode — single developer, minimal ceremony.
+ *
+ * - No human gates (auto-approve at PLAN_REVIEW/EVIDENCE_REVIEW)
+ * - 1 review iteration (fast feedback, not deep convergence)
+ * - Self-approval allowed (single person workflow)
+ * - Hash chain disabled (overhead not justified for solo work)
+ * - Audit events still emitted (traceability even in solo)
+ */
+export const SOLO_POLICY: GovernancePolicy = {
+  mode: "solo",
+  requireHumanGates: false,
+  maxSelfReviewIterations: 1,
+  maxImplReviewIterations: 1,
+  allowSelfApproval: true,
+  audit: {
+    emitTransitions: true,
+    emitToolCalls: true,
+    enableChainHash: false,
+  },
+  actorClassification: {
+    governance_decision: "system",
+  },
+};
+
+/**
+ * TEAM mode — collaborative workflow.
+ *
+ * - Human gates active (explicit approve/reject at review points)
+ * - 3 review iterations (deep convergence via digest-stop)
+ * - Self-approval allowed (trust within team)
+ * - Full audit with hash chain
+ */
+export const TEAM_POLICY: GovernancePolicy = {
+  mode: "team",
+  requireHumanGates: true,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true,
+  audit: {
+    emitTransitions: true,
+    emitToolCalls: true,
+    enableChainHash: true,
+  },
+  actorClassification: {
+    governance_decision: "human",
+  },
+};
+
+/**
+ * REGULATED mode — full governance for banks, DATEV, regulated industries.
+ *
+ * - Human gates active (explicit approve/reject required)
+ * - 3 review iterations (full convergence)
+ * - Four-eyes principle enforced (initiator ≠ reviewer)
+ * - Full audit with hash chain
+ * - Abort also classified as human action
+ *
+ * Regulatory coverage:
+ * - MaRisk AT 7.2 (1-5): Documented change request, impact analysis,
+ *   test evidence, authorized approval, separation of duties
+ * - BAIT 4.3.2: Change management with documented approval process
+ * - ISO 27001 A.8.32: Change management controls
+ * - GoBD §146 Abs. 4: Tamper-evident, immutable audit trail
+ * - DORA Art. 9: ICT change management with audit trail
+ */
+export const REGULATED_POLICY: GovernancePolicy = {
+  mode: "regulated",
+  requireHumanGates: true,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: false,
+  audit: {
+    emitTransitions: true,
+    emitToolCalls: true,
+    enableChainHash: true,
+  },
+  actorClassification: {
+    governance_decision: "human",
+    governance_abort_session: "human",
+  },
+};
+
+// ─── Registry ─────────────────────────────────────────────────────────────────
+
+/** All known policy presets, indexed by mode. */
+const POLICIES: Readonly<Record<string, GovernancePolicy>> = {
+  solo: SOLO_POLICY,
+  team: TEAM_POLICY,
+  regulated: REGULATED_POLICY,
+};
+
+/**
+ * Resolve a governance policy by mode name.
+ *
+ * Returns TEAM_POLICY if mode is unknown or undefined.
+ * TEAM is the safe default: human gates on, audit on, self-approval on.
+ * If you need regulated, you must explicitly say so.
+ */
+export function resolvePolicy(mode?: string): GovernancePolicy {
+  if (!mode) return TEAM_POLICY;
+  return POLICIES[mode] ?? TEAM_POLICY;
+}
+
+/** All known policy mode names. */
+export function policyModes(): string[] {
+  return Object.keys(POLICIES);
+}
+
+// ─── Snapshot Factory ─────────────────────────────────────────────────────────
+
+/**
+ * Create an immutable policy snapshot for embedding in SessionState.
+ *
+ * The snapshot freezes all governance-critical fields. The hash provides
+ * non-repudiation: given the hash and the policy registry, an auditor
+ * can verify which exact policy governed a session.
+ *
+ * @param policy - The resolved governance policy.
+ * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
+ * @param digestFn - SHA-256 digest function (injected for testability).
+ */
+export function createPolicySnapshot(
+  policy: GovernancePolicy,
+  resolvedAt: string,
+  digestFn: (text: string) => string,
+): PolicySnapshot {
+  // Canonical JSON: sorted keys for deterministic hashing.
+  // This ensures the same policy always produces the same hash,
+  // regardless of object key insertion order in different JS engines.
+  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+
+  return {
+    mode: policy.mode,
+    hash: digestFn(canonical),
+    resolvedAt,
+    requireHumanGates: policy.requireHumanGates,
+    maxSelfReviewIterations: policy.maxSelfReviewIterations,
+    maxImplReviewIterations: policy.maxImplReviewIterations,
+    allowSelfApproval: policy.allowSelfApproval,
+    audit: {
+      emitTransitions: policy.audit.emitTransitions,
+      emitToolCalls: policy.audit.emitToolCalls,
+      enableChainHash: policy.audit.enableChainHash,
+    },
+  };
+}

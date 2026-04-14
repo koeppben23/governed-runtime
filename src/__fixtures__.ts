@@ -1,0 +1,235 @@
+/**
+ * @module __fixtures__
+ * @description Shared test fixtures for the governance test suite.
+ *
+ * Provides minimal valid objects for each evidence type and a complete SessionState.
+ * All timestamps are fixed for deterministic assertions.
+ */
+
+import type { SessionState, Phase } from "./state/schema";
+import type {
+  TicketEvidence,
+  PlanEvidence,
+  PlanRecord,
+  SelfReviewLoop,
+  ValidationResult,
+  ImplEvidence,
+  ImplReviewResult,
+  ReviewDecision,
+  ErrorInfo,
+  BindingInfo,
+  PolicySnapshot,
+} from "./state/evidence";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+export const FIXED_TIME = "2026-01-01T00:00:00.000Z";
+export const FIXED_UUID = "00000000-0000-0000-0000-000000000001";
+export const FIXED_SESSION_UUID = "00000000-0000-0000-0000-000000000002";
+export const FIXED_DIGEST = "digest-of-test";
+
+// ─── Evidence Fixtures ────────────────────────────────────────────────────────
+
+export const BINDING: BindingInfo = {
+  sessionId: FIXED_SESSION_UUID,
+  worktree: "/tmp/test-repo",
+  resolvedAt: FIXED_TIME,
+};
+
+export const POLICY_SNAPSHOT: PolicySnapshot = {
+  mode: "team",
+  hash: "policy-hash-team",
+  resolvedAt: FIXED_TIME,
+  requireHumanGates: true,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true,
+  audit: {
+    emitTransitions: true,
+    emitToolCalls: true,
+    enableChainHash: true,
+  },
+};
+
+export const TICKET: TicketEvidence = {
+  text: "Fix the auth bug in login.ts",
+  digest: "digest-of-ticket",
+  source: "user",
+  createdAt: FIXED_TIME,
+};
+
+export const PLAN_EVIDENCE: PlanEvidence = {
+  body: "## Plan\n1. Fix auth\n2. Add tests",
+  digest: "digest-of-plan",
+  sections: ["Plan"],
+  createdAt: FIXED_TIME,
+};
+
+export const PLAN_RECORD: PlanRecord = {
+  current: PLAN_EVIDENCE,
+  history: [],
+};
+
+export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
+  iteration: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: "digest-of-plan",
+  revisionDelta: "none",
+  verdict: "approve",
+};
+
+export const SELF_REVIEW_PENDING: SelfReviewLoop = {
+  iteration: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: "digest-of-plan",
+  revisionDelta: "minor",
+  verdict: "changes_requested",
+};
+
+export const VALIDATION_PASSED: ValidationResult[] = [
+  { checkId: "test_quality", passed: true, detail: "All tests pass", executedAt: FIXED_TIME },
+  { checkId: "rollback_safety", passed: true, detail: "Safe to rollback", executedAt: FIXED_TIME },
+];
+
+export const VALIDATION_FAILED: ValidationResult[] = [
+  { checkId: "test_quality", passed: false, detail: "Missing tests", executedAt: FIXED_TIME },
+  { checkId: "rollback_safety", passed: true, detail: "Safe to rollback", executedAt: FIXED_TIME },
+];
+
+export const IMPL_EVIDENCE: ImplEvidence = {
+  changedFiles: ["src/auth.ts", "src/auth.test.ts"],
+  domainFiles: ["src/auth.ts"],
+  digest: "digest-of-impl",
+  executedAt: FIXED_TIME,
+};
+
+export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
+  iteration: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: "digest-of-impl",
+  revisionDelta: "none",
+  verdict: "approve",
+  executedAt: FIXED_TIME,
+};
+
+export const IMPL_REVIEW_PENDING_RESULT: ImplReviewResult = {
+  iteration: 1,
+  maxIterations: 3,
+  prevDigest: null,
+  currDigest: "digest-of-impl",
+  revisionDelta: "minor",
+  verdict: "changes_requested",
+  executedAt: FIXED_TIME,
+};
+
+export const REVIEW_APPROVE: ReviewDecision = {
+  verdict: "approve",
+  rationale: "LGTM",
+  decidedAt: FIXED_TIME,
+  decidedBy: "reviewer-1",
+};
+
+export const ERROR_INFO: ErrorInfo = {
+  code: "TOOL_ERROR",
+  message: "Something went wrong",
+  recoveryHint: "Retry the operation",
+  occurredAt: FIXED_TIME,
+};
+
+// ─── State Factory ────────────────────────────────────────────────────────────
+
+/**
+ * Create a minimal valid SessionState at any phase.
+ * Override fields via the partial parameter.
+ */
+export function makeState(
+  phase: Phase = "TICKET",
+  overrides: Partial<SessionState> = {},
+): SessionState {
+  return {
+    id: FIXED_UUID,
+    schemaVersion: "v1",
+    phase,
+    binding: BINDING,
+    ticket: null,
+    plan: null,
+    selfReview: null,
+    validation: [],
+    implementation: null,
+    implReview: null,
+    reviewDecision: null,
+    activeProfile: null,
+    activeChecks: ["test_quality", "rollback_safety"],
+    policySnapshot: POLICY_SNAPSHOT,
+    initiatedBy: "initiator-1",
+    transition: null,
+    error: null,
+    createdAt: FIXED_TIME,
+    ...overrides,
+  };
+}
+
+/**
+ * Create a state that's progressed to a specific phase with appropriate evidence.
+ */
+export function makeProgressedState(phase: Phase): SessionState {
+  switch (phase) {
+    case "TICKET":
+      return makeState("TICKET");
+    case "PLAN":
+      return makeState("PLAN", { ticket: TICKET, plan: PLAN_RECORD });
+    case "PLAN_REVIEW":
+      return makeState("PLAN_REVIEW", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+    case "VALIDATION":
+      return makeState("VALIDATION", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+      });
+    case "IMPLEMENTATION":
+      return makeState("IMPLEMENTATION", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+        validation: VALIDATION_PASSED,
+      });
+    case "IMPL_REVIEW":
+      return makeState("IMPL_REVIEW", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+      });
+    case "EVIDENCE_REVIEW":
+      return makeState("EVIDENCE_REVIEW", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        implReview: IMPL_REVIEW_CONVERGED,
+      });
+    case "COMPLETE":
+      return makeState("COMPLETE", {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        implReview: IMPL_REVIEW_CONVERGED,
+      });
+  }
+}
