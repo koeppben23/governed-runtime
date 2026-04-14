@@ -1,6 +1,6 @@
 /**
  * @module audit.test
- * @description Comprehensive tests for the governance audit subsystem.
+ * @description Comprehensive tests for the FlowGuard audit subsystem.
  *
  * Covers all 5 audit modules:
  * - types: factory functions, computeChainHash, summarizeArgs
@@ -110,11 +110,11 @@ function buildSessionTrail(): AuditEvent[] {
       detail: { kind: "lifecycle", action: "session_created", finalPhase: "TICKET" },
     }),
     makeAuditEvent({
-      event: "tool_call:governance_ticket",
+      event: "tool_call:flowguard_ticket",
       phase: "TICKET",
       timestamp: TS1,
       actor: "user",
-      detail: { kind: "tool_call", tool: "governance_ticket", success: true, transitionCount: 1 },
+      detail: { kind: "tool_call", tool: "flowguard_ticket", success: true, transitionCount: 1 },
     }),
     makeAuditEvent({
       event: "transition:TICKET_SET",
@@ -135,11 +135,11 @@ function buildSessionTrail(): AuditEvent[] {
       detail: { kind: "transition", from: "PLAN_REVIEW", to: "VALIDATION", event: "APPROVE", autoAdvanced: false, chainIndex: -1 },
     }),
     makeAuditEvent({
-      event: "tool_call:governance_validate",
+      event: "tool_call:flowguard_validate",
       phase: "VALIDATION",
       timestamp: TS2,
       actor: "machine",
-      detail: { kind: "tool_call", tool: "governance_validate", success: true, transitionCount: 1 },
+      detail: { kind: "tool_call", tool: "flowguard_validate", success: true, transitionCount: 1 },
     }),
     makeAuditEvent({
       event: "transition:ALL_PASSED",
@@ -220,15 +220,15 @@ describe("audit types", () => {
       const event = createToolCallEvent(
         SESSION_ID,
         "PLAN",
-        { tool: "governance_plan", argsSummary: { text: "fix auth" }, success: true, transitionCount: 1 },
+        { tool: "flowguard_plan", argsSummary: { text: "fix auth" }, success: true, transitionCount: 1 },
         TS1,
         "user-1",
         GENESIS_HASH,
       );
-      expect(event.event).toBe("tool_call:governance_plan");
+      expect(event.event).toBe("tool_call:flowguard_plan");
       expect(event.actor).toBe("user-1");
       expect(event.detail.kind).toBe("tool_call");
-      expect(event.detail.tool).toBe("governance_plan");
+      expect(event.detail.tool).toBe("flowguard_plan");
     });
 
     it("createErrorEvent produces valid chained event", () => {
@@ -588,7 +588,7 @@ describe("audit query", () => {
   const events: AuditEvent[] = [
     makeAuditEvent({ id: "e1", sessionId: "sess-a", phase: "TICKET", event: "lifecycle:session_created", timestamp: TS1, actor: "system" }),
     makeAuditEvent({ id: "e2", sessionId: "sess-a", phase: "PLAN", event: "transition:TICKET_SET", timestamp: TS1, actor: "machine" }),
-    makeAuditEvent({ id: "e3", sessionId: "sess-a", phase: "PLAN", event: "tool_call:governance_plan", timestamp: TS2, actor: "user-1" }),
+    makeAuditEvent({ id: "e3", sessionId: "sess-a", phase: "PLAN", event: "tool_call:flowguard_plan", timestamp: TS2, actor: "user-1" }),
     makeAuditEvent({ id: "e4", sessionId: "sess-b", phase: "TICKET", event: "lifecycle:session_created", timestamp: TS2, actor: "system" }),
     makeAuditEvent({ id: "e5", sessionId: "sess-a", phase: "VALIDATION", event: "error:CHECK_TIMEOUT", timestamp: TS3, actor: "machine", detail: { kind: "error", code: "CHECK_TIMEOUT" } }),
   ];
@@ -634,7 +634,7 @@ describe("audit query", () => {
     it("toolCallEvents returns only tool call events", () => {
       const result = toolCallEvents(events);
       expect(result).toHaveLength(1);
-      expect(result[0]!.event).toBe("tool_call:governance_plan");
+      expect(result[0]!.event).toBe("tool_call:flowguard_plan");
     });
 
     it("errorEvents returns only error events", () => {

@@ -2,12 +2,12 @@
  * @module config/profiles/content/angular
  * @description Angular + Nx profile rule content for LLM guidance.
  *
- * This content is injected into governance tool responses when the Angular
- * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
+ * This content is injected into FlowGuard tool responses when the Angular
+ * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * Angular-specific naming, architecture, testing, and anti-pattern rules.
  *
- * Ported from: governance_content/profiles/rules.frontend-angular-nx.md (v2.0)
- * Adapted for: TypeScript governance system, LLM-agnostic delivery
+ * Ported from: flowguard_content/profiles/rules.frontend-angular-nx.md (v2.0)
+ * Adapted for: TypeScript FlowGuard system, LLM-agnostic delivery
  *
  * @version v1
  */
@@ -15,8 +15,8 @@
 export const profileRuleContent = `
 # Angular + Nx Profile Rules
 
-These rules supplement the universal governance mandates. They apply when the
-governance system detects an Angular + Nx stack in the repository.
+These rules supplement the universal FlowGuard mandates. They apply when the
+FlowGuard system detects an Angular + Nx stack in the repository.
 
 ---
 

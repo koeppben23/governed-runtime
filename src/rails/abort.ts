@@ -1,6 +1,6 @@
 /**
  * @module abort
- * @description /abort rail — emergency clean termination of a governance session.
+ * @description /abort rail — emergency clean termination of a FlowGuard session.
  *
  * Bypasses the topology entirely. Directly sets phase = COMPLETE with an error
  * marker (code: "ABORTED"). This is the escape hatch for:

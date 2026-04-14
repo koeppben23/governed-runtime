@@ -36,7 +36,7 @@ describe("review rail", () => {
       const state = makeProgressedState("COMPLETE");
       const report = await executeReview(state, NOW, noopExecutors);
 
-      expect(report.schemaVersion).toBe("governance-review-report.v1");
+      expect(report.schemaVersion).toBe("flowguard-review-report.v1");
       expect(report.sessionId).toBe(FIXED_UUID);
       expect(report.generatedAt).toBe(NOW);
       expect(report.phase).toBe("COMPLETE");

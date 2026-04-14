@@ -183,7 +183,7 @@ export function createTransitionEvent(
 
 /**
  * Create a tool call audit event.
- * One event per governance tool invocation.
+ * One event per FlowGuard tool invocation.
  */
 export function createToolCallEvent(
   sessionId: string,

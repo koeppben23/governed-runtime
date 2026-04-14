@@ -2,8 +2,8 @@
  * @module config/profiles/content/baseline
  * @description Baseline (stack-agnostic) profile rule content for LLM guidance.
  *
- * This content is injected into governance tool responses when no stack-specific
- * profile matches the repository. It supplements the universal governance mandates (governance-mandates.md)
+ * This content is injected into FlowGuard tool responses when no stack-specific
+ * profile matches the repository. It supplements the universal FlowGuard mandates (flowguard-mandates.md)
  * with fundamental programming best practices that apply to any language or framework.
  *
  * Designed for: Python, Go, Rust, C#, Ruby, or any stack without a dedicated profile.
@@ -14,7 +14,7 @@
 export const profileRuleContent = `
 # Baseline Profile Rules
 
-These rules supplement the universal governance mandates. They apply when no
+These rules supplement the universal FlowGuard mandates. They apply when no
 stack-specific profile matches the repository. They provide fundamental
 programming best practices that apply to any language or framework.
 

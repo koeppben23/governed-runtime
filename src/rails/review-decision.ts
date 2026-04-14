@@ -11,7 +11,7 @@
  * MUST be different from the session initiator (state.initiatedBy).
  * This satisfies MaRisk AT 7.2 (5) — separation of duties.
  *
- * State clearing patterns (governance-critical):
+ * State clearing patterns (FlowGuard-critical):
  *
  * | Gate            | Verdict            | Keep                    | Clear                                    |
  * |-----------------|--------------------|-------------------------|------------------------------------------|
@@ -66,7 +66,7 @@ const REJECT_CLEAR = {
 /**
  * Apply state clearing pattern based on gate + verdict.
  *
- * Clearing rules (governance-critical):
+ * Clearing rules (FlowGuard-critical):
  * - approve: keep everything (state flows forward)
  * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
  * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview (re-implement)

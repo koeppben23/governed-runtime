@@ -2,12 +2,12 @@
  * @module config/profiles/content/java
  * @description Java (Spring Boot) profile rule content for LLM guidance.
  *
- * This content is injected into governance tool responses when the Java
- * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
+ * This content is injected into FlowGuard tool responses when the Java
+ * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * Java-specific naming, architecture, testing, and anti-pattern rules.
  *
- * Ported from: governance_content/profiles/rules.backend-java.md (v2.2)
- * Adapted for: TypeScript governance system, LLM-agnostic delivery
+ * Ported from: flowguard_content/profiles/rules.backend-java.md (v2.2)
+ * Adapted for: TypeScript FlowGuard system, LLM-agnostic delivery
  *
  * @version v1
  */
@@ -15,8 +15,8 @@
 export const profileRuleContent = `
 # Java (Spring Boot) Profile Rules
 
-These rules supplement the universal governance mandates. They apply when the
-governance system detects a Java/Spring Boot stack in the repository.
+These rules supplement the universal FlowGuard mandates. They apply when the
+FlowGuard system detects a Java/Spring Boot stack in the repository.
 
 ---
 

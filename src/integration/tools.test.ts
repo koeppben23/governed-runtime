@@ -105,9 +105,9 @@ describe("integration/tools", () => {
       }
     });
 
-    it("barrel re-exports GovernanceAuditPlugin", () => {
-      expect(barrel.GovernanceAuditPlugin).toBeDefined();
-      expect(typeof barrel.GovernanceAuditPlugin).toBe("function");
+    it("barrel re-exports FlowGuardAuditPlugin", () => {
+      expect(barrel.FlowGuardAuditPlugin).toBeDefined();
+      expect(typeof barrel.FlowGuardAuditPlugin).toBe("function");
     });
   });
 
@@ -116,7 +116,7 @@ describe("integration/tools", () => {
     it("does not export unknown tool names", () => {
       const knownKeys = new Set(TOOL_NAMES);
       const barrelKeys = Object.keys(barrel).filter(
-        (k) => k !== "GovernanceAuditPlugin",
+        (k) => k !== "FlowGuardAuditPlugin",
       );
       for (const key of barrelKeys) {
         expect(knownKeys.has(key as typeof TOOL_NAMES[number])).toBe(true);

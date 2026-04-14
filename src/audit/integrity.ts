@@ -1,6 +1,6 @@
 /**
  * @module audit/integrity
- * @description Hash chain verification for the governance audit trail.
+ * @description Hash chain verification for the FlowGuard audit trail.
  *
  * Every audit event includes:
  * - `prevHash`: hash of the previous event (or "genesis" for the first)

@@ -1,6 +1,6 @@
-# Governance for OpenCode
+# FlowGuard for OpenCode
 
-Deterministic, fail-closed governance workflow for AI-assisted software delivery.
+Deterministic, fail-closed FlowGuard workflow for AI-assisted software delivery.
 Adds explicit phases, evidence gates, audit trails, and policy enforcement to OpenCode.
 
 > **Status:** v1.1.0 | TypeScript | OpenCode-native | Installable Package Architecture
@@ -13,15 +13,15 @@ Adds explicit phases, evidence gates, audit trails, and policy enforcement to Op
 
 ```bash
 # Global installation (recommended) — available in all OpenCode sessions
-npx @governance/core install
+npx @flowguard/core install
 
 # Project-local installation — only in this repository
-npx @governance/core install --install-scope repo
+npx @flowguard/core install --install-scope repo
 ```
 
-The CLI installer writes thin wrappers (re-exports from `@governance/core`) and
-a managed `governance-mandates.md` into the OpenCode config directory. All business
-logic lives in the npm package — `npm update @governance/core` is all that's needed
+The CLI installer writes thin wrappers (re-exports from `@flowguard/core`) and
+a managed `flowguard-mandates.md` into the OpenCode config directory. All business
+logic lives in the npm package — `npm update @flowguard/core` is all that's needed
 for upgrades.
 
 **Targets:**
@@ -35,7 +35,7 @@ for upgrades.
 
 **Verify installation:**
 ```bash
-npx @governance/core doctor
+npx @flowguard/core doctor
 ```
 
 ### 2. Start a Governed Session
@@ -44,9 +44,9 @@ npx @governance/core doctor
 /hydrate
 ```
 
-This bootstraps a governance session: binds your OpenCode session to the git worktree,
-auto-detects your tech stack (Java, Angular, TypeScript), resolves the governance policy,
-and initializes canonical state at `.governance/session-state.json`.
+This bootstraps a FlowGuard session: binds your OpenCode session to the git worktree,
+auto-detects your tech stack (Java, Angular, TypeScript), resolves the FlowGuard policy,
+and initializes canonical state at `.flowguard/session-state.json`.
 
 ### 3. Follow the Workflow
 
@@ -69,9 +69,9 @@ All commands are available as `/command` in OpenCode chat.
 
 ### /hydrate
 
-Bootstrap or reload the governance session. Idempotent — safe to call repeatedly.
+Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
 
-- **Creates**: Session state at `.governance/session-state.json`
+- **Creates**: Session state at `.flowguard/session-state.json`
 - **Resolves**: Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
 - **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo.
 
@@ -117,7 +117,7 @@ Run validation checks against the approved plan.
 Execute the implementation plan, then review.
 
 1. LLM implements the plan using OpenCode's built-in tools (read, write, bash)
-2. LLM calls governance tool to record changed files (auto-detected via git)
+2. LLM calls FlowGuard tool to record changed files (auto-detected via git)
 3. Auto-advances to IMPL_REVIEW
 4. LLM reviews implementation, approves or requests changes
 5. Loop runs up to `maxImplReviewIterations` (from policy) or until convergence
@@ -131,7 +131,7 @@ Use when you're unsure what to do next.
 ### /review
 
 Generate a standalone compliance report. Read-only, does not mutate state.
-Writes report to `.governance/review-report.json`.
+Writes report to `.flowguard/review-report.json`.
 
 Includes: evidence completeness matrix, four-eyes status, validation summary, findings.
 
@@ -165,7 +165,7 @@ In Solo mode, gates auto-approve. In Team/Regulated mode, a human must decide.
 
 ## Policies
 
-Three governance policies control strictness:
+Three FlowGuard policies control strictness:
 
 | Policy | Human Gates | Four-Eyes | Self-Review Max | Impl Review Max |
 |--------|------------|-----------|-----------------|-----------------|
@@ -190,7 +190,7 @@ Profiles provide tech-stack-specific guidance. Auto-detected from repository sig
 
 Highest confidence wins. Angular > Java > TypeScript > Baseline.
 
-Profile rules are injected into LLM context via `governance_status` tool responses.
+Profile rules are injected into LLM context via `flowguard_status` tool responses.
 This means the LLM automatically receives tech-stack-specific coding conventions,
 naming rules, architecture patterns, testing requirements, and anti-pattern lists.
 
@@ -199,7 +199,7 @@ naming rules, architecture patterns, testing requirements, and anti-pattern list
 Register your own profile:
 
 ```typescript
-import { defaultProfileRegistry } from "@governance/core";
+import { defaultProfileRegistry } from "@flowguard/core";
 
 defaultProfileRegistry.register({
   id: "my-stack",
@@ -215,14 +215,14 @@ defaultProfileRegistry.register({
 
 ## Audit Trail
 
-Every state transition and tool call is recorded in `.governance/audit.jsonl`.
+Every state transition and tool call is recorded in `.flowguard/audit.jsonl`.
 
 ### Event Kinds
 
 | Kind | Example | Description |
 |------|---------|-------------|
 | `transition` | `transition:PLAN_READY` | State machine transition |
-| `tool_call` | `tool_call:governance_plan` | Governance tool invocation |
+| `tool_call` | `tool_call:flowguard_plan` | FlowGuard tool invocation |
 | `error` | `error:TOOL_ERROR` | Tool or system error |
 | `lifecycle` | `lifecycle:session_created` | Session lifecycle event |
 
@@ -232,7 +232,7 @@ Each event includes `prevHash` and `chainHash` (SHA-256). Modifying, inserting, 
 any event breaks the chain. Verify:
 
 ```typescript
-import { verifyChain } from "@governance/core";
+import { verifyChain } from "@flowguard/core";
 
 const { valid, firstBreak, verifiedCount } = verifyChain(events);
 ```
@@ -255,19 +255,19 @@ Automated 7-check compliance assessment:
 
 ```
 your-project/
-├── .governance/                    # Runtime artifacts (auto-created)
+├── .flowguard/                    # Runtime artifacts (auto-created)
 │   ├── session-state.json          # Canonical state (Zod-validated, atomic writes)
 │   ├── review-report.json          # Latest compliance report
 │   └── audit.jsonl                 # Append-only hash-chained audit trail
 ├── .opencode/                      # OpenCode integration (or ~/.config/opencode/ for global)
-│   ├── package.json                # Plugin dependencies (includes @governance/core)
-│   ├── governance-mandates.md      # Managed artifact — governance mandates (SHA-256 digest-tracked)
-│   ├── tools/governance.ts         # Thin wrapper → re-exports 9 tools from @governance/core
+│   ├── package.json                # Plugin dependencies (includes @flowguard/core)
+│   ├── flowguard-mandates.md      # Managed artifact — FlowGuard mandates (SHA-256 digest-tracked)
+│   ├── tools/flowguard.ts         # Thin wrapper → re-exports 9 tools from @flowguard/core
 │   ├── commands/*.md               # 9 command prompts
-│   └── plugins/governance-audit.ts # Thin wrapper → re-exports plugin from @governance/core
+│   └── plugins/flowguard-audit.ts # Thin wrapper → re-exports plugin from @flowguard/core
 ├── AGENTS.md                       # User/project rules (OpenCode auto-loads, NEVER touched by installer)
-├── opencode.json                   # OpenCode configuration (instructions reference governance-mandates.md)
-└── src/                            # @governance/core package source
+├── opencode.json                   # OpenCode configuration (instructions reference flowguard-mandates.md)
+└── src/                            # @flowguard/core package source
     ├── state/                      # Layer 1: Zod schemas
     ├── machine/                    # Layer 2: Pure state machine
     ├── rails/                      # Layer 3: Command orchestrators
@@ -289,7 +289,7 @@ All errors are reason-coded with structured responses:
   "error": true,
   "code": "COMMAND_NOT_ALLOWED",
   "message": "/plan is not allowed in phase COMPLETE.",
-  "recovery": "Check the current phase with governance_status.",
+  "recovery": "Check the current phase with flowguard_status.",
   "quickFix": "/continue"
 }
 ```
@@ -337,14 +337,14 @@ npm test
 # Build
 npm run build
 
-# Install governance globally
-npx @governance/core install
+# Install FlowGuard globally
+npx @flowguard/core install
 
 # Verify installation
-npx @governance/core doctor
+npx @flowguard/core doctor
 
 # Uninstall
-npx @governance/core uninstall
+npx @flowguard/core uninstall
 ```
 
 ### Test Policy

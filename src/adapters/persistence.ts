@@ -1,11 +1,11 @@
 /**
  * @module persistence
- * @description Atomic file I/O for the .governance/ directory.
+ * @description Atomic file I/O for the .flowguard/ directory.
  *
- * This is the ONLY module that touches the filesystem for governance state.
- * All governance files live under {worktree}/.governance/:
+ * This is the ONLY module that touches the filesystem for FlowGuard state.
+ * All FlowGuard files live under {worktree}/.flowguard/:
  *
- *   .governance/
+ *   .flowguard/
  *   +-- session-state.json    # Main state (atomic read/write, Zod-validated)
  *   +-- review-report.json    # Latest review report (atomic write)
  *   +-- audit.jsonl           # Append-only audit trail
@@ -13,7 +13,7 @@
  * Design:
  * - Zod validation on EVERY state write (fail-closed -- never persist invalid state)
  * - Atomic writes: temp file -> rename (safe on NTFS and ext4/xfs)
- * - Auto-creates .governance/ directory on first write
+ * - Auto-creates .flowguard/ directory on first write
  * - PersistenceError with typed codes for caller error handling
  * - Read returns Zod-parsed objects (schema-validated, new reference)
  *
@@ -26,7 +26,7 @@
  * Why not just writeFile?
  *   A crash mid-write leaves a truncated file. Atomic rename ensures
  *   the file is either fully the old version or fully the new version.
- *   For governance state in regulated environments, this is non-negotiable.
+ *   For FlowGuard state in regulated environments, this is non-negotiable.
  *
  * @version v1
  */
@@ -39,31 +39,31 @@ import { AuditEvent, ReviewReport } from "../state/evidence";
 
 // -- Constants ----------------------------------------------------------------
 
-const GOV_DIR = ".governance";
+const FG_DIR = ".flowguard";
 const STATE_FILE = "session-state.json";
 const REPORT_FILE = "review-report.json";
 const AUDIT_FILE = "audit.jsonl";
 
 // -- Path Helpers -------------------------------------------------------------
 
-/** Resolve the .governance directory path for a worktree. */
-export function govDir(worktree: string): string {
-  return path.join(worktree, GOV_DIR);
+/** Resolve the .flowguard directory path for a worktree. */
+export function fgDir(worktree: string): string {
+  return path.join(worktree, FG_DIR);
 }
 
 /** Resolve the state file path. */
 export function statePath(worktree: string): string {
-  return path.join(worktree, GOV_DIR, STATE_FILE);
+  return path.join(worktree, FG_DIR, STATE_FILE);
 }
 
 /** Resolve the review report file path. */
 export function reportPath(worktree: string): string {
-  return path.join(worktree, GOV_DIR, REPORT_FILE);
+  return path.join(worktree, FG_DIR, REPORT_FILE);
 }
 
 /** Resolve the audit trail file path. */
 export function auditPath(worktree: string): string {
-  return path.join(worktree, GOV_DIR, AUDIT_FILE);
+  return path.join(worktree, FG_DIR, AUDIT_FILE);
 }
 
 // -- Error --------------------------------------------------------------------
@@ -89,11 +89,11 @@ export class PersistenceError extends Error {
 // -- Directory ----------------------------------------------------------------
 
 /**
- * Ensure the .governance/ directory exists. Idempotent.
+ * Ensure the .flowguard/ directory exists. Idempotent.
  * Uses recursive mkdir -- safe to call even if parent dirs are missing.
  */
 async function ensureDir(worktree: string): Promise<void> {
-  await fs.mkdir(govDir(worktree), { recursive: true });
+  await fs.mkdir(fgDir(worktree), { recursive: true });
 }
 
 // -- Atomic Write -------------------------------------------------------------
@@ -133,7 +133,7 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
 // -- State Operations ---------------------------------------------------------
 
 /**
- * Read the session state from .governance/session-state.json.
+ * Read the session state from .flowguard/session-state.json.
  *
  * @returns SessionState if file exists and is valid, null if file does not exist.
  * @throws PersistenceError if file exists but cannot be read, parsed, or validated.
@@ -181,7 +181,7 @@ export async function readState(worktree: string): Promise<SessionState | null> 
  *
  * Invariants:
  * 1. Zod-validates BEFORE writing (fail-closed -- invalid state never hits disk)
- * 2. Creates .governance/ directory if missing
+ * 2. Creates .flowguard/ directory if missing
  * 3. Uses atomic write (temp -> rename)
  * 4. Pretty-prints JSON (2-space indent) for human readability and git diffs
  *
@@ -206,7 +206,7 @@ export async function writeState(
 }
 
 /**
- * Check if a governance session state file exists.
+ * Check if a FlowGuard session state file exists.
  * Does NOT validate the file contents.
  */
 export async function stateExists(worktree: string): Promise<boolean> {

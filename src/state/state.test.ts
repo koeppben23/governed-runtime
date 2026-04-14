@@ -265,7 +265,7 @@ describe("state schemas", () => {
 
     it("ReviewReport validates overall status enum", () => {
       expect(() => ReviewReport.parse({
-        schemaVersion: "governance-review-report.v1",
+        schemaVersion: "flowguard-review-report.v1",
         sessionId: FIXED_UUID,
         generatedAt: FIXED_TIME,
         phase: "COMPLETE",

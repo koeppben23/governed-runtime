@@ -1,7 +1,7 @@
 /**
  * @module integration/plugin
  * @description OpenCode Plugin that creates structured, hash-chained audit events
- * for all governance tool calls and state transitions.
+ * for all FlowGuard tool calls and state transitions.
  *
  * Policy-aware emission:
  * - Actor classification via policy.actorClassification (not hardcoded)
@@ -10,28 +10,28 @@
  * - Conditional hash chaining via policy.audit.enableChainHash
  * - Lifecycle and error events are always emitted (structural, not operational)
  *
- * On each governance tool execution:
+ * On each FlowGuard tool execution:
  * 1. Reads session state to resolve the governing policy
  * 2. Parses the tool result JSON to extract phase, transitions, and status
  * 3. Creates a tool_call audit event if policy.audit.emitToolCalls
  * 4. Creates transition audit events for each state transition if policy.audit.emitTransitions
  * 5. Creates lifecycle events for session creation, completion, and abortion (always)
  * 6. Hash-chains events for tamper detection if policy.audit.enableChainHash
- * 7. Appends all emitted events to .governance/audit.jsonl
+ * 7. Appends all emitted events to .flowguard/audit.jsonl
  *
  * Design:
  * - Fire-and-forget: audit failures are logged but never block the workflow.
- *   Governance correctness does not depend on audit success.
+ *   FlowGuard correctness does not depend on audit success.
  * - The plugin closure captures `worktree` and caches `lastHash` for chaining.
- * - Only governance tools (name starting with "governance_") are audited.
+ * - Only FlowGuard tools (name starting with "flowguard_") are audited.
  * - Hash chain is initialized by reading the last event from the trail on first call.
  * - Policy is resolved from session state (read from persistence after tool executes).
  *   Falls back to TEAM_POLICY if state is unavailable.
  *
  * Installation:
- * This module lives inside @governance/core. The thin wrapper in
- * ~/.config/opencode/plugins/governance-audit.ts (or .opencode/plugins/)
- * re-exports GovernanceAuditPlugin for OpenCode to discover.
+ * This module lives inside @flowguard/core. The thin wrapper in
+ * ~/.config/opencode/plugins/flowguard-audit.ts (or .opencode/plugins/)
+ * re-exports FlowGuardAuditPlugin for OpenCode to discover.
  *
  * Plugin API (verified against OpenCode docs Apr 14, 2026):
  * - Plugin is an async function receiving { project, client, $, directory, worktree }
@@ -58,32 +58,32 @@ import {
 } from "../audit/types";
 import { getLastChainHash } from "../audit/integrity";
 import { resolvePolicy } from "../config/policy";
-import type { GovernancePolicy } from "../config/policy";
+import type { FlowGuardPolicy } from "../config/policy";
 import type { Phase, Event } from "../state/schema";
 
-/** Governance tool name prefix. Only tools with this prefix are audited. */
-const GOV_PREFIX = "governance_";
+/** FlowGuard tool name prefix. Only tools with this prefix are audited. */
+const FG_PREFIX = "flowguard_";
 
 /**
  * Map tool names to lifecycle actions.
  * Tools that produce lifecycle events beyond the regular tool_call event.
  */
 const LIFECYCLE_TOOLS: Record<string, string> = {
-  governance_hydrate: "session_created",
-  governance_abort_session: "session_aborted",
+  flowguard_hydrate: "session_created",
+  flowguard_abort_session: "session_aborted",
 };
 
 /**
- * Governance Audit Plugin.
+ * FlowGuard Audit Plugin.
  *
  * Captures worktree from plugin context at initialization time.
  * Maintains a hash chain cache for efficient chaining without re-reading the trail.
- * Hooks tool.execute.after to append structured audit events for governance tools.
+ * Hooks tool.execute.after to append structured audit events for FlowGuard tools.
  *
  * Policy-aware: reads session state to resolve audit emission controls and
  * actor classification per tool invocation.
  */
-export const GovernanceAuditPlugin: Plugin = async ({
+export const FlowGuardAuditPlugin: Plugin = async ({
   project,
   client,
   $,
@@ -153,7 +153,7 @@ export const GovernanceAuditPlugin: Plugin = async ({
     if (client?.app?.log) {
       await client.app.log({
         body: {
-          service: "governance-audit",
+          service: "flowguard-audit",
           level: "error",
           message,
           extra: {
@@ -165,7 +165,7 @@ export const GovernanceAuditPlugin: Plugin = async ({
   }
 
   /**
-   * Resolve the governance policy for the current session.
+   * Resolve the FlowGuard policy for the current session.
    *
    * Reads session state from persistence to extract policySnapshot.mode,
    * then resolves the full policy (including actorClassification and audit controls).
@@ -173,7 +173,7 @@ export const GovernanceAuditPlugin: Plugin = async ({
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
    */
-  async function resolveSessionPolicy(): Promise<GovernancePolicy> {
+  async function resolveSessionPolicy(): Promise<FlowGuardPolicy> {
     try {
       if (!auditWorktree) return resolvePolicy(undefined);
       const state = await readState(auditWorktree);
@@ -185,9 +185,9 @@ export const GovernanceAuditPlugin: Plugin = async ({
 
   return {
     "tool.execute.after": async (input, output) => {
-      // Only audit governance tools
+      // Only audit FlowGuard tools
       const toolName: string = input?.tool ?? "";
-      if (!toolName.startsWith(GOV_PREFIX)) return;
+      if (!toolName.startsWith(FG_PREFIX)) return;
 
       try {
         if (!auditWorktree) return;
@@ -198,7 +198,7 @@ export const GovernanceAuditPlugin: Plugin = async ({
           policy.audit;
 
         // Actor classification from policy — not hardcoded.
-        // E.g., REGULATED classifies governance_decision as "human",
+        // E.g., REGULATED classifies flowguard_decision as "human",
         // SOLO classifies it as "system" (auto-approved, no human in loop).
         const actor = policy.actorClassification[toolName] ?? "system";
 
@@ -237,7 +237,7 @@ export const GovernanceAuditPlugin: Plugin = async ({
           success = !result?.error;
           errorMessage = result?.errorMessage;
 
-          // Extract transitions from _audit field (set by governance tools)
+          // Extract transitions from _audit field (set by FlowGuard tools)
           if (Array.isArray(result?._audit?.transitions)) {
             transitions = result._audit.transitions;
           }

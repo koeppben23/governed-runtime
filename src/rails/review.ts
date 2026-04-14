@@ -7,7 +7,7 @@
  *
  * Now includes the Evidence Completeness Matrix and Four-Eyes status.
  *
- * The report is written as a separate file (governance-review-report.v1),
+ * The report is written as a separate file (flowguard-review-report.v1),
  * not embedded in state. This makes it:
  * - Independently auditable (can be diffed, versioned, shared)
  * - Available without loading the full session state
@@ -51,7 +51,7 @@ export interface ExtendedReviewReport extends ReviewReport {
  * Pure read — does NOT mutate state, does NOT produce RailResult.
  *
  * The caller is responsible for:
- * - Writing the report to .governance/review-report.json
+ * - Writing the report to .flowguard/review-report.json
  * - NOT persisting any state changes (there are none)
  */
 export async function executeReview(
@@ -134,7 +134,7 @@ export async function executeReview(
 
   // 5. Build report
   return {
-    schemaVersion: "governance-review-report.v1",
+    schemaVersion: "flowguard-review-report.v1",
     sessionId: state.id,
     generatedAt: now,
     phase: state.phase,

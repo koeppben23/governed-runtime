@@ -1,6 +1,6 @@
 /**
  * @module audit
- * @description Barrel export for the governance audit subsystem.
+ * @description Barrel export for the FlowGuard audit subsystem.
  *
  * Provides:
  * - Structured audit event types and factory functions (types.ts)

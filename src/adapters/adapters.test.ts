@@ -1,6 +1,6 @@
 /**
  * @module adapters.test
- * @description Tests for the governance adapter layer.
+ * @description Tests for the FlowGuard adapter layer.
  *
  * Covers:
  * - persistence: atomic file I/O, Zod validation, JSONL trail (uses real temp dirs)
@@ -24,7 +24,7 @@ import {
   readReport,
   appendAuditEvent,
   readAuditTrail,
-  govDir,
+  fgDir,
   statePath,
   reportPath,
   auditPath,
@@ -73,7 +73,7 @@ function makeValidAuditEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 /** Create a minimal valid ReviewReport for persistence tests. */
 function makeValidReport(): ReviewReport {
   return {
-    schemaVersion: "governance-review-report.v1",
+    schemaVersion: "flowguard-review-report.v1",
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,
     phase: "COMPLETE",
@@ -102,10 +102,10 @@ describe("persistence", () => {
   describe("HAPPY", () => {
     it("path helpers resolve correct paths", () => {
       const wt = "/tmp/my-repo";
-      expect(govDir(wt)).toBe(path.join(wt, ".governance"));
-      expect(statePath(wt)).toBe(path.join(wt, ".governance", "session-state.json"));
-      expect(reportPath(wt)).toBe(path.join(wt, ".governance", "review-report.json"));
-      expect(auditPath(wt)).toBe(path.join(wt, ".governance", "audit.jsonl"));
+      expect(fgDir(wt)).toBe(path.join(wt, ".flowguard"));
+      expect(statePath(wt)).toBe(path.join(wt, ".flowguard", "session-state.json"));
+      expect(reportPath(wt)).toBe(path.join(wt, ".flowguard", "review-report.json"));
+      expect(auditPath(wt)).toBe(path.join(wt, ".flowguard", "audit.jsonl"));
     });
 
     it("writeState + readState round-trip preserves data", async () => {
@@ -129,7 +129,7 @@ describe("persistence", () => {
       await writeReport(tmpDir, report);
       const loaded = await readReport(tmpDir);
       expect(loaded).not.toBeNull();
-      expect(loaded!.schemaVersion).toBe("governance-review-report.v1");
+      expect(loaded!.schemaVersion).toBe("flowguard-review-report.v1");
       expect(loaded!.overallStatus).toBe("clean");
     });
 
@@ -148,11 +148,11 @@ describe("persistence", () => {
       expect(events[1]!.event).toBe("transition:TICKET_SET");
     });
 
-    it("writeState auto-creates .governance/ directory", async () => {
-      // tmpDir has no .governance/ subdirectory yet
+    it("writeState auto-creates .flowguard/ directory", async () => {
+      // tmpDir has no .flowguard/ subdirectory yet
       const state = makeProgressedState("TICKET");
       await writeState(tmpDir, state);
-      const stat = await fs.stat(path.join(tmpDir, ".governance"));
+      const stat = await fs.stat(path.join(tmpDir, ".flowguard"));
       expect(stat.isDirectory()).toBe(true);
     });
 
@@ -196,7 +196,7 @@ describe("persistence", () => {
     });
 
     it("readState throws on corrupted JSON", async () => {
-      await fs.mkdir(govDir(tmpDir), { recursive: true });
+      await fs.mkdir(fgDir(tmpDir), { recursive: true });
       await fs.writeFile(statePath(tmpDir), "not valid json{{{", "utf-8");
       await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
       try {
@@ -207,7 +207,7 @@ describe("persistence", () => {
     });
 
     it("readState throws on valid JSON but invalid schema", async () => {
-      await fs.mkdir(govDir(tmpDir), { recursive: true });
+      await fs.mkdir(fgDir(tmpDir), { recursive: true });
       await fs.writeFile(statePath(tmpDir), JSON.stringify({ foo: "bar" }), "utf-8");
       await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
       try {
@@ -221,7 +221,7 @@ describe("persistence", () => {
   // ─── CORNER ─────────────────────────────────────────────────
   describe("CORNER", () => {
     it("readAuditTrail skips malformed lines but reads valid ones", async () => {
-      await fs.mkdir(govDir(tmpDir), { recursive: true });
+      await fs.mkdir(fgDir(tmpDir), { recursive: true });
       const validEvent = makeValidAuditEvent();
       const content = [
         JSON.stringify(validEvent),
@@ -237,7 +237,7 @@ describe("persistence", () => {
     });
 
     it("readAuditTrail handles empty file", async () => {
-      await fs.mkdir(govDir(tmpDir), { recursive: true });
+      await fs.mkdir(fgDir(tmpDir), { recursive: true });
       await fs.writeFile(auditPath(tmpDir), "", "utf-8");
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);

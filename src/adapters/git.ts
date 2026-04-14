@@ -2,7 +2,7 @@
  * @module git
  * @description Git subprocess adapter -- thin wrapper around git CLI commands.
  *
- * Provides the git operations the governance system needs:
+ * Provides the git operations the FlowGuard system needs:
  * - Worktree root detection (resolveRoot)
  * - Changed file discovery (changedFiles, diffFiles)
  * - Branch info (currentBranch)

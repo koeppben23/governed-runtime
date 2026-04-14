@@ -1,4 +1,4 @@
-# AI Engineering Governance Platform
+# AI Engineering FlowGuard Platform
 
 AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.
 
@@ -6,7 +6,7 @@ AI-assisted engineering with deterministic workflow control, fail-closed enforce
 
 ## Executive Summary
 
-The **AI Engineering Governance Platform** transforms AI-assisted software delivery from unstructured chat interactions into **deterministic, policy-bound workflows** with explicit phases, gates, canonical state, audit artifacts, and fail-closed enforcement.
+The **AI Engineering FlowGuard Platform** transforms AI-assisted software delivery from unstructured chat interactions into **deterministic, policy-bound workflows** with explicit phases, gates, canonical state, audit artifacts, and fail-closed enforcement.
 
 Built for **regulated industries, enterprise engineering teams, and organizations with audit or compliance requirements**, the platform provides the operating discipline that AI-driven development needs to meet controlled software delivery standards.
 
@@ -37,9 +37,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
-- **Policy-aware evaluation** — every transition is checked against the active governance policy
+- **Policy-aware evaluation** — every transition is checked against the active FlowGuard policy
 
-### Governance & Compliance
+### FlowGuard & Compliance
 
 - **Three deployment profiles:** Solo (no human gates), Team (human gates, self-approval allowed), Regulated (human gates, four-eyes principle enforced)
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
@@ -74,16 +74,16 @@ Every governed session starts with explicit hydration:
 /hydrate
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree), resolves the governance profile via repository signals, creates an immutable policy snapshot, and initializes canonical state. If prerequisites are missing, execution **blocks** with a reason code.
+The system establishes workspace binding (OpenCode session to git worktree), resolves the FlowGuard profile via repository signals, creates an immutable policy snapshot, and initializes canonical state. If prerequisites are missing, execution **blocks** with a reason code.
 
 ### 2. Governed Command Surface
 
-Nine governance commands map to workflow phases:
+Nine FlowGuard commands map to workflow phases:
 
 | Command | Purpose |
 |---------|---------|
-| `/hydrate` | Bootstrap governance session, bind workspace, resolve profile and policy |
-| `/ticket` | Record the task description for governance tracking |
+| `/hydrate` | Bootstrap FlowGuard session, bind workspace, resolve profile and policy |
+| `/ticket` | Record the task description for FlowGuard tracking |
 | `/plan` | Generate implementation plan with self-review loop |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject) |
 | `/implement` | Execute implementation, record evidence, run review loop |
@@ -116,7 +116,7 @@ TICKET -> PLAN -> PLAN_REVIEW -> VALIDATION -> IMPLEMENTATION -> IMPL_REVIEW -> 
 
 ### 4. Canonical State Model
 
-The governance runtime maintains **canonical state** — a single JSON document, atomically persisted, Zod-validated on every write. It answers:
+The FlowGuard runtime maintains **canonical state** — a single JSON document, atomically persisted, Zod-validated on every write. It answers:
 
 - Current phase and next allowed action
 - Active profile and its rule content
@@ -131,7 +131,7 @@ In controlled environments, "the system should probably continue" is not accepta
 
 ### 5. Pure State Machine
 
-The governance core is a **pure, deterministic state machine**:
+The FlowGuard core is a **pure, deterministic state machine**:
 
 - **Topology**: Immutable transition table (`Phase x Event -> Phase`)
 - **Guards**: Pure predicate functions (`(state) -> boolean`), first-match-wins evaluation
@@ -191,19 +191,19 @@ Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine
 
 The platform uses an **installable package architecture**:
 
-1. **`@governance/core` npm package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin)
-2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@governance/core/integration`
-3. **CLI installer** — `npx @governance/core install` writes wrappers, commands, package.json, opencode.json, and a managed `governance-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
-4. **Global-first** — default installation target is `~/.config/opencode/`, making governance available across all projects without per-project setup
+1. **`@flowguard/core` npm package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin)
+2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@flowguard/core/integration`
+3. **CLI installer** — `npx @flowguard/core install` writes wrappers, commands, package.json, opencode.json, and a managed `flowguard-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
+4. **Global-first** — default installation target is `~/.config/opencode/`, making FlowGuard available across all projects without per-project setup
 
-**Upgrade path:** `npm update @governance/core` upgrades all logic. Thin wrappers remain stable across versions.
+**Upgrade path:** `npm update @flowguard/core` upgrades all logic. Thin wrappers remain stable across versions.
 
 ### OpenCode Integration
 
 - **9 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
 - **9 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
-- **`governance-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
+- **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
 
 ---
@@ -256,7 +256,7 @@ The value is the **governed operating model around AI-assisted engineering**, no
 
 ### Repository Content Is Data, Not Authority
 
-Repository files can inform governance rules, but they do not silently authorize behavior. **Policy authority comes from the governance runtime**, not from repo content.
+Repository files can inform FlowGuard rules, but they do not silently authorize behavior. **Policy authority comes from the FlowGuard runtime**, not from repo content.
 
 ### Fail-Closed by Default
 
@@ -285,10 +285,10 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 - **Version:** 1.1.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
-- **Architecture:** Installable package (`@governance/core`) with thin wrappers
+- **Architecture:** Installable package (`@flowguard/core`) with thin wrappers
 - **Phase Count:** 8 explicit workflow phases
-- **Command Surface:** 9 governance commands
-- **Custom Tools:** 9 OpenCode tool exports (via `@governance/core/integration`)
+- **Command Surface:** 9 FlowGuard commands
+- **Custom Tools:** 9 OpenCode tool exports (via `@flowguard/core/integration`)
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
 - **Policy Modes:** 3 (Solo [default], Team, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
@@ -301,7 +301,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## In One Sentence
 
-The AI Engineering Governance Platform makes AI-assisted software delivery usable in regulated and control-heavy environments by adding deterministic workflow control, explicit approvals, and audit-ready proof.
+The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable in regulated and control-heavy environments by adding deterministic workflow control, explicit approvals, and audit-ready proof.
 
 ---
 

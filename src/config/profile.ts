@@ -1,6 +1,6 @@
 /**
  * @module config/profile
- * @description Governance profile — tech-stack-aware validation configuration.
+ * @description FlowGuard profile — tech-stack-aware validation configuration.
  *
  * Profiles configure which validation checks run, how they run, and
  * optionally detect the right profile for a repository automatically.
@@ -148,7 +148,7 @@ export interface CheckExecutor {
 }
 
 /**
- * A governance profile — tech-stack-aware validation configuration.
+ * A FlowGuard profile — tech-stack-aware validation configuration.
  *
  * Profiles determine:
  * - Which checks are active for a session
@@ -156,7 +156,7 @@ export interface CheckExecutor {
  * - Whether the profile matches a given repository
  * - Additional LLM instructions for the tech stack
  */
-export interface GovernanceProfile {
+export interface FlowGuardProfile {
   /** Unique profile identifier (e.g., "baseline", "backend-java", "frontend-react"). */
   readonly id: string;
   /** Human-readable profile name. */
@@ -190,19 +190,19 @@ export interface GovernanceProfile {
 /**
  * Profile registry.
  *
- * Central catalog of all available governance profiles.
+ * Central catalog of all available FlowGuard profiles.
  * Supports registration, lookup, and auto-detection.
  */
 export class ProfileRegistry {
-  private readonly profiles = new Map<string, GovernanceProfile>();
+  private readonly profiles = new Map<string, FlowGuardProfile>();
 
   /** Register a profile. Overwrites existing entries with the same ID. */
-  register(profile: GovernanceProfile): void {
+  register(profile: FlowGuardProfile): void {
     this.profiles.set(profile.id, profile);
   }
 
   /** Look up a profile by ID. Returns undefined if not registered. */
-  get(id: string): GovernanceProfile | undefined {
+  get(id: string): FlowGuardProfile | undefined {
     return this.profiles.get(id);
   }
 
@@ -213,8 +213,8 @@ export class ProfileRegistry {
    * the one with the highest confidence score (> 0).
    * Returns undefined if no profile matches.
    */
-  detect(signals: RepoSignals): GovernanceProfile | undefined {
-    let best: GovernanceProfile | undefined;
+  detect(signals: RepoSignals): FlowGuardProfile | undefined {
+    let best: FlowGuardProfile | undefined;
     let bestScore = 0;
 
     for (const profile of this.profiles.values()) {
@@ -401,7 +401,7 @@ const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, Chec
 // ─── Baseline Profile ─────────────────────────────────────────────────────────
 
 /**
- * The baseline governance profile.
+ * The baseline FlowGuard profile.
  *
  * Universal profile that works for any tech stack.
  * Provides two state-based validation checks (test_quality, rollback_safety)
@@ -410,9 +410,9 @@ const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, Chec
  * Auto-detection: always returns 0.1 (lowest priority).
  * Any tech-specific profile will score higher and take precedence.
  */
-export const baselineProfile: GovernanceProfile = {
+export const baselineProfile: FlowGuardProfile = {
   id: "baseline",
-  name: "Baseline Governance",
+  name: "Baseline FlowGuard",
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (_signals) => 0.1,
@@ -422,7 +422,7 @@ export const baselineProfile: GovernanceProfile = {
 // ─── Java Profile ─────────────────────────────────────────────────────────────
 
 /**
- * Java (Spring Boot) governance profile.
+ * Java (Spring Boot) FlowGuard profile.
  *
  * Detection signals (confidence = 0.8):
  * - pom.xml in packageFiles → Maven-based Java project
@@ -432,7 +432,7 @@ export const baselineProfile: GovernanceProfile = {
  * can be registered separately. The value is in the instructions (profile rules)
  * that guide the LLM on Java-specific conventions.
  */
-export const javaProfile: GovernanceProfile = {
+export const javaProfile: FlowGuardProfile = {
   id: "backend-java",
   name: "Java / Spring Boot",
   activeChecks: BASELINE_ACTIVE_CHECKS,
@@ -452,7 +452,7 @@ export const javaProfile: GovernanceProfile = {
 // ─── Angular Profile ──────────────────────────────────────────────────────────
 
 /**
- * Angular (+ Nx) governance profile.
+ * Angular (+ Nx) FlowGuard profile.
  *
  * Detection signals (confidence = 0.85):
  * - angular.json in configFiles → Angular CLI project
@@ -461,7 +461,7 @@ export const javaProfile: GovernanceProfile = {
  * Scores slightly higher than TypeScript (0.85 > 0.7) because Angular
  * projects always have TypeScript but not vice versa.
  */
-export const angularProfile: GovernanceProfile = {
+export const angularProfile: FlowGuardProfile = {
   id: "frontend-angular",
   name: "Angular / Nx",
   activeChecks: BASELINE_ACTIVE_CHECKS,
@@ -478,7 +478,7 @@ export const angularProfile: GovernanceProfile = {
 // ─── TypeScript Profile ───────────────────────────────────────────────────────
 
 /**
- * TypeScript (Node.js / general) governance profile.
+ * TypeScript (Node.js / general) FlowGuard profile.
  *
  * Detection signals (confidence = 0.7):
  * - tsconfig.json in configFiles → TypeScript project
@@ -487,7 +487,7 @@ export const angularProfile: GovernanceProfile = {
  * with tsconfig.json get the Angular profile, not this one.
  * Higher than baseline (0.7 > 0.1) so any TS repo gets TS rules.
  */
-export const typescriptProfile: GovernanceProfile = {
+export const typescriptProfile: FlowGuardProfile = {
   id: "typescript",
   name: "TypeScript / Node.js",
   activeChecks: BASELINE_ACTIVE_CHECKS,

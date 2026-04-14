@@ -85,7 +85,7 @@ describe("config/policy", () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
-    it("snapshot preserves all governance-critical fields", () => {
+    it("snapshot preserves all FlowGuard-critical fields", () => {
       const digest = (s: string) => `hash-${s.length}`;
       const snap = createPolicySnapshot(REGULATED_POLICY, "2026-01-01T00:00:00.000Z", digest);
       expect(snap.mode).toBe("regulated");

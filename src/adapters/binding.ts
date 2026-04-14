@@ -1,14 +1,14 @@
 /**
  * @module binding
- * @description Resolves and validates the OpenCode <-> governance session binding.
+ * @description Resolves and validates the OpenCode <-> FlowGuard session binding.
  *
- * Maps OpenCode Custom Tool context to a governance binding:
- * - context.sessionID -> governance session identity
+ * Maps OpenCode Custom Tool context to a FlowGuard binding:
+ * - context.sessionID -> FlowGuard session identity
  * - context.worktree  -> git worktree root (state storage location)
  *
  * Binding model:
- * - One worktree = one governance session at a time
- *   (the .governance/ directory is per-worktree)
+ * - One worktree = one FlowGuard session at a time
+ *   (the .flowguard/ directory is per-worktree)
  * - Multiple OpenCode sessions can work on the same worktree over time
  *   (session continuation: new conversation, same project)
  * - The binding.sessionId in SessionState records the ORIGINAL session that
@@ -20,7 +20,7 @@
  * 3. Validate: resolved path must be a git repository
  *
  * Validation:
- * - Worktree must match (same project, same .governance/ directory)
+ * - Worktree must match (same project, same .flowguard/ directory)
  * - Session ID may differ (new OpenCode conversation = OK, same project)
  * - Path comparison is case-insensitive on Windows (NTFS is case-insensitive)
  *
@@ -54,7 +54,7 @@ export class BindingError extends Error {
 // -- Types --------------------------------------------------------------------
 
 /**
- * OpenCode Custom Tool context -- subset of fields relevant to governance.
+ * OpenCode Custom Tool context -- subset of fields relevant to FlowGuard.
  *
  * Full OpenCode tool context:
  *   { agent, sessionID, messageID, directory, worktree }
@@ -89,7 +89,7 @@ export interface ResolvedBinding {
 // -- Public API ---------------------------------------------------------------
 
 /**
- * Resolve a governance binding from OpenCode tool context.
+ * Resolve a FlowGuard binding from OpenCode tool context.
  *
  * Strategy:
  * 1. Validate session ID is present
@@ -122,7 +122,7 @@ export async function resolveBinding(
       throw new BindingError(
         "NO_WORKTREE",
         "Neither context.worktree nor context.directory is available. " +
-          "Cannot determine governance session location.",
+          "Cannot determine FlowGuard session location.",
       );
     }
 
@@ -131,7 +131,7 @@ export async function resolveBinding(
       throw new BindingError(
         "NOT_GIT_REPO",
         `Directory is not inside a git repository: ${ctx.directory}. ` +
-          "Governance requires a git repository.",
+          "FlowGuard requires a git repository.",
       );
     }
 
@@ -151,16 +151,16 @@ export async function resolveBinding(
  * Validate that an existing session state is compatible with the current binding.
  *
  * Rules:
- * - Worktree MUST match (same project = same .governance/ directory)
+ * - Worktree MUST match (same project = same .flowguard/ directory)
  * - Session ID MAY differ (new OpenCode session continuing same project is OK)
  *
  * Why allow different session IDs?
- *   A developer starts a governance session, closes their terminal, opens a new
+ *   A developer starts a FlowGuard session, closes their terminal, opens a new
  *   OpenCode session, and continues. The project (worktree) is the same, the
- *   governance state should persist. Only the OpenCode session ID changes.
+ *   FlowGuard state should persist. Only the OpenCode session ID changes.
  *
  * Why reject different worktrees?
- *   If the state's worktree doesn't match, the .governance/ directory is in the
+ *   If the state's worktree doesn't match, the .flowguard/ directory is in the
  *   wrong place. This indicates a configuration error or state file corruption.
  *
  * @returns true if compatible.

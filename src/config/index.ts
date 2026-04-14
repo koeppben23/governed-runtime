@@ -1,6 +1,6 @@
 /**
  * @module config
- * @description Barrel export for governance configuration modules.
+ * @description Barrel export for FlowGuard configuration modules.
  *
  * Three extension points:
  * 1. Profile — tech-stack-aware validation configuration
@@ -14,7 +14,7 @@
 export {
   type RepoSignals,
   type CheckExecutor,
-  type GovernanceProfile,
+  type FlowGuardProfile,
   ProfileRegistry,
   baselineProfile,
   javaProfile,
@@ -26,7 +26,7 @@ export {
 // ── Policy ───────────────────────────────────────────────────────────────────
 export {
   type AuditPolicy,
-  type GovernancePolicy,
+  type FlowGuardPolicy,
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,

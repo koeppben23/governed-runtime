@@ -31,7 +31,7 @@ import {
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 8 governance phases.
+ * The 8 FlowGuard phases.
  * init() is a function (bootstrap, workspace, binding, discovery) — not a phase.
  *
  * Linear flow:
@@ -112,7 +112,7 @@ export type Transition = z.infer<typeof Transition>;
 // ─── Session State ────────────────────────────────────────────────────────────
 
 /**
- * The complete governance session state.
+ * The complete FlowGuard session state.
  * Single JSON document, atomically persisted, Zod-validated on every write.
  *
  * Slot pattern: each evidence field is nullable.
@@ -128,7 +128,7 @@ export const SessionState = z.object({
   /** Schema version — always "v1" for this generation. */
   schemaVersion: z.literal("v1"),
 
-  /** Current governance phase. */
+  /** Current FlowGuard phase. */
   phase: Phase,
 
   /** Workspace binding (OpenCode session <-> git worktree). */
@@ -186,7 +186,7 @@ export const SessionState = z.object({
 
   /**
    * Immutable policy snapshot — frozen at session creation.
-   * Records which governance rules governed this session.
+   * Records which FlowGuard rules governed this session.
    * The hash provides non-repudiation for auditors.
    */
   policySnapshot: PolicySnapshotSchema,

@@ -53,7 +53,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   // ── VALIDATION ──────────────────────────────────────────────
   // Runs N checks in one phase (not N separate phases).
   // CHECK_FAILED → PLAN: failed validation means the plan is deficient.
-  // The plan must be revised and re-approved — that's the governance guarantee.
+  // The plan must be revised and re-approved — that's the FlowGuard guarantee.
   ["VALIDATION", new Map<Event, Phase>([
     ["ALL_PASSED",   "IMPLEMENTATION"],
     ["CHECK_FAILED", "PLAN"],

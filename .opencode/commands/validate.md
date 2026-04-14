@@ -2,15 +2,15 @@
 description: Run validation checks on the approved plan.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Execute validation checks for the governance session.
+Execute validation checks for the FlowGuard session.
 
 ## Steps
 
-1. Call `governance_status` with no arguments to verify:
+1. Call `flowguard_status` with no arguments to verify:
    - A session exists.
    - The phase is VALIDATION.
    - An approved plan exists.
@@ -77,7 +77,7 @@ Execute validation checks for the governance session.
 
    **Pass criteria:** Changes extend existing patterns, abstractions are justified, coupling is minimal, and naming/organization is consistent.
 
-4. Call `governance_validate` with the argument `results` set to an array containing one entry per active check. Each entry must have:
+4. Call `flowguard_validate` with the argument `results` set to an array containing one entry per active check. Each entry must have:
    - `checkId`: The check identifier string (e.g., `"test_quality"`).
    - `passed`: `true` or `false`.
    - `detail`: A string with 2-4 sentences explaining why the check passed or failed. Reference specific parts of the plan.
@@ -93,9 +93,9 @@ Execute validation checks for the governance session.
 - The `detail` field must reference specific plan content. Do not write generic statements like "looks good" or "testing is adequate".
 - DO NOT modify any code or files. Validation is analysis only.
 - DO NOT use the `question` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
-- DO NOT auto-chain into /implement, /plan, or any other governance command after validation completes.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit `/validate` triggers this command. If the user sends free-text implying validation, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
+- DO NOT auto-chain into /implement, /plan, or any other FlowGuard command after validation completes.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit `/validate` triggers this command. If the user sends free-text implying validation, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one `Next action:` line. If all checks passed: `Next action: run /implement to start implementation.` If any check failed: `Next action: run /plan to revise the plan and address the failed checks.`

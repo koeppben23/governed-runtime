@@ -83,7 +83,7 @@ export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPendi
  * 4. If a guard matches, resolve the transition via topology.
  * 5. If no guard matches → return pending (phase needs work/evidence).
  *
- * This function is the HEART of the governance machine.
+ * This function is the HEART of the FlowGuard machine.
  * Every phase transition flows through here.
  *
  * @param state - Current session state.

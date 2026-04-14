@@ -1,9 +1,9 @@
-# Governance Rules
+# FlowGuard Rules
 
-This file defines universal governance mandates for AI-assisted development.
-These rules are always active when governance commands or tools are in use.
+This file defines universal FlowGuard mandates for AI-assisted development.
+These rules are always active when FlowGuard commands or tools are in use.
 
-Stack-specific profile rules are loaded dynamically by governance tools and
+Stack-specific profile rules are loaded dynamically by FlowGuard tools and
 delivered in tool responses. Profile rules supplement but never override
 these universal mandates.
 
@@ -233,7 +233,7 @@ Every implementation output MUST contain these sections:
 - Prefer deletion of invalid paths over indefinite coexistence of conflicting paths.
 - Do not pad the result with praise, speculation, or unverifiable confidence.
 
-### Governance Addendum
+### FlowGuard Addendum
 
 - Treat SSOT sources, path authority, schema ownership, and command-surface boundaries as first-class implementation constraints.
 - Treat duplicate truths, silent fallback, authority confusion, and path drift as material defects to avoid, not cleanup opportunities to postpone.
@@ -368,7 +368,7 @@ Before accepting any change, try to break it mentally:
 - Do not summarize code unless it helps prove a finding.
 - Do not suggest large rewrites when a minimal fix exists.
 
-### Governance Addendum
+### FlowGuard Addendum
 
 - Treat documented contracts, SSOT rules, path authority, and surface boundaries as first-class review evidence.
 - Treat silent fallback behavior as suspicious unless explicitly justified and tested.
@@ -454,7 +454,7 @@ All risk assessments MUST use these three canonical tiers:
 
 ### Tier Evidence Minimums
 
-Each tier requires escalating evidence before a governance gate can pass:
+Each tier requires escalating evidence before a FlowGuard gate can pass:
 
 | Tier | Required Evidence |
 |------|-------------------|
@@ -464,7 +464,7 @@ Each tier requires escalating evidence before a governance gate can pass:
 
 ### Gate Integration
 
-- A governance gate CANNOT pass when mandatory tier evidence is missing.
+- A FlowGuard gate CANNOT pass when mandatory tier evidence is missing.
 - Missing tier evidence results in a blocked state with specific recovery steps.
 - Tier is determined during planning and recorded in session state.
 - Tier classification is immutable for the session once approved.
@@ -481,7 +481,7 @@ If the tier cannot be determined from available evidence:
 
 ## 5. Cross-Cutting Principles
 
-These principles apply across all mandates and all governance-controlled work:
+These principles apply across all mandates and all FlowGuard-controlled work:
 
 <investigate_before_answering>
 Never speculate about code you have not read. If a task references a specific file,

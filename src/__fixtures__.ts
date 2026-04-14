@@ -1,6 +1,6 @@
 /**
  * @module __fixtures__
- * @description Shared test fixtures for the governance test suite.
+ * @description Shared test fixtures for the FlowGuard test suite.
  *
  * Provides minimal valid objects for each evidence type and a complete SessionState.
  * All timestamps are fixed for deterministic assertions.

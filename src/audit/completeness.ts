@@ -2,7 +2,7 @@
  * @module audit/completeness
  * @description Evidence Completeness Matrix — automated compliance check.
  *
- * Evaluates the completeness of a governance session's evidence chain.
+ * Evaluates the completeness of a FlowGuard session's evidence chain.
  * For each evidence slot: is it present, missing, failed, or not yet required?
  *
  * Also evaluates the four-eyes principle:
@@ -262,7 +262,7 @@ function getSlotDetail(
 // ─── Evaluator ────────────────────────────────────────────────────────────────
 
 /**
- * Evaluate evidence completeness for a governance session.
+ * Evaluate evidence completeness for a FlowGuard session.
  *
  * Returns a structured report showing:
  * - Per-slot status (complete / missing / not_yet_required / failed)

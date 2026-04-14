@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
  * @module cli/install
- * @description CLI for installing/uninstalling governance into an OpenCode environment.
+ * @description CLI for installing/uninstalling FlowGuard into an OpenCode environment.
  *
  * Usage:
- *   npx @governance/core install  [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
- *   npx @governance/core uninstall [--install-scope global|repo]
- *   npx @governance/core doctor   [--install-scope global|repo]
+ *   npx @flowguard/core install  [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
+ *   npx @flowguard/core uninstall [--install-scope global|repo]
+ *   npx @flowguard/core doctor   [--install-scope global|repo]
  *
  * Install scopes:
  *   --install-scope global  (default)  ~/.config/opencode/  — nothing in the customer repo
- *   --install-scope repo               ./.opencode/         — governance layer committed to repo
+ *   --install-scope repo               ./.opencode/         — FlowGuard layer committed to repo
  *
  * Deprecated aliases (still work, emit warning):
  *   --global  → --install-scope global
@@ -18,13 +18,13 @@
  *   --mode X  → --policy-mode X
  *
  * Architecture:
- * - governance-mandates.md is a managed artifact: always replaced on install, digest-checked by doctor.
+ * - flowguard-mandates.md is a managed artifact: always replaced on install, digest-checked by doctor.
  * - AGENTS.md is NEVER touched — it belongs to the user/project (OpenCode's instruction slot).
- * - Thin wrappers (tools, plugins, commands) import from @governance/core.
- * - opencode.json is merge-managed: governance instruction entry added, legacy entries migrated.
+ * - Thin wrappers (tools, plugins, commands) import from @flowguard/core.
+ * - opencode.json is merge-managed: FlowGuard instruction entry added, legacy entries migrated.
  *
  * Ownership matrix:
- *   hard-managed:   governance-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md
+ *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md
  *   merge-managed:  package.json, opencode.json
  *   user-owned:     AGENTS.md (never touched)
  *
@@ -40,7 +40,7 @@ import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
-  GOVERNANCE_MANDATES_BODY,
+  FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
@@ -55,10 +55,10 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Install scope: where governance artifacts are placed. */
+/** Install scope: where FlowGuard artifacts are placed. */
 export type InstallScope = "global" | "repo";
 
-/** Governance policy mode (runtime behavior, NOT install location). */
+/** FlowGuard policy mode (runtime behavior, NOT install location). */
 export type PolicyMode = "solo" | "team" | "regulated";
 
 /** CLI action. */
@@ -110,11 +110,11 @@ export interface DoctorCheck {
 /** Current package version — injected at build time or read from package.json. */
 const PACKAGE_VERSION = "2.0.0";
 
-/** Files owned by governance that uninstall may remove. */
-const GOVERNANCE_OWNED_FILES = [
+/** Files owned by FlowGuard that uninstall may remove. */
+const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
-  "tools/governance.ts",
-  "plugins/governance-audit.ts",
+  "tools/flowguard.ts",
+  "plugins/flowguard-audit.ts",
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
 ] as const;
 
@@ -143,11 +143,11 @@ export function sha256(content: string): string {
 }
 
 /**
- * Compute the canonical digest for governance-mandates.md body.
+ * Compute the canonical digest for flowguard-mandates.md body.
  * This is the digest stored in the managed-artifact header.
  */
 export function computeMandatesDigest(): string {
-  return sha256(GOVERNANCE_MANDATES_BODY);
+  return sha256(FLOWGUARD_MANDATES_BODY);
 }
 
 // ─── File Helpers ─────────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ async function safeUnlink(filePath: string): Promise<boolean> {
 
 /**
  * Write a file only if it doesn't exist or --force is set.
- * Used for hard-managed artifacts OTHER than governance-mandates.md
+ * Used for hard-managed artifacts OTHER than flowguard-mandates.md
  * (which is always replaced).
  */
 async function writeIfAbsent(
@@ -205,10 +205,10 @@ async function writeIfAbsent(
 // ─── JSON Merge Helpers ───────────────────────────────────────────────────────
 
 /**
- * Merge governance dependencies into an existing or new package.json.
+ * Merge FlowGuard dependencies into an existing or new package.json.
  *
  * Strategy:
- * - If file exists, parse it and add/update the @governance/core dependency.
+ * - If file exists, parse it and add/update the @flowguard/core dependency.
  * - If file doesn't exist, write the template.
  * - Never removes existing dependencies.
  * - Removes legacy @opencode-ai/plugin dependency if present (no longer needed).
@@ -228,7 +228,7 @@ async function mergePackageJson(
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
     const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-    deps["@governance/core"] = `^${version}`;
+    deps["@flowguard/core"] = `^${version}`;
     if (!deps["zod"]) deps["zod"] = "^3.23.0";
     // Remove legacy dependency that is no longer needed
     delete deps["@opencode-ai/plugin"];
@@ -243,7 +243,7 @@ async function mergePackageJson(
 }
 
 /**
- * Merge governance config into an existing or new opencode.json.
+ * Merge FlowGuard config into an existing or new opencode.json.
  *
  * Invariants (idempotent, enforced after every call):
  * 1. instructions array contains exactly 1x the scope-appropriate mandate entry
@@ -275,7 +275,7 @@ async function mergeOpencodeJson(
       ? (parsed["instructions"] as string[])
       : [];
 
-    // Migration: remove legacy "AGENTS.md" entry (only the exact governance-owned one)
+    // Migration: remove legacy "AGENTS.md" entry (only the exact FlowGuard-owned one)
     instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
 
     // Deduplicate: remove our entry if already present, then add exactly once
@@ -296,7 +296,7 @@ async function mergeOpencodeJson(
 }
 
 /**
- * Remove governance instruction entries from opencode.json during uninstall.
+ * Remove FlowGuard instruction entries from opencode.json during uninstall.
  * Removes both current and legacy entries. Preserves everything else.
  */
 async function removeFromOpencodeJson(
@@ -321,12 +321,12 @@ async function removeFromOpencodeJson(
     );
 
     if (after.length === before.length) {
-      return { path: filePath, action: "skipped", reason: "no governance entries found" };
+      return { path: filePath, action: "skipped", reason: "no FlowGuard entries found" };
     }
 
     parsed["instructions"] = after;
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-    return { path: filePath, action: "merged", reason: "removed governance instruction entries" };
+    return { path: filePath, action: "merged", reason: "removed FlowGuard instruction entries" };
   } catch {
     return { path: filePath, action: "skipped", reason: "malformed JSON" };
   }
@@ -335,10 +335,10 @@ async function removeFromOpencodeJson(
 // ─── Install ──────────────────────────────────────────────────────────────────
 
 /**
- * Install governance into the target directory.
+ * Install FlowGuard into the target directory.
  *
  * Ownership semantics:
- * - governance-mandates.md: ALWAYS replaced (hard-managed, versioned, digest-tracked)
+ * - flowguard-mandates.md: ALWAYS replaced (hard-managed, versioned, digest-tracked)
  * - tools/plugins/commands: write if absent, --force to replace (hard-managed)
  * - package.json: merge (merge-managed)
  * - opencode.json: merge with migration (merge-managed)
@@ -359,7 +359,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, "plugins"));
     await ensureDir(join(target, "commands"));
 
-    // 1. governance-mandates.md (always replace — managed artifact)
+    // 1. flowguard-mandates.md (always replace — managed artifact)
     const digest = computeMandatesDigest();
     const mandatesContent = buildMandatesContent(PACKAGE_VERSION, digest);
     const mandatesPath = join(target, MANDATES_FILENAME);
@@ -369,12 +369,12 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
     // 2. Tool wrapper (write if absent, --force to replace)
     ops.push(
-      await writeIfAbsent(join(target, "tools", "governance.ts"), TOOL_WRAPPER, args.force),
+      await writeIfAbsent(join(target, "tools", "flowguard.ts"), TOOL_WRAPPER, args.force),
     );
 
     // 3. Plugin wrapper (write if absent, --force to replace)
     ops.push(
-      await writeIfAbsent(join(target, "plugins", "governance-audit.ts"), PLUGIN_WRAPPER, args.force),
+      await writeIfAbsent(join(target, "plugins", "flowguard-audit.ts"), PLUGIN_WRAPPER, args.force),
     );
 
     // 4. Command files (write if absent, --force to replace)
@@ -404,11 +404,11 @@ export async function install(args: CliArgs): Promise<CliResult> {
 // ─── Uninstall ────────────────────────────────────────────────────────────────
 
 /**
- * Uninstall governance from the target directory.
+ * Uninstall FlowGuard from the target directory.
  *
- * Removes all governance-owned files including governance-mandates.md.
+ * Removes all FlowGuard-owned files including flowguard-mandates.md.
  * Reports warnings for modified managed artifacts.
- * Cleans governance instruction entries from opencode.json.
+ * Cleans FlowGuard instruction entries from opencode.json.
  * Never touches AGENTS.md.
  *
  * @param args - Parsed CLI arguments.
@@ -421,11 +421,11 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
   const warnings: string[] = [];
 
   try {
-    // Remove governance-owned files
-    for (const relPath of GOVERNANCE_OWNED_FILES) {
+    // Remove FlowGuard-owned files
+    for (const relPath of FLOWGUARD_OWNED_FILES) {
       const fullPath = join(target, relPath);
 
-      // For governance-mandates.md, check if modified before removing
+      // For flowguard-mandates.md, check if modified before removing
       if (relPath === MANDATES_FILENAME) {
         const content = await safeRead(fullPath);
         if (content !== null) {
@@ -450,24 +450,24 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       });
     }
 
-    // Remove @governance/core from package.json
+    // Remove @flowguard/core from package.json
     const pkgPath = join(target, "package.json");
     const pkgContent = await safeRead(pkgPath);
     if (pkgContent) {
       try {
         const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
         const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-        delete deps["@governance/core"];
+        delete deps["@flowguard/core"];
         delete deps["@opencode-ai/plugin"]; // Clean up legacy dep too
         parsed["dependencies"] = deps;
         await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-        ops.push({ path: pkgPath, action: "merged", reason: "removed governance dependencies" });
+        ops.push({ path: pkgPath, action: "merged", reason: "removed FlowGuard dependencies" });
       } catch {
         ops.push({ path: pkgPath, action: "skipped", reason: "malformed JSON" });
       }
     }
 
-    // Remove governance instruction entries from opencode.json
+    // Remove FlowGuard instruction entries from opencode.json
     const opencodeJsonPath = args.installScope === "global"
       ? join(target, "opencode.json")
       : join(resolve("."), "opencode.json");
@@ -482,7 +482,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
 // ─── Doctor ───────────────────────────────────────────────────────────────────
 
 /**
- * Verify the governance installation is correct and complete.
+ * Verify the FlowGuard installation is correct and complete.
  *
  * Extended status model for managed artifacts:
  * - ok: file present, content/digest matches
@@ -490,7 +490,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
  * - modified: file present, managed header found, digest mismatch
  * - unmanaged: file present, no managed header
  * - version_mismatch: file present, digest ok, header version != installed version
- * - instruction_missing: governance-mandates.md ok but opencode.json doesn't reference it
+ * - instruction_missing: flowguard-mandates.md ok but opencode.json doesn't reference it
  * - instruction_stale: legacy "AGENTS.md" entry still in opencode.json instructions
  * - error: other problems (e.g. malformed JSON)
  *
@@ -501,7 +501,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   const target = resolveTarget(args.installScope);
   const checks: DoctorCheck[] = [];
 
-  // 1. Check governance-mandates.md (digest verification)
+  // 1. Check flowguard-mandates.md (digest verification)
   const mandatesPath = join(target, MANDATES_FILENAME);
   const mandatesContent = await safeRead(mandatesPath);
   if (!mandatesContent) {
@@ -530,7 +530,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
 
   // 2. Check tool wrapper
-  const toolPath = join(target, "tools", "governance.ts");
+  const toolPath = join(target, "tools", "flowguard.ts");
   const toolContent = await safeRead(toolPath);
   if (!toolContent) {
     checks.push({ file: toolPath, status: "missing" });
@@ -541,7 +541,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
 
   // 3. Check plugin wrapper
-  const pluginPath = join(target, "plugins", "governance-audit.ts");
+  const pluginPath = join(target, "plugins", "flowguard-audit.ts");
   const pluginContent = await safeRead(pluginPath);
   if (!pluginContent) {
     checks.push({ file: pluginPath, status: "missing" });
@@ -573,10 +573,10 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     try {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
       const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-      if (deps["@governance/core"]) {
+      if (deps["@flowguard/core"]) {
         checks.push({ file: pkgPath, status: "ok" });
       } else {
-        checks.push({ file: pkgPath, status: "error", detail: "missing @governance/core dependency" });
+        checks.push({ file: pkgPath, status: "error", detail: "missing @flowguard/core dependency" });
       }
     } catch {
       checks.push({ file: pkgPath, status: "error", detail: "malformed JSON" });
@@ -782,16 +782,16 @@ export function formatDoctor(checks: DoctorCheck[]): string {
 }
 
 const USAGE = `\
-Usage: governance <command> [options]
+Usage: flowguard <command> [options]
 
 Commands:
-  install     Install governance tools, plugins, and commands
-  uninstall   Remove governance files
+  install     Install FlowGuard tools, plugins, and commands
+  uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
 
 Options:
   --install-scope  Where to install: global (default) or repo
-  --policy-mode    Governance policy: solo (default), team, regulated
+  --policy-mode    FlowGuard policy: solo (default), team, regulated
   --force          Overwrite all managed artifacts
 
 Deprecated (still work):
@@ -800,10 +800,10 @@ Deprecated (still work):
   --mode X    → --policy-mode X
 
 Examples:
-  npx @governance/core install
-  npx @governance/core install --install-scope repo --policy-mode regulated
-  npx @governance/core uninstall --install-scope global
-  npx @governance/core doctor
+  npx @flowguard/core install
+  npx @flowguard/core install --install-scope repo --policy-mode regulated
+  npx @flowguard/core uninstall --install-scope global
+  npx @flowguard/core doctor
 `;
 
 /**
@@ -829,7 +829,7 @@ export async function main(argv: string[]): Promise<number> {
 
   switch (args.action) {
     case "install": {
-      console.log(`Installing governance to ${targetLabel}...`);
+      console.log(`Installing FlowGuard to ${targetLabel}...`);
       console.log(`  Install scope: ${args.installScope}`);
       console.log(`  Policy mode: ${args.policyMode}`);
       console.log("");
@@ -842,7 +842,7 @@ export async function main(argv: string[]): Promise<number> {
     }
 
     case "uninstall": {
-      console.log(`Uninstalling governance from ${targetLabel}...`);
+      console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
       console.log("");
       const result = await uninstall(args);
       console.log(formatResult(result));
@@ -850,7 +850,7 @@ export async function main(argv: string[]): Promise<number> {
     }
 
     case "doctor": {
-      console.log(`Checking governance installation at ${targetLabel}...`);
+      console.log(`Checking FlowGuard installation at ${targetLabel}...`);
       console.log("");
       const checks = await doctor(args);
       console.log(formatDoctor(checks));

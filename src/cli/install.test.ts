@@ -1,14 +1,14 @@
 /**
  * @module cli/install.test
- * @description Tests for the governance CLI installer (install, uninstall, doctor).
+ * @description Tests for the FlowGuard CLI installer (install, uninstall, doctor).
  *
  * Uses real temp directories to exercise filesystem operations end-to-end.
  * All five test categories are covered: HAPPY, BAD, CORNER, EDGE, PERF.
  *
  * Architecture under test (v2):
- * - governance-mandates.md is a managed artifact (always replaced, digest-tracked).
+ * - flowguard-mandates.md is a managed artifact (always replaced, digest-tracked).
  * - AGENTS.md is NEVER touched — it belongs to the user/project.
- * - opencode.json instructions reference governance-mandates.md (scope-dependent path).
+ * - opencode.json instructions reference flowguard-mandates.md (scope-dependent path).
  * - Legacy "AGENTS.md" instruction entries are migrated (removed) on install.
  * - parseArgs returns { args, deprecations } | null.
  * - CliResult includes warnings: string[].
@@ -42,7 +42,7 @@ import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
-  GOVERNANCE_MANDATES_BODY,
+  FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
@@ -303,7 +303,7 @@ describe("cli/parseArgs", () => {
 // These tests verify that the Core Library repo itself does NOT use the
 // installer path. The separation is:
 //   - This repo: AGENTS.md as dev ruleset (OpenCode auto-loads from repo root)
-//   - Installed product: governance-mandates.md as managed artifact
+//   - Installed product: flowguard-mandates.md as managed artifact
 //
 // These tests read the REAL repo filesystem via REPO_ROOT, not tmpDir.
 // They are deliberately outside the beforeEach/afterEach scope that
@@ -328,7 +328,7 @@ describe("DEV_REPO_INVARIANTS", () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
-    it(".opencode/governance-mandates.md does NOT exist (no managed artifacts in dev repo)", () => {
+    it(".opencode/flowguard-mandates.md does NOT exist (no managed artifacts in dev repo)", () => {
       expect(existsSync(path.join(REPO_ROOT, ".opencode", MANDATES_FILENAME))).toBe(false);
     });
 
@@ -341,29 +341,29 @@ describe("DEV_REPO_INVARIANTS", () => {
       expect(parsed.instructions).toEqual([]);
     });
 
-    it(".opencode/package.json does NOT contain @governance/core (no self-install)", async () => {
+    it(".opencode/package.json does NOT contain @flowguard/core (no self-install)", async () => {
       const content = await fs.readFile(
         path.join(REPO_ROOT, ".opencode", "package.json"),
         "utf-8",
       );
       const parsed = JSON.parse(content);
       const deps = parsed.dependencies ?? {};
-      expect(deps["@governance/core"]).toBeUndefined();
+      expect(deps["@flowguard/core"]).toBeUndefined();
     });
   });
 
   // ─── EDGE ─────────────────────────────────────────────────
   describe("EDGE", () => {
-    it("REPO_ROOT resolves to a directory containing package.json with name @governance/core", async () => {
+    it("REPO_ROOT resolves to a directory containing package.json with name @flowguard/core", async () => {
       const content = await fs.readFile(
         path.join(REPO_ROOT, "package.json"),
         "utf-8",
       );
       const parsed = JSON.parse(content);
-      expect(parsed.name).toBe("@governance/core");
+      expect(parsed.name).toBe("@flowguard/core");
     });
 
-    it("no governance-mandates.md anywhere in .opencode/ tree", async () => {
+    it("no flowguard-mandates.md anywhere in .opencode/ tree", async () => {
       const ocDir = path.join(REPO_ROOT, ".opencode");
       // Check all immediate subdirectories
       const entries = await fs.readdir(ocDir, { withFileTypes: true });
@@ -471,8 +471,8 @@ describe("cli/crypto", () => {
   });
 
   describe("CORNER", () => {
-    it("computeMandatesDigest matches sha256 of GOVERNANCE_MANDATES_BODY", () => {
-      expect(computeMandatesDigest()).toBe(sha256(GOVERNANCE_MANDATES_BODY));
+    it("computeMandatesDigest matches sha256 of FLOWGUARD_MANDATES_BODY", () => {
+      expect(computeMandatesDigest()).toBe(sha256(FLOWGUARD_MANDATES_BODY));
     });
   });
 
@@ -486,7 +486,7 @@ describe("cli/crypto", () => {
     it("sha256 of mandates body completes in < 5ms", () => {
       const start = performance.now();
       for (let i = 0; i < 100; i++) {
-        sha256(GOVERNANCE_MANDATES_BODY);
+        sha256(FLOWGUARD_MANDATES_BODY);
       }
       const elapsed = performance.now() - start;
       expect(elapsed).toBeLessThan(500); // 100 iterations
@@ -508,9 +508,9 @@ describe("cli/templates", () => {
 
     it("buildMandatesContent includes version and digest in header", () => {
       const content = buildMandatesContent("2.0.0", "abcd1234".repeat(8));
-      expect(content).toContain("@governance/core v2.0.0");
+      expect(content).toContain("@flowguard/core v2.0.0");
       expect(content).toContain("content-digest: sha256:");
-      expect(content).toContain("# Governance Mandates");
+      expect(content).toContain("# FlowGuard Mandates");
     });
 
     it("isManagedArtifact returns true for valid managed content", () => {
@@ -533,7 +533,7 @@ describe("cli/templates", () => {
       const digest = computeMandatesDigest();
       const content = buildMandatesContent("2.0.0", digest);
       const body = extractManagedBody(content);
-      expect(body).toBe(GOVERNANCE_MANDATES_BODY);
+      expect(body).toBe(FLOWGUARD_MANDATES_BODY);
     });
   });
 
@@ -560,42 +560,42 @@ describe("cli/templates", () => {
       expect(LEGACY_INSTRUCTION_ENTRY).toBe("AGENTS.md");
     });
 
-    it("MANDATES_FILENAME is 'governance-mandates.md'", () => {
-      expect(MANDATES_FILENAME).toBe("governance-mandates.md");
+    it("MANDATES_FILENAME is 'flowguard-mandates.md'", () => {
+      expect(MANDATES_FILENAME).toBe("flowguard-mandates.md");
     });
   });
 
   describe("EDGE", () => {
-    it("buildMandatesContent body starts with # Governance Mandates", () => {
+    it("buildMandatesContent body starts with # FlowGuard Mandates", () => {
       const content = buildMandatesContent("1.0.0", "a".repeat(64));
       // After the two header lines and a blank line, body starts
       const lines = content.split("\n");
-      // Line 0: <!-- @governance/core ... -->
+      // Line 0: <!-- @flowguard/core ... -->
       // Line 1: <!-- content-digest: sha256:... -->
       // Line 2: (blank)
-      // Line 3: # Governance Mandates
-      expect(lines[3]).toBe("# Governance Mandates");
+      // Line 3: # FlowGuard Mandates
+      expect(lines[3]).toBe("# FlowGuard Mandates");
     });
 
-    it("GOVERNANCE_MANDATES_BODY contains Hard Rules section with all 5 operative parts", () => {
-      expect(GOVERNANCE_MANDATES_BODY).toContain("## 0. Hard Rules");
-      expect(GOVERNANCE_MANDATES_BODY).toContain("### Top Priorities");
-      expect(GOVERNANCE_MANDATES_BODY).toContain("### Stop Conditions");
-      expect(GOVERNANCE_MANDATES_BODY).toContain("### Evidence Requirements");
-      expect(GOVERNANCE_MANDATES_BODY).toContain("### Approval Blockers");
-      expect(GOVERNANCE_MANDATES_BODY).toContain("### Ambiguity Protocol");
+    it("FLOWGUARD_MANDATES_BODY contains Hard Rules section with all 5 operative parts", () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain("## 0. Hard Rules");
+      expect(FLOWGUARD_MANDATES_BODY).toContain("### Top Priorities");
+      expect(FLOWGUARD_MANDATES_BODY).toContain("### Stop Conditions");
+      expect(FLOWGUARD_MANDATES_BODY).toContain("### Evidence Requirements");
+      expect(FLOWGUARD_MANDATES_BODY).toContain("### Approval Blockers");
+      expect(FLOWGUARD_MANDATES_BODY).toContain("### Ambiguity Protocol");
     });
 
     it("Hard Rules section appears before Developer Mandate", () => {
-      const hardRulesIdx = GOVERNANCE_MANDATES_BODY.indexOf("## 0. Hard Rules");
-      const devMandateIdx = GOVERNANCE_MANDATES_BODY.indexOf("## 1. Developer Mandate");
+      const hardRulesIdx = FLOWGUARD_MANDATES_BODY.indexOf("## 0. Hard Rules");
+      const devMandateIdx = FLOWGUARD_MANDATES_BODY.indexOf("## 1. Developer Mandate");
       expect(hardRulesIdx).toBeGreaterThan(-1);
       expect(devMandateIdx).toBeGreaterThan(-1);
       expect(hardRulesIdx).toBeLessThan(devMandateIdx);
     });
 
-    it("GOVERNANCE_MANDATES_BODY does not reference AGENTS.md", () => {
-      expect(GOVERNANCE_MANDATES_BODY).not.toContain("AGENTS.md");
+    it("FLOWGUARD_MANDATES_BODY does not reference AGENTS.md", () => {
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain("AGENTS.md");
     });
   });
 
@@ -617,18 +617,18 @@ describe("cli/templates", () => {
 describe("cli/install", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
-    it("creates all governance files in repo scope", async () => {
+    it("creates all FlowGuard files in repo scope", async () => {
       const result = await install(repoArgs());
       expect(result.errors).toEqual([]);
       expect(result.warnings).toEqual([]);
 
       const oc = path.join(tmpDir, ".opencode");
-      // governance-mandates.md
+      // flowguard-mandates.md
       expect(existsSync(path.join(oc, MANDATES_FILENAME))).toBe(true);
       // Tool wrapper
-      expect(existsSync(path.join(oc, "tools", "governance.ts"))).toBe(true);
+      expect(existsSync(path.join(oc, "tools", "flowguard.ts"))).toBe(true);
       // Plugin wrapper
-      expect(existsSync(path.join(oc, "plugins", "governance-audit.ts"))).toBe(true);
+      expect(existsSync(path.join(oc, "plugins", "flowguard-audit.ts"))).toBe(true);
       // Command files
       for (const name of Object.keys(COMMANDS)) {
         expect(existsSync(path.join(oc, "commands", name))).toBe(true);
@@ -639,7 +639,7 @@ describe("cli/install", () => {
       expect(existsSync(path.join(tmpDir, "opencode.json"))).toBe(true);
     });
 
-    it("governance-mandates.md is a valid managed artifact", async () => {
+    it("flowguard-mandates.md is a valid managed artifact", async () => {
       await install(repoArgs());
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", MANDATES_FILENAME),
@@ -653,7 +653,7 @@ describe("cli/install", () => {
     it("tool wrapper content matches template", async () => {
       await install(repoArgs());
       const content = await fs.readFile(
-        path.join(tmpDir, ".opencode", "tools", "governance.ts"),
+        path.join(tmpDir, ".opencode", "tools", "flowguard.ts"),
         "utf-8",
       );
       expect(content.trim()).toBe(TOOL_WRAPPER.trim());
@@ -662,25 +662,25 @@ describe("cli/install", () => {
     it("plugin wrapper content matches template", async () => {
       await install(repoArgs());
       const content = await fs.readFile(
-        path.join(tmpDir, ".opencode", "plugins", "governance-audit.ts"),
+        path.join(tmpDir, ".opencode", "plugins", "flowguard-audit.ts"),
         "utf-8",
       );
       expect(content.trim()).toBe(PLUGIN_WRAPPER.trim());
     });
 
-    it("package.json contains @governance/core and zod but NOT @opencode-ai/plugin", async () => {
+    it("package.json contains @flowguard/core and zod but NOT @opencode-ai/plugin", async () => {
       await install(repoArgs());
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", "package.json"),
         "utf-8",
       );
       const parsed = JSON.parse(content);
-      expect(parsed.dependencies["@governance/core"]).toBeDefined();
+      expect(parsed.dependencies["@flowguard/core"]).toBeDefined();
       expect(parsed.dependencies["zod"]).toBeDefined();
       expect(parsed.dependencies["@opencode-ai/plugin"]).toBeUndefined();
     });
 
-    it("opencode.json includes governance-mandates.md instruction (repo scope)", async () => {
+    it("opencode.json includes flowguard-mandates.md instruction (repo scope)", async () => {
       await install(repoArgs());
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
@@ -724,7 +724,7 @@ describe("cli/install", () => {
       expect(skipped.length).toBeGreaterThan(0);
     });
 
-    it("governance-mandates.md is ALWAYS replaced even without --force", async () => {
+    it("flowguard-mandates.md is ALWAYS replaced even without --force", async () => {
       await install(repoArgs());
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       // Tamper with the file
@@ -734,18 +734,18 @@ describe("cli/install", () => {
       await install(repoArgs());
       const content = await fs.readFile(mandatesPath, "utf-8");
       expect(isManagedArtifact(content)).toBe(true);
-      expect(content).toContain("# Governance Mandates");
+      expect(content).toContain("# FlowGuard Mandates");
     });
 
     it("--force overwrites existing tool wrapper", async () => {
       await install(repoArgs());
       // Modify the tool wrapper
-      const toolPath = path.join(tmpDir, ".opencode", "tools", "governance.ts");
+      const toolPath = path.join(tmpDir, ".opencode", "tools", "flowguard.ts");
       await fs.writeFile(toolPath, "// modified", "utf-8");
 
       // Re-install with --force
       const result = await install(repoArgs({ force: true }));
-      const toolOp = result.ops.find((op) => op.path.includes("governance.ts") && op.path.includes("tools"));
+      const toolOp = result.ops.find((op) => op.path.includes("flowguard.ts") && op.path.includes("tools"));
       expect(toolOp?.action).toBe("written");
 
       // Content should be restored
@@ -770,8 +770,8 @@ describe("cli/install", () => {
       const parsed = JSON.parse(content);
       // Original dep preserved
       expect(parsed.dependencies.lodash).toBe("^4.0.0");
-      // Governance dep added
-      expect(parsed.dependencies["@governance/core"]).toBeDefined();
+      // FlowGuard dep added
+      expect(parsed.dependencies["@flowguard/core"]).toBeDefined();
     });
 
     it("merges into existing opencode.json without removing other config", async () => {
@@ -876,7 +876,7 @@ describe("cli/install", () => {
       const parsed = JSON.parse(content);
       expect(parsed.dependencies["@opencode-ai/plugin"]).toBeUndefined();
       expect(parsed.dependencies.lodash).toBe("^4.0.0");
-      expect(parsed.dependencies["@governance/core"]).toBeDefined();
+      expect(parsed.dependencies["@flowguard/core"]).toBeDefined();
     });
   });
 
@@ -928,7 +928,7 @@ describe("cli/install", () => {
       const thirdIdx = instructions.indexOf("third.md");
       expect(firstIdx).toBeLessThan(secondIdx);
       expect(secondIdx).toBeLessThan(thirdIdx);
-      // Governance entry appended at end
+      // FlowGuard entry appended at end
       expect(instructions).toContain(mandatesInstructionEntry("repo"));
     });
   });
@@ -949,24 +949,24 @@ describe("cli/install", () => {
 describe("cli/uninstall", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
-    it("removes governance files after install", async () => {
+    it("removes FlowGuard files after install", async () => {
       await install(repoArgs());
       const result = await uninstall(repoArgs({ action: "uninstall" }));
       expect(result.errors).toEqual([]);
 
       const oc = path.join(tmpDir, ".opencode");
-      // governance-mandates.md removed
+      // flowguard-mandates.md removed
       expect(existsSync(path.join(oc, MANDATES_FILENAME))).toBe(false);
       // Tool and plugin removed
-      expect(existsSync(path.join(oc, "tools", "governance.ts"))).toBe(false);
-      expect(existsSync(path.join(oc, "plugins", "governance-audit.ts"))).toBe(false);
+      expect(existsSync(path.join(oc, "tools", "flowguard.ts"))).toBe(false);
+      expect(existsSync(path.join(oc, "plugins", "flowguard-audit.ts"))).toBe(false);
       // Command files removed
       for (const name of Object.keys(COMMANDS)) {
         expect(existsSync(path.join(oc, "commands", name))).toBe(false);
       }
     });
 
-    it("removes @governance/core from package.json", async () => {
+    it("removes @flowguard/core from package.json", async () => {
       await install(repoArgs());
       await uninstall(repoArgs({ action: "uninstall" }));
 
@@ -975,10 +975,10 @@ describe("cli/uninstall", () => {
         "utf-8",
       );
       const parsed = JSON.parse(content);
-      expect(parsed.dependencies["@governance/core"]).toBeUndefined();
+      expect(parsed.dependencies["@flowguard/core"]).toBeUndefined();
     });
 
-    it("removes governance instruction from opencode.json", async () => {
+    it("removes FlowGuard instruction from opencode.json", async () => {
       await install(repoArgs());
       await uninstall(repoArgs({ action: "uninstall" }));
 
@@ -1021,7 +1021,7 @@ describe("cli/uninstall", () => {
       );
       const parsed = JSON.parse(content);
       expect(parsed.dependencies.lodash).toBe("^4.0.0");
-      expect(parsed.dependencies["@governance/core"]).toBeUndefined();
+      expect(parsed.dependencies["@flowguard/core"]).toBeUndefined();
     });
 
     it("AGENTS.md in project root is never touched by uninstall", async () => {
@@ -1038,7 +1038,7 @@ describe("cli/uninstall", () => {
       expect(content).toBe("# User rules\n");
     });
 
-    it("warns when governance-mandates.md was locally modified", async () => {
+    it("warns when flowguard-mandates.md was locally modified", async () => {
       await install(repoArgs());
       // Tamper with mandates but keep the managed header
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
@@ -1050,7 +1050,7 @@ describe("cli/uninstall", () => {
       expect(result.warnings[0]).toContain("modified");
     });
 
-    it("warns when governance-mandates.md has no managed header", async () => {
+    it("warns when flowguard-mandates.md has no managed header", async () => {
       await install(repoArgs());
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       await fs.writeFile(mandatesPath, "# Just a plain file\n", "utf-8");
@@ -1067,7 +1067,7 @@ describe("cli/uninstall", () => {
         path.join(pkgDir, "package.json"),
         JSON.stringify({
           dependencies: {
-            "@governance/core": "^2.0.0",
+            "@flowguard/core": "^2.0.0",
             "@opencode-ai/plugin": "^1.0.0",
             lodash: "^4.0.0",
           },
@@ -1081,7 +1081,7 @@ describe("cli/uninstall", () => {
         "utf-8",
       );
       const parsed = JSON.parse(content);
-      expect(parsed.dependencies["@governance/core"]).toBeUndefined();
+      expect(parsed.dependencies["@flowguard/core"]).toBeUndefined();
       expect(parsed.dependencies["@opencode-ai/plugin"]).toBeUndefined();
       expect(parsed.dependencies.lodash).toBe("^4.0.0");
     });
@@ -1143,15 +1143,15 @@ describe("cli/doctor", () => {
   describe("CORNER", () => {
     it("detects modified tool wrapper", async () => {
       await install(repoArgs());
-      const toolPath = path.join(tmpDir, ".opencode", "tools", "governance.ts");
+      const toolPath = path.join(tmpDir, ".opencode", "tools", "flowguard.ts");
       await fs.writeFile(toolPath, "// tampered content", "utf-8");
 
       const checks = await doctor(repoArgs({ action: "doctor" }));
-      const toolCheck = checks.find((c) => c.file.includes("governance.ts") && c.file.includes("tools"));
+      const toolCheck = checks.find((c) => c.file.includes("flowguard.ts") && c.file.includes("tools"));
       expect(toolCheck?.status).toBe("modified");
     });
 
-    it("detects modified governance-mandates.md (digest mismatch)", async () => {
+    it("detects modified flowguard-mandates.md (digest mismatch)", async () => {
       await install(repoArgs());
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, "utf-8");
@@ -1164,7 +1164,7 @@ describe("cli/doctor", () => {
       expect(mandatesCheck?.detail).toContain("digest mismatch");
     });
 
-    it("detects unmanaged governance-mandates.md (no header)", async () => {
+    it("detects unmanaged flowguard-mandates.md (no header)", async () => {
       await install(repoArgs());
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       await fs.writeFile(mandatesPath, "# Just a plain file\n", "utf-8");
@@ -1174,11 +1174,11 @@ describe("cli/doctor", () => {
       expect(mandatesCheck?.status).toBe("unmanaged");
     });
 
-    it("detects missing @governance/core in package.json", async () => {
+    it("detects missing @flowguard/core in package.json", async () => {
       await install(repoArgs());
       const pkgPath = path.join(tmpDir, ".opencode", "package.json");
       const content = JSON.parse(await fs.readFile(pkgPath, "utf-8"));
-      delete content.dependencies["@governance/core"];
+      delete content.dependencies["@flowguard/core"];
       await fs.writeFile(pkgPath, JSON.stringify(content, null, 2), "utf-8");
 
       const checks = await doctor(repoArgs({ action: "doctor" }));
@@ -1188,7 +1188,7 @@ describe("cli/doctor", () => {
 
     it("detects instruction_missing in opencode.json", async () => {
       await install(repoArgs());
-      // Remove governance entry from instructions
+      // Remove FlowGuard entry from instructions
       const ocPath = path.join(tmpDir, "opencode.json");
       const content = JSON.parse(await fs.readFile(ocPath, "utf-8"));
       content.instructions = ["other-stuff.md"];

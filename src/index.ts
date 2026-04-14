@@ -1,6 +1,6 @@
 /**
- * @module governance
- * @description Root barrel export for the governance runtime package.
+ * @module flowguard
+ * @description Root barrel export for the FlowGuard runtime package.
  *
  * Exports organized by layer:
  * - State: Phase, Event, SessionState, evidence types
@@ -78,7 +78,7 @@ export {
   readState,
   writeState,
   writeReport,
-  govDir,
+  fgDir,
   statePath,
   reportPath,
   auditPath,
@@ -112,7 +112,7 @@ export { createTestContext } from "./testing";
 export {
   type RepoSignals,
   type CheckExecutor,
-  type GovernanceProfile,
+  type FlowGuardProfile,
   ProfileRegistry,
   baselineProfile,
   javaProfile,
@@ -123,7 +123,7 @@ export {
 
 export {
   type AuditPolicy,
-  type GovernancePolicy,
+  type FlowGuardPolicy,
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,
@@ -221,5 +221,5 @@ export {
   validate,
   review,
   abort_session,
-  GovernanceAuditPlugin,
+  FlowGuardAuditPlugin,
 } from "./integration";

@@ -2,12 +2,12 @@
  * @module config/profiles/content/typescript
  * @description TypeScript (Node.js / general) profile rule content for LLM guidance.
  *
- * This content is injected into governance tool responses when the TypeScript
- * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
+ * This content is injected into FlowGuard tool responses when the TypeScript
+ * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * TypeScript-specific naming, architecture, testing, and anti-pattern rules.
  *
  * NEW: This profile did not exist in the old system. Created for the
- * TypeScript governance system itself and general TypeScript/Node.js projects.
+ * TypeScript FlowGuard system itself and general TypeScript/Node.js projects.
  *
  * @version v1
  */
@@ -15,8 +15,8 @@
 export const profileRuleContent = `
 # TypeScript Profile Rules
 
-These rules supplement the universal governance mandates. They apply when the
-governance system detects a TypeScript/Node.js stack in the repository.
+These rules supplement the universal FlowGuard mandates. They apply when the
+FlowGuard system detects a TypeScript/Node.js stack in the repository.
 
 ---
 

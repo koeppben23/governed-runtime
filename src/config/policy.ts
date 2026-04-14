@@ -1,18 +1,18 @@
 /**
  * @module config/policy
- * @description Governance policy — operating mode configuration.
+ * @description FlowGuard policy — operating mode configuration.
  *
  * Three presets:
  * - SOLO:      Single developer, no human gates, minimal ceremony
  * - TEAM:      Collaborative workflow, human gates, self-approval allowed
- * - REGULATED: Full governance, four-eyes principle, complete audit trail
+ * - REGULATED: Full FlowGuard, four-eyes principle, complete audit trail
  *
  * Policy lifecycle:
  * 1. Resolved at session creation (/hydrate) via `resolvePolicy(mode)`
  * 2. Frozen as an immutable PolicySnapshot in SessionState
  * 3. Governs the session for its entire lifetime — never mutated mid-session
  *
- * The PolicySnapshot stores governance-critical fields so auditors can verify
+ * The PolicySnapshot stores FlowGuard-critical fields so auditors can verify
  * which rules governed a session — even if the policy presets are updated later.
  * The snapshot hash provides non-repudiation: if the hash matches a known policy,
  * the policy is authentic.
@@ -21,7 +21,7 @@
  * - MaRisk AT 7.2: REGULATED enforces separation of duties via four-eyes
  * - ISO 27001 A.8.32: All modes enforce change management controls
  * - GoBD §146: TEAM/REGULATED enable tamper-evident hash chain
- * - DORA Art. 9: REGULATED provides full ICT change management governance
+ * - DORA Art. 9: REGULATED provides full ICT change management FlowGuard
  *
  * Dependency: imports PolicySnapshot from state layer (inner → outer is correct).
  *
@@ -42,10 +42,10 @@ export interface AuditPolicy {
   readonly enableChainHash: boolean;
 }
 
-// ─── Governance Policy ────────────────────────────────────────────────────────
+// ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
- * Full governance policy configuration.
+ * Full FlowGuard policy configuration.
  *
  * Determines:
  * - Whether human gates require explicit human decisions
@@ -54,7 +54,7 @@ export interface AuditPolicy {
  * - Which audit events are emitted and how
  * - How actors are classified in the audit trail
  */
-export interface GovernancePolicy {
+export interface FlowGuardPolicy {
   /** Policy mode identifier. */
   readonly mode: "solo" | "team" | "regulated";
 
@@ -84,7 +84,7 @@ export interface GovernancePolicy {
 
   /**
    * Actor classification per tool name.
-   * Maps governance tool names to actor labels for the audit trail.
+    * Maps FlowGuard tool names to actor labels for the audit trail.
    * Tools not listed default to "system".
    */
   readonly actorClassification: Readonly<Record<string, string>>;
@@ -101,7 +101,7 @@ export interface GovernancePolicy {
  * - Hash chain disabled (overhead not justified for solo work)
  * - Audit events still emitted (traceability even in solo)
  */
-export const SOLO_POLICY: GovernancePolicy = {
+export const SOLO_POLICY: FlowGuardPolicy = {
   mode: "solo",
   requireHumanGates: false,
   maxSelfReviewIterations: 1,
@@ -113,7 +113,7 @@ export const SOLO_POLICY: GovernancePolicy = {
     enableChainHash: false,
   },
   actorClassification: {
-    governance_decision: "system",
+    flowguard_decision: "system",
   },
 };
 
@@ -125,7 +125,7 @@ export const SOLO_POLICY: GovernancePolicy = {
  * - Self-approval allowed (trust within team)
  * - Full audit with hash chain
  */
-export const TEAM_POLICY: GovernancePolicy = {
+export const TEAM_POLICY: FlowGuardPolicy = {
   mode: "team",
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
@@ -137,12 +137,12 @@ export const TEAM_POLICY: GovernancePolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    governance_decision: "human",
+    flowguard_decision: "human",
   },
 };
 
 /**
- * REGULATED mode — full governance for banks, DATEV, regulated industries.
+ * REGULATED mode — full FlowGuard for banks, DATEV, regulated industries.
  *
  * - Human gates active (explicit approve/reject required)
  * - 3 review iterations (full convergence)
@@ -158,7 +158,7 @@ export const TEAM_POLICY: GovernancePolicy = {
  * - GoBD §146 Abs. 4: Tamper-evident, immutable audit trail
  * - DORA Art. 9: ICT change management with audit trail
  */
-export const REGULATED_POLICY: GovernancePolicy = {
+export const REGULATED_POLICY: FlowGuardPolicy = {
   mode: "regulated",
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
@@ -170,28 +170,28 @@ export const REGULATED_POLICY: GovernancePolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    governance_decision: "human",
-    governance_abort_session: "human",
+    flowguard_decision: "human",
+    flowguard_abort_session: "human",
   },
 };
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 /** All known policy presets, indexed by mode. */
-const POLICIES: Readonly<Record<string, GovernancePolicy>> = {
+const POLICIES: Readonly<Record<string, FlowGuardPolicy>> = {
   solo: SOLO_POLICY,
   team: TEAM_POLICY,
   regulated: REGULATED_POLICY,
 };
 
 /**
- * Resolve a governance policy by mode name.
+ * Resolve a FlowGuard policy by mode name.
  *
  * Returns TEAM_POLICY if mode is unknown or undefined.
  * TEAM is the safe default: human gates on, audit on, self-approval on.
  * If you need regulated, you must explicitly say so.
  */
-export function resolvePolicy(mode?: string): GovernancePolicy {
+export function resolvePolicy(mode?: string): FlowGuardPolicy {
   if (!mode) return TEAM_POLICY;
   return POLICIES[mode] ?? TEAM_POLICY;
 }
@@ -206,16 +206,16 @@ export function policyModes(): string[] {
 /**
  * Create an immutable policy snapshot for embedding in SessionState.
  *
- * The snapshot freezes all governance-critical fields. The hash provides
+ * The snapshot freezes all FlowGuard-critical fields. The hash provides
  * non-repudiation: given the hash and the policy registry, an auditor
  * can verify which exact policy governed a session.
  *
- * @param policy - The resolved governance policy.
+ * @param policy - The resolved FlowGuard policy.
  * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
  * @param digestFn - SHA-256 digest function (injected for testability).
  */
 export function createPolicySnapshot(
-  policy: GovernancePolicy,
+  policy: FlowGuardPolicy,
   resolvedAt: string,
   digestFn: (text: string) => string,
 ): PolicySnapshot {

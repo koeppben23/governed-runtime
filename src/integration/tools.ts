@@ -1,12 +1,12 @@
 /**
  * @module integration/tools
- * @description OpenCode Custom Tool definitions for the governance system.
+ * @description OpenCode Custom Tool definitions for the FlowGuard system.
  *
- * 9 named exports -> 9 tools (governance_status, governance_hydrate, etc.)
+ * 9 named exports -> 9 tools (flowguard_status, flowguard_hydrate, etc.)
  * OpenCode derives tool names as <filename>_<exportname>.
  *
  * Architecture:
- * - Tools are the bridge between the LLM and the governance state machine.
+ * - Tools are the bridge between the LLM and the FlowGuard state machine.
  * - Simple operations (hydrate, ticket, decision, abort, review) call rails directly.
  * - Iterative operations (plan, implement) manage state step-by-step
  *   because the LLM drives the loop (multi-call pattern).
@@ -29,8 +29,8 @@
  * This ensures the LLM always gets parseable feedback, never raw stack traces.
  *
  * Installation:
- * This module lives inside @governance/core. The thin wrapper in
- * ~/.config/opencode/tools/governance.ts (or .opencode/tools/) re-exports
+ * This module lives inside @flowguard/core. The thin wrapper in
+ * ~/.config/opencode/tools/flowguard.ts (or .opencode/tools/) re-exports
  * these 9 named exports for OpenCode to discover.
  *
  * @version v2
@@ -110,7 +110,7 @@ import type {
 
 // Config: Policy, Reasons, Completeness
 import { resolvePolicy } from "../config/policy";
-import type { GovernancePolicy } from "../config/policy";
+import type { FlowGuardPolicy } from "../config/policy";
 import { defaultReasonRegistry } from "../config/reasons";
 import { evaluateCompleteness } from "../audit/completeness";
 
@@ -195,7 +195,7 @@ async function requireState(
   if (!state) {
     throw Object.assign(
       new Error(
-        "No governance session found. Run /hydrate first to bootstrap a session.",
+        "No FlowGuard session found. Run /hydrate first to bootstrap a session.",
       ),
       { code: "NO_SESSION" },
     );
@@ -207,7 +207,7 @@ async function requireState(
  * Resolve policy from session state (existing session)
  * or default to SOLO_POLICY (no session yet).
  */
-function resolvePolicyFromState(state: SessionState | null): GovernancePolicy {
+function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
   return resolvePolicy(state?.policySnapshot?.mode);
 }
 
@@ -215,7 +215,7 @@ function resolvePolicyFromState(state: SessionState | null): GovernancePolicy {
  * Create a policy-aware RailContext.
  * Merges the production context with the resolved policy.
  */
-function createPolicyContext(policy: GovernancePolicy): RailContext {
+function createPolicyContext(policy: FlowGuardPolicy): RailContext {
   return { ...createRailContext(), policy };
 }
 
@@ -242,12 +242,12 @@ function extractSections(body: string): string[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 1: governance_status — Read-Only State Check
+// Tool 1: flowguard_status — Read-Only State Check
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const status: ToolDefinition = {
   description:
-    "Read the current governance session state. Returns phase, evidence summary, " +
+    "Read the current FlowGuard session state. Returns phase, evidence summary, " +
     "policy info, completeness matrix, and next action. " +
     "Does NOT mutate state. Use this to understand where the workflow is before taking action.",
   args: {},
@@ -259,7 +259,7 @@ export const status: ToolDefinition = {
       if (!state) {
         return JSON.stringify({
           phase: null,
-          status: "No governance session found.",
+          status: "No FlowGuard session found.",
           next: "Run /hydrate to bootstrap a session.",
         });
       }
@@ -321,21 +321,21 @@ export const status: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 2: governance_hydrate — Bootstrap Session
+// Tool 2: flowguard_hydrate — Bootstrap Session
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const hydrate: ToolDefinition = {
   description:
-    "Bootstrap or reload the governance session. Creates a new session if none exists, " +
+    "Bootstrap or reload the FlowGuard session. Creates a new session if none exists, " +
     "or returns the existing session unchanged (idempotent). " +
     "Optionally configure policy mode (solo/team/regulated) and profile. " +
-    "This MUST be the first governance tool call in any workflow.",
+    "This MUST be the first FlowGuard tool call in any workflow.",
   args: {
     policyMode: z
       .enum(["solo", "team", "regulated"])
       .default("solo")
       .describe(
-        "Governance policy mode. 'solo' = no human gates (default). " +
+        "FlowGuard policy mode. 'solo' = no human gates (default). " +
         "'team' = human gates, self-approval allowed. " +
         "'regulated' = human gates, four-eyes principle enforced.",
       ),
@@ -387,12 +387,12 @@ export const hydrate: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 3: governance_ticket — Record Task
+// Tool 3: flowguard_ticket — Record Task
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const ticket: ToolDefinition = {
   description:
-    "Record the task/ticket description for the governance session. " +
+    "Record the task/ticket description for the FlowGuard session. " +
     "Clears all downstream evidence (plan, validation, implementation). " +
     "Allowed only in TICKET phase.",
   args: {
@@ -424,17 +424,17 @@ export const ticket: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 4: governance_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
+// Tool 4: flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Multi-call pattern driven by the LLM:
 //
-// Step 1: LLM generates plan, calls governance_plan({ planText: "..." })
+// Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
 //   -> Tool records plan, initializes self-review loop, returns "self-review needed"
 //
-// Step 2: LLM reviews plan critically, calls governance_plan({
+// Step 2: LLM reviews plan critically, calls flowguard_plan({
 //   selfReviewVerdict: "changes_requested", planText: "revised..."
-// }) OR governance_plan({ selfReviewVerdict: "approve" })
+// }) OR flowguard_plan({ selfReviewVerdict: "approve" })
 //   -> Tool records iteration, checks convergence
 //
 // Repeat Step 2 until converged or max iterations (from policy).
@@ -540,7 +540,7 @@ export const plan: ToolDefinition = {
           next:
             "Self-review needed. Review the plan critically against the ticket. " +
             "Check for completeness, correctness, edge cases, and feasibility. " +
-            "Then call governance_plan with selfReviewVerdict.",
+            "Then call flowguard_plan with selfReviewVerdict.",
           _audit: { transitions },
         });
       } else {
@@ -626,7 +626,7 @@ export const plan: ToolDefinition = {
           revisionDelta,
           next:
             "Review the plan again. Check if the revisions address all issues. " +
-            "Call governance_plan with selfReviewVerdict.",
+            "Call flowguard_plan with selfReviewVerdict.",
           _audit: { transitions },
         });
       }
@@ -637,7 +637,7 @@ export const plan: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 5: governance_decision — Human Verdict at User Gates
+// Tool 5: flowguard_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const decision: ToolDefinition = {
@@ -684,24 +684,24 @@ export const decision: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 6: governance_implement — Record Implementation OR Impl Review Verdict
+// Tool 6: flowguard_implement — Record Implementation OR Impl Review Verdict
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Multi-call pattern driven by the LLM:
 //
 // Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
-// Step 2: LLM calls governance_implement({})
+// Step 2: LLM calls flowguard_implement({})
 //   -> Tool auto-detects changed files via git, records ImplEvidence
 //   -> Auto-advances to IMPL_REVIEW
 //   -> Returns "review needed"
 //
 // Step 3: LLM reviews the implementation
-// Step 4: LLM calls governance_implement({ reviewVerdict: "approve" })
+// Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve" })
 //   -> Tool records review iteration, checks convergence
 //   -> On convergence: auto-advance to EVIDENCE_REVIEW
 //
-// OR Step 4: LLM calls governance_implement({ reviewVerdict: "changes_requested" })
-//   -> LLM makes more code changes, then calls governance_implement({}) again
+// OR Step 4: LLM calls flowguard_implement({ reviewVerdict: "changes_requested" })
+//   -> LLM makes more code changes, then calls flowguard_implement({}) again
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const implement: ToolDefinition = {
@@ -751,10 +751,10 @@ export const implement: ToolDefinition = {
 
         // Auto-detect changed files via git
         const files = await changedFiles(worktree);
-        // Separate domain files (non-config, non-test, non-governance)
+        // Separate domain files (non-config, non-test, non-FlowGuard)
         const domainFiles = files.filter(
           (f) =>
-            !f.startsWith(".governance/") &&
+            !f.startsWith(".flowguard/") &&
             !f.startsWith(".opencode/") &&
             !f.includes("node_modules/"),
         );
@@ -789,7 +789,7 @@ export const implement: ToolDefinition = {
           domainFiles,
           next:
             "Review the implementation against the plan. Check correctness, completeness, " +
-            "edge cases, and code quality. Then call governance_implement with reviewVerdict.",
+            "edge cases, and code quality. Then call flowguard_implement with reviewVerdict.",
           _audit: { transitions },
         });
       } else {
@@ -807,7 +807,7 @@ export const implement: ToolDefinition = {
         const prevDigest = state.implementation.digest;
 
         // For changes_requested, the LLM should make changes and call
-        // governance_implement({}) again (Mode A). Here we just record
+        // flowguard_implement({}) again (Mode A). Here we just record
         // the review verdict.
         const revisionDelta: RevisionDelta = "none";
 
@@ -855,7 +855,7 @@ export const implement: ToolDefinition = {
             implReviewIteration: iteration,
             next:
               "Make the requested code changes using read/write/bash tools, " +
-              "then call governance_implement (without reviewVerdict) to re-record the implementation.",
+              "then call flowguard_implement (without reviewVerdict) to re-record the implementation.",
             _audit: { transitions },
           });
         }
@@ -876,7 +876,7 @@ export const implement: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 7: governance_validate — Record Validation Check Results
+// Tool 7: flowguard_validate — Record Validation Check Results
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const validate: ToolDefinition = {
@@ -981,15 +981,15 @@ export const validate: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 8: governance_review — Generate Compliance Report (Read-Only)
+// Tool 8: flowguard_review — Generate Compliance Report (Read-Only)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const review: ToolDefinition = {
   description:
     "Generate a standalone compliance review report with evidence completeness matrix " +
     "and four-eyes principle status. Always available in every phase. " +
-    "Does NOT mutate session state. Produces a governance-review-report.v1 artifact " +
-    "written to .governance/review-report.json.",
+    "Does NOT mutate session state. Produces a flowguard-review-report.v1 artifact " +
+    "written to .flowguard/review-report.json.",
   args: {},
   async execute(_args, context) {
     try {
@@ -1006,7 +1006,7 @@ export const review: ToolDefinition = {
       return JSON.stringify({
         phase: state.phase,
         status: "Review report generated.",
-        reportPath: ".governance/review-report.json",
+        reportPath: ".flowguard/review-report.json",
         overallStatus: report.overallStatus,
         policyMode: state.policySnapshot?.mode ?? "unknown",
         completeness: {
@@ -1031,12 +1031,12 @@ export const review: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tool 9: governance_abort_session — Emergency Termination
+// Tool 9: flowguard_abort_session — Emergency Termination
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const abort_session: ToolDefinition = {
   description:
-    "Emergency termination of the governance session. Bypasses the state machine " +
+    "Emergency termination of the FlowGuard session. Bypasses the state machine " +
     "and directly sets phase to COMPLETE with an ABORTED error marker. " +
     "Use only when the session cannot or should not continue. Irreversible.",
   args: {

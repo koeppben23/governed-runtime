@@ -1,8 +1,8 @@
 /**
  * @module config/reasons
- * @description Blocked reason registry — structured error catalog for governance rails.
+ * @description Blocked reason registry — structured error catalog for FlowGuard rails.
  *
- * Every blocked/error state in the governance system has a registered reason code.
+ * Every blocked/error state in the FlowGuard system has a registered reason code.
  * The registry provides:
  * - Human-readable message templates with {variable} interpolation
  * - Recovery steps (actionable guidance for the user)
@@ -24,7 +24,7 @@
  * - adapter:       External system (git, filesystem) error
  * - state:         Session state error
  *
- * Dependency: leaf module — no imports from other governance modules.
+ * Dependency: leaf module — no imports from other FlowGuard modules.
  *
  * @version v1
  */
@@ -150,7 +150,7 @@ export class BlockedReasonRegistry {
 /**
  * All built-in blocked reason codes.
  *
- * Exhaustive catalog of every blocked/error state in the governance system.
+ * Exhaustive catalog of every blocked/error state in the FlowGuard system.
  * Organized by category. Each entry provides:
  * - A message template with interpolation variables
  * - Recovery steps (what the user should do)
@@ -163,7 +163,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "admissibility",
     messageTemplate: "{command} is not allowed in phase {phase}",
     recoverySteps: [
-      "Check the current phase with governance_status",
+      "Check the current phase with flowguard_status",
       "Use a command that is allowed in the current phase",
     ],
   },
@@ -172,7 +172,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "admissibility",
     messageTemplate:
       "Review verdict is only accepted in IMPL_REVIEW phase (current: {phase})",
-    recoverySteps: ["Check the current phase with governance_status"],
+    recoverySteps: ["Check the current phase with flowguard_status"],
   },
 
   // ── Input Validation ──────────────────────────────────────────
@@ -222,7 +222,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "input",
     messageTemplate: "Event {event} is not valid in phase {phase}",
     recoverySteps: [
-      "Check the current phase with governance_status",
+      "Check the current phase with flowguard_status",
       "Use a valid event for the current phase",
     ],
   },
@@ -242,7 +242,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
       "Missing results for active checks: {checks}. All active checks must be reported.",
     recoverySteps: [
       "Submit results for all active checks",
-      "Check activeChecks in the session state via governance_status",
+      "Check activeChecks in the session state via flowguard_status",
     ],
   },
 
@@ -290,8 +290,8 @@ const SEED_REASONS: readonly BlockedReason[] = [
     code: "NO_SESSION",
     category: "precondition",
     messageTemplate:
-      "No governance session found. Run /hydrate first to bootstrap a session.",
-    recoverySteps: ["Run /hydrate to create a new governance session"],
+      "No FlowGuard session found. Run /hydrate first to bootstrap a session.",
+    recoverySteps: ["Run /hydrate to create a new FlowGuard session"],
     quickFixCommand: "/hydrate",
   },
   {
@@ -300,7 +300,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       "No self-review loop is active. Submit a plan first.",
     recoverySteps: [
-      "Submit a plan via governance_plan with planText first",
+      "Submit a plan via flowguard_plan with planText first",
     ],
   },
   {
@@ -308,7 +308,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "precondition",
     messageTemplate: "No plan exists to review.",
     recoverySteps: [
-      "Submit a plan via governance_plan with planText first",
+      "Submit a plan via flowguard_plan with planText first",
     ],
     quickFixCommand: "/plan",
   },
@@ -317,7 +317,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "precondition",
     messageTemplate: "No implementation evidence to review.",
     recoverySteps: [
-      "Record implementation via governance_implement first",
+      "Record implementation via flowguard_implement first",
     ],
     quickFixCommand: "/implement",
   },
@@ -357,19 +357,19 @@ const SEED_REASONS: readonly BlockedReason[] = [
   {
     code: "READ_FAILED",
     category: "adapter",
-    messageTemplate: "Failed to read governance state: {message}",
+    messageTemplate: "Failed to read FlowGuard state: {message}",
     recoverySteps: [
-      "Check if .governance/state.json exists and is readable",
+      "Check if .flowguard/state.json exists and is readable",
       "Verify file permissions",
     ],
   },
   {
     code: "PARSE_FAILED",
     category: "adapter",
-    messageTemplate: "Failed to parse governance state: {message}",
+    messageTemplate: "Failed to parse FlowGuard state: {message}",
     recoverySteps: [
       "The state file may be corrupted",
-      "Check .governance/state.json for valid JSON",
+      "Check .flowguard/state.json for valid JSON",
       "Consider starting a new session with /hydrate",
     ],
   },
@@ -386,9 +386,9 @@ const SEED_REASONS: readonly BlockedReason[] = [
   {
     code: "WRITE_FAILED",
     category: "adapter",
-    messageTemplate: "Failed to write governance state: {message}",
+    messageTemplate: "Failed to write FlowGuard state: {message}",
     recoverySteps: [
-      "Check file system permissions for .governance/ directory",
+      "Check file system permissions for .flowguard/ directory",
       "Ensure sufficient disk space",
     ],
   },

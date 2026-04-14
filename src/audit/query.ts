@@ -1,6 +1,6 @@
 /**
  * @module audit/query
- * @description Query and filter utilities for the governance audit trail.
+ * @description Query and filter utilities for the FlowGuard audit trail.
  *
  * All functions are pure — they take an array of events and return filtered/transformed arrays.
  * No I/O — the caller reads the trail via persistence.readAuditTrail() first.
@@ -56,7 +56,7 @@ export function byKind(kind: AuditEventKind): AuditFilter {
 
 /**
  * Filter events by exact event name.
- * E.g., "transition:PLAN_READY", "tool_call:governance_plan".
+ * E.g., "transition:PLAN_READY", "tool_call:flowguard_plan".
  */
 export function byEvent(eventName: string): AuditFilter {
   return (event) => event.event === eventName;

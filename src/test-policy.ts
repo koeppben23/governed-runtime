@@ -1,9 +1,9 @@
 /**
  * @module test-policy
- * @description Test policy constants and types for the governance test suite.
+ * @description Test policy constants and types for the FlowGuard test suite.
  *
  * Every test file MUST cover all five categories. This policy is enforced
- * by test naming conventions and review mandates in governance-mandates.md.
+ * by test naming conventions and review mandates in flowguard-mandates.md.
  *
  * Categories:
  * 1. HAPPY  — Normal, expected successful flows

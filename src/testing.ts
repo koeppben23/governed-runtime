@@ -1,12 +1,12 @@
 /**
  * @module testing
- * @description Test utilities for the governance runtime.
+ * @description Test utilities for the FlowGuard runtime.
  *
  * Separated from production code to ensure test helpers
  * are never accidentally imported in production bundles.
  *
  * Usage in tests:
- *   import { createTestContext } from "@governance/core/testing";
+ *   import { createTestContext } from "@flowguard/core/testing";
  *
  * @version v1
  */

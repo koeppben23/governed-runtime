@@ -1,31 +1,31 @@
 /**
  * @module templates
  *
- * Embedded templates used by the governance installer script.
+ * Embedded templates used by the FlowGuard installer script.
  *
  * Contains all file contents that the installer writes into the target
  * project: tool wrappers, plugin wrappers, slash-command markdown files,
- * the governance-mandates.md ruleset, and configuration skeletons.
+ * the flowguard-mandates.md ruleset, and configuration skeletons.
  */
 
 // ---------------------------------------------------------------------------
-// Tool wrapper — tools/governance.ts
+// Tool wrapper — tools/flowguard.ts
 // ---------------------------------------------------------------------------
 
 /**
- * Thin wrapper for `tools/governance.ts`.
+ * Thin wrapper for `tools/flowguard.ts`.
  *
- * Re-exports the nine named tool definitions from `@governance/core`
+ * Re-exports the nine named tool definitions from `@flowguard/core`
  * so that OpenCode can discover them via filename convention.
  */
 export const TOOL_WRAPPER = `\
 /**
- * Governance tools — thin wrapper.
- * All logic lives in @governance/core. This file re-exports
+ * FlowGuard tools — thin wrapper.
+ * All logic lives in @flowguard/core. This file re-exports
  * the 9 named tool definitions for OpenCode to discover.
  *
  * Tool naming: OpenCode derives names as <filename>_<exportname>.
- * governance.ts + export const status -> governance_status
+ * flowguard.ts + export const status -> flowguard_status
  *
  * @see https://opencode.ai/docs/custom-tools
  */
@@ -39,28 +39,28 @@ export {
   validate,
   review,
   abort_session,
-} from "@governance/core/integration";
+} from "@flowguard/core/integration";
 `;
 
 // ---------------------------------------------------------------------------
-// Plugin wrapper — plugins/governance-audit.ts
+// Plugin wrapper — plugins/flowguard-audit.ts
 // ---------------------------------------------------------------------------
 
 /**
- * Thin wrapper for `plugins/governance-audit.ts`.
+ * Thin wrapper for `plugins/flowguard-audit.ts`.
  *
- * Re-exports the GovernanceAuditPlugin from `@governance/core`
+ * Re-exports the FlowGuardAuditPlugin from `@flowguard/core`
  * so that OpenCode can discover it.
  */
 export const PLUGIN_WRAPPER = `\
 /**
- * Governance audit plugin — thin wrapper.
- * All logic lives in @governance/core. This file re-exports
- * the GovernanceAuditPlugin for OpenCode to discover.
+ * FlowGuard audit plugin — thin wrapper.
+ * All logic lives in @flowguard/core. This file re-exports
+ * the FlowGuardAuditPlugin for OpenCode to discover.
  *
  * @see https://opencode.ai/docs/plugins
  */
-export { GovernanceAuditPlugin } from "@governance/core/integration";
+export { FlowGuardAuditPlugin } from "@flowguard/core/integration";
 `;
 
 // ---------------------------------------------------------------------------
@@ -68,25 +68,25 @@ export { GovernanceAuditPlugin } from "@governance/core/integration";
 // ---------------------------------------------------------------------------
 
 /**
- * All nine governance slash-command definitions, keyed by filename
+ * All nine FlowGuard slash-command definitions, keyed by filename
  * (e.g. `"hydrate.md"`). Each value is the full markdown content
  * that the installer writes into `.opencode/commands/`.
  */
 export const COMMANDS: Record<string, string> = {
   "hydrate.md": `\
 ---
-description: Bootstrap or reload the governance session. Run this FIRST before any other governance command.
+description: Bootstrap or reload the FlowGuard session. Run this FIRST before any other FlowGuard command.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Bootstrap the governance session for this project.
+Bootstrap the FlowGuard session for this project.
 
 ## Steps
 
-1. Call the \`governance_hydrate\` tool with no arguments.
+1. Call the \`flowguard_hydrate\` tool with no arguments.
 2. Read the returned JSON. It contains the current \`phase\` and \`next\` action.
 3. Report the result to the user:
    - If a new session was created: confirm the session ID and that the workflow starts at TICKET phase.
@@ -95,38 +95,38 @@ Bootstrap the governance session for this project.
 
 ## Rules
 
-- DO NOT call any other governance tool before governance_hydrate.
+- DO NOT call any other FlowGuard tool before flowguard_hydrate.
 - DO NOT modify any files.
-- DO NOT skip the governance_hydrate call.
+- DO NOT skip the flowguard_hydrate call.
 - DO NOT ask the user anything. Do not use the \`question\` tool or present selectable choices.
 - DO NOT explain what you are about to do. Just call the tool.
-- DO NOT substitute shell commands or direct file manipulation for the governance_hydrate tool.
-- DO NOT auto-chain to /ticket, /plan, /continue, or any other governance command after hydration completes.
+- DO NOT substitute shell commands or direct file manipulation for the flowguard_hydrate tool.
+- DO NOT auto-chain to /ticket, /plan, /continue, or any other FlowGuard command after hydration completes.
 - DO NOT infer or assume session state beyond what the tool returns.
-- Natural-language prompts like "go", "weiter", "proceed", "start", or "initialize" are NOT command invocations. Only an explicit \`/hydrate\` triggers this command. If the user sends free-text implying session setup, respond conversationally without calling governance tools.
+- Natural-language prompts like "go", "weiter", "proceed", "start", or "initialize" are NOT command invocations. Only an explicit \`/hydrate\` triggers this command. If the user sends free-text implying session setup, respond conversationally without calling FlowGuard tools.
 - If the tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to record a task, or /review for a compliance check.\`
 `,
 
   "ticket.md": `\
 ---
-description: Record a task or ticket for the governance session.
+description: Record a task or ticket for the FlowGuard session.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Record the following task/ticket in the governance session:
+Record the following task/ticket in the FlowGuard session:
 
 $ARGUMENTS
 
 ## Steps
 
-1. Call \`governance_status\` to check the current phase.
-   - If no session exists, call \`governance_hydrate\` first.
+1. Call \`flowguard_status\` to check the current phase.
+   - If no session exists, call \`flowguard_hydrate\` first.
    - If the phase is not TICKET, report that /ticket is only allowed in TICKET phase.
-2. Call \`governance_ticket\` with:
+2. Call \`flowguard_ticket\` with:
    - \`text\`: The full task description provided above. If \`$ARGUMENTS\` is empty, ask the user to provide a task description.
    - \`source\`: "user"
 3. Read the returned JSON.
@@ -136,13 +136,13 @@ $ARGUMENTS
 
 - DO NOT invent or modify the ticket text. Use exactly what the user provided.
 - If no arguments were provided, ask the user for the task description. DO NOT proceed without it.
-- DO NOT call governance_plan or any other workflow-advancing tool.
+- DO NOT call flowguard_plan or any other workflow-advancing tool.
 - DO NOT use the \`question\` tool or present selectable choices (except to ask for missing ticket text via plain text).
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
 - DO NOT auto-chain into /plan, /continue, /review, or /review-decision after the ticket is recorded.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- Natural-language prompts like "go", "weiter", "proceed", "start working", or task descriptions sent without the /ticket prefix are NOT command invocations. Only an explicit \`/ticket\` triggers this command. If the user sends free-text describing a task, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "go", "weiter", "proceed", "start working", or task descriptions sent without the /ticket prefix are NOT command invocations. Only an explicit \`/ticket\` triggers this command. If the user sends free-text describing a task, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After successful ticket: \`Next action: run /plan to generate an implementation plan.\`
 `,
 
@@ -151,7 +151,7 @@ $ARGUMENTS
 description: Generate a plan with self-review loop for the current ticket.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
@@ -161,8 +161,8 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 
 ### Phase 1: Check State
 
-1. Call \`governance_status\` with no arguments to verify:
-   - A session exists (if not, call \`governance_hydrate\` first).
+1. Call \`flowguard_status\` with no arguments to verify:
+   - A session exists (if not, call \`flowguard_hydrate\` first).
    - A ticket exists (if not, tell the user to run /ticket first and stop).
    - The phase allows /plan (TICKET or PLAN). If not, report the current phase and stop.
 
@@ -176,7 +176,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
    - \`## Files to Modify\` — Complete list of file paths that will be created, modified, or deleted.
    - \`## Edge Cases\` — Numbered list of edge cases. Each entry names the scenario and the handling strategy.
    - \`## Validation Criteria\` — Numbered list of verifiable conditions. Each entry is a concrete check (e.g., "running \`npm test\` passes", "function X returns Y when given Z").
-4. Call \`governance_plan\` with the argument \`planText\` set to the full plan markdown. Do NOT set \`selfReviewVerdict\`.
+4. Call \`flowguard_plan\` with the argument \`planText\` set to the full plan markdown. Do NOT set \`selfReviewVerdict\`.
 5. Read the response. It will say self-review is needed.
 
 ### Phase 3: Self-Review Loop
@@ -193,8 +193,8 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
    - [ ] At least 2 validation criteria are listed.
    - [ ] Each validation criterion is mechanically verifiable (could be checked by running a command or inspecting output).
 7. Based on your review:
-   - If ALL checklist items pass: Call \`governance_plan\` with the argument \`selfReviewVerdict\` set to \`"approve"\`. Do NOT set \`planText\`.
-   - If ANY checklist item fails: Revise the plan to fix all failing items. Call \`governance_plan\` with \`selfReviewVerdict\` set to \`"changes_requested"\` AND \`planText\` set to the complete revised plan.
+   - If ALL checklist items pass: Call \`flowguard_plan\` with the argument \`selfReviewVerdict\` set to \`"approve"\`. Do NOT set \`planText\`.
+   - If ANY checklist item fails: Revise the plan to fix all failing items. Call \`flowguard_plan\` with \`selfReviewVerdict\` set to \`"changes_requested"\` AND \`planText\` set to the complete revised plan.
 8. Read the response:
    - If self-review converged (the response says "converged" or the phase changed to PLAN_REVIEW): Report the final status to the user.
    - If another iteration is needed: Go back to step 6.
@@ -209,30 +209,30 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - DO NOT call any implementation tools (write, edit, bash for code changes). Planning only.
 - The self-review loop runs up to 3 iterations maximum.
 - DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
 - DO NOT auto-chain into /continue, /review, /implement, or /review-decision after the plan converges.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal governance mandates.
-- Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit \`/plan\` triggers this command. If the user sends free-text implying planning, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- If the \`flowguard_status\` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal FlowGuard mandates.
+- Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit \`/plan\` triggers this command. If the user sends free-text implying planning, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
   "continue.md": `\
 ---
-description: Continue the governance workflow — do the next thing based on the current phase.
+description: Continue the FlowGuard workflow — do the next thing based on the current phase.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Determine what the governance workflow needs next and do it.
+Determine what the FlowGuard workflow needs next and do it.
 
 ## Steps
 
-1. Call \`governance_status\` to check the current session state.
-   - If no session exists, call \`governance_hydrate\` first.
+1. Call \`flowguard_status\` to check the current session state.
+   - If no session exists, call \`flowguard_hydrate\` first.
 
 2. Based on the current phase, take the appropriate action:
 
@@ -244,7 +244,7 @@ Determine what the governance workflow needs next and do it.
 
    ### PLAN (self-review pending)
    - The plan needs self-review. Review the current plan critically.
-   - Call \`governance_plan\` with the appropriate selfReviewVerdict.
+   - Call \`flowguard_plan\` with the appropriate selfReviewVerdict.
    - Follow the self-review loop as described in /plan.
 
    ### PLAN_REVIEW (User Gate)
@@ -256,14 +256,14 @@ Determine what the governance workflow needs next and do it.
    - Run validation checks. For each active check:
      - \`test_quality\`: Analyze test coverage and quality.
      - \`rollback_safety\`: Analyze whether changes can be safely rolled back.
-   - Call \`governance_validate\` with all results.
+   - Call \`flowguard_validate\` with all results.
 
    ### IMPLEMENTATION (needs implementation)
    - Tell the user to run /implement to start the implementation.
 
    ### IMPL_REVIEW (review pending)
    - Review the implementation against the plan.
-   - Call \`governance_implement\` with the appropriate reviewVerdict.
+   - Call \`flowguard_implement\` with the appropriate reviewVerdict.
 
    ### EVIDENCE_REVIEW (User Gate)
    - Tell the user this is a human decision point.
@@ -281,10 +281,10 @@ Determine what the governance workflow needs next and do it.
 - DO NOT take destructive actions. /continue is a routing command — it determines what to do, not blindly executes.
 - At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
 - Always check status first before taking any action.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
-- Natural-language prompts like "go", "weiter", "proceed", "mach weiter", "next", or "what's next" are NOT command invocations. Only an explicit \`/continue\` triggers this command. If the user sends free-text implying continuation, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
+- Natural-language prompts like "go", "weiter", "proceed", "mach weiter", "next", or "what's next" are NOT command invocations. Only an explicit \`/continue\` triggers this command. If the user sends free-text implying continuation, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line stating the next step for the user.
 `,
 
@@ -293,7 +293,7 @@ Determine what the governance workflow needs next and do it.
 description: Implement the approved plan and review the implementation.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
@@ -303,8 +303,8 @@ Implement the approved plan and review the implementation.
 
 ### Phase 1: Check State
 
-1. Call \`governance_status\` with no arguments to verify:
-   - A session exists (if not, call \`governance_hydrate\` first and stop).
+1. Call \`flowguard_status\` with no arguments to verify:
+   - A session exists (if not, call \`flowguard_hydrate\` first and stop).
    - The phase is IMPLEMENTATION (if not, report the current phase and stop).
    - A ticket and approved plan exist.
    - Validation checks have passed.
@@ -318,7 +318,7 @@ Implement the approved plan and review the implementation.
    - Use the \`write\` or \`edit\` tool to create or modify files.
    - Use the \`bash\` tool for commands (install dependencies, run formatters, etc.).
    - Follow the plan steps exactly. Do not add steps that are not in the plan.
-4. After completing ALL implementation steps from the plan, call \`governance_implement\` with no arguments (do NOT set \`reviewVerdict\`).
+4. After completing ALL implementation steps from the plan, call \`flowguard_implement\` with no arguments (do NOT set \`reviewVerdict\`).
    - The tool will auto-detect changed files via git and record implementation evidence.
    - It will advance the phase to IMPL_REVIEW.
 5. Read the response. It will list the changed files and say a review is needed.
@@ -334,8 +334,8 @@ Implement the approved plan and review the implementation.
    - [ ] Code follows the project's existing conventions (naming, formatting, file organization).
    - [ ] Each validation criterion from the plan is testable against the current code.
 7. Based on your review:
-   - If ALL checklist items pass: Call \`governance_implement\` with \`reviewVerdict\` set to \`"approve"\`.
-   - If ANY checklist item fails: Call \`governance_implement\` with \`reviewVerdict\` set to \`"changes_requested"\`. Then make the necessary code changes using read/write/bash tools to fix the failing items. After making changes, call \`governance_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
+   - If ALL checklist items pass: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"approve"\`.
+   - If ANY checklist item fails: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"changes_requested"\`. Then make the necessary code changes using read/write/bash tools to fix the failing items. After making changes, call \`flowguard_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
 8. Read the response:
    - If review converged (the response says "converged" or the phase changed to EVIDENCE_REVIEW): Report the final status to the user.
    - If another review iteration is needed: Go back to step 6.
@@ -345,17 +345,17 @@ Implement the approved plan and review the implementation.
 
 - Follow the plan exactly. Do not deviate from the approved plan.
 - DO NOT skip the implementation review. You MUST run the checklist at least once.
-- When changes are requested in the review, you MUST make the actual code changes BEFORE calling governance_implement again.
-- Call governance_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
+- When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
+- Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
 - The review loop runs up to 3 iterations maximum.
-- DO NOT modify governance files (.governance/*) directly. Only use governance tools.
+- DO NOT modify FlowGuard files (.flowguard/*) directly. Only use FlowGuard tools.
 - DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT bypass governance_implement with direct file manipulation of .governance/ state.
+- DO NOT bypass flowguard_implement with direct file manipulation of .flowguard/ state.
 - DO NOT auto-chain into /review-decision, /plan, /ticket, or /continue after the implementation review converges.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal governance mandates.
-- Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit \`/implement\` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- If the \`flowguard_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal FlowGuard mandates.
+- Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit \`/implement\` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
@@ -364,15 +364,15 @@ Implement the approved plan and review the implementation.
 description: Run validation checks on the approved plan.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Execute validation checks for the governance session.
+Execute validation checks for the FlowGuard session.
 
 ## Steps
 
-1. Call \`governance_status\` with no arguments to verify:
+1. Call \`flowguard_status\` with no arguments to verify:
    - A session exists.
    - The phase is VALIDATION.
    - An approved plan exists.
@@ -439,7 +439,7 @@ Execute validation checks for the governance session.
 
    **Pass criteria:** Changes extend existing patterns, abstractions are justified, coupling is minimal, and naming/organization is consistent.
 
-4. Call \`governance_validate\` with the argument \`results\` set to an array containing one entry per active check. Each entry must have:
+4. Call \`flowguard_validate\` with the argument \`results\` set to an array containing one entry per active check. Each entry must have:
    - \`checkId\`: The check identifier string (e.g., \`"test_quality"\`).
    - \`passed\`: \`true\` or \`false\`.
    - \`detail\`: A string with 2-4 sentences explaining why the check passed or failed. Reference specific parts of the plan.
@@ -455,11 +455,11 @@ Execute validation checks for the governance session.
 - The \`detail\` field must reference specific plan content. Do not write generic statements like "looks good" or "testing is adequate".
 - DO NOT modify any code or files. Validation is analysis only.
 - DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
-- DO NOT auto-chain into /implement, /plan, or any other governance command after validation completes.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit \`/validate\` triggers this command. If the user sends free-text implying validation, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
+- DO NOT auto-chain into /implement, /plan, or any other FlowGuard command after validation completes.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit \`/validate\` triggers this command. If the user sends free-text implying validation, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. If all checks passed: \`Next action: run /implement to start implementation.\` If any check failed: \`Next action: run /plan to revise the plan and address the failed checks.\`
 `,
 
@@ -468,7 +468,7 @@ Execute validation checks for the governance session.
 description: Submit a human review decision (approve, changes_requested, reject) at a User Gate.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
@@ -478,7 +478,7 @@ Decision: $ARGUMENTS
 
 ## Steps
 
-1. Call \`governance_status\` to verify:
+1. Call \`flowguard_status\` to verify:
    - A session exists.
    - The current phase is PLAN_REVIEW or EVIDENCE_REVIEW (a User Gate).
    - If the phase is NOT a User Gate, report this to the user and stop.
@@ -489,7 +489,7 @@ Decision: $ARGUMENTS
    - The first word is the verdict. Everything after is the rationale.
    - If \`$ARGUMENTS\` is empty or unclear, ask the user for their decision. DO NOT guess.
 
-3. Call \`governance_decision\` with:
+3. Call \`flowguard_decision\` with:
    - \`verdict\`: The parsed verdict (exactly one of: "approve", "changes_requested", "reject")
    - \`rationale\`: The parsed rationale, or empty string if none provided.
 
@@ -505,11 +505,11 @@ Decision: $ARGUMENTS
 - DO NOT call this tool if the current phase is not PLAN_REVIEW or EVIDENCE_REVIEW.
 - Valid verdicts are ONLY: approve, changes_requested, reject. Nothing else.
 - DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for governance tools.
-- DO NOT auto-chain to other governance commands after the decision is recorded.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- Natural-language prompts like "approve", "go", "weiter", "looks good", "ship it", or "reject" sent WITHOUT the /review-decision prefix are NOT command invocations. Only an explicit \`/review-decision\` triggers this command. If the user sends free-text implying a decision, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
+- DO NOT auto-chain to other FlowGuard commands after the decision is recorded.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "approve", "go", "weiter", "looks good", "ship it", or "reject" sent WITHOUT the /review-decision prefix are NOT command invocations. Only an explicit \`/review-decision\` triggers this command. If the user sends free-text implying a decision, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line stating the next workflow step based on the verdict and phase.
 `,
 
@@ -518,19 +518,19 @@ Decision: $ARGUMENTS
 description: Generate a standalone compliance review report for the current session.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Generate a compliance review report for the current governance session.
+Generate a compliance review report for the current FlowGuard session.
 
 ## Steps
 
-1. Call \`governance_status\` to verify a session exists.
+1. Call \`flowguard_status\` to verify a session exists.
    - If no session exists, report this and stop.
 
-2. Call \`governance_review\` with no arguments.
-   - The tool generates a review report and writes it to \`.governance/review-report.json\`.
+2. Call \`flowguard_review\` with no arguments.
+   - The tool generates a review report and writes it to \`.flowguard/review-report.json\`.
 
 3. Read the response and present the report to the user:
    - **Overall status**: clean, warnings, or issues.
@@ -544,31 +544,31 @@ Generate a compliance review report for the current governance session.
 
 - This command is read-only. It does NOT advance or modify the workflow.
 - This command works in every phase — it is always available.
-- DO NOT modify any governance state or files other than the report.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- DO NOT auto-chain to any other governance command after generating the report.
+- DO NOT modify any FlowGuard state or files other than the report.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- DO NOT auto-chain to any other FlowGuard command after generating the report.
 - Present the report clearly and concisely.
-- Natural-language prompts like "review it", "check the status", "how does it look", or "is it ready" are NOT command invocations. Only an explicit \`/review\` triggers this command. If the user sends free-text implying a review, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- Natural-language prompts like "review it", "check the status", "how does it look", or "is it ready" are NOT command invocations. Only an explicit \`/review\` triggers this command. If the user sends free-text implying a review, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with a \`Next action:\` line based on the current phase and report findings.
 `,
 
   "abort.md": `\
 ---
-description: Emergency termination of the governance session.
+description: Emergency termination of the FlowGuard session.
 ---
 
-You are managing a governance-controlled development workflow.
+You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Abort the governance session.
+Abort the FlowGuard session.
 
 Reason: $ARGUMENTS
 
 ## Steps
 
-1. Call \`governance_status\` to verify a session exists.
+1. Call \`flowguard_status\` to verify a session exists.
    - If no session exists, report "No session to abort" and stop.
    - If the session is already COMPLETE, report it is already terminal and stop.
 
@@ -577,7 +577,7 @@ Reason: $ARGUMENTS
    - The session will be marked as ABORTED at COMPLETE phase.
    - This is irreversible — a new session must be started with /hydrate.
 
-3. Call \`governance_abort_session\` with:
+3. Call \`flowguard_abort_session\` with:
    - \`reason\`: The reason from \`$ARGUMENTS\`, or "Session aborted by user" if no reason was provided.
 
 4. Report the result: confirm the session has been terminated and that /hydrate can start a new one.
@@ -586,21 +586,21 @@ Reason: $ARGUMENTS
 
 - DO NOT abort without informing the user of the consequences.
 - If no reason is provided in $ARGUMENTS, use "Session aborted by user" as the default reason.
-- After aborting, DO NOT attempt any further governance workflow actions except /review (which remains available).
-- DO NOT auto-chain to /hydrate or any other governance command after abort completes.
-- DO NOT infer or assume session state beyond what the governance tools return.
-- Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling governance tools.
-- If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- After aborting, DO NOT attempt any further FlowGuard workflow actions except /review (which remains available).
+- DO NOT auto-chain to /hydrate or any other FlowGuard command after abort completes.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
 `,
 };
 
 // ---------------------------------------------------------------------------
-// governance-mandates.md — universal governance ruleset (managed artifact)
+// flowguard-mandates.md — universal FlowGuard ruleset (managed artifact)
 // ---------------------------------------------------------------------------
 
-/** Filename for the governance mandates artifact. */
-export const MANDATES_FILENAME = "governance-mandates.md";
+/** Filename for the FlowGuard mandates artifact. */
+export const MANDATES_FILENAME = "flowguard-mandates.md";
 
 /**
  * Returns the instruction entry path for opencode.json based on install scope.
@@ -616,18 +616,18 @@ export function mandatesInstructionEntry(scope: "global" | "repo"): string {
 export const LEGACY_INSTRUCTION_ENTRY = "AGENTS.md";
 
 /**
- * Body of the governance mandates (without managed-artifact header).
+ * Body of the FlowGuard mandates (without managed-artifact header).
  *
  * The header (version + digest) is prepended at install time by
  * `buildMandatesContent()`.
  */
-export const GOVERNANCE_MANDATES_BODY = `\
-# Governance Mandates
+export const FLOWGUARD_MANDATES_BODY = `\
+# FlowGuard Mandates
 
-This file defines universal governance mandates for AI-assisted development.
-These rules are always active when governance commands or tools are in use.
+This file defines universal FlowGuard mandates for AI-assisted development.
+These rules are always active when FlowGuard commands or tools are in use.
 
-Stack-specific profile rules are loaded dynamically by governance tools and
+Stack-specific profile rules are loaded dynamically by FlowGuard tools and
 delivered in tool responses. Profile rules supplement but never override
 these universal mandates.
 
@@ -837,7 +837,7 @@ Every implementation output MUST contain these sections:
 - Prefer deletion of invalid paths over indefinite coexistence of conflicting paths.
 - Do not pad the result with praise, speculation, or unverifiable confidence.
 
-### Governance Addendum
+### FlowGuard Addendum
 
 - Treat SSOT sources, path authority, schema ownership, and command-surface boundaries as first-class implementation constraints.
 - Treat duplicate truths, silent fallback, authority confusion, and path drift as material defects to avoid, not cleanup opportunities to postpone.
@@ -972,7 +972,7 @@ Before accepting any change, try to break it mentally:
 - Do not summarize code unless it helps prove a finding.
 - Do not suggest large rewrites when a minimal fix exists.
 
-### Governance Addendum
+### FlowGuard Addendum
 
 - Treat documented contracts, SSOT rules, path authority, and surface boundaries as first-class review evidence.
 - Treat silent fallback behavior as suspicious unless explicitly justified and tested.
@@ -1058,7 +1058,7 @@ All risk assessments MUST use these three canonical tiers:
 
 ### Tier Evidence Minimums
 
-Each tier requires escalating evidence before a governance gate can pass:
+Each tier requires escalating evidence before a FlowGuard gate can pass:
 
 | Tier | Required Evidence |
 |------|-------------------|
@@ -1068,7 +1068,7 @@ Each tier requires escalating evidence before a governance gate can pass:
 
 ### Gate Integration
 
-- A governance gate CANNOT pass when mandatory tier evidence is missing.
+- A FlowGuard gate CANNOT pass when mandatory tier evidence is missing.
 - Missing tier evidence results in a blocked state with specific recovery steps.
 - Tier is determined during planning and recorded in session state.
 - Tier classification is immutable for the session once approved.
@@ -1085,7 +1085,7 @@ If the tier cannot be determined from available evidence:
 
 ## 5. Cross-Cutting Principles
 
-These principles apply across all mandates and all governance-controlled work:
+These principles apply across all mandates and all FlowGuard-controlled work:
 
 1. **Investigate before claiming** — Read code, tests, and contracts before making assertions. Never speculate about unread artifacts.
 2. **Evidence over assertion** — Every claim maps to a concrete artifact. If the mapping cannot be made, the claim is unverified.
@@ -1100,24 +1100,24 @@ These principles apply across all mandates and all governance-controlled work:
 `;
 
 /**
- * Build the full governance-mandates.md content with managed-artifact header.
+ * Build the full flowguard-mandates.md content with managed-artifact header.
  *
  * Header layout:
  *   Line 1: version + ownership marker
  *   Line 2: content-digest over the body (everything after the header)
  *
- * Digest is SHA-256 hex over GOVERNANCE_MANDATES_BODY (the body without header).
+ * Digest is SHA-256 hex over FLOWGUARD_MANDATES_BODY (the body without header).
  * This avoids self-referential digest problems.
  *
  * @param version - Package version (e.g. "1.2.0")
- * @param digest  - SHA-256 hex digest of GOVERNANCE_MANDATES_BODY
+ * @param digest  - SHA-256 hex digest of FLOWGUARD_MANDATES_BODY
  */
 export function buildMandatesContent(version: string, digest: string): string {
-  return `<!-- @governance/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${GOVERNANCE_MANDATES_BODY}`;
+  return `<!-- @flowguard/core v${version} | managed artifact — do not edit manually -->\n<!-- content-digest: sha256:${digest} -->\n\n${FLOWGUARD_MANDATES_BODY}`;
 }
 
 /**
- * Extract the content-digest from a governance-mandates.md file.
+ * Extract the content-digest from a flowguard-mandates.md file.
  * Returns null if the file does not have a valid managed-artifact header.
  */
 export function extractManagedDigest(content: string): string | null {
@@ -1126,11 +1126,11 @@ export function extractManagedDigest(content: string): string | null {
 }
 
 /**
- * Extract the version from a governance-mandates.md managed-artifact header.
+ * Extract the version from a flowguard-mandates.md managed-artifact header.
  * Returns null if the file does not have a valid managed-artifact header.
  */
 export function extractManagedVersion(content: string): string | null {
-  const match = content.match(/^<!-- @governance\/core v([\d.]+) \| managed artifact/m);
+  const match = content.match(/^<!-- @flowguard\/core v([\d.]+) \| managed artifact/m);
   return match?.[1] ?? null;
 }
 
@@ -1138,14 +1138,14 @@ export function extractManagedVersion(content: string): string | null {
  * Check if a file has a valid managed-artifact header.
  */
 export function isManagedArtifact(content: string): boolean {
-  return /^<!-- @governance\/core v[\d.]+ \| managed artifact/.test(content);
+  return /^<!-- @flowguard\/core v[\d.]+ \| managed artifact/.test(content);
 }
 
 /**
  * Extract the body from a managed-artifact file (everything after the header).
  *
  * The header is 2 comment lines followed by an empty line:
- *   Line 1: <!-- @governance/core ... -->
+ *   Line 1: <!-- @flowguard/core ... -->
  *   Line 2: <!-- content-digest: sha256:... -->
  *   Line 3: (empty)
  *   Line 4+: body
@@ -1155,7 +1155,7 @@ export function isManagedArtifact(content: string): boolean {
 export function extractManagedBody(content: string): string | null {
   if (!isManagedArtifact(content)) return null;
   // Find the body after the header (two comment lines + blank line)
-  const match = content.match(/^<!-- @governance\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/);
+  const match = content.match(/^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/);
   return match?.[1] ?? null;
 }
 // ---------------------------------------------------------------------------
@@ -1165,7 +1165,7 @@ export function extractManagedBody(content: string): string | null {
 /**
  * Minimal OpenCode configuration template.
  *
- * Points OpenCode at the governance-mandates.md instruction file so governance
+ * Points OpenCode at the flowguard-mandates.md instruction file so FlowGuard
  * mandates are loaded automatically on every session.
  *
  * @param instructionEntry - The instruction path (scope-dependent).
@@ -1182,19 +1182,19 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a minimal `package.json` fragment declaring governance dependencies.
+ * Returns a minimal `package.json` fragment declaring FlowGuard dependencies.
  *
- * Only zod and @governance/core are required. The @opencode-ai/plugin
- * dependency was removed — governance tools use plain ToolDefinition objects
+ * Only zod and @flowguard/core are required. The @opencode-ai/plugin
+ * dependency was removed — FlowGuard tools use plain ToolDefinition objects
  * that OpenCode discovers without the plugin SDK.
  *
- * @param version - The semver version of `@governance/core` to pin (e.g. `"1.2.3"`).
+ * @param version - The semver version of `@flowguard/core` to pin (e.g. `"1.2.3"`).
  * @returns A JSON string suitable for writing to `package.json`.
  */
 export const PACKAGE_JSON_TEMPLATE = (version: string): string => `\
 {
   "dependencies": {
-    "@governance/core": "^${version}",
+    "@flowguard/core": "^${version}",
     "zod": "^3.23.0"
   }
 }

@@ -1,19 +1,19 @@
 /**
  * @module integration/plugin.test
- * @description Tests for the GovernanceAuditPlugin integration module.
+ * @description Tests for the FlowGuardAuditPlugin integration module.
  *
  * The plugin is an async function that receives the OpenCode PluginInput context
  * and returns a Hooks object with a `tool.execute.after` handler. Since full
  * plugin execution requires a live OpenCode runtime, these tests validate:
- * - Export shape: GovernanceAuditPlugin is an async function with correct arity
+ * - Export shape: FlowGuardAuditPlugin is an async function with correct arity
  * - Hooks contract: calling the plugin returns an object with the expected hooks
- * - Barrel export: integration/index.ts re-exports GovernanceAuditPlugin
+ * - Barrel export: integration/index.ts re-exports FlowGuardAuditPlugin
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
 import { describe, it, expect } from "vitest";
-import { GovernanceAuditPlugin } from "./plugin";
+import { FlowGuardAuditPlugin } from "./plugin";
 import * as barrel from "./index";
 
 // ─── Mock Plugin Input ────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
     worktree: "/tmp/mock-worktree",
     serverUrl: new URL("http://localhost:3000"),
     ...overrides,
-  } as Parameters<typeof GovernanceAuditPlugin>[0];
+  } as Parameters<typeof FlowGuardAuditPlugin>[0];
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -44,25 +44,25 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
 describe("integration/plugin", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
-    it("GovernanceAuditPlugin is an async function", () => {
-      expect(typeof GovernanceAuditPlugin).toBe("function");
+    it("FlowGuardAuditPlugin is an async function", () => {
+      expect(typeof FlowGuardAuditPlugin).toBe("function");
       // Async functions have AsyncFunction constructor
-      expect(GovernanceAuditPlugin.constructor.name).toBe("AsyncFunction");
+      expect(FlowGuardAuditPlugin.constructor.name).toBe("AsyncFunction");
     });
 
-    it("GovernanceAuditPlugin returns hooks with tool.execute.after", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+    it("FlowGuardAuditPlugin returns hooks with tool.execute.after", async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       expect(hooks).toBeDefined();
       expect(typeof hooks).toBe("object");
       expect(typeof hooks["tool.execute.after"]).toBe("function");
     });
 
-    it("barrel re-exports GovernanceAuditPlugin", () => {
-      expect(barrel.GovernanceAuditPlugin).toBe(GovernanceAuditPlugin);
+    it("barrel re-exports FlowGuardAuditPlugin", () => {
+      expect(barrel.FlowGuardAuditPlugin).toBe(FlowGuardAuditPlugin);
     });
 
     it("tool.execute.after handler accepts input and output args", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const handler = hooks["tool.execute.after"]!;
       // Check arity: 2 params (input, output)
       expect(handler.length).toBe(2);
@@ -71,11 +71,11 @@ describe("integration/plugin", () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe("BAD", () => {
-    it("silently ignores non-governance tool calls", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+    it("silently ignores non-FlowGuard tool calls", async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const handler = hooks["tool.execute.after"]!;
 
-      // Calling with a non-governance tool name should not throw
+      // Calling with a non-FlowGuard tool name should not throw
       await expect(
         handler(
           { tool: "bash", sessionID: "s1", callID: "c1", args: {} },
@@ -85,7 +85,7 @@ describe("integration/plugin", () => {
     });
 
     it("handles missing worktree gracefully", async () => {
-      const hooks = await GovernanceAuditPlugin(
+      const hooks = await FlowGuardAuditPlugin(
         createMockInput({ worktree: "", directory: "" }),
       );
       const handler = hooks["tool.execute.after"]!;
@@ -93,7 +93,7 @@ describe("integration/plugin", () => {
       // Should not throw even with empty worktree
       await expect(
         handler(
-          { tool: "governance_status", sessionID: "s1", callID: "c1", args: {} },
+          { tool: "flowguard_status", sessionID: "s1", callID: "c1", args: {} },
           { title: "status", output: '{"phase":"TICKET"}', metadata: {} },
         ),
       ).resolves.toBeUndefined();
@@ -104,7 +104,7 @@ describe("integration/plugin", () => {
   describe("CORNER", () => {
     it("initializes with worktree from input.worktree", async () => {
       // When worktree is provided, it takes precedence over directory
-      const hooks = await GovernanceAuditPlugin(
+      const hooks = await FlowGuardAuditPlugin(
         createMockInput({
           worktree: "/custom/worktree",
           directory: "/custom/dir",
@@ -114,7 +114,7 @@ describe("integration/plugin", () => {
     });
 
     it("falls back to directory when worktree is empty", async () => {
-      const hooks = await GovernanceAuditPlugin(
+      const hooks = await FlowGuardAuditPlugin(
         createMockInput({
           worktree: "",
           directory: "/custom/dir",
@@ -124,7 +124,7 @@ describe("integration/plugin", () => {
     });
 
     it("returns only the tool.execute.after hook (no other hooks)", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks);
       expect(keys).toEqual(["tool.execute.after"]);
     });
@@ -133,23 +133,23 @@ describe("integration/plugin", () => {
   // ─── EDGE ─────────────────────────────────────────────────
   describe("EDGE", () => {
     it("handles non-JSON tool output without throwing", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const handler = hooks["tool.execute.after"]!;
 
       // Non-JSON output — the handler should catch parse errors internally
       await expect(
         handler(
-          { tool: "governance_status", sessionID: "s1", callID: "c1", args: {} },
+          { tool: "flowguard_status", sessionID: "s1", callID: "c1", args: {} },
           { title: "status", output: "not json at all", metadata: {} },
         ),
       ).resolves.toBeUndefined();
     });
 
     it("multiple plugin initializations create independent instances", async () => {
-      const hooks1 = await GovernanceAuditPlugin(
+      const hooks1 = await FlowGuardAuditPlugin(
         createMockInput({ worktree: "/wt1" }),
       );
-      const hooks2 = await GovernanceAuditPlugin(
+      const hooks2 = await FlowGuardAuditPlugin(
         createMockInput({ worktree: "/wt2" }),
       );
 
@@ -159,14 +159,14 @@ describe("integration/plugin", () => {
       );
     });
 
-    it("handles tool name exactly at GOV_PREFIX boundary", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+    it("handles tool name exactly at FG_PREFIX boundary", async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const handler = hooks["tool.execute.after"]!;
 
-      // "governance_" alone (without suffix) — should match GOV_PREFIX
+      // "flowguard_" alone (without suffix) — should match FG_PREFIX
       await expect(
         handler(
-          { tool: "governance_", sessionID: "s1", callID: "c1", args: {} },
+          { tool: "flowguard_", sessionID: "s1", callID: "c1", args: {} },
           { title: "", output: "{}", metadata: {} },
         ),
       ).resolves.toBeUndefined();
@@ -178,18 +178,18 @@ describe("integration/plugin", () => {
     it("plugin initialization completes in < 5ms", async () => {
       const start = performance.now();
       for (let i = 0; i < 100; i++) {
-        await GovernanceAuditPlugin(createMockInput());
+        await FlowGuardAuditPlugin(createMockInput());
       }
       const elapsed = performance.now() - start;
       // 100 initializations in < 500ms => < 5ms each
       expect(elapsed).toBeLessThan(500);
     });
 
-    it("non-governance tool filtering is sub-microsecond", async () => {
-      const hooks = await GovernanceAuditPlugin(createMockInput());
+    it("non-FlowGuard tool filtering is sub-microsecond", async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
       const handler = hooks["tool.execute.after"]!;
 
-      // Non-governance tools should be filtered out immediately (prefix check)
+      // Non-FlowGuard tools should be filtered out immediately (prefix check)
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         await handler(

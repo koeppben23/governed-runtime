@@ -285,7 +285,7 @@ function checkReviewGatesHonored(
 function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
   const reachedValidation = filtered.some((e) => e.phase === "VALIDATION");
   const validationEvents = filtered.filter(
-    (e) => e.phase === "VALIDATION" && e.event.startsWith("tool_call:governance_validate"),
+    (e) => e.phase === "VALIDATION" && e.event.startsWith("tool_call:flowguard_validate"),
   );
   return {
     name: "validation_executed",

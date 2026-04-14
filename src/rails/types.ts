@@ -16,7 +16,7 @@ import type { SessionState, Phase, Event } from "../state/schema";
 import type { LoopVerdict, RevisionDelta } from "../state/evidence";
 import { evaluate } from "../machine/evaluate";
 import type { EvalResult } from "../machine/evaluate";
-import type { GovernancePolicy } from "../config/policy";
+import type { FlowGuardPolicy } from "../config/policy";
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 
@@ -92,11 +92,11 @@ export interface RailContext {
   /** SHA-256 hex digest of a string. */
   digest: (text: string) => string;
   /**
-   * Governance policy for this session.
+   * FlowGuard policy for this session.
    * Undefined → TEAM_POLICY behavior (safe default).
    * Set by the tool layer after resolving from state.policySnapshot or config.
    */
-  policy?: GovernancePolicy;
+  policy?: FlowGuardPolicy;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
-  "name": "@governance/core",
+  "name": "@flowguard/core",
   "version": "1.1.0",
-  "description": "Governance runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
+  "description": "FlowGuard runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +16,7 @@
     }
   },
   "bin": {
-    "governance": "./dist/cli/install.js"
+    "flowguard": "./dist/cli/install.js"
   },
   "scripts": {
     "build": "tsc",

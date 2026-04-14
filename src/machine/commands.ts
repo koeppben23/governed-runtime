@@ -19,7 +19,7 @@ import type { Phase } from "../state/schema";
 
 // ─── Command Enum ─────────────────────────────────────────────────────────────
 
-/** All governance commands (user-facing). */
+/** All FlowGuard commands (user-facing). */
 export const Command = {
   HYDRATE:         "hydrate",
   TICKET:          "ticket",

@@ -1,6 +1,6 @@
 /**
  * @module hydrate
- * @description /hydrate rail — bootstrap a governance session.
+ * @description /hydrate rail — bootstrap a FlowGuard session.
  *
  * This is the FIRST command in every workflow. It creates or loads the SessionState.
  * Named "hydrate" (not "init") because OpenCode already has /init.
@@ -31,7 +31,7 @@ import { evaluate } from "../machine/evaluate";
 import type { RailResult, RailContext } from "./types";
 import { blocked } from "../config/reasons";
 import { defaultProfileRegistry } from "../config/profile";
-import type { GovernanceProfile, RepoSignals } from "../config/profile";
+import type { FlowGuardProfile, RepoSignals } from "../config/profile";
 import { extractBaseInstructions, extractByPhaseInstructions } from "../config/profile";
 import { resolvePolicy, createPolicySnapshot } from "../config/policy";
 
@@ -75,7 +75,7 @@ export interface HydrateInput {
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 /**
- * Bootstrap or load a governance session.
+ * Bootstrap or load a FlowGuard session.
  *
  * @param existingState - Current state, or null if this is a new session.
  * @param input - Binding info from OpenCode tool context.
@@ -102,7 +102,7 @@ export function executeHydrate(
   }
 
   // 3. Resolve profile → activeChecks + activeProfile
-  let profile: GovernanceProfile | undefined;
+  let profile: FlowGuardProfile | undefined;
 
   if (input.profileId && input.profileId !== "baseline") {
     // Explicit profile requested — look up by ID
