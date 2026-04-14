@@ -7,6 +7,7 @@
  * - Changed file discovery (changedFiles, diffFiles)
  * - Branch info (currentBranch)
  * - Worktree cleanliness check (isClean)
+ * - Remote origin URL retrieval (remoteOriginUrl)
  *
  * Design:
  * - Uses child_process.execFile (no shell invocation -- zero injection risk)
@@ -273,6 +274,25 @@ export async function stagedFiles(worktree: string): Promise<string[]> {
 export async function headCommit(worktree: string): Promise<string | null> {
   try {
     return await git(worktree, ["rev-parse", "--short", "HEAD"]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the remote "origin" URL for the repository.
+ *
+ * Returns null if:
+ * - No remote named "origin" exists
+ * - The directory is not a git repository
+ * - Git is not available
+ *
+ * Used by the workspace registry to derive the canonical repository fingerprint.
+ */
+export async function remoteOriginUrl(worktree: string): Promise<string | null> {
+  try {
+    const url = await git(worktree, ["remote", "get-url", "origin"]);
+    return url || null;
   } catch {
     return null;
   }

@@ -74,15 +74,15 @@ Every governed session starts with explicit hydration:
 /hydrate
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree), resolves the FlowGuard profile via repository signals, creates an immutable policy snapshot, and initializes canonical state. If prerequisites are missing, execution **blocks** with a reason code.
+The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), resolves the FlowGuard profile via repository signals, creates an immutable policy snapshot, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
 
 ### 2. Governed Command Surface
 
-Nine FlowGuard commands map to workflow phases:
+Ten FlowGuard commands map to workflow phases:
 
 | Command | Purpose |
 |---------|---------|
-| `/hydrate` | Bootstrap FlowGuard session, bind workspace, resolve profile and policy |
+| `/hydrate` | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy |
 | `/ticket` | Record the task description for FlowGuard tracking |
 | `/plan` | Generate implementation plan with self-review loop |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject) |
@@ -91,6 +91,7 @@ Nine FlowGuard commands map to workflow phases:
 | `/continue` | Universal routing — do the next appropriate action for the current phase |
 | `/review` | Read-only compliance report with evidence completeness matrix |
 | `/abort` | Emergency session termination |
+| `/archive` | Archive a completed session as `.tar.gz` |
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
@@ -179,7 +180,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **1. State Model** | Zod schemas for all evidence types, phases, events | `state/evidence.ts`, `state/schema.ts` |
 | **2. Machine** | Pure transition table, guards, evaluator | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts` |
 | **3. Rails** | Thin orchestrators for each command | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files) |
-| **4. Adapters** | I/O boundary (filesystem, git, OpenCode context) | `adapters/persistence.ts`, `git.ts`, `binding.ts`, `context.ts` |
+| **4. Adapters** | I/O boundary (filesystem, git, workspace registry, OpenCode context) | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
 | **5. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
 | **6. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
 | **7. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
@@ -201,8 +202,8 @@ The platform uses an **installable package architecture**:
 
 ### OpenCode Integration
 
-- **9 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
-- **9 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
+- **10 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
+- **10 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
@@ -284,18 +285,18 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 1.1.0
+- **Version:** 1.2.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
-- **Architecture:** Installable package (`@flowguard/core`) with thin wrappers
+- **Architecture:** Installable package (`@flowguard/core`) with thin wrappers + workspace registry
 - **Phase Count:** 8 explicit workflow phases
-- **Command Surface:** 9 FlowGuard commands
-- **Custom Tools:** 9 OpenCode tool exports (via `@flowguard/core/integration`)
+- **Command Surface:** 10 FlowGuard commands
+- **Custom Tools:** 10 OpenCode tool exports (via `@flowguard/core/integration`)
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
 - **Policy Modes:** 3 (Solo [default], Team, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas
-- **Test Coverage:** 662 tests across 17 test files, 5 mandatory categories
+- **Test Coverage:** 737 tests across 18 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---
@@ -306,6 +307,6 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-*Version: 1.1.0*
+*Version: 1.2.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Last Updated: 2026-04-14*

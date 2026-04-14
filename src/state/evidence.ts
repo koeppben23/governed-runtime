@@ -50,12 +50,18 @@ export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
 /**
  * Workspace binding resolved during init().
- * Links an OpenCode session to a git worktree.
+ * Links an OpenCode session to a git worktree and workspace registry.
  * Populated by context.sessionID and context.worktree from the Custom Tool API.
+ *
+ * fingerprint: 24-hex repository fingerprint derived from the canonical remote
+ * URL (or local path fallback). Used as the workspace directory name under
+ * ~/.config/opencode/workspaces/{fingerprint}/. Deterministic and stable
+ * across clones of the same remote.
  */
 export const BindingInfo = z.object({
   sessionId: z.string().uuid(),
   worktree: z.string().min(1),
+  fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
   resolvedAt: z.string().datetime(),
 });
 export type BindingInfo = z.infer<typeof BindingInfo>;

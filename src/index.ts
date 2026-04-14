@@ -79,7 +79,6 @@ export {
   readState,
   writeState,
   writeReport,
-  fgDir,
   statePath,
   reportPath,
   auditPath,
@@ -102,10 +101,34 @@ export {
   stagedFiles,
   headCommit,
   listRepoSignals,
+  remoteOriginUrl,
   GitError,
 } from "./adapters/git";
 export { fromOpenCodeContext } from "./adapters/binding";
 export { createRailContext } from "./adapters/context";
+export {
+  canonicalizeOriginUrl,
+  normalizeForFingerprint,
+  computeFingerprint,
+  computeFingerprintFromRemote,
+  computeFingerprintFromPath,
+  validateFingerprint,
+  validateSessionId,
+  workspacesHome,
+  configRoot,
+  workspaceDir,
+  sessionDir,
+  initWorkspace,
+  readWorkspaceInfo,
+  writeSessionPointer,
+  readSessionPointer,
+  archiveSession,
+  WorkspaceError,
+  type MaterialClass,
+  type FingerprintResult,
+  type WorkspaceInfo,
+  type SessionPointer,
+} from "./adapters/workspace";
 
 // ─── Testing Utilities (import separately for test bundles) ──────────────────
 
@@ -242,5 +265,6 @@ export {
   validate,
   review,
   abort_session,
+  archive,
   FlowGuardAuditPlugin,
 } from "./integration";

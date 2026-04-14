@@ -15,14 +15,14 @@
 /**
  * Thin wrapper for `tools/flowguard.ts`.
  *
- * Re-exports the nine named tool definitions from `@flowguard/core`
+ * Re-exports the ten named tool definitions from `@flowguard/core`
  * so that OpenCode can discover them via filename convention.
  */
 export const TOOL_WRAPPER = `\
 /**
  * FlowGuard tools — thin wrapper.
  * All logic lives in @flowguard/core. This file re-exports
- * the 9 named tool definitions for OpenCode to discover.
+ * the 10 named tool definitions for OpenCode to discover.
  *
  * Tool naming: OpenCode derives names as <filename>_<exportname>.
  * flowguard.ts + export const status -> flowguard_status
@@ -39,6 +39,7 @@ export {
   validate,
   review,
   abort_session,
+  archive,
 } from "@flowguard/core/integration";
 `;
 
@@ -68,7 +69,7 @@ export { FlowGuardAuditPlugin } from "@flowguard/core/integration";
 // ---------------------------------------------------------------------------
 
 /**
- * All nine FlowGuard slash-command definitions, keyed by filename
+ * All ten FlowGuard slash-command definitions, keyed by filename
  * (e.g. `"hydrate.md"`). Each value is the full markdown content
  * that the installer writes into `.opencode/commands/`.
  */
@@ -348,9 +349,9 @@ Implement the approved plan and review the implementation.
 - When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
 - Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
 - The review loop runs up to 3 iterations maximum.
-- DO NOT modify FlowGuard files (.flowguard/*) directly. Only use FlowGuard tools.
+- DO NOT modify FlowGuard state files directly. Only use FlowGuard tools.
 - DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT bypass flowguard_implement with direct file manipulation of .flowguard/ state.
+- DO NOT bypass flowguard_implement with direct file manipulation of FlowGuard state.
 - DO NOT auto-chain into /review-decision, /plan, /ticket, or /continue after the implementation review converges.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - If the \`flowguard_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal FlowGuard mandates.
@@ -530,7 +531,7 @@ Generate a compliance review report for the current FlowGuard session.
    - If no session exists, report this and stop.
 
 2. Call \`flowguard_review\` with no arguments.
-   - The tool generates a review report and writes it to \`.flowguard/review-report.json\`.
+   - The tool generates a review report and writes it to the workspace session directory.
 
 3. Read the response and present the report to the user:
    - **Overall status**: clean, warnings, or issues.
@@ -592,6 +593,42 @@ Reason: $ARGUMENTS
 - Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
+`,
+
+  "archive.md": `\
+---
+description: Archive a completed FlowGuard session as a compressed tar.gz file.
+---
+
+You are managing a FlowGuard-controlled development workflow.
+
+## Task
+
+Archive the current (or a specified) completed FlowGuard session.
+
+## Steps
+
+1. Call \`flowguard_status\` to verify a session exists.
+   - If no session exists, report "No session to archive" and stop.
+
+2. Call \`flowguard_archive\` with no arguments.
+   - The tool archives the current session if it is in COMPLETE phase.
+   - The archive is stored in the workspace sessions/archive/ directory.
+
+3. Read the response and report:
+   - The archive file path.
+   - Confirmation that the session data was archived successfully.
+
+## Rules
+
+- Only COMPLETE sessions can be archived.
+- If the session is not COMPLETE, report the current phase and tell the user to complete or abort the session first.
+- DO NOT modify any FlowGuard state.
+- DO NOT auto-chain to other FlowGuard commands after archiving.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "archive", "save", "compress", or "backup" are NOT command invocations. Only an explicit \`/archive\` triggers this command. If the user sends free-text implying archiving, respond conversationally without calling FlowGuard tools.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- Always end your response with exactly one \`Next action:\` line. After successful archive: \`Next action: run /hydrate to start a new session.\`
 `,
 };
 

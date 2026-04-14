@@ -24,7 +24,6 @@ import {
   readConfig,
   writeDefaultConfig,
   configPath,
-  fgDir,
   PersistenceError,
 } from "../adapters/persistence";
 import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
@@ -47,7 +46,7 @@ async function cleanTmpDir(dir: string): Promise<void> {
 
 /** Write a raw string to the config file location. */
 async function writeRawConfig(worktree: string, content: string): Promise<void> {
-  await fs.mkdir(fgDir(worktree), { recursive: true });
+  await fs.mkdir(worktree, { recursive: true });
   await fs.writeFile(configPath(worktree), content, "utf-8");
 }
 
@@ -268,9 +267,9 @@ describe("DEFAULT_CONFIG", () => {
 // =============================================================================
 
 describe("configPath", () => {
-  it("resolves to .flowguard/config.json under worktree", () => {
+  it("resolves to config.json under workspace directory", () => {
     const p = configPath("/some/project");
-    expect(p).toBe(path.join("/some/project", ".flowguard", "config.json"));
+    expect(p).toBe(path.join("/some/project", "config.json"));
   });
 });
 
@@ -383,9 +382,9 @@ describe("writeDefaultConfig", () => {
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
-  it("creates the .flowguard directory if missing", async () => {
+  it("creates the workspace directory if missing", async () => {
     await writeDefaultConfig(tmpDir);
-    const stat = await fs.stat(fgDir(tmpDir));
+    const stat = await fs.stat(tmpDir);
     expect(stat.isDirectory()).toBe(true);
   });
 

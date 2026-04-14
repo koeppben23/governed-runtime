@@ -43,6 +43,11 @@ export interface HydrateInput {
   /** Git worktree path (from context.worktree). */
   readonly worktree: string;
   /**
+   * Repository fingerprint (24 hex chars).
+   * Computed by workspace.ts from the canonical remote URL or local path.
+   */
+  readonly fingerprint: string;
+  /**
    * Active validation checks.
    * If provided, overrides the profile's default checks.
    * If omitted, resolved from the profile.
@@ -94,6 +99,9 @@ export function executeHydrate(
   if (!input.worktree.trim()) {
     return blocked("MISSING_WORKTREE");
   }
+  if (!input.fingerprint || !/^[0-9a-f]{24}$/.test(input.fingerprint)) {
+    return blocked("MISSING_WORKTREE");
+  }
 
   // 2. Idempotent: if state exists, return it unchanged
   if (existingState !== null) {
@@ -141,6 +149,7 @@ export function executeHydrate(
   const binding: BindingInfo = {
     sessionId: input.sessionId,
     worktree: input.worktree,
+    fingerprint: input.fingerprint,
     resolvedAt: now,
   };
 

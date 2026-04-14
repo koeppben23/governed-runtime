@@ -2,7 +2,7 @@
  * @module config/flowguard-config
  * @description FlowGuard per-worktree configuration schema and defaults.
  *
- * Configuration file: {worktree}/.flowguard/config.json
+ * Configuration file: {workspaceDir}/config.json
  *
  * Priority chain (highest → lowest):
  *   Tool arguments > Config file > Policy preset > Built-in defaults

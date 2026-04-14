@@ -4,11 +4,11 @@
  *
  * Maps OpenCode Custom Tool context to a FlowGuard binding:
  * - context.sessionID -> FlowGuard session identity
- * - context.worktree  -> git worktree root (state storage location)
+ * - context.worktree  -> git worktree root (used for fingerprint computation)
  *
  * Binding model:
- * - One worktree = one FlowGuard session at a time
- *   (the .flowguard/ directory is per-worktree)
+ * - One worktree = one workspace fingerprint
+ *   (workspace data lives at ~/.config/opencode/workspaces/{fingerprint}/)
  * - Multiple OpenCode sessions can work on the same worktree over time
  *   (session continuation: new conversation, same project)
  * - The binding.sessionId in SessionState records the ORIGINAL session that
@@ -20,7 +20,7 @@
  * 3. Validate: resolved path must be a git repository
  *
  * Validation:
- * - Worktree must match (same project, same .flowguard/ directory)
+ * - Worktree must match (same project, same workspace fingerprint)
  * - Session ID may differ (new OpenCode conversation = OK, same project)
  * - Path comparison is case-insensitive on Windows (NTFS is case-insensitive)
  *
@@ -151,7 +151,7 @@ export async function resolveBinding(
  * Validate that an existing session state is compatible with the current binding.
  *
  * Rules:
- * - Worktree MUST match (same project = same .flowguard/ directory)
+ * - Worktree MUST match (same project = same workspace fingerprint)
  * - Session ID MAY differ (new OpenCode session continuing same project is OK)
  *
  * Why allow different session IDs?
@@ -160,8 +160,8 @@ export async function resolveBinding(
  *   FlowGuard state should persist. Only the OpenCode session ID changes.
  *
  * Why reject different worktrees?
- *   If the state's worktree doesn't match, the .flowguard/ directory is in the
- *   wrong place. This indicates a configuration error or state file corruption.
+ *   If the state's worktree doesn't match, the workspace fingerprint resolves
+ *   differently. This indicates a configuration error or state file corruption.
  *
  * @returns true if compatible.
  * @throws BindingError if worktree mismatch.

@@ -3,16 +3,16 @@
  * @description Barrel export for OpenCode integration layer.
  *
  * Exports:
- * - 9 FlowGuard tools (status, hydrate, ticket, plan, decision, implement,
- *   validate, review, abort_session) — consumed by thin wrappers in
+ * - 10 FlowGuard tools (status, hydrate, ticket, plan, decision, implement,
+ *   validate, review, abort_session, archive) — consumed by thin wrappers in
  *   ~/.config/opencode/tools/ or .opencode/tools/.
  * - FlowGuardAuditPlugin — consumed by thin wrappers in
  *   ~/.config/opencode/plugins/ or .opencode/plugins/.
  *
- * @version v2
+ * @version v3
  */
 
-// ── Tools (9 named exports) ──────────────────────────────────────────────────
+// ── Tools (10 named exports) ─────────────────────────────────────────────────
 
 export {
   status,
@@ -24,6 +24,7 @@ export {
   validate,
   review,
   abort_session,
+  archive,
 } from "./tools";
 
 // ── Plugin ───────────────────────────────────────────────────────────────────

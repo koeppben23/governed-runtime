@@ -359,7 +359,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "adapter",
     messageTemplate: "Failed to read FlowGuard state: {message}",
     recoverySteps: [
-      "Check if .flowguard/state.json exists and is readable",
+      "Check if the session state file exists and is readable",
       "Verify file permissions",
     ],
   },
@@ -369,7 +369,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     messageTemplate: "Failed to parse FlowGuard state: {message}",
     recoverySteps: [
       "The state file may be corrupted",
-      "Check .flowguard/state.json for valid JSON",
+      "Check the session state file for valid JSON",
       "Consider starting a new session with /hydrate",
     ],
   },
@@ -388,7 +388,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "adapter",
     messageTemplate: "Failed to write FlowGuard state: {message}",
     recoverySteps: [
-      "Check file system permissions for .flowguard/ directory",
+      "Check file system permissions for the workspace directory",
       "Ensure sufficient disk space",
     ],
   },

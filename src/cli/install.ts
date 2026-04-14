@@ -54,6 +54,7 @@ import {
 } from "./templates";
 import { configPath, readConfig, writeDefaultConfig } from "../adapters/persistence";
 import { PersistenceError } from "../adapters/persistence";
+import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from "../adapters/workspace";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -627,40 +628,52 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // 7. Check .flowguard/config.json
+  // 7. Check workspace config.json
   //    Config is optional — missing is ok (defaults apply).
   //    But if present, it must be valid JSON and pass schema validation.
-  const cfgPath = configPath(resolve("."));
+  //    Config lives at ~/.config/opencode/workspaces/{fingerprint}/config.json
   try {
-    const config = await readConfig(resolve("."));
-    const fileExists = existsSync(cfgPath);
-    if (!fileExists) {
-      checks.push({ file: cfgPath, status: "ok", detail: "no config file — using defaults" });
-    } else {
-      // File exists and parsed successfully — check if any fields differ from defaults
-      const hasCustom =
-        config.logging.level !== "info" ||
-        config.policy.defaultMode !== undefined ||
-        config.policy.maxSelfReviewIterations !== undefined ||
-        config.policy.maxImplReviewIterations !== undefined ||
-        config.profile.defaultId !== undefined ||
-        config.profile.activeChecks !== undefined;
-      checks.push({
-        file: cfgPath,
-        status: "ok",
-        detail: hasCustom ? "config valid (customized)" : "config valid (defaults only)",
-      });
+    const fpResult = await computeFingerprint(resolve("."));
+    const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
+    const cfgPath = configPath(wsDir);
+    try {
+      const config = await readConfig(wsDir);
+      const fileExists = existsSync(cfgPath);
+      if (!fileExists) {
+        checks.push({ file: cfgPath, status: "ok", detail: "no config file — using defaults" });
+      } else {
+        // File exists and parsed successfully — check if any fields differ from defaults
+        const hasCustom =
+          config.logging.level !== "info" ||
+          config.policy.defaultMode !== undefined ||
+          config.policy.maxSelfReviewIterations !== undefined ||
+          config.policy.maxImplReviewIterations !== undefined ||
+          config.profile.defaultId !== undefined ||
+          config.profile.activeChecks !== undefined;
+        checks.push({
+          file: cfgPath,
+          status: "ok",
+          detail: hasCustom ? "config valid (customized)" : "config valid (defaults only)",
+        });
+      }
+    } catch (err) {
+      if (err instanceof PersistenceError) {
+        if (err.code === "PARSE_FAILED" || err.code === "SCHEMA_VALIDATION_FAILED") {
+          checks.push({ file: cfgPath, status: "error", detail: err.message });
+        } else {
+          checks.push({ file: cfgPath, status: "error", detail: `cannot read config: ${err.message}` });
+        }
+      } else {
+        checks.push({ file: cfgPath, status: "error", detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}` });
+      }
     }
   } catch (err) {
-    if (err instanceof PersistenceError) {
-      if (err.code === "PARSE_FAILED" || err.code === "SCHEMA_VALIDATION_FAILED") {
-        checks.push({ file: cfgPath, status: "error", detail: err.message });
-      } else {
-        checks.push({ file: cfgPath, status: "error", detail: `cannot read config: ${err.message}` });
-      }
-    } else {
-      checks.push({ file: cfgPath, status: "error", detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}` });
-    }
+    // Fingerprint computation failed (e.g., git not available)
+    checks.push({
+      file: "config.json",
+      status: "error",
+      detail: `cannot resolve workspace: ${err instanceof Error ? err.message : String(err)}`,
+    });
   }
 
   return checks;

@@ -57,9 +57,9 @@ Implement the approved plan and review the implementation.
 - When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
 - Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
 - The review loop runs up to 3 iterations maximum.
-- DO NOT modify FlowGuard files (.flowguard/*) directly. Only use FlowGuard tools.
+- DO NOT modify FlowGuard state files directly. Only use FlowGuard tools.
 - DO NOT use the `question` tool or present selectable choices.
-- DO NOT bypass flowguard_implement with direct file manipulation of .flowguard/ state.
+- DO NOT bypass flowguard_implement with direct file manipulation of FlowGuard state.
 - DO NOT auto-chain into /review-decision, /plan, /ticket, or /continue after the implementation review converges.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - If the `flowguard_status` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal FlowGuard mandates.

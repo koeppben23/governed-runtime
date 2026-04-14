@@ -24,7 +24,6 @@ import {
   readReport,
   appendAuditEvent,
   readAuditTrail,
-  fgDir,
   statePath,
   reportPath,
   auditPath,
@@ -101,11 +100,10 @@ describe("persistence", () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe("HAPPY", () => {
     it("path helpers resolve correct paths", () => {
-      const wt = "/tmp/my-repo";
-      expect(fgDir(wt)).toBe(path.join(wt, ".flowguard"));
-      expect(statePath(wt)).toBe(path.join(wt, ".flowguard", "session-state.json"));
-      expect(reportPath(wt)).toBe(path.join(wt, ".flowguard", "review-report.json"));
-      expect(auditPath(wt)).toBe(path.join(wt, ".flowguard", "audit.jsonl"));
+      const sessDir = "/tmp/sessions/abc123";
+      expect(statePath(sessDir)).toBe(path.join(sessDir, "session-state.json"));
+      expect(reportPath(sessDir)).toBe(path.join(sessDir, "review-report.json"));
+      expect(auditPath(sessDir)).toBe(path.join(sessDir, "audit.jsonl"));
     });
 
     it("writeState + readState round-trip preserves data", async () => {
@@ -148,11 +146,11 @@ describe("persistence", () => {
       expect(events[1]!.event).toBe("transition:TICKET_SET");
     });
 
-    it("writeState auto-creates .flowguard/ directory", async () => {
-      // tmpDir has no .flowguard/ subdirectory yet
+    it("writeState auto-creates parent directory", async () => {
+      // tmpDir is the sessionDir — writeState should auto-create it
       const state = makeProgressedState("TICKET");
       await writeState(tmpDir, state);
-      const stat = await fs.stat(path.join(tmpDir, ".flowguard"));
+      const stat = await fs.stat(tmpDir);
       expect(stat.isDirectory()).toBe(true);
     });
 
@@ -196,7 +194,7 @@ describe("persistence", () => {
     });
 
     it("readState throws on corrupted JSON", async () => {
-      await fs.mkdir(fgDir(tmpDir), { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
       await fs.writeFile(statePath(tmpDir), "not valid json{{{", "utf-8");
       await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
       try {
@@ -207,7 +205,7 @@ describe("persistence", () => {
     });
 
     it("readState throws on valid JSON but invalid schema", async () => {
-      await fs.mkdir(fgDir(tmpDir), { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
       await fs.writeFile(statePath(tmpDir), JSON.stringify({ foo: "bar" }), "utf-8");
       await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
       try {
@@ -221,7 +219,7 @@ describe("persistence", () => {
   // ─── CORNER ─────────────────────────────────────────────────
   describe("CORNER", () => {
     it("readAuditTrail skips malformed lines but reads valid ones", async () => {
-      await fs.mkdir(fgDir(tmpDir), { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
       const validEvent = makeValidAuditEvent();
       const content = [
         JSON.stringify(validEvent),
@@ -237,7 +235,7 @@ describe("persistence", () => {
     });
 
     it("readAuditTrail handles empty file", async () => {
-      await fs.mkdir(fgDir(tmpDir), { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
       await fs.writeFile(auditPath(tmpDir), "", "utf-8");
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(0);
@@ -281,6 +279,7 @@ describe("persistence", () => {
           binding: {
             sessionId: FIXED_SESSION_UUID,
             worktree: `/tmp/test-${i}`,
+            fingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6",
             resolvedAt: FIXED_TIME,
           },
         }),

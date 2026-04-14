@@ -51,7 +51,7 @@ export interface ExtendedReviewReport extends ReviewReport {
  * Pure read — does NOT mutate state, does NOT produce RailResult.
  *
  * The caller is responsible for:
- * - Writing the report to .flowguard/review-report.json
+ * - Writing the report to the session directory (review-report.json)
  * - NOT persisting any state changes (there are none)
  */
 export async function executeReview(

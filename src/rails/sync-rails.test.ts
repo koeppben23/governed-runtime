@@ -15,19 +15,24 @@ import {
   IMPL_REVIEW_CONVERGED,
   REVIEW_APPROVE,
   FIXED_SESSION_UUID,
+  FIXED_FINGERPRINT,
 } from "../__fixtures__";
 import { REGULATED_POLICY, TEAM_POLICY } from "../config/policy";
 
 const ctx = createTestContext();
 
+/** Default hydrate input with all required fields. */
+const HYDRATE_INPUT = {
+  sessionId: FIXED_SESSION_UUID,
+  worktree: "/tmp/test",
+  fingerprint: FIXED_FINGERPRINT,
+} as const;
+
 describe("hydrate rail", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
     it("creates new session when existingState is null", () => {
-      const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
-      }, ctx);
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
         expect(result.state.phase).toBe("TICKET");
@@ -40,10 +45,7 @@ describe("hydrate rail", () => {
 
     it("returns existing state unchanged (idempotent)", () => {
       const existing = makeState("PLAN");
-      const result = executeHydrate(existing, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
-      }, ctx);
+      const result = executeHydrate(existing, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
         expect(result.state).toBe(existing);
@@ -52,8 +54,7 @@ describe("hydrate rail", () => {
 
     it("resolves policy mode", () => {
       const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
+        ...HYDRATE_INPUT,
         policyMode: "regulated",
       }, ctx);
       expect(result.kind).toBe("ok");
@@ -64,8 +65,7 @@ describe("hydrate rail", () => {
 
     it("sets initiatedBy from input", () => {
       const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
+        ...HYDRATE_INPUT,
         initiatedBy: "alice",
       }, ctx);
       expect(result.kind).toBe("ok");
@@ -78,7 +78,7 @@ describe("hydrate rail", () => {
   // ─── BAD ───────────────────────────────────────────────────
   describe("BAD", () => {
     it("blocks on empty sessionId", () => {
-      const result = executeHydrate(null, { sessionId: "", worktree: "/tmp" }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, sessionId: "" }, ctx);
       expect(result.kind).toBe("blocked");
       if (result.kind === "blocked") {
         expect(result.code).toBe("MISSING_SESSION_ID");
@@ -86,7 +86,7 @@ describe("hydrate rail", () => {
     });
 
     it("blocks on empty worktree", () => {
-      const result = executeHydrate(null, { sessionId: FIXED_SESSION_UUID, worktree: "" }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, worktree: "" }, ctx);
       expect(result.kind).toBe("blocked");
       if (result.kind === "blocked") {
         expect(result.code).toBe("MISSING_WORKTREE");
@@ -94,7 +94,7 @@ describe("hydrate rail", () => {
     });
 
     it("blocks on whitespace-only sessionId", () => {
-      const result = executeHydrate(null, { sessionId: "   ", worktree: "/tmp" }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, sessionId: "   " }, ctx);
       expect(result.kind).toBe("blocked");
     });
   });
@@ -102,10 +102,7 @@ describe("hydrate rail", () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
     it("defaults policyMode to team", () => {
-      const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
-      }, ctx);
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
         expect(result.state.policySnapshot.mode).toBe("team");
@@ -113,10 +110,7 @@ describe("hydrate rail", () => {
     });
 
     it("defaults initiatedBy to sessionId", () => {
-      const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
-      }, ctx);
+      const result = executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
         expect(result.state.initiatedBy).toBe(FIXED_SESSION_UUID);
@@ -125,8 +119,7 @@ describe("hydrate rail", () => {
 
     it("resolves profile from repoSignals", () => {
       const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
+        ...HYDRATE_INPUT,
         repoSignals: { files: [], packageFiles: ["pom.xml"], configFiles: [] },
       }, ctx);
       expect(result.kind).toBe("ok");
@@ -140,8 +133,7 @@ describe("hydrate rail", () => {
   describe("EDGE", () => {
     it("explicit profileId takes precedence over repoSignals", () => {
       const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
+        ...HYDRATE_INPUT,
         profileId: "typescript",
         repoSignals: { files: [], packageFiles: ["pom.xml"], configFiles: [] },
       }, ctx);
@@ -153,8 +145,7 @@ describe("hydrate rail", () => {
 
     it("custom activeChecks override profile defaults", () => {
       const result = executeHydrate(null, {
-        sessionId: FIXED_SESSION_UUID,
-        worktree: "/tmp/test",
+        ...HYDRATE_INPUT,
         activeChecks: ["custom_check"],
       }, ctx);
       expect(result.kind).toBe("ok");
@@ -168,7 +159,7 @@ describe("hydrate rail", () => {
   describe("PERF", () => {
     it("hydrate is fast (smoke test)", () => {
       const start = performance.now();
-      executeHydrate(null, { sessionId: FIXED_SESSION_UUID, worktree: "/tmp" }, ctx);
+      executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(performance.now() - start).toBeLessThan(50);
     });
   });

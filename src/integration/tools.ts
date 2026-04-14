@@ -2,7 +2,7 @@
  * @module integration/tools
  * @description OpenCode Custom Tool definitions for the FlowGuard system.
  *
- * 9 named exports -> 9 tools (flowguard_status, flowguard_hydrate, etc.)
+ * 10 named exports -> 10 tools (flowguard_status, flowguard_hydrate, etc.)
  * OpenCode derives tool names as <filename>_<exportname>.
  *
  * Architecture:
@@ -11,7 +11,13 @@
  * - Iterative operations (plan, implement) manage state step-by-step
  *   because the LLM drives the loop (multi-call pattern).
  * - Validation records check results submitted by the LLM.
- * - All tools: resolve worktree -> read state -> resolve policy -> work -> persist -> return JSON.
+ * - All tools: resolve worktree -> init workspace -> read state -> resolve policy -> work -> persist -> return JSON.
+ *
+ * Workspace integration:
+ * - Tools use workspace.ts to compute fingerprints and resolve session/workspace paths
+ * - Session state lives under ~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/
+ * - Config lives under ~/.config/opencode/workspaces/{fingerprint}/config.json
+ * - All path construction is delegated to workspace.ts (SSOT)
  *
  * Policy integration:
  * - Policy is resolved from state.policySnapshot.mode (for existing sessions)
@@ -31,9 +37,9 @@
  * Installation:
  * This module lives inside @flowguard/core. The thin wrapper in
  * ~/.config/opencode/tools/flowguard.ts (or .opencode/tools/) re-exports
- * these 9 named exports for OpenCode to discover.
+ * these 10 named exports for OpenCode to discover.
  *
- * @version v2
+ * @version v3
  */
 
 import { z } from "zod";
@@ -98,6 +104,16 @@ import {
 } from "../adapters/persistence";
 import { changedFiles, listRepoSignals } from "../adapters/git";
 import { createRailContext } from "../adapters/context";
+
+// Workspace
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+  workspaceDir as resolveWorkspaceDir,
+  initWorkspace,
+  writeSessionPointer,
+  archiveSession,
+} from "../adapters/workspace";
 
 // Evidence types
 import type {
@@ -187,11 +203,33 @@ function getWorktree(context: {
   return context.worktree || context.directory;
 }
 
+/**
+ * Resolve workspace paths from tool context.
+ * Returns fingerprint, sessionDir, and workspaceDir.
+ * This is the workspace-aware equivalent of getWorktree + readState.
+ */
+async function resolveWorkspacePaths(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}): Promise<{
+  worktree: string;
+  fingerprint: string;
+  sessDir: string;
+  wsDir: string;
+}> {
+  const worktree = getWorktree(context);
+  const fpResult = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fpResult.fingerprint, context.sessionID);
+  const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
+  return { worktree, fingerprint: fpResult.fingerprint, sessDir, wsDir };
+}
+
 /** Read state with null-safety messaging. */
 async function requireState(
-  worktree: string,
+  sessDir: string,
 ): Promise<SessionState> {
-  const state = await readState(worktree);
+  const state = await readState(sessDir);
   if (!state) {
     throw Object.assign(
       new Error(
@@ -224,11 +262,11 @@ function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  * Rails don't persist — the caller (this tool layer) does it atomically.
  */
 async function persistAndFormat(
-  worktree: string,
+  sessDir: string,
   result: RailResult,
 ): Promise<string> {
   if (result.kind === "ok") {
-    await writeState(worktree, result.state);
+    await writeState(sessDir, result.state);
   }
   return formatRailResult(result);
 }
@@ -253,8 +291,8 @@ export const status: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await readState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await readState(sessDir);
 
       if (!state) {
         return JSON.stringify({
@@ -347,7 +385,12 @@ export const hydrate: ToolDefinition = {
   async execute(args, context) {
     try {
       const worktree = getWorktree(context);
-      const existing = await readState(worktree);
+
+      // Initialize workspace + session directories (idempotent)
+      const wsResult = await initWorkspace(worktree, context.sessionID);
+      const { fingerprint, sessionDir: sessDir, workspaceDir: wsDir } = wsResult;
+
+      const existing = await readState(sessDir);
 
       // Resolve policy for context
       const policy = existing
@@ -361,16 +404,20 @@ export const hydrate: ToolDefinition = {
       const result = executeHydrate(existing, {
         sessionId: context.sessionID,
         worktree,
+        fingerprint,
         policyMode: args.policyMode,
         profileId: args.profileId,
         repoSignals,
         initiatedBy: context.sessionID,
       }, ctx);
 
+      // Write session pointer (fire-and-forget, non-authoritative)
+      writeSessionPointer(fingerprint, context.sessionID, sessDir).catch(() => {});
+
       // Include detected profile info in the response for new sessions
       if (result.kind === "ok" && !existing) {
         const state = result.state;
-        const formatted = JSON.parse(await persistAndFormat(worktree, result));
+        const formatted = JSON.parse(await persistAndFormat(sessDir, result));
         return JSON.stringify({
           ...formatted,
           profileId: state.activeProfile?.id ?? "baseline",
@@ -379,7 +426,7 @@ export const hydrate: ToolDefinition = {
         });
       }
 
-      return await persistAndFormat(worktree, result);
+      return await persistAndFormat(sessDir, result);
     } catch (err) {
       return formatError(err);
     }
@@ -406,8 +453,8 @@ export const ticket: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -416,7 +463,7 @@ export const ticket: ToolDefinition = {
         source: args.source,
       }, ctx);
 
-      return await persistAndFormat(worktree, result);
+      return await persistAndFormat(sessDir, result);
     } catch (err) {
       return formatError(err);
     }
@@ -468,8 +515,8 @@ export const plan: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxSelfReviewIterations = policy.maxSelfReviewIterations;
@@ -529,7 +576,7 @@ export const plan: ToolDefinition = {
           evalFn,
           ctx,
         );
-        await writeState(worktree, finalState);
+        await writeState(sessDir, finalState);
 
         return JSON.stringify({
           phase: finalState.phase,
@@ -600,7 +647,7 @@ export const plan: ToolDefinition = {
           evalFn,
           ctx,
         );
-        await writeState(worktree, finalState);
+        await writeState(sessDir, finalState);
 
         // Check convergence for messaging
         const converged =
@@ -661,8 +708,8 @@ export const decision: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -676,7 +723,7 @@ export const decision: ToolDefinition = {
         ctx,
       );
 
-      return await persistAndFormat(worktree, result);
+      return await persistAndFormat(sessDir, result);
     } catch (err) {
       return formatError(err);
     }
@@ -725,8 +772,8 @@ export const implement: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { worktree, sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxImplReviewIterations = policy.maxImplReviewIterations;
@@ -751,10 +798,9 @@ export const implement: ToolDefinition = {
 
         // Auto-detect changed files via git
         const files = await changedFiles(worktree);
-        // Separate domain files (non-config, non-test, non-FlowGuard)
+        // Separate domain files (non-config, non-test, non-infrastructure)
         const domainFiles = files.filter(
           (f) =>
-            !f.startsWith(".flowguard/") &&
             !f.startsWith(".opencode/") &&
             !f.includes("node_modules/"),
         );
@@ -780,7 +826,7 @@ export const implement: ToolDefinition = {
           evalFn,
           ctx,
         );
-        await writeState(worktree, finalState);
+        await writeState(sessDir, finalState);
 
         return JSON.stringify({
           phase: finalState.phase,
@@ -832,7 +878,7 @@ export const implement: ToolDefinition = {
           evalFn,
           ctx,
         );
-        await writeState(worktree, finalState);
+        await writeState(sessDir, finalState);
 
         const converged =
           iteration >= maxImplReviewIterations ||
@@ -905,8 +951,8 @@ export const validate: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -955,7 +1001,7 @@ export const validate: ToolDefinition = {
         evalFn,
         ctx,
       );
-      await writeState(worktree, finalState);
+      await writeState(sessDir, finalState);
 
       const allPassed = validationResults.every((r: ValidationResult) => r.passed);
       const failedChecks = validationResults
@@ -989,24 +1035,23 @@ export const review: ToolDefinition = {
     "Generate a standalone compliance review report with evidence completeness matrix " +
     "and four-eyes principle status. Always available in every phase. " +
     "Does NOT mutate session state. Produces a flowguard-review-report.v1 artifact " +
-    "written to .flowguard/review-report.json.",
+    "written to the session directory.",
   args: {},
   async execute(_args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const now = new Date().toISOString();
 
       // Generate extended report (with completeness matrix)
       const report = await executeReview(state, now);
 
-      // Write report artifact
-      await writeReport(worktree, report);
+      // Write report artifact to session directory
+      await writeReport(sessDir, report);
 
       return JSON.stringify({
         phase: state.phase,
         status: "Review report generated.",
-        reportPath: ".flowguard/review-report.json",
         overallStatus: report.overallStatus,
         policyMode: state.policySnapshot?.mode ?? "unknown",
         completeness: {
@@ -1047,8 +1092,8 @@ export const abort_session: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const worktree = getWorktree(context);
-      const state = await requireState(worktree);
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -1061,7 +1106,47 @@ export const abort_session: ToolDefinition = {
         ctx,
       );
 
-      return await persistAndFormat(worktree, result);
+      return await persistAndFormat(sessDir, result);
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tool 10: flowguard_archive — Archive Completed Session
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const archive: ToolDefinition = {
+  description:
+    "Archive a completed FlowGuard session as a tar.gz file. " +
+    "Creates a compressed archive in the workspace's sessions/archive/ directory. " +
+    "Only works on sessions in COMPLETE phase. " +
+    "Uses system tar (available on Windows 10+, macOS, Linux).",
+  args: {},
+  async execute(_args, context) {
+    try {
+      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
+      const state = await readState(sessDir);
+
+      if (!state) {
+        return formatBlocked("NO_SESSION");
+      }
+
+      if (state.phase !== "COMPLETE") {
+        return formatBlocked("COMMAND_NOT_ALLOWED", {
+          command: "/archive",
+          phase: state.phase,
+        });
+      }
+
+      const archivePath = await archiveSession(fingerprint, context.sessionID);
+
+      return JSON.stringify({
+        phase: state.phase,
+        status: "Session archived successfully.",
+        archivePath,
+      });
     } catch (err) {
       return formatError(err);
     }

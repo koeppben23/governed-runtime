@@ -3,7 +3,7 @@
 Deterministic, fail-closed FlowGuard workflow for AI-assisted software delivery.
 Adds explicit phases, evidence gates, audit trails, and policy enforcement to OpenCode.
 
-> **Status:** v1.1.0 | TypeScript | OpenCode-native | Installable Package Architecture
+> **Status:** v1.2.0 | TypeScript | OpenCode-native | Workspace Registry Architecture
 
 ---
 
@@ -45,8 +45,8 @@ npx @flowguard/core doctor
 ```
 
 This bootstraps a FlowGuard session: binds your OpenCode session to the git worktree,
-auto-detects your tech stack (Java, Angular, TypeScript), resolves the FlowGuard policy,
-and initializes canonical state at `.flowguard/session-state.json`.
+computes a repository fingerprint, auto-detects your tech stack (Java, Angular, TypeScript),
+resolves the FlowGuard policy, and initializes canonical state in the workspace registry.
 
 ### 3. Follow the Workflow
 
@@ -71,9 +71,9 @@ All commands are available as `/command` in OpenCode chat.
 
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
 
-- **Creates**: Session state at `.flowguard/session-state.json`
-- **Resolves**: Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
-- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo. If omitted, falls back to `policy.defaultMode` from `.flowguard/config.json` (if set), then to the built-in default.
+- **Creates**: Session state in workspace registry (`~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/`)
+- **Resolves**: Fingerprint (from git remote or worktree path), Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
+- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo. If omitted, falls back to `policy.defaultMode` from workspace config (if set), then to the built-in default.
 
 ### /ticket
 
@@ -131,13 +131,22 @@ Use when you're unsure what to do next.
 ### /review
 
 Generate a standalone compliance report. Read-only, does not mutate state.
-Writes report to `.flowguard/review-report.json`.
+Writes report to the session directory in the workspace registry.
 
 Includes: evidence completeness matrix, four-eyes status, validation summary, findings.
 
 ### /abort
 
 Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irreversible.
+
+### /archive
+
+Archive a completed session as a `.tar.gz` file. Can also be triggered automatically
+when a session reaches the COMPLETE phase.
+
+- **Phase**: COMPLETE (or any terminal state)
+- **Creates**: `{workspaceDir}/sessions/archive/{sessionId}.tar.gz`
+- **Removes**: The original session directory after successful archival
 
 ---
 
@@ -215,7 +224,7 @@ defaultProfileRegistry.register({
 
 ## Audit Trail
 
-Every state transition and tool call is recorded in `.flowguard/audit.jsonl`.
+Every state transition and tool call is recorded in the session's `audit.jsonl`.
 
 ### Event Kinds
 
@@ -253,12 +262,12 @@ Automated 7-check compliance assessment:
 
 ## Configuration
 
-FlowGuard supports per-worktree configuration via `.flowguard/config.json`. The file is optional — when absent, all built-in defaults apply.
+FlowGuard supports per-repository configuration via `config.json` in the workspace directory. The file is optional — when absent, all built-in defaults apply.
 
 ### Config File Location
 
 ```
-{worktree}/.flowguard/config.json
+~/.config/opencode/workspaces/{fingerprint}/config.json
 ```
 
 ### Schema
@@ -313,31 +322,55 @@ Each log entry carries: `level`, `service` (caller identity), `message`, and opt
 
 ## File Structure
 
+### Workspace Registry (`~/.config/opencode/`)
+
+All FlowGuard runtime data lives outside the repository, in a centralized workspace registry:
+
+```
+~/.config/opencode/
+├── SESSION_POINTER.json                        # Non-authoritative diagnostic cache
+├── workspaces/
+│   └── {24-hex-fingerprint}/                   # Per repository (fingerprint from git remote or path)
+│       ├── workspace.json                       # Metadata: fingerprint source, canonical remote, worktree
+│       ├── config.json                          # Per-repo FlowGuard config (optional, Zod-validated)
+│       ├── logs/                                # Per-repo log output
+│       ├── discovery/                           # Business rules (future)
+│       └── sessions/
+│           ├── {session-uuid}/                  # One FlowGuard run
+│           │   ├── session-state.json            # Canonical state (Zod-validated, atomic writes)
+│           │   ├── audit.jsonl                   # Append-only hash-chained audit trail
+│           │   └── review-report.json            # Latest compliance report
+│           └── archive/
+│               └── {session-uuid}.tar.gz         # Archived completed sessions
+```
+
+### Repository Integration
+
 ```
 your-project/
-├── .flowguard/                    # Runtime artifacts (auto-created)
-│   ├── session-state.json          # Canonical state (Zod-validated, atomic writes)
-│   ├── review-report.json          # Latest compliance report
-│   ├── audit.jsonl                 # Append-only hash-chained audit trail
-│   └── config.json                 # Per-worktree configuration (optional, Zod-validated)
 ├── .opencode/                      # OpenCode integration (or ~/.config/opencode/ for global)
 │   ├── package.json                # Plugin dependencies (includes @flowguard/core)
 │   ├── flowguard-mandates.md      # Managed artifact — FlowGuard mandates (SHA-256 digest-tracked)
-│   ├── tools/flowguard.ts         # Thin wrapper → re-exports 9 tools from @flowguard/core
-│   ├── commands/*.md               # 9 command prompts
+│   ├── tools/flowguard.ts         # Thin wrapper → re-exports 10 tools from @flowguard/core
+│   ├── commands/*.md               # 10 command prompts
 │   └── plugins/flowguard-audit.ts # Thin wrapper → re-exports plugin from @flowguard/core
 ├── AGENTS.md                       # User/project rules (OpenCode auto-loads, NEVER touched by installer)
-├── opencode.json                   # OpenCode configuration (instructions reference flowguard-mandates.md)
-└── src/                            # @flowguard/core package source
-    ├── state/                      # Layer 1: Zod schemas
-    ├── machine/                    # Layer 2: Pure state machine
-    ├── rails/                      # Layer 3: Command orchestrators
-    ├── adapters/                   # Layer 4: I/O boundary (state, config, audit, git)
-    ├── config/                     # Layer 5: Extension points (profiles, policies, reasons, config schema)
-    ├── logging/                    # Layer 5b: Structured logging (logger interface + factories)
-    ├── audit/                      # Layer 6: Audit subsystem
-    ├── integration/                # Layer 7: OpenCode tools + plugin (9 tools, 1 plugin)
-    └── cli/                        # CLI installer (install/uninstall/doctor)
+└── opencode.json                   # OpenCode configuration (instructions reference flowguard-mandates.md)
+```
+
+### Package Source (`@flowguard/core`)
+
+```
+src/
+├── state/                      # Layer 1: Zod schemas
+├── machine/                    # Layer 2: Pure state machine
+├── rails/                      # Layer 3: Command orchestrators
+├── adapters/                   # Layer 4: I/O boundary (state, config, audit, git, workspace)
+├── config/                     # Layer 5: Extension points (profiles, policies, reasons, config schema)
+├── logging/                    # Layer 5b: Structured logging (logger interface + factories)
+├── audit/                      # Layer 6: Audit subsystem
+├── integration/                # Layer 7: OpenCode tools + plugin (10 tools, 1 plugin)
+└── cli/                        # CLI installer (install/uninstall/doctor)
 ```
 
 ---
@@ -393,7 +426,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (662 tests across 17 test files)
+# Run tests (737 tests across 18 test files)
 npm test
 
 # Build

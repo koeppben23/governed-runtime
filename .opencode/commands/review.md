@@ -14,7 +14,7 @@ Generate a compliance review report for the current FlowGuard session.
    - If no session exists, report this and stop.
 
 2. Call `flowguard_review` with no arguments.
-   - The tool generates a review report and writes it to `.flowguard/review-report.json`.
+   - The tool generates a review report and writes it to the workspace session directory.
 
 3. Read the response and present the report to the user:
    - **Overall status**: clean, warnings, or issues.

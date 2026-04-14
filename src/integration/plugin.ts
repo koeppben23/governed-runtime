@@ -10,10 +10,10 @@
  * - Conditional hash chaining via policy.audit.enableChainHash
  * - Lifecycle and error events are always emitted (structural, not operational)
  *
- * Config-aware:
- * - Reads .flowguard/config.json at plugin init (once, per worktree)
- * - Config provides: logging level, default policy mode, iteration overrides
- * - Missing/invalid config falls back to built-in defaults (never blocks)
+ * Workspace-aware:
+ * - Resolves workspace fingerprint from worktree at plugin init
+ * - Reads config from workspace directory (workspace registry)
+ * - All audit files live under session directory in workspace registry
  *
  * Logging:
  * - Plugin is the ONLY OpenCode logger writer (via client.app.log)
@@ -27,7 +27,7 @@
  * 4. Creates transition audit events for each state transition if policy.audit.emitTransitions
  * 5. Creates lifecycle events for session creation, completion, and abortion (always)
  * 6. Hash-chains events for tamper detection if policy.audit.enableChainHash
- * 7. Appends all emitted events to .flowguard/audit.jsonl
+ * 7. Appends all emitted events to {sessionDir}/audit.jsonl
  *
  * Design:
  * - Fire-and-forget: audit failures are logged but never block the workflow.
@@ -37,6 +37,10 @@
  * - Hash chain is initialized by reading the last event from the trail on first call.
  * - Policy is resolved from session state (read from persistence after tool executes).
  *   Falls back to TEAM_POLICY if state is unavailable.
+ *
+ * Auto-archive:
+ * - On session completion (COMPLETE phase transition), automatically archives the session
+ *   as a tar.gz file. Fire-and-forget — archive failure never blocks.
  *
  * Installation:
  * This module lives inside @flowguard/core. The thin wrapper in
@@ -48,7 +52,7 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v3
+ * @version v4
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
@@ -58,6 +62,12 @@ import {
   readAuditTrail,
   readConfig,
 } from "../adapters/persistence";
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+  workspaceDir as resolveWorkspaceDir,
+  archiveSession,
+} from "../adapters/workspace";
 import {
   createToolCallEvent,
   createTransitionEvent,
@@ -107,11 +117,45 @@ export const FlowGuardAuditPlugin: Plugin = async ({
   // Capture worktree from plugin context (project-level, stable)
   const auditWorktree = worktree || directory;
 
+  // ── Workspace resolution ────────────────────────────────────────────────
+  // Resolve fingerprint + workspace directory at plugin init (once, stable).
+  // Session directory varies per tool call (uses sessionID from tool context).
+  let cachedFingerprint: string | null = null;
+  let cachedWsDir: string | null = null;
+
+  async function resolveFingerprint(): Promise<string | null> {
+    if (cachedFingerprint) return cachedFingerprint;
+    if (!auditWorktree) return null;
+    try {
+      const result = await computeFingerprint(auditWorktree);
+      cachedFingerprint = result.fingerprint;
+      cachedWsDir = resolveWorkspaceDir(result.fingerprint);
+      return cachedFingerprint;
+    } catch {
+      return null;
+    }
+  }
+
+  function getSessionDir(sessionId: string): string | null {
+    if (!cachedFingerprint) return null;
+    try {
+      return resolveSessionDir(cachedFingerprint, sessionId);
+    } catch {
+      return null;
+    }
+  }
+
   // ── Config + Logger initialization ──────────────────────────────────────
   // Read config once at plugin init. Failures fall back to defaults — never block.
   let config: FlowGuardConfig;
   try {
-    config = auditWorktree ? await readConfig(auditWorktree) : DEFAULT_CONFIG;
+    // Resolve workspace to read config from workspace dir
+    const fp = await resolveFingerprint();
+    if (fp && cachedWsDir) {
+      config = await readConfig(cachedWsDir);
+    } else {
+      config = DEFAULT_CONFIG;
+    }
   } catch {
     config = DEFAULT_CONFIG;
   }
@@ -142,6 +186,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
     worktree: auditWorktree ?? "none",
     logLevel: config.logging.level,
     hasConfigFile: config !== DEFAULT_CONFIG,
+    fingerprint: cachedFingerprint ?? "unknown",
   });
 
   // Hash chain state — cached in closure, initialized on first audit call.
@@ -153,17 +198,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({
    * Initialize the chain hash by reading the existing trail.
    * Called once on first audit event, then cached.
    */
-  async function initChain(): Promise<string> {
+  async function initChain(sessDir: string | null): Promise<string> {
     if (chainInitialized && lastHash !== null) return lastHash;
 
     try {
-      if (!auditWorktree) {
+      if (!sessDir) {
         lastHash = GENESIS_HASH;
         chainInitialized = true;
         return lastHash;
       }
 
-      const { events } = await readAuditTrail(auditWorktree);
+      const { events } = await readAuditTrail(sessDir);
       // readAuditTrail returns AuditEvent objects — cast to raw records for getLastChainHash
       lastHash = getLastChainHash(
         events as unknown as Array<Record<string, unknown>>,
@@ -182,16 +227,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({
    * Append an event and optionally update the cached chain hash.
    *
    * @param event - The chained audit event to persist.
+   * @param sessDir - Absolute path to the session directory.
    * @param trackChain - If true, update the cached lastHash for chain continuity.
    *   Pass false when policy.audit.enableChainHash is disabled — events still
    *   get persisted but the chain is not maintained (each event uses GENESIS_HASH).
    */
   async function appendAndTrack(
     event: ChainedAuditEvent,
+    sessDir: string,
     trackChain: boolean,
   ): Promise<void> {
-    if (!auditWorktree) return;
-    await appendAuditEvent(auditWorktree, event);
+    await appendAuditEvent(sessDir, event);
     if (trackChain) {
       lastHash = event.chainHash;
     }
@@ -211,16 +257,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({
    *
    * Resolution chain:
    * 1. Session state policySnapshot.mode (if session exists)
-   * 2. Config policy.defaultMode (per-worktree config file)
-   * 3. resolvePolicy(undefined) → TEAM_POLICY (built-in default)
+   * 2. Config policy.defaultMode (per-workspace config file)
+   * 3. resolvePolicy(undefined) -> TEAM_POLICY (built-in default)
    *
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
    */
-  async function resolveSessionPolicy(): Promise<FlowGuardPolicy> {
+  async function resolveSessionPolicy(sessDir: string | null): Promise<FlowGuardPolicy> {
     try {
-      if (!auditWorktree) return resolvePolicy(config.policy.defaultMode);
-      const state = await readState(auditWorktree);
+      if (!sessDir) return resolvePolicy(config.policy.defaultMode);
+      const state = await readState(sessDir);
       const mode = state?.policySnapshot?.mode ?? config.policy.defaultMode;
       log.debug("policy", "resolved session policy", { mode: mode ?? "default" });
       return resolvePolicy(mode);
@@ -237,10 +283,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({
       if (!toolName.startsWith(FG_PREFIX)) return;
 
       try {
-        if (!auditWorktree) return;
+        // Resolve session directory from tool context
+        const sessionId: string = input?.sessionID ?? "unknown";
+        await resolveFingerprint();
+        const sessDir = getSessionDir(sessionId);
+        if (!sessDir) return;
 
         // ── Resolve policy for emission controls + actor classification ──
-        const policy = await resolveSessionPolicy();
+        const policy = await resolveSessionPolicy(sessDir);
         const { emitToolCalls, emitTransitions, enableChainHash } =
           policy.audit;
 
@@ -257,14 +307,13 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         const actor = policy.actorClassification[toolName] ?? "system";
 
         const now = new Date().toISOString();
-        const sessionId = input?.sessionID ?? "unknown";
 
         // Initialize prevHash: proper chain if enabled, genesis otherwise.
         // When chaining is disabled, each event gets an independent hash
         // (prevHash is always GENESIS_HASH, no chain continuity).
         let prevHash: string;
         if (enableChainHash) {
-          prevHash = await initChain();
+          prevHash = await initChain(sessDir);
         } else {
           prevHash = GENESIS_HASH;
         }
@@ -318,7 +367,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
             actor,
             prevHash,
           );
-          await appendAndTrack(toolCallEvt, enableChainHash);
+          await appendAndTrack(toolCallEvt, sessDir, enableChainHash);
           if (enableChainHash) prevHash = toolCallEvt.chainHash;
           log.debug("audit", "emitted tool_call event", { tool: toolName, phase });
         }
@@ -341,7 +390,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
               t.at,
               prevHash,
             );
-            await appendAndTrack(transEvt, enableChainHash);
+            await appendAndTrack(transEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = transEvt.chainHash;
           }
         }
@@ -372,7 +421,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
             actor, // Actor from policy (e.g., REGULATED: abort is "human")
             prevHash,
           );
-          await appendAndTrack(lifecycleEvt, enableChainHash);
+          await appendAndTrack(lifecycleEvt, sessDir, enableChainHash);
           if (enableChainHash) prevHash = lifecycleEvt.chainHash;
         }
 
@@ -393,8 +442,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({
             "machine",
             prevHash,
           );
-          await appendAndTrack(completionEvt, enableChainHash);
+          await appendAndTrack(completionEvt, sessDir, enableChainHash);
           if (enableChainHash) prevHash = completionEvt.chainHash;
+
+          // Auto-archive completed session (fire-and-forget)
+          if (cachedFingerprint) {
+            archiveSession(cachedFingerprint, sessionId).catch((err) => {
+              log.warn("audit", "auto-archive failed", {
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          }
         }
 
         // ── 5. Emit error event (always — structural) ───────────────────
@@ -413,7 +471,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
             now,
             prevHash,
           );
-          await appendAndTrack(errorEvt, enableChainHash);
+          await appendAndTrack(errorEvt, sessDir, enableChainHash);
         }
       } catch (err) {
         // Fire-and-forget: log but never block the workflow
