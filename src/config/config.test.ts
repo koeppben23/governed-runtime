@@ -14,14 +14,20 @@ import {
   angularProfile,
   typescriptProfile,
   defaultProfileRegistry,
+  resolveProfileInstructions,
+  extractBaseInstructions,
+  extractByPhaseInstructions,
 } from "../config/profile";
-import type { RepoSignals } from "../config/profile";
+import type { RepoSignals, PhaseInstructions, CheckExecutor } from "../config/profile";
 import {
   BlockedReasonRegistry,
   defaultReasonRegistry,
   blocked,
 } from "../config/reasons";
 import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
+import { makeState, makeProgressedState, PLAN_RECORD, IMPL_EVIDENCE } from "../__fixtures__";
+import type { SessionState } from "../state/schema";
+import type { PlanEvidence, PlanRecord } from "../state/evidence";
 
 describe("config/policy", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -270,6 +276,340 @@ describe("config/profile", () => {
         defaultProfileRegistry.detect(signals);
       }, 200, 50);
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.profileDetect10kMs);
+    });
+  });
+});
+
+describe("config/profile/phase-instructions", () => {
+  const phaseInstructions: PhaseInstructions = {
+    base: "Always present base rules.",
+    byPhase: {
+      PLAN: "Focus on plan structure and completeness.",
+      IMPLEMENTATION: "Focus on code quality and test coverage.",
+    },
+  };
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe("HAPPY", () => {
+    it("resolveProfileInstructions returns base for plain string", () => {
+      expect(resolveProfileInstructions("plain rules", "PLAN")).toBe("plain rules");
+    });
+
+    it("resolveProfileInstructions returns base + phase extra for matching phase", () => {
+      const result = resolveProfileInstructions(phaseInstructions, "PLAN");
+      expect(result).toContain("Always present base rules.");
+      expect(result).toContain("Focus on plan structure and completeness.");
+    });
+
+    it("resolveProfileInstructions returns only base for non-matching phase", () => {
+      const result = resolveProfileInstructions(phaseInstructions, "TICKET");
+      expect(result).toBe("Always present base rules.");
+    });
+
+    it("extractBaseInstructions returns base from PhaseInstructions", () => {
+      expect(extractBaseInstructions(phaseInstructions)).toBe("Always present base rules.");
+    });
+
+    it("extractBaseInstructions returns string as-is", () => {
+      expect(extractBaseInstructions("plain")).toBe("plain");
+    });
+
+    it("extractByPhaseInstructions returns byPhase from PhaseInstructions", () => {
+      const byPhase = extractByPhaseInstructions(phaseInstructions);
+      expect(byPhase).toBeDefined();
+      expect(byPhase!.PLAN).toBe("Focus on plan structure and completeness.");
+      expect(byPhase!.IMPLEMENTATION).toBe("Focus on code quality and test coverage.");
+    });
+
+    it("extractByPhaseInstructions returns undefined for string", () => {
+      expect(extractByPhaseInstructions("plain")).toBeUndefined();
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe("BAD", () => {
+    it("resolveProfileInstructions returns empty for undefined", () => {
+      expect(resolveProfileInstructions(undefined, "PLAN")).toBe("");
+    });
+
+    it("extractBaseInstructions returns empty for undefined", () => {
+      expect(extractBaseInstructions(undefined)).toBe("");
+    });
+
+    it("extractByPhaseInstructions returns undefined for undefined", () => {
+      expect(extractByPhaseInstructions(undefined)).toBeUndefined();
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe("CORNER", () => {
+    it("PhaseInstructions with no byPhase returns only base", () => {
+      const noPhase: PhaseInstructions = { base: "base only" };
+      expect(resolveProfileInstructions(noPhase, "PLAN")).toBe("base only");
+    });
+
+    it("PhaseInstructions with empty byPhase returns only base", () => {
+      const emptyPhase: PhaseInstructions = { base: "base", byPhase: {} };
+      expect(resolveProfileInstructions(emptyPhase, "PLAN")).toBe("base");
+    });
+
+    it("resolveProfileInstructions separates base and phase with double newline", () => {
+      const result = resolveProfileInstructions(phaseInstructions, "PLAN");
+      expect(result).toBe("Always present base rules.\n\nFocus on plan structure and completeness.");
+    });
+
+    it("all 8 phases are valid keys for byPhase", () => {
+      const allPhases: PhaseInstructions = {
+        base: "b",
+        byPhase: {
+          TICKET: "t",
+          PLAN: "p",
+          PLAN_REVIEW: "pr",
+          VALIDATION: "v",
+          IMPLEMENTATION: "i",
+          IMPL_REVIEW: "ir",
+          EVIDENCE_REVIEW: "er",
+          COMPLETE: "c",
+        },
+      };
+      for (const [phase, extra] of Object.entries(allPhases.byPhase!)) {
+        expect(resolveProfileInstructions(allPhases, phase as import("../state/schema").Phase)).toBe(`b\n\n${extra}`);
+      }
+    });
+
+    it("extractByPhaseInstructions returns undefined for PhaseInstructions without byPhase", () => {
+      const noPhase: PhaseInstructions = { base: "b" };
+      expect(extractByPhaseInstructions(noPhase)).toBeUndefined();
+    });
+  });
+
+  // ─── EDGE ─────────────────────────────────────────────────
+  describe("EDGE", () => {
+    it("existing built-in profiles work with resolveProfileInstructions (backward compat)", () => {
+      // All built-in profiles use plain strings — resolveProfileInstructions should pass them through
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const result = resolveProfileInstructions(profile.instructions, "PLAN");
+        expect(typeof result).toBe("string");
+        expect(result.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("PhaseInstructions in GovernanceProfile interface is accepted by registry", () => {
+      const registry = new ProfileRegistry();
+      registry.register({
+        id: "test-phase-aware",
+        name: "Test Phase-Aware",
+        activeChecks: [],
+        checks: new Map(),
+        instructions: phaseInstructions,
+      });
+      const profile = registry.get("test-phase-aware");
+      expect(profile).toBeDefined();
+      expect(resolveProfileInstructions(profile!.instructions, "PLAN")).toContain("plan structure");
+      expect(resolveProfileInstructions(profile!.instructions, "TICKET")).toBe("Always present base rules.");
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+  describe("PERF", () => {
+    it("resolveProfileInstructions is sub-microsecond per call", () => {
+      const start = performance.now();
+      for (let i = 0; i < 10000; i++) {
+        resolveProfileInstructions(phaseInstructions, "PLAN");
+      }
+      const elapsed = performance.now() - start;
+      // 10k calls < 10ms → < 1μs each
+      expect(elapsed).toBeLessThan(10);
+    });
+  });
+});
+
+describe("config/profile/check-executors", () => {
+  const testQuality = baselineProfile.checks.get("test_quality")!;
+  const rollbackSafety = baselineProfile.checks.get("rollback_safety")!;
+
+  /** Helper: make a plan record with custom body. */
+  function planWith(body: string): PlanRecord {
+    return {
+      current: {
+        body,
+        digest: "d",
+        sections: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      history: [],
+    };
+  }
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe("HAPPY", () => {
+    it("test_quality passes when plan mentions tests", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("## Plan\n1. Add unit tests for the service") });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(true);
+      expect(result.checkId).toBe("test_quality");
+      expect(result.executedAt).toBeDefined();
+    });
+
+    it("rollback_safety passes for low-risk plan", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("## Plan\n1. Rename variable in utils") });
+      const result = await rollbackSafety.execute(state);
+      expect(result.passed).toBe(true);
+      expect(result.detail).toContain("No high-risk signals");
+    });
+
+    it("rollback_safety passes for high-risk plan with rollback mention", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Add database migration\n2. Rollback script included"),
+      });
+      const result = await rollbackSafety.execute(state);
+      expect(result.passed).toBe(true);
+      expect(result.detail).toContain("rollback safety");
+    });
+
+    it("executors are registered in BASELINE_CHECKS for all profiles", () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        expect(profile.checks.get("test_quality")).toBeDefined();
+        expect(profile.checks.get("rollback_safety")).toBeDefined();
+      }
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe("BAD", () => {
+    it("test_quality fails when plan has no test-related content", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("## Plan\n1. Refactor module structure") });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain("does not address test quality");
+    });
+
+    it("rollback_safety fails for high-risk plan without rollback mention", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Change authentication flow\n2. Update database schema"),
+      });
+      const result = await rollbackSafety.execute(state);
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain("high-risk signals");
+      expect(result.detail).toContain("rollback");
+    });
+
+    it("test_quality fails when plan is empty (null plan)", async () => {
+      const state = makeState("VALIDATION", { plan: null });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(false);
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe("CORNER", () => {
+    it("test_quality fails when implementation has files but no test files", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Add test coverage"),
+        implementation: {
+          changedFiles: ["src/auth.ts", "src/config.ts"],
+          domainFiles: ["src/auth.ts"],
+          digest: "d",
+          executedAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(false);
+      expect(result.detail).toContain("none appear to be test files");
+    });
+
+    it("test_quality passes when implementation includes test files", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Add test coverage"),
+        implementation: IMPL_EVIDENCE,  // has src/auth.test.ts
+      });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(true);
+    });
+
+    it("test_quality passes when implementation has no changed files (empty array)", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Add test coverage"),
+        implementation: {
+          changedFiles: [],
+          domainFiles: [],
+          digest: "d",
+          executedAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(true);
+    });
+
+    it("rollback_safety detects various high-risk keywords", async () => {
+      const keywords = ["database", "schema", "migration", "auth", "security", "payment", "messaging", "queue"];
+      for (const keyword of keywords) {
+        const state = makeState("VALIDATION", { plan: planWith(`Plan: change ${keyword} logic`) });
+        const result = await rollbackSafety.execute(state);
+        expect(result.passed).toBe(false);
+      }
+    });
+
+    it("rollback_safety accepts various rollback keywords", async () => {
+      const rollbackKeywords = ["rollback", "backward compat", "feature flag", "revert", "reversible"];
+      for (const keyword of rollbackKeywords) {
+        const state = makeState("VALIDATION", {
+          plan: planWith(`Plan: change database logic. ${keyword} strategy included.`),
+        });
+        const result = await rollbackSafety.execute(state);
+        expect(result.passed).toBe(true);
+      }
+    });
+  });
+
+  // ─── EDGE ─────────────────────────────────────────────────
+  describe("EDGE", () => {
+    it("test_quality detects spec files as test files", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Add test"),
+        implementation: {
+          changedFiles: ["src/auth.ts", "src/auth.spec.ts"],
+          domainFiles: ["src/auth.ts"],
+          digest: "d",
+          executedAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(true);
+    });
+
+    it("test_quality is case-insensitive for signal detection", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("## Plan\n1. Run TESTING suite") });
+      const result = await testQuality.execute(state);
+      expect(result.passed).toBe(true);
+    });
+
+    it("rollback_safety is case-insensitive for signal detection", async () => {
+      const state = makeState("VALIDATION", {
+        plan: planWith("## Plan\n1. Change DATABASE schema\n2. ROLLBACK plan included"),
+      });
+      const result = await rollbackSafety.execute(state);
+      expect(result.passed).toBe(true);
+    });
+
+    it("all executors return ISO datetime in executedAt", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("Add test for auth") });
+      const tqResult = await testQuality.execute(state);
+      const rsResult = await rollbackSafety.execute(state);
+      expect(tqResult.executedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(rsResult.executedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+  describe("PERF", () => {
+    it("both executors complete in < 5ms", async () => {
+      const state = makeState("VALIDATION", { plan: planWith("Add unit tests for database migration with rollback") });
+      const start = performance.now();
+      await testQuality.execute(state);
+      await rollbackSafety.execute(state);
+      const elapsed = performance.now() - start;
+      expect(elapsed).toBeLessThan(5);
     });
   });
 });

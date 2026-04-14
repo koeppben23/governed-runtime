@@ -32,6 +32,7 @@ import type { RailResult, RailContext } from "./types";
 import { blocked } from "../config/reasons";
 import { defaultProfileRegistry } from "../config/profile";
 import type { GovernanceProfile, RepoSignals } from "../config/profile";
+import { extractBaseInstructions, extractByPhaseInstructions } from "../config/profile";
 import { resolvePolicy, createPolicySnapshot } from "../config/policy";
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -123,7 +124,10 @@ export function executeHydrate(
     ? {
         id: profile.id,
         name: profile.name,
-        ruleContent: profile.instructions ?? "",
+        ruleContent: extractBaseInstructions(profile.instructions),
+        ...(extractByPhaseInstructions(profile.instructions)
+          ? { phaseRuleContent: extractByPhaseInstructions(profile.instructions) }
+          : {}),
       }
     : null;
 

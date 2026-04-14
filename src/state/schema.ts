@@ -164,6 +164,8 @@ export const SessionState = z.object({
    * Contains the profile ID, name, and LLM rule content.
    * The ruleContent is the stack-specific guidance text injected into
    * tool responses when commands reference "profile rules".
+   * phaseRuleContent maps Phase values to additional phase-specific text
+   * that is appended to ruleContent when the session is in that phase.
    * Null only if no profile was resolved (should not happen — baseline is always available).
    */
   activeProfile: z
@@ -171,6 +173,7 @@ export const SessionState = z.object({
       id: z.string().min(1),
       name: z.string().min(1),
       ruleContent: z.string(),
+      phaseRuleContent: z.record(z.string(), z.string()).optional(),
     })
     .nullable(),
 

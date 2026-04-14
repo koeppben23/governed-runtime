@@ -275,7 +275,11 @@ export const status: ToolDefinition = {
         initiatedBy: state.initiatedBy,
         profileId: state.activeProfile?.id ?? "none",
         profileName: state.activeProfile?.name ?? "None",
-        profileRules: state.activeProfile?.ruleContent ?? "",
+        profileRules: (() => {
+          const base = state.activeProfile?.ruleContent ?? "";
+          const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
+          return phaseExtra ? base + "\n\n" + phaseExtra : base;
+        })(),
         hasTicket: state.ticket !== null,
         hasPlan: state.plan !== null,
         planVersion: state.plan
