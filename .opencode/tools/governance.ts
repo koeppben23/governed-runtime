@@ -1,6 +1,6 @@
 /**
  * Governance tools — thin wrapper.
- * All logic lives in @governance/core. This file re-exports
+ * All logic lives in src/integration/. This file re-exports
  * the 9 named tool definitions for OpenCode to discover.
  *
  * Tool naming: OpenCode derives names as <filename>_<exportname>.
@@ -18,4 +18,4 @@ export {
   validate,
   review,
   abort_session,
-} from "@governance/core/integration";
+} from "../../src/integration/index";
