@@ -222,6 +222,36 @@ describe("config/profile", () => {
       expect(typescriptProfile.instructions).toBeDefined();
     });
 
+    it.each([
+      ["baseline", baselineProfile],
+      ["java", javaProfile],
+      ["angular", angularProfile],
+      ["typescript", typescriptProfile],
+    ] as const)("%s profile contains NOT_VERIFIED marker guidance", (_name, profile) => {
+      expect(profile.instructions).toContain("NOT_VERIFIED");
+    });
+
+    it.each([
+      ["baseline", baselineProfile],
+      ["java", javaProfile],
+      ["angular", angularProfile],
+      ["typescript", typescriptProfile],
+    ] as const)("%s profile contains ASSUMPTION marker guidance", (_name, profile) => {
+      expect(profile.instructions).toContain("ASSUMPTION");
+    });
+
+    it("no built-in profile references AGENTS.md", () => {
+      const allInstructions = [
+        baselineProfile.instructions,
+        javaProfile.instructions,
+        angularProfile.instructions,
+        typescriptProfile.instructions,
+      ];
+      for (const instr of allInstructions) {
+        expect(instr).not.toContain("AGENTS.md");
+      }
+    });
+
     it("ids() returns all registered IDs", () => {
       const ids = defaultProfileRegistry.ids();
       expect(ids).toContain("baseline");

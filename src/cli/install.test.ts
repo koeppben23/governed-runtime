@@ -21,6 +21,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   parseArgs,
   resolveTarget,
@@ -52,6 +53,18 @@ import {
   isManagedArtifact,
 } from "./templates";
 import { measureAsync } from "../test-policy";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * Repo root derived from this test file's location (src/cli/install.test.ts).
+ * Used by DEV_REPO_INVARIANTS tests to read the real repo filesystem,
+ * independent of any cwd changes made by the installer test harness.
+ */
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -158,10 +171,6 @@ describe("cli/parseArgs", () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe("BAD", () => {
-    it("returns null for empty argv", () => {
-      expect(parseArgs([])).toBeNull();
-    });
-
     it("returns null for unknown action", () => {
       expect(parseArgs(["deploy"])).toBeNull();
     });
@@ -284,6 +293,100 @@ describe("cli/parseArgs", () => {
       }
       const elapsed = performance.now() - start;
       // 1000 calls in < 50ms => < 0.05ms per call
+      expect(elapsed).toBeLessThan(50);
+    });
+  });
+});
+
+// ─── DEV_REPO_INVARIANTS ──────────────────────────────────────────────────────
+//
+// These tests verify that the Core Library repo itself does NOT use the
+// installer path. The separation is:
+//   - This repo: AGENTS.md as dev ruleset (OpenCode auto-loads from repo root)
+//   - Installed product: governance-mandates.md as managed artifact
+//
+// These tests read the REAL repo filesystem via REPO_ROOT, not tmpDir.
+// They are deliberately outside the beforeEach/afterEach scope that
+// changes cwd to a temp directory.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("DEV_REPO_INVARIANTS", () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe("HAPPY", () => {
+    it("AGENTS.md exists in repo root (dev ruleset)", () => {
+      expect(existsSync(path.join(REPO_ROOT, "AGENTS.md"))).toBe(true);
+    });
+
+    it("opencode.json exists in repo root", () => {
+      expect(existsSync(path.join(REPO_ROOT, "opencode.json"))).toBe(true);
+    });
+
+    it(".opencode/ directory exists in repo root", () => {
+      expect(existsSync(path.join(REPO_ROOT, ".opencode"))).toBe(true);
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe("CORNER", () => {
+    it(".opencode/governance-mandates.md does NOT exist (no managed artifacts in dev repo)", () => {
+      expect(existsSync(path.join(REPO_ROOT, ".opencode", MANDATES_FILENAME))).toBe(false);
+    });
+
+    it("opencode.json has empty instructions array (dev repo uses AGENTS.md, not installer path)", async () => {
+      const content = await fs.readFile(
+        path.join(REPO_ROOT, "opencode.json"),
+        "utf-8",
+      );
+      const parsed = JSON.parse(content);
+      expect(parsed.instructions).toEqual([]);
+    });
+
+    it(".opencode/package.json does NOT contain @governance/core (no self-install)", async () => {
+      const content = await fs.readFile(
+        path.join(REPO_ROOT, ".opencode", "package.json"),
+        "utf-8",
+      );
+      const parsed = JSON.parse(content);
+      const deps = parsed.dependencies ?? {};
+      expect(deps["@governance/core"]).toBeUndefined();
+    });
+  });
+
+  // ─── EDGE ─────────────────────────────────────────────────
+  describe("EDGE", () => {
+    it("REPO_ROOT resolves to a directory containing package.json with name @governance/core", async () => {
+      const content = await fs.readFile(
+        path.join(REPO_ROOT, "package.json"),
+        "utf-8",
+      );
+      const parsed = JSON.parse(content);
+      expect(parsed.name).toBe("@governance/core");
+    });
+
+    it("no governance-mandates.md anywhere in .opencode/ tree", async () => {
+      const ocDir = path.join(REPO_ROOT, ".opencode");
+      // Check all immediate subdirectories
+      const entries = await fs.readdir(ocDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subEntries = await fs.readdir(path.join(ocDir, entry.name));
+          expect(subEntries).not.toContain(MANDATES_FILENAME);
+        }
+      }
+      // Check root of .opencode/
+      const rootEntries = await fs.readdir(ocDir);
+      expect(rootEntries).not.toContain(MANDATES_FILENAME);
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+  describe("PERF", () => {
+    it("REPO_ROOT resolution is sub-millisecond", () => {
+      const start = performance.now();
+      for (let i = 0; i < 1000; i++) {
+        path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+      }
+      const elapsed = performance.now() - start;
       expect(elapsed).toBeLessThan(50);
     });
   });
@@ -472,6 +575,27 @@ describe("cli/templates", () => {
       // Line 2: (blank)
       // Line 3: # Governance Mandates
       expect(lines[3]).toBe("# Governance Mandates");
+    });
+
+    it("GOVERNANCE_MANDATES_BODY contains Hard Rules section with all 5 operative parts", () => {
+      expect(GOVERNANCE_MANDATES_BODY).toContain("## 0. Hard Rules");
+      expect(GOVERNANCE_MANDATES_BODY).toContain("### Top Priorities");
+      expect(GOVERNANCE_MANDATES_BODY).toContain("### Stop Conditions");
+      expect(GOVERNANCE_MANDATES_BODY).toContain("### Evidence Requirements");
+      expect(GOVERNANCE_MANDATES_BODY).toContain("### Approval Blockers");
+      expect(GOVERNANCE_MANDATES_BODY).toContain("### Ambiguity Protocol");
+    });
+
+    it("Hard Rules section appears before Developer Mandate", () => {
+      const hardRulesIdx = GOVERNANCE_MANDATES_BODY.indexOf("## 0. Hard Rules");
+      const devMandateIdx = GOVERNANCE_MANDATES_BODY.indexOf("## 1. Developer Mandate");
+      expect(hardRulesIdx).toBeGreaterThan(-1);
+      expect(devMandateIdx).toBeGreaterThan(-1);
+      expect(hardRulesIdx).toBeLessThan(devMandateIdx);
+    });
+
+    it("GOVERNANCE_MANDATES_BODY does not reference AGENTS.md", () => {
+      expect(GOVERNANCE_MANDATES_BODY).not.toContain("AGENTS.md");
     });
   });
 

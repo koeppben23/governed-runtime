@@ -3,7 +3,7 @@
  * @description Java (Spring Boot) profile rule content for LLM guidance.
  *
  * This content is injected into governance tool responses when the Java
- * profile is active. It supplements the universal AGENTS.md mandates with
+ * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
  * Java-specific naming, architecture, testing, and anti-pattern rules.
  *
  * Ported from: governance_content/profiles/rules.backend-java.md (v2.2)
@@ -40,6 +40,10 @@ Before producing code, detect and lock the repo conventions:
 - Formatting/lint gates (Spotless/Checkstyle/PMD/SpotBugs/ErrorProne/Sonar)
 
 Once detected, these conventions become constraints. If not detectable, mark as unknown and avoid introducing new patterns.
+
+- Mark unverified runtime claims as \`NOT_VERIFIED\`.
+- Mark beliefs not checked against artifacts as \`ASSUMPTION\`.
+- Include recovery or verification steps when they are actionable.
 
 ---
 

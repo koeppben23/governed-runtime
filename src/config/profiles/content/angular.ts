@@ -3,7 +3,7 @@
  * @description Angular + Nx profile rule content for LLM guidance.
  *
  * This content is injected into governance tool responses when the Angular
- * profile is active. It supplements the universal AGENTS.md mandates with
+ * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
  * Angular-specific naming, architecture, testing, and anti-pattern rules.
  *
  * Ported from: governance_content/profiles/rules.frontend-angular-nx.md (v2.0)
@@ -32,6 +32,10 @@ Before code changes, detect and lock:
 - Nx project boundaries and tag constraints
 
 Once detected, these become constraints. If unknown, mark unknown and avoid introducing a new pattern.
+
+- Mark unverified runtime claims as \`NOT_VERIFIED\`.
+- Mark beliefs not checked against artifacts as \`ASSUMPTION\`.
+- Include recovery or verification steps when they are actionable.
 
 ---
 

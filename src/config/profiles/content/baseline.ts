@@ -3,7 +3,7 @@
  * @description Baseline (stack-agnostic) profile rule content for LLM guidance.
  *
  * This content is injected into governance tool responses when no stack-specific
- * profile matches the repository. It supplements the universal AGENTS.md mandates
+ * profile matches the repository. It supplements the universal governance mandates (governance-mandates.md)
  * with fundamental programming best practices that apply to any language or framework.
  *
  * Designed for: Python, Go, Rust, C#, Ruby, or any stack without a dedicated profile.
@@ -33,6 +33,10 @@ Before code changes, detect and lock:
 
 Once detected, these become constraints. Do not introduce new tooling or patterns
 unless the change explicitly requires it.
+
+- Mark unverified runtime claims as \`NOT_VERIFIED\`.
+- Mark beliefs not checked against artifacts as \`ASSUMPTION\`.
+- Include recovery or verification steps when they are actionable.
 
 ---
 

@@ -62,7 +62,7 @@ Implement the approved plan and review the implementation.
 - DO NOT bypass governance_implement with direct file manipulation of .governance/ state.
 - DO NOT auto-chain into /review-decision, /plan, /ticket, or /continue after the implementation review converges.
 - DO NOT infer or assume session state beyond what the governance tools return.
-- If the `governance_status` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal mandates in AGENTS.md.
+- If the `governance_status` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal governance mandates.
 - Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit `/implement` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling governance tools.
 - If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one `Next action:` line. After implementation review converges to EVIDENCE_REVIEW: `Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.`

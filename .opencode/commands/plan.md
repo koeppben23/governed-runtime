@@ -63,7 +63,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - DO NOT substitute shell commands or direct file manipulation for governance tools.
 - DO NOT auto-chain into /continue, /review, /implement, or /review-decision after the plan converges.
 - DO NOT infer or assume session state beyond what the governance tools return.
-- If the `governance_status` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal mandates in AGENTS.md.
+- If the `governance_status` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal governance mandates.
 - Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit `/plan` triggers this command. If the user sends free-text implying planning, respond conversationally without calling governance tools.
 - If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one `Next action:` line. After plan converges to PLAN_REVIEW: `Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.`

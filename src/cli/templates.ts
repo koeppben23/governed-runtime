@@ -5,7 +5,7 @@
  *
  * Contains all file contents that the installer writes into the target
  * project: tool wrappers, plugin wrappers, slash-command markdown files,
- * the AGENTS.md governance ruleset, and configuration skeletons.
+ * the governance-mandates.md ruleset, and configuration skeletons.
  */
 
 // ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - DO NOT substitute shell commands or direct file manipulation for governance tools.
 - DO NOT auto-chain into /continue, /review, /implement, or /review-decision after the plan converges.
 - DO NOT infer or assume session state beyond what the governance tools return.
-- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal mandates in AGENTS.md.
+- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal governance mandates.
 - Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit \`/plan\` triggers this command. If the user sends free-text implying planning, respond conversationally without calling governance tools.
 - If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
@@ -353,7 +353,7 @@ Implement the approved plan and review the implementation.
 - DO NOT bypass governance_implement with direct file manipulation of .governance/ state.
 - DO NOT auto-chain into /review-decision, /plan, /ticket, or /continue after the implementation review converges.
 - DO NOT infer or assume session state beyond what the governance tools return.
-- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal mandates in AGENTS.md.
+- If the \`governance_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal governance mandates.
 - Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit \`/implement\` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling governance tools.
 - If any governance tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
@@ -638,6 +638,65 @@ these universal mandates.
 - **Evidence**: A concrete, verifiable artifact — code, test output, schema, file path, function signature, error message, or command result. Narrative claims are not evidence.
 - **\`ASSUMPTION\`**: A belief not verified against artifacts. Mark explicitly.
 - **\`NOT_VERIFIED\`**: A claim about runtime behavior not yet executed. Mark explicitly.
+
+---
+
+## 0. Hard Rules
+
+Compact operational core. These rules take absolute priority.
+
+### Top Priorities
+
+1. Smallest correct change — over broad rewrites or speculative cleanup.
+2. Evidence over assertion — every claim maps to a concrete artifact.
+3. Contract integrity — no drift between code, docs, tests, and runtime.
+4. Fail-closed on ambiguity — do not proceed when context is insufficient.
+5. Investigate before claiming — read code before making assertions.
+
+### Stop Conditions
+
+STOP and do not proceed when:
+
+- Component scope is missing for code-producing work.
+- The governing authority or contract is ambiguous.
+- Required evidence is unavailable or contradictory.
+- The requested behavior conflicts with documented contracts.
+- The change would require inventing unsupported workflow or behavior.
+- A test passes for the wrong reason.
+
+If interaction is possible, ask for clarification.
+If interaction is not possible, return a blocked/insufficient-context result.
+
+### Evidence Requirements
+
+Every non-trivial output MUST include:
+
+- Governing contract, spec, or schema that justifies the change.
+- Exact files and symbols touched; line references when available and reliable.
+- Test evidence covering the risky path, not just the happy path.
+- Explicit \`ASSUMPTION\` marker for any unverified belief.
+- Explicit \`NOT_VERIFIED\` marker for any untested runtime claim.
+
+### Approval Blockers
+
+A change MUST NOT be approved when:
+
+- Correctness is unproven or depends on assumption.
+- Key behavior has no test coverage.
+- A fallback or compatibility path can hide failure.
+- Docs, contracts, and code disagree.
+- Security or trust-boundary concerns are unresolved.
+- The change creates a second authority or silent drift.
+
+### Ambiguity Protocol
+
+When context is missing or instructions are unclear:
+
+1. State what is known vs. unknown.
+2. Mark unknowns as \`ASSUMPTION\`.
+3. Propose the smallest safe interpretation.
+4. Ask for clarification before proceeding.
+5. Never encode ambiguity as fact or confidence.
 
 ---
 

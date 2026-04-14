@@ -3,7 +3,7 @@
  * @description Test policy constants and types for the governance test suite.
  *
  * Every test file MUST cover all five categories. This policy is enforced
- * by test naming conventions and review mandates in AGENTS.md.
+ * by test naming conventions and review mandates in governance-mandates.md.
  *
  * Categories:
  * 1. HAPPY  — Normal, expected successful flows

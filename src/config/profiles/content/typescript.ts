@@ -3,7 +3,7 @@
  * @description TypeScript (Node.js / general) profile rule content for LLM guidance.
  *
  * This content is injected into governance tool responses when the TypeScript
- * profile is active. It supplements the universal AGENTS.md mandates with
+ * profile is active. It supplements the universal governance mandates (governance-mandates.md) with
  * TypeScript-specific naming, architecture, testing, and anti-pattern rules.
  *
  * NEW: This profile did not exist in the old system. Created for the
@@ -33,6 +33,10 @@ Before code changes, detect and lock:
 - Framework (Express, Fastify, Hono, NestJS, or none)
 
 Once detected, these become constraints. If not detectable, mark as unknown and avoid introducing new patterns.
+
+- Mark unverified runtime claims as \`NOT_VERIFIED\`.
+- Mark beliefs not checked against artifacts as \`ASSUMPTION\`.
+- Include recovery or verification steps when they are actionable.
 
 ---
 

@@ -22,6 +22,65 @@ across universal mandates and tech-stack profiles.
 
 ---
 
+## 0. Hard Rules
+
+Compact operational core. These rules take absolute priority.
+
+### Top Priorities
+
+1. Smallest correct change — over broad rewrites or speculative cleanup.
+2. Evidence over assertion — every claim maps to a concrete artifact.
+3. Contract integrity — no drift between code, docs, tests, and runtime.
+4. Fail-closed on ambiguity — do not proceed when context is insufficient.
+5. Investigate before claiming — read code before making assertions.
+
+### Stop Conditions
+
+STOP and do not proceed when:
+
+- Component scope is missing for code-producing work.
+- The governing authority or contract is ambiguous.
+- Required evidence is unavailable or contradictory.
+- The requested behavior conflicts with documented contracts.
+- The change would require inventing unsupported workflow or behavior.
+- A test passes for the wrong reason.
+
+If interaction is possible, ask for clarification.
+If interaction is not possible, return a blocked/insufficient-context result.
+
+### Evidence Requirements
+
+Every non-trivial output MUST include:
+
+- Governing contract, spec, or schema that justifies the change.
+- Exact files and symbols touched; line references when available and reliable.
+- Test evidence covering the risky path, not just the happy path.
+- Explicit `ASSUMPTION` marker for any unverified belief.
+- Explicit `NOT_VERIFIED` marker for any untested runtime claim.
+
+### Approval Blockers
+
+A change MUST NOT be approved when:
+
+- Correctness is unproven or depends on assumption.
+- Key behavior has no test coverage.
+- A fallback or compatibility path can hide failure.
+- Docs, contracts, and code disagree.
+- Security or trust-boundary concerns are unresolved.
+- The change creates a second authority or silent drift.
+
+### Ambiguity Protocol
+
+When context is missing or instructions are unclear:
+
+1. State what is known vs. unknown.
+2. Mark unknowns as `ASSUMPTION`.
+3. Propose the smallest safe interpretation.
+4. Ask for clarification before proceeding.
+5. Never encode ambiguity as fact or confidence.
+
+---
+
 ## 1. Developer Mandate
 
 ### Role
