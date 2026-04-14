@@ -208,3 +208,18 @@ export {
   type CompletenessReport,
   evaluateCompleteness,
 } from "./audit/completeness";
+
+// ─── Layer 7: Integration (OpenCode Tools + Plugin) ──────────────────────────
+
+export {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  implement,
+  validate,
+  review,
+  abort_session,
+  GovernanceAuditPlugin,
+} from "./integration";

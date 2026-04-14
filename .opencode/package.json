@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@governance/core": "^1.1.0",
     "zod": "^3.23.0",
     "@opencode-ai/plugin": "latest"
   }

@@ -3,7 +3,7 @@
 Deterministic, fail-closed governance workflow for AI-assisted software delivery.
 Adds explicit phases, evidence gates, audit trails, and policy enforcement to OpenCode.
 
-> **Status:** v2.0.0-alpha | TypeScript | OpenCode-native | Zero-Bridge Architecture
+> **Status:** v1.1.0 | TypeScript | OpenCode-native | Installable Package Architecture
 
 ---
 
@@ -12,12 +12,25 @@ Adds explicit phases, evidence gates, audit trails, and policy enforcement to Op
 ### 1. Install
 
 ```bash
-# In your project root
-npm install @governance/core
+# Global installation (recommended) — available in all OpenCode sessions
+npx @governance/core install
+
+# Project-local installation — only in this repository
+npx @governance/core install --project
 ```
 
-The `.opencode/` directory contains the OpenCode integration (tools, commands, plugins).
-OpenCode auto-installs `.opencode/package.json` dependencies on startup.
+The CLI installer writes thin wrappers (re-exports from `@governance/core`) into
+the OpenCode config directory. All business logic lives in the npm package —
+`npm update @governance/core` is all that's needed for upgrades.
+
+**Targets:**
+- `--global` (default): `~/.config/opencode/` — works across all projects
+- `--project`: `./.opencode/` + `./opencode.json` + `./AGENTS.md` — project-scoped
+
+**Verify installation:**
+```bash
+npx @governance/core doctor
+```
 
 ### 2. Start a Governed Session
 
@@ -54,7 +67,7 @@ Bootstrap or reload the governance session. Idempotent — safe to call repeated
 
 - **Creates**: Session state at `.governance/session-state.json`
 - **Resolves**: Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
-- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: team.
+- **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo.
 
 ### /ticket
 
@@ -150,11 +163,11 @@ Three governance policies control strictness:
 
 | Policy | Human Gates | Four-Eyes | Self-Review Max | Impl Review Max |
 |--------|------------|-----------|-----------------|-----------------|
-| **Solo** | Disabled (auto-approve) | No | 2 | 2 |
+| **Solo** | Disabled (auto-approve) | No | 1 | 1 |
 | **Team** | Enabled | No | 3 | 3 |
-| **Regulated** | Enabled | Yes (enforced) | 5 | 5 |
+| **Regulated** | Enabled | Yes (enforced) | 3 | 3 |
 
-Set the policy during hydration: `/hydrate` defaults to `team`.
+Set the policy during hydration: `/hydrate` defaults to `solo`.
 
 ---
 
@@ -240,21 +253,22 @@ your-project/
 │   ├── session-state.json          # Canonical state (Zod-validated, atomic writes)
 │   ├── review-report.json          # Latest compliance report
 │   └── audit.jsonl                 # Append-only hash-chained audit trail
-├── .opencode/                      # OpenCode integration
-│   ├── package.json                # Plugin dependencies
-│   ├── tools/governance.ts         # 9 custom tool exports
+├── .opencode/                      # OpenCode integration (or ~/.config/opencode/ for global)
+│   ├── package.json                # Plugin dependencies (includes @governance/core)
+│   ├── tools/governance.ts         # Thin wrapper → re-exports 9 tools from @governance/core
 │   ├── commands/*.md               # 9 command prompts
-│   └── plugins/governance-audit.ts # Audit event plugin
+│   └── plugins/governance-audit.ts # Thin wrapper → re-exports plugin from @governance/core
 ├── AGENTS.md                       # Universal governance mandates (always in LLM context)
-├── PRODUCT_IDENTITY.md             # Product identity document
 ├── opencode.json                   # OpenCode configuration
-└── src/                            # Governance core library
+└── src/                            # @governance/core package source
     ├── state/                      # Layer 1: Zod schemas
     ├── machine/                    # Layer 2: Pure state machine
     ├── rails/                      # Layer 3: Command orchestrators
     ├── adapters/                   # Layer 4: I/O boundary
     ├── config/                     # Extension points (profiles, policies, reasons)
-    └── audit/                      # Layer 6: Audit subsystem
+    ├── audit/                      # Layer 6: Audit subsystem
+    ├── integration/                # Layer 7: OpenCode tools + plugin (9 tools, 1 plugin)
+    └── cli/                        # CLI installer (install/uninstall/doctor)
 ```
 
 ---
@@ -310,11 +324,20 @@ npm install
 # Type check
 npm run check
 
-# Run tests
+# Run tests (502 tests across 15 test files)
 npm test
 
 # Build
 npm run build
+
+# Install governance globally
+npx @governance/core install
+
+# Verify installation
+npx @governance/core doctor
+
+# Uninstall
+npx @governance/core uninstall
 ```
 
 ### Test Policy

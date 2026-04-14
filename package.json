@@ -1,6 +1,6 @@
 {
   "name": "@governance/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Governance runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,14 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./integration": {
+      "import": "./dist/integration/index.js",
+      "types": "./dist/integration/index.d.ts"
     }
+  },
+  "bin": {
+    "governance": "./dist/cli/install.js"
   },
   "scripts": {
     "build": "tsc",
@@ -23,10 +30,19 @@
   "dependencies": {
     "zod": "^3.23.0"
   },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.3",
+    "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^2.1.0"
   },
   "files": [
     "dist",

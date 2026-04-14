@@ -147,11 +147,11 @@ All side effects (persistence, git, LLM calls) live in the adapter layer, inject
 
 ### Solo
 
-For individual engineers who want structured execution and complete work records without human approval gates. All gates auto-approve.
+For individual engineers who want structured execution and complete work records without human approval gates. All gates auto-approve. **Default mode.**
 
 ### Team
 
-For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed. Default profile.
+For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed.
 
 ### Regulated
 
@@ -180,18 +180,30 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **2. Machine** | Pure transition table, guards, evaluator | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts` |
 | **3. Rails** | Thin orchestrators for each command | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files) |
 | **4. Adapters** | I/O boundary (filesystem, git, OpenCode context) | `adapters/persistence.ts`, `git.ts`, `binding.ts`, `context.ts` |
-| **5. Integration** | OpenCode custom tools, commands, plugins | `.opencode/tools/`, `commands/`, `plugins/` |
+| **5. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
 | **6. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
 | **7. Config** | Extension points (profiles, policies, reason codes) | `config/policy.ts`, `profile.ts`, `reasons.ts` |
+| **8. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
 
-Dependencies flow **inward**: Integration -> Adapters -> Rails -> Machine -> State. No circular dependencies.
+Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. No circular dependencies.
+
+### Deployment Model
+
+The platform uses an **installable package architecture**:
+
+1. **`@governance/core` npm package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin)
+2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@governance/core/integration`
+3. **CLI installer** — `npx @governance/core install` writes wrappers, commands, package.json, opencode.json, AGENTS.md. Idempotent, merge-aware, non-destructive.
+4. **Global-first** — default installation target is `~/.config/opencode/`, making governance available across all projects without per-project setup
+
+**Upgrade path:** `npm update @governance/core` upgrades all logic. Thin wrappers remain stable across versions.
 
 ### OpenCode Integration
 
-- **9 Custom Tools** (`.opencode/tools/governance.ts`) — bridge between LLM and state machine
+- **9 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
 - **9 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
-- **1 Audit Plugin** (`.opencode/plugins/governance-audit.ts`) — automatic event recording via `tool.execute.after` hook
-- **AGENTS.md** — universal governance mandates always loaded into LLM context (306 lines, 5 sections)
+- **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
+- **AGENTS.md** — universal governance mandates always loaded into LLM context
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
 
 ---
@@ -271,16 +283,18 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 2.0.0-alpha
+- **Version:** 1.1.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
+- **Architecture:** Installable package (`@governance/core`) with thin wrappers
 - **Phase Count:** 8 explicit workflow phases
 - **Command Surface:** 9 governance commands
-- **Custom Tools:** 9 OpenCode tool exports
+- **Custom Tools:** 9 OpenCode tool exports (via `@governance/core/integration`)
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
-- **Policy Modes:** 3 (Solo, Team, Regulated)
+- **Policy Modes:** 3 (Solo [default], Team, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas
+- **Test Coverage:** 502 tests across 15 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---
@@ -291,6 +305,6 @@ The AI Engineering Governance Platform makes AI-assisted software delivery usabl
 
 ---
 
-*Version: 2.0.0-alpha*
+*Version: 1.1.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Last Updated: 2026-04-14*
