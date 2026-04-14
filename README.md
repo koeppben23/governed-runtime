@@ -16,16 +16,22 @@ Adds explicit phases, evidence gates, audit trails, and policy enforcement to Op
 npx @governance/core install
 
 # Project-local installation — only in this repository
-npx @governance/core install --project
+npx @governance/core install --install-scope repo
 ```
 
-The CLI installer writes thin wrappers (re-exports from `@governance/core`) into
-the OpenCode config directory. All business logic lives in the npm package —
-`npm update @governance/core` is all that's needed for upgrades.
+The CLI installer writes thin wrappers (re-exports from `@governance/core`) and
+a managed `governance-mandates.md` into the OpenCode config directory. All business
+logic lives in the npm package — `npm update @governance/core` is all that's needed
+for upgrades.
 
 **Targets:**
-- `--global` (default): `~/.config/opencode/` — works across all projects
-- `--project`: `./.opencode/` + `./opencode.json` + `./AGENTS.md` — project-scoped
+- `--install-scope global` (default): `~/.config/opencode/` — works across all projects
+- `--install-scope repo`: `./.opencode/` + `./opencode.json` — project-scoped
+
+**Policy mode:**
+- `--policy-mode solo` (default), `--policy-mode team`, `--policy-mode regulated`
+
+> Deprecated aliases `--global`, `--project`, and `--mode` still work but emit warnings.
 
 **Verify installation:**
 ```bash
@@ -255,11 +261,12 @@ your-project/
 │   └── audit.jsonl                 # Append-only hash-chained audit trail
 ├── .opencode/                      # OpenCode integration (or ~/.config/opencode/ for global)
 │   ├── package.json                # Plugin dependencies (includes @governance/core)
+│   ├── governance-mandates.md      # Managed artifact — governance mandates (SHA-256 digest-tracked)
 │   ├── tools/governance.ts         # Thin wrapper → re-exports 9 tools from @governance/core
 │   ├── commands/*.md               # 9 command prompts
 │   └── plugins/governance-audit.ts # Thin wrapper → re-exports plugin from @governance/core
-├── AGENTS.md                       # Universal governance mandates (always in LLM context)
-├── opencode.json                   # OpenCode configuration
+├── AGENTS.md                       # User/project rules (OpenCode auto-loads, NEVER touched by installer)
+├── opencode.json                   # OpenCode configuration (instructions reference governance-mandates.md)
 └── src/                            # @governance/core package source
     ├── state/                      # Layer 1: Zod schemas
     ├── machine/                    # Layer 2: Pure state machine
@@ -324,7 +331,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (502 tests across 15 test files)
+# Run tests (555 tests across 15 test files)
 npm test
 
 # Build

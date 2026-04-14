@@ -193,7 +193,7 @@ The platform uses an **installable package architecture**:
 
 1. **`@governance/core` npm package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin)
 2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@governance/core/integration`
-3. **CLI installer** — `npx @governance/core install` writes wrappers, commands, package.json, opencode.json, AGENTS.md. Idempotent, merge-aware, non-destructive.
+3. **CLI installer** — `npx @governance/core install` writes wrappers, commands, package.json, opencode.json, and a managed `governance-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
 4. **Global-first** — default installation target is `~/.config/opencode/`, making governance available across all projects without per-project setup
 
 **Upgrade path:** `npm update @governance/core` upgrades all logic. Thin wrappers remain stable across versions.
@@ -203,7 +203,7 @@ The platform uses an **installable package architecture**:
 - **9 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
 - **9 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
-- **AGENTS.md** — universal governance mandates always loaded into LLM context
+- **`governance-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
 
 ---
@@ -294,7 +294,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas
-- **Test Coverage:** 502 tests across 15 test files, 5 mandatory categories
+- **Test Coverage:** 555 tests across 15 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---
