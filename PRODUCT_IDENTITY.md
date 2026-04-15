@@ -186,7 +186,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **State Validation** | Zod schemas, validated on every write |
 | **Audit Integrity** | SHA-256 hash chain, JSONL append-only |
 | **Module System** | ES2022 modules, Bundler resolution |
-| **Package** | `@flowguard/core` (distributed via GitHub Releases as source) |
+| **Package** | `@flowguard/core` (distributed via GitHub Releases as pre-built proprietary artifact) |
 
 ### Layer Architecture
 
@@ -206,16 +206,14 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 
 Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
-### Deployment Model
+### Distribution Model
 
-The platform uses a **source-distributed, locally-installed architecture**:
+FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** with installer-managed local runtime materialization.
 
-1. **`@flowguard/core` package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin). Distributed via GitHub Releases as source code, built locally.
-2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@flowguard/core/integration`
-3. **CLI installer** — `flowguard install` writes wrappers, commands, package.json, opencode.json, and a managed `flowguard-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
-4. **Global-first** — default installation target is `~/.config/opencode/`, making FlowGuard available across all projects without per-project setup
-
-**Upgrade path:** Download the latest release, rebuild, and reinstall globally (`npm install -g ./`). Thin wrappers remain stable across versions.
+1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases.
+2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
+3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
+4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.
 
 ### OpenCode Integration
 
@@ -288,7 +286,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 - **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements.
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
-- **Single-machine, single-user sessions.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model.
+- **No built-in multi-user coordination.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Multi-user access requires customer-managed controls (OS permissions, host account separation).
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
 - **No built-in CI integration.** FlowGuard operates within the developer's local environment. CI/CD pipeline integration requires wrapping FlowGuard operations in custom scripts.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
@@ -300,7 +298,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 - **Version:** 1.3.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
-- **Architecture:** Source-distributed package (`@flowguard/core`) with thin wrappers + workspace registry
+- **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Phase Count:** 8 explicit workflow phases
 - **Workflow Commands:** 9 (hydrate, ticket, plan, continue, implement, review-decision, validate, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
@@ -325,4 +323,5 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 *Version: 1.3.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
+*Distribution: Pre-built proprietary artifact (GitHub Releases)*
 *Last Updated: 2026-04-15*
