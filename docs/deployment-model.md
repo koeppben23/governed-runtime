@@ -177,7 +177,7 @@ FlowGuard integrates with OpenCode via:
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
 | **Single-machine** | No distributed sessions | External coordination |
-| **Single-user** | No collaboration | External workflow |
+| **Session access** | Multi-user access requires customer-managed controls | OS permissions, external tooling |
 | **No hosted option** | No managed service | Self-hosted only |
 | **Local storage** | No cloud sync | Manual archive transfer |
 
