@@ -1,0 +1,11 @@
+name: flowguard-codeql-config
+disable-default-queries: false
+
+paths-ignore:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - 'src/test-policy.ts'
+  - 'src/test-helpers.ts'
+
+paths:
+  - src

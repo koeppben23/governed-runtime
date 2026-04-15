@@ -1,0 +1,28 @@
+# actionlint configuration
+# See: https://github.com/rhysd/actionlint/blob/main/docs/configfile.md
+
+rules:
+  # Warn on deprecated actions
+  - name: deprecated-actions
+  # Check for missing 'shell' specification
+  - name: shellcheck
+  # Check for commonly misspelled action names
+  - name: misnamed-actor
+  # Check workflow concurrency settings
+  - name: concurrency
+  # Check for top-level permissions
+  - name: permissions
+
+# Shellcheck rules to ignore (info-level warnings are non-blocking)
+shellcheck:
+  - SC2086  # info: Double quote to prevent globbing and word splitting
+  - SC2012  # info: Use find instead of ls
+  - SC2035  # info: Use ./*glob* so names with dashes
+  - SC2010  # info: Don't check ls output
+  - SC2046  # info: Quote this to prevent word splitting
+
+# Ignore certain paths
+ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/.git/**"

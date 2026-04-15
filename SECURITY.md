@@ -2,9 +2,14 @@
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| 1.x     | Yes       |
+| Version | Supported          |
+|---------|--------------------|
+| 1.x     | :white_check_mark: |
+
+## Security Update Policy
+
+- **Critical vulnerabilities**: Acknowledgment within 72 hours, best-effort fix timeline
+- **High/Medium/Low**: Next planned release
 
 ## Reporting a Vulnerability
 
@@ -40,3 +45,10 @@ The following are in scope for security reports:
 - We follow coordinated disclosure: fixes are released before public disclosure
 - Security advisories are published via GitHub Security Advisories
 - Credit is given to reporters unless anonymity is requested
+
+## Enterprise Security Considerations
+
+- FlowGuard operates locally with no outbound network calls
+- All data remains on the local filesystem
+- Audit trails use SHA-256 hash chains for tamper evidence
+- Policy snapshots are immutable and SHA-256 hashed per session

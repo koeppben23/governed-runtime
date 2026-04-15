@@ -92,6 +92,7 @@ function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     installScope: "repo",
     policyMode: "solo",
     force: false,
+    coreTarball: undefined,
     ...overrides,
   };
 }
@@ -103,6 +104,7 @@ function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     installScope: "global",
     policyMode: "solo",
     force: false,
+    coreTarball: undefined,
     ...overrides,
   };
 }
@@ -131,6 +133,8 @@ describe("cli/parseArgs", () => {
         installScope: "global",
         policyMode: "solo",
         force: false,
+        coreTarball: undefined,
+        vendorDir: undefined,
       });
       expect(result!.deprecations).toEqual([]);
     });
@@ -151,6 +155,27 @@ describe("cli/parseArgs", () => {
     it("parses 'install --policy-mode regulated --force'", () => {
       const result = parseArgs(["install", "--policy-mode", "regulated", "--force"]);
       expect(result).not.toBeNull();
+      expect(result!.args.policyMode).toBe("regulated");
+      expect(result!.args.force).toBe(true);
+    });
+
+    it("parses 'install --core-tarball <path>'", () => {
+      const result = parseArgs(["install", "--core-tarball", "/path/to/flowguard-core-1.3.0.tgz"]);
+      expect(result).not.toBeNull();
+      expect(result!.args.coreTarball).toBe("/path/to/flowguard-core-1.3.0.tgz");
+    });
+
+    it("parses 'install --core-tarball with all options'", () => {
+      const result = parseArgs([
+        "install",
+        "--core-tarball", "./flowguard-core-1.3.0.tgz",
+        "--install-scope", "repo",
+        "--policy-mode", "regulated",
+        "--force",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.args.coreTarball).toBe("./flowguard-core-1.3.0.tgz");
+      expect(result!.args.installScope).toBe("repo");
       expect(result!.args.policyMode).toBe("regulated");
       expect(result!.args.force).toBe(true);
     });
@@ -201,6 +226,10 @@ describe("cli/parseArgs", () => {
 
     it("returns null for --mode with invalid value (deprecated alias)", () => {
       expect(parseArgs(["install", "--mode", "enterprise"])).toBeNull();
+    });
+
+    it("returns null for --core-tarball without value", () => {
+      expect(parseArgs(["install", "--core-tarball"])).toBeNull();
     });
   });
 
@@ -607,10 +636,18 @@ describe("cli/templates", () => {
 // ─── install ──────────────────────────────────────────────────────────────────
 
 describe("cli/install", () => {
+  // Helper: create a mock tarball for testing
+  async function createMockTarball(version = "1.3.0"): Promise<string> {
+    const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
+    await fs.writeFile(tarballPath, "mock tarball content");
+    return tarballPath;
+  }
+
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
-    it("creates all FlowGuard files in repo scope", async () => {
-      const result = await install(repoArgs());
+    it("creates all FlowGuard files in repo scope with --core-tarball", async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
       expect(result.warnings).toEqual([]);
 
@@ -629,10 +666,39 @@ describe("cli/install", () => {
       expect(existsSync(path.join(oc, "package.json"))).toBe(true);
       // opencode.json in project root
       expect(existsSync(path.join(tmpDir, "opencode.json"))).toBe(true);
+      // vendor directory with tarball
+      expect(existsSync(path.join(oc, "vendor", "flowguard-core-1.3.0.tgz"))).toBe(true);
+    });
+
+    it("copies tarball to vendor directory", async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+
+      const vendorPath = path.join(tmpDir, ".opencode", "vendor", "flowguard-core-1.3.0.tgz");
+      expect(existsSync(vendorPath)).toBe(true);
+      const content = await fs.readFile(vendorPath, "utf-8");
+      expect(content).toBe("mock tarball content");
+    });
+
+    it("package.json uses @flowguard/opencode-runtime with file:-dependency", async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const content = await fs.readFile(
+        path.join(tmpDir, ".opencode", "package.json"),
+        "utf-8",
+      );
+      const parsed = JSON.parse(content);
+      expect(parsed.name).toBe("@flowguard/opencode-runtime");
+      expect(parsed.private).toBe(true);
+      expect(parsed.dependencies["@flowguard/core"]).toBe("file:./vendor/flowguard-core-1.3.0.tgz");
+      expect(parsed.dependencies["zod"]).toBeDefined();
     });
 
     it("flowguard-mandates.md is a valid managed artifact", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", MANDATES_FILENAME),
         "utf-8",
@@ -643,7 +709,8 @@ describe("cli/install", () => {
     });
 
     it("tool wrapper content matches template", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", "tools", "flowguard.ts"),
         "utf-8",
@@ -652,7 +719,8 @@ describe("cli/install", () => {
     });
 
     it("plugin wrapper content matches template", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", "plugins", "flowguard-audit.ts"),
         "utf-8",
@@ -661,7 +729,8 @@ describe("cli/install", () => {
     });
 
     it("package.json contains @flowguard/core and zod but NOT @opencode-ai/plugin", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, ".opencode", "package.json"),
         "utf-8",
@@ -673,7 +742,8 @@ describe("cli/install", () => {
     });
 
     it("opencode.json includes flowguard-mandates.md instruction (repo scope)", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
         "utf-8",
@@ -683,12 +753,14 @@ describe("cli/install", () => {
     });
 
     it("AGENTS.md is NOT created by install", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       expect(existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(false);
     });
 
     it("opencode.json does NOT contain legacy AGENTS.md entry", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
         "utf-8",
@@ -700,43 +772,70 @@ describe("cli/install", () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe("BAD", () => {
-    it("returns error count of 0 on fresh directory", async () => {
+    it("install without --core-tarball returns error", async () => {
       const result = await install(repoArgs());
-      expect(result.errors.length).toBe(0);
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain("--core-tarball is required");
+    });
+
+    it("install with non-existent tarball returns error", async () => {
+      const result = await install(repoArgs({
+        coreTarball: "/nonexistent/flowguard-core-1.3.0.tgz",
+      }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain("not found");
+    });
+
+    it("install with invalid tarball filename returns error", async () => {
+      const invalidTarball = path.join(tmpDir, "invalid-name.tgz");
+      await fs.writeFile(invalidTarball, "content");
+      const result = await install(repoArgs({ coreTarball: invalidTarball }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain("must match flowguard-core-");
+    });
+
+    it("install with version mismatch returns error", async () => {
+      const tarball = await createMockTarball("2.0.0");
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain("Version mismatch");
     });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
     it("idempotent: second install skips existing wrappers (no --force)", async () => {
-      await install(repoArgs());
-      const result2 = await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const result2 = await install(repoArgs({ coreTarball: tarball }));
       // Tool and plugin should be skipped (already exist, no --force)
       const skipped = result2.ops.filter((op) => op.action === "skipped");
       expect(skipped.length).toBeGreaterThan(0);
     });
 
     it("flowguard-mandates.md is ALWAYS replaced even without --force", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       // Tamper with the file
       await fs.writeFile(mandatesPath, "# Tampered", "utf-8");
 
       // Re-install without --force
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(mandatesPath, "utf-8");
       expect(isManagedArtifact(content)).toBe(true);
       expect(content).toContain("# FlowGuard Mandates");
     });
 
     it("--force overwrites existing tool wrapper", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       // Modify the tool wrapper
       const toolPath = path.join(tmpDir, ".opencode", "tools", "flowguard.ts");
       await fs.writeFile(toolPath, "// modified", "utf-8");
 
       // Re-install with --force
-      const result = await install(repoArgs({ force: true }));
+      const result = await install(repoArgs({ coreTarball: tarball, force: true }));
       const toolOp = result.ops.find((op) => op.path.includes("flowguard.ts") && op.path.includes("tools"));
       expect(toolOp?.action).toBe("written");
 
@@ -746,6 +845,7 @@ describe("cli/install", () => {
     });
 
     it("merges into existing package.json without removing other deps", async () => {
+      const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, ".opencode");
       await fs.mkdir(pkgDir, { recursive: true });
       await fs.writeFile(
@@ -754,7 +854,7 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(pkgDir, "package.json"),
         "utf-8",
@@ -767,6 +867,7 @@ describe("cli/install", () => {
     });
 
     it("merges into existing opencode.json without removing other config", async () => {
+      const tarball = await createMockTarball();
       // Create an opencode.json with custom config
       await fs.writeFile(
         path.join(tmpDir, "opencode.json"),
@@ -774,7 +875,7 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
         "utf-8",
@@ -787,17 +888,26 @@ describe("cli/install", () => {
     });
 
     it("AGENTS.md in project root is never touched even with --force", async () => {
+      const tarball = await createMockTarball();
       // Create a custom AGENTS.md
       const agentsPath = path.join(tmpDir, "AGENTS.md");
       await fs.writeFile(agentsPath, "# My Custom Rules\n", "utf-8");
 
-      await install(repoArgs({ force: true }));
+      await install(repoArgs({ coreTarball: tarball, force: true }));
       const content = await fs.readFile(agentsPath, "utf-8");
       // Should still be the user's content — install never touches AGENTS.md
       expect(content).toBe("# My Custom Rules\n");
     });
 
+    it("supports relative tarball path", async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: "./flowguard-core-1.3.0.tgz" }));
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, ".opencode", "vendor", "flowguard-core-1.3.0.tgz"))).toBe(true);
+    });
+
     it("handles malformed package.json by overwriting", async () => {
+      const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, ".opencode");
       await fs.mkdir(pkgDir, { recursive: true });
       await fs.writeFile(
@@ -806,27 +916,28 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      const result = await install(repoArgs());
+      const result = await install(repoArgs({ coreTarball: tarball }));
       const pkgOp = result.ops.find((op) => op.path.includes("package.json"));
       expect(pkgOp?.action).toBe("written");
       expect(pkgOp?.reason).toContain("malformed");
     });
 
     it("handles malformed opencode.json by overwriting", async () => {
+      const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, "opencode.json"),
         "not json at all{{{",
         "utf-8",
       );
 
-      const result = await install(repoArgs());
+      const result = await install(repoArgs({ coreTarball: tarball }));
       const ocOp = result.ops.find((op) => op.path.includes("opencode.json"));
       expect(ocOp?.action).toBe("written");
       expect(ocOp?.reason).toContain("malformed");
     });
 
     it("legacy migration: removes AGENTS.md from opencode.json instructions", async () => {
-      // Create an opencode.json with legacy AGENTS.md entry
+      const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, "opencode.json"),
         JSON.stringify({
@@ -835,21 +946,19 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
         "utf-8",
       );
       const parsed = JSON.parse(content);
-      // Legacy entry removed
       expect(parsed.instructions).not.toContain("AGENTS.md");
-      // Other user entries preserved
       expect(parsed.instructions).toContain("other-instructions.md");
-      // New entry added
       expect(parsed.instructions).toContain(mandatesInstructionEntry("repo"));
     });
 
     it("removes legacy @opencode-ai/plugin from existing package.json", async () => {
+      const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, ".opencode");
       await fs.mkdir(pkgDir, { recursive: true });
       await fs.writeFile(
@@ -860,7 +969,7 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(pkgDir, "package.json"),
         "utf-8",
@@ -875,8 +984,9 @@ describe("cli/install", () => {
   // ─── EDGE ─────────────────────────────────────────────────
   describe("EDGE", () => {
     it("opencode.json does not duplicate instruction entry on re-install", async () => {
-      await install(repoArgs());
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      await install(repoArgs({ coreTarball: tarball }));
 
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
@@ -891,14 +1001,16 @@ describe("cli/install", () => {
     });
 
     it("result ops include every written/merged file", async () => {
-      const result = await install(repoArgs());
-      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      const expectedOps = 1 + 1 + 1 + commandCount + 1 + 1;
+      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 
     it("user entries in opencode.json instructions are preserved in order", async () => {
+      const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, "opencode.json"),
         JSON.stringify({
@@ -907,20 +1019,18 @@ describe("cli/install", () => {
         "utf-8",
       );
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(
         path.join(tmpDir, "opencode.json"),
         "utf-8",
       );
       const parsed = JSON.parse(content);
       const instructions = parsed.instructions as string[];
-      // User entries still in original order
       const firstIdx = instructions.indexOf("first.md");
       const secondIdx = instructions.indexOf("second.md");
       const thirdIdx = instructions.indexOf("third.md");
       expect(firstIdx).toBeLessThan(secondIdx);
       expect(secondIdx).toBeLessThan(thirdIdx);
-      // FlowGuard entry appended at end
       expect(instructions).toContain(mandatesInstructionEntry("repo"));
     });
   });
@@ -928,8 +1038,9 @@ describe("cli/install", () => {
   // ─── PERF ──────────────────────────────────────────────────
   describe("PERF", () => {
     it("full install completes in < 500ms", async () => {
+      const tarball = await createMockTarball();
       const { elapsedMs } = await measureAsync(async () => {
-        await install(repoArgs());
+        await install(repoArgs({ coreTarball: tarball }));
       });
       expect(elapsedMs).toBeLessThan(500);
     });
@@ -939,10 +1050,18 @@ describe("cli/install", () => {
 // ─── uninstall ────────────────────────────────────────────────────────────────
 
 describe("cli/uninstall", () => {
+  // Helper: create a mock tarball for uninstall tests
+  async function createMockTarball(version = "1.3.0"): Promise<string> {
+    const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
+    await fs.writeFile(tarballPath, "mock tarball content");
+    return tarballPath;
+  }
+
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
     it("removes FlowGuard files after install", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const result = await uninstall(repoArgs({ action: "uninstall" }));
       expect(result.errors).toEqual([]);
 
@@ -956,10 +1075,13 @@ describe("cli/uninstall", () => {
       for (const name of Object.keys(COMMANDS)) {
         expect(existsSync(path.join(oc, "commands", name))).toBe(false);
       }
+      // Vendor directory removed
+      expect(existsSync(path.join(oc, "vendor"))).toBe(false);
     });
 
     it("removes @flowguard/core from package.json", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: "uninstall" }));
 
       const content = await fs.readFile(
@@ -971,7 +1093,8 @@ describe("cli/uninstall", () => {
     });
 
     it("removes FlowGuard instruction from opencode.json", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: "uninstall" }));
 
       const content = await fs.readFile(
@@ -997,6 +1120,7 @@ describe("cli/uninstall", () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
     it("uninstall preserves other dependencies in package.json", async () => {
+      const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, ".opencode");
       await fs.mkdir(pkgDir, { recursive: true });
       await fs.writeFile(
@@ -1004,7 +1128,7 @@ describe("cli/uninstall", () => {
         JSON.stringify({ dependencies: { lodash: "^4.0.0" } }, null, 2),
         "utf-8",
       );
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: "uninstall" }));
 
       const content = await fs.readFile(
@@ -1017,11 +1141,12 @@ describe("cli/uninstall", () => {
     });
 
     it("AGENTS.md in project root is never touched by uninstall", async () => {
+      const tarball = await createMockTarball();
       // Create a user AGENTS.md
       const agentsPath = path.join(tmpDir, "AGENTS.md");
       await fs.writeFile(agentsPath, "# User rules\n", "utf-8");
 
-      await install(repoArgs());
+      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: "uninstall" }));
 
       // AGENTS.md should still exist and be unmodified
@@ -1031,7 +1156,8 @@ describe("cli/uninstall", () => {
     });
 
     it("warns when flowguard-mandates.md was locally modified", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       // Tamper with mandates but keep the managed header
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, "utf-8");
@@ -1043,7 +1169,8 @@ describe("cli/uninstall", () => {
     });
 
     it("warns when flowguard-mandates.md has no managed header", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       await fs.writeFile(mandatesPath, "# Just a plain file\n", "utf-8");
 
@@ -1053,6 +1180,7 @@ describe("cli/uninstall", () => {
     });
 
     it("uninstall removes legacy @opencode-ai/plugin from package.json", async () => {
+      const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, ".opencode");
       await fs.mkdir(pkgDir, { recursive: true });
       await fs.writeFile(
@@ -1104,20 +1232,29 @@ describe("cli/uninstall", () => {
 // ─── doctor ───────────────────────────────────────────────────────────────────
 
 describe("cli/doctor", () => {
+  // Helper: create a mock tarball for testing
+  async function createMockTarball(version = "1.3.0"): Promise<string> {
+    const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
+    await fs.writeFile(tarballPath, "mock tarball content");
+    return tarballPath;
+  }
+
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
     it("all checks pass after fresh install", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: "doctor" }));
       const allOk = checks.every((c) => c.status === "ok");
       expect(allOk).toBe(true);
     });
 
     it("returns correct check count", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: "doctor" }));
-      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config
-      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1;
+      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 vendor tarball + 1 opencode.json + 1 config
+      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1;
       expect(checks.length).toBe(expectedChecks);
     });
   });
@@ -1134,7 +1271,8 @@ describe("cli/doctor", () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
     it("detects modified tool wrapper", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const toolPath = path.join(tmpDir, ".opencode", "tools", "flowguard.ts");
       await fs.writeFile(toolPath, "// tampered content", "utf-8");
 
@@ -1144,7 +1282,8 @@ describe("cli/doctor", () => {
     });
 
     it("detects modified flowguard-mandates.md (digest mismatch)", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       const original = await fs.readFile(mandatesPath, "utf-8");
       // Tamper with body but keep header intact
@@ -1157,7 +1296,8 @@ describe("cli/doctor", () => {
     });
 
     it("detects unmanaged flowguard-mandates.md (no header)", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const mandatesPath = path.join(tmpDir, ".opencode", MANDATES_FILENAME);
       await fs.writeFile(mandatesPath, "# Just a plain file\n", "utf-8");
 
@@ -1167,7 +1307,8 @@ describe("cli/doctor", () => {
     });
 
     it("detects missing @flowguard/core in package.json", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       const pkgPath = path.join(tmpDir, ".opencode", "package.json");
       const content = JSON.parse(await fs.readFile(pkgPath, "utf-8"));
       delete content.dependencies["@flowguard/core"];
@@ -1179,7 +1320,8 @@ describe("cli/doctor", () => {
     });
 
     it("detects instruction_missing in opencode.json", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       // Remove FlowGuard entry from instructions
       const ocPath = path.join(tmpDir, "opencode.json");
       const content = JSON.parse(await fs.readFile(ocPath, "utf-8"));
@@ -1195,7 +1337,8 @@ describe("cli/doctor", () => {
     });
 
     it("detects instruction_stale (legacy AGENTS.md entry)", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       // Add legacy entry to instructions
       const ocPath = path.join(tmpDir, "opencode.json");
       const content = JSON.parse(await fs.readFile(ocPath, "utf-8"));
@@ -1214,7 +1357,8 @@ describe("cli/doctor", () => {
   // ─── EDGE ─────────────────────────────────────────────────
   describe("EDGE", () => {
     it("doctor after uninstall reports all missing", async () => {
-      await install(repoArgs());
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: "uninstall" }));
       const checks = await doctor(repoArgs({ action: "doctor" }));
       // mandates, tool, plugin, commands should be missing
@@ -1346,14 +1490,23 @@ describe("cli/formatResult", () => {
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 describe("cli/main", () => {
+  // Helper: create a mock tarball for testing
+  async function createMockTarball(version = "1.3.0"): Promise<string> {
+    const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
+    await fs.writeFile(tarballPath, "mock tarball content");
+    return tarballPath;
+  }
+
   describe("HAPPY", () => {
     it("returns 0 for successful install (repo scope)", async () => {
-      const code = await main(["install", "--install-scope", "repo"]);
+      const tarball = await createMockTarball();
+      const code = await main(["install", "--install-scope", "repo", "--core-tarball", tarball]);
       expect(code).toBe(0);
     });
 
     it("returns 0 for doctor after install (repo scope)", async () => {
-      await main(["install", "--install-scope", "repo"]);
+      const tarball = await createMockTarball();
+      await main(["install", "--install-scope", "repo", "--core-tarball", tarball]);
       const code = await main(["doctor", "--install-scope", "repo"]);
       expect(code).toBe(0);
     });
@@ -1369,6 +1522,11 @@ describe("cli/main", () => {
       const code = await main(["deploy"]);
       expect(code).toBe(1);
     });
+
+    it("returns 1 when install is called without --core-tarball", async () => {
+      const code = await main(["install", "--install-scope", "repo"]);
+      expect(code).toBe(1);
+    });
   });
 
   describe("CORNER", () => {
@@ -1377,8 +1535,9 @@ describe("cli/main", () => {
       expect(code).toBe(1);
     });
 
-    it("deprecated --project still works via main()", async () => {
-      const code = await main(["install", "--project"]);
+    it("deprecated --project still works via main() but requires --core-tarball", async () => {
+      const tarball = await createMockTarball();
+      const code = await main(["install", "--project", "--core-tarball", tarball]);
       expect(code).toBe(0);
     });
   });
@@ -1392,8 +1551,9 @@ describe("cli/main", () => {
 
   describe("PERF", () => {
     it("main dispatch overhead is negligible", async () => {
+      const tarball = await createMockTarball();
       const start = performance.now();
-      await main(["install", "--install-scope", "repo"]);
+      await main(["install", "--install-scope", "repo", "--core-tarball", tarball]);
       const elapsed = performance.now() - start;
       expect(elapsed).toBeLessThan(1000);
     });

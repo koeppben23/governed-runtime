@@ -91,6 +91,89 @@ jobs:
       - name: npm audit (moderate+)
         run: npm audit --audit-level=moderate
 
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: "-config-file .github/actionlint.yaml -color"
+
+  secrets-scan:
+    name: secrets-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    name: codeql-sast
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+          queries: security-extended
+
+      - name: Build
+        run: npm run build
+        shell: bash
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:typescript"
+
+  security-policy:
+    name: security-policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for SECURITY.md
+        run: |
+          if [ ! -f SECURITY.md ]; then
+            echo "::error::SECURITY.md is missing"
+            exit 1
+          fi
+          echo "SECURITY.md found"
+
+      - name: Check for private vulnerability reporting
+        run: |
+          if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
+            echo "::warning::Private vulnerability reporting not configured. Consider enabling it at https://github.com/${{ github.repository }}/security/advisories/new"
+          fi
+
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -114,8 +197,20 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Create mock tarball for testing
+        id: tarball
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p 'require("./package.json").version')
+          mkdir -p "$RUNNER_TEMP/flowguard-test"
+          printf '%s' "mock tarball" > "$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz"
+          echo "path=$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz" >> "$GITHUB_OUTPUT"
+
       - name: Install FlowGuard (test install)
-        run: node dist/cli/install.js install --install-scope repo
+        shell: bash
+        run: |
+          node dist/cli/install.js install --install-scope repo --core-tarball "${{ steps.tarball.outputs.path }}"
 
       - name: Verify CLI doctor
+        shell: bash
         run: node dist/cli/install.js doctor --install-scope repo

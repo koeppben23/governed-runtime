@@ -22,23 +22,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate tag matches VERSION file
+      - name: Validate tag matches package.json
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          FILE_VERSION="$(cat VERSION | tr -d '[:space:]')"
           PKG_VERSION="$(node -p 'require("./package.json").version')"
           echo "Tag: $TAG_VERSION"
-          echo "VERSION file: $FILE_VERSION"
           echo "package.json: $PKG_VERSION"
-          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
-            echo "::error::Tag $TAG_VERSION does not match VERSION file $FILE_VERSION"
-            exit 1
-          fi
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag $TAG_VERSION does not match package.json $PKG_VERSION"
             exit 1
@@ -71,7 +64,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -79,49 +71,40 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Generate SBOM (CycloneDX)
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          SBOM="flowguard-${VERSION}-sbom.cdx.json"
-          npm sbom --sbom-format cyclonedx --sbom-type library > "$SBOM"
-          echo "SBOM=$SBOM" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Copy LICENSE to dist
+        run: cp LICENSE dist/
 
-      - name: Package release tarball
+      - name: Create npm package
         run: |
-          TARBALL="flowguard-${{ env.VERSION }}.tar.gz"
-          tar -czf "$TARBALL" \
-            dist/ \
-            package.json \
-            package-lock.json \
-            README.md \
-            CHANGELOG.md \
-            SECURITY.md \
-            VERSION \
-            LICENSE 2>/dev/null || true
-          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          mkdir -p release
+          npm pack --pack-destination release/
+
+      - name: Validate asset naming
+        run: |
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          EXPECTED_FILENAME="flowguard-core-${PKG_VERSION}.tgz"
+          CREATED_FILENAME=$(find release -maxdepth 1 -name "*.tgz" -type f -printf "%f\n" 2>/dev/null | head -1)
+          echo "Expected: $EXPECTED_FILENAME"
+          echo "Created: $CREATED_FILENAME"
+          if [ "$CREATED_FILENAME" != "$EXPECTED_FILENAME" ]; then
+            echo "::error::Asset filename mismatch. Expected '$EXPECTED_FILENAME' but got '$CREATED_FILENAME'"
+            exit 1
+          fi
+          echo "Asset naming validated successfully."
 
       - name: Generate checksums
+        working-directory: release
         run: |
-          CHECKSUMS="flowguard-${{ env.VERSION }}-checksums.sha256"
-          sha256sum "${{ env.TARBALL }}" "${{ env.SBOM }}" > "$CHECKSUMS"
-          echo "CHECKSUMS=$CHECKSUMS" >> "$GITHUB_ENV"
-
-      - name: Attest build provenance (Sigstore)
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            ${{ env.TARBALL }}
-            ${{ env.SBOM }}
+          sha256sum ./*.tgz > checksums.sha256
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "${{ env.TARBALL }}" \
-            "${{ env.SBOM }}" \
-            "${{ env.CHECKSUMS }}" \
-            --title "FlowGuard v${{ env.VERSION }}" \
+            release/*.tgz \
+            release/checksums.sha256 \
+            LICENSE \
+            --title "FlowGuard v${GITHUB_REF_NAME#v}" \
             --generate-notes \
             --verify-tag

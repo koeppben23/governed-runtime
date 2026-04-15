@@ -1,54 +1,48 @@
 # Installation
 
-FlowGuard is distributed via GitHub Releases as source code. The release contains the complete TypeScript source that must be built before installation.
+FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases. No build step required.
 
 ## Prerequisites
 
 - Node.js 20+
-- Bun (recommended) or npm
+- npm
 - OpenCode
 
 ## Installation Steps
 
-### 1. Download the Release
+### 1. Download the Release Artifact
 
-Download the latest release from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
+Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
 
-### 2. Build the Package
-
+Verify the checksum:
 ```bash
-# Extract the release
-cd flowguard-release
-
-# Install dependencies and build
-npm install
-npm run build
+sha256sum flowguard-core-{version}.tgz
 ```
 
-### 3. Install Globally
+### 2. Install the CLI
 
 ```bash
-# Install the built CLI globally
-npm install -g ./
+npm install -g ./flowguard-core-{version}.tgz
 
 # Verify installation
 flowguard --version
 ```
 
-### 4. Initialize OpenCode Integration
+### 3. Initialize OpenCode Integration
 
 ```bash
-# Set up FlowGuard tools in your OpenCode environment
-flowguard install
+flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz
 ```
 
-### 5. Verify Installation
+**Note:** The `--core-tarball` path must point to the downloaded release artifact. This is required for the installer to set up local vendored dependencies.
+
+### 4. Verify Installation
 
 ```bash
 flowguard doctor
 ```
 
-Expected output (abridged — one line per managed artifact):
+Expected output:
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/tools/flowguard.ts
@@ -70,6 +64,7 @@ Expected output (abridged — one line per managed artifact):
 | `--install-scope global` | Install to `~/.config/opencode/` (default) |
 | `--install-scope repo` | Install to `.opencode/` (committed to repo) |
 | `--policy-mode solo\|team\|regulated` | Set default policy mode |
+| `--core-tarball <path>` | **Required.** Path to `flowguard-core-{version}.tgz` |
 
 ## How It Works
 
@@ -139,11 +134,21 @@ npm run check
 
 ## Troubleshooting
 
+### --core-tarball required
+
+```
+ERROR: --core-tarball is required.
+Usage: flowguard install --core-tarball /path/to/flowguard-core-1.3.0.tgz
+Download from: https://github.com/koeppben23/governed-runtime/releases
+```
+
+Ensure you have downloaded `flowguard-core-{version}.tgz` from the releases page.
+
 ### Tools not discovered
 
 ```bash
-# Reinstall tools
-flowguard install --force
+# Reinstall tools (requires --core-tarball again)
+flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz --force
 
 # Check OpenCode config
 opencode doctor

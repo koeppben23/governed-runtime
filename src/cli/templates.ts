@@ -1230,8 +1230,11 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
  */
 export const PACKAGE_JSON_TEMPLATE = (version: string): string => `\
 {
+  "name": "@flowguard/opencode-runtime",
+  "version": "${version}",
+  "private": true,
   "dependencies": {
-    "@flowguard/core": "^${version}",
+    "@flowguard/core": "file:./vendor/flowguard-core-${version}.tgz",
     "zod": "^3.23.0"
   }
 }
