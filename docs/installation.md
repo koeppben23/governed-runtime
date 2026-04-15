@@ -1,30 +1,46 @@
 # Installation
 
+FlowGuard is distributed via GitHub Releases. This ensures controlled, auditable distribution.
+
 ## Prerequisites
 
 - Node.js 20+
 - Bun (recommended) or npm
 - OpenCode
 
-## Global Installation
+## Installation Steps
+
+### 1. Download the Release
+
+Download the latest release from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
+
+The release contains:
+- Source code snapshot
+- Built artifacts
+- Installation instructions
+- Version information
+
+### 2. Install the Package
 
 ```bash
-# Install the FlowGuard package
-npm install -g @flowguard/core
+# From the release directory
+npm install -g ./
 
-# Set up OpenCode integration
-npx @flowguard/core install
+# Or with Bun
+bun add -g ./
 ```
 
-### Options
+### 3. Set Up OpenCode Integration
 
-| Option | Description |
-|--------|-------------|
-| `--install-scope global` | Install to `~/.config/opencode/` (default) |
-| `--install-scope repo` | Install to `.opencode/` (committed to repo) |
-| `--policy-mode solo\|team\|regulated` | Set default policy mode |
+```bash
+# Initialize FlowGuard in your OpenCode environment
+npx flowguard install
 
-## Verify Installation
+# Or with the installed CLI
+flowguard install
+```
+
+### 4. Verify Installation
 
 ```bash
 flowguard doctor
@@ -38,6 +54,37 @@ Expected output:
 ✓ Configuration valid
 ```
 
+## Installation Options
+
+| Option | Description |
+|--------|-------------|
+| `--install-scope global` | Install to `~/.config/opencode/` (default) |
+| `--install-scope repo` | Install to `.opencode/` (committed to repo) |
+| `--policy-mode solo\|team\|regulated` | Set default policy mode |
+
+## How It Works
+
+FlowGuard integrates with OpenCode via custom tools:
+
+1. OpenCode discovers tools in `~/.config/opencode/tools/`
+2. FlowGuard tools are installed there automatically
+3. Use `/<command>` to invoke FlowGuard commands
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/hydrate` | Bootstrap session |
+| `/ticket <text>` | Record task |
+| `/plan` | Generate plan |
+| `/continue` | Auto-advance |
+| `/validate` | Run checks |
+| `/implement` | Execute plan |
+| `/review-decision` | Human approval |
+| `/review` | Generate report |
+| `/abort` | Terminate session |
+| `/archive` | Archive session |
+
 ## Uninstall
 
 ```bash
@@ -45,6 +92,8 @@ flowguard uninstall
 ```
 
 ## Local Development
+
+For development on FlowGuard itself:
 
 ```bash
 # Clone repository
@@ -60,14 +109,6 @@ npm test
 # Build
 npm run build
 ```
-
-## OpenCode Integration
-
-FlowGuard integrates with OpenCode via custom tools. After installation:
-
-1. OpenCode discovers tools in `~/.config/opencode/tools/`
-2. FlowGuard tools are installed there automatically
-3. Use `/flowguard_<command>` to invoke
 
 ## Troubleshooting
 
