@@ -33,6 +33,11 @@ Configuration file reference.
 ### [Troubleshooting](./troubleshooting.md)
 FAQ and error handling.
 
+## Compliance
+
+### [BSI C5 Mapping](./bsi-c5-mapping.md)
+How FlowGuard capabilities map to BSI C5:2020 control domains.
+
 ## Additional Resources
 
 - [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
