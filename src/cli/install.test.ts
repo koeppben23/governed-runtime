@@ -93,7 +93,6 @@ function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     policyMode: "solo",
     force: false,
     coreTarball: undefined,
-    vendorDir: undefined,
     ...overrides,
   };
 }
@@ -106,7 +105,6 @@ function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
     policyMode: "solo",
     force: false,
     coreTarball: undefined,
-    vendorDir: undefined,
     ...overrides,
   };
 }
@@ -173,14 +171,12 @@ describe("cli/parseArgs", () => {
         "--core-tarball", "./flowguard-core-1.3.0.tgz",
         "--install-scope", "repo",
         "--policy-mode", "regulated",
-        "--vendor-dir", "./vendor",
         "--force",
       ]);
       expect(result).not.toBeNull();
       expect(result!.args.coreTarball).toBe("./flowguard-core-1.3.0.tgz");
       expect(result!.args.installScope).toBe("repo");
       expect(result!.args.policyMode).toBe("regulated");
-      expect(result!.args.vendorDir).toBe("./vendor");
       expect(result!.args.force).toBe(true);
     });
 
@@ -234,10 +230,6 @@ describe("cli/parseArgs", () => {
 
     it("returns null for --core-tarball without value", () => {
       expect(parseArgs(["install", "--core-tarball"])).toBeNull();
-    });
-
-    it("returns null for --vendor-dir without value", () => {
-      expect(parseArgs(["install", "--vendor-dir"])).toBeNull();
     });
   });
 
@@ -907,13 +899,6 @@ describe("cli/install", () => {
       expect(content).toBe("# My Custom Rules\n");
     });
 
-    it("custom --vendor-dir places tarball in specified location", async () => {
-      const tarball = await createMockTarball();
-      await install(repoArgs({ coreTarball: tarball, vendorDir: "custom-vendor" }));
-
-      expect(existsSync(path.join(tmpDir, ".opencode", "custom-vendor", "flowguard-core-1.3.0.tgz"))).toBe(true);
-    });
-
     it("supports relative tarball path", async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: "./flowguard-core-1.3.0.tgz" }));
@@ -1268,8 +1253,8 @@ describe("cli/doctor", () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: "doctor" }));
-      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config
-      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1;
+      // 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 vendor tarball + 1 opencode.json + 1 config
+      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1;
       expect(checks.length).toBe(expectedChecks);
     });
   });

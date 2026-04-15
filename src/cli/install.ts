@@ -80,7 +80,6 @@ export interface CliArgs {
   policyMode: PolicyMode;
   force: boolean;
   coreTarball?: string;
-  vendorDir?: string;
 }
 
 /** Result of a single file operation. */
@@ -196,6 +195,15 @@ async function safeUnlink(filePath: string): Promise<boolean> {
 }
 
 /**
+ * Generate the file:-dependency string for @flowguard/core.
+ * Used by both PACKAGE_JSON_TEMPLATE and mergePackageJson() to ensure
+ * consistent A1 model: local vendor directory with offline-resolvable file:-dependency.
+ */
+function vendorDependency(version: string): string {
+  return `file:./vendor/flowguard-core-${version}.tgz`;
+}
+
+/**
  * Write a file only if it doesn't exist or --force is set.
  * Used for hard-managed artifacts OTHER than flowguard-mandates.md
  * (which is always replaced).
@@ -240,7 +248,7 @@ async function mergePackageJson(
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
     const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-    deps["@flowguard/core"] = `^${version}`;
+    deps["@flowguard/core"] = vendorDependency(version);
     if (!deps["zod"]) deps["zod"] = "^3.23.0";
     // Remove legacy dependency that is no longer needed
     delete deps["@opencode-ai/plugin"];
@@ -413,9 +421,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, "plugins"));
     await ensureDir(join(target, "commands"));
 
-    // 1. Copy tarball to vendor directory
-    const vendorDir = args.vendorDir || "vendor";
-    const vendorPath = join(target, vendorDir);
+    // 1. Copy tarball to vendor directory (fixed path for A1 model)
+    const vendorPath = join(target, "vendor");
     await ensureDir(vendorPath);
     const vendorTarballPath = join(vendorPath, tarballName);
     await copyFile(tarballPath, vendorTarballPath);
@@ -642,7 +649,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // 5. Check package.json
+  // 5. Check package.json (A1 model validation)
   const pkgPath = join(target, "package.json");
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) {
@@ -651,14 +658,27 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     try {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
       const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-      if (deps["@flowguard/core"]) {
-        checks.push({ file: pkgPath, status: "ok" });
-      } else {
+      const coreDep = deps["@flowguard/core"];
+      if (!coreDep) {
         checks.push({ file: pkgPath, status: "error", detail: "missing @flowguard/core dependency" });
+      } else if (!coreDep.startsWith("file:./vendor/flowguard-core-")) {
+        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core must be a file:-dependency (got: ${coreDep})` });
+      } else if (!coreDep.endsWith(".tgz")) {
+        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core file:-dependency must end in .tgz (got: ${coreDep})` });
+      } else {
+        checks.push({ file: pkgPath, status: "ok" });
       }
     } catch {
       checks.push({ file: pkgPath, status: "error", detail: "malformed JSON" });
     }
+  }
+
+  // 5b. Check vendor tarball exists (A1 model validation)
+  const vendorTarballPath = join(target, "vendor", `flowguard-core-${PACKAGE_VERSION}.tgz`);
+  if (existsSync(vendorTarballPath)) {
+    checks.push({ file: vendorTarballPath, status: "ok" });
+  } else {
+    checks.push({ file: vendorTarballPath, status: "missing", detail: "vendor tarball not found — run install with --core-tarball" });
   }
 
   // 6. Check opencode.json instruction entries
@@ -779,7 +799,6 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let policyMode: PolicyMode = "solo";
   let force = false;
   let coreTarball: string | undefined;
-  let vendorDir: string | undefined;
   const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length; i++) {
@@ -819,16 +838,6 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
-      case "--vendor-dir": {
-        const next = argv[i + 1];
-        if (next) {
-          vendorDir = next;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
 
       // ── Deprecated aliases ─────────────────────────────────
       case "--global":
@@ -858,7 +867,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   return {
-    args: { action, installScope, policyMode, force, coreTarball, vendorDir },
+    args: { action, installScope, policyMode, force, coreTarball },
     deprecations,
   };
 }
@@ -942,7 +951,6 @@ Options:
   --policy-mode    FlowGuard policy: solo (default), team, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
-  --vendor-dir     Vendor directory (default: ./vendor)
 
 Deprecated (still work):
   --global    → --install-scope global
