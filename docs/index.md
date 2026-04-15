@@ -35,9 +35,9 @@ FAQ and error handling.
 
 ## Additional Resources
 
-- [Product Identity](../PRODUCT_IDENTITY.md) — Customer-facing product overview
-- [AI Guidelines](../AGENTS.md) — Development guidelines for AI assistants
-- [Contributing](../CONTRIBUTING.md) — Developer guidelines
+- [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
+- [Product Identity](../PRODUCT_IDENTITY.md) — Product overview and architecture details
+- [AGENTS.md](../AGENTS.md) — FlowGuard mandates for AI-assisted development (used by the development repo; end users receive `flowguard-mandates.md` via the installer)
 
 ## Quick Reference
 

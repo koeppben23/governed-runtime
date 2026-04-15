@@ -60,7 +60,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
-- **Self-hosted** — no external dependencies, full data sovereignty
+- **Self-hosted** — runs locally, no outbound network calls from FlowGuard. All data stays on the user's filesystem.
 
 ### Repository Discovery
 
@@ -186,7 +186,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **State Validation** | Zod schemas, validated on every write |
 | **Audit Integrity** | SHA-256 hash chain, JSONL append-only |
 | **Module System** | ES2022 modules, Bundler resolution |
-| **Package** | Single npm package, one install, one version |
+| **Package** | `@flowguard/core` (distributed via GitHub Releases as source) |
 
 ### Layer Architecture
 
@@ -208,14 +208,14 @@ Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine
 
 ### Deployment Model
 
-The platform uses an **installable package architecture**:
+The platform uses a **source-distributed, locally-installed architecture**:
 
-1. **`@flowguard/core` npm package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin)
+1. **`@flowguard/core` package** — contains all business logic (state machine, rails, adapters, audit, config, tools, plugin). Distributed via GitHub Releases as source code, built locally.
 2. **Thin wrappers** — installed via CLI into `~/.config/opencode/` (global) or `.opencode/` (project), each ~15 lines, re-export from `@flowguard/core/integration`
-3. **CLI installer** — `npx @flowguard/core install` writes wrappers, commands, package.json, opencode.json, and a managed `flowguard-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
+3. **CLI installer** — `flowguard install` writes wrappers, commands, package.json, opencode.json, and a managed `flowguard-mandates.md`. Idempotent, merge-aware, non-destructive. Never touches user-owned `AGENTS.md`.
 4. **Global-first** — default installation target is `~/.config/opencode/`, making FlowGuard available across all projects without per-project setup
 
-**Upgrade path:** `npm update @flowguard/core` upgrades all logic. Thin wrappers remain stable across versions.
+**Upgrade path:** Download the latest release, rebuild, and reinstall globally (`npm install -g ./`). Thin wrappers remain stable across versions.
 
 ### OpenCode Integration
 
@@ -227,19 +227,19 @@ The platform uses an **installable package architecture**:
 
 ---
 
-## Why Enterprise Teams Choose This
+## Intended Use Cases
 
-### For Engineering Leadership
+### Engineering teams adopting AI-assisted development
 
-Standardize how AI work is initiated, planned, approved, implemented, and evidenced. Reduce the operational risk of chat-driven coding through explicit workflow phases, policy-bound transitions, and review gates.
+Adds structured phases, evidence gates, and audit trails to AI-assisted workflows. Useful when teams need to track what was planned, approved, and implemented rather than relying on unstructured chat history.
 
-### For Platform & Compliance Teams
+### Organizations with audit or compliance requirements
 
-Get a concrete control plane instead of vague assurances. Inspect active policy and profile selection, evidence completeness matrix, hash-chained audit trails, four-eyes enforcement status, and reason-coded blocked decisions.
+Provides hash-chained audit trails, four-eyes enforcement in regulated mode, explicit approval gates, and exportable session archives. These are building blocks for compliance workflows — they do not constitute compliance certification by themselves.
 
-### For Regulated Industries
+### Platform teams standardizing AI tool usage
 
-Answer control expectations around **traceability**, **integrity verification** (hash chain), **explicit approval points** (User Gates), **separation of concerns** (pure machine vs. I/O), **exportability** (JSONL audit trail), **retention** (immutable evidence), and **fail-closed handling** (reason-coded blocking).
+Offers a policy-bound execution model with configurable deployment profiles (Solo, Team, Regulated). Profiles can be selected per-repository via auto-detection or explicit configuration.
 
 ---
 
@@ -252,24 +252,6 @@ Answer control expectations around **traceability**, **integrity verification** 
 - **Not** tied to any specific LLM — works with Claude, GPT, Gemini, and any future model
 
 The value is the **governed operating model around AI-assisted engineering**, not autonomous software delivery without oversight.
-
----
-
-## Competitive Differentiation
-
-| Capability | Traditional AI Tools | This Platform |
-|------------|---------------------|---------------|
-| Workflow phases | None | 8 explicit phases with evidence gates |
-| Evidence requirements | Implicit | Explicit, per-slot completeness matrix |
-| Audit trail | Chat history only | Hash-chained, tamper-evident, exportable |
-| Next action computation | Heuristic | Deterministic (pure state machine) |
-| Blocking behavior | Silent failure | Reason-coded with recovery guidance |
-| Policy profiles | None | Solo / Team / Regulated with four-eyes |
-| Tech-stack awareness | None | Auto-detected profiles (Java, Angular, TS) + deep discovery |
-| Repository discovery | None | 5-collector pipeline with evidence classification |
-| Archive integrity | None | Manifest + per-file digests + 10-check verification |
-| LLM coupling | Model-specific | LLM-agnostic (any model, any provider) |
-| Runtime architecture | Subprocess bridge | Zero-bridge (same process) |
 
 ---
 
@@ -302,11 +284,23 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ---
 
+## Limitations and Caveats
+
+- **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements.
+- **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
+- **Single-machine, single-user sessions.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model.
+- **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
+- **No built-in CI integration.** FlowGuard operates within the developer's local environment. CI/CD pipeline integration requires wrapping FlowGuard operations in custom scripts.
+- **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
+- **Profile auto-detection is heuristic.** Tech-stack detection uses file-path-based signals (presence of `pom.xml`, `angular.json`, etc.). It does not read file contents and may misclassify repositories with non-standard layouts.
+
+---
+
 ## Product Facts
 
 - **Version:** 1.3.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
-- **Architecture:** Installable package (`@flowguard/core`) with thin wrappers + workspace registry
+- **Architecture:** Source-distributed package (`@flowguard/core`) with thin wrappers + workspace registry
 - **Phase Count:** 8 explicit workflow phases
 - **Workflow Commands:** 9 (hydrate, ticket, plan, continue, implement, review-decision, validate, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
@@ -318,8 +312,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
-- **Test Coverage:** 884 tests across 22 test files, 5 mandatory categories
-- **Self-Hosted:** No external dependencies, full data sovereignty
+- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories
+- **Self-Hosted:** Runs locally — no outbound network calls from FlowGuard itself. All data stays on the user's filesystem.
 
 ---
 

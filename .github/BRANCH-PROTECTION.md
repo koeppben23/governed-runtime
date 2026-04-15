@@ -15,21 +15,33 @@ To protect the `main` branch, configure the following rules in GitHub:
 | **Require a pull request before merging** | ✅ Enabled | No direct commits to main |
 | **Require approvals** | ✅ 1 (or more) | At least one approval required |
 | **Dismiss stale reviews** | ✅ Enabled | Reviews dismissed when new commits push |
-| **Require status checks to pass before merging** | ✅ Enabled | CI must be green |
-| **Required status checks** | `CI`, `conventional-commits` | Only these checks required |
+| **Require status checks to pass before merging** | ✅ Enabled | All checks must be green |
+| **Required status checks** | `test`, `typecheck`, `build`, `install (ubuntu-latest)`, `install (macos-latest)`, `install (windows-latest)`, `Validate Commit Messages` | All CI job names listed individually |
 | **Do not allow bypassing the above settings** | ✅ Enabled | Even admins must follow rules |
 | **Do not allow force pushes** | ✅ Enabled | No force push to main |
 | **Do not allow deletion** | ✅ Enabled | Cannot delete main branch |
 
 ### Status Checks
 
-The following GitHub Actions must pass:
+The following GitHub Actions jobs must pass:
 
-1. **CI** (`.github/workflows/ci.yml`)
-   - Runs: `npm test`, `npm run check`, `npm run build`
-   - Triggered on: push to main, pull_request to main
+1. **test** (`.github/workflows/ci.yml` — job `test`)
+   - Runs: `npm test`
+   - Platform: ubuntu-latest
 
-2. **conventional-commits** (`.github/workflows/conventional-commits.yml`)
+2. **typecheck** (`.github/workflows/ci.yml` — job `typecheck`)
+   - Runs: `npm run check` (tsc --noEmit)
+   - Platform: ubuntu-latest
+
+3. **build** (`.github/workflows/ci.yml` — job `build`)
+   - Runs: `npm run build`
+   - Platform: ubuntu-latest
+
+4. **install (ubuntu-latest)**, **install (macos-latest)**, **install (windows-latest)** (`.github/workflows/ci.yml` — job `install`)
+   - Runs: build → `flowguard install` → `flowguard doctor`
+   - Platform: matrix across ubuntu, macOS, Windows
+
+5. **Validate Commit Messages** (`.github/workflows/conventional-commits.yml`)
    - Validates: PR titles (on PR) or commit messages (on push)
    - Triggered on: pull_request to main, push to main
 
@@ -62,34 +74,33 @@ For emergency situations, a repository admin can:
 │  Developer  │ ─────────────────▶│  GitHub Actions  │
 └─────────────┘                   └────────┬─────────┘
        ▲                                   │
-       │                                   ▼
-       │                            ┌──────────────┐
-       │                            │ CI Workflow  │
-       │                            │ - npm test   │
-       │                            │ - npm check  │
-       │                            │ - npm build  │
-       │                            └──────┬───────┘
-       │                                   │
-       │                            ┌──────┴───────┐
-       │                            │ Conv. Commits │
-       │                            │ - PR title    │
-       │                            │ - Commits     │
-       │                            └──────┬───────┘
-       │                                   │
-       │                                   ▼
-       │                            ┌──────────────┐
-       │                            │   Results     │
-       │                            └──────┬───────┘
-       │                                   │
-       │                    ┌──────────────┴──────────────┐
-       │                    ▼                                 ▼
-       │             ┌───────────┐                   ┌───────────┐
-       │             │  PASSED   │                   │  FAILED   │
-       │             └─────┬─────┘                   └───────────┘
-       │                   │                               │
-       │                   ▼                               ▼
-       │             PR Merged                      Fix Required
-       │                                                   │
-       │                                                   ▼
-       └───────────────────────────────────────── Back to PR
+       │                      ┌────────────┼────────────┐
+       │                      ▼            ▼            ▼
+       │               ┌───────────┐ ┌──────────┐ ┌──────────┐
+       │               │   test    │ │ typecheck │ │  build   │
+       │               │ npm test  │ │ tsc check │ │ tsc+esm  │
+       │               └─────┬─────┘ └────┬─────┘ └────┬─────┘
+       │                     │             │            │
+       │                     ▼             ▼            ▼
+       │               ┌─────────────────────────────────────┐
+       │               │  install (ubuntu / macOS / Windows) │
+       │               │  flowguard install → doctor         │
+       │               └──────────────┬──────────────────────┘
+       │                              │
+       │                     ┌────────┴────────┐
+       │                     ▼                 ▼
+       │               ┌──────────┐     ┌──────────────┐
+       │               │ Validate │     │   Results     │
+       │               │ Commits  │     └──────┬───────┘
+       │               └────┬─────┘            │
+       │                    │       ┌──────────┴──────────┐
+       │                    │       ▼                     ▼
+       │                    │ ┌───────────┐       ┌───────────┐
+       │                    │ │  PASSED   │       │  FAILED   │
+       │                    │ └─────┬─────┘       └───────────┘
+       │                    │       │                   │
+       │                    ▼       ▼                   ▼
+       │               PR Merged                 Fix Required
+       │                                               │
+       └───────────────────────────────────────────────┘
 ```

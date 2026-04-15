@@ -72,6 +72,7 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 ### Verification Example
 
 ```typescript
+// Available after installation (see docs/installation.md)
 import { verifyArchive } from '@flowguard/core';
 
 const result = await verifyArchive('/path/to/archive.tar.gz');
