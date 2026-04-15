@@ -826,3 +826,92 @@ describe("docs/upgrade-rollback.md", () => {
     });
   });
 });
+
+describe("docs/security-hardening.md", () => {
+  const SECURITY_HARDENING_PATH = path.join(PROJECT_ROOT, "docs/security-hardening.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(SECURITY_HARDENING_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document host-level hardening", async () => {
+      const content = await fs.readFile(SECURITY_HARDENING_PATH, "utf-8");
+      expect(content).toContain("Host-Level Hardening");
+      expect(content).toContain("Filesystem Permissions");
+    });
+
+    it("should document operational security", async () => {
+      const content = await fs.readFile(SECURITY_HARDENING_PATH, "utf-8");
+      expect(content).toContain("Operational Security");
+    });
+
+    it("should document network security", async () => {
+      const content = await fs.readFile(SECURITY_HARDENING_PATH, "utf-8");
+      expect(content).toContain("Network Security");
+      expect(content).toContain("Air-Gapped");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(SECURITY_HARDENING_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should clarify encryption is customer responsibility", async () => {
+      const content = await fs.readFile(SECURITY_HARDENING_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("customer responsibility");
+    });
+  });
+});
+
+describe("docs/release-policy.md", () => {
+  const RELEASE_POLICY_PATH = path.join(PROJECT_ROOT, "docs/release-policy.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(RELEASE_POLICY_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document versioning", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Versioning");
+      expect(content).toContain("Semantic Versioning");
+    });
+
+    it("should document release process", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Release Process");
+      expect(content).toContain("Artifact Creation");
+    });
+
+    it("should document distribution", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Distribution");
+      expect(content).toContain("GitHub Releases");
+    });
+
+    it("should document support lifecycle", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Support Lifecycle");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should document artifact archival as customer responsibility", async () => {
+      const content = await fs.readFile(RELEASE_POLICY_PATH, "utf-8");
+      expect(content).toContain("Artifact Archival");
+      expect(content.toLowerCase()).toContain("customer responsibility");
+    });
+  });
+});
