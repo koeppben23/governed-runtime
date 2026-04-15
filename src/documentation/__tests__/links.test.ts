@@ -1,11 +1,12 @@
 /**
  * @module documentation/links
- * @description Tests for documentation link consistency.
+ * @description Tests for documentation link consistency and delivery scope.
  *
  * Ensures all documentation links are valid and consistent:
  * - All referenced files exist
  * - No broken links
  * - Consistent distribution story
+ * - Delivery scope is clearly documented
  *
  * @version v1
  */
@@ -22,6 +23,10 @@ const COMMANDS_PATH = path.join(PROJECT_ROOT, "docs/commands.md");
 const QUICKSTART_PATH = path.join(PROJECT_ROOT, "docs/quick-start.md");
 const PROFILES_PATH = path.join(PROJECT_ROOT, "docs/profiles.md");
 const ARCHIVE_PATH = path.join(PROJECT_ROOT, "docs/archive.md");
+const PRODUCT_IDENTITY_PATH = path.join(PROJECT_ROOT, "PRODUCT_IDENTITY.md");
+const DISTRIBUTION_MODEL_PATH = path.join(PROJECT_ROOT, "docs/distribution-model.md");
+const DELIVERY_SCOPE_PATH = path.join(PROJECT_ROOT, "docs/delivery-scope.md");
+const SUPPORT_MODEL_PATH = path.join(PROJECT_ROOT, "docs/support-model.md");
 
 interface Link {
   target: string;
@@ -260,6 +265,288 @@ describe("Documentation Links", () => {
       }
 
       expect(brokenLinks, `Broken links found:\n${brokenLinks.join("\n")}`).toHaveLength(0);
+    });
+  });
+});
+
+describe("PRODUCT_IDENTITY.md", () => {
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(PRODUCT_IDENTITY_PATH)).resolves.not.toThrow();
+    });
+
+    it("should contain Distribution Model section", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).toContain("### Distribution Model");
+    });
+
+    it("should reference Option A1", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).toContain("Option A1");
+    });
+
+    it("should mention pre-built proprietary artifact", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("pre-built");
+      expect(content.toLowerCase()).toContain("proprietary");
+    });
+
+    it("should mention file:-based dependencies", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).toContain("file:");
+    });
+
+    it("should not contain outdated 'source code' language", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).not.toContain("source code");
+    });
+
+    it("should reference flowguard-core-{version}.tgz", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).toContain("flowguard-core-");
+      expect(content).toContain(".tgz");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not have empty Distribution Model section", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      const distSection = content.split("### Distribution Model")[1]?.split("###")[0] || "";
+      expect(distSection.length).toBeGreaterThan(100);
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should document technically enforced properties", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("fail-closed");
+      const hasHashChain = content.toLowerCase().includes("hash-chain") || content.toLowerCase().includes("hash chain");
+      expect(hasHashChain).toBe(true);
+    });
+
+    it("should document limitations and caveats", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content).toContain("Limitations and Caveats");
+    });
+
+    it("should not claim compliance IS certified", async () => {
+      const content = await fs.readFile(PRODUCT_IDENTITY_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("flowguard is compliance certified");
+      expect(content.toLowerCase()).not.toContain("certified compliant");
+    });
+  });
+});
+
+describe("docs/distribution-model.md", () => {
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(DISTRIBUTION_MODEL_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document Option A1 distribution model", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("Option A1");
+    });
+
+    it("should document artifact contents", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("Artifact Contents");
+      expect(content).toContain("CLI");
+      expect(content).toContain("Core");
+      expect(content).toContain("Integration");
+    });
+
+    it("should document installation flow", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("Installation Flow");
+      expect(content).toContain("--core-tarball");
+    });
+
+    it("should document offline compatibility", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("offline");
+      expect(content.toLowerCase()).toContain("air-gap");
+    });
+
+    it("should document upgrade and rollback", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("upgrade");
+      expect(content.toLowerCase()).toContain("rollback");
+    });
+
+    it("should document customer responsibilities", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("Customer Responsibilities");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not suggest npm registry installation", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).not.toContain("npm install -g @flowguard/core");
+      expect(content).not.toContain("npm install @flowguard/core");
+    });
+
+    it("should not claim network calls at runtime", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("network call");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should document integrity verification mechanisms", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("SHA-256");
+      expect(content).toContain("checksum");
+    });
+
+    it("should document file:-based dependency model", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("file:");
+      expect(content).toContain("vendor/");
+    });
+  });
+
+  describe("EDGE", () => {
+    it("should handle air-gapped scenario documentation", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("air-gapped");
+      expect(content).toContain("USB");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(DISTRIBUTION_MODEL_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+      expect(content).toContain("Technically Enforced");
+      expect(content).toContain("Currently Delivered");
+      expect(content).toContain("Optional");
+      expect(content).toContain("Not Covered");
+      expect(content).toContain("Customer Responsibility");
+    });
+  });
+});
+
+describe("docs/delivery-scope.md", () => {
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(DELIVERY_SCOPE_PATH)).resolves.not.toThrow();
+    });
+
+    it("should define scope categories", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("Technically Enforced");
+      expect(content).toContain("Currently Delivered");
+      expect(content).toContain("Optional");
+      expect(content).toContain("Not Covered");
+      expect(content).toContain("Customer Responsibilities");
+    });
+
+    it("should document fail-closed enforcement", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("fail-closed");
+      expect(content.toLowerCase()).toContain("enforcement");
+    });
+
+    it("should document workflow engine features", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("8 explicit phases");
+      expect(content).toContain("3 policy modes");
+      expect(content).toContain("4 built-in profiles");
+    });
+
+    it("should document audit & compliance features", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("Hash-chained audit trail");
+      expect(content).toContain("Compliance summary");
+      expect(content).toContain("Four-eyes enforcement");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not claim compliance IS certified", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("compliance certified");
+      expect(content.toLowerCase()).not.toContain("certified compliant");
+    });
+
+    it("should not claim multi-user support exists", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("multi-user support");
+      expect(content.toLowerCase()).not.toContain("built-in multi-user");
+    });
+
+    it("should not claim CI/CD native integration exists", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("ci-native integration");
+      expect(content.toLowerCase()).not.toContain("built-in ci/cd");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should document Not Covered items clearly", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("Not Covered");
+      expect(content).toContain("Multi-user sessions");
+      expect(content).toContain("CI/CD native integration");
+      expect(content).toContain("Hosted / SaaS");
+    });
+
+    it("should document customer responsibilities", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("Customer Responsibilities");
+      expect(content).toContain("Security & Access Control");
+      expect(content).toContain("Data Management");
+      expect(content).toContain("Operations");
+    });
+  });
+
+  describe("EDGE", () => {
+    it("should document regulatory considerations table", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("Regulatory Considerations");
+      expect(content).toContain("What It Provides");
+      expect(content).toContain("What It Does Not Provide");
+    });
+
+    it("should clarify audit trail provides building blocks only", async () => {
+      const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
+      expect(content).toContain("building blocks");
+    });
+  });
+});
+
+describe("docs/support-model.md", () => {
+  describe("HAPPY", () => {
+    it("should document responsibility matrix", async () => {
+      const content = await fs.readFile(SUPPORT_MODEL_PATH, "utf-8");
+      expect(content).toContain("Responsibility Matrix");
+    });
+
+    it("should document contact channels", async () => {
+      const content = await fs.readFile(SUPPORT_MODEL_PATH, "utf-8");
+      expect(content).toContain("Contact Channels");
+    });
+
+    it("should document response expectations", async () => {
+      const content = await fs.readFile(SUPPORT_MODEL_PATH, "utf-8");
+      expect(content).toContain("Response Expectations");
+    });
+
+    it("should clarify no SLA guarantees", async () => {
+      const content = await fs.readFile(SUPPORT_MODEL_PATH, "utf-8");
+      const hasNoSla = content.toLowerCase().includes("uptime sla") || content.toLowerCase().includes("contractual slas");
+      expect(hasNoSla).toBe(true);
+      expect(content.toLowerCase()).toContain("best-effort");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not claim contractual SLA guarantees", async () => {
+      const content = await fs.readFile(SUPPORT_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("contractual sla guarantee");
+      expect(content.toLowerCase()).not.toContain("guaranteed sla");
     });
   });
 });
