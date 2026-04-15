@@ -116,6 +116,7 @@ jobs:
 
       - name: Create mock tarball for testing
         id: tarball
+        shell: bash
         run: |
           PKG_VERSION=$(node -p 'require("./package.json").version')
           mkdir -p "$RUNNER_TEMP/flowguard-test"
@@ -123,8 +124,10 @@ jobs:
           echo "path=$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz" >> $GITHUB_OUTPUT
 
       - name: Install FlowGuard (test install)
+        shell: bash
         run: |
           node dist/cli/install.js install --install-scope repo --core-tarball "${{ steps.tarball.outputs.path }}"
 
       - name: Verify CLI doctor
+        shell: bash
         run: node dist/cli/install.js doctor --install-scope repo
