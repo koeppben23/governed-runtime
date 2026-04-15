@@ -308,7 +308,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Architecture:** Installable package (`@flowguard/core`) with thin wrappers + workspace registry
 - **Phase Count:** 8 explicit workflow phases
-- **Command Surface:** 10 FlowGuard commands
+- **Workflow Commands:** 9 (hydrate, ticket, plan, continue, implement, review-decision, validate, review, abort)
+- **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 10 OpenCode tool exports (via `@flowguard/core/integration`)
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
 - **Policy Modes:** 3 (Solo [default], Team, Regulated)
@@ -316,8 +317,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Discovery Collectors:** 5 (repo-metadata, stack-detection, topology, surface-detection, domain-signals)
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
-- **Evidence Types:** 17 Zod schemas + 12 Discovery schemas
-- **Test Coverage:** 872 tests across 22 test files, 5 mandatory categories
+- **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
+- **Test Coverage:** 884 tests across 22 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---

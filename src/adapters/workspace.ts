@@ -30,7 +30,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import * as crypto from "node:crypto";
 import { remoteOriginUrl } from "./git";
-import { readState } from "./persistence";
+import { readState, isEnoent } from "./persistence";
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -1005,15 +1005,4 @@ function buildVerificationResult(
   };
 }
 
-/**
- * Check if an error is ENOENT (file not found).
- * Reused pattern from persistence.ts.
- */
-function isEnoent(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: unknown }).code === "ENOENT"
-  );
-}
+

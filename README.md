@@ -67,9 +67,15 @@ The system guides you through each phase. Run `/continue` at any point to see wh
 
 ## Commands
 
-All commands are available as `/command` in OpenCode chat.
+FlowGuard distinguishes between **Workflow Commands** (drive session state) and **Operational Tools** (operate on session artifacts).
 
-### /hydrate
+### Workflow Commands
+
+Workflow commands are part of the governed flow and drive session state transitions.
+
+All workflow commands are available as `/command` in OpenCode chat.
+
+#### /hydrate
 
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
 
@@ -143,16 +149,20 @@ Includes: evidence completeness matrix, four-eyes status, validation summary, fi
 
 Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irreversible.
 
-### /archive
+### Operational Tools
+
+Operational tools perform export, inspection, and management actions on session artifacts. They are not part of the workflow state machine.
+
+#### /archive
 
 Archive a completed session as a `.tar.gz` file with integrity verification.
 Can also be triggered automatically when a session reaches the COMPLETE phase.
 
-- **Phase**: COMPLETE (or any terminal state)
+- **Phase**: COMPLETE (operational tool, not a workflow command)
 - **Creates**: `{workspaceDir}/sessions/archive/{sessionId}.tar.gz` + `.tar.gz.sha256` + `archive-manifest.json`
 - **Manifest**: Contains `sessionId`, `fingerprint`, `policyMode`, `profileId`, `discoveryDigest`, `includedFiles`, `fileDigests`, `contentDigest`
 - **Verify**: `verifyArchive()` validates manifest presence, file completeness, digest integrity, and discovery consistency (10 finding codes)
-- **Removes**: The original session directory after successful archival
+- **Note**: This is an operational export action, not a workflow step. The original session directory is preserved.
 
 ---
 
@@ -331,16 +341,16 @@ The `archive-manifest.json` contains:
 
 | Finding Code | What It Checks |
 |-------------|----------------|
-| `MANIFEST_MISSING` | Manifest file exists in archive |
-| `MANIFEST_PARSE_ERROR` | Manifest is valid JSON matching schema |
-| `SESSION_ID_MISMATCH` | Manifest sessionId matches archive name |
-| `FILE_MISSING` | All listed files are present |
-| `FILE_EXTRA` | No unlisted files in archive |
-| `DIGEST_MISMATCH` | Per-file hashes match content |
-| `CONTENT_DIGEST_MISMATCH` | Overall content digest is correct |
-| `ARCHIVE_HASH_MISMATCH` | `.sha256` file matches actual archive hash |
-| `STATE_MISSING` | Session state file exists |
-| `DISCOVERY_SNAPSHOT_MISSING` | Discovery snapshot present when `discoveryDigest` set |
+| `missing_manifest` | Manifest file exists in archive |
+| `manifest_parse_error` | Manifest is valid JSON matching schema |
+| `missing_file` | All listed files are present |
+| `unexpected_file` | No unlisted files in archive |
+| `file_digest_mismatch` | Per-file hashes match content |
+| `content_digest_mismatch` | Overall content digest is correct |
+| `archive_checksum_missing` | `.sha256` sidecar file present |
+| `archive_checksum_mismatch` | `.sha256` file matches actual archive hash |
+| `state_missing` | Session state file exists |
+| `snapshot_missing` | Discovery snapshot present when `discoveryDigest` set |
 
 ---
 
@@ -529,7 +539,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (872 tests across 22 test files)
+# Run tests (884 tests across 22 test files)
 npm test
 
 # Build
