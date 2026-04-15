@@ -1,0 +1,6 @@
+# Default owners for all files in the repository.
+# Requires review from a code owner on PRs that modify matching paths.
+# Effective only when "Require review from Code Owners" is enabled
+# in branch protection rules or rulesets.
+
+* @koeppben23
