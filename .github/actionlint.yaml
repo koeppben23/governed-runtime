@@ -1,0 +1,20 @@
+# actionlint configuration
+# See: https://github.com/rhysd/actionlint/blob/main/docs/configfile.md
+
+rules:
+  # Warn on deprecated actions
+  - name: deprecated-actions
+  # Check for missing 'shell' specification
+  - name: shellcheck
+  # Check for commonly misspelled action names
+  - name: misnamed-actor
+  # Check workflow concurrency settings
+  - name: concurrency
+  # Check for top-level permissions
+  - name: permissions
+
+# Ignore certain paths
+ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/.git/**"

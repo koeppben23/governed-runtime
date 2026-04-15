@@ -91,6 +91,43 @@ jobs:
       - name: npm audit (moderate+)
         run: npm audit --audit-level=moderate
 
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: "-config-file .github/actionlint.yaml -color"
+
+  scorecard:
+    name: scorecard
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@v2
+        with:
+          results-file: results.sarif
+          results-format: sarif
+          publish-results: ${{ github.event_name != 'pull_request' }}
+
+      - name: Upload results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: github.event_name != 'pull_request'
+        with:
+          sarif_file: results.sarif
+
   secrets-scan:
     name: secrets-scan
     runs-on: ubuntu-latest
