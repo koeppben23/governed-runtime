@@ -93,13 +93,15 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 
 | Tool Name | Purpose |
 |-----------|---------|
+| `flowguard_status` | Check session state |
 | `flowguard_hydrate` | Session bootstrap |
 | `flowguard_ticket` | Task recording |
 | `flowguard_plan` | Plan generation |
-| `flowguard_continue` | Auto-advance |
+| `flowguard_decision` | Record review verdict |
 | `flowguard_validate` | Validation runner |
 | `flowguard_implement` | Plan executor |
-| `flowguard_abort` | Session termination |
+| `flowguard_review` | Generate compliance report |
+| `flowguard_abort_session` | Session termination |
 | `flowguard_archive` | Session archival |
 
 ## Uninstall
