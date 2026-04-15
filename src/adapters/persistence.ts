@@ -566,8 +566,15 @@ export async function writeDiscoverySnapshot(
   sessionDir: string,
   result: DiscoveryResult,
 ): Promise<void> {
+  const parsed = DiscoveryResultSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new PersistenceError(
+      "SCHEMA_VALIDATION_FAILED",
+      `Discovery snapshot failed schema validation: ${parsed.error.message}`,
+    );
+  }
   await ensureDir(sessionDir);
-  const json = JSON.stringify(result, null, 2) + "\n";
+  const json = JSON.stringify(parsed.data, null, 2) + "\n";
   await atomicWrite(path.join(sessionDir, "discovery-snapshot.json"), json);
 }
 
@@ -583,8 +590,15 @@ export async function writeProfileResolutionSnapshot(
   sessionDir: string,
   resolution: ProfileResolution,
 ): Promise<void> {
+  const parsed = ProfileResolutionSchema.safeParse(resolution);
+  if (!parsed.success) {
+    throw new PersistenceError(
+      "SCHEMA_VALIDATION_FAILED",
+      `Profile resolution snapshot failed schema validation: ${parsed.error.message}`,
+    );
+  }
   await ensureDir(sessionDir);
-  const json = JSON.stringify(resolution, null, 2) + "\n";
+  const json = JSON.stringify(parsed.data, null, 2) + "\n";
   await atomicWrite(
     path.join(sessionDir, "profile-resolution-snapshot.json"),
     json,

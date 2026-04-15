@@ -152,15 +152,41 @@ export function extractDiscoverySummary(
 /**
  * Compute SHA-256 digest of a DiscoveryResult.
  *
- * Uses canonical JSON (sorted keys) for deterministic hashing.
+ * Uses canonical JSON (recursively sorted keys) for deterministic hashing.
  * Used as `discoveryDigest` on SessionState for drift detection.
  */
 export function computeDiscoveryDigest(result: DiscoveryResult): string {
-  const canonical = JSON.stringify(result, Object.keys(result).sort());
+  const canonical = JSON.stringify(canonicalize(result));
   return createHash("sha256").update(canonical).digest("hex");
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Recursively produce a canonical form of a JSON-compatible value.
+ *
+ * - Objects: keys sorted lexicographically, values canonicalized recursively.
+ * - Arrays: element order preserved (order is semantic), values canonicalized.
+ * - Primitives: returned unchanged.
+ *
+ * This guarantees that two structurally equal values produce identical
+ * JSON.stringify output regardless of original key insertion order.
+ */
+function canonicalize(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+
+  // Object: sort keys lexicographically, recurse into values
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
+  }
+  return sorted;
+}
 
 /**
  * Wrap a promise with a timeout.

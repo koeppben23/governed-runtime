@@ -12,7 +12,7 @@
  * @version v1
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // Discovery types
 import {
@@ -43,6 +43,20 @@ import {
   extractDiscoverySummary,
   computeDiscoveryDigest,
 } from "./orchestrator";
+
+// ─── Git Adapter Mock (module-level, deterministic) ──────────────────────────
+// The repo-metadata collector imports from ../adapters/git. A single
+// module-level mock ensures deterministic behavior across all orchestrator tests.
+// Per-test overrides use vi.mocked().mockResolvedValueOnce() where needed.
+
+vi.mock("../adapters/git", () => ({
+  defaultBranch: vi.fn().mockResolvedValue("main"),
+  headCommit: vi.fn().mockResolvedValue("abc1234"),
+  isClean: vi.fn().mockResolvedValue(true),
+  remoteOriginUrl: vi.fn().mockResolvedValue(null),
+}));
+
+const gitMock = await import("../adapters/git");
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -477,15 +491,16 @@ describe("discovery/collectors/domain-signals", () => {
 // ─── Orchestrator Tests ───────────────────────────────────────────────────────
 
 describe("discovery/orchestrator", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("HAPPY", () => {
     it("runDiscovery returns complete result for TypeScript project", async () => {
-      // Mock git functions that repo-metadata calls
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue("https://github.com/test/repo.git"),
-      }));
+      // Override remoteOriginUrl for this test (default mock returns null)
+      vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce(
+        "https://github.com/test/repo.git",
+      );
 
       const result = await runDiscovery(TS_PROJECT_INPUT);
 
@@ -508,18 +523,9 @@ describe("discovery/orchestrator", () => {
       // Schema validation passes
       const parsed = DiscoveryResultSchema.safeParse(result);
       expect(parsed.success).toBe(true);
-
-      vi.restoreAllMocks();
     });
 
     it("extractDiscoverySummary produces lightweight summary", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
-
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const summary = extractDiscoverySummary(result);
 
@@ -533,18 +539,9 @@ describe("discovery/orchestrator", () => {
       // Schema validation passes
       const parsed = DiscoverySummarySchema.safeParse(summary);
       expect(parsed.success).toBe(true);
-
-      vi.restoreAllMocks();
     });
 
     it("computeDiscoveryDigest returns deterministic hash", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
-
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const digest1 = computeDiscoveryDigest(result);
       const digest2 = computeDiscoveryDigest(result);
@@ -552,76 +549,42 @@ describe("discovery/orchestrator", () => {
       expect(digest1).toBe(digest2);
       expect(digest1.length).toBe(64); // SHA-256 hex
       expect(/^[0-9a-f]{64}$/.test(digest1)).toBe(true);
-
-      vi.restoreAllMocks();
     });
   });
 
   describe("CORNER", () => {
     it("handles empty input gracefully", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue(null),
-        headCommit: vi.fn().mockResolvedValue(null),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
+      // Override git mocks to return null for empty-repo scenario
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
 
       const result = await runDiscovery(EMPTY_INPUT);
 
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.stack.languages).toHaveLength(0);
       expect(result.topology.kind).toBe("unknown");
-
-      vi.restoreAllMocks();
     });
 
     it("validation hints derive typecheck command from tsconfig", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
-
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const typecheckCmd = result.validationHints.commands.find(
         (c) => c.kind === "typecheck",
       );
       expect(typecheckCmd).toBeDefined();
       expect(typecheckCmd?.command).toContain("tsc");
-
-      vi.restoreAllMocks();
     });
 
     it("validation hints derive lint tools from eslint config", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
-
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const eslint = result.validationHints.lintTools.find((t) => t.id === "eslint");
       expect(eslint).toBeDefined();
       expect(eslint?.classification).toBe("fact");
-
-      vi.restoreAllMocks();
     });
 
     it("monorepo input yields monorepo topology", async () => {
-      vi.mock("../adapters/git", () => ({
-        defaultBranch: vi.fn().mockResolvedValue("main"),
-        headCommit: vi.fn().mockResolvedValue("abc1234"),
-        isClean: vi.fn().mockResolvedValue(true),
-        remoteOriginUrl: vi.fn().mockResolvedValue(null),
-      }));
-
       const result = await runDiscovery(MONOREPO_INPUT);
       expect(result.topology.kind).toBe("monorepo");
       expect(result.topology.modules.length).toBeGreaterThanOrEqual(3);
-
-      vi.restoreAllMocks();
     });
   });
 });

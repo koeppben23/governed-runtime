@@ -209,6 +209,16 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: "INVALID_FINGERPRINT",
+    category: "input",
+    messageTemplate:
+      "fingerprint is missing or malformed (expected 24 hex chars)",
+    recoverySteps: [
+      "Ensure OpenCode context provides a valid worktree and fingerprint",
+      "Fingerprint must be a 24-character lowercase hex string",
+    ],
+  },
+  {
     code: "INVALID_VERDICT",
     category: "input",
     messageTemplate:

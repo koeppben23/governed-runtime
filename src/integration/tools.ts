@@ -416,74 +416,85 @@ export const hydrate: ToolDefinition = {
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
       let profileResolution: ProfileResolution | undefined;
+      let discoveryError: string | undefined;
 
       if (!existing && repoSignals) {
-        // 1. Run discovery orchestrator
-        discoveryResult = await runDiscovery({
-          worktreePath: worktree,
-          fingerprint,
-          allFiles: repoSignals.files,
-          packageFiles: repoSignals.packageFiles,
-          configFiles: repoSignals.configFiles,
-        });
+        try {
+          // 1. Run discovery orchestrator
+          discoveryResult = await runDiscovery({
+            worktreePath: worktree,
+            fingerprint,
+            allFiles: repoSignals.files,
+            packageFiles: repoSignals.packageFiles,
+            configFiles: repoSignals.configFiles,
+          });
 
-        // 2. Write workspace-level discovery
-        await writeDiscovery(wsDir, discoveryResult);
+          // 2. Write workspace-level discovery
+          await writeDiscovery(wsDir, discoveryResult);
 
-        // 3. Detect profile with discovery context
-        const detectionInput = { repoSignals, discovery: discoveryResult };
-        const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-        const selectedProfile = detectedProfile ?? profileRegistryForResolution.get("baseline");
+          // 3. Detect profile with discovery context
+          const detectionInput = { repoSignals, discovery: discoveryResult };
+          const detectedProfile = profileRegistryForResolution.detect(detectionInput);
+          const selectedProfile = detectedProfile ?? profileRegistryForResolution.get("baseline");
 
-        // 4. Build profile resolution (including rejected candidates)
-        const allCandidates: ProfileResolution["secondary"] = [];
-        const rejectedCandidates: ProfileResolution["rejected"] = [];
+          // 4. Build profile resolution (including rejected candidates)
+          const allCandidates: ProfileResolution["secondary"] = [];
+          const rejectedCandidates: ProfileResolution["rejected"] = [];
 
-        for (const pid of profileRegistryForResolution.ids()) {
-          const p = profileRegistryForResolution.get(pid);
-          if (!p?.detect) continue;
-          const score = p.detect(detectionInput);
-          if (p.id === selectedProfile?.id) continue;
-          if (score > 0) {
-            allCandidates.push({
-              id: p.id,
-              name: p.name,
-              confidence: score,
-              evidence: [],
-            });
-          } else {
-            rejectedCandidates.push({
-              id: p.id,
-              score: 0,
-              reason: "No matching signals",
-            });
+          for (const pid of profileRegistryForResolution.ids()) {
+            const p = profileRegistryForResolution.get(pid);
+            if (!p?.detect) continue;
+            const score = p.detect(detectionInput);
+            if (p.id === selectedProfile?.id) continue;
+            if (score > 0) {
+              allCandidates.push({
+                id: p.id,
+                name: p.name,
+                confidence: score,
+                evidence: [],
+              });
+            } else {
+              rejectedCandidates.push({
+                id: p.id,
+                score: 0,
+                reason: "No matching signals",
+              });
+            }
           }
+
+          profileResolution = {
+            schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
+            resolvedAt: ctx.now(),
+            primary: {
+              id: selectedProfile?.id ?? "baseline",
+              name: selectedProfile?.name ?? "Baseline FlowGuard",
+              confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
+              evidence: [],
+            },
+            secondary: allCandidates,
+            rejected: rejectedCandidates,
+            activeChecks: [...(selectedProfile?.activeChecks ?? ["test_quality", "rollback_safety"])],
+          };
+
+          // 5. Write workspace-level profile resolution
+          await writeProfileResolution(wsDir, profileResolution);
+
+          // 6. Write immutable snapshots to session dir (BEFORE state)
+          await writeDiscoverySnapshot(sessDir, discoveryResult);
+          await writeProfileResolutionSnapshot(sessDir, profileResolution);
+
+          // 7. Compute digest and summary
+          discoveryDigest = computeDiscoveryDigest(discoveryResult);
+          discoverySummary = extractDiscoverySummary(discoveryResult);
+        } catch (err) {
+          // Discovery failed — degrade gracefully.
+          // Session will be created without discovery data.
+          discoveryResult = undefined;
+          discoveryDigest = undefined;
+          discoverySummary = undefined;
+          profileResolution = undefined;
+          discoveryError = err instanceof Error ? err.message : String(err);
         }
-
-        profileResolution = {
-          schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
-          resolvedAt: ctx.now(),
-          primary: {
-            id: selectedProfile?.id ?? "baseline",
-            name: selectedProfile?.name ?? "Baseline FlowGuard",
-            confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
-            evidence: [],
-          },
-          secondary: allCandidates,
-          rejected: rejectedCandidates,
-          activeChecks: [...(selectedProfile?.activeChecks ?? ["test_quality", "rollback_safety"])],
-        };
-
-        // 5. Write workspace-level profile resolution
-        await writeProfileResolution(wsDir, profileResolution);
-
-        // 6. Write immutable snapshots to session dir (BEFORE state)
-        await writeDiscoverySnapshot(sessDir, discoveryResult);
-        await writeProfileResolutionSnapshot(sessDir, profileResolution);
-
-        // 7. Compute digest and summary
-        discoveryDigest = computeDiscoveryDigest(discoveryResult);
-        discoverySummary = extractDiscoverySummary(discoveryResult);
       }
 
       const result = executeHydrate(existing, {
@@ -506,14 +517,18 @@ export const hydrate: ToolDefinition = {
       if (result.kind === "ok" && !existing) {
         const state = result.state;
         const formatted = JSON.parse(await persistAndFormat(sessDir, result));
-        return JSON.stringify({
+        const response: Record<string, unknown> = {
           ...formatted,
           profileId: state.activeProfile?.id ?? "baseline",
           profileName: state.activeProfile?.name ?? "Baseline Governance",
           profileDetected: !!repoSignals,
           discoveryComplete: !!discoveryResult,
           discoverySummary: discoverySummary ?? null,
-        });
+        };
+        if (discoveryError) {
+          response.discoveryError = discoveryError;
+        }
+        return JSON.stringify(response);
       }
 
       return await persistAndFormat(sessDir, result);

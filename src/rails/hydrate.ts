@@ -118,7 +118,7 @@ export function executeHydrate(
     return blocked("MISSING_WORKTREE");
   }
   if (!input.fingerprint || !/^[0-9a-f]{24}$/.test(input.fingerprint)) {
-    return blocked("MISSING_WORKTREE");
+    return blocked("INVALID_FINGERPRINT");
   }
 
   // 2. Idempotent: if state exists, return it unchanged
@@ -161,7 +161,7 @@ export function executeHydrate(
     : null;
 
   // 4. Resolve policy → immutable snapshot
-  const policyMode = input.policyMode ?? "team";
+  const policyMode = input.policyMode ?? "solo";
   const policy = resolvePolicy(policyMode);
   const now = ctx.now();
   const policySnapshot = createPolicySnapshot(policy, now, ctx.digest);

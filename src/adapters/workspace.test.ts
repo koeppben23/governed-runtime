@@ -34,9 +34,11 @@ import {
   writeSessionPointer,
   readSessionPointer,
   archiveSession,
+  verifyArchive,
   WorkspaceError,
   type WorkspaceInfo,
 } from "./workspace";
+import * as crypto from "node:crypto";
 import { benchmarkSync } from "../test-policy";
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -652,6 +654,240 @@ describe("archiveSession", () => {
     await expect(
       archiveSession("a1b2c3d4e5f6a1b2c3d4e5f6", "../escape"),
     ).rejects.toThrow(WorkspaceError);
+  });
+});
+
+// =============================================================================
+// verifyArchive
+// =============================================================================
+
+describe("verifyArchive", () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.OPENCODE_CONFIG_DIR;
+    await cleanTmpDir(tmpDir);
+  });
+
+  /**
+   * Helper: create a real archived session and return paths.
+   * Uses archiveSession to produce manifest, tar, and sidecar.
+   */
+  async function createArchivedSession(sessionId = "550e8400-e29b-41d4-a716-446655440000") {
+    const worktree = path.resolve(".");
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write minimal session-state.json so the archive has content
+    await fs.writeFile(
+      path.join(sessDir, "session-state.json"),
+      JSON.stringify({ phase: "COMPLETE", sessionId }),
+      "utf-8",
+    );
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    return { fingerprint, sessionId, sessDir, archivePath };
+  }
+
+  // ── HAPPY ──────────────────────────────────────────────────────
+
+  it("passes on a clean archive", async () => {
+    const { fingerprint, sessionId } = await createArchivedSession();
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.filter((f) => f.severity === "error")).toHaveLength(0);
+    expect(result.manifest).not.toBeNull();
+    expect(result.manifest!.sessionId).toBe(sessionId);
+    expect(result.verifiedAt).toBeTruthy();
+  });
+
+  // ── BAD ────────────────────────────────────────────────────────
+
+  it("reports missing_manifest when archive-manifest.json is absent", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Remove the manifest
+    await fs.unlink(path.join(sessDir, "archive-manifest.json"));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "missing_manifest", severity: "error" }),
+    );
+    expect(result.manifest).toBeNull();
+  });
+
+  it("reports manifest_parse_error when manifest is invalid JSON", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Corrupt the manifest
+    await fs.writeFile(path.join(sessDir, "archive-manifest.json"), "NOT JSON{{{", "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "manifest_parse_error", severity: "error" }),
+    );
+    expect(result.manifest).toBeNull();
+  });
+
+  it("reports manifest_parse_error when manifest fails schema validation", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Write valid JSON but invalid schema (missing required fields)
+    await fs.writeFile(
+      path.join(sessDir, "archive-manifest.json"),
+      JSON.stringify({ schemaVersion: "wrong", random: true }),
+      "utf-8",
+    );
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "manifest_parse_error", severity: "error" }),
+    );
+  });
+
+  // ── CORNER ─────────────────────────────────────────────────────
+
+  it("reports missing_file when a listed file is deleted", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Read manifest to find what files are listed
+    const manifestPath = path.join(sessDir, "archive-manifest.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
+
+    // Delete session-state.json (which is in includedFiles)
+    await fs.unlink(path.join(sessDir, "session-state.json"));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Should report both missing_file and state_missing
+    expect(result.passed).toBe(false);
+    const codes = result.findings.map((f) => f.code);
+    expect(codes).toContain("missing_file");
+    expect(codes).toContain("state_missing");
+  });
+
+  it("reports unexpected_file when an unlisted file is present", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Add a rogue file after archiving
+    await fs.writeFile(path.join(sessDir, "rogue-file.txt"), "intruder", "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "unexpected_file", severity: "warning", file: "rogue-file.txt" }),
+    );
+  });
+
+  it("reports file_digest_mismatch when file content is tampered", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Tamper with session-state.json content (manifest still has old digest)
+    await fs.writeFile(
+      path.join(sessDir, "session-state.json"),
+      JSON.stringify({ phase: "TAMPERED", evil: true }),
+      "utf-8",
+    );
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "file_digest_mismatch", severity: "error" }),
+    );
+  });
+
+  it("reports content_digest_mismatch when manifest contentDigest is wrong", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Read and tamper with contentDigest in manifest
+    const manifestPath = path.join(sessDir, "archive-manifest.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
+    manifest.contentDigest = "0000000000000000000000000000000000000000000000000000000000000000";
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "content_digest_mismatch", severity: "error" }),
+    );
+  });
+
+  it("reports snapshot_missing when discoveryDigest is set but snapshots are absent", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Tamper manifest to claim a discoveryDigest exists
+    const manifestPath = path.join(sessDir, "archive-manifest.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
+    manifest.discoveryDigest = "abc123fake";
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Should find snapshot_missing warnings for both discovery and profile-resolution snapshots
+    const snapshotFindings = result.findings.filter((f) => f.code === "snapshot_missing");
+    expect(snapshotFindings).toHaveLength(2);
+    expect(snapshotFindings[0]!.severity).toBe("warning");
+    expect(snapshotFindings[1]!.severity).toBe("warning");
+  });
+
+  it("reports state_missing when session-state.json is absent", async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Remove session-state.json
+    await fs.unlink(path.join(sessDir, "session-state.json"));
+
+    // Also fix manifest so it doesn't list session-state.json as missing_file
+    // (we want to isolate state_missing finding)
+    const manifestPath = path.join(sessDir, "archive-manifest.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
+    manifest.includedFiles = manifest.includedFiles.filter((f: string) => f !== "session-state.json");
+    delete manifest.fileDigests["session-state.json"];
+    // Recompute contentDigest from remaining file digests
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash("sha256")
+      .update(digestValues.join(""))
+      .digest("hex");
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "state_missing", severity: "error" }),
+    );
+  });
+
+  it("reports archive_checksum_missing when sidecar is absent", async () => {
+    const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession();
+
+    // Remove the .sha256 sidecar
+    const sidecarPath = `${archivePath}.sha256`;
+    try {
+      await fs.unlink(sidecarPath);
+    } catch {
+      // May not exist if archiveSession sidecar write failed — still test the finding
+    }
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "archive_checksum_missing", severity: "warning" }),
+    );
   });
 });
 

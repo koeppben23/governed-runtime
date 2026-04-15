@@ -936,8 +936,13 @@ async function buildArchiveManifest(
     .update(sortedDigestValues.join(""))
     .digest("hex");
 
-  // Add the manifest itself to the file list (it will be written after this)
-  const includedFiles = [...files, "archive-manifest.json"].sort();
+  // includedFiles lists only session artifacts — NOT the manifest itself.
+  // The manifest is metadata ABOUT the archive content. Self-referential
+  // inclusion is impossible (the manifest cannot contain its own digest)
+  // and would create fragile accidental-correctness in verification.
+  // The manifest file IS physically present in the archive but is not
+  // part of the content-digest computation.
+  const includedFiles = [...files].sort();
 
   return {
     schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,

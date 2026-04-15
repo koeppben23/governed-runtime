@@ -97,15 +97,39 @@ describe("hydrate rail", () => {
       const result = executeHydrate(null, { ...HYDRATE_INPUT, sessionId: "   " }, ctx);
       expect(result.kind).toBe("blocked");
     });
+
+    it("blocks on invalid fingerprint", () => {
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, fingerprint: "not-valid-hex!" },
+        ctx,
+      );
+      expect(result.kind).toBe("blocked");
+      if (result.kind === "blocked") {
+        expect(result.code).toBe("INVALID_FINGERPRINT");
+      }
+    });
+
+    it("blocks on empty fingerprint", () => {
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, fingerprint: "" },
+        ctx,
+      );
+      expect(result.kind).toBe("blocked");
+      if (result.kind === "blocked") {
+        expect(result.code).toBe("INVALID_FINGERPRINT");
+      }
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
-    it("defaults policyMode to team", () => {
+    it("defaults policyMode to solo", () => {
       const result = executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
-        expect(result.state.policySnapshot.mode).toBe("team");
+        expect(result.state.policySnapshot.mode).toBe("solo");
       }
     });
 

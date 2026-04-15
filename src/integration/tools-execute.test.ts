@@ -39,6 +39,7 @@ import {
   archive,
 } from "./tools";
 import { readState, writeState } from "../adapters/persistence";
+import * as persistence from "../adapters/persistence";
 import { makeState, makeProgressedState } from "../__fixtures__";
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -277,6 +278,28 @@ describe("hydrate", () => {
       const s2 = parseToolResult(await status.execute({}, ctx2));
       expect(s1.hasTicket).toBe(true);
       expect(s2.hasTicket).toBe(false);
+    });
+
+    it("degrades gracefully when discovery persistence fails", async () => {
+      // Force writeDiscovery to throw — simulates disk full, permissions, etc.
+      const spy = vi.spyOn(persistence, "writeDiscovery")
+        .mockRejectedValueOnce(new Error("Simulated disk write failure"));
+
+      const result = await hydrateSession();
+
+      // Session must still be created successfully
+      expect(result.phase).toBe("TICKET");
+      expect(result.error).toBeUndefined();
+
+      // Discovery fields should be absent/empty (degraded)
+      expect(result.discoveryComplete).toBe(false);
+      expect(result.discoverySummary).toBeNull();
+
+      // discoveryError should report the failure
+      expect(result.discoveryError).toBeDefined();
+      expect(result.discoveryError).toContain("disk write failure");
+
+      spy.mockRestore();
     });
   });
 });
