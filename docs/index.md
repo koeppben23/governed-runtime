@@ -33,6 +33,11 @@ Configuration file reference.
 ### [Troubleshooting](./troubleshooting.md)
 FAQ and error handling.
 
+## Support
+
+### [Support Model](./support-model.md)
+Responsibilities, contact channels, and expectations.
+
 ## Additional Resources
 
 - [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
