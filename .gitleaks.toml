@@ -1,20 +1,18 @@
-[]
-# Allowlist for paths that should be skipped during secret scanning
-[allowlist]
-paths = [
-  "node_modules/.*",
-  "dist/.*",
-  "coverage/.*",
-  "*.test.ts",
-  "*.spec.ts",
-  "fixtures/.*",
-  ".github/.*"
-]
+# Gitleaks configuration
+# See: https://github.com/zricethezav/gitleaks#configuration
 
-regexes = [
-  "^test-.*$",
-  "^EXAMPLE-.*$",
-  "^MOCK-.*$",
-  "placeholder.*",
-  "your-.*-here"
-]
+# Allowlist: paths to skip during scanning
+[allowlist]
+  paths = [
+    "node_modules/",
+    "dist/",
+    "coverage/",
+    ".git/"
+  ]
+  regexes = [
+    "^test-.*$",
+    "^EXAMPLE-.*$",
+    "^MOCK-.*$",
+    "placeholder.*",
+    "your-.*-here"
+  ]

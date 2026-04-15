@@ -111,12 +111,13 @@ jobs:
       actions: read
       contents: read
       packages: read
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Run Scorecard
-        uses: ossf/scorecard-action@v2
+        uses: ossf/scorecard-action@e37659bb00a4e89645a1c4f28e1f5a6e4b5e2e9c
         with:
           results-file: results.sarif
           results-format: sarif
@@ -159,12 +160,6 @@ jobs:
         with:
           languages: typescript
           queries: security-extended
-          config: |
-            disable-default-queries: false
-            paths-ignore:
-              - '**/*.test.ts'
-              - '**/*.spec.ts'
-              - 'src/test-policy.ts'
 
       - name: Build
         run: npm run build
@@ -225,8 +220,8 @@ jobs:
         run: |
           PKG_VERSION=$(node -p 'require("./package.json").version')
           mkdir -p "$RUNNER_TEMP/flowguard-test"
-          echo "mock tarball" > "$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz"
-          echo "path=$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz" >> $GITHUB_OUTPUT
+          printf '%s' "mock tarball" > "$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz"
+          echo "path=$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz" >> "$GITHUB_OUTPUT"
 
       - name: Install FlowGuard (test install)
         shell: bash

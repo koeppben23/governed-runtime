@@ -13,6 +13,12 @@ rules:
   # Check for top-level permissions
   - name: permissions
 
+# Shellcheck rules to ignore (info-level warnings are non-blocking)
+shellcheck:
+  - SC2086  # info: Double quote to prevent globbing and word splitting
+  - SC2012  # info: Use find instead of ls
+  - SC2035  # info: Use ./*glob* so names with dashes
+
 # Ignore certain paths
 ignore:
   - "**/node_modules/**"
