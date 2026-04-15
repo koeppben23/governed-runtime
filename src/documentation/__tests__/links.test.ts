@@ -590,10 +590,10 @@ describe("docs/deployment-model.md", () => {
   });
 
   describe("BAD", () => {
-    it("should not claim multi-user support is built-in", async () => {
+    it("should not claim multi-user support exists", async () => {
       const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
       expect(content.toLowerCase()).not.toContain("multi-user support");
-      expect(content.toLowerCase()).not.toContain("built-in multi-user");
+      expect(content.toLowerCase()).not.toContain("has built-in multi-user");
     });
 
     it("should not claim hosted/SaaS option", async () => {

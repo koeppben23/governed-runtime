@@ -12,7 +12,7 @@ This document describes how FlowGuard is deployed, where it runs, and how it int
 | **Runtime Environment** | OpenCode / Bun (same process) |
 | **Installation Target** | `~/.config/opencode/` (global) or `.opencode/` (project) |
 | **Network Behavior** | No outbound connections required |
-| **Multi-Instance** | Not supported (single-machine, single-user) |
+| **Multi-Instance** | Not supported (single-machine, no built-in multi-user coordination) |
 
 ---
 

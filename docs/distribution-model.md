@@ -48,8 +48,8 @@ The `flowguard-core-{version}.tgz` contains:
 ### 1. Download Artifact
 
 ```bash
-# Download from GitHub Releases
-wget https://github.com/koeppben23/governed-runtime/releases/download/v{version}/flowguard-core-{version}.tgz
+# Download from your approved release source
+#    (e.g., GitHub Releases, internal artifact store)
 
 # Verify checksum
 sha256sum flowguard-core-{version}.tgz

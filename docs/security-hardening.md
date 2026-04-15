@@ -85,7 +85,7 @@ FlowGuard is designed to run locally with no network access. Security hardening 
 
 ### No Outbound Connections
 
-FlowGuard does not make outbound network connections. The CLI installer downloads artifacts, but after installation, FlowGuard runs entirely offline.
+FlowGuard does not make outbound network connections. After installation, FlowGuard runs entirely offline.
 
 **Verification:**
 ```bash

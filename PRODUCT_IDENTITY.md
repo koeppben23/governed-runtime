@@ -286,7 +286,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 - **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements.
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
-- **Single-machine, single-user sessions.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model.
+- **No built-in multi-user coordination.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Multi-user access requires customer-managed controls (OS permissions, host account separation).
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
 - **No built-in CI integration.** FlowGuard operates within the developer's local environment. CI/CD pipeline integration requires wrapping FlowGuard operations in custom scripts.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
