@@ -8,12 +8,11 @@ Deterministic, fail-closed workflow engine for AI-assisted software delivery.
 
 ## Installation
 
-FlowGuard is distributed via GitHub Releases as source code.
+FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
 
-1. Download the latest release from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
-2. Build: `npm install && npm run build`
-3. Install: `npm install -g ./`
-4. Initialize: `flowguard install`
+1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
+2. Install: `npm install -g ./flowguard-core-{version}.tgz`
+3. Initialize: `flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz`
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 

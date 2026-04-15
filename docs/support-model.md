@@ -6,7 +6,7 @@ Responsibilities, contact channels, and expectations for FlowGuard support.
 
 ## Overview
 
-FlowGuard is an open-source project maintained by a small team. This document defines what support is available, who is responsible for what, and how to get help.
+FlowGuard is a proprietary commercial product distributed via GitHub Releases. This document defines what support is available, who is responsible for what, and how to get help.
 
 FlowGuard is a **locally installed development tool**, not a hosted service. There is no SaaS infrastructure, no uptime SLA, and no managed operations. Support covers the software itself — its installation, configuration, and correct operation.
 
@@ -64,7 +64,7 @@ Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues) wit
 
 ## Response Expectations
 
-FlowGuard is maintained as an open-source project. Response times are best-effort, not contractual SLAs.
+FlowGuard is maintained as a proprietary commercial product. Response times are best-effort, not contractual SLAs.
 
 | Category | Target Response | Target Resolution |
 |----------|----------------|-------------------|

@@ -4,13 +4,16 @@
  * @description CLI for installing/uninstalling FlowGuard into an OpenCode environment.
  *
  * Usage:
- *   npx @flowguard/core install  [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
- *   npx @flowguard/core uninstall [--install-scope global|repo]
- *   npx @flowguard/core doctor   [--install-scope global|repo]
+ *   flowguard install --core-tarball <path> [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
+ *   flowguard uninstall [--install-scope global|repo]
+ *   flowguard doctor [--install-scope global|repo]
  *
  * Install scopes:
  *   --install-scope global  (default)  ~/.config/opencode/  — nothing in the customer repo
  *   --install-scope repo               ./.opencode/         — FlowGuard layer committed to repo
+ *
+ * Required:
+ *   --core-tarball <path>  Path to flowguard-core-{version}.tgz from GitHub Releases
  *
  * Deprecated aliases (still work, emit warning):
  *   --global  → --install-scope global
@@ -18,13 +21,16 @@
  *   --mode X  → --policy-mode X
  *
  * Architecture:
+ * - FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
+ * - The installer materializes the core tarball in a local vendor/ directory.
+ * - Generated package.json uses file:-dependency pointing to vendored tarball.
  * - flowguard-mandates.md is a managed artifact: always replaced on install, digest-checked by doctor.
  * - AGENTS.md is NEVER touched — it belongs to the user/project (OpenCode's instruction slot).
  * - Thin wrappers (tools, plugins, commands) import from @flowguard/core.
  * - opencode.json is merge-managed: FlowGuard instruction entry added, legacy entries migrated.
  *
  * Ownership matrix:
- *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md
+ *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md, vendor/*.tgz
  *   merge-managed:  package.json, opencode.json
  *   user-owned:     AGENTS.md (never touched)
  *
@@ -33,8 +39,8 @@
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
-import { join, resolve, dirname } from "node:path";
+import { mkdir, readFile, writeFile, unlink, copyFile, rm } from "node:fs/promises";
+import { join, resolve, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import {
   TOOL_WRAPPER,
@@ -73,6 +79,8 @@ export interface CliArgs {
   installScope: InstallScope;
   policyMode: PolicyMode;
   force: boolean;
+  coreTarball?: string;
+  vendorDir?: string;
 }
 
 /** Result of a single file operation. */
@@ -119,6 +127,7 @@ const FLOWGUARD_OWNED_FILES = [
   "tools/flowguard.ts",
   "plugins/flowguard-audit.ts",
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
+  "vendor",
 ] as const;
 
 // ─── Path Resolution ──────────────────────────────────────────────────────────
@@ -357,12 +366,62 @@ export async function install(args: CliArgs): Promise<CliResult> {
   const warnings: string[] = [];
 
   try {
+    // 0. Validate --core-tarball is required
+    if (!args.coreTarball) {
+      errors.push(
+        "ERROR: --core-tarball is required.\n" +
+        "Usage: flowguard install --core-tarball /path/to/flowguard-core-1.3.0.tgz\n" +
+        "Download from: https://github.com/koeppben23/governed-runtime/releases"
+      );
+      return { target, ops, errors, warnings };
+    }
+
+    // Resolve tarball path (support relative paths)
+    const tarballPath = resolve(args.coreTarball);
+
+    // 0b. Verify tarball exists
+    if (!existsSync(tarballPath)) {
+      errors.push(`ERROR: Core tarball not found: ${tarballPath}`);
+      return { target, ops, errors, warnings };
+    }
+
+    // 0c. Extract version from tarball filename
+    const tarballName = basename(tarballPath);
+    const versionMatch = tarballName.match(/^flowguard-core-(\d+\.\d+\.\d+)\.tgz$/);
+    if (!versionMatch) {
+      errors.push(
+        "ERROR: Tarball filename must match flowguard-core-{version}.tgz\n" +
+        `  Found: ${tarballName}`
+      );
+      return { target, ops, errors, warnings };
+    }
+    const tarballVersion = versionMatch[1];
+
+    // 0d. Verify version matches installer version
+    if (tarballVersion !== PACKAGE_VERSION) {
+      errors.push(
+        `ERROR: Version mismatch.\n` +
+        `  Tarball: ${tarballVersion}\n` +
+        `  Installer: ${PACKAGE_VERSION}\n` +
+        `  Please use the correct tarball version.`
+      );
+      return { target, ops, errors, warnings };
+    }
+
     // Ensure base directories
     await ensureDir(join(target, "tools"));
     await ensureDir(join(target, "plugins"));
     await ensureDir(join(target, "commands"));
 
-    // 1. flowguard-mandates.md (always replace — managed artifact)
+    // 1. Copy tarball to vendor directory
+    const vendorDir = args.vendorDir || "vendor";
+    const vendorPath = join(target, vendorDir);
+    await ensureDir(vendorPath);
+    const vendorTarballPath = join(vendorPath, tarballName);
+    await copyFile(tarballPath, vendorTarballPath);
+    ops.push({ path: vendorTarballPath, action: "written" });
+
+    // 2. flowguard-mandates.md (always replace — managed artifact)
     const digest = computeMandatesDigest();
     const mandatesContent = buildMandatesContent(PACKAGE_VERSION, digest);
     const mandatesPath = join(target, MANDATES_FILENAME);
@@ -370,27 +429,27 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await writeFile(mandatesPath, mandatesContent, "utf-8");
     ops.push({ path: mandatesPath, action: "written" });
 
-    // 2. Tool wrapper (write if absent, --force to replace)
+    // 3. Tool wrapper (write if absent, --force to replace)
     ops.push(
       await writeIfAbsent(join(target, "tools", "flowguard.ts"), TOOL_WRAPPER, args.force),
     );
 
-    // 3. Plugin wrapper (write if absent, --force to replace)
+    // 4. Plugin wrapper (write if absent, --force to replace)
     ops.push(
       await writeIfAbsent(join(target, "plugins", "flowguard-audit.ts"), PLUGIN_WRAPPER, args.force),
     );
 
-    // 4. Command files (write if absent, --force to replace)
+    // 5. Command files (write if absent, --force to replace)
     for (const [name, content] of Object.entries(COMMANDS)) {
       ops.push(
         await writeIfAbsent(join(target, "commands", name), content, args.force),
       );
     }
 
-    // 5. package.json (merge)
+    // 6. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
     ops.push(await mergePackageJson(join(target, "package.json"), PACKAGE_VERSION));
 
-    // 6. opencode.json (merge with migration)
+    // 7. opencode.json (merge with migration)
     //    - global: merge into ~/.config/opencode/opencode.json
     //    - repo: merge into ./opencode.json (project root, parent of .opencode/)
     const opencodeJsonPath = args.installScope === "global"
@@ -443,6 +502,22 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
           } else {
             warnings.push(`${MANDATES_FILENAME} has no managed header — removed anyway`);
           }
+        }
+      }
+
+      // Handle vendor directory specially (recursively remove)
+      if (relPath === "vendor") {
+        try {
+          if (existsSync(fullPath)) {
+            await rm(fullPath, { recursive: true, force: true });
+            ops.push({ path: fullPath, action: "removed" });
+          } else {
+            ops.push({ path: fullPath, action: "not_found" });
+          }
+          continue;
+        } catch {
+          ops.push({ path: fullPath, action: "not_found" });
+          continue;
         }
       }
 
@@ -703,6 +778,8 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let installScope: InstallScope = "global";
   let policyMode: PolicyMode = "solo";
   let force = false;
+  let coreTarball: string | undefined;
+  let vendorDir: string | undefined;
   const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length; i++) {
@@ -732,6 +809,26 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
       case "--force":
         force = true;
         break;
+      case "--core-tarball": {
+        const next = argv[i + 1];
+        if (next) {
+          coreTarball = next;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
+      case "--vendor-dir": {
+        const next = argv[i + 1];
+        if (next) {
+          vendorDir = next;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
 
       // ── Deprecated aliases ─────────────────────────────────
       case "--global":
@@ -761,7 +858,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   return {
-    args: { action, installScope, policyMode, force },
+    args: { action, installScope, policyMode, force, coreTarball, vendorDir },
     deprecations,
   };
 }
@@ -844,6 +941,8 @@ Options:
   --install-scope  Where to install: global (default) or repo
   --policy-mode    FlowGuard policy: solo (default), team, regulated
   --force          Overwrite all managed artifacts
+  --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
+  --vendor-dir     Vendor directory (default: ./vendor)
 
 Deprecated (still work):
   --global    → --install-scope global
@@ -851,8 +950,8 @@ Deprecated (still work):
   --mode X    → --policy-mode X
 
 Examples:
-  flowguard install
-  flowguard install --install-scope repo --policy-mode regulated
+  flowguard install --core-tarball /path/to/flowguard-core-1.3.0.tgz
+  flowguard install --core-tarball ./flowguard-core-1.3.0.tgz --install-scope repo --policy-mode regulated
   flowguard uninstall --install-scope global
   flowguard doctor
 `;
