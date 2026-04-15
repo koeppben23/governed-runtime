@@ -8,9 +8,8 @@
 
 ## Security Update Policy
 
-- **Critical vulnerabilities** (CVSS 9.0+): Fix released within 14 days
-- **High vulnerabilities** (CVSS 7.0-8.9): Fix released within 30 days
-- **Medium/Low**: Next planned release
+- **Critical vulnerabilities**: Acknowledgment within 72 hours, best-effort fix timeline
+- **High/Medium/Low**: Next planned release
 
 ## Reporting a Vulnerability
 
