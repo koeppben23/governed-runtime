@@ -145,6 +145,69 @@ import { readState } from "../adapters/persistence";
 import { defaultProfileRegistry } from "../config/profile";
 ```
 
+## Repository Governance
+
+### Branch Model
+
+- `main` is **protected** — no direct commits allowed
+- All changes must go through Pull Requests
+- Branch naming convention:
+  - `feature/<description>` — new features
+  - `fix/<description>` — bug fixes
+  - `docs/<description>` — documentation updates
+  - `chore/<description>` — maintenance tasks
+
+### Conventional Commits
+
+All commit messages must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>: <description>
+
+[optional body]
+
+[optional footer]
+```
+
+**Allowed types:**
+
+| Type | Description |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation changes |
+| `test` | Adding or updating tests |
+| `refactor` | Code refactoring without behavior change |
+| `chore` | Maintenance tasks, dependency updates |
+| `perf` | Performance improvements |
+| `ci` | CI/CD changes |
+
+**Examples:**
+```bash
+feat: add archive verification command
+fix: correct session state validation
+docs: update command reference
+test: add edge case for empty repository
+refactor: extract validation helpers
+```
+
+### Merge Strategy
+
+- **Preferred:** Squash and merge
+- PR title must follow conventional commit format
+- All CI checks must pass before merge
+- At least one approval required
+
+### CI Status Checks
+
+The following checks must pass for a PR to be merged:
+
+| Check | Command | Description |
+|-------|---------|-------------|
+| Tests | `npm test` | All 906+ tests must pass |
+| Type Check | `npm run check` | TypeScript compilation |
+| Build | `npm run build` | Successful compilation to dist/ |
+
 ## Pull Request Process
 
 ### 1. Before Starting
@@ -173,15 +236,7 @@ npm test -- src/architecture/
 
 ### 3. Commit Messages
 
-Follow conventional commits:
-
-```
-feat: add new validation check for rollback safety
-fix: correct archive finding code names in documentation
-docs: update README with new commands section
-test: add architecture tests for layer dependencies
-refactor: extract isEnoent to shared utility
-```
+See [Conventional Commits](#conventional-commits) section above.
 
 ### 4. Submit PR
 
