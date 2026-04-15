@@ -28,7 +28,7 @@
  *   merge-managed:  package.json, opencode.json
  *   user-owned:     AGENTS.md (never touched)
  *
- * @version v2
+ * @version v1.3.0
  */
 
 import { createHash } from "node:crypto";
@@ -110,8 +110,8 @@ export interface DoctorCheck {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Current package version — injected at build time or read from package.json. */
-const PACKAGE_VERSION = "2.0.0";
+/** Current package version — must match package.json version. */
+const PACKAGE_VERSION = "1.3.0";
 
 /** Files owned by FlowGuard that uninstall may remove. */
 const FLOWGUARD_OWNED_FILES = [

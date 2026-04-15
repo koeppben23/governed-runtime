@@ -150,7 +150,7 @@ describe("Documentation Links", () => {
     it("should clarify /archive is not a workflow command", async () => {
       const content = await fs.readFile(COMMANDS_PATH, "utf-8");
       expect(content.toLowerCase()).toContain("operational");
-      expect(content.toLowerCase()).toContain("don't drive workflow");
+      expect(content.toLowerCase()).toContain("artifact");
     });
   });
 
@@ -172,9 +172,9 @@ describe("Documentation Links", () => {
   });
 
   describe("Distribution Consistency", () => {
-    it("README should not reference public npm", async () => {
+    it("README should not reference public npm registry", async () => {
       const content = await fs.readFile(README_PATH, "utf-8");
-      expect(content).not.toContain("npm install -g");
+      expect(content).not.toContain("@flowguard/core");
       expect(content).not.toContain("npmjs.com");
     });
 
