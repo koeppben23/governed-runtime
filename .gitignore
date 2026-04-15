@@ -24,5 +24,4 @@ Thumbs.db
 .env
 .env.*
 
-# Lock files (use npm ci in CI)
-package-lock.json
+
