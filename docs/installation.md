@@ -65,7 +65,6 @@ Expected output:
 | `--install-scope repo` | Install to `.opencode/` (committed to repo) |
 | `--policy-mode solo\|team\|regulated` | Set default policy mode |
 | `--core-tarball <path>` | **Required.** Path to `flowguard-core-{version}.tgz` |
-| `--vendor-dir <path>` | Vendor directory (default: `./vendor`) |
 
 ## How It Works
 

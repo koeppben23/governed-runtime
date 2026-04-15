@@ -659,12 +659,12 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
       const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
       const coreDep = deps["@flowguard/core"];
+      const expectedDep = vendorDependency(PACKAGE_VERSION);
+
       if (!coreDep) {
         checks.push({ file: pkgPath, status: "error", detail: "missing @flowguard/core dependency" });
-      } else if (!coreDep.startsWith("file:./vendor/flowguard-core-")) {
-        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core must be a file:-dependency (got: ${coreDep})` });
-      } else if (!coreDep.endsWith(".tgz")) {
-        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core file:-dependency must end in .tgz (got: ${coreDep})` });
+      } else if (coreDep !== expectedDep) {
+        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core must be "${expectedDep}" (got: ${coreDep})` });
       } else {
         checks.push({ file: pkgPath, status: "ok" });
       }

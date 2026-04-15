@@ -188,7 +188,7 @@ chmod 755 ~/.config/opencode/
 ## Security Considerations
 
 - **Always verify checksums** before and after transfer. The checksums file uses SHA-256.
-- **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library), which is bundled in the release artifact.
+- **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library) that is installed via the local package manager when running `npm install` in the `.opencode/` directory.
 - **Offline-first**: FlowGuard makes no outbound network calls after installation.
 
 ---
