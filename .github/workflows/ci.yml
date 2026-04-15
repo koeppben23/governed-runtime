@@ -84,5 +84,8 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Install FlowGuard (test install)
+        run: node dist/cli/install.js install --install-scope repo
+
       - name: Verify CLI doctor
-        run: node dist/cli/install.js doctor
+        run: node dist/cli/install.js doctor --install-scope repo
