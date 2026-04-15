@@ -136,6 +136,9 @@ jobs:
     name: security-policy
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check for SECURITY.md
         run: |
           if [ ! -f SECURITY.md ]; then
