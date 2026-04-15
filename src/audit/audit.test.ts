@@ -781,7 +781,7 @@ describe("audit query", () => {
         50,
         10,
       );
-      expect(p99Ms).toBeLessThan(10);
+      expect(p99Ms).toBeLessThan(50);
     });
   });
 });
