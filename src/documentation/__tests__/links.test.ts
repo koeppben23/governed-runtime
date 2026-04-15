@@ -550,3 +550,154 @@ describe("docs/support-model.md", () => {
     });
   });
 });
+
+describe("docs/deployment-model.md", () => {
+  const DEPLOYMENT_MODEL_PATH = path.join(PROJECT_ROOT, "docs/deployment-model.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(DEPLOYMENT_MODEL_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document self-hosted deployment", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("self-hosted");
+      expect(content.toLowerCase()).toContain("locally installed");
+    });
+
+    it("should document installation targets", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content).toContain("~/.config/opencode/");
+      expect(content).toContain(".opencode/");
+    });
+
+    it("should document integration architecture", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content).toContain("OpenCode Integration");
+      expect(content).toContain("Adapter Layer");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+      expect(content).toContain("Technically Enforced");
+      expect(content).toContain("Currently Delivered");
+      expect(content).toContain("Not Covered");
+      expect(content).toContain("Customer Responsibility");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not claim multi-user support is built-in", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("multi-user support");
+      expect(content.toLowerCase()).not.toContain("built-in multi-user");
+    });
+
+    it("should not claim hosted/SaaS option", async () => {
+      const content = await fs.readFile(DEPLOYMENT_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("saas");
+      expect(content.toLowerCase()).not.toContain("hosted service");
+    });
+  });
+});
+
+describe("docs/data-classification.md", () => {
+  const DATA_CLASSIFICATION_PATH = path.join(PROJECT_ROOT, "docs/data-classification.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(DATA_CLASSIFICATION_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document data classification matrix", async () => {
+      const content = await fs.readFile(DATA_CLASSIFICATION_PATH, "utf-8");
+      expect(content).toContain("Session State");
+      expect(content).toContain("Audit Trail");
+      expect(content).toContain("Configuration");
+    });
+
+    it("should document data handling requirements", async () => {
+      const content = await fs.readFile(DATA_CLASSIFICATION_PATH, "utf-8");
+      expect(content).toContain("Confidentiality");
+      expect(content).toContain("Integrity");
+      expect(content).toContain("Availability");
+    });
+
+    it("should document retention and disposal", async () => {
+      const content = await fs.readFile(DATA_CLASSIFICATION_PATH, "utf-8");
+      expect(content).toContain("Retention");
+      expect(content).toContain("Disposal");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(DATA_CLASSIFICATION_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+      expect(content).toContain("Technically Enforced");
+      expect(content).toContain("Customer Responsibility");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should clarify encryption is customer responsibility", async () => {
+      const content = await fs.readFile(DATA_CLASSIFICATION_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("customer responsibility");
+      expect(content.toLowerCase()).toContain("encryption");
+    });
+  });
+});
+
+describe("docs/admin-model.md", () => {
+  const ADMIN_MODEL_PATH = path.join(PROJECT_ROOT, "docs/admin-model.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(ADMIN_MODEL_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document ownership model", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content).toContain("Installation Owner");
+      expect(content).toContain("Session Roles");
+    });
+
+    it("should document administration tasks", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content).toContain("Installation Management");
+      expect(content).toContain("Policy Management");
+    });
+
+    it("should document escalation model", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content).toContain("Escalation");
+      expect(content).toContain("Support Path");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+      expect(content).toContain("Technically Enforced");
+      expect(content).toContain("Not Covered");
+      expect(content).toContain("Customer Responsibility");
+    });
+  });
+
+  describe("BAD", () => {
+    it("should not claim built-in admin UI exists", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content.toLowerCase()).not.toContain("admin ui is built-in");
+      expect(content.toLowerCase()).not.toContain("web interface provided");
+    });
+
+    it("should document limitations", async () => {
+      const content = await fs.readFile(ADMIN_MODEL_PATH, "utf-8");
+      expect(content).toContain("Limitations");
+    });
+  });
+});
