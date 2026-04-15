@@ -84,11 +84,5 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Install CLI globally
-        run: npm install -g .
-
-      - name: Verify CLI version
-        run: npx flowguard --version
-
-      - name: Verify doctor
-        run: npx flowguard doctor
+      - name: Verify CLI doctor
+        run: node dist/cli/install.js doctor

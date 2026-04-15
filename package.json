@@ -19,7 +19,8 @@
     "flowguard": "./dist/cli/install.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run fix-esm",
+    "fix-esm": "node scripts/fix-esm-imports.js",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
