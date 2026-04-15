@@ -38,6 +38,11 @@ FAQ and error handling.
 ### [Air-Gapped Installation](./air-gapped-guide.md)
 How to install FlowGuard in environments without internet access.
 
+## Compliance
+
+### [BSI C5 Mapping](./bsi-c5-mapping.md)
+How FlowGuard capabilities map to BSI C5:2020 control domains.
+
 ## Additional Resources
 
 - [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
