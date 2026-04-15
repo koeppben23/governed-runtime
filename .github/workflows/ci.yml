@@ -114,8 +114,16 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Create mock tarball for testing
+        run: |
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          mkdir -p /tmp/flowguard-test
+          echo "mock tarball" > /tmp/flowguard-test/flowguard-core-${PKG_VERSION}.tgz
+
       - name: Install FlowGuard (test install)
-        run: node dist/cli/install.js install --install-scope repo
+        run: |
+          PKG_VERSION="$(node -p 'require("./package.json").version')"
+          node dist/cli/install.js install --install-scope repo --core-tarball /tmp/flowguard-test/flowguard-core-${PKG_VERSION}.tgz
 
       - name: Verify CLI doctor
         run: node dist/cli/install.js doctor --install-scope repo
