@@ -117,7 +117,13 @@ export interface DoctorCheck {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Current package version — must match package.json version. */
+/**
+ * Current package version.
+ *
+ * SSOT NOTE: This value MUST match package.json.version.
+ * The release workflow validates this constraint (see .github/workflows/release.yml).
+ * Future improvement: read from VERSION file written during release.
+ */
 const PACKAGE_VERSION = "1.3.0";
 
 /** Files owned by FlowGuard that uninstall may remove. */

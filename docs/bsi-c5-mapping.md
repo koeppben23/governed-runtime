@@ -36,15 +36,15 @@ Relevance levels:
 | OIS | Organisation of Information Security | Partial | Policy-bound execution model |
 | SP | Security Policies | Partial | Enforceable policy modes with fail-closed semantics |
 | HR | Human Resources | Not Applicable | — |
-| AM | Asset Management | Partial | CycloneDX SBOM generation on releases |
+| AM | Asset Management | Partial | Release artifact checksums, minimal supply chain |
 | PS | Physical Security | Not Applicable | — |
 | RB | Operational Procedures | **Direct** | 8-phase change workflow, evidence gates, audit trail |
 | IDM | Identity and Access Management | **Direct** | Four-eyes principle, role separation (initiator vs. reviewer) |
-| CRY | Cryptography and Key Management | Partial | SHA-256 hash chain, Sigstore attestation |
+| CRY | Cryptography and Key Management | Partial | SHA-256 hash chain, checksums on release artifacts |
 | KOS | Communications Security | Not Applicable | No network communication (self-hosted) |
 | PI | Portability and Interoperability | Partial | Structured session archives with integrity verification |
 | DEV | Procurement and Development | **Direct** | Structured development workflow with validation gates |
-| DLL | Supplier Management | Partial | Minimal supply chain (1 runtime dependency), SBOM |
+| DLL | Supplier Management | Partial | Minimal supply chain (1 runtime dependency: zod), offline-resolvable dependencies |
 | SIM | Security Incident Management | Not Applicable | — |
 | BCM | Business Continuity Management | Not Applicable | — |
 | COM | Compliance | **Direct** | Evidence completeness matrix, compliance reports, session archives |
@@ -213,9 +213,9 @@ FlowGuard enforces its own policy rules deterministically, but organizational se
 
 **Relevance: Partial**
 
-FlowGuard contributes to software asset visibility through SBOM generation.
+FlowGuard provides release artifact integrity verification and minimal supply chain.
 
-- **FlowGuard provides:** CycloneDX SBOM generated on GitHub Releases, SHA-256 checksums on release artifacts, Sigstore attestation on releases, minimal supply chain surface (1 runtime dependency: `zod`).
+- **FlowGuard provides:** SHA-256 checksums on release artifacts, release artifact integrity verification, minimal supply chain surface (1 runtime dependency: `zod`).
 - **Organization must provide:** Asset inventory management, asset classification, data handling policies, media handling and disposal.
 
 ### CRY — Cryptography and Key Management
@@ -224,7 +224,7 @@ FlowGuard contributes to software asset visibility through SBOM generation.
 
 FlowGuard uses cryptographic operations for integrity verification, not for data encryption or key management.
 
-- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, Sigstore attestation on release artifacts, SHA-256 policy snapshot hashing for non-repudiation.
+- **FlowGuard provides:** SHA-256 hash-chained audit trail (tamper-evident), SHA-256 digests on archive files and manifests, SHA-256 checksums on release artifacts, SHA-256 policy snapshot hashing for non-repudiation.
 - **Organization must provide:** Encryption policies, key management infrastructure, certificate management, cryptographic algorithm selection policies.
 
 ### PI — Portability and Interoperability
@@ -233,7 +233,7 @@ FlowGuard uses cryptographic operations for integrity verification, not for data
 
 FlowGuard session data is structured and exportable, supporting data portability requirements.
 
-- **FlowGuard provides:** Structured session archives (`.tar.gz`) with JSON manifest, Zod-validated state schemas (documented, deterministic structure), JSONL audit trail in standard format, CycloneDX SBOM (industry-standard format).
+- **FlowGuard provides:** Structured session archives (`.tar.gz`) with JSON manifest, Zod-validated state schemas (documented, deterministic structure), JSONL audit trail in standard format.
 - **Organization must provide:** Data migration strategies, vendor lock-in assessment, interoperability testing with other systems.
 
 ### DLL — Supplier Management (Steuerung von Dienstleistern)
@@ -242,7 +242,7 @@ FlowGuard session data is structured and exportable, supporting data portability
 
 FlowGuard's minimal dependency footprint reduces supply chain risk.
 
-- **FlowGuard provides:** 1 runtime dependency (`zod`), CycloneDX SBOM on every release, Sigstore attestation for release provenance, source-distributed architecture (no opaque binary dependencies).
+- **FlowGuard provides:** 1 runtime dependency (`zod`), offline-resolvable dependencies via local vendor directory, pre-built release artifact distributed via GitHub Releases.
 - **Organization must provide:** Supplier evaluation and selection processes, supplier monitoring, contractual security requirements, supply chain risk management.
 
 ### PSS — Product Security
@@ -283,7 +283,7 @@ The following FlowGuard artifacts provide verifiable evidence for the mappings a
 | Policy configuration | `src/config/policy.ts` | IDM (separation of duties), OIS (policy enforcement) |
 | Review decision logic | `src/rails/review-decision.ts` | IDM (four-eyes principle) |
 | Archive verification | `src/archive/types.ts` | COM (audit support), PI (portability) |
-| Release workflow (SBOM, Sigstore) | `.github/workflows/release.yml` | AM (asset management), DLL (supply chain), CRY (attestation) |
+| Release workflow | `.github/workflows/release.yml` | AM (checksums), DLL (supply chain) |
 | Security policy | `SECURITY.md` | PSS (vulnerability management) |
 
 ---
