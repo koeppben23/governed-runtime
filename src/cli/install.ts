@@ -851,10 +851,10 @@ Deprecated (still work):
   --mode X    → --policy-mode X
 
 Examples:
-  npx @flowguard/core install
-  npx @flowguard/core install --install-scope repo --policy-mode regulated
-  npx @flowguard/core uninstall --install-scope global
-  npx @flowguard/core doctor
+  flowguard install
+  flowguard install --install-scope repo --policy-mode regulated
+  flowguard uninstall --install-scope global
+  flowguard doctor
 `;
 
 /**

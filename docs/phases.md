@@ -17,7 +17,7 @@ TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIE
 | PLAN_REVIEW | Human approves plan | **User Gate** |
 | VALIDATION | Run validation checks | Automatic |
 | IMPLEMENTATION | Execute plan | Automatic |
-| IMPL_REVIEW | Human reviews implementation | **User Gate** |
+| IMPL_REVIEW | LLM reviews implementation | Automatic (self-review) |
 | EVIDENCE_REVIEW | Human reviews evidence | **User Gate** |
 | COMPLETE | Session archived | Terminal |
 
@@ -59,27 +59,31 @@ Human reviews and approves the plan before implementation begins. In regulated m
 ### VALIDATION
 
 **Entry:** `/review-decision` (approve from PLAN_REVIEW)
-**Exit:** `/implement`
+**Exit:** Automatic (all checks passed → IMPLEMENTATION, any check failed → back to PLAN)
 
 Runs automated validation checks defined by the active profile. All checks must pass to proceed.
+Use `/validate` to run the checks.
 
 ### IMPLEMENTATION
 
-**Entry:** `/review-decision` (approve from VALIDATION)
-**Exit:** `/review-decision`
+**Entry:** Automatic from VALIDATION (all checks passed)
+**Exit:** Automatic (auto-advances to IMPL_REVIEW)
 
-AI implements the plan using OpenCode tools. Changed files are automatically tracked.
+AI implements the plan using OpenCode tools. Changed files are automatically tracked via git.
+Use `/implement` to record evidence and auto-advance.
 
 ### IMPL_REVIEW
 
-**Entry:** `/review-decision` (approve from IMPLEMENTATION)
-**Exit:** `/review-decision`
+**Entry:** Automatic from IMPLEMENTATION (after `/implement`)
+**Exit:** Automatic (review convergence)
 
-Human reviews the implementation against the plan.
+LLM reviews the implementation against the plan. This is a self-review loop (similar to PLAN phase),
+not a human gate. The LLM calls `flowguard_implement` with a `reviewVerdict` to record each iteration.
+On convergence, auto-advances to EVIDENCE_REVIEW.
 
 ### EVIDENCE_REVIEW
 
-**Entry:** `/review-decision` (approve from IMPL_REVIEW)
+**Entry:** Automatic from IMPL_REVIEW (review converged)
 **Exit:** `/review-decision`
 
 Final human review of all evidence before completion.

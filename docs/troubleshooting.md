@@ -40,9 +40,9 @@ ls ~/.config/opencode/workspaces/*/sessions/
 **Solution:**
 ```bash
 # Check current state
-/status
+/review
 
-# Get next action
+# Try to advance
 /continue
 ```
 
