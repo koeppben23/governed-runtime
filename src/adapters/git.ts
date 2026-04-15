@@ -280,6 +280,30 @@ export async function headCommit(worktree: string): Promise<string | null> {
 }
 
 /**
+ * Get the default branch name for the repository.
+ *
+ * Strategy:
+ * 1. Try `git symbolic-ref refs/remotes/origin/HEAD` (set after clone)
+ * 2. Fall back to null if no remote HEAD is configured
+ *
+ * Returns the branch name only (e.g., "main"), not the full ref.
+ * Returns null if the default branch cannot be determined.
+ */
+export async function defaultBranch(worktree: string): Promise<string | null> {
+  try {
+    const ref = await git(worktree, [
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+    ]);
+    // ref is "refs/remotes/origin/main" — extract last segment
+    const parts = ref.split("/");
+    return parts[parts.length - 1] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the remote "origin" URL for the repository.
  *
  * Returns null if:

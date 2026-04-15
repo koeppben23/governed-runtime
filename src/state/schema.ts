@@ -27,6 +27,7 @@ import {
   TicketEvidence,
   ValidationResult,
 } from "./evidence";
+import { DiscoverySummarySchema } from "../discovery/types";
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -198,6 +199,23 @@ export const SessionState = z.object({
    * initiatedBy !== reviewDecision.decidedBy (in regulated mode).
    */
   initiatedBy: z.string().min(1),
+
+  // ── Discovery ───────────────────────────────────────────────
+
+  /**
+   * SHA-256 digest of the DiscoveryResult at session creation time.
+   * Used for drift detection: if the workspace discovery changes,
+   * this digest will no longer match the current discovery.json.
+   * Null for sessions created before Phase 5 (discovery system).
+   */
+  discoveryDigest: z.string().nullable().optional(),
+
+  /**
+   * Lightweight discovery summary for quick consumption by Plan/Review/Implement.
+   * NOT the full DiscoveryResult — just the most useful fields.
+   * Null for sessions created before Phase 5 (discovery system).
+   */
+  discoverySummary: DiscoverySummarySchema.nullable().optional(),
 
   // ── Metadata ────────────────────────────────────────────────
 

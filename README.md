@@ -3,7 +3,7 @@
 Deterministic, fail-closed FlowGuard workflow for AI-assisted software delivery.
 Adds explicit phases, evidence gates, audit trails, and policy enforcement to OpenCode.
 
-> **Status:** v1.2.0 | TypeScript | OpenCode-native | Workspace Registry Architecture
+> **Status:** v1.3.0 | TypeScript | OpenCode-native | Workspace Registry + Discovery System
 
 ---
 
@@ -45,8 +45,10 @@ npx @flowguard/core doctor
 ```
 
 This bootstraps a FlowGuard session: binds your OpenCode session to the git worktree,
-computes a repository fingerprint, auto-detects your tech stack (Java, Angular, TypeScript),
-resolves the FlowGuard policy, and initializes canonical state in the workspace registry.
+computes a repository fingerprint, runs **comprehensive repo discovery** (stack detection,
+topology analysis, surface detection, domain signals), auto-detects your tech stack,
+resolves the FlowGuard policy, writes immutable discovery snapshots, and initializes
+canonical state in the workspace registry.
 
 ### 3. Follow the Workflow
 
@@ -72,7 +74,9 @@ All commands are available as `/command` in OpenCode chat.
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
 
 - **Creates**: Session state in workspace registry (`~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/`)
-- **Resolves**: Fingerprint (from git remote or worktree path), Profile (auto-detect from repo), Policy (solo/team/regulated), Binding (session <-> worktree)
+- **Discovers**: Repository metadata, language/framework/tool stack, project topology (monorepo vs single), architectural surfaces (API, persistence, CI/CD, security), domain signals
+- **Resolves**: Fingerprint (from git remote or worktree path), Profile (auto-detect from repo + discovery), Policy (solo/team/regulated), Binding (session <-> worktree)
+- **Snapshots**: Immutable copies of `discovery.json` and `profile-resolution.json` written to session directory before state persistence
 - **Arguments**: Optional `policyMode` (solo, team, regulated). Default: solo. If omitted, falls back to `policy.defaultMode` from workspace config (if set), then to the built-in default.
 
 ### /ticket
@@ -141,11 +145,13 @@ Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irrev
 
 ### /archive
 
-Archive a completed session as a `.tar.gz` file. Can also be triggered automatically
-when a session reaches the COMPLETE phase.
+Archive a completed session as a `.tar.gz` file with integrity verification.
+Can also be triggered automatically when a session reaches the COMPLETE phase.
 
 - **Phase**: COMPLETE (or any terminal state)
-- **Creates**: `{workspaceDir}/sessions/archive/{sessionId}.tar.gz`
+- **Creates**: `{workspaceDir}/sessions/archive/{sessionId}.tar.gz` + `.tar.gz.sha256` + `archive-manifest.json`
+- **Manifest**: Contains `sessionId`, `fingerprint`, `policyMode`, `profileId`, `discoveryDigest`, `includedFiles`, `fileDigests`, `contentDigest`
+- **Verify**: `verifyArchive()` validates manifest presence, file completeness, digest integrity, and discovery consistency (10 finding codes)
 - **Removes**: The original session directory after successful archival
 
 ---
@@ -215,7 +221,8 @@ defaultProfileRegistry.register({
   name: "My Custom Stack",
   activeChecks: ["test_quality", "rollback_safety"],
   checks: new Map(), // use baseline check executors
-  detect: (signals) => signals.configFiles.includes("my-config.json") ? 0.9 : 0,
+  detect: ({ repoSignals, discovery }) =>
+    repoSignals.configFiles.includes("my-config.json") ? 0.9 : 0,
   instructions: "Your LLM guidance text here...",
 });
 ```
@@ -260,6 +267,83 @@ Automated 7-check compliance assessment:
 
 ---
 
+## Discovery System
+
+On every `/hydrate`, FlowGuard runs a comprehensive repository discovery pipeline with 5 independent collectors:
+
+| Collector | What It Detects | Evidence Class |
+|-----------|----------------|----------------|
+| **repo-metadata** | Default branch, HEAD commit, dirty status, remote URL | `fact` |
+| **stack-detection** | Languages, frameworks, tools, testing frameworks, build tools, linters | `fact` / `derived_signal` |
+| **topology** | Monorepo vs single-project, workspace roots, package manager | `fact` / `derived_signal` |
+| **surface-detection** | API surfaces, persistence (ORM/migrations), CI/CD, security, architectural layers | `fact` / `derived_signal` |
+| **domain-signals** | Domain keywords from directory names and file paths | `derived_signal` |
+
+### Design
+
+- **Budget-guarded**: Each collector runs independently via `Promise.allSettled` with per-collector timeout. A failing collector degrades gracefully; partial results are allowed.
+- **File-path-based**: All detection uses file paths only — no file content is read. This keeps discovery fast and predictable.
+- **Evidence-classified**: Every detected item carries a classification (`fact`, `derived_signal`, or `hypothesis`) indicating confidence level.
+- **Separate from RepoSignals**: `DiscoveryResult` wraps `RepoSignals` (which remains lightweight and fast) with rich additional data.
+
+### Persistence
+
+Discovery results are written to two locations:
+
+1. **Workspace directory**: `discovery/discovery.json` and `discovery/profile-resolution.json` — updated on each hydrate
+2. **Session directory**: `discovery-snapshot.json` and `profile-resolution-snapshot.json` — immutable copies written *before* state persistence
+
+The session state carries a `discoveryDigest` (SHA-256 of the full discovery result) and a `discoverySummary` (lightweight summary: language/framework/topology one-liners, surface/domain counts).
+
+### Profile Resolution
+
+Profile detection now receives `ProfileDetectionInput` with both `repoSignals` and the optional `DiscoveryResult`. The resolution is recorded in `profile-resolution.json`, including:
+
+- Selected profile with score
+- All rejected candidates with scores
+- Detection timestamp
+
+---
+
+## Archive Hardening
+
+Session archival now produces three artifacts:
+
+| File | Content |
+|------|---------|
+| `{sessionId}.tar.gz` | Compressed session directory contents |
+| `{sessionId}.tar.gz.sha256` | SHA-256 hash of the archive file |
+| `archive-manifest.json` | Structured manifest with digests and file inventory |
+
+### Manifest
+
+The `archive-manifest.json` contains:
+
+- `sessionId`, `fingerprint`, `policyMode`, `profileId`
+- `discoveryDigest` — links archive to exact discovery state
+- `includedFiles` — complete list of archived files
+- `fileDigests` — per-file SHA-256 hashes
+- `contentDigest` — SHA-256 over all file digests (tamper-evident)
+
+### Verification
+
+`verifyArchive()` performs 10 integrity checks:
+
+| Finding Code | What It Checks |
+|-------------|----------------|
+| `MANIFEST_MISSING` | Manifest file exists in archive |
+| `MANIFEST_PARSE_ERROR` | Manifest is valid JSON matching schema |
+| `SESSION_ID_MISMATCH` | Manifest sessionId matches archive name |
+| `FILE_MISSING` | All listed files are present |
+| `FILE_EXTRA` | No unlisted files in archive |
+| `DIGEST_MISMATCH` | Per-file hashes match content |
+| `CONTENT_DIGEST_MISMATCH` | Overall content digest is correct |
+| `ARCHIVE_HASH_MISMATCH` | `.sha256` file matches actual archive hash |
+| `STATE_MISSING` | Session state file exists |
+| `DISCOVERY_SNAPSHOT_MISSING` | Discovery snapshot present when `discoveryDigest` set |
+
+---
+
 ## Configuration
 
 FlowGuard supports per-repository configuration via `config.json` in the workspace directory. The file is optional — when absent, all built-in defaults apply.
@@ -286,6 +370,11 @@ FlowGuard supports per-repository configuration via `config.json` in the workspa
   "profile": {
     "defaultId": "typescript",
     "activeChecks": ["test_quality", "rollback_safety"]
+  },
+  "archive": {
+    "retentionDays": 90,
+    "autoCleanupSessions": true,
+    "exportPath": "/path/to/export/dir"
   }
 }
 ```
@@ -298,6 +387,9 @@ FlowGuard supports per-repository configuration via `config.json` in the workspa
 | `policy` | `maxImplReviewIterations` | integer 1–10 | *(from policy preset)* | Override max implementation review iterations. |
 | `profile` | `defaultId` | string | *(none)* | Default profile ID when `/hydrate` is called without explicit profile. |
 | `profile` | `activeChecks` | string[] | *(none)* | Override the set of active validation checks. |
+| `archive` | `retentionDays` | integer 1–3650 | *(none)* | How long to retain archived sessions. *(Reserved, logic not yet implemented.)* |
+| `archive` | `autoCleanupSessions` | boolean | *(none)* | Automatically clean up sessions older than retention period. *(Reserved.)* |
+| `archive` | `exportPath` | string | *(none)* | Directory for archive export. *(Reserved.)* |
 
 ### Priority Chain
 
@@ -334,14 +426,20 @@ All FlowGuard runtime data lives outside the repository, in a centralized worksp
 │       ├── workspace.json                       # Metadata: fingerprint source, canonical remote, worktree
 │       ├── config.json                          # Per-repo FlowGuard config (optional, Zod-validated)
 │       ├── logs/                                # Per-repo log output
-│       ├── discovery/                           # Business rules (future)
+│       ├── discovery/                           # Repository discovery results
+│       │   ├── discovery.json                   # Full DiscoveryResult (stack, topology, surfaces, domain)
+│       │   └── profile-resolution.json          # Profile resolution with scores + rejected candidates
 │       └── sessions/
 │           ├── {session-uuid}/                  # One FlowGuard run
 │           │   ├── session-state.json            # Canonical state (Zod-validated, atomic writes)
 │           │   ├── audit.jsonl                   # Append-only hash-chained audit trail
-│           │   └── review-report.json            # Latest compliance report
+│           │   ├── review-report.json            # Latest compliance report
+│           │   ├── discovery-snapshot.json        # Immutable discovery snapshot (written before state)
+│           │   └── profile-resolution-snapshot.json # Immutable profile resolution snapshot
 │           └── archive/
-│               └── {session-uuid}.tar.gz         # Archived completed sessions
+│               ├── {session-uuid}.tar.gz         # Archived completed sessions
+│               ├── {session-uuid}.tar.gz.sha256  # Archive file hash
+│               └── archive-manifest.json          # Manifest with digests and file inventory
 ```
 
 ### Repository Integration
@@ -369,7 +467,12 @@ src/
 ├── config/                     # Layer 5: Extension points (profiles, policies, reasons, config schema)
 ├── logging/                    # Layer 5b: Structured logging (logger interface + factories)
 ├── audit/                      # Layer 6: Audit subsystem
-├── integration/                # Layer 7: OpenCode tools + plugin (10 tools, 1 plugin)
+├── discovery/                  # Layer 7: Repo discovery (5 collectors + orchestrator)
+│   ├── collectors/             #   repo-metadata, stack-detection, topology, surface-detection, domain-signals
+│   ├── orchestrator.ts         #   Budget-guarded parallel execution, summary extraction, digest computation
+│   └── types.ts                #   Zod schemas for DiscoveryResult, SurfacesInfo, TopologyInfo, etc.
+├── archive/                    # Layer 8: Archive types (manifest, verification, findings)
+├── integration/                # Layer 9: OpenCode tools + plugin (10 tools, 1 plugin)
 └── cli/                        # CLI installer (install/uninstall/doctor)
 ```
 
@@ -426,7 +529,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (737 tests across 18 test files)
+# Run tests (872 tests across 22 test files)
 npm test
 
 # Build

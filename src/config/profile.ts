@@ -26,6 +26,7 @@
 
 import type { SessionState } from "../state/schema";
 import type { Phase } from "../state/schema";
+import type { DiscoveryResult } from "../discovery/types";
 import { profileRuleContent as javaRuleContent } from "./profiles/content/java";
 import { profileRuleContent as angularRuleContent } from "./profiles/content/angular";
 import { profileRuleContent as typescriptRuleContent } from "./profiles/content/typescript";
@@ -120,6 +121,20 @@ export interface RepoSignals {
 }
 
 /**
+ * Input struct for profile auto-detection.
+ *
+ * Wraps RepoSignals (always available) and optionally DiscoveryResult
+ * (available after Phase 5 discovery). Profiles can use either or both.
+ *
+ * This struct is evolvable: new fields can be added without changing
+ * the detect() function signature on FlowGuardProfile or ProfileRegistry.
+ */
+export interface ProfileDetectionInput {
+  readonly repoSignals: RepoSignals;
+  readonly discovery?: DiscoveryResult;
+}
+
+/**
  * A validation check executor.
  *
  * Runs a single validation check and returns a result.
@@ -171,7 +186,7 @@ export interface FlowGuardProfile {
    * 0 = no match, 1 = perfect match.
    * If omitted, the profile can only be selected explicitly.
    */
-  readonly detect?: (signals: RepoSignals) => number;
+  readonly detect?: (input: ProfileDetectionInput) => number;
   /**
    * Additional LLM instructions injected when this profile is active.
    *
@@ -213,13 +228,13 @@ export class ProfileRegistry {
    * the one with the highest confidence score (> 0).
    * Returns undefined if no profile matches.
    */
-  detect(signals: RepoSignals): FlowGuardProfile | undefined {
+  detect(input: ProfileDetectionInput): FlowGuardProfile | undefined {
     let best: FlowGuardProfile | undefined;
     let bestScore = 0;
 
     for (const profile of this.profiles.values()) {
       if (profile.detect) {
-        const score = profile.detect(signals);
+        const score = profile.detect(input);
         if (score > bestScore) {
           bestScore = score;
           best = profile;
@@ -415,7 +430,7 @@ export const baselineProfile: FlowGuardProfile = {
   name: "Baseline FlowGuard",
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
-  detect: (_signals) => 0.1,
+  detect: (_input) => 0.1,
   instructions: baselineRuleContent,
 };
 
@@ -437,8 +452,8 @@ export const javaProfile: FlowGuardProfile = {
   name: "Java / Spring Boot",
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
-  detect: (signals: RepoSignals): number => {
-    const hasJavaBuild = signals.packageFiles.some(
+  detect: (input: ProfileDetectionInput): number => {
+    const hasJavaBuild = input.repoSignals.packageFiles.some(
       (f) =>
         f === "pom.xml" ||
         f === "build.gradle" ||
@@ -466,8 +481,8 @@ export const angularProfile: FlowGuardProfile = {
   name: "Angular / Nx",
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
-  detect: (signals: RepoSignals): number => {
-    const hasAngular = signals.configFiles.some(
+  detect: (input: ProfileDetectionInput): number => {
+    const hasAngular = input.repoSignals.configFiles.some(
       (f) => f === "angular.json" || f === "nx.json",
     );
     return hasAngular ? 0.85 : 0;
@@ -492,8 +507,8 @@ export const typescriptProfile: FlowGuardProfile = {
   name: "TypeScript / Node.js",
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
-  detect: (signals: RepoSignals): number => {
-    const hasTs = signals.configFiles.some(
+  detect: (input: ProfileDetectionInput): number => {
+    const hasTs = input.repoSignals.configFiles.some(
       (f) => f === "tsconfig.json",
     );
     return hasTs ? 0.7 : 0;

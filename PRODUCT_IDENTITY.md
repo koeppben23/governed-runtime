@@ -62,6 +62,21 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
 - **Self-hosted** — no external dependencies, full data sovereignty
 
+### Repository Discovery
+
+- **5-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, domain signals — all run in parallel with budget guards
+- **Evidence-classified** — every detected item carries `fact`, `derived_signal`, or `hypothesis` classification
+- **File-path-based** — no file content reading, fast and predictable detection from repository file listing
+- **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
+- **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
+
+### Archive Hardening
+
+- **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
+- **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification
+- **10-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, and state presence
+- **Soft-check design** — missing discovery snapshots warn (not fail-hard) for backward compatibility with pre-discovery sessions
+
 ---
 
 ## How It Works
@@ -74,7 +89,7 @@ Every governed session starts with explicit hydration:
 /hydrate
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), resolves the FlowGuard profile via repository signals, creates an immutable policy snapshot, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
+The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 5-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
 
 ### 2. Governed Command Surface
 
@@ -181,13 +196,15 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **2. Machine** | Pure transition table, guards, evaluator | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts` |
 | **3. Rails** | Thin orchestrators for each command | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files) |
 | **4. Adapters** | I/O boundary (filesystem, git, workspace registry, OpenCode context) | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
-| **5. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
-| **6. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
-| **7. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
-| **8. Logging** | Structured logging (logger interface + factories) | `logging/logger.ts` |
-| **9. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
+| **5. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
+| **6. Logging** | Structured logging (logger interface + factories) | `logging/logger.ts` |
+| **7. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
+| **8. Discovery** | Repo discovery (5 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
+| **9. Archive** | Archive manifest types, verification | `archive/types.ts` |
+| **10. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
+| **11. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
 
-Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
+Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
 ### Deployment Model
 
@@ -248,7 +265,9 @@ The value is the **governed operating model around AI-assisted engineering**, no
 | Next action computation | Heuristic | Deterministic (pure state machine) |
 | Blocking behavior | Silent failure | Reason-coded with recovery guidance |
 | Policy profiles | None | Solo / Team / Regulated with four-eyes |
-| Tech-stack awareness | None | Auto-detected profiles (Java, Angular, TS) |
+| Tech-stack awareness | None | Auto-detected profiles (Java, Angular, TS) + deep discovery |
+| Repository discovery | None | 5-collector pipeline with evidence classification |
+| Archive integrity | None | Manifest + per-file digests + 10-check verification |
 | LLM coupling | Model-specific | LLM-agnostic (any model, any provider) |
 | Runtime architecture | Subprocess bridge | Zero-bridge (same process) |
 
@@ -285,7 +304,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 1.2.0
+- **Version:** 1.3.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Architecture:** Installable package (`@flowguard/core`) with thin wrappers + workspace registry
 - **Phase Count:** 8 explicit workflow phases
@@ -294,9 +313,11 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
 - **Policy Modes:** 3 (Solo [default], Team, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
+- **Discovery Collectors:** 5 (repo-metadata, stack-detection, topology, surface-detection, domain-signals)
+- **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
-- **Evidence Types:** 17 Zod schemas
-- **Test Coverage:** 737 tests across 18 test files, 5 mandatory categories
+- **Evidence Types:** 17 Zod schemas + 12 Discovery schemas
+- **Test Coverage:** 872 tests across 22 test files, 5 mandatory categories
 - **Self-Hosted:** No external dependencies, full data sovereignty
 
 ---
@@ -307,6 +328,6 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-*Version: 1.2.0*
+*Version: 1.3.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
-*Last Updated: 2026-04-14*
+*Last Updated: 2026-04-15*

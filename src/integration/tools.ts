@@ -105,6 +105,18 @@ import {
 import { changedFiles, listRepoSignals } from "../adapters/git";
 import { createRailContext } from "../adapters/context";
 
+// Discovery
+import { runDiscovery, extractDiscoverySummary, computeDiscoveryDigest } from "../discovery/orchestrator";
+import {
+  writeDiscovery,
+  writeProfileResolution,
+  writeDiscoverySnapshot,
+  writeProfileResolutionSnapshot,
+} from "../adapters/persistence";
+import type { DiscoveryResult, ProfileResolution } from "../discovery/types";
+import { PROFILE_RESOLUTION_SCHEMA_VERSION } from "../discovery/types";
+import { defaultProfileRegistry as profileRegistryForResolution } from "../config/profile";
+
 // Workspace
 import {
   computeFingerprint,
@@ -398,8 +410,81 @@ export const hydrate: ToolDefinition = {
         : resolvePolicy(args.policyMode);
       const ctx = createPolicyContext(policy);
 
-      // Gather repo signals for profile auto-detection (only needed for new sessions)
-      const repoSignals = existing ? undefined : await listRepoSignals(worktree);
+      // ── Discovery (only for new sessions) ──────────────────────
+      let repoSignals = existing ? undefined : await listRepoSignals(worktree);
+      let discoveryResult: DiscoveryResult | undefined;
+      let discoveryDigest: string | undefined;
+      let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
+      let profileResolution: ProfileResolution | undefined;
+
+      if (!existing && repoSignals) {
+        // 1. Run discovery orchestrator
+        discoveryResult = await runDiscovery({
+          worktreePath: worktree,
+          fingerprint,
+          allFiles: repoSignals.files,
+          packageFiles: repoSignals.packageFiles,
+          configFiles: repoSignals.configFiles,
+        });
+
+        // 2. Write workspace-level discovery
+        await writeDiscovery(wsDir, discoveryResult);
+
+        // 3. Detect profile with discovery context
+        const detectionInput = { repoSignals, discovery: discoveryResult };
+        const detectedProfile = profileRegistryForResolution.detect(detectionInput);
+        const selectedProfile = detectedProfile ?? profileRegistryForResolution.get("baseline");
+
+        // 4. Build profile resolution (including rejected candidates)
+        const allCandidates: ProfileResolution["secondary"] = [];
+        const rejectedCandidates: ProfileResolution["rejected"] = [];
+
+        for (const pid of profileRegistryForResolution.ids()) {
+          const p = profileRegistryForResolution.get(pid);
+          if (!p?.detect) continue;
+          const score = p.detect(detectionInput);
+          if (p.id === selectedProfile?.id) continue;
+          if (score > 0) {
+            allCandidates.push({
+              id: p.id,
+              name: p.name,
+              confidence: score,
+              evidence: [],
+            });
+          } else {
+            rejectedCandidates.push({
+              id: p.id,
+              score: 0,
+              reason: "No matching signals",
+            });
+          }
+        }
+
+        profileResolution = {
+          schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
+          resolvedAt: ctx.now(),
+          primary: {
+            id: selectedProfile?.id ?? "baseline",
+            name: selectedProfile?.name ?? "Baseline FlowGuard",
+            confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
+            evidence: [],
+          },
+          secondary: allCandidates,
+          rejected: rejectedCandidates,
+          activeChecks: [...(selectedProfile?.activeChecks ?? ["test_quality", "rollback_safety"])],
+        };
+
+        // 5. Write workspace-level profile resolution
+        await writeProfileResolution(wsDir, profileResolution);
+
+        // 6. Write immutable snapshots to session dir (BEFORE state)
+        await writeDiscoverySnapshot(sessDir, discoveryResult);
+        await writeProfileResolutionSnapshot(sessDir, profileResolution);
+
+        // 7. Compute digest and summary
+        discoveryDigest = computeDiscoveryDigest(discoveryResult);
+        discoverySummary = extractDiscoverySummary(discoveryResult);
+      }
 
       const result = executeHydrate(existing, {
         sessionId: context.sessionID,
@@ -409,6 +494,9 @@ export const hydrate: ToolDefinition = {
         profileId: args.profileId,
         repoSignals,
         initiatedBy: context.sessionID,
+        discoveryResult,
+        discoveryDigest,
+        discoverySummary,
       }, ctx);
 
       // Write session pointer (fire-and-forget, non-authoritative)
@@ -423,6 +511,8 @@ export const hydrate: ToolDefinition = {
           profileId: state.activeProfile?.id ?? "baseline",
           profileName: state.activeProfile?.name ?? "Baseline Governance",
           profileDetected: !!repoSignals,
+          discoveryComplete: !!discoveryResult,
+          discoverySummary: discoverySummary ?? null,
         });
       }
 

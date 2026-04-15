@@ -27,11 +27,13 @@
 
 import type { SessionState } from "../state/schema";
 import type { BindingInfo } from "../state/evidence";
+import type { DiscoverySummary } from "../discovery/types";
 import { evaluate } from "../machine/evaluate";
 import type { RailResult, RailContext } from "./types";
 import { blocked } from "../config/reasons";
 import { defaultProfileRegistry } from "../config/profile";
 import type { FlowGuardProfile, RepoSignals } from "../config/profile";
+import type { DiscoveryResult } from "../discovery/types";
 import { extractBaseInstructions, extractByPhaseInstructions } from "../config/profile";
 import { resolvePolicy, createPolicySnapshot } from "../config/policy";
 
@@ -75,6 +77,22 @@ export interface HydrateInput {
    * Defaults to sessionId if not provided.
    */
   readonly initiatedBy?: string;
+  /**
+   * Discovery result from the orchestrator.
+   * Used for profile detection when available (Phase 5+).
+   * The rail does NOT run discovery — the tool layer does.
+   */
+  readonly discoveryResult?: DiscoveryResult;
+  /**
+   * SHA-256 digest of the DiscoveryResult.
+   * Computed by the tool layer and embedded in SessionState.
+   */
+  readonly discoveryDigest?: string;
+  /**
+   * Lightweight discovery summary for SessionState.
+   * Extracted from DiscoveryResult by the tool layer.
+   */
+  readonly discoverySummary?: DiscoverySummary;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -117,7 +135,10 @@ export function executeHydrate(
     profile = defaultProfileRegistry.get(input.profileId);
   } else if (input.repoSignals) {
     // Auto-detect from repo signals (highest confidence wins)
-    profile = defaultProfileRegistry.detect(input.repoSignals);
+    profile = defaultProfileRegistry.detect({
+      repoSignals: input.repoSignals,
+      discovery: input.discoveryResult,
+    });
   }
 
   // Fall back to baseline if nothing matched
@@ -175,6 +196,10 @@ export function executeHydrate(
     activeChecks,
     policySnapshot,
     initiatedBy: input.initiatedBy ?? input.sessionId,
+
+    // Discovery
+    discoveryDigest: input.discoveryDigest ?? null,
+    discoverySummary: input.discoverySummary ?? null,
 
     // Metadata
     transition: null,

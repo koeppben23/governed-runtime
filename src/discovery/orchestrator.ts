@@ -1,0 +1,321 @@
+/**
+ * @module discovery/orchestrator
+ * @description Discovery orchestrator — runs all collectors and assembles DiscoveryResult.
+ *
+ * Design:
+ * - Each collector runs independently (Promise.allSettled)
+ * - Collector failure degrades that collector only (status: "failed")
+ * - Partial results are allowed — the orchestrator never fails entirely
+ * - Per-collector timeout budget (configurable, default 10s)
+ * - Produces a complete DiscoveryResult with all sections populated
+ *
+ * Also provides:
+ * - extractDiscoverySummary(): extracts DiscoverySummary from DiscoveryResult
+ * - computeDiscoveryDigest(): SHA-256 of canonical JSON for drift detection
+ *
+ * @version v1
+ */
+
+import { createHash } from "node:crypto";
+import type {
+  CollectorInput,
+  CollectorStatus,
+  DiscoveryResult,
+  DiscoverySummary,
+  RepoMetadata,
+  StackInfo,
+  TopologyInfo,
+  SurfacesInfo,
+  DomainSignals,
+  ValidationHints,
+} from "./types";
+import { DISCOVERY_SCHEMA_VERSION } from "./types";
+import { collectRepoMetadata } from "./collectors/repo-metadata";
+import { collectStack } from "./collectors/stack-detection";
+import { collectTopology } from "./collectors/topology";
+import { collectSurfaces } from "./collectors/surface-detection";
+import { collectDomainSignals } from "./collectors/domain-signals";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Default per-collector timeout (ms). */
+const COLLECTOR_TIMEOUT_MS = 10_000;
+
+// ─── Orchestrator ─────────────────────────────────────────────────────────────
+
+/**
+ * Run all discovery collectors and assemble a DiscoveryResult.
+ *
+ * Each collector runs independently with a timeout budget.
+ * If a collector fails or times out, its status is recorded as "failed"
+ * and empty defaults are used for its section.
+ *
+ * @param input - Shared collector input (worktree, fingerprint, file lists).
+ * @param timeoutMs - Per-collector timeout (default: 10_000ms).
+ * @returns Complete DiscoveryResult with per-collector status.
+ */
+export async function runDiscovery(
+  input: CollectorInput,
+  timeoutMs: number = COLLECTOR_TIMEOUT_MS,
+): Promise<DiscoveryResult> {
+  // Run all collectors in parallel with timeout budget
+  const [metaResult, stackResult, topoResult, surfaceResult, domainResult] =
+    await Promise.allSettled([
+      withTimeout(collectRepoMetadata(input), timeoutMs),
+      withTimeout(collectStack(input), timeoutMs),
+      withTimeout(collectTopology(input), timeoutMs),
+      withTimeout(collectSurfaces(input), timeoutMs),
+      withTimeout(collectDomainSignals(input), timeoutMs),
+    ]);
+
+  // Extract results with safe defaults for failures
+  const collectors: Record<string, CollectorStatus> = {};
+
+  const meta = extractResult(metaResult, "repo-metadata", collectors, {
+    defaultBranch: null,
+    headCommit: null,
+    isDirty: true,
+    worktreePath: input.worktreePath,
+    canonicalRemote: null,
+    fingerprint: input.fingerprint,
+  });
+
+  const stack = extractResult(stackResult, "stack-detection", collectors, {
+    languages: [],
+    frameworks: [],
+    buildTools: [],
+    testFrameworks: [],
+    runtimes: [],
+  });
+
+  const topology = extractResult(topoResult, "topology", collectors, {
+    kind: "unknown" as const,
+    modules: [],
+    entryPoints: [],
+    rootConfigs: [],
+    ignorePaths: [],
+  });
+
+  const surfaces = extractResult(surfaceResult, "surface-detection", collectors, {
+    api: [],
+    persistence: [],
+    cicd: [],
+    security: [],
+    layers: [],
+  });
+
+  const domain = extractResult(domainResult, "domain-signals", collectors, {
+    keywords: [],
+    glossarySources: [],
+  });
+
+  // Derive validation hints from stack + topology
+  const validationHints = deriveValidationHints(stack, topology, input);
+
+  return {
+    schemaVersion: DISCOVERY_SCHEMA_VERSION,
+    collectedAt: new Date().toISOString(),
+    collectors,
+    repoMetadata: meta,
+    stack,
+    topology,
+    surfaces,
+    domainSignals: domain,
+    validationHints,
+  };
+}
+
+// ─── Summary & Digest ─────────────────────────────────────────────────────────
+
+/**
+ * Extract a lightweight DiscoverySummary from a full DiscoveryResult.
+ *
+ * Used to embed a small summary in SessionState without bloating it.
+ */
+export function extractDiscoverySummary(
+  result: DiscoveryResult,
+): DiscoverySummary {
+  return {
+    primaryLanguages: result.stack.languages
+      .filter((l) => l.confidence >= 0.3)
+      .map((l) => l.id),
+    frameworks: result.stack.frameworks.map((f) => f.id),
+    topologyKind: result.topology.kind,
+    moduleCount: result.topology.modules.length,
+    hasApiSurface: result.surfaces.api.length > 0,
+    hasPersistenceSurface: result.surfaces.persistence.length > 0,
+    hasCiCd: result.surfaces.cicd.length > 0,
+    hasSecuritySurface: result.surfaces.security.length > 0,
+  };
+}
+
+/**
+ * Compute SHA-256 digest of a DiscoveryResult.
+ *
+ * Uses canonical JSON (sorted keys) for deterministic hashing.
+ * Used as `discoveryDigest` on SessionState for drift detection.
+ */
+export function computeDiscoveryDigest(result: DiscoveryResult): string {
+  const canonical = JSON.stringify(result, Object.keys(result).sort());
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+// ─── Internal Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Wrap a promise with a timeout.
+ * Rejects with a timeout error if the promise doesn't resolve in time.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Collector timed out after ${ms}ms`)),
+      ms,
+    );
+    promise
+      .then((v) => {
+        clearTimeout(timer);
+        resolve(v);
+      })
+      .catch((e) => {
+        clearTimeout(timer);
+        reject(e);
+      });
+  });
+}
+
+/**
+ * Extract collector result or use default on failure.
+ * Records collector status in the collectors map.
+ */
+function extractResult<T>(
+  settled: PromiseSettledResult<{ status: CollectorStatus; data: T }>,
+  name: string,
+  collectors: Record<string, CollectorStatus>,
+  defaultData: T,
+): T {
+  if (settled.status === "fulfilled") {
+    collectors[name] = settled.value.status;
+    return settled.value.data;
+  }
+  // Collector failed or timed out
+  collectors[name] = "failed";
+  return defaultData;
+}
+
+/**
+ * Derive validation hints from stack and topology analysis.
+ *
+ * Infers likely build/test/lint commands based on detected tools.
+ */
+function deriveValidationHints(
+  stack: StackInfo,
+  topology: TopologyInfo,
+  input: CollectorInput,
+): ValidationHints {
+  const commands: ValidationHints["commands"] = [];
+  const lintTools: ValidationHints["lintTools"] = [];
+
+  // Detect build/test commands from build tools
+  const buildToolIds = new Set(stack.buildTools.map((t) => t.id));
+
+  if (buildToolIds.has("npm")) {
+    commands.push(
+      { kind: "build", command: "npm run build", confidence: 0.7, classification: "derived_signal" },
+      { kind: "test", command: "npm test", confidence: 0.8, classification: "derived_signal" },
+    );
+  }
+  if (buildToolIds.has("maven")) {
+    commands.push(
+      { kind: "build", command: "mvn compile", confidence: 0.8, classification: "derived_signal" },
+      { kind: "test", command: "mvn test", confidence: 0.8, classification: "derived_signal" },
+    );
+  }
+  if (buildToolIds.has("gradle") || buildToolIds.has("gradle-kotlin")) {
+    commands.push(
+      { kind: "build", command: "gradle build", confidence: 0.8, classification: "derived_signal" },
+      { kind: "test", command: "gradle test", confidence: 0.8, classification: "derived_signal" },
+    );
+  }
+  if (buildToolIds.has("cargo")) {
+    commands.push(
+      { kind: "build", command: "cargo build", confidence: 0.9, classification: "derived_signal" },
+      { kind: "test", command: "cargo test", confidence: 0.9, classification: "derived_signal" },
+    );
+  }
+  if (buildToolIds.has("go-modules")) {
+    commands.push(
+      { kind: "build", command: "go build ./...", confidence: 0.9, classification: "derived_signal" },
+      { kind: "test", command: "go test ./...", confidence: 0.9, classification: "derived_signal" },
+    );
+  }
+
+  // Detect typecheck commands
+  const configSet = new Set(input.configFiles);
+  if (configSet.has("tsconfig.json")) {
+    commands.push({
+      kind: "typecheck",
+      command: "npx tsc --noEmit",
+      confidence: 0.85,
+      classification: "derived_signal",
+    });
+  }
+
+  // Detect test frameworks as lint/check tools
+  for (const tf of stack.testFrameworks) {
+    if (tf.id === "vitest") {
+      commands.push({
+        kind: "test",
+        command: "npx vitest run",
+        confidence: 0.9,
+        classification: "derived_signal",
+      });
+    }
+    if (tf.id === "jest") {
+      commands.push({
+        kind: "test",
+        command: "npx jest",
+        confidence: 0.85,
+        classification: "derived_signal",
+      });
+    }
+  }
+
+  // Detect lint tools from config files
+  const eslintConfigs = [
+    ".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml",
+    "eslint.config.js", "eslint.config.mjs",
+  ];
+  if (eslintConfigs.some((c) => configSet.has(c))) {
+    lintTools.push({
+      id: "eslint",
+      confidence: 0.9,
+      classification: "fact",
+      evidence: eslintConfigs.filter((c) => configSet.has(c)),
+    });
+    commands.push({
+      kind: "lint",
+      command: "npx eslint .",
+      confidence: 0.7,
+      classification: "derived_signal",
+    });
+  }
+
+  const prettierConfigs = [".prettierrc", ".prettierrc.json"];
+  if (prettierConfigs.some((c) => configSet.has(c))) {
+    lintTools.push({
+      id: "prettier",
+      confidence: 0.9,
+      classification: "fact",
+      evidence: prettierConfigs.filter((c) => configSet.has(c)),
+    });
+    commands.push({
+      kind: "format",
+      command: "npx prettier --check .",
+      confidence: 0.7,
+      classification: "derived_signal",
+    });
+  }
+
+  return { commands, lintTools };
+}

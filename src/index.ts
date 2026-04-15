@@ -89,12 +89,18 @@ export {
   readAuditTrail,
   readConfig,
   writeDefaultConfig,
+  writeDiscovery,
+  readDiscovery,
+  writeProfileResolution,
+  writeDiscoverySnapshot,
+  writeProfileResolutionSnapshot,
   PersistenceError,
 } from "./adapters/persistence";
 export {
   resolveRoot,
   isGitRepo,
   currentBranch,
+  defaultBranch,
   isClean,
   changedFiles,
   diffFiles,
@@ -138,6 +144,7 @@ export { createTestContext } from "./testing";
 
 export {
   type RepoSignals,
+  type ProfileDetectionInput,
   type CheckExecutor,
   type FlowGuardProfile,
   ProfileRegistry,
@@ -253,7 +260,77 @@ export {
   evaluateCompleteness,
 } from "./audit/completeness";
 
-// ─── Layer 7: Integration (OpenCode Tools + Plugin) ──────────────────────────
+// ─── Layer 7: Discovery ──────────────────────────────────────────────────────
+
+export {
+  // Types
+  type EvidenceClass,
+  type CollectorStatus,
+  type DetectedItem,
+  type RepoMetadata,
+  type StackInfo,
+  type TopologyKind,
+  type ModuleInfo,
+  type EntryPointInfo,
+  type TopologyInfo,
+  type SurfaceInfo,
+  type LayerInfo,
+  type SurfacesInfo,
+  type DomainKeyword,
+  type DomainSignals,
+  type CommandHint,
+  type ValidationHints,
+  type DiscoveryResult,
+  type ProfileCandidate,
+  type RejectedCandidate,
+  type ProfileResolution,
+  type DiscoverySummary,
+  type CollectorInput,
+  type CollectorOutput,
+  // Schemas
+  EvidenceClassSchema,
+  CollectorStatusSchema,
+  DetectedItemSchema,
+  DiscoveryResultSchema,
+  ProfileResolutionSchema,
+  DiscoverySummarySchema,
+  // Constants
+  DISCOVERY_SCHEMA_VERSION,
+  PROFILE_RESOLUTION_SCHEMA_VERSION,
+} from "./discovery/types";
+
+export {
+  runDiscovery,
+  extractDiscoverySummary,
+  computeDiscoveryDigest,
+} from "./discovery/orchestrator";
+
+export { collectRepoMetadata } from "./discovery/collectors/repo-metadata";
+export { collectStack } from "./discovery/collectors/stack-detection";
+export { collectTopology } from "./discovery/collectors/topology";
+export { collectSurfaces } from "./discovery/collectors/surface-detection";
+export { collectDomainSignals } from "./discovery/collectors/domain-signals";
+
+// ─── Layer 8: Archive ────────────────────────────────────────────────────────
+
+export {
+  type ArchiveFindingCode,
+  type ArchiveFindingSeverity,
+  type ArchiveFinding,
+  type ArchiveManifest,
+  type ArchiveVerification,
+  // Schemas
+  ArchiveFindingCodeSchema,
+  ArchiveManifestSchema,
+  ArchiveVerificationSchema,
+  ArchiveFindingSchema,
+  // Constants
+  ARCHIVE_MANIFEST_SCHEMA_VERSION,
+} from "./archive/types";
+
+export { verifyArchive } from "./adapters/workspace";
+
+// ─── Layer 9: Integration (OpenCode Tools + Plugin) ──────────────────────────
 
 export {
   status,

@@ -141,22 +141,22 @@ describe("config/profile", () => {
 
     it("baseline profile detected with lowest confidence", () => {
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
-      expect(baselineProfile.detect!(signals)).toBe(0.1);
+      expect(baselineProfile.detect!({ repoSignals: signals })).toBe(0.1);
     });
 
     it("java profile detected by pom.xml", () => {
       const signals: RepoSignals = { files: [], packageFiles: ["pom.xml"], configFiles: [] };
-      expect(javaProfile.detect!(signals)).toBe(0.8);
+      expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
     });
 
     it("angular profile detected by angular.json", () => {
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ["angular.json"] };
-      expect(angularProfile.detect!(signals)).toBe(0.85);
+      expect(angularProfile.detect!({ repoSignals: signals })).toBe(0.85);
     });
 
     it("typescript profile detected by tsconfig.json", () => {
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ["tsconfig.json"] };
-      expect(typescriptProfile.detect!(signals)).toBe(0.7);
+      expect(typescriptProfile.detect!({ repoSignals: signals })).toBe(0.7);
     });
 
     it("defaultProfileRegistry.detect picks highest confidence", () => {
@@ -166,7 +166,7 @@ describe("config/profile", () => {
         packageFiles: [],
         configFiles: ["angular.json", "tsconfig.json"],
       };
-      const detected = defaultProfileRegistry.detect(signals);
+      const detected = defaultProfileRegistry.detect({ repoSignals: signals });
       expect(detected?.id).toBe("frontend-angular");
     });
   });
@@ -180,7 +180,7 @@ describe("config/profile", () => {
     it("detect returns undefined when no profile matches", () => {
       const registry = new ProfileRegistry();
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
-      expect(registry.detect(signals)).toBeUndefined();
+      expect(registry.detect({ repoSignals: signals })).toBeUndefined();
     });
   });
 
@@ -188,17 +188,17 @@ describe("config/profile", () => {
   describe("CORNER", () => {
     it("java profile detects build.gradle.kts", () => {
       const signals: RepoSignals = { files: [], packageFiles: ["build.gradle.kts"], configFiles: [] };
-      expect(javaProfile.detect!(signals)).toBe(0.8);
+      expect(javaProfile.detect!({ repoSignals: signals })).toBe(0.8);
     });
 
     it("angular profile detects nx.json", () => {
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: ["nx.json"] };
-      expect(angularProfile.detect!(signals)).toBe(0.85);
+      expect(angularProfile.detect!({ repoSignals: signals })).toBe(0.85);
     });
 
     it("no matching signals → detect returns only baseline (via confidence > 0)", () => {
       const signals: RepoSignals = { files: ["readme.md"], packageFiles: [], configFiles: [] };
-      const detected = defaultProfileRegistry.detect(signals);
+      const detected = defaultProfileRegistry.detect({ repoSignals: signals });
       expect(detected?.id).toBe("baseline");
     });
 
@@ -217,7 +217,7 @@ describe("config/profile", () => {
       const registry = new ProfileRegistry();
       registry.register({ id: "manual", name: "Manual", activeChecks: [], checks: new Map() });
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
-      expect(registry.detect(signals)).toBeUndefined();
+      expect(registry.detect({ repoSignals: signals })).toBeUndefined();
     });
 
     it("all built-in profiles have instructions", () => {
@@ -273,7 +273,7 @@ describe("config/profile", () => {
       const files = Array.from({ length: 10000 }, (_, i) => `src/file${i}.ts`);
       const signals: RepoSignals = { files, packageFiles: ["pom.xml"], configFiles: ["tsconfig.json"] };
       const result = benchmarkSync(() => {
-        defaultProfileRegistry.detect(signals);
+        defaultProfileRegistry.detect({ repoSignals: signals });
       }, 200, 50);
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.profileDetect10kMs);
     });
