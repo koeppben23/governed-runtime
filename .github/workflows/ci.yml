@@ -24,10 +24,17 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage
+        run: npm run test:coverage
         env:
           FORCE_COLOR: 0
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
 
   typecheck:
     name: typecheck
@@ -64,6 +71,25 @@ jobs:
         run: npm run build
         env:
           FORCE_COLOR: 0
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    # Non-blocking: signal-only, not a required status check.
+    # Observe results before promoting to merge-blocker.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: npm audit (moderate+)
+        run: npm audit --audit-level=moderate
 
   install:
     name: install (${{ matrix.os }})
