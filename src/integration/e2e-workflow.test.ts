@@ -624,6 +624,87 @@ describe("e2e-workflow", () => {
       expect(finalCompleteness.overallComplete).toBe(true);
     });
 
+    it("regulated mode blocks self-approval at PLAN_REVIEW (four-eyes enforcement)", async () => {
+      // Regulated mode: allowSelfApproval === false.
+      // The decision tool uses context.sessionID as decidedBy,
+      // and hydrate uses context.sessionID as initiatedBy.
+      // Same session = same actor = self-approval → must be blocked.
+      //
+      // Note: context.sessionID serves as both routing key (sessDir) and
+      // identity key (initiatedBy/decidedBy). This means a different reviewer
+      // would resolve to a different session directory at the E2E tool level.
+      // The "different reviewer succeeds" path is tested at the rail level
+      // (review-decision.ts), not here. This E2E test verifies the critical
+      // safety property: self-approval is blocked.
+
+      await callOk(hydrate, { policyMode: "regulated", profileId: "baseline" });
+      await callOk(ticket, { text: "Regulated four-eyes test", source: "user" });
+      await callOk(plan, { planText: "## Regulated Plan\n\nThis plan requires external review." });
+
+      // Drive self-review to convergence
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("PLAN_REVIEW");
+
+      // Attempt self-approval — MUST be blocked
+      const raw = await decision.execute(
+        { verdict: "approve", rationale: "I approve my own work" },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("SELF_APPROVAL_FORBIDDEN");
+      expect(result.recovery).toBeDefined();
+
+      // Phase must not have changed — still at PLAN_REVIEW
+      expect(await getPhase()).toBe("PLAN_REVIEW");
+
+      // Verify state was NOT mutated (no reviewDecision recorded)
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.reviewDecision).toBeNull();
+    });
+
+    it("regulated mode blocks all decisions by same actor at PLAN_REVIEW (four-eyes enforcement)", async () => {
+      // In regulated mode, the four-eyes principle blocks ALL decisions
+      // (approve, changes_requested, reject) by the session initiator.
+      // The check is identity-based: decidedBy !== initiatedBy.
+
+      await callOk(hydrate, { policyMode: "regulated", profileId: "baseline" });
+      await callOk(ticket, { text: "Regulated changes test", source: "user" });
+      await callOk(plan, { planText: "## Plan needing changes" });
+
+      // Drive to PLAN_REVIEW
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("PLAN_REVIEW");
+
+      // changes_requested by same actor — also blocked in regulated mode
+      const crRaw = await decision.execute(
+        { verdict: "changes_requested", rationale: "Needs more detail" },
+        ctx,
+      );
+      const crResult = parseToolResult(crRaw);
+      expect(crResult.error).toBe(true);
+      expect(crResult.code).toBe("SELF_APPROVAL_FORBIDDEN");
+
+      // reject by same actor — also blocked
+      const rejRaw = await decision.execute(
+        { verdict: "reject", rationale: "Start over" },
+        ctx,
+      );
+      const rejResult = parseToolResult(rejRaw);
+      expect(rejResult.error).toBe(true);
+      expect(rejResult.code).toBe("SELF_APPROVAL_FORBIDDEN");
+
+      // Phase unchanged — still PLAN_REVIEW
+      expect(await getPhase()).toBe("PLAN_REVIEW");
+    });
+
     it("full re-traversal after EVIDENCE_REVIEW reject completes successfully", async () => {
       // Team workflow to EVIDENCE_REVIEW, then reject, then complete from scratch
       await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
