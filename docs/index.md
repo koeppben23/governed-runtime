@@ -33,6 +33,11 @@ Configuration file reference.
 ### [Troubleshooting](./troubleshooting.md)
 FAQ and error handling.
 
+## Deployment
+
+### [Air-Gapped Installation](./air-gapped-guide.md)
+How to install FlowGuard in environments without internet access.
+
 ## Compliance
 
 ### [BSI C5 Mapping](./bsi-c5-mapping.md)
