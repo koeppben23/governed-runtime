@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   verify:
@@ -77,10 +79,17 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Package release tarball
+      - name: Generate SBOM (CycloneDX)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          TARBALL="flowguard-${VERSION}.tar.gz"
+          SBOM="flowguard-${VERSION}-sbom.cdx.json"
+          npm sbom --sbom-format cyclonedx --sbom-type library > "$SBOM"
+          echo "SBOM=$SBOM" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Package release tarball
+        run: |
+          TARBALL="flowguard-${{ env.VERSION }}.tar.gz"
           tar -czf "$TARBALL" \
             dist/ \
             package.json \
@@ -91,7 +100,19 @@ jobs:
             VERSION \
             LICENSE 2>/dev/null || true
           echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Generate checksums
+        run: |
+          CHECKSUMS="flowguard-${{ env.VERSION }}-checksums.sha256"
+          sha256sum "${{ env.TARBALL }}" "${{ env.SBOM }}" > "$CHECKSUMS"
+          echo "CHECKSUMS=$CHECKSUMS" >> "$GITHUB_ENV"
+
+      - name: Attest build provenance (Sigstore)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            ${{ env.TARBALL }}
+            ${{ env.SBOM }}
 
       - name: Create GitHub Release
         env:
@@ -99,6 +120,8 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "${{ env.TARBALL }}" \
+            "${{ env.SBOM }}" \
+            "${{ env.CHECKSUMS }}" \
             --title "FlowGuard v${{ env.VERSION }}" \
             --generate-notes \
             --verify-tag
