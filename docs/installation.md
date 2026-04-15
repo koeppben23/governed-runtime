@@ -48,14 +48,19 @@ flowguard install
 flowguard doctor
 ```
 
-Expected output:
+Expected output (abridged — one line per managed artifact):
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
+  [ok] ~/.config/opencode/commands/hydrate.md
+  ... (10 command files total)
+  [ok] ~/.config/opencode/commands/archive.md
+  [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
+  [ok] config.json — no config file — using defaults
 
-  5/5 checks passed
+  N/N checks passed
 ```
 
 ## Installation Options

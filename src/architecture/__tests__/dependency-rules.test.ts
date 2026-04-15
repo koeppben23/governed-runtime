@@ -62,6 +62,15 @@ const NODE_BUILTIN_PREFIXES = [
   "node:assert", "node:perf_hooks",
 ];
 
+/**
+ * Normalize a file path to use forward slashes.
+ * Ensures `.includes("/state/")` etc. work on all platforms
+ * (Windows `path.join()` produces backslash separators).
+ */
+function normalizeSep(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
 interface ImportInfo {
   module: string;
   raw: string;
@@ -135,8 +144,8 @@ async function analyzeFile(filePath: string): Promise<FileAnalysis> {
   const imports = parseImports(content);
 
   return {
-    filePath,
-    relativePath,
+    filePath: normalizeSep(filePath),
+    relativePath: normalizeSep(relativePath),
     imports,
   };
 }

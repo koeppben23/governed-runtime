@@ -52,7 +52,7 @@ Open OpenCode and start a governed session:
 /implement
 ```
 
-### 6. Review Implementation
+### 6. Final Review
 
 ```
 /review-decision approve
