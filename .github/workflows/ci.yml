@@ -91,6 +91,63 @@ jobs:
       - name: npm audit (moderate+)
         run: npm audit --audit-level=moderate
 
+  secrets-scan:
+    name: secrets-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          config-path: .gitleaks.toml
+
+  codeql:
+    name: codeql-sast
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+          queries: security-extended
+
+      - name: Build
+        run: npm run build
+        shell: bash
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:typescript"
+
+  security-policy:
+    name: security-policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for SECURITY.md
+        run: |
+          if [ ! -f SECURITY.md ]; then
+            echo "::error::SECURITY.md is missing"
+            exit 1
+          fi
+          echo "SECURITY.md found"
+
+      - name: Check for private vulnerability reporting
+        run: |
+          if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
+            echo "::warning::Private vulnerability reporting not configured. Consider enabling it at https://github.com/${{ github.repository }}/security/advisories/new"
+          fi
+
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

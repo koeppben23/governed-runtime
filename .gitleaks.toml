@@ -1,0 +1,23 @@
+[rules]
+  [[rules.allowlist]]
+    description = "Allow test fixtures and examples"
+    files = [".*test.*", ".*fixture.*", ".*mock.*"]
+
+[allowlist]
+  description = "Allowlisted paths for secrets"
+  paths = [
+    "node_modules/.*",
+    "dist/.*",
+    "coverage/.*",
+    "*.test.ts",
+    "*.spec.ts",
+    "fixtures/.*",
+    ".github/.*"
+  ]
+  regexes = [
+    "^test-.*$",
+    "^EXAMPLE-.*$",
+    "^MOCK-.*$",
+    "placeholder.*",
+    "your-.*-here"
+  ]
