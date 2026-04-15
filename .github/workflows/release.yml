@@ -83,7 +83,7 @@ jobs:
         run: |
           PKG_VERSION="$(node -p 'require("./package.json").version')"
           EXPECTED_FILENAME="flowguard-core-${PKG_VERSION}.tgz"
-          CREATED_FILENAME=$(ls release/*.tgz 2>/dev/null | head -1 | xargs basename)
+          CREATED_FILENAME=$(find release -maxdepth 1 -name "*.tgz" -type f -printf "%f\n" 2>/dev/null | head -1)
           echo "Expected: $EXPECTED_FILENAME"
           echo "Created: $CREATED_FILENAME"
           if [ "$CREATED_FILENAME" != "$EXPECTED_FILENAME" ]; then
@@ -95,7 +95,7 @@ jobs:
       - name: Generate checksums
         working-directory: release
         run: |
-          sha256sum *.tgz > checksums.sha256
+          sha256sum ./*.tgz > checksums.sha256
 
       - name: Create GitHub Release
         env:
