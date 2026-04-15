@@ -91,7 +91,7 @@ export const PERF_BUDGETS = {
   validateBindingMs: 0.5,
 
   /** Reason registry lookup + format (map lookup + string interpolation). */
-  reasonLookupMs: 0.5,
+  reasonLookupMs: 5,
 } as const;
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

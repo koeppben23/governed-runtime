@@ -6,41 +6,24 @@ Deterministic, fail-closed workflow engine for AI-assisted software delivery.
 
 ---
 
-## Quick Start
+## Installation
 
-### 1. Install
+FlowGuard is distributed via GitHub Releases as source code.
 
-```bash
-# Install the FlowGuard package
-npm install -g @flowguard/core
+1. Download the latest release from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
+2. Build: `npm install && npm run build`
+3. Install: `npm install -g ./`
+4. Initialize: `flowguard install`
 
-# Set up OpenCode integration (creates tools, plugins, and commands)
-npx @flowguard/core install
-```
+See [docs/installation.md](./docs/installation.md) for full instructions.
 
-The installer writes:
-- Thin wrappers to `~/.config/opencode/tools/` (or `.opencode/` for repo scope)
-- FlowGuard mandates to the OpenCode config directory
-- Command documentation for OpenCode
-
-**Options:**
-- `--install-scope global` (default): `~/.config/opencode/` — works across all projects
-- `--install-scope repo`: `.opencode/` — committed to repository
-- `--policy-mode solo|team|regulated`: Set default policy mode
-
-### 2. Verify Installation
+## Get Started
 
 ```bash
-npx @flowguard/core doctor
-```
-
-### 3. Start Session
-
-```
 /hydrate
 ```
 
-### 4. Follow the Workflow
+### Follow the Workflow
 
 ```
 /ticket <describe the task>

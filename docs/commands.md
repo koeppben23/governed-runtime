@@ -2,6 +2,17 @@
 
 FlowGuard distinguishes between **Workflow Commands** (drive session state) and **Operational Tools** (operate on session artifacts).
 
+## Command Surface
+
+FlowGuard uses a two-level command surface:
+
+| Level | Syntax | Example | Purpose |
+|-------|--------|---------|---------|
+| **User-facing** | `/command` | `/hydrate`, `/ticket` | OpenCode chat commands |
+| **Internal** | `flowguard_command` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
+
+The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
+
 ## Workflow Commands
 
 These commands drive the session through the workflow phases.
