@@ -20,6 +20,8 @@ const DOCS_INDEX = path.join(PROJECT_ROOT, "docs/index.md");
 const INSTALLATION_PATH = path.join(PROJECT_ROOT, "docs/installation.md");
 const COMMANDS_PATH = path.join(PROJECT_ROOT, "docs/commands.md");
 const QUICKSTART_PATH = path.join(PROJECT_ROOT, "docs/quick-start.md");
+const PROFILES_PATH = path.join(PROJECT_ROOT, "docs/profiles.md");
+const ARCHIVE_PATH = path.join(PROJECT_ROOT, "docs/archive.md");
 
 interface Link {
   target: string;
@@ -181,6 +183,34 @@ describe("Documentation Links", () => {
     it("docs/installation.md should reference GitHub Releases", async () => {
       const content = await fs.readFile(INSTALLATION_PATH, "utf-8");
       expect(content).toContain("GitHub Releases");
+    });
+
+    it("docs/profiles.md should not suggest public npm install", async () => {
+      const content = await fs.readFile(PROFILES_PATH, "utf-8");
+      expect(content).not.toContain("npm install -g @flowguard/core");
+      expect(content).not.toContain("npx @flowguard/core");
+    });
+
+    it("docs/archive.md should not suggest public npm install", async () => {
+      const content = await fs.readFile(ARCHIVE_PATH, "utf-8");
+      expect(content).not.toContain("npm install -g @flowguard/core");
+      expect(content).not.toContain("npx @flowguard/core");
+    });
+
+    it("docs/profiles.md import examples should reference installation docs", async () => {
+      const content = await fs.readFile(PROFILES_PATH, "utf-8");
+      const hasImport = content.includes("from '@flowguard/core'");
+      if (hasImport) {
+        expect(content).toContain("see docs/installation.md");
+      }
+    });
+
+    it("docs/archive.md import examples should reference installation docs", async () => {
+      const content = await fs.readFile(ARCHIVE_PATH, "utf-8");
+      const hasImport = content.includes("from '@flowguard/core'");
+      if (hasImport) {
+        expect(content).toContain("see docs/installation.md");
+      }
     });
 
     it("All documentation should use consistent command syntax", async () => {

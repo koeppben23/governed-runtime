@@ -40,8 +40,7 @@
     "vitest": "^2.1.0"
   },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "license": "UNLICENSED",
   "private": true

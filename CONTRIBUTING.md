@@ -29,7 +29,7 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - Bun (recommended) or npm
 
 ### Installation
@@ -204,7 +204,7 @@ The following checks must pass for a PR to be merged:
 
 | Check | Command | Description |
 |-------|---------|-------------|
-| Tests | `npm test` | All 906+ tests must pass |
+| Tests | `npm test` | All tests must pass |
 | Type Check | `npm run check` | TypeScript compilation |
 | Build | `npm run build` | Successful compilation to dist/ |
 

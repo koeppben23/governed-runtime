@@ -94,6 +94,7 @@ Extends Baseline with Angular-specific rules:
 ### Creating a Profile
 
 ```typescript
+// Available after installation (see docs/installation.md)
 import { defineProfile } from '@flowguard/core';
 
 export const myProfile = defineProfile({
@@ -116,6 +117,7 @@ export const myProfile = defineProfile({
 ### Registering a Profile
 
 ```typescript
+// Available after installation (see docs/installation.md)
 import { profileRegistry } from '@flowguard/core';
 
 profileRegistry.register(myProfile);

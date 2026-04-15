@@ -66,10 +66,10 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ## Product Documentation
 
-| Document | Audience |
-|----------|----------|
-| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Customer-facing product overview |
-| [AGENTS.md](./AGENTS.md) | AI development guidelines |
+| Document | Audience | Notes |
+|----------|----------|-------|
+| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations |
+| [AGENTS.md](./AGENTS.md) | Development repo | FlowGuard mandates used by this repo's AI assistants. End users receive `flowguard-mandates.md` via the installer instead. |
 
 ---
 
@@ -82,7 +82,7 @@ npm install
 # Type check
 npm run check
 
-# Run tests (906 tests)
+# Run tests
 npm test
 
 # Build
