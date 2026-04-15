@@ -73,10 +73,10 @@ FlowGuard is designed to run locally with no network access. Security hardening 
 
 | Step | Action |
 |------|--------|
-| 1 | Download artifact on connected machine |
+| 1 | Operator downloads artifact from release source |
 | 2 | Verify checksum |
 | 3 | Transfer to air-gapped environment |
-| 4 | Install via `flowguard install` |
+| 4 | Install via `flowguard install --core-tarball <path>` | |
 
 **Customer Responsibility:**
 - Verify network isolation

@@ -28,9 +28,9 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 | Version | Example | Meaning |
 |---------|---------|---------|
-| **Major** | 2.0.0 | Breaking changes |
-| **Minor** | 1.3.0 | New features, backward compatible |
-| **Patch** | 1.3.1 | Bug fixes, backward compatible |
+| **Major** | 2.0.0 | Breaking changes — check release notes |
+| **Minor** | 1.3.0 | New features — test before production use |
+| **Patch** | 1.3.1 | Bug fixes — typically compatible |
 
 ### Version Lifecycle
 
@@ -38,7 +38,7 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 |--------|-------------|----------|
 | **Latest** | Current stable release | Until next release |
 | **Previous** | Prior release | Best-effort support |
-| **Unsupported** | Older versions | No updates |
+| **Older** | Unsupported | No updates |
 
 ---
 
