@@ -100,7 +100,8 @@ function isNodeBuiltinImport(module: string): boolean {
 }
 
 function getTargetModule(importPath: string): string | null {
-  const normalized = importPath.replace(/^\.\.\//, "").replace(/^\.\//, "");
+  // Strip all leading ../ segments (supports nested subdirectories like integration/tools/)
+  const normalized = importPath.replace(/^(\.\.\/)+/, "").replace(/^\.\//, "");
   const first = normalized.split("/")[0];
   return first || null;
 }

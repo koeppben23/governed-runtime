@@ -1,0 +1,448 @@
+/**
+ * @module integration/tools/simple-tools
+ * @description Simple FlowGuard tools that delegate directly to rails.
+ *
+ * Contains: status, ticket, decision, validate, review, abort_session, archive.
+ * These tools follow the pattern: resolve workspace -> read state -> call rail -> persist.
+ *
+ * @version v3
+ */
+
+import { z } from "zod";
+
+import type { ToolDefinition } from "./helpers";
+import {
+  resolveWorkspacePaths,
+  requireState,
+  resolvePolicyFromState,
+  createPolicyContext,
+  formatEval,
+  formatBlocked,
+  formatError,
+  persistAndFormat,
+} from "./helpers";
+
+// State & Machine
+import type { SessionState } from "../../state/schema";
+import { evaluate } from "../../machine/evaluate";
+import { isCommandAllowed, Command } from "../../machine/commands";
+
+// Rails
+import { executeTicket } from "../../rails/ticket";
+import { executeReviewDecision } from "../../rails/review-decision";
+import { executeReview } from "../../rails/review";
+import { executeAbort } from "../../rails/abort";
+
+// Rail helpers
+import { autoAdvance } from "../../rails/types";
+
+// Adapters
+import {
+  readState,
+  writeState,
+  writeReport,
+} from "../../adapters/persistence";
+
+// Workspace
+import { archiveSession } from "../../adapters/workspace";
+
+// Evidence types
+import type { CheckId, ValidationResult } from "../../state/evidence";
+
+// Config
+import { evaluateCompleteness } from "../../audit/completeness";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_status — Read-Only State Check
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const status: ToolDefinition = {
+  description:
+    "Read the current FlowGuard session state. Returns phase, evidence summary, " +
+    "policy info, completeness matrix, and next action. " +
+    "Does NOT mutate state. Use this to understand where the workflow is before taking action.",
+  args: {},
+  async execute(_args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await readState(sessDir);
+
+      if (!state) {
+        return JSON.stringify({
+          phase: null,
+          status: "No FlowGuard session found.",
+          next: "Run /hydrate to bootstrap a session.",
+        });
+      }
+
+      const policy = resolvePolicyFromState(state);
+      const ev = evaluate(state, policy);
+      const completeness = evaluateCompleteness(state);
+
+      return JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        policyMode: state.policySnapshot?.mode ?? "unknown",
+        initiatedBy: state.initiatedBy,
+        profileId: state.activeProfile?.id ?? "none",
+        profileName: state.activeProfile?.name ?? "None",
+        profileRules: (() => {
+          const base = state.activeProfile?.ruleContent ?? "";
+          const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
+          return phaseExtra ? base + "\n\n" + phaseExtra : base;
+        })(),
+        hasTicket: state.ticket !== null,
+        hasPlan: state.plan !== null,
+        planVersion: state.plan
+          ? state.plan.history.length + 1
+          : 0,
+        selfReviewIteration: state.selfReview?.iteration ?? null,
+        selfReviewConverged: state.selfReview
+          ? state.selfReview.iteration >= state.selfReview.maxIterations ||
+            (state.selfReview.revisionDelta === "none" &&
+              state.selfReview.verdict === "approve")
+          : null,
+        validationResults: state.validation.map((v) => ({
+          checkId: v.checkId,
+          passed: v.passed,
+        })),
+        hasImplementation: state.implementation !== null,
+        implReviewIteration: state.implReview?.iteration ?? null,
+        implReviewConverged: state.implReview
+          ? state.implReview.iteration >=
+              state.implReview.maxIterations ||
+            (state.implReview.revisionDelta === "none" &&
+              state.implReview.verdict === "approve")
+          : null,
+        hasReviewDecision: state.reviewDecision !== null,
+        reviewVerdict: state.reviewDecision?.verdict ?? null,
+        error: state.error,
+        evalKind: ev.kind,
+        next: formatEval(ev),
+        completeness: {
+          overallComplete: completeness.overallComplete,
+          fourEyes: completeness.fourEyes,
+          summary: completeness.summary,
+        },
+      });
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_ticket — Record Task
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const ticket: ToolDefinition = {
+  description:
+    "Record the task/ticket description for the FlowGuard session. " +
+    "Clears all downstream evidence (plan, validation, implementation). " +
+    "Allowed only in TICKET phase.",
+  args: {
+    text: z.string().describe(
+      "The task or ticket description. Must be non-empty.",
+    ),
+    source: z
+      .enum(["user", "external"])
+      .default("user")
+      .describe("Source of the ticket: 'user' (typed in chat) or 'external' (from issue tracker)."),
+  },
+  async execute(args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+
+      const result = executeTicket(state, {
+        text: args.text,
+        source: args.source,
+      }, ctx);
+
+      return await persistAndFormat(sessDir, result);
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_decision — Human Verdict at User Gates
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const decision: ToolDefinition = {
+  description:
+    "Record a human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). " +
+    "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
+    "This tool ONLY works at PLAN_REVIEW and EVIDENCE_REVIEW phases. " +
+    "In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.",
+  args: {
+    verdict: z
+      .enum(["approve", "changes_requested", "reject"])
+      .describe(
+        "Review verdict. 'approve' advances the workflow. " +
+        "'changes_requested' returns to revision. " +
+        "'reject' restarts from TICKET.",
+      ),
+    rationale: z
+      .string()
+      .default("")
+      .describe("Reason for the decision. Recorded in audit trail."),
+  },
+  async execute(args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: args.verdict,
+          rationale: args.rationale,
+          decidedBy: context.sessionID,
+        },
+        ctx,
+      );
+
+      return await persistAndFormat(sessDir, result);
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_validate — Record Validation Check Results
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const validate: ToolDefinition = {
+  description:
+    "Record validation check results. The LLM executes the checks (test analysis, " +
+    "rollback safety analysis, etc.) and reports results here. " +
+    "Provide an array of check results. Check IDs must match the session's activeChecks. " +
+    "After recording: ALL_PASSED -> advance to IMPLEMENTATION, CHECK_FAILED -> return to PLAN.",
+  args: {
+    results: z
+      .array(
+        z.object({
+          checkId: z
+            .string()
+            .min(1)
+            .describe("Which validation check this result is for (must match activeChecks)."),
+          passed: z.boolean().describe("Whether the check passed."),
+          detail: z
+            .string()
+            .describe("Detailed explanation of the check result."),
+        }),
+      )
+      .describe(
+        "Array of validation check results. Must cover all activeChecks for the session.",
+      ),
+  },
+  async execute(args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+
+      // Admissibility
+      if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
+        return formatBlocked("COMMAND_NOT_ALLOWED", {
+          command: "/validate",
+          phase: state.phase,
+        });
+      }
+
+      if (state.activeChecks.length === 0) {
+        return formatBlocked("NO_ACTIVE_CHECKS");
+      }
+
+      // Validate that all active checks are covered
+      const submittedIds = new Set(args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId));
+      const missing = state.activeChecks.filter(
+        (id) => !submittedIds.has(id),
+      );
+      if (missing.length > 0) {
+        return formatBlocked("MISSING_CHECKS", {
+          checks: missing.join(", "),
+        });
+      }
+
+      // Record results with timestamps
+      const now = ctx.now();
+      const validationResults = args.results.map((r: { checkId: string; passed: boolean; detail: string }) => ({
+        checkId: r.checkId as CheckId,
+        passed: r.passed,
+        detail: r.detail,
+        executedAt: now,
+      }));
+
+      const nextState: SessionState = {
+        ...state,
+        validation: validationResults,
+        error: null,
+      };
+
+      // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
+      const evalFn = (s: SessionState) => evaluate(s, policy);
+      const { state: finalState, evalResult: ev, transitions } = autoAdvance(
+        nextState,
+        evalFn,
+        ctx,
+      );
+      await writeState(sessDir, finalState);
+
+      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
+      const failedChecks = validationResults
+        .filter((r: ValidationResult) => !r.passed)
+        .map((r: ValidationResult) => r.checkId);
+
+      return JSON.stringify({
+        phase: finalState.phase,
+        status: allPassed
+          ? "All validation checks passed."
+          : `Validation failed: ${failedChecks.join(", ")}.`,
+        results: validationResults.map((r: ValidationResult) => ({
+          checkId: r.checkId,
+          passed: r.passed,
+        })),
+        next: formatEval(ev),
+        _audit: { transitions },
+      });
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_review — Generate Compliance Report (Read-Only)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const review: ToolDefinition = {
+  description:
+    "Generate a standalone compliance review report with evidence completeness matrix " +
+    "and four-eyes principle status. Always available in every phase. " +
+    "Does NOT mutate session state. Produces a flowguard-review-report.v1 artifact " +
+    "written to the session directory.",
+  args: {},
+  async execute(_args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
+      const now = new Date().toISOString();
+
+      // Generate extended report (with completeness matrix)
+      const report = await executeReview(state, now);
+
+      // Write report artifact to session directory
+      await writeReport(sessDir, report);
+
+      return JSON.stringify({
+        phase: state.phase,
+        status: "Review report generated.",
+        overallStatus: report.overallStatus,
+        policyMode: state.policySnapshot?.mode ?? "unknown",
+        completeness: {
+          overallComplete: report.completeness.overallComplete,
+          fourEyes: report.completeness.fourEyes,
+          summary: report.completeness.summary,
+          slots: report.completeness.slots.map((s) => ({
+            slot: s.slot,
+            label: s.label,
+            status: s.status,
+            detail: s.detail,
+          })),
+        },
+        findingsCount: report.findings.length,
+        findings: report.findings,
+        validationSummary: report.validationSummary,
+      });
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_abort_session — Emergency Termination
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const abort_session: ToolDefinition = {
+  description:
+    "Emergency termination of the FlowGuard session. Bypasses the state machine " +
+    "and directly sets phase to COMPLETE with an ABORTED error marker. " +
+    "Use only when the session cannot or should not continue. Irreversible.",
+  args: {
+    reason: z
+      .string()
+      .default("Session aborted by user")
+      .describe("Reason for aborting. Recorded in audit trail."),
+  },
+  async execute(args, context) {
+    try {
+      const { sessDir } = await resolveWorkspacePaths(context);
+      const state = await requireState(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+
+      const result = executeAbort(
+        state,
+        {
+          reason: args.reason,
+          actor: context.sessionID,
+        },
+        ctx,
+      );
+
+      return await persistAndFormat(sessDir, result);
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// flowguard_archive — Archive Completed Session
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const archive: ToolDefinition = {
+  description:
+    "Archive a completed FlowGuard session as a tar.gz file. " +
+    "Creates a compressed archive in the workspace's sessions/archive/ directory. " +
+    "Only works on sessions in COMPLETE phase. " +
+    "Uses system tar (available on Windows 10+, macOS, Linux).",
+  args: {},
+  async execute(_args, context) {
+    try {
+      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
+      const state = await readState(sessDir);
+
+      if (!state) {
+        return formatBlocked("NO_SESSION");
+      }
+
+      if (state.phase !== "COMPLETE") {
+        return formatBlocked("COMMAND_NOT_ALLOWED", {
+          command: "/archive",
+          phase: state.phase,
+        });
+      }
+
+      const archivePath = await archiveSession(fingerprint, context.sessionID);
+
+      return JSON.stringify({
+        phase: state.phase,
+        status: "Session archived successfully.",
+        archivePath,
+      });
+    } catch (err) {
+      return formatError(err);
+    }
+  },
+};
