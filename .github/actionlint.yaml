@@ -18,6 +18,8 @@ shellcheck:
   - SC2086  # info: Double quote to prevent globbing and word splitting
   - SC2012  # info: Use find instead of ls
   - SC2035  # info: Use ./*glob* so names with dashes
+  - SC2010  # info: Don't check ls output
+  - SC2046  # info: Quote this to prevent word splitting
 
 # Ignore certain paths
 ignore:
