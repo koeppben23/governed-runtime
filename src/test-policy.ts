@@ -31,6 +31,10 @@
  * @version v1
  */
 
+declare const performance: {
+  now(): number;
+};
+
 // ─── Test Categories ──────────────────────────────────────────────────────────
 
 /**

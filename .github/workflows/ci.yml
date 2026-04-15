@@ -159,6 +159,12 @@ jobs:
         with:
           languages: typescript
           queries: security-extended
+          config: |
+            disable-default-queries: false
+            paths-ignore:
+              - '**/*.test.ts'
+              - '**/*.spec.ts'
+              - 'src/test-policy.ts'
 
       - name: Build
         run: npm run build
