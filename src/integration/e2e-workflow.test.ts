@@ -278,6 +278,89 @@ describe("e2e-workflow", () => {
       }
       expect(await getPhase()).toBe("VALIDATION");
     });
+
+    it("changes_requested at EVIDENCE_REVIEW sends back to IMPLEMENTATION", async () => {
+      // Team workflow to EVIDENCE_REVIEW
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      await callOk(ticket, { text: "Rework task", source: "user" });
+      await callOk(plan, { planText: "## Plan" });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "OK" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("EVIDENCE_REVIEW");
+
+      // Request changes — sends back to IMPLEMENTATION
+      await callOk(decision, { verdict: "changes_requested", rationale: "Need more tests" });
+      expect(await getPhase()).toBe("IMPLEMENTATION");
+
+      // Verify impl + implReview cleared, but plan preserved
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.implementation).toBeNull();
+      expect(state!.implReview).toBeNull();
+      expect(state!.plan).not.toBeNull();
+
+      // Re-implement and complete
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "Good now" });
+      expect(await getPhase()).toBe("COMPLETE");
+    });
+
+    it("reject at EVIDENCE_REVIEW restarts from TICKET with full clearing", async () => {
+      // Team workflow to EVIDENCE_REVIEW
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      await callOk(ticket, { text: "Rejected task", source: "user" });
+      await callOk(plan, { planText: "## Original Plan" });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "OK" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("EVIDENCE_REVIEW");
+
+      // Reject — sends back to TICKET, clears everything
+      await callOk(decision, { verdict: "reject", rationale: "Wrong approach entirely" });
+      expect(await getPhase()).toBe("TICKET");
+
+      // Verify all downstream evidence is cleared
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.plan).toBeNull();
+      expect(state!.selfReview).toBeNull();
+      expect(state!.validation).toHaveLength(0);
+      expect(state!.implementation).toBeNull();
+      expect(state!.implReview).toBeNull();
+      // Ticket is preserved (reject goes TO ticket, doesn't clear it)
+      expect(state!.ticket).not.toBeNull();
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -465,6 +548,135 @@ describe("e2e-workflow", () => {
       // But readAuditTrail should not throw.
       expect(trail).toBeDefined();
       expect(Array.isArray(trail.events)).toBe(true);
+    });
+
+    it("self-review changes_requested loop: revise plan then complete", async () => {
+      // Team workflow: self-review loop exercises changes_requested path
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      await callOk(ticket, { text: "Iterative planning task", source: "user" });
+
+      // Submit initial plan
+      await callOk(plan, { planText: "## Initial Plan\nToo vague" });
+      expect(await getPhase()).toBe("PLAN");
+
+      // Self-review: request changes with revised plan
+      await callOk(plan, {
+        selfReviewVerdict: "changes_requested",
+        planText: "## Revised Plan\n1. Concrete step A\n2. Concrete step B",
+      });
+
+      // Now approve the revised plan
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("PLAN_REVIEW");
+
+      // Verify the revised plan is in state
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.plan!.current.body).toContain("Revised Plan");
+
+      // Complete the workflow
+      await callOk(decision, { verdict: "approve", rationale: "OK" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "Ship it" });
+      expect(await getPhase()).toBe("COMPLETE");
+    });
+
+    it("review tool reports completeness at different workflow stages", async () => {
+      await callOk(hydrate, { policyMode: "solo", profileId: "baseline" });
+
+      // Review right after hydrate — ticket is required but missing
+      const earlyReview = await callOk(review, {});
+      expect(earlyReview.phase).toBe("TICKET");
+      const earlyCompleteness = earlyReview.completeness as Record<string, unknown>;
+      expect(earlyCompleteness.overallComplete).toBe(false);
+
+      // Complete the workflow
+      await callOk(ticket, { text: "Review test", source: "user" });
+      await callOk(plan, { planText: "## Plan" });
+      await callOk(plan, { selfReviewVerdict: "approve" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      await callOk(implement, { reviewVerdict: "approve" });
+      expect(await getPhase()).toBe("COMPLETE");
+
+      // Review after completion — should be complete
+      const finalReview = await callOk(review, {});
+      expect(finalReview.overallStatus).toBe("clean");
+      const finalCompleteness = finalReview.completeness as Record<string, unknown>;
+      expect(finalCompleteness.overallComplete).toBe(true);
+    });
+
+    it("full re-traversal after EVIDENCE_REVIEW reject completes successfully", async () => {
+      // Team workflow to EVIDENCE_REVIEW, then reject, then complete from scratch
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      await callOk(ticket, { text: "First attempt", source: "user" });
+      await callOk(plan, { planText: "## Bad Plan" });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "OK" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+
+      // Reject at EVIDENCE_REVIEW — back to TICKET
+      await callOk(decision, { verdict: "reject", rationale: "Start over" });
+      expect(await getPhase()).toBe("TICKET");
+
+      // Full re-traversal with new ticket
+      await callOk(ticket, { text: "Second attempt — better approach", source: "user" });
+      await callOk(plan, { planText: "## Better Plan" });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "PLAN_REVIEW") break;
+        await callOk(plan, { selfReviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "Good" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "EVIDENCE_REVIEW") break;
+        await callOk(implement, { reviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "Ship it" });
+      expect(await getPhase()).toBe("COMPLETE");
+
+      // Verify final state has second attempt's data
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.ticket!.text).toBe("Second attempt — better approach");
+      expect(state!.plan!.current.body).toContain("Better Plan");
     });
   });
 });
