@@ -50,49 +50,58 @@ export type TestCategory = (typeof TEST_CATEGORIES)[number];
 // ─── Performance Thresholds ───────────────────────────────────────────────────
 
 /**
+ * CI runners (GitHub Actions, etc.) are shared VMs with noisy neighbors,
+ * cold caches, and unpredictable scheduling. A 2x multiplier is standard
+ * practice to avoid flaky perf tests while keeping local budgets tight.
+ */
+const CI_MULTIPLIER = process.env.CI ? 2 : 1;
+
+/**
  * Performance budgets for PERF tests.
  * All values in milliseconds unless noted otherwise.
  *
  * These are measured as p99 over 100 iterations (warm).
  * Cold starts may exceed by up to 5x — measure warm only.
+ *
+ * On CI, all budgets are multiplied by 2x (see CI_MULTIPLIER).
  */
 export const PERF_BUDGETS = {
   /** Single evaluate(state, policy) call. */
-  evaluateSingleMs: 1,
+  evaluateSingleMs: 1 * CI_MULTIPLIER,
 
   /** Single guard predicate check. */
-  guardPredicateMs: 0.5,
+  guardPredicateMs: 0.5 * CI_MULTIPLIER,
 
   /** Full hash chain verification for 1000 events. */
-  auditChainVerify1000Ms: 100,
+  auditChainVerify1000Ms: 100 * CI_MULTIPLIER,
 
   /** Full SessionState JSON.stringify + Zod parse round-trip. */
-  stateSerializeMs: 5,
+  stateSerializeMs: 5 * CI_MULTIPLIER,
 
   /** Profile detect() with 10,000 file signals. */
-  profileDetect10kMs: 1,
+  profileDetect10kMs: 1 * CI_MULTIPLIER,
 
   /** readState + writeState round-trip (filesystem I/O). */
-  stateIoRoundTripMs: 50,
+  stateIoRoundTripMs: 50 * CI_MULTIPLIER,
 
   /** Completeness matrix evaluation. */
-  completenessEvalMs: 2,
+  completenessEvalMs: 2 * CI_MULTIPLIER,
 
   /** Compliance summary generation from 500 events. */
-  complianceSummary500Ms: 50,
+  complianceSummary500Ms: 50 * CI_MULTIPLIER,
 
   /** Single SHA-256 digest of 1MB string. */
-  digest1MbMs: 10,
+  digest1MbMs: 10 * CI_MULTIPLIER,
 
   /** autoAdvance loop (max 10 transitions). */
-  autoAdvanceMs: 5,
+  autoAdvanceMs: 5 * CI_MULTIPLIER,
 
   /** validateBinding (2x path normalize + string compare). */
-  validateBindingMs: 0.5,
+  validateBindingMs: 0.5 * CI_MULTIPLIER,
 
   /** Reason registry lookup + format (map lookup + string interpolation). */
-  reasonLookupMs: 5,
-} as const;
+  reasonLookupMs: 5 * CI_MULTIPLIER,
+};
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
