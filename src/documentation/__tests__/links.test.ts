@@ -701,3 +701,128 @@ describe("docs/admin-model.md", () => {
     });
   });
 });
+
+describe("docs/trust-boundaries.md", () => {
+  const TRUST_BOUNDARIES_PATH = path.join(PROJECT_ROOT, "docs/trust-boundaries.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(TRUST_BOUNDARIES_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document trust boundary diagram", async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, "utf-8");
+      expect(content).toContain("Trust Boundary");
+      expect(content).toContain("Component Trust Levels");
+    });
+
+    it("should document boundary crossings", async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, "utf-8");
+      expect(content).toContain("Boundary Crossings");
+      expect(content).toContain("Filesystem Boundary");
+    });
+
+    it("should document threat model", async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, "utf-8");
+      expect(content).toContain("Threat Model");
+      expect(content).toContain("Within Trust Boundary");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should clarify network boundary", async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, "utf-8");
+      expect(content.toLowerCase()).toContain("not supported");
+      expect(content.toLowerCase()).toContain("no network");
+    });
+  });
+});
+
+describe("docs/retention-recovery.md", () => {
+  const RETENTION_RECOVERY_PATH = path.join(PROJECT_ROOT, "docs/retention-recovery.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(RETENTION_RECOVERY_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document data retention matrix", async () => {
+      const content = await fs.readFile(RETENTION_RECOVERY_PATH, "utf-8");
+      expect(content).toContain("Data Retention Matrix");
+      expect(content).toContain("Session Data");
+    });
+
+    it("should document archive lifecycle", async () => {
+      const content = await fs.readFile(RETENTION_RECOVERY_PATH, "utf-8");
+      expect(content).toContain("Archive Lifecycle");
+      expect(content).toContain("Archive Creation");
+    });
+
+    it("should document recovery procedures", async () => {
+      const content = await fs.readFile(RETENTION_RECOVERY_PATH, "utf-8");
+      expect(content).toContain("Recovery Procedures");
+      expect(content).toContain("Disaster Recovery");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(RETENTION_RECOVERY_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should clarify backup responsibility", async () => {
+      const content = await fs.readFile(RETENTION_RECOVERY_PATH, "utf-8");
+      expect(content).toContain("Customer Responsibility");
+    });
+  });
+});
+
+describe("docs/upgrade-rollback.md", () => {
+  const UPGRADE_ROLLBACK_PATH = path.join(PROJECT_ROOT, "docs/upgrade-rollback.md");
+
+  describe("HAPPY", () => {
+    it("file should exist", async () => {
+      await expect(fs.access(UPGRADE_ROLLBACK_PATH)).resolves.not.toThrow();
+    });
+
+    it("should document upgrade procedure", async () => {
+      const content = await fs.readFile(UPGRADE_ROLLBACK_PATH, "utf-8");
+      expect(content).toContain("Upgrade Procedure");
+      expect(content).toContain("Standard Upgrade");
+    });
+
+    it("should document rollback procedure", async () => {
+      const content = await fs.readFile(UPGRADE_ROLLBACK_PATH, "utf-8");
+      expect(content).toContain("Rollback Procedure");
+    });
+
+    it("should document version compatibility", async () => {
+      const content = await fs.readFile(UPGRADE_ROLLBACK_PATH, "utf-8");
+      expect(content).toContain("Version Compatibility");
+    });
+  });
+
+  describe("DELIVERY_SCOPE", () => {
+    it("should have delivery scope table", async () => {
+      const content = await fs.readFile(UPGRADE_ROLLBACK_PATH, "utf-8");
+      expect(content).toContain("Delivery Scope");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("should document artifact management", async () => {
+      const content = await fs.readFile(UPGRADE_ROLLBACK_PATH, "utf-8");
+      expect(content).toContain("Artifact Management");
+    });
+  });
+});
