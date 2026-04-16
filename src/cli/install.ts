@@ -38,7 +38,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile, unlink, copyFile, rm } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 import { homedir } from "node:os";
@@ -1024,10 +1024,13 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
-// Auto-run when executed directly
+// Auto-run when executed directly.
+// realpathSync resolves symlinks so that both `flowguard` (symlink) and
+// `install.js` (direct) executions trigger main().
 const isDirectExecution =
   typeof process !== "undefined" &&
-  process.argv[1]?.endsWith("install.js");
+  process.argv[1] !== undefined &&
+  realpathSync(process.argv[1]).endsWith("install.js");
 
 if (isDirectExecution) {
   main(process.argv.slice(2)).then((code) => process.exit(code));
