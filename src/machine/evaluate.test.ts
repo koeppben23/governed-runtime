@@ -169,6 +169,22 @@ describe("evaluate", () => {
       const result = evaluate(makeState("ARCHITECTURE", { architecture: ARCHITECTURE_DECISION }));
       expect(result.kind).toBe("pending");
     });
+
+    it("evaluate throws on null state", () => {
+      expect(() => evaluate(null as any)).toThrow();
+    });
+
+    it("evaluate throws on undefined state", () => {
+      expect(() => evaluate(undefined as any)).toThrow();
+    });
+
+    it("evaluate handles state with null phase gracefully", () => {
+      const result = evaluate({ ...makeState("TICKET"), phase: null as any });
+      expect(result.kind).toBe("pending");
+      if (result.kind === "pending") {
+        expect(result.phase).toBeNull();
+      }
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -265,6 +281,20 @@ describe("evaluate", () => {
       expect(evaluateWithEvent("TICKET", "APPROVE")).toBeUndefined();
       expect(evaluateWithEvent("READY", "APPROVE")).toBeUndefined();
     });
+
+    it("evaluate handles state with undefined phase gracefully", () => {
+      // Phase not in GUARDS or TERMINAL → returns pending
+      const result = evaluate({ ...makeState("TICKET"), phase: undefined as any });
+      expect(result.kind).toBe("pending");
+    });
+
+    it("evaluate handles state with numeric phase", () => {
+      // Non-string phase → TERMINAL.has() returns false, but GUARDS.get() may throw
+      // The function should not crash — it returns pending for unknown phases
+      const result = evaluate({ ...makeState("TICKET"), phase: 123 as any });
+      // GUARDS.get() with non-string key returns undefined → pending
+      expect(result.kind).toBe("pending");
+    });
   });
 
   // ─── PERF ──────────────────────────────────────────────────
@@ -275,6 +305,13 @@ describe("evaluate", () => {
         evaluate(state);
       }, 200, 50);
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.evaluateSingleMs);
+    });
+
+    it("evaluateWithEvent() < 0.1ms (p99)", () => {
+      const result = benchmarkSync(() => {
+        evaluateWithEvent("PLAN_REVIEW", "APPROVE");
+      }, 200, 50);
+      expect(result.p99Ms).toBeLessThan(0.1);
     });
   });
 });

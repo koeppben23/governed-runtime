@@ -26,7 +26,6 @@
  * - Guard evaluation: < 0.1ms per guard predicate
  * - Audit chain verification: < 100ms for 1000 events
  * - State serialization: < 5ms for full SessionState
- * - Profile detection: < 1ms for detect() with 10,000 file signals
  *
  * @version v1
  */
@@ -88,9 +87,6 @@ export const PERF_BUDGETS = {
   /** Full SessionState JSON.stringify + Zod parse round-trip. */
   stateSerializeMs: 5 * CI_MULTIPLIER,
 
-  /** Profile detect() with 10,000 file signals. */
-  profileDetect10kMs: 1 * CI_MULTIPLIER,
-
   /**
    * readState + writeState round-trip (filesystem I/O).
    * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
@@ -120,9 +116,6 @@ export const PERF_BUDGETS = {
 
   /** validateBinding (2x path normalize + string compare). */
   validateBindingMs: 0.5 * CI_MULTIPLIER,
-
-  /** Reason registry lookup + format (map lookup + string interpolation). */
-  reasonLookupMs: 5 * CI_MULTIPLIER,
 };
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
