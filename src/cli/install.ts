@@ -124,7 +124,7 @@ export interface DoctorCheck {
  * The release workflow validates this constraint (see .github/workflows/release.yml).
  * Future improvement: read from VERSION file written during release.
  */
-const PACKAGE_VERSION = "1.3.0";
+const PACKAGE_VERSION = "1.3.1";
 
 /** Files owned by FlowGuard that uninstall may remove. */
 const FLOWGUARD_OWNED_FILES = [
@@ -297,6 +297,31 @@ async function mergeOpencodeJson(
 
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
+
+    // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
+    // Desktop app owns its own plugin/instruction config — do NOT touch it.
+    // FlowGuard only manages its own mandates entry.
+    const hasPluginField = "plugin" in parsed;
+    const existingInstructions = Array.isArray(parsed["instructions"])
+      ? (parsed["instructions"] as string[])
+      : [];
+    const hasDesktopInstructions = existingInstructions.some(
+      (i) => !i.includes("flowguard-mandates") && !i.includes("AGENTS.md"),
+    );
+
+    if (hasPluginField || hasDesktopInstructions) {
+      // Desktop app owns this config — only add our mandates entry if absent
+      const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
+      if (!instructions.includes(entry)) {
+        instructions.push(entry);
+      }
+      parsed["instructions"] = instructions;
+
+      await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
+      return { path: filePath, action: "merged" };
+    }
+
+    // Standard merge for FlowGuard-only configs
     let instructions = Array.isArray(parsed["instructions"])
       ? (parsed["instructions"] as string[])
       : [];
@@ -336,6 +361,35 @@ async function removeFromOpencodeJson(
 
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
+
+    // Detect desktop app config — do NOT modify it (flowguard uninstall should not
+    // touch desktop app's plugin/instruction configuration)
+    const hasPluginField = "plugin" in parsed;
+    const existingInstructions = Array.isArray(parsed["instructions"])
+      ? (parsed["instructions"] as string[])
+      : [];
+    const hasDesktopInstructions = existingInstructions.some(
+      (i) => !i.includes("flowguard-mandates") && !i.includes("AGENTS.md"),
+    );
+
+    if (hasPluginField || hasDesktopInstructions) {
+      // Desktop app owns this config — only remove FlowGuard mandates entry
+      const entry = mandatesInstructionEntry(scope);
+      const before = parsed["instructions"] as string[];
+      const after = before.filter(
+        (i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY,
+      );
+
+      if (after.length === before.length) {
+        return { path: filePath, action: "skipped", reason: "no FlowGuard entries found" };
+      }
+
+      parsed["instructions"] = after;
+      await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
+      return { path: filePath, action: "merged", reason: "removed FlowGuard mandates entry" };
+    }
+
+    // Standard removal for FlowGuard-only configs
     if (!Array.isArray(parsed["instructions"])) {
       return { path: filePath, action: "skipped", reason: "no instructions array" };
     }
