@@ -211,5 +211,5 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ---
 
-*FlowGuard Version: 1.3.1*
+*FlowGuard Version: 1.0.0*
 *Last Updated: 2026-04-15*
