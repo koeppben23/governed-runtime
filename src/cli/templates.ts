@@ -126,7 +126,7 @@ $ARGUMENTS
 
 1. Call \`flowguard_status\` to check the current phase.
    - If no session exists, call \`flowguard_hydrate\` first.
-   - If the phase is not TICKET, report that /ticket is only allowed in TICKET phase.
+   - If the phase is not READY or TICKET, report that /ticket is only allowed in READY or TICKET phase.
 2. Call \`flowguard_ticket\` with:
    - \`text\`: The full task description provided above. If \`$ARGUMENTS\` is empty, ask the user to provide a task description.
    - \`source\`: "user"
@@ -237,6 +237,9 @@ Determine what the FlowGuard workflow needs next and do it.
 
 2. Based on the current phase, take the appropriate action:
 
+   ### READY (choose flow)
+   - Tell the user to choose a flow: /ticket, /architecture, or /review.
+
    ### TICKET (needs ticket)
    - Tell the user to provide a task description using /ticket.
 
@@ -275,12 +278,31 @@ Determine what the FlowGuard workflow needs next and do it.
    - Report that the workflow is complete. No further actions needed.
    - If there is an error with code "ABORTED", note the session was aborted.
 
+   ### ARCHITECTURE (self-review pending)
+   - The ADR needs self-review. Review it critically.
+   - Call \`flowguard_architecture\` with the appropriate selfReviewVerdict.
+   - Follow the self-review loop as described in /architecture.
+
+   ### ARCH_REVIEW (User Gate)
+   - Tell the user this is a human decision point.
+   - Present the ADR summary and ask for a verdict: approve, changes_requested, or reject.
+   - Tell the user to use \`/review-decision <verdict>\`.
+
+   ### ARCH_COMPLETE (terminal)
+   - Report that the architecture flow is complete. ADR accepted.
+
+   ### REVIEW (report generated)
+   - Call \`flowguard_continue\` to advance to REVIEW_COMPLETE.
+
+   ### REVIEW_COMPLETE (terminal)
+   - Report that the review flow is complete. Report delivered.
+
 3. Report the action taken and the current state to the user.
 
 ## Rules
 
 - DO NOT take destructive actions. /continue is a routing command — it determines what to do, not blindly executes.
-- At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
+- At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
 - Always check status first before taking any action.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
@@ -481,7 +503,7 @@ Decision: $ARGUMENTS
 
 1. Call \`flowguard_status\` to verify:
    - A session exists.
-   - The current phase is PLAN_REVIEW or EVIDENCE_REVIEW (a User Gate).
+   - The current phase is PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW (a User Gate).
    - If the phase is NOT a User Gate, report this to the user and stop.
 
 2. Parse the decision from \`$ARGUMENTS\`:
@@ -497,13 +519,13 @@ Decision: $ARGUMENTS
 4. Read the returned JSON and report:
    - **approve**: Confirm advancement and show the new phase.
    - **changes_requested**: Explain that the workflow returns to the revision phase. State what needs to happen next.
-   - **reject**: Explain that the workflow returns to TICKET. All plan/implementation evidence has been cleared.
+    - **reject**: Explain that the workflow returns to the revision start. At PLAN_REVIEW or EVIDENCE_REVIEW, reject returns to TICKET and clears plan/implementation evidence. At ARCH_REVIEW, reject returns to READY and clears ADR evidence.
 
 ## Rules
 
 - DO NOT fabricate a verdict. Use exactly what the user provided.
 - If the arguments are ambiguous (e.g., "maybe" or "not sure"), ask the user to clarify.
-- DO NOT call this tool if the current phase is not PLAN_REVIEW or EVIDENCE_REVIEW.
+- DO NOT call this tool if the current phase is not PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW.
 - Valid verdicts are ONLY: approve, changes_requested, reject. Nothing else.
 - DO NOT use the \`question\` tool or present selectable choices.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
@@ -636,7 +658,7 @@ Reason: $ARGUMENTS
 
 - DO NOT abort without informing the user of the consequences.
 - If no reason is provided in $ARGUMENTS, use "Session aborted by user" as the default reason.
-- After aborting, DO NOT attempt any further FlowGuard workflow actions except /review (which remains available).
+- After aborting, DO NOT attempt any further FlowGuard workflow actions. The session is terminal.
 - DO NOT auto-chain to /hydrate or any other FlowGuard command after abort completes.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
@@ -661,7 +683,7 @@ Archive the current (or a specified) completed FlowGuard session.
    - If no session exists, report "No session to archive" and stop.
 
 2. Call \`flowguard_archive\` with no arguments.
-   - The tool archives the current session if it is in COMPLETE phase.
+   - The tool archives the current session if it is in a terminal phase (COMPLETE, ARCH_COMPLETE, or REVIEW_COMPLETE).
    - The archive is stored in the workspace sessions/archive/ directory.
 
 3. Read the response and report:
@@ -670,8 +692,8 @@ Archive the current (or a specified) completed FlowGuard session.
 
 ## Rules
 
-- Only COMPLETE sessions can be archived.
-- If the session is not COMPLETE, report the current phase and tell the user to complete or abort the session first.
+- Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
+- If the session is not in a terminal phase, report the current phase and tell the user to complete or abort the session first.
 - DO NOT modify any FlowGuard state.
 - DO NOT auto-chain to other FlowGuard commands after archiving.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.

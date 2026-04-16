@@ -440,7 +440,7 @@ export const archive: ToolDefinition = {
   description:
     "Archive a completed FlowGuard session as a tar.gz file. " +
     "Creates a compressed archive in the workspace's sessions/archive/ directory. " +
-    "Only works on sessions in COMPLETE phase. " +
+    "Only works on terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE). " +
     "Uses system tar (available on Windows 10+, macOS, Linux).",
   args: {},
   async execute(_args, context) {
@@ -452,7 +452,8 @@ export const archive: ToolDefinition = {
         return formatBlocked("NO_SESSION");
       }
 
-      if (state.phase !== "COMPLETE") {
+      const TERMINAL_PHASES = new Set(["COMPLETE", "ARCH_COMPLETE", "REVIEW_COMPLETE"]);
+      if (!TERMINAL_PHASES.has(state.phase)) {
         return formatBlocked("COMMAND_NOT_ALLOWED", {
           command: "/archive",
           phase: state.phase,

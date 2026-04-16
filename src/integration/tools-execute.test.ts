@@ -849,7 +849,7 @@ describe("archive", () => {
       expect(result.code).toBe("NO_SESSION");
     });
 
-    it("blocks when session is not COMPLETE", async () => {
+    it("blocks when session is not in a terminal phase", async () => {
       await hydrateSession();
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
@@ -859,6 +859,45 @@ describe("archive", () => {
   });
 
   describe("CORNER", () => {
+    it.skipIf(!tarOk)("archives from ARCH_COMPLETE", async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        phase: "ARCH_COMPLETE",
+        architecture: {
+          id: "ADR-1",
+          title: "Test ADR",
+          adrText: "## Context\nTest\n## Decision\nTest\n## Consequences\nTest",
+          status: "accepted",
+          createdAt: new Date().toISOString(),
+          digest: "abc123",
+        },
+      });
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toContain("archived");
+    });
+
+    it.skipIf(!tarOk)("archives from REVIEW_COMPLETE", async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: "REVIEW_COMPLETE" });
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toContain("archived");
+    });
+
     it("archive path follows expected pattern", async () => {
       await hydrateSession();
       await abort_session.execute({ reason: "Done" }, ctx);
