@@ -3,16 +3,25 @@
  * @description Transition table — the formal state machine graph.
  *              Phase x Event → Phase. Immutable. Read-only at runtime.
  *
- *              ~80 lines replace 1,377 lines of YAML (phase_api.yaml + topology.yaml).
+ * Three standalone flows from READY:
+ *
+ * Ticket flow:
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *
+ * Architecture flow:
+ *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
+ *
+ * Review flow:
+ *   READY → REVIEW → REVIEW_COMPLETE
  *
  * Rules:
- * - COMPLETE is terminal (empty map — no outgoing transitions).
- * - ERROR loops back to the same phase in all non-user-gate, non-terminal phases.
- * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW) have NO error event
- *   (human is in control — machine cannot error during a human decision).
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) have empty maps.
+ * - READY is command-driven (no guards, no auto-advance).
+ * - ERROR loops back to the same phase in all non-gate, non-terminal, non-READY phases.
+ * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) have NO error event.
  * - Every transition is explicitly listed. No wildcards, no inheritance.
  *
- * @version v1
+ * @version v2
  */
 
 import type { Phase, Event } from "../state/schema";
@@ -23,9 +32,22 @@ import type { Phase, Event } from "../state/schema";
  * The complete transition table.
  * For each phase: a map of events to target phases.
  *
- * Reading: TRANSITIONS.get("TICKET")?.get("PLAN_READY") === "PLAN"
+ * Reading: TRANSITIONS.get("READY")?.get("TICKET_SELECTED") === "TICKET"
  */
 export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Map<Phase, ReadonlyMap<Event, Phase>>([
+
+  // ── READY (Routing) ───────────────────────────────────────────
+  // Command-driven: user selects one of 3 flows.
+  // No guards, no ERROR event — waiting for explicit command.
+  ["READY", new Map<Event, Phase>([
+    ["TICKET_SELECTED",        "TICKET"],
+    ["ARCHITECTURE_SELECTED",  "ARCHITECTURE"],
+    ["REVIEW_SELECTED",        "REVIEW"],
+  ])],
+
+  // ═══════════════════════════════════════════════════════════════
+  // TICKET FLOW
+  // ═══════════════════════════════════════════════════════════════
 
   // ── TICKET ──────────────────────────────────────────────────
   // Stays until ticket+plan evidence exists, then advances to PLAN.
@@ -53,7 +75,6 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   // ── VALIDATION ──────────────────────────────────────────────
   // Runs N checks in one phase (not N separate phases).
   // CHECK_FAILED → PLAN: failed validation means the plan is deficient.
-  // The plan must be revised and re-approved — that's the FlowGuard guarantee.
   ["VALIDATION", new Map<Event, Phase>([
     ["ALL_PASSED",   "IMPLEMENTATION"],
     ["CHECK_FAILED", "PLAN"],
@@ -61,7 +82,6 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ])],
 
   // ── IMPLEMENTATION ──────────────────────────────────────────
-  // Executes implementation, then advances to review.
   ["IMPLEMENTATION", new Map<Event, Phase>([
     ["IMPL_COMPLETE", "IMPL_REVIEW"],
     ["ERROR",         "IMPLEMENTATION"],
@@ -77,7 +97,6 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
 
   // ── EVIDENCE_REVIEW (User Gate) ─────────────────────────────
   // Human decides: approve → COMPLETE, changes → IMPLEMENTATION, reject → TICKET.
-  // Option A: changes_requested goes to IMPLEMENTATION (no rework classifier).
   ["EVIDENCE_REVIEW", new Map<Event, Phase>([
     ["APPROVE",            "COMPLETE"],
     ["CHANGES_REQUESTED",  "IMPLEMENTATION"],
@@ -85,8 +104,44 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ])],
 
   // ── COMPLETE (Terminal) ─────────────────────────────────────
-  // No outgoing transitions. Workflow is done.
   ["COMPLETE", new Map<Event, Phase>()],
+
+  // ═══════════════════════════════════════════════════════════════
+  // ARCHITECTURE FLOW
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── ARCHITECTURE ────────────────────────────────────────────
+  // Self-review loop (same convergence pattern as PLAN).
+  ["ARCHITECTURE", new Map<Event, Phase>([
+    ["SELF_REVIEW_MET",     "ARCH_REVIEW"],
+    ["SELF_REVIEW_PENDING", "ARCHITECTURE"],
+    ["ERROR",               "ARCHITECTURE"],
+  ])],
+
+  // ── ARCH_REVIEW (User Gate) ─────────────────────────────────
+  // Human decides: approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → READY.
+  ["ARCH_REVIEW", new Map<Event, Phase>([
+    ["APPROVE",            "ARCH_COMPLETE"],
+    ["CHANGES_REQUESTED",  "ARCHITECTURE"],
+    ["REJECT",             "READY"],
+  ])],
+
+  // ── ARCH_COMPLETE (Terminal) ────────────────────────────────
+  ["ARCH_COMPLETE", new Map<Event, Phase>()],
+
+  // ═══════════════════════════════════════════════════════════════
+  // REVIEW FLOW
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── REVIEW ──────────────────────────────────────────────────
+  // Generates compliance report, then auto-advances to terminal.
+  ["REVIEW", new Map<Event, Phase>([
+    ["REVIEW_DONE", "REVIEW_COMPLETE"],
+    ["ERROR",       "REVIEW"],
+  ])],
+
+  // ── REVIEW_COMPLETE (Terminal) ──────────────────────────────
+  ["REVIEW_COMPLETE", new Map<Event, Phase>()],
 ]);
 
 // ─── Phase Classifications ────────────────────────────────────────────────────
@@ -95,11 +150,14 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
 export const USER_GATES: ReadonlySet<Phase> = new Set<Phase>([
   "PLAN_REVIEW",
   "EVIDENCE_REVIEW",
+  "ARCH_REVIEW",
 ]);
 
 /** Terminal phases: no outgoing transitions, workflow complete. */
 export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
   "COMPLETE",
+  "ARCH_COMPLETE",
+  "REVIEW_COMPLETE",
 ]);
 
 // ─── Transition Resolution ────────────────────────────────────────────────────

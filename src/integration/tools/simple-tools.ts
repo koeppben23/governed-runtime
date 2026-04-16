@@ -19,7 +19,9 @@ import {
   formatEval,
   formatBlocked,
   formatError,
+  formatRailResult,
   persistAndFormat,
+  appendNextAction,
 } from "./helpers";
 
 // State & Machine
@@ -30,7 +32,7 @@ import { isCommandAllowed, Command } from "../../machine/commands";
 // Rails
 import { executeTicket } from "../../rails/ticket";
 import { executeReviewDecision } from "../../rails/review-decision";
-import { executeReview } from "../../rails/review";
+import { executeReview, executeReviewFlow } from "../../rails/review";
 import { executeAbort } from "../../rails/abort";
 
 // Rail helpers
@@ -45,6 +47,9 @@ import {
 
 // Workspace
 import { archiveSession } from "../../adapters/workspace";
+
+// Artifacts
+import { writeMadrArtifact } from "../artifacts/madr-writer";
 
 // Evidence types
 import type { CheckId, ValidationResult } from "../../state/evidence";
@@ -79,7 +84,7 @@ export const status: ToolDefinition = {
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
 
-      return JSON.stringify({
+      return appendNextAction(JSON.stringify({
         phase: state.phase,
         sessionId: state.id,
         policyMode: state.policySnapshot?.mode ?? "unknown",
@@ -124,7 +129,7 @@ export const status: ToolDefinition = {
           fourEyes: completeness.fourEyes,
           summary: completeness.summary,
         },
-      });
+      }), state);
     } catch (err) {
       return formatError(err);
     }
@@ -139,7 +144,7 @@ export const ticket: ToolDefinition = {
   description:
     "Record the task/ticket description for the FlowGuard session. " +
     "Clears all downstream evidence (plan, validation, implementation). " +
-    "Allowed only in TICKET phase.",
+    "Allowed in READY and TICKET phases.",
   args: {
     text: z.string().describe(
       "The task or ticket description. Must be non-empty.",
@@ -174,9 +179,9 @@ export const ticket: ToolDefinition = {
 
 export const decision: ToolDefinition = {
   description:
-    "Record a human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). " +
+    "Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). " +
     "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
-    "This tool ONLY works at PLAN_REVIEW and EVIDENCE_REVIEW phases. " +
+    "This tool ONLY works at PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW phases. " +
     "In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.",
   args: {
     verdict: z
@@ -184,7 +189,7 @@ export const decision: ToolDefinition = {
       .describe(
         "Review verdict. 'approve' advances the workflow. " +
         "'changes_requested' returns to revision. " +
-        "'reject' restarts from TICKET.",
+        "'reject' restarts from TICKET (or READY for architecture flow).",
       ),
     rationale: z
       .string()
@@ -207,6 +212,15 @@ export const decision: ToolDefinition = {
         },
         ctx,
       );
+
+      // Write MADR artifact when architecture flow completes
+      if (
+        result.kind === "ok" &&
+        result.state.phase === "ARCH_COMPLETE" &&
+        result.state.architecture
+      ) {
+        await writeMadrArtifact(sessDir, result.state.architecture);
+      }
 
       return await persistAndFormat(sessDir, result);
     } catch (err) {
@@ -302,7 +316,7 @@ export const validate: ToolDefinition = {
         .filter((r: ValidationResult) => !r.passed)
         .map((r: ValidationResult) => r.checkId);
 
-      return JSON.stringify({
+      return appendNextAction(JSON.stringify({
         phase: finalState.phase,
         status: allPassed
           ? "All validation checks passed."
@@ -313,7 +327,7 @@ export const validate: ToolDefinition = {
         })),
         next: formatEval(ev),
         _audit: { transitions },
-      });
+      }), finalState);
     } catch (err) {
       return formatError(err);
     }
@@ -321,33 +335,43 @@ export const validate: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_review — Generate Compliance Report (Read-Only)
+// flowguard_review — Standalone Review Flow (READY → REVIEW → REVIEW_COMPLETE)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const review: ToolDefinition = {
   description:
-    "Generate a standalone compliance review report with evidence completeness matrix " +
-    "and four-eyes principle status. Always available in every phase. " +
-    "Does NOT mutate session state. Produces a flowguard-review-report.v1 artifact " +
-    "written to the session directory.",
+    "Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. " +
+    "Generates a compliance review report with evidence completeness matrix " +
+    "and four-eyes principle status. Produces a flowguard-review-report.v1 artifact " +
+    "written to the session directory. Only allowed in READY phase.",
   args: {},
   async execute(_args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
       const state = await requireState(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+
+      // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
+      const result = executeReviewFlow(state, ctx);
+
+      if (result.kind === "blocked") {
+        return formatRailResult(result);
+      }
+
+      // 2. Generate the compliance report using the final state
       const now = new Date().toISOString();
+      const report = await executeReview(result.state, now);
 
-      // Generate extended report (with completeness matrix)
-      const report = await executeReview(state, now);
-
-      // Write report artifact to session directory
+      // 3. Persist state + write report artifact
+      await writeState(sessDir, result.state);
       await writeReport(sessDir, report);
 
-      return JSON.stringify({
-        phase: state.phase,
-        status: "Review report generated.",
+      return appendNextAction(JSON.stringify({
+        phase: result.state.phase,
+        status: "Review flow complete. Report generated.",
         overallStatus: report.overallStatus,
-        policyMode: state.policySnapshot?.mode ?? "unknown",
+        policyMode: result.state.policySnapshot?.mode ?? "unknown",
         completeness: {
           overallComplete: report.completeness.overallComplete,
           fourEyes: report.completeness.fourEyes,
@@ -362,7 +386,8 @@ export const review: ToolDefinition = {
         findingsCount: report.findings.length,
         findings: report.findings,
         validationSummary: report.validationSummary,
-      });
+        _audit: { transitions: result.transitions },
+      }), result.state);
     } catch (err) {
       return formatError(err);
     }
@@ -436,11 +461,11 @@ export const archive: ToolDefinition = {
 
       const archivePath = await archiveSession(fingerprint, context.sessionID);
 
-      return JSON.stringify({
+      return appendNextAction(JSON.stringify({
         phase: state.phase,
         status: "Session archived successfully.",
         archivePath,
-      });
+      }), state);
     } catch (err) {
       return formatError(err);
     }

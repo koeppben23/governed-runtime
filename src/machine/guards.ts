@@ -4,16 +4,15 @@
  *              For each guard-based phase: an ordered list of (event, guard) pairs.
  *              First match wins. Deterministic — guards are evaluated top-to-bottom.
  *
- *              ~90 lines replace 432 lines of guards.yaml.
- *
  * Design:
  * - Guards are pure functions: (state) → boolean. No side effects.
  * - ERROR guard is always first (fail-closed: if error is present, it fires first).
- * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW) are NOT in this table —
+ * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) are NOT in this table —
  *   they wait for explicit human commands.
- * - COMPLETE is NOT in this table — it's terminal.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) are NOT in this table.
+ * - READY is NOT in this table — it is command-driven (no auto-advance).
  *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState, Phase, Event } from "../state/schema";
@@ -44,6 +43,8 @@ export const hasPlanReady: GuardFn = (s) =>
  * Convergence condition (digest-stop):
  *   iteration >= maxIterations
  *   OR (revisionDelta === "none" AND verdict === "approve")
+ *
+ * Used by both PLAN and ARCHITECTURE phases.
  */
 export const selfReviewMet: GuardFn = (s) => {
   if (s.selfReview === null) return false;
@@ -54,7 +55,7 @@ export const selfReviewMet: GuardFn = (s) => {
   );
 };
 
-/** Self-review loop still iterating. */
+/** Self-review loop still iterating. Used by both PLAN and ARCHITECTURE phases. */
 export const selfReviewPending: GuardFn = (s) =>
   s.selfReview !== null && !selfReviewMet(s);
 
@@ -98,6 +99,10 @@ export const implReviewMet: GuardFn = (s) => {
 export const implReviewPending: GuardFn = (s) =>
   s.implReview !== null && !implReviewMet(s);
 
+/** Review report has been generated (review flow completion). */
+export const reviewDone: GuardFn = (s) =>
+  s.phase === "REVIEW";
+
 // ─── Guard Table ──────────────────────────────────────────────────────────────
 
 /**
@@ -111,6 +116,11 @@ export const implReviewPending: GuardFn = (s) =>
  * ERROR is always first — fail-closed by design.
  * The last guard in each list is the "true fallback" (always-true condition)
  * to ensure deterministic resolution.
+ *
+ * Phases NOT in this table:
+ * - READY: command-driven (no guards)
+ * - PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW: user gates
+ * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE: terminal
  */
 export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<Phase, readonly GuardEntry[]>([
 
@@ -140,5 +150,20 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<Phase, 
     { event: "ERROR",          guard: hasError },
     { event: "REVIEW_MET",     guard: implReviewMet },
     { event: "REVIEW_PENDING", guard: implReviewPending },
+  ]],
+
+  // ARCHITECTURE reuses the same self-review convergence guards as PLAN.
+  ["ARCHITECTURE", [
+    { event: "ERROR",               guard: hasError },
+    { event: "SELF_REVIEW_MET",     guard: selfReviewMet },
+    { event: "SELF_REVIEW_PENDING", guard: selfReviewPending },
+  ]],
+
+  // REVIEW: auto-advances to REVIEW_COMPLETE after report generation.
+  // The reviewDone guard fires immediately (the rail sets phase to REVIEW
+  // after generating the report, then autoAdvance fires this guard).
+  ["REVIEW", [
+    { event: "ERROR",       guard: hasError },
+    { event: "REVIEW_DONE", guard: reviewDone },
   ]],
 ]);

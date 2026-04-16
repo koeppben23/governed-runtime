@@ -2,9 +2,10 @@
  * @module review-decision
  * @description /review-decision rail — human verdict at a User Gate.
  *
- * Works at both User Gate phases:
+ * Works at all three User Gate phases:
  * - PLAN_REVIEW:     approve → VALIDATION, changes → PLAN, reject → TICKET
  * - EVIDENCE_REVIEW: approve → COMPLETE, changes → IMPLEMENTATION, reject → TICKET
+ * - ARCH_REVIEW:     approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → READY
  *
  * Four-eyes principle enforcement (regulated mode):
  * When policy.allowSelfApproval === false, the reviewer (decidedBy)
@@ -21,6 +22,9 @@
  * | EVIDENCE_REVIEW | approve            | everything              | (nothing — complete)                     |
  * | EVIDENCE_REVIEW | changes_requested  | ticket, plan, validation| impl, implReview, reviewDecision         |
  * | EVIDENCE_REVIEW | reject             | ticket                  | plan, selfReview, validation, impl, ...  |
+ * | ARCH_REVIEW     | approve            | architecture, selfReview| (nothing — complete)                     |
+ * | ARCH_REVIEW     | changes_requested  | architecture            | selfReview                               |
+ * | ARCH_REVIEW     | reject             | (nothing)               | architecture, selfReview                 |
  *
  * @version v1
  */
@@ -64,21 +68,41 @@ const REJECT_CLEAR = {
 };
 
 /**
+ * State fields cleared on reject at ARCH_REVIEW.
+ * Architecture flow is wiped — user returns to READY to choose a new flow.
+ */
+const ARCH_REJECT_CLEAR = {
+  architecture: null,
+  selfReview: null,
+};
+
+/**
  * Apply state clearing pattern based on gate + verdict.
  *
  * Clearing rules (FlowGuard-critical):
  * - approve: keep everything (state flows forward)
  * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
  * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview (re-implement)
- * - reject at any gate: clear everything downstream of TICKET
+ * - changes_requested at ARCH_REVIEW: clear selfReview (fresh review loop)
+ * - reject at PLAN_REVIEW/EVIDENCE_REVIEW: clear everything downstream of TICKET
+ * - reject at ARCH_REVIEW: clear architecture + selfReview (back to READY)
  */
 function applyStateClearingPattern(
   state: SessionState,
   verdict: ReviewVerdict,
 ): SessionState {
-  if (verdict === "approve") return state;
+  if (verdict === "approve") {
+    // At ARCH_REVIEW, set architecture status to "accepted" on approval
+    if (state.phase === "ARCH_REVIEW" && state.architecture) {
+      return { ...state, architecture: { ...state.architecture, status: "accepted" } };
+    }
+    return state;
+  }
 
   if (verdict === "reject") {
+    if (state.phase === "ARCH_REVIEW") {
+      return { ...state, ...ARCH_REJECT_CLEAR };
+    }
     return { ...state, ...REJECT_CLEAR };
   }
 
@@ -88,6 +112,9 @@ function applyStateClearingPattern(
   }
   if (state.phase === "EVIDENCE_REVIEW") {
     return { ...state, implementation: null, implReview: null };
+  }
+  if (state.phase === "ARCH_REVIEW") {
+    return { ...state, selfReview: null };
   }
 
   return state;

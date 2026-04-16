@@ -7,25 +7,23 @@
  *              - evaluateWithEvent(): User-gate phases (human provides explicit event)
  *              Both support optional policy parameter for mode-aware behavior.
  *
- *              ~95 lines replace 2,177 lines of phase_kernel.py.
- *
  * Contract:
  * - evaluate() is a PURE FUNCTION: same state + policy → same result. No side effects.
  * - evaluateWithEvent() is a PURE FUNCTION: phase + event → target phase.
  * - Neither function mutates state, writes files, or produces audit events.
- *   That's the rail's responsibility.
+ *
+ * Phase classification:
+ * - READY: command-driven → returns "pending" (waiting for user to select a flow)
+ * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): returns "terminal"
+ * - User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): returns "waiting" or auto-approve
+ * - Guard-based: evaluates guards top-to-bottom, first match wins
  *
  * Policy-aware behavior:
  * - requireHumanGates: false → auto-approve at User Gates (solo mode)
  * - requireHumanGates: true  → return "waiting" at User Gates (team/regulated)
  * - No policy → defaults to requireHumanGates: true (safe default)
  *
- * Auto-approve safety:
- * When requireHumanGates is false, the evaluator fires APPROVE at User Gates.
- * This is safe because the APPROVE clearing pattern in review-decision is a no-op
- * (keep everything). No evidence is lost during auto-advance through gates.
- *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState, Phase, Event } from "../state/schema";
@@ -56,6 +54,7 @@ export interface EvalTerminal {
 /**
  * Phase needs more work or evidence before a guard can fire.
  * Normal state — NOT a bug. Examples:
+ * - READY without a selected flow (waiting for /ticket, /architecture, or /review)
  * - TICKET without ticket evidence (waiting for /ticket)
  * - VALIDATION before checks have been run (waiting for /continue)
  * - IMPLEMENTATION before impl executed (waiting for /implement)
@@ -69,6 +68,14 @@ export interface EvalPending {
 
 export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPending;
 
+// ─── Waiting Reason Messages ──────────────────────────────────────────────────
+
+const GATE_REASONS: Record<string, string> = {
+  PLAN_REVIEW: "Awaiting plan review decision (approve / changes_requested / reject)",
+  EVIDENCE_REVIEW: "Awaiting evidence review decision (approve / changes_requested / reject)",
+  ARCH_REVIEW: "Awaiting architecture decision review (approve / changes_requested / reject)",
+};
+
 // ─── Evaluator ────────────────────────────────────────────────────────────────
 
 /**
@@ -76,12 +83,13 @@ export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPendi
  *
  * Algorithm:
  * 1. If phase is terminal → return terminal.
- * 2. If phase is a User Gate:
+ * 2. If phase is READY → return pending (command-driven, no auto-advance).
+ * 3. If phase is a User Gate:
  *    a. If policy.requireHumanGates === false → auto-approve (solo mode)
  *    b. Otherwise → return waiting (human must decide)
- * 3. Otherwise, iterate guards for the current phase (first match wins).
- * 4. If a guard matches, resolve the transition via topology.
- * 5. If no guard matches → return pending (phase needs work/evidence).
+ * 4. Otherwise, iterate guards for the current phase (first match wins).
+ * 5. If a guard matches, resolve the transition via topology.
+ * 6. If no guard matches → return pending (phase needs work/evidence).
  *
  * This function is the HEART of the FlowGuard machine.
  * Every phase transition flows through here.
@@ -101,11 +109,14 @@ export function evaluate(
     return { kind: "terminal" };
   }
 
-  // 2. User Gate — policy-dependent
+  // 2. READY — command-driven, no auto-advance
+  if (phase === "READY") {
+    return { kind: "pending", phase };
+  }
+
+  // 3. User Gate — policy-dependent
   if (USER_GATES.has(phase)) {
     // Solo mode: auto-approve at user gates.
-    // Fires APPROVE event, which resolveTransition maps to the next phase.
-    // Safe because APPROVE clearing pattern is a no-op (keep everything).
     if (policy?.requireHumanGates === false) {
       const target = resolveTransition(phase, "APPROVE");
       if (target) {
@@ -117,14 +128,11 @@ export function evaluate(
     return {
       kind: "waiting",
       phase,
-      reason:
-        phase === "PLAN_REVIEW"
-          ? "Awaiting plan review decision (approve / changes_requested / reject)"
-          : "Awaiting evidence review decision (approve / changes_requested / reject)",
+      reason: GATE_REASONS[phase] ?? `Awaiting review decision at ${phase}`,
     };
   }
 
-  // 3. Guard-based — evaluate guards in order
+  // 4. Guard-based — evaluate guards in order
   const guardEntries = GUARDS.get(phase);
   if (!guardEntries) {
     return { kind: "pending", phase };
@@ -142,7 +150,7 @@ export function evaluate(
     }
   }
 
-  // 4. No guard matched — phase needs more work or evidence
+  // 5. No guard matched — phase needs more work or evidence
   return { kind: "pending", phase };
 }
 

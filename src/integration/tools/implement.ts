@@ -32,6 +32,7 @@ import {
   formatEval,
   formatBlocked,
   formatError,
+  appendNextAction,
 } from "./helpers";
 
 // State & Machine
@@ -133,7 +134,7 @@ export const implement: ToolDefinition = {
         );
         await writeState(sessDir, finalState);
 
-        return JSON.stringify({
+        return appendNextAction(JSON.stringify({
           phase: finalState.phase,
           status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
           changedFiles: files,
@@ -142,7 +143,7 @@ export const implement: ToolDefinition = {
             "Review the implementation against the plan. Check correctness, completeness, " +
             "edge cases, and code quality. Then call flowguard_implement with reviewVerdict.",
           _audit: { transitions },
-        });
+        }), finalState);
       } else {
         // ── Mode B: Implementation review verdict ────────────────
         if (state.phase !== "IMPL_REVIEW") {
@@ -190,17 +191,17 @@ export const implement: ToolDefinition = {
           (revisionDelta === "none" && verdict === "approve");
 
         if (converged && verdict === "approve") {
-          return JSON.stringify({
+          return appendNextAction(JSON.stringify({
             phase: finalState.phase,
             status: `Implementation review converged at iteration ${iteration}. Approved.`,
             implReviewIteration: iteration,
             next: formatEval(ev),
             _audit: { transitions },
-          });
+          }), finalState);
         }
 
         if (verdict === "changes_requested") {
-          return JSON.stringify({
+          return appendNextAction(JSON.stringify({
             phase: finalState.phase,
             status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
             implReviewIteration: iteration,
@@ -208,17 +209,17 @@ export const implement: ToolDefinition = {
               "Make the requested code changes using read/write/bash tools, " +
               "then call flowguard_implement (without reviewVerdict) to re-record the implementation.",
             _audit: { transitions },
-          });
+          }), finalState);
         }
 
         // Forced convergence (max iterations reached, verdict was not approve)
-        return JSON.stringify({
+        return appendNextAction(JSON.stringify({
           phase: finalState.phase,
           status: `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`,
           implReviewIteration: iteration,
           next: formatEval(ev),
           _audit: { transitions },
-        });
+        }), finalState);
       }
     } catch (err) {
       return formatError(err);

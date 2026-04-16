@@ -3,11 +3,12 @@
  * @description /continue rail — routing command that advances the workflow.
  *
  * Behavior depends on current phase:
- * - User Gate (PLAN_REVIEW, EVIDENCE_REVIEW): return "waiting" — use /review-decision
- * - Terminal (COMPLETE): return "terminal"
+ * - User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW): return "waiting" — use /review-decision
+ * - Terminal (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE): return "terminal"
  * - VALIDATION: run all active checks, then evaluate
  * - PLAN: run one more self-review iteration, then evaluate
  * - IMPL_REVIEW: run one more review iteration, then evaluate
+ * - ARCHITECTURE: run one more ADR self-review iteration, then evaluate
  * - Other phases: just evaluate (may advance if evidence is present)
  *
  * /continue is the universal "do the next thing" command.
@@ -22,7 +23,8 @@
  */
 
 import type { SessionState } from "../state/schema";
-import type { CheckId, ValidationResult, PlanEvidence, ImplEvidence, PlanRecord, LoopVerdict } from "../state/evidence";
+import type { CheckId, ValidationResult, PlanEvidence, ImplEvidence, PlanRecord, LoopVerdict, ArchitectureDecision } from "../state/evidence";
+import { validateAdrSections } from "../state/evidence";
 import { Command, isCommandAllowed } from "../machine/commands";
 import { USER_GATES, TERMINAL } from "../machine/topology";
 import type { RailResult, RailContext } from "./types";
@@ -49,6 +51,11 @@ export interface ContinueExecutors {
     plan: PlanRecord,
     iteration: number,
   ) => Promise<{ verdict: LoopVerdict; updatedImpl?: ImplEvidence }>;
+  /** Run one ADR self-review iteration (ARCHITECTURE phase). */
+  architectureReview: (
+    adr: ArchitectureDecision,
+    iteration: number,
+  ) => Promise<{ verdict: LoopVerdict; revisedText?: string }>;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -99,12 +106,21 @@ export async function executeContinue(
       workState = await runOneImplReviewIteration(workState, ctx, executors);
       break;
 
+    case "ARCHITECTURE":
+      workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
+      break;
+
     // Other phases: no work needed, just evaluate
   }
 
   // 4. Auto-advance (policy-aware)
   const evalFn = createPolicyEvalFn(ctx);
-  const { state: finalState, evalResult: result, transitions } = autoAdvance(workState, evalFn, ctx);
+  const { state: advancedState, evalResult: result, transitions } = autoAdvance(workState, evalFn, ctx);
+
+  // Finalize ADR status on architecture flow completion (solo auto-approve)
+  const finalState = advancedState.phase === "ARCH_COMPLETE" && advancedState.architecture
+    ? { ...advancedState, architecture: { ...advancedState.architecture, status: "accepted" as const } }
+    : advancedState;
 
   return { kind: "ok", state: finalState, evalResult: result, transitions };
 }
@@ -224,6 +240,65 @@ async function runOneImplReviewIteration(
       revisionDelta: loop.revisionDelta,
       verdict: loop.verdict,
       executedAt: ctx.now(),
+    },
+  };
+}
+
+/** Run one ADR self-review iteration (for ARCHITECTURE phase). */
+async function runOneArchitectureReviewIteration(
+  state: SessionState,
+  ctx: RailContext,
+  executors: ContinueExecutors,
+): Promise<SessionState> {
+  if (!state.architecture) return state;
+
+  const currentAdr = state.architecture;
+  const startIteration = state.selfReview?.iteration ?? 0;
+  // maxIterations: existing state value > policy > fallback 3
+  const maxIterations =
+    state.selfReview?.maxIterations ??
+    ctx.policy?.maxSelfReviewIterations ??
+    DEFAULT_MAX_REVIEW_ITERATIONS;
+
+  const loop = await runSingleIteration(currentAdr, startIteration, maxIterations, async (adr, iter) => {
+    const review = await executors.architectureReview(adr, iter);
+    if (review.verdict === "changes_requested" && review.revisedText?.trim()) {
+      const revisedText = review.revisedText.trim();
+      // Validate MADR sections on revision
+      const missingSections = validateAdrSections(revisedText);
+      if (missingSections.length > 0) {
+        // Invalid revision — treat as no change (keep current ADR)
+        return { verdict: review.verdict };
+      }
+      return {
+        verdict: review.verdict,
+        updated: {
+          ...adr,
+          adrText: revisedText,
+          digest: ctx.digest(revisedText),
+        },
+      };
+    }
+    return { verdict: review.verdict };
+  });
+
+  // No iteration ran (already at max)
+  if (loop.iteration === startIteration) return state;
+
+  const updatedArchitecture = loop.artifact !== currentAdr
+    ? loop.artifact
+    : state.architecture;
+
+  return {
+    ...state,
+    architecture: updatedArchitecture,
+    selfReview: {
+      iteration: loop.iteration,
+      maxIterations: loop.maxIterations,
+      prevDigest: loop.prevDigest,
+      currDigest: loop.currDigest,
+      revisionDelta: loop.revisionDelta,
+      verdict: loop.verdict,
     },
   };
 }

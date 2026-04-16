@@ -21,6 +21,8 @@ export { Phase, Event, Transition, SessionState } from "./state/schema";
 export type {
   BindingInfo,
   TicketEvidence,
+  ArchitectureDecision,
+  AdrStatus,
   PlanEvidence,
   PlanRecord,
   SelfReviewLoop,
@@ -35,7 +37,7 @@ export type {
   PolicySnapshot,
 } from "./state/evidence";
 
-export { PolicySnapshotSchema } from "./state/evidence";
+export { PolicySnapshotSchema, REQUIRED_ADR_SECTIONS, validateAdrSections } from "./state/evidence";
 
 // ─── Layer 2: Machine ────────────────────────────────────────────────────────
 
@@ -52,11 +54,14 @@ export {
   implComplete,
   implReviewMet,
   implReviewPending,
+  reviewDone,
   GUARDS,
 } from "./machine/guards";
 export { Command, isCommandAllowed } from "./machine/commands";
 export { evaluate } from "./machine/evaluate";
 export type { EvalResult } from "./machine/evaluate";
+export { resolveNextAction, ACTION_CODES } from "./machine/next-action";
+export type { NextAction } from "./machine/next-action";
 
 // ─── Layer 3: Rails ──────────────────────────────────────────────────────────
 
@@ -70,7 +75,9 @@ export { executeReviewDecision } from "./rails/review-decision";
 export { executeValidate } from "./rails/validate";
 export { executeImplement } from "./rails/implement";
 export { executeContinue } from "./rails/continue";
-export { executeReview } from "./rails/review";
+export { executeReview, executeReviewFlow } from "./rails/review";
+export { executeArchitecture } from "./rails/architecture";
+export type { ArchitectureInput } from "./rails/architecture";
 export { executeAbort } from "./rails/abort";
 
 // ─── Layer 4: Adapters ──────────────────────────────────────────────────────
@@ -343,5 +350,6 @@ export {
   review,
   abort_session,
   archive,
+  architecture,
   FlowGuardAuditPlugin,
 } from "./integration";

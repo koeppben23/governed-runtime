@@ -116,7 +116,7 @@ describe("status", () => {
     it("returns correct phase and fields after hydrate", async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
       expect(result.sessionId).toBeTruthy();
       expect(result.policyMode).toBe("solo");
       expect(result.hasTicket).toBe(false);
@@ -166,14 +166,14 @@ describe("hydrate", () => {
   describe("HAPPY", () => {
     it("creates a new session with solo policy", async () => {
       const result = await hydrateSession({ policyMode: "solo" });
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
       expect(result.status).toBe("ok");
       expect(result.profileDetected).toBe(true);
     });
 
     it("creates a new session with team policy", async () => {
       const result = await hydrateSession({ policyMode: "team" });
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
     });
 
     it("persists state to session directory on disk", async () => {
@@ -185,7 +185,7 @@ describe("hydrate", () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
-      expect(state!.phase).toBe("TICKET");
+      expect(state!.phase).toBe("READY");
       expect(state!.binding.fingerprint).toBe(fp.fingerprint);
     });
 
@@ -230,8 +230,8 @@ describe("hydrate", () => {
       const first = await hydrateSession();
       const second = await hydrateSession();
       // Both should succeed, second returns existing
-      expect(first.phase).toBe("TICKET");
-      expect(second.phase).toBe("TICKET");
+      expect(first.phase).toBe("READY");
+      expect(second.phase).toBe("READY");
     });
 
     it("idempotent hydrate preserves workspace metadata", async () => {
@@ -250,7 +250,7 @@ describe("hydrate", () => {
     it("works with repo without remote (path-based fingerprint)", async () => {
       vi.mocked(gitMock.remoteOriginUrl).mockResolvedValueOnce(null);
       const result = await hydrateSession();
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
       expect(result.error).toBeUndefined();
     });
 
@@ -270,7 +270,7 @@ describe("hydrate", () => {
         ctx2,
       );
       const result2 = parseToolResult(raw2);
-      expect(result2.phase).toBe("TICKET");
+      expect(result2.phase).toBe("READY");
 
       // Ticket in session 1 only
       await ticket.execute({ text: "Session 1 ticket", source: "user" }, ctx);
@@ -288,7 +288,7 @@ describe("hydrate", () => {
       const result = await hydrateSession();
 
       // Session must still be created successfully
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
       expect(result.error).toBeUndefined();
 
       // Discovery fields should be absent/empty (degraded)
@@ -730,17 +730,17 @@ describe("validate", () => {
 
 describe("review", () => {
   describe("HAPPY", () => {
-    it("generates report without mutating state", async () => {
-      await hydrateAndTicket();
+    it("starts review flow from READY and transitions to REVIEW_COMPLETE", async () => {
+      await hydrateSession();
       const raw = await review.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("REVIEW_COMPLETE");
       expect(result.completeness).toBeDefined();
     });
 
     it("report includes completeness matrix", async () => {
-      await hydrateAndTicket();
+      await hydrateSession();
       const result = parseToolResult(await review.execute({}, ctx));
       const comp = result.completeness as Record<string, unknown>;
       expect(typeof comp.overallComplete).toBe("boolean");
@@ -755,16 +755,22 @@ describe("review", () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe("NO_SESSION");
     });
+
+    it("blocks when not in READY phase", async () => {
+      await hydrateAndTicket();
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+    });
   });
 
   describe("CORNER", () => {
-    it("state is unchanged after review", async () => {
-      await hydrateAndTicket();
-      const before = parseToolResult(await status.execute({}, ctx));
+    it("review flow persists REVIEW_COMPLETE phase on disk", async () => {
+      await hydrateSession();
       await review.execute({}, ctx);
-      const after = parseToolResult(await status.execute({}, ctx));
-      expect(before.phase).toBe(after.phase);
-      expect(before.hasTicket).toBe(after.hasTicket);
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).toBe("REVIEW_COMPLETE");
     });
   });
 });
@@ -805,7 +811,7 @@ describe("abort_session", () => {
 
   describe("CORNER", () => {
     it("can abort from any non-terminal phase", async () => {
-      // Abort from TICKET phase (after hydrate)
+      // Abort from READY phase (after hydrate)
       await hydrateSession();
       const raw = await abort_session.execute({ reason: "Cancel" }, ctx);
       const result = parseToolResult(raw);
@@ -881,7 +887,7 @@ describe("cross-cutting", () => {
     it("repo without remote uses path-based fingerprint", async () => {
       vi.mocked(gitMock.remoteOriginUrl).mockResolvedValue(null);
       const result = await hydrateSession();
-      expect(result.phase).toBe("TICKET");
+      expect(result.phase).toBe("READY");
       // Verify the full tool chain works with path fingerprint
       await ticket.execute({ text: "Path-based test", source: "user" }, ctx);
       const s = parseToolResult(await status.execute({}, ctx));

@@ -15,6 +15,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
+  ARCHITECTURE_DECISION,
 } from "../__fixtures__";
 import { SOLO_POLICY, TEAM_POLICY } from "../config/policy";
 
@@ -346,6 +347,7 @@ describe("continue rail", () => {
     }),
     selfReview: async () => ({ verdict: "approve" as const }),
     implReview: async () => ({ verdict: "approve" as const }),
+    architectureReview: async () => ({ verdict: "approve" as const }),
   };
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -401,6 +403,33 @@ describe("continue rail", () => {
         expect(result.evalResult.kind).toBe("waiting");
       }
     });
+
+    it("at ARCH_REVIEW → waiting", async () => {
+      const state = makeProgressedState("ARCH_REVIEW");
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.evalResult.kind).toBe("waiting");
+      }
+    });
+
+    it("at ARCH_COMPLETE → blocked (terminal)", async () => {
+      const state = makeProgressedState("ARCH_COMPLETE");
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("blocked");
+      if (result.kind === "blocked") {
+        expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+      }
+    });
+
+    it("at REVIEW_COMPLETE → blocked (terminal)", async () => {
+      const state = makeProgressedState("REVIEW_COMPLETE");
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("blocked");
+      if (result.kind === "blocked") {
+        expect(result.code).toBe("COMMAND_NOT_ALLOWED");
+      }
+    });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
@@ -415,6 +444,75 @@ describe("continue rail", () => {
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
         expect(result.state.phase).toBe("PLAN_REVIEW");
+      }
+    });
+
+    it("at ARCHITECTURE runs ADR self-review and advances to ARCH_REVIEW on convergence", async () => {
+      const state = makeState("ARCHITECTURE", {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: ARCHITECTURE_DECISION.digest,
+          revisionDelta: "major",
+          verdict: "changes_requested",
+        },
+      });
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        // approve + no change → converged → ARCH_REVIEW
+        expect(result.state.selfReview!.verdict).toBe("approve");
+        expect(result.state.phase).toBe("ARCH_REVIEW");
+      }
+    });
+
+    it("at ARCHITECTURE with changes_requested updates ADR text", async () => {
+      const revisedText = "## Context\nRevised.\n\n## Decision\nChanged.\n\n## Consequences\nUpdated.";
+      const reviseExecutors = {
+        ...continueExecutors,
+        architectureReview: async () => ({
+          verdict: "changes_requested" as const,
+          revisedText,
+        }),
+      };
+      const state = makeState("ARCHITECTURE", {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: ARCHITECTURE_DECISION.digest,
+          revisionDelta: "major",
+          verdict: "changes_requested",
+        },
+      });
+      const result = await executeContinue(state, ctx, reviseExecutors);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.architecture!.adrText).toBe(revisedText);
+        expect(result.state.selfReview!.iteration).toBe(1);
+      }
+    });
+
+    it("at ARCHITECTURE without architecture evidence → no-op", async () => {
+      const state = makeState("ARCHITECTURE");
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        // No architecture → no self-review work, just evaluate → pending
+        expect(result.evalResult.kind).toBe("pending");
+      }
+    });
+
+    it("at REVIEW → auto-advances to REVIEW_COMPLETE", async () => {
+      const state = makeState("REVIEW");
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        // reviewDone guard fires immediately when phase === "REVIEW"
+        expect(result.state.phase).toBe("REVIEW_COMPLETE");
       }
     });
   });

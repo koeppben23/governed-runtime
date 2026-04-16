@@ -19,8 +19,8 @@ import type { SessionState } from "../state/schema";
 import type { TicketEvidence } from "../state/evidence";
 import { Command, isCommandAllowed } from "../machine/commands";
 import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext } from "./types";
-import { autoAdvance } from "./types";
+import type { RailResult, RailContext, TransitionRecord } from "./types";
+import { autoAdvance, applyTransition } from "./types";
 import { blocked } from "../config/reasons";
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -59,8 +59,23 @@ export function executeTicket(
   };
 
   // 4. Mutate state — clear all downstream evidence (fresh start)
+  //    If called from READY, transition to TICKET first (flow selection).
+  const preTransitions: TransitionRecord[] = [];
+  let basePhase = state.phase;
+  let baseTransition = state.transition;
+
+  if (state.phase === "READY") {
+    const at = ctx.now();
+    basePhase = "TICKET";
+    const tr: TransitionRecord = { from: "READY", to: "TICKET", event: "TICKET_SELECTED", at };
+    preTransitions.push(tr);
+    baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
+  }
+
   const nextState: SessionState = {
     ...state,
+    phase: basePhase,
+    transition: baseTransition,
     ticket,
     plan: null,
     selfReview: null,
@@ -73,7 +88,8 @@ export function executeTicket(
 
   // 5. Auto-advance (policy-aware)
   const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-  const { state: finalState, evalResult: result, transitions } = autoAdvance(nextState, evalFn, ctx);
+  const { state: finalState, evalResult: result, transitions: advanceTransitions } = autoAdvance(nextState, evalFn, ctx);
+  const transitions = [...preTransitions, ...advanceTransitions];
 
   return { kind: "ok", state: finalState, evalResult: result, transitions };
 }

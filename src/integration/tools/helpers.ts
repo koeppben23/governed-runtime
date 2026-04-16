@@ -18,6 +18,8 @@ import { z } from "zod";
 // State & Machine
 import type { SessionState } from "../../state/schema";
 import type { EvalResult } from "../../machine/evaluate";
+import { resolveNextAction } from "../../machine/next-action";
+import type { NextAction } from "../../machine/next-action";
 
 // Rail helpers
 import type { RailResult, RailContext } from "../../rails/types";
@@ -105,12 +107,15 @@ export function formatRailResult(result: RailResult): string {
       quickFix: result.quickFix,
     });
   }
-  return JSON.stringify({
+  const nextAction = resolveNextAction(result.state.phase, result.state);
+  const json = JSON.stringify({
     phase: result.state.phase,
     status: "ok",
     next: formatEval(result.evalResult),
+    nextAction,
     _audit: { transitions: result.transitions },
   });
+  return json + `\nNext action: ${nextAction.text}`;
 }
 
 /**
@@ -221,6 +226,23 @@ export async function persistAndFormat(
     await writeState(sessDir, result.state);
   }
   return formatRailResult(result);
+}
+
+/**
+ * Append NextAction to a custom JSON response string.
+ *
+ * Use this when a tool builds custom JSON (not via formatRailResult)
+ * but still needs the mandatory NextAction footer.
+ *
+ * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
+ * @param state - Current session state for NextAction resolution.
+ * @returns JSON string with nextAction field + trailing footer line.
+ */
+export function appendNextAction(jsonStr: string, state: SessionState): string {
+  const nextAction = resolveNextAction(state.phase, state);
+  const parsed = JSON.parse(jsonStr);
+  parsed.nextAction = nextAction;
+  return JSON.stringify(parsed) + `\nNext action: ${nextAction.text}`;
 }
 
 // ─── Plan Parsing ─────────────────────────────────────────────────────────────

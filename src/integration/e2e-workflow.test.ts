@@ -35,6 +35,7 @@ import {
   review,
   abort_session,
   archive,
+  architecture,
 } from "./tools";
 import { readState } from "../adapters/persistence";
 import { readAuditTrail } from "../adapters/persistence";
@@ -119,7 +120,7 @@ describe("e2e-workflow", () => {
     it("complete solo workflow: hydrate → ticket → plan → validate → implement → complete", async () => {
       // 1. Hydrate
       const h = await callOk(hydrate, { policyMode: "solo", profileId: "baseline" });
-      expect(h.phase).toBe("TICKET");
+      expect(h.phase).toBe("READY");
 
       // 2. Ticket
       await callOk(ticket, { text: "Fix the auth bug", source: "user" });
@@ -168,7 +169,7 @@ describe("e2e-workflow", () => {
     it("complete team workflow with explicit decisions", async () => {
       // 1. Hydrate (team mode)
       await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
-      expect(await getPhase()).toBe("TICKET");
+      expect(await getPhase()).toBe("READY");
 
       // 2. Ticket
       await callOk(ticket, { text: "Team task", source: "user" });
@@ -437,13 +438,13 @@ describe("e2e-workflow", () => {
       phases.push(await getPhase()); // COMPLETE
 
       // Verify progression
-      expect(phases[0]).toBe("TICKET");
-      expect(phases[1]).toBe("TICKET"); // Ticket doesn't auto-advance
+      expect(phases[0]).toBe("READY");
+      expect(phases[1]).toBe("TICKET"); // Ticket transitions READY → TICKET
       expect(phases[phases.length - 1]).toBe("COMPLETE");
 
       // All phases should be valid phase names
       const validPhases = new Set([
-        "TICKET", "PLAN", "PLAN_REVIEW", "VALIDATION",
+        "READY", "TICKET", "PLAN", "PLAN_REVIEW", "VALIDATION",
         "IMPLEMENTATION", "IMPL_REVIEW", "EVIDENCE_REVIEW", "COMPLETE",
       ]);
       for (const p of phases) {
@@ -594,34 +595,119 @@ describe("e2e-workflow", () => {
       expect(await getPhase()).toBe("COMPLETE");
     });
 
-    it("review tool reports completeness at different workflow stages", async () => {
+    it("review flow transitions from READY to REVIEW_COMPLETE with report", async () => {
       await callOk(hydrate, { policyMode: "solo", profileId: "baseline" });
 
-      // Review right after hydrate — ticket is required but missing
-      const earlyReview = await callOk(review, {});
-      expect(earlyReview.phase).toBe("TICKET");
-      const earlyCompleteness = earlyReview.completeness as Record<string, unknown>;
-      expect(earlyCompleteness.overallComplete).toBe(false);
+      // Review right after hydrate — standalone flow from READY
+      const reviewResult = await callOk(review, {});
+      expect(reviewResult.phase).toBe("REVIEW_COMPLETE");
+      expect(reviewResult.overallStatus).toBeDefined();
+      const completeness = reviewResult.completeness as Record<string, unknown>;
+      // Review flow has no evidence slots, so overallComplete is true
+      expect(completeness.overallComplete).toBe(true);
+      expect(completeness.slots).toBeDefined();
+    });
 
-      // Complete the workflow
-      await callOk(ticket, { text: "Review test", source: "user" });
-      await callOk(plan, { planText: "## Plan" });
-      await callOk(plan, { selfReviewVerdict: "approve" });
-      await callOk(validate, {
-        results: [
-          { checkId: "test_quality", passed: true, detail: "OK" },
-          { checkId: "rollback_safety", passed: true, detail: "OK" },
-        ],
-      });
-      await callOk(implement, {});
-      await callOk(implement, { reviewVerdict: "approve" });
-      expect(await getPhase()).toBe("COMPLETE");
+    it("architecture solo flow: hydrate → architecture → ARCH_COMPLETE", async () => {
+      // 1. Hydrate (solo — auto-approves at gates)
+      await callOk(hydrate, { policyMode: "solo", profileId: "baseline" });
+      expect(await getPhase()).toBe("READY");
 
-      // Review after completion — should be complete
-      const finalReview = await callOk(review, {});
-      expect(finalReview.overallStatus).toBe("clean");
-      const finalCompleteness = finalReview.completeness as Record<string, unknown>;
-      expect(finalCompleteness.overallComplete).toBe(true);
+      // 2. Submit ADR (Mode A: initial submission)
+      const adrText =
+        "## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.";
+      await callOk(architecture, { id: "ADR-1", title: "Use PostgreSQL", adrText });
+      expect(await getPhase()).toBe("ARCHITECTURE");
+
+      // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
+      await callOk(architecture, { selfReviewVerdict: "approve" });
+      // Solo auto-approves ARCH_REVIEW → ARCH_COMPLETE
+      expect(await getPhase()).toBe("ARCH_COMPLETE");
+
+      // 4. Verify architecture evidence
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.architecture).not.toBeNull();
+      expect(state!.architecture!.id).toBe("ADR-1");
+      expect(state!.architecture!.title).toBe("Use PostgreSQL");
+      expect(state!.architecture!.status).toBe("accepted");
+      expect(state!.selfReview).not.toBeNull();
+    });
+
+    it("architecture team flow with explicit decisions", async () => {
+      // 1. Hydrate (team mode — requires explicit gate decisions)
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      expect(await getPhase()).toBe("READY");
+
+      // 2. Submit ADR
+      const adrText =
+        "## Context\nMicroservices comm.\n\n## Decision\nUse gRPC.\n\n## Consequences\nNeed proto files.";
+      await callOk(architecture, { id: "ADR-2", title: "gRPC for services", adrText });
+
+      // 3. Self-review loop to ARCH_REVIEW
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "ARCH_REVIEW") break;
+        await callOk(architecture, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("ARCH_REVIEW");
+
+      // 4. Approve at ARCH_REVIEW
+      await callOk(decision, { verdict: "approve", rationale: "ADR looks good" });
+      expect(await getPhase()).toBe("ARCH_COMPLETE");
+
+      // 5. Verify MADR artifact was written
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.architecture!.status).toBe("accepted");
+    });
+
+    it("architecture reject at ARCH_REVIEW returns to READY", async () => {
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      const adrText =
+        "## Context\nLogging.\n\n## Decision\nUse ELK.\n\n## Consequences\nComplex setup.";
+      await callOk(architecture, { id: "ADR-3", title: "ELK for logging", adrText });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "ARCH_REVIEW") break;
+        await callOk(architecture, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("ARCH_REVIEW");
+
+      // Reject → back to READY (architecture flow reject clears architecture evidence)
+      await callOk(decision, { verdict: "reject", rationale: "Wrong approach" });
+      expect(await getPhase()).toBe("READY");
+
+      // Verify architecture was cleared
+      const sessDir = await getSessDir();
+      const state = await readState(sessDir);
+      expect(state!.architecture).toBeNull();
+      expect(state!.selfReview).toBeNull();
+    });
+
+    it("architecture changes_requested at ARCH_REVIEW returns to ARCHITECTURE", async () => {
+      await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
+      const adrText =
+        "## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs.";
+      await callOk(architecture, { id: "ADR-4", title: "REST APIs", adrText });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "ARCH_REVIEW") break;
+        await callOk(architecture, { selfReviewVerdict: "approve" });
+      }
+      expect(await getPhase()).toBe("ARCH_REVIEW");
+
+      // Changes requested → back to ARCHITECTURE for revision
+      await callOk(decision, { verdict: "changes_requested", rationale: "Add more consequences" });
+      expect(await getPhase()).toBe("ARCHITECTURE");
+
+      // Re-submit revised ADR (Mode A — selfReview was cleared, must re-initialize)
+      const revisedAdr =
+        "## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs. Must version endpoints.";
+      await callOk(architecture, { id: "ADR-4", title: "REST APIs", adrText: revisedAdr });
+      for (let i = 0; i < 5; i++) {
+        if (await getPhase() === "ARCH_REVIEW") break;
+        await callOk(architecture, { selfReviewVerdict: "approve" });
+      }
+      await callOk(decision, { verdict: "approve", rationale: "Better now" });
+      expect(await getPhase()).toBe("ARCH_COMPLETE");
     });
 
     it("regulated mode blocks self-approval at PLAN_REVIEW (four-eyes enforcement)", async () => {

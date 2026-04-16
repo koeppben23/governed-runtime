@@ -323,6 +323,15 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: "/plan",
   },
   {
+    code: "NO_ARCHITECTURE",
+    category: "precondition",
+    messageTemplate: "No ADR exists to review.",
+    recoverySteps: [
+      "Submit an ADR via flowguard_architecture with id, title, and adrText first",
+    ],
+    quickFixCommand: "/architecture",
+  },
+  {
     code: "NO_IMPLEMENTATION",
     category: "precondition",
     messageTemplate: "No implementation evidence to review.",
@@ -330,6 +339,40 @@ const SEED_REASONS: readonly BlockedReason[] = [
       "Record implementation via flowguard_implement first",
     ],
     quickFixCommand: "/implement",
+  },
+
+  // ── Architecture Input ────────────────────────────────────────
+  {
+    code: "INVALID_ADR_ID",
+    category: "input",
+    messageTemplate:
+      "ADR ID must match the pattern ADR-<number> (e.g., ADR-1, ADR-42).",
+    recoverySteps: ["Provide a valid ADR ID in the format ADR-<number>"],
+  },
+  {
+    code: "EMPTY_ADR_TITLE",
+    category: "input",
+    messageTemplate: "ADR title must not be empty.",
+    recoverySteps: ["Provide a short, descriptive title for the architecture decision"],
+  },
+  {
+    code: "EMPTY_ADR_TEXT",
+    category: "input",
+    messageTemplate: "ADR body text must not be empty.",
+    recoverySteps: [
+      "Provide the full ADR body in MADR format",
+      "Must include ## Context, ## Decision, and ## Consequences sections",
+    ],
+  },
+  {
+    code: "MISSING_ADR_SECTIONS",
+    category: "input",
+    messageTemplate:
+      "ADR is missing required MADR sections: {sections}",
+    recoverySteps: [
+      "Add the missing sections to the ADR body",
+      "Required: ## Context, ## Decision, ## Consequences",
+    ],
   },
 
   // ── Identity / Four-Eyes ──────────────────────────────────────

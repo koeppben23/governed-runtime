@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import {
+  ArchitectureDecision,
   BindingInfo,
   CheckId,
   ErrorInfo,
@@ -32,19 +33,31 @@ import { DiscoverySummarySchema } from "../discovery/types";
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
 /**
- * The 8 FlowGuard phases.
+ * The 14 FlowGuard phases across 3 standalone flows.
  * init() is a function (bootstrap, workspace, binding, discovery) — not a phase.
  *
- * Linear flow:
- *   TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ * After /hydrate, the session starts at READY — a routing phase
+ * where the user selects one of 3 standalone flows:
+ *
+ * Ticket flow (full development lifecycle):
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *
+ * Architecture flow (ADR creation):
+ *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
+ *
+ * Review flow (compliance report):
+ *   READY → REVIEW → REVIEW_COMPLETE
  *
  * Backward transitions:
  *   PLAN_REVIEW --changes_requested--> PLAN
  *   PLAN_REVIEW --reject--> TICKET
  *   EVIDENCE_REVIEW --changes_requested--> IMPLEMENTATION
  *   EVIDENCE_REVIEW --reject--> TICKET
+ *   ARCH_REVIEW --changes_requested--> ARCHITECTURE
+ *   ARCH_REVIEW --reject--> READY
  */
 export const Phase = z.enum([
+  "READY",
   "TICKET",
   "PLAN",
   "PLAN_REVIEW",
@@ -53,6 +66,11 @@ export const Phase = z.enum([
   "IMPL_REVIEW",
   "EVIDENCE_REVIEW",
   "COMPLETE",
+  "ARCHITECTURE",
+  "ARCH_REVIEW",
+  "ARCH_COMPLETE",
+  "REVIEW",
+  "REVIEW_COMPLETE",
 ]);
 export type Phase = z.infer<typeof Phase>;
 
@@ -64,6 +82,11 @@ export type Phase = z.infer<typeof Phase>;
  * Mapping: command → rail → state mutation → evaluate() → event → transition.
  */
 export const Event = z.enum([
+  // READY → flow selection
+  "TICKET_SELECTED",
+  "ARCHITECTURE_SELECTED",
+  "REVIEW_SELECTED",
+
   // TICKET → PLAN
   "PLAN_READY",
 
@@ -71,7 +94,7 @@ export const Event = z.enum([
   "SELF_REVIEW_MET",
   "SELF_REVIEW_PENDING",
 
-  // User Gate decisions (PLAN_REVIEW, EVIDENCE_REVIEW)
+  // User Gate decisions (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW)
   "APPROVE",
   "CHANGES_REQUESTED",
   "REJECT",
@@ -86,6 +109,9 @@ export const Event = z.enum([
   // IMPL_REVIEW loop
   "REVIEW_MET",
   "REVIEW_PENDING",
+
+  // REVIEW flow → REVIEW_COMPLETE
+  "REVIEW_DONE",
 
   // Error recovery (non-user-gate, non-terminal phases)
   "ERROR",
@@ -140,6 +166,9 @@ export const SessionState = z.object({
   /** Ticket/task evidence from /ticket. */
   ticket: TicketEvidence.nullable(),
 
+  /** Architecture Decision Record from /architecture. */
+  architecture: ArchitectureDecision.nullable(),
+
   /** Plan record with version history from /plan. */
   plan: PlanRecord.nullable(),
 
@@ -155,7 +184,7 @@ export const SessionState = z.object({
   /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
   implReview: ImplReviewResult.nullable(),
 
-  /** Human review decision at PLAN_REVIEW or EVIDENCE_REVIEW. */
+  /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
   reviewDecision: ReviewDecision.nullable(),
 
   // ── Configuration ───────────────────────────────────────────

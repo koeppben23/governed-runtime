@@ -14,6 +14,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
   REVIEW_APPROVE,
+  ARCHITECTURE_DECISION,
   FIXED_SESSION_UUID,
   FIXED_FINGERPRINT,
 } from "../__fixtures__";
@@ -35,7 +36,7 @@ describe("hydrate rail", () => {
       const result = executeHydrate(null, HYDRATE_INPUT, ctx);
       expect(result.kind).toBe("ok");
       if (result.kind === "ok") {
-        expect(result.state.phase).toBe("TICKET");
+        expect(result.state.phase).toBe("READY");
         expect(result.state.binding.sessionId).toBe(FIXED_SESSION_UUID);
         expect(result.state.binding.worktree).toBe("/tmp/test");
         expect(result.state.schemaVersion).toBe("v1");
@@ -428,6 +429,64 @@ describe("review-decision rail", () => {
         expect(result.transitions[0]!.from).toBe("PLAN_REVIEW");
         expect(result.transitions[0]!.to).toBe("VALIDATION");
       }
+    });
+
+    it("approve at ARCH_REVIEW → ARCH_COMPLETE", () => {
+      const state = makeProgressedState("ARCH_REVIEW");
+      const result = executeReviewDecision(state, {
+        verdict: "approve",
+        rationale: "ADR looks good",
+        decidedBy: "reviewer-1",
+      }, ctx);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.phase).toBe("ARCH_COMPLETE");
+        expect(result.state.reviewDecision?.verdict).toBe("approve");
+        expect(result.state.architecture).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+      }
+    });
+
+    it("changes_requested at ARCH_REVIEW → ARCHITECTURE with cleared selfReview", () => {
+      const state = makeProgressedState("ARCH_REVIEW");
+      const result = executeReviewDecision(state, {
+        verdict: "changes_requested",
+        rationale: "Missing consequences detail",
+        decidedBy: "reviewer-1",
+      }, ctx);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.phase).toBe("ARCHITECTURE");
+        expect(result.state.selfReview).toBeNull();
+        expect(result.state.architecture).not.toBeNull(); // kept
+      }
+    });
+
+    it("reject at ARCH_REVIEW → READY with cleared architecture", () => {
+      const state = makeProgressedState("ARCH_REVIEW");
+      const result = executeReviewDecision(state, {
+        verdict: "reject",
+        rationale: "Wrong approach entirely",
+        decidedBy: "reviewer-1",
+      }, ctx);
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.phase).toBe("READY");
+        expect(result.state.architecture).toBeNull();
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it("four-eyes blocks at ARCH_REVIEW when decidedBy === initiatedBy in regulated mode", () => {
+      const state = makeProgressedState("ARCH_REVIEW");
+      const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
+      const result = executeReviewDecision(state, {
+        verdict: "approve",
+        rationale: "LGTM",
+        decidedBy: state.initiatedBy,
+      }, regulatedCtx);
+      expect(result.kind).toBe("blocked");
+      if (result.kind === "blocked") expect(result.code).toBe("SELF_APPROVAL_FORBIDDEN");
     });
   });
 

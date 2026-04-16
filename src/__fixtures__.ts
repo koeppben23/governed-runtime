@@ -9,6 +9,7 @@
 import type { SessionState, Phase } from "./state/schema";
 import type {
   TicketEvidence,
+  ArchitectureDecision,
   PlanEvidence,
   PlanRecord,
   SelfReviewLoop,
@@ -58,6 +59,15 @@ export const TICKET: TicketEvidence = {
   digest: "digest-of-ticket",
   source: "user",
   createdAt: FIXED_TIME,
+};
+
+export const ARCHITECTURE_DECISION: ArchitectureDecision = {
+  id: "ADR-1",
+  title: "Use PostgreSQL for primary storage",
+  adrText: "## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.",
+  status: "proposed",
+  createdAt: FIXED_TIME,
+  digest: "digest-of-adr",
 };
 
 export const PLAN_EVIDENCE: PlanEvidence = {
@@ -148,7 +158,7 @@ export const ERROR_INFO: ErrorInfo = {
  * Override fields via the partial parameter.
  */
 export function makeState(
-  phase: Phase = "TICKET",
+  phase: Phase = "READY",
   overrides: Partial<SessionState> = {},
 ): SessionState {
   return {
@@ -157,6 +167,7 @@ export function makeState(
     phase,
     binding: BINDING,
     ticket: null,
+    architecture: null,
     plan: null,
     selfReview: null,
     validation: [],
@@ -179,6 +190,8 @@ export function makeState(
  */
 export function makeProgressedState(phase: Phase): SessionState {
   switch (phase) {
+    case "READY":
+      return makeState("READY");
     case "TICKET":
       return makeState("TICKET");
     case "PLAN":
@@ -233,5 +246,24 @@ export function makeProgressedState(phase: Phase): SessionState {
         implementation: IMPL_EVIDENCE,
         implReview: IMPL_REVIEW_CONVERGED,
       });
+    case "ARCHITECTURE":
+      return makeState("ARCHITECTURE", {
+        architecture: ARCHITECTURE_DECISION,
+      });
+    case "ARCH_REVIEW":
+      return makeState("ARCH_REVIEW", {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+    case "ARCH_COMPLETE":
+      return makeState("ARCH_COMPLETE", {
+        architecture: { ...ARCHITECTURE_DECISION, status: "accepted" },
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+      });
+    case "REVIEW":
+      return makeState("REVIEW");
+    case "REVIEW_COMPLETE":
+      return makeState("REVIEW_COMPLETE");
   }
 }

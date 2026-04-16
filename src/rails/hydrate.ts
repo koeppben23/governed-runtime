@@ -10,12 +10,12 @@
  * 2. If state is null → create a new SessionState:
  *    - Generate UUID
  *    - Resolve binding from OpenCode tool context (sessionId, worktree)
- *    - Set phase = TICKET
+ *    - Set phase = READY (user selects a flow via /ticket, /architecture, or /review)
  *    - Resolve profile → set activeChecks
  *    - Resolve policy → create immutable PolicySnapshot
  *    - Record initiatedBy (for four-eyes principle)
  *    - All evidence slots = null
- * 3. Evaluate the new state (returns "pending" at TICKET — waiting for /ticket)
+ * 3. Evaluate the new state (returns "pending" at READY — waiting for flow selection)
  *
  * Idempotent: calling /hydrate on an existing session is a no-op.
  * This makes it safe to call at the start of every command as a guard.
@@ -178,12 +178,13 @@ export function executeHydrate(
   const newState: SessionState = {
     id: crypto.randomUUID(),
     schemaVersion: "v1",
-    phase: "TICKET",
+    phase: "READY",
 
     binding,
 
     // All evidence slots start empty
     ticket: null,
+    architecture: null,
     plan: null,
     selfReview: null,
     validation: [],
@@ -207,7 +208,7 @@ export function executeHydrate(
     createdAt: now,
   };
 
-  // 7. Evaluate (will be "pending" at TICKET — waiting for /ticket)
+  // 7. Evaluate (will be "pending" at READY — waiting for flow selection)
   const result = evaluate(newState, ctx.policy);
 
   return { kind: "ok", state: newState, evalResult: result, transitions: [] };

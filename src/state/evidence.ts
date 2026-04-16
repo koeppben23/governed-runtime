@@ -158,9 +158,56 @@ export const ImplReviewResult = z.object({
 });
 export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
 
+// ─── Architecture Decision Record ─────────────────────────────────────────────
+
+/** Status of an Architecture Decision Record. */
+export const AdrStatus = z.enum(["proposed", "accepted", "deprecated"]);
+export type AdrStatus = z.infer<typeof AdrStatus>;
+
+/**
+ * Required MADR sections in the ADR text.
+ * The adrText MUST contain these markdown headings for section validation.
+ */
+export const REQUIRED_ADR_SECTIONS = ["## Context", "## Decision", "## Consequences"] as const;
+
+/**
+ * Validate that an ADR text contains all required MADR sections.
+ * Returns the list of missing section headings (empty = valid).
+ */
+export function validateAdrSections(adrText: string): string[] {
+  return REQUIRED_ADR_SECTIONS.filter(
+    (heading) => !adrText.includes(heading),
+  );
+}
+
+/**
+ * Architecture Decision Record (ADR) evidence.
+ * Produced by the /architecture flow. Follows MADR format.
+ *
+ * The adrText is free-form Markdown that MUST contain:
+ * - ## Context
+ * - ## Decision
+ * - ## Consequences
+ */
+export const ArchitectureDecision = z.object({
+  /** ADR identifier (e.g., "ADR-1", "ADR-42"). */
+  id: z.string().regex(/^ADR-\d+$/),
+  /** Short title of the architecture decision. */
+  title: z.string().min(1),
+  /** Full ADR body in Markdown (MADR format with required sections). */
+  adrText: z.string().min(1),
+  /** Lifecycle status of the ADR. */
+  status: AdrStatus,
+  /** When the ADR was created. */
+  createdAt: z.string().datetime(),
+  /** SHA-256 digest of the adrText for integrity verification. */
+  digest: z.string().min(1),
+});
+export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
+
 // ─── Review Decision ──────────────────────────────────────────────────────────
 
-/** Human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). */
+/** Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). */
 export const ReviewDecision = z.object({
   verdict: ReviewVerdict,
   rationale: z.string(),

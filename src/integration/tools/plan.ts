@@ -30,6 +30,7 @@ import {
   formatBlocked,
   formatError,
   extractSections,
+  appendNextAction,
 } from "./helpers";
 
 // State & Machine
@@ -144,7 +145,7 @@ export const plan: ToolDefinition = {
         );
         await writeState(sessDir, finalState);
 
-        return JSON.stringify({
+        return appendNextAction(JSON.stringify({
           phase: finalState.phase,
           status: "Plan submitted (v" + (history.length + 1) + ").",
           planDigest: planEvidence.digest,
@@ -155,7 +156,7 @@ export const plan: ToolDefinition = {
             "Check for completeness, correctness, edge cases, and feasibility. " +
             "Then call flowguard_plan with selfReviewVerdict.",
           _audit: { transitions },
-        });
+        }), finalState);
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
         if (!state.selfReview) {
@@ -221,17 +222,17 @@ export const plan: ToolDefinition = {
           (revisionDelta === "none" && verdict === "approve");
 
         if (converged) {
-          return JSON.stringify({
+          return appendNextAction(JSON.stringify({
             phase: finalState.phase,
             status: `Self-review converged at iteration ${iteration}. Plan approved.`,
             planDigest: currentPlan.digest,
             selfReviewIteration: iteration,
             next: formatEval(ev),
             _audit: { transitions },
-          });
+          }), finalState);
         }
 
-        return JSON.stringify({
+        return appendNextAction(JSON.stringify({
           phase: finalState.phase,
           status: `Self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
           planDigest: currentPlan.digest,
@@ -241,7 +242,7 @@ export const plan: ToolDefinition = {
             "Review the plan again. Check if the revisions address all issues. " +
             "Call flowguard_plan with selfReviewVerdict.",
           _audit: { transitions },
-        });
+        }), finalState);
       }
     } catch (err) {
       return formatError(err);

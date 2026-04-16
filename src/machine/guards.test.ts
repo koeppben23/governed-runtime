@@ -9,6 +9,7 @@ import {
   implComplete,
   implReviewMet,
   implReviewPending,
+  reviewDone,
   GUARDS,
 } from "../machine/guards";
 import type { Phase } from "../state/schema";
@@ -65,6 +66,10 @@ describe("guards", () => {
     it("implReviewPending fires when impl review not converged", () => {
       expect(implReviewPending(makeState("IMPL_REVIEW", { implReview: IMPL_REVIEW_PENDING_RESULT }))).toBe(true);
     });
+
+    it("reviewDone fires when phase is REVIEW", () => {
+      expect(reviewDone(makeState("REVIEW"))).toBe(true);
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -103,6 +108,11 @@ describe("guards", () => {
 
     it("implReviewMet does not fire when implReview is null", () => {
       expect(implReviewMet(makeState("IMPL_REVIEW"))).toBe(false);
+    });
+
+    it("reviewDone does not fire when phase is not REVIEW", () => {
+      expect(reviewDone(makeState("TICKET"))).toBe(false);
+      expect(reviewDone(makeState("READY"))).toBe(false);
     });
   });
 
@@ -160,21 +170,42 @@ describe("guards", () => {
       // activeChecks has 2 but only 1 passed
       expect(allValidationsPassed(onePass)).toBe(false);
     });
+
+    it("selfReviewMet works identically for ARCHITECTURE phase", () => {
+      const archState = makeState("ARCHITECTURE", {
+        selfReview: SELF_REVIEW_CONVERGED,
+      });
+      expect(selfReviewMet(archState)).toBe(true);
+    });
+
+    it("selfReviewPending works identically for ARCHITECTURE phase", () => {
+      const archState = makeState("ARCHITECTURE", {
+        selfReview: SELF_REVIEW_PENDING_FIX,
+      });
+      expect(selfReviewPending(archState)).toBe(true);
+    });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
   describe("EDGE", () => {
     it("GUARDS table covers all guard-based phases", () => {
-      const guardPhases: Phase[] = ["TICKET", "PLAN", "VALIDATION", "IMPLEMENTATION", "IMPL_REVIEW"];
+      const guardPhases: Phase[] = [
+        "TICKET", "PLAN", "VALIDATION", "IMPLEMENTATION", "IMPL_REVIEW",
+        "ARCHITECTURE", "REVIEW",
+      ];
       for (const phase of guardPhases) {
         expect(GUARDS.has(phase)).toBe(true);
       }
     });
 
-    it("GUARDS table does not include user gates or terminal", () => {
+    it("GUARDS table does not include READY, user gates, or terminals", () => {
+      expect(GUARDS.has("READY")).toBe(false);
       expect(GUARDS.has("PLAN_REVIEW")).toBe(false);
       expect(GUARDS.has("EVIDENCE_REVIEW")).toBe(false);
+      expect(GUARDS.has("ARCH_REVIEW")).toBe(false);
       expect(GUARDS.has("COMPLETE")).toBe(false);
+      expect(GUARDS.has("ARCH_COMPLETE")).toBe(false);
+      expect(GUARDS.has("REVIEW_COMPLETE")).toBe(false);
     });
 
     it("ERROR guard is always first in each phase's guard list", () => {
@@ -204,6 +235,13 @@ describe("guards", () => {
         ],
       });
       expect(allValidationsPassed(withExtra)).toBe(true);
+    });
+
+    it("ARCHITECTURE guards are identical to PLAN guards (same convergence logic)", () => {
+      const planGuards = GUARDS.get("PLAN")!;
+      const archGuards = GUARDS.get("ARCHITECTURE")!;
+      expect(archGuards.length).toBe(planGuards.length);
+      expect(archGuards.map(g => g.event)).toEqual(planGuards.map(g => g.event));
     });
   });
 

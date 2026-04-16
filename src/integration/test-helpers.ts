@@ -200,7 +200,11 @@ export const GIT_MOCK_DEFAULTS = {
 export function parseToolResult<T = Record<string, unknown>>(
   jsonStr: string,
 ): T {
-  return JSON.parse(jsonStr) as T;
+  // Tool output may include a "\nNext action: ..." footer after the JSON.
+  // JSON.stringify never produces literal newlines, so the first \n is the boundary.
+  const idx = jsonStr.indexOf("\n");
+  const jsonPart = idx >= 0 ? jsonStr.slice(0, idx) : jsonStr;
+  return JSON.parse(jsonPart) as T;
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   createPolicyContext,
   persistAndFormat,
   formatError,
+  appendNextAction,
 } from "./helpers";
 
 // State
@@ -197,7 +198,10 @@ export const hydrate: ToolDefinition = {
       // Include detected profile info in the response for new sessions
       if (result.kind === "ok" && !existing) {
         const state = result.state;
-        const formatted = JSON.parse(await persistAndFormat(sessDir, result));
+        // persistAndFormat returns JSON + optional "\nNext action: ..." footer — strip before parsing
+        const rawFormatted = await persistAndFormat(sessDir, result);
+        const jsonEnd = rawFormatted.indexOf("\n");
+        const formatted = JSON.parse(jsonEnd >= 0 ? rawFormatted.slice(0, jsonEnd) : rawFormatted);
         const response: Record<string, unknown> = {
           ...formatted,
           profileId: state.activeProfile?.id ?? "baseline",
@@ -209,7 +213,7 @@ export const hydrate: ToolDefinition = {
         if (discoveryError) {
           response.discoveryError = discoveryError;
         }
-        return JSON.stringify(response);
+        return appendNextAction(JSON.stringify(response), state);
       }
 
       return await persistAndFormat(sessDir, result);
