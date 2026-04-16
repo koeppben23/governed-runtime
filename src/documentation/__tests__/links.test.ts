@@ -451,7 +451,7 @@ describe("docs/delivery-scope.md", () => {
 
     it("should document workflow engine features", async () => {
       const content = await fs.readFile(DELIVERY_SCOPE_PATH, "utf-8");
-      expect(content).toContain("8 explicit phases");
+      expect(content).toContain("14 explicit phases");
       expect(content).toContain("3 policy modes");
       expect(content).toContain("4 built-in profiles");
     });

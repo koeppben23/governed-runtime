@@ -58,12 +58,12 @@ These features are available in FlowGuard 1.3.0.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **8 explicit phases** | Delivered | TICKET through COMPLETE |
+| **14 explicit phases** | Delivered | 3 flows: Ticket (READY→COMPLETE), Architecture (READY→ARCH_COMPLETE), Review (READY→REVIEW_COMPLETE) |
 | **3 policy modes** | Delivered | Solo, Team, Regulated |
 | **4 built-in profiles** | Delivered | Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node |
 | **4-phase self-review** | Delivered | iteration limit, digest convergence, verdict loop |
-| **10 commands** | Delivered | hydrate, ticket, plan, continue, implement, validate, review-decision, review, abort, archive |
-| **10 custom tools** | Delivered | OpenCode tool exports |
+| **10 commands** | Delivered | hydrate, ticket, plan, continue, implement, validate, review-decision, architecture, review, abort |
+| **11 custom tools** | Delivered | OpenCode tool exports (+ archive operational tool) |
 | **4 event kinds** | Delivered | transition, tool_call, error, lifecycle |
 
 ### Audit & Compliance

@@ -22,7 +22,9 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 /hydrate
 ```
 
-### Follow the Workflow
+After hydration, choose one of three flows:
+
+### Ticket Flow (Full Development Lifecycle)
 
 ```
 /ticket <describe the task>
@@ -33,13 +35,27 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 /review-decision approve
 ```
 
+### Architecture Flow (ADR Creation)
+
+```
+/architecture <id, title, adrText>
+/review-decision approve
+```
+
+### Review Flow (Compliance Report)
+
+```
+/review
+```
+
 ---
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **8 Phases** | TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE |
+| **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
+| **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
 | **Policy Modes** | Solo (auto), Team (optional review), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |

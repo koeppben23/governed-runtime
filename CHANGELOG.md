@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Three independent flows after `/hydrate`: Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance report)
+- READY phase as shared entry point with command-driven flow selection
+- `/architecture` command and tool for ADR creation with MADR format validation and self-review loop
+- `/review` as standalone flow (READY → REVIEW → REVIEW_COMPLETE) with phase transitions
+- NextAction system — deterministic next-step guidance on every tool response
+- MADR artifact writer (`src/integration/artifacts/madr-writer.ts`)
+- Architecture phases: ARCHITECTURE, ARCH_REVIEW, ARCH_COMPLETE
+- Review phases: REVIEW, REVIEW_COMPLETE
+- 11 new tests (1162 total)
 - GitHub Actions CI pipeline (`.github/workflows/ci.yml`)
 - Conventional commits validation (`.github/workflows/conventional-commits.yml`)
 - Architecture dependency boundary tests
@@ -15,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive user documentation (`docs/`)
 
 ### Changed
+- State machine extended from 8 to 14 phases, 17 events, 10 commands
+- `/hydrate` now initializes to READY phase instead of TICKET
+- `/ticket` performs READY → TICKET transition before recording task
+- `/review-decision` handles ARCH_REVIEW in addition to PLAN_REVIEW and EVIDENCE_REVIEW
+- `/continue` handles ARCHITECTURE phase with self-review iteration
+- All integration tools emit NextAction footer on every response
 - README.md restructured with links to `docs/`
 - Clear separation between user docs and internal docs
 

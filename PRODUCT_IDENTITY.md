@@ -33,7 +33,8 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **8 explicit phases** from ticket intake through completion
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance report)
+- **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
@@ -103,8 +104,9 @@ Ten FlowGuard commands map to workflow phases:
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject) |
 | `/implement` | Execute implementation, record evidence, run review loop |
 | `/validate` | Run validation checks (test quality, rollback safety) |
+| `/architecture` | Create or revise an Architecture Decision Record (ADR) with self-review loop |
+| `/review` | Start standalone compliance review flow |
 | `/continue` | Universal routing — do the next appropriate action for the current phase |
-| `/review` | Read-only compliance report with evidence completeness matrix |
 | `/abort` | Emergency session termination |
 | `/archive` | Archive a completed session as `.tar.gz` |
 
@@ -112,21 +114,34 @@ Each command is tied to phase admissibility rules, evidence requirements, and st
 
 ### 3. Phase Workflow
 
-The platform moves work through **8 explicit phases** rather than allowing arbitrary jumps:
+The platform offers **three independent flows** starting from a shared READY entry point:
 
+**Ticket Flow (Full Development Lifecycle):**
 ```
-TICKET -> PLAN -> PLAN_REVIEW -> VALIDATION -> IMPLEMENTATION -> IMPL_REVIEW -> EVIDENCE_REVIEW -> COMPLETE
+READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
 ```
 
-**User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW.
+**Architecture Flow (ADR Creation):**
+```
+READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
+```
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern).
+**Review Flow (Compliance Report):**
+```
+READY → REVIEW → REVIEW_COMPLETE
+```
+
+**User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
+
+**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality.
 
 **Backward Transitions**:
 - `changes_requested` at PLAN_REVIEW -> back to PLAN
 - `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> back to TICKET
 - `changes_requested` at EVIDENCE_REVIEW -> back to IMPLEMENTATION
 - `CHECK_FAILED` at VALIDATION -> back to PLAN (plan must be revised and re-approved)
+- `changes_requested` at ARCH_REVIEW -> back to ARCHITECTURE
+- `reject` at ARCH_REVIEW -> back to READY
 
 **Every phase transition requires evidence.** The system computes whether progression is allowed.
 
@@ -217,8 +232,8 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 ### OpenCode Integration
 
-- **10 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
-- **10 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
+- **11 Custom Tools** (`integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers
+- **11 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
@@ -299,10 +314,10 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Version:** 1.3.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
-- **Phase Count:** 8 explicit workflow phases
-- **Workflow Commands:** 9 (hydrate, ticket, plan, continue, implement, review-decision, validate, review, abort)
+- **Phase Count:** 14 explicit workflow phases across 3 flows
+- **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
-- **Custom Tools:** 10 OpenCode tool exports (via `@flowguard/core/integration`)
+- **Custom Tools:** 11 OpenCode tool exports (via `@flowguard/core/integration`)
 - **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
 - **Policy Modes:** 3 (Solo [default], Team, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)

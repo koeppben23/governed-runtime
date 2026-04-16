@@ -375,13 +375,14 @@ describe("DEV_REPO_INVARIANTS", () => {
       expect(parsed.instructions).toEqual([]);
     });
 
-    it("COMMANDS template covers all 10 slash commands", () => {
+    it("COMMANDS template covers all 11 slash commands", () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(10);
+      expect(commandNames).toHaveLength(11);
       // Verify all expected commands are present
       for (const expected of [
         "hydrate.md", "ticket.md", "plan.md", "continue.md", "implement.md",
-        "validate.md", "review-decision.md", "review.md", "abort.md", "archive.md",
+        "validate.md", "review-decision.md", "review.md", "architecture.md",
+        "abort.md", "archive.md",
       ]) {
         expect(commandNames).toContain(expected);
       }

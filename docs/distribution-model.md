@@ -23,7 +23,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 | Category | Description | Example |
 |----------|-------------|---------|
 | **Technically Enforced** | Properties guaranteed by implementation | Fail-closed, Hash-Chain integrity, Phase gates |
-| **Currently Delivered** | Available in current release | 8 phases, 3 profiles, archive verification |
+| **Currently Delivered** | Available in current release | 14 phases (3 flows), 3 profiles, archive verification |
 | **Optional** | Can be enabled, not default | Regulated mode, custom profiles |
 | **Not Covered** | Intentionally not implemented | Multi-user, CI-native, compliance certification |
 | **Customer Responsibility** | Customer must handle | Backup, network segmentation, compliance mapping |

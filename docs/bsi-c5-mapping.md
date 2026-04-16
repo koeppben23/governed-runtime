@@ -64,10 +64,10 @@ The RB domain covers change management, operational documentation, logging, and 
 #### FlowGuard Provides
 
 **Change Management:**
-- 8 explicit workflow phases: TICKET, PLAN, PLAN_REVIEW, VALIDATION, IMPLEMENTATION, IMPL_REVIEW, EVIDENCE_REVIEW, COMPLETE
+- 14 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
 - Phase gates that require evidence before progression — no phase can be skipped
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
-- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET
+- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET (ticket flow) or READY (architecture flow)
 - Validation checks defined by active profile must all pass before implementation begins
 - Every phase transition is governed by a pure, deterministic state machine with an immutable transition table
 

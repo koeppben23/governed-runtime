@@ -16,7 +16,7 @@ Get up and running in 5 minutes.
 Reference for all FlowGuard commands.
 
 ### [Phases](./phases.md)
-Understanding the 8 workflow phases.
+Understanding the 14 workflow phases across 3 flows.
 
 ### [Policies](./policies.md)
 Policy modes: Solo, Team, and Regulated.
@@ -56,15 +56,16 @@ Responsibilities, contact channels, and expectations.
 
 ## Quick Reference
 
-| Command | Phase | Description |
-|---------|-------|-------------|
-| `/hydrate` | Any | Bootstrap session |
-| `/ticket` | TICKET | Record task |
-| `/plan` | TICKET, PLAN | Generate plan |
-| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW | Human approval |
+| Command | Allowed In | Description |
+|---------|------------|-------------|
+| `/hydrate` | Any | Bootstrap session → READY |
+| `/ticket` | READY, TICKET | Record task, start ticket flow |
+| `/plan` | READY, TICKET, PLAN | Generate plan |
+| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW | Human approval |
 | `/validate` | VALIDATION | Run checks |
 | `/implement` | IMPLEMENTATION | Execute plan |
+| `/architecture` | READY, ARCHITECTURE | Create/revise ADR |
+| `/review` | READY | Start compliance review flow |
 | `/continue` | Any | Auto-advance |
-| `/review` | Any | Generate report |
 | `/abort` | Any | Terminate |
-| `/archive` | COMPLETE | Archive session |
+| `/archive` | COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE | Archive session |
