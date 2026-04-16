@@ -121,6 +121,22 @@ flowguard install --core-tarball ./flowguard-core-{old}.tgz --force
 
 ---
 
+## Uninstall
+
+To remove FlowGuard from an environment:
+
+```bash
+# Remove OpenCode integration
+flowguard uninstall
+
+# Remove CLI
+npm uninstall -g @flowguard/core
+```
+
+The uninstall command removes all FlowGuard-owned files from `~/.config/opencode/` (or `./.opencode/` for repo scope) and cleans up the `opencode.json` instruction entries. `flowguard-mandates.md` is also removed. Your `AGENTS.md` is never touched.
+
+---
+
 ## Air-Gapped Environments
 
 FlowGuard is designed for air-gapped deployment:

@@ -1001,7 +1001,7 @@ export async function main(argv: string[]): Promise<number> {
       console.log(formatResult(result));
       if (result.errors.length > 0) return 1;
       console.log("");
-      console.log(`  Run 'bun install' in ${targetLabel} to install dependencies.`);
+      console.log(`  Run 'npm install' in ${targetLabel} to install dependencies.`);
       return 0;
     }
 

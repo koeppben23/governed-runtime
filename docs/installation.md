@@ -32,6 +32,7 @@ flowguard --version
 
 ```bash
 flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz
+cd ~/.config/opencode && npm install
 ```
 
 **Note:** The `--core-tarball` path must point to the downloaded release artifact. This is required for the installer to set up local vendored dependencies.
