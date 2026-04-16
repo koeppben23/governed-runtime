@@ -38,8 +38,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile, unlink, copyFile, rm } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { join, resolve, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -118,13 +119,27 @@ export interface DoctorCheck {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
- * Current package version.
- *
- * SSOT NOTE: This value MUST match package.json.version.
- * The release workflow validates this constraint (see .github/workflows/release.yml).
- * Future improvement: read from VERSION file written during release.
+ * Get the current package version from the VERSION file.
+ * SSOT: This is the single source of truth for the version.
+ * Both package.json and the release workflow validate against this value.
  */
-const PACKAGE_VERSION = "1.3.1";
+function getPackageVersion(): string {
+  const versionFile = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "VERSION");
+  try {
+    return readFileSync(versionFile, "utf-8").trim();
+  } catch {
+    throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
+  }
+}
+
+/** Cache the version so we don't re-read the file on every call. */
+let _cachedVersion: string | undefined;
+function PACKAGE_VERSION(): string {
+  if (!_cachedVersion) {
+    _cachedVersion = getPackageVersion();
+  }
+  return _cachedVersion;
+}
 
 /** Files owned by FlowGuard that uninstall may remove. */
 const FLOWGUARD_OWNED_FILES = [
@@ -466,11 +481,11 @@ export async function install(args: CliArgs): Promise<CliResult> {
     const tarballVersion = versionMatch[1];
 
     // 0d. Verify version matches installer version
-    if (tarballVersion !== PACKAGE_VERSION) {
+    if (tarballVersion !== PACKAGE_VERSION()) {
       errors.push(
         `ERROR: Version mismatch.\n` +
         `  Tarball: ${tarballVersion}\n` +
-        `  Installer: ${PACKAGE_VERSION}\n` +
+        `  Installer: ${PACKAGE_VERSION()}\n` +
         `  Please use the correct tarball version.`
       );
       return { target, ops, errors, warnings };
@@ -490,7 +505,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
     // 2. flowguard-mandates.md (always replace — managed artifact)
     const digest = computeMandatesDigest();
-    const mandatesContent = buildMandatesContent(PACKAGE_VERSION, digest);
+    const mandatesContent = buildMandatesContent(PACKAGE_VERSION(), digest);
     const mandatesPath = join(target, MANDATES_FILENAME);
     await ensureDir(dirname(mandatesPath));
     await writeFile(mandatesPath, mandatesContent, "utf-8");
@@ -514,7 +529,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     // 6. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
-    ops.push(await mergePackageJson(join(target, "package.json"), PACKAGE_VERSION));
+    ops.push(await mergePackageJson(join(target, "package.json"), PACKAGE_VERSION()));
 
     // 7. opencode.json (merge with migration)
     //    - global: merge into ~/.config/opencode/opencode.json
@@ -667,8 +682,8 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
       // Header digest matches canonical, but actual body was modified (e.g. appended)
       checks.push({ file: mandatesPath, status: "modified", detail: "content-digest mismatch — file body was locally edited" });
-    } else if (fileVersion !== PACKAGE_VERSION) {
-      checks.push({ file: mandatesPath, status: "version_mismatch", detail: `header v${fileVersion} != installed v${PACKAGE_VERSION}` });
+    } else if (fileVersion !== PACKAGE_VERSION()) {
+      checks.push({ file: mandatesPath, status: "version_mismatch", detail: `header v${fileVersion} != installed v${PACKAGE_VERSION()}` });
     } else {
       checks.push({ file: mandatesPath, status: "ok" });
     }
@@ -719,7 +734,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
       const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
       const coreDep = deps["@flowguard/core"];
-      const expectedDep = vendorDependency(PACKAGE_VERSION);
+      const expectedDep = vendorDependency(PACKAGE_VERSION());
 
       if (!coreDep) {
         checks.push({ file: pkgPath, status: "error", detail: "missing @flowguard/core dependency" });
@@ -734,7 +749,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
 
   // 5b. Check vendor tarball exists (A1 model validation)
-  const vendorTarballPath = join(target, "vendor", `flowguard-core-${PACKAGE_VERSION}.tgz`);
+  const vendorTarballPath = join(target, "vendor", `flowguard-core-${PACKAGE_VERSION()}.tgz`);
   if (existsSync(vendorTarballPath)) {
     checks.push({ file: vendorTarballPath, status: "ok" });
   } else {

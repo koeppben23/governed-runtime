@@ -66,6 +66,12 @@ const REPO_ROOT = path.resolve(
   "../..",
 );
 
+/**
+ * SSOT: Read version from VERSION file at repo root.
+ * All test assertions that need the version should use this constant.
+ */
+const VERSION = readFileSync(path.join(REPO_ROOT, "VERSION"), "utf-8").trim();
+
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 let tmpDir: string;
@@ -160,21 +166,21 @@ describe("cli/parseArgs", () => {
     });
 
     it("parses 'install --core-tarball <path>'", () => {
-      const result = parseArgs(["install", "--core-tarball", "/path/to/flowguard-core-1.3.1.tgz"]);
+      const result = parseArgs(["install", "--core-tarball", "/path/to/flowguard-core-${VERSION}.tgz"]);
       expect(result).not.toBeNull();
-      expect(result!.args.coreTarball).toBe("/path/to/flowguard-core-1.3.1.tgz");
+      expect(result!.args.coreTarball).toBe("/path/to/flowguard-core-${VERSION}.tgz");
     });
 
     it("parses 'install --core-tarball with all options'", () => {
       const result = parseArgs([
         "install",
-        "--core-tarball", "./flowguard-core-1.3.1.tgz",
+        "--core-tarball", "./flowguard-core-${VERSION}.tgz",
         "--install-scope", "repo",
         "--policy-mode", "regulated",
         "--force",
       ]);
       expect(result).not.toBeNull();
-      expect(result!.args.coreTarball).toBe("./flowguard-core-1.3.1.tgz");
+      expect(result!.args.coreTarball).toBe("./flowguard-core-${VERSION}.tgz");
       expect(result!.args.installScope).toBe("repo");
       expect(result!.args.policyMode).toBe("regulated");
       expect(result!.args.force).toBe(true);
@@ -638,7 +644,7 @@ describe("cli/templates", () => {
 
 describe("cli/install", () => {
   // Helper: create a mock tarball for testing
-  async function createMockTarball(version = "1.3.1"): Promise<string> {
+  async function createMockTarball(version = VERSION): Promise<string> {
     const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
     await fs.writeFile(tarballPath, "mock tarball content");
     return tarballPath;
@@ -668,7 +674,7 @@ describe("cli/install", () => {
       // opencode.json in project root
       expect(existsSync(path.join(tmpDir, "opencode.json"))).toBe(true);
       // vendor directory with tarball
-      expect(existsSync(path.join(oc, "vendor", "flowguard-core-1.3.1.tgz"))).toBe(true);
+      expect(existsSync(path.join(oc, "vendor", `flowguard-core-${VERSION}.tgz`))).toBe(true);
     });
 
     it("copies tarball to vendor directory", async () => {
@@ -676,7 +682,7 @@ describe("cli/install", () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
 
-      const vendorPath = path.join(tmpDir, ".opencode", "vendor", "flowguard-core-1.3.1.tgz");
+      const vendorPath = path.join(tmpDir, ".opencode", "vendor", `flowguard-core-${VERSION}.tgz`);
       expect(existsSync(vendorPath)).toBe(true);
       const content = await fs.readFile(vendorPath, "utf-8");
       expect(content).toBe("mock tarball content");
@@ -693,7 +699,7 @@ describe("cli/install", () => {
       const parsed = JSON.parse(content);
       expect(parsed.name).toBe("@flowguard/opencode-runtime");
       expect(parsed.private).toBe(true);
-      expect(parsed.dependencies["@flowguard/core"]).toBe("file:./vendor/flowguard-core-1.3.1.tgz");
+      expect(parsed.dependencies["@flowguard/core"]).toBe(`file:./vendor/flowguard-core-${VERSION}.tgz`);
       expect(parsed.dependencies["zod"]).toBeDefined();
     });
 
@@ -781,7 +787,7 @@ describe("cli/install", () => {
 
     it("install with non-existent tarball returns error", async () => {
       const result = await install(repoArgs({
-        coreTarball: "/nonexistent/flowguard-core-1.3.1.tgz",
+        coreTarball: "/nonexistent/flowguard-core-${VERSION}.tgz",
       }));
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain("not found");
@@ -902,9 +908,9 @@ describe("cli/install", () => {
 
     it("supports relative tarball path", async () => {
       const tarball = await createMockTarball();
-      const result = await install(repoArgs({ coreTarball: "./flowguard-core-1.3.1.tgz" }));
+      const result = await install(repoArgs({ coreTarball: `./flowguard-core-${VERSION}.tgz` }));
       expect(result.errors).toEqual([]);
-      expect(existsSync(path.join(tmpDir, ".opencode", "vendor", "flowguard-core-1.3.1.tgz"))).toBe(true);
+      expect(existsSync(path.join(tmpDir, ".opencode", "vendor", `flowguard-core-${VERSION}.tgz`))).toBe(true);
     });
 
     it("handles malformed package.json by overwriting", async () => {
@@ -1052,7 +1058,7 @@ describe("cli/install", () => {
 
 describe("cli/uninstall", () => {
   // Helper: create a mock tarball for uninstall tests
-  async function createMockTarball(version = "1.3.1"): Promise<string> {
+  async function createMockTarball(version = VERSION): Promise<string> {
     const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
     await fs.writeFile(tarballPath, "mock tarball content");
     return tarballPath;
@@ -1234,7 +1240,7 @@ describe("cli/uninstall", () => {
 
 describe("cli/doctor", () => {
   // Helper: create a mock tarball for testing
-  async function createMockTarball(version = "1.3.1"): Promise<string> {
+  async function createMockTarball(version = VERSION): Promise<string> {
     const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
     await fs.writeFile(tarballPath, "mock tarball content");
     return tarballPath;
@@ -1492,7 +1498,7 @@ describe("cli/formatResult", () => {
 
 describe("cli/main", () => {
   // Helper: create a mock tarball for testing
-  async function createMockTarball(version = "1.3.1"): Promise<string> {
+  async function createMockTarball(version = VERSION): Promise<string> {
     const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
     await fs.writeFile(tarballPath, "mock tarball content");
     return tarballPath;
