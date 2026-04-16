@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Full 5-category test coverage (HAPPY/BAD/CORNER/EDGE/PERF) for evaluate, workspace, and discovery modules
+- Performance benchmarks for evaluateWithEvent (<0.1ms p99), initWorkspace (<50ms), runDiscovery (<100ms)
+
+### Removed
+
+- Untested performance budgets from test-policy.ts: profileDetect10kMs, reasonLookupMs
+
+### Fixed
+
+- LSP errors in config.test.ts from removed budget references
+- Type error: PhaseInstructions.length → extractBaseInstructions().length
+
 ## [1.0.0] - 2026-04-16
 
 ### Features
@@ -29,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conventional commits validation (`.github/workflows/conventional-commits.yml`)
 - Architecture dependency boundary tests
 - CONTRIBUTING.md with development guidelines
-- **1164 Tests bestanden**
+- **1182 Tests bestanden**
 
 ## [0.9.0] - 2026-04-15
 
