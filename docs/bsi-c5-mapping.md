@@ -299,5 +299,5 @@ The following FlowGuard artifacts provide verifiable evidence for the mappings a
 ---
 
 *Reference: BSI C5:2020 — Cloud Computing Compliance Criteria Catalogue*
-*FlowGuard Version: 1.3.0*
+*FlowGuard Version: 1.3.1*
 *Last Updated: 2026-04-15*

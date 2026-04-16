@@ -33,8 +33,6 @@
  *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md, vendor/*.tgz
  *   merge-managed:  package.json, opencode.json
  *   user-owned:     AGENTS.md (never touched)
- *
- * @version v1.3.0
  */
 
 import { createHash } from "node:crypto";
@@ -452,9 +450,9 @@ export async function install(args: CliArgs): Promise<CliResult> {
     // 0. Validate --core-tarball is required
     if (!args.coreTarball) {
       errors.push(
-        "ERROR: --core-tarball is required.\n" +
-        "Usage: flowguard install --core-tarball /path/to/flowguard-core-1.3.0.tgz\n" +
-        "Download from: https://github.com/koeppben23/governed-runtime/releases"
+        `ERROR: --core-tarball is required.\n` +
+        `Usage: flowguard install --core-tarball /path/to/flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
+        `Download from: https://github.com/koeppben23/governed-runtime/releases`
       );
       return { target, ops, errors, warnings };
     }
@@ -1013,7 +1011,9 @@ export function formatDoctor(checks: DoctorCheck[]): string {
   return lines.join("\n");
 }
 
-const USAGE = `\
+function getUsage(): string {
+  const v = PACKAGE_VERSION();
+  return `\
 Usage: flowguard <command> [options]
 
 Commands:
@@ -1033,11 +1033,12 @@ Deprecated (still work):
   --mode X    → --policy-mode X
 
 Examples:
-  flowguard install --core-tarball /path/to/flowguard-core-1.3.0.tgz
-  flowguard install --core-tarball ./flowguard-core-1.3.0.tgz --install-scope repo --policy-mode regulated
+  flowguard install --core-tarball /path/to/flowguard-core-${v}.tgz
+  flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
   flowguard uninstall --install-scope global
   flowguard doctor
 `;
+}
 
 /**
  * CLI main entry point.
@@ -1047,7 +1048,7 @@ export async function main(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
 
   if (!parsed) {
-    console.log(USAGE);
+    console.log(getUsage());
     return 1;
   }
 

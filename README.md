@@ -2,7 +2,7 @@
 
 Deterministic, fail-closed workflow engine for AI-assisted software delivery.
 
-> **Version:** v1.3.0 | TypeScript | OpenCode-native
+> **Version:** 1.3.1 | TypeScript | OpenCode-native
 
 ---
 

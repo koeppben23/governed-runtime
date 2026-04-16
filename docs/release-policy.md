@@ -29,7 +29,7 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 | Version | Example | Meaning |
 |---------|---------|---------|
 | **Major** | 2.0.0 | Breaking changes — check release notes |
-| **Minor** | 1.3.0 | New features — test before production use |
+| **Minor** | 1.3.1 | New features — test before production use |
 | **Patch** | 1.3.1 | Bug fixes — typically compatible |
 
 ### Version Lifecycle
@@ -138,11 +138,11 @@ Organizations should maintain:
 ```
 /artifact-store/
 ├── flowguard-core-1.2.0.tgz
-├── flowguard-core-1.3.0.tgz
+├── flowguard-core-1.3.1.tgz
 ├── checksums.sha256
 └── release-notes/
     ├── v1.2.0.md
-    └── v1.3.0.md
+    └── 1.3.1.md
 ```
 
 ---
@@ -155,5 +155,5 @@ For release-related questions:
 
 ---
 
-*FlowGuard Version: 1.3.0*
+*FlowGuard Version: 1.3.1*
 *Last Updated: 2026-04-15*

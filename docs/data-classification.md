@@ -200,5 +200,5 @@ User Input → OpenCode → FlowGuard Tools → Session State → Audit Trail �
 
 ---
 
-*FlowGuard Version: 1.3.0*
+*FlowGuard Version: 1.3.1*
 *Last Updated: 2026-04-15*

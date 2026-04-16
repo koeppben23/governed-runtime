@@ -19,12 +19,16 @@
     "flowguard": "./dist/cli/install.js"
   },
   "scripts": {
-    "build": "tsc && npm run fix-esm",
+    "build": "npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
     "fix-esm": "node scripts/fix-esm-imports.js",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sync-version": "node scripts/sync-version.js",
+    "generate-docs": "node scripts/generate-docs.js",
+    "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
+    "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ && git commit -m 'chore: sync version from VERSION to package.json and docs'"
   },
   "engines": {
     "node": ">=20"

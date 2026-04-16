@@ -52,7 +52,7 @@ These properties are guaranteed by the implementation and cannot be circumvented
 
 ## Currently Delivered
 
-These features are available in FlowGuard 1.3.0.
+These features are available in FlowGuard 1.3.1.
 
 ### Workflow Engine
 
@@ -172,5 +172,5 @@ FlowGuard provides **building blocks** for regulated workflows:
 
 ---
 
-*FlowGuard Version: 1.3.0*
+*FlowGuard Version: 1.3.1*
 *Last Updated: 2026-04-15*
