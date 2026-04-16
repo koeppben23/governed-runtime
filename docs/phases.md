@@ -22,6 +22,88 @@ READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
 READY → REVIEW → REVIEW_COMPLETE
 ```
 
+## Flow Diagram
+
+```
+                              ┌──────────┐
+                              │ /hydrate │
+                              └────┬─────┘
+                                   │
+                                   ▼
+                              ┌──────────┐
+                              │  READY   │  ◄── Command-driven (no guards)
+                              └──┬──┬──┬─┘
+                   ┌─────────────┘  │  └─────────────┐
+                   │                │                 │
+              /ticket          /architecture       /review
+                   │                │                 │
+    ═══════════════╪════════   ════╪════════════   ══╪══════════════
+    TICKET FLOW    │          ARCH FLOW    │     REVIEW FLOW   │
+    ═══════════════╪════════   ════╪════════════   ══╪══════════════
+                   ▼                ▼                 ▼
+              ┌──────────┐    ┌──────────────┐   ┌──────────┐
+              │  TICKET  │    │ ARCHITECTURE │   │  REVIEW  │
+              └────┬─────┘    └──────┬───────┘   └────┬─────┘
+                   │  auto           │  self-review    │  auto
+                   ▼                 ▼  loop           ▼
+              ┌──────────┐    ┌──────────────┐   ┌────────────────┐
+              │   PLAN   │◄┐  │ ARCH_REVIEW  │   │REVIEW_COMPLETE │ ■
+              └────┬─────┘ │  └──┬───┬───┬───┘   └────────────────┘
+         self-     │       │     │   │   │
+         review    ▼       │     │   │   │ reject
+         loop ┌────────────┐     │   │   └──────► (READY)
+              │PLAN_REVIEW │     │   │
+              └─┬───┬───┬──┘     │   │ changes_requested
+                │   │   │        │   └──────► (ARCHITECTURE)
+                │   │   │        │
+     approve    │   │   │ reject │ approve
+                │   │   └──► (TICKET)
+                │   │                       ▼
+     changes_   │   │               ┌───────────────┐
+     requested  │   │               │ ARCH_COMPLETE  │ ■
+        ▼       │   │               └───────────────┘
+      (PLAN)    │   │                 ADR "accepted"
+                │   │                 MADR written
+                ▼   │
+           ┌────────────┐
+           │ VALIDATION │
+           └──┬─────┬───┘
+              │     │
+    ALL_PASSED│     │CHECK_FAILED
+              │     └──► (PLAN)
+              ▼
+      ┌────────────────┐
+      │IMPLEMENTATION  │
+      └───────┬────────┘
+              │  auto
+              ▼
+      ┌────────────────┐
+      │  IMPL_REVIEW   │ ◄── self-review loop
+      └───────┬────────┘
+              │  auto (converged)
+              ▼
+      ┌────────────────┐
+      │EVIDENCE_REVIEW │
+      └─┬─────┬────┬───┘
+        │     │    │
+approve │     │    │ reject
+        │     │    └──► (TICKET)
+        │     │
+        │  changes_requested
+        │     └──► (IMPLEMENTATION)
+        ▼
+   ┌──────────┐
+   │ COMPLETE  │ ■
+   └──────────┘
+```
+
+| Symbol | Meaning |
+|--------|---------|
+| `■` | Terminal phase (session complete, `/archive` available) |
+| `◄` / `►` | Backward transition (changes_requested / reject / CHECK_FAILED) |
+| `self-review loop` | LLM reviews own output iteratively (digest-stop / max iterations) |
+| `auto` | Automatic transition without user intervention |
+
 ## Phase Reference
 
 ### Shared Entry Point

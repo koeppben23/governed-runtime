@@ -48,6 +48,64 @@ After hydration, choose one of three flows:
 /review
 ```
 
+### Flow Overview
+
+```
+                         ┌──────────┐
+                         │ /hydrate │
+                         └────┬─────┘
+                              │
+                         ┌────▼────┐
+                         │  READY  │
+                         └┬───┬───┬┘
+              ┌───────────┘   │   └───────────┐
+         /ticket         /architecture     /review
+              │               │               │
+              ▼               ▼               ▼
+         ┌────────┐    ┌─────────────┐   ┌────────┐
+         │ TICKET │    │ARCHITECTURE │   │ REVIEW │
+         └───┬────┘    └──────┬──────┘   └───┬────┘
+             ▼          self- ▼ review        ▼
+         ┌────────┐    ┌─────────────┐   ┌────────────────┐
+         │  PLAN  │◄┐  │ ARCH_REVIEW │   │REVIEW_COMPLETE │ ■
+         └───┬────┘ │  └──┬──┬──┬────┘   └────────────────┘
+   self-     ▼      │     │  │  └──► READY (reject)
+   review┌──────────┤  ◄──┘  └──► ARCHITECTURE
+    loop │PLAN_     │  approve     (changes_requested)
+         │REVIEW    │     ▼
+         └┬──┬──┬───┘  ┌───────────────┐
+          │  │  └──► TICKET (reject)
+          │  │      │  │ ARCH_COMPLETE  │ ■
+   approve│  └──► PLAN └───────────────┘
+          ▼  (changes_requested)
+     ┌────────────┐
+     │ VALIDATION │
+     └──┬─────┬───┘
+        │     └──► PLAN (CHECK_FAILED)
+        ▼
+  ┌────────────────┐
+  │IMPLEMENTATION  │
+  └───────┬────────┘
+          ▼
+  ┌────────────────┐
+  │  IMPL_REVIEW   │ ◄── self-review loop
+  └───────┬────────┘
+          ▼
+  ┌────────────────┐
+  │EVIDENCE_REVIEW │
+  └─┬─────┬────┬───┘
+    │     │    └──► TICKET (reject)
+    │     └──► IMPLEMENTATION (changes_requested)
+    ▼
+ ┌──────────┐
+ │ COMPLETE │ ■
+ └──────────┘
+
+■ = Terminal   ◄ = Backward transition   ► = Reject/revise path
+```
+
+See [docs/phases.md](./docs/phases.md) for full phase details.
+
 ---
 
 ## Features
