@@ -261,6 +261,66 @@ describe("redaction/export-redaction", () => {
         expect(r.rationale).toBe("[REDACTED]");
       });
     });
+
+    it("sensitive patterns (emails, IPs, API keys) in rationale are redacted", () => {
+      const input = {
+        receipts: [{
+          decidedBy: "alice@example.com",
+          rationale: "Approved for prod. API key: sk-abc123xyz. IP 192.168.1.42. User: /home/alice",
+        }],
+      };
+      const out = redactDecisionReceipts(input, "basic") as Record<string, unknown>;
+      const r = (out.receipts[0] as Record<string, unknown>);
+      expect(r.decidedBy).toBe("[REDACTED]");
+      expect(r.rationale).toBe("[REDACTED]");
+      expect(String(r.decidedBy)).not.toContain("alice");
+      expect(String(r.rationale)).not.toContain("sk-abc123xyz");
+    });
+
+    it("strict mode: no raw value leaks through in any field", () => {
+      const raw = {
+        receipts: [{
+          decidedBy: "bob@secret.io",
+          rationale: "Token: ghp_VERYLONGSECRET1234567890abcdef",
+        }],
+      };
+      const out = redactDecisionReceipts(raw, "strict") as Record<string, unknown>;
+      const r = (out.receipts[0] as Record<string, unknown>);
+      const decidedByStr = String(r.decidedBy);
+      const rationaleStr = String(r.rationale);
+      expect(decidedByStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(rationaleStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(decidedByStr).not.toContain("bob");
+      expect(rationaleStr).not.toContain("ghp_");
+    });
+
+    it("decisionId and other non-sensitive fields are preserved", () => {
+      const input = {
+        receipts: [{
+          decisionId: "DEC-999",
+          decidedBy: "alice",
+          rationale: "ok",
+          nonSensitiveField: "kept as-is",
+          timestamp: "2026-04-17",
+        }],
+      };
+      const out = redactDecisionReceipts(input, "basic") as Record<string, unknown>;
+      const r = (out.receipts[0] as Record<string, unknown>);
+      expect(r.decisionId).toBe("DEC-999");
+      expect(r.nonSensitiveField).toBe("kept as-is");
+      expect(r.timestamp).toBe("2026-04-17");
+    });
+
+    it("deep copy safety: original nested objects are never mutated", () => {
+      const input = {
+        receipts: [{ decidedBy: "alice", rationale: "original" }],
+        completeness: { fourEyes: { initiatedBy: "bob", detail: "lgtm" } },
+      };
+      const snapshot = JSON.stringify(input);
+      redactDecisionReceipts(input, "basic");
+      redactReviewReport(input, "basic");
+      expect(JSON.stringify(input)).toBe(snapshot);
+    });
   });
 
   // ─── PERF ───────────────────────────────────────────────────────────────

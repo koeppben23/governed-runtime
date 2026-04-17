@@ -935,6 +935,31 @@ describe("verifyArchive", () => {
       expect.objectContaining({ code: "archive_checksum_missing", severity: "warning" }),
     );
   });
+
+  it("reports archive_checksum_mismatch when sidecar hash is wrong", async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    const wrongChecksum = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    await fs.writeFile(`${archivePath}.sha256`, `${wrongChecksum}  archive.tar.gz\n`, "utf-8");
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "archive_checksum_mismatch", severity: "error" }),
+    );
+  });
+
+  it("reports archive_checksum_missing when sidecar file is absent", async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    await fs.unlink(`${archivePath}.sha256`);
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: "archive_checksum_missing", severity: "warning" }),
+    );
+  });
 });
 
 // =============================================================================
@@ -1092,6 +1117,52 @@ describe("EDGE", () => {
 
       const archivePath = await archiveSession(fingerprint, sessionId);
       expect(archivePath).toContain(".tar.gz");
+    });
+
+    it("succeeds with missing audit.jsonl (no decisions recorded)", async () => {
+      const worktree = path.resolve(".");
+      const sessionId = "edge-no-audit";
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain(".tar.gz");
+
+      const stats = await fs.stat(archivePath);
+      expect(stats.size).toBeGreaterThan(0);
+    });
+
+    it("succeeds with corrupt audit.jsonl (malformed lines skipped, no receipts)", async () => {
+      const worktree = path.resolve(".");
+      const sessionId = "edge-corrupt-audit";
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+      await fs.writeFile(path.join(sessDir, "audit.jsonl"), "NOT JSON{{{\nALSO BAD{{{", "utf-8");
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain(".tar.gz");
+
+      const receipts = JSON.parse(await fs.readFile(path.join(sessDir, "decision-receipts.v1.json"), "utf-8"));
+      expect(receipts.count).toBe(0);
+      expect(receipts.receipts).toHaveLength(0);
+    });
+
+    it("succeeds with corrupt config.json in workspace (falls back to defaults)", async () => {
+      const worktree = path.resolve(".");
+      const sessionId = "edge-corrupt-config";
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+      const wsDir = workspaceDir(fingerprint);
+
+      await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+      await fs.writeFile(path.join(wsDir, "config.json"), "{invalid{{{", "utf-8");
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain(".tar.gz");
+
+      const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+      expect(manifest.redactionMode).toBe("basic");
     });
   });
 });
