@@ -328,7 +328,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
       if (state?.policySnapshot) {
         const policy = policyFromSnapshot(state.policySnapshot);
         log.debug("policy", "resolved session policy", {
-          requestedMode: state.policySnapshot.requestedMode ?? state.policySnapshot.mode,
+          requestedMode: state.policySnapshot.requestedMode,
           effectiveMode: state.policySnapshot.mode,
         });
         return { policy, state };
@@ -561,7 +561,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
               ? `${
                 typeof parsed?.policyResolution === "object"
                   ? `requested_mode:${String((parsed.policyResolution as Record<string, unknown>).requestedMode ?? "unknown")};effective_mode:${String((parsed.policyResolution as Record<string, unknown>).effectiveMode ?? state?.policySnapshot.mode ?? policy.mode)};effective_gate_behavior:${String((parsed.policyResolution as Record<string, unknown>).effectiveGateBehavior ?? state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"))};reason:${String((parsed.policyResolution as Record<string, unknown>).reason ?? state?.policySnapshot.degradedReason ?? "none")}`
-                  : `requested_mode:${state?.policySnapshot.requestedMode ?? state?.policySnapshot.mode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve")};reason:${state?.policySnapshot.degradedReason ?? "none"}`
+                  : `requested_mode:${state?.policySnapshot.requestedMode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve")};reason:${state?.policySnapshot.degradedReason ?? "none"}`
               }`
               : undefined;
 

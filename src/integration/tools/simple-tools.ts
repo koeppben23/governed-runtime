@@ -28,6 +28,7 @@ import {
 import type { SessionState } from "../../state/schema";
 import { evaluate } from "../../machine/evaluate";
 import { isCommandAllowed, Command } from "../../machine/commands";
+import { TERMINAL } from "../../machine/topology";
 
 // Rails
 import { executeTicket } from "../../rails/ticket";
@@ -452,8 +453,7 @@ export const archive: ToolDefinition = {
         return formatBlocked("NO_SESSION");
       }
 
-      const TERMINAL_PHASES = new Set(["COMPLETE", "ARCH_COMPLETE", "REVIEW_COMPLETE"]);
-      if (!TERMINAL_PHASES.has(state.phase)) {
+      if (!TERMINAL.has(state.phase)) {
         return formatBlocked("COMMAND_NOT_ALLOWED", {
           command: "/archive",
           phase: state.phase,

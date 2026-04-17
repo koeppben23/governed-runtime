@@ -171,7 +171,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     code: "WRONG_PHASE",
     category: "admissibility",
     messageTemplate:
-      "Review verdict is only accepted in IMPL_REVIEW phase (current: {phase})",
+      "Command is not valid in the current phase (current: {phase})",
     recoverySteps: ["Check the current phase with flowguard_status"],
   },
 

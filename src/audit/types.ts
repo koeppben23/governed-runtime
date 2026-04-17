@@ -24,6 +24,7 @@
 
 import * as crypto from "node:crypto";
 import type { Phase, Event } from "../state/schema";
+import type { ReviewVerdict } from "../state/evidence";
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export interface DecisionDetail {
   decisionId: string;
   decisionSequence: number;
   gatePhase: Phase;
-  verdict: "approve" | "changes_requested" | "reject";
+  verdict: ReviewVerdict;
   rationale: string;
   decidedBy: string;
   decidedAt: string;

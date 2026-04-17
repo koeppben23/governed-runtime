@@ -107,7 +107,7 @@ The IDM domain covers identity management, access control, and separation of dut
 - Self-approval is blocked in Regulated mode (`allowSelfApproval: false`)
 - Initiator and reviewer identities are tracked in session state and audit trail
 - 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in Team and Regulated modes
-- `FOUR_EYES_VIOLATION` reason code blocks progress when the principle is violated
+- `SELF_APPROVAL_FORBIDDEN` reason code blocks progress when the principle is violated
 
 **Policy Enforcement:**
 - Policy mode is set at session creation and governs all subsequent transitions

@@ -17,6 +17,7 @@
  */
 
 import type { Phase, SessionState } from "../state/schema";
+import { isConverged } from "./guards";
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
 
@@ -92,11 +93,7 @@ export function resolveNextAction(phase: Phase, state: SessionState): NextAction
 
     case "PLAN":
       if (state.selfReview !== null) {
-        const { iteration, maxIterations, revisionDelta, verdict } = state.selfReview;
-        const converged =
-          iteration >= maxIterations ||
-          (revisionDelta === "none" && verdict === "approve");
-        if (converged) {
+        if (isConverged(state.selfReview)) {
           return {
             code: ACTION_CODES.RUN_CONTINUE,
             text: "Plan converged. Run /continue to advance to review",
@@ -181,11 +178,7 @@ export function resolveNextAction(phase: Phase, state: SessionState): NextAction
         };
       }
       if (state.selfReview !== null) {
-        const { iteration, maxIterations, revisionDelta, verdict } = state.selfReview;
-        const converged =
-          iteration >= maxIterations ||
-          (revisionDelta === "none" && verdict === "approve");
-        if (converged) {
+        if (isConverged(state.selfReview)) {
           return {
             code: ACTION_CODES.RUN_CONTINUE,
             text: "ADR self-review converged. Run /continue to advance to review",

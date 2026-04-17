@@ -39,20 +39,34 @@ export const hasPlanReady: GuardFn = (s) =>
   s.ticket !== null && s.plan !== null;
 
 /**
- * Self-review loop converged.
- * Convergence condition (digest-stop):
- *   iteration >= maxIterations
- *   OR (revisionDelta === "none" AND verdict === "approve")
+ * Convergence predicate for review loops (digest-stop).
  *
+ * Converged when:
+ *   iteration >= maxIterations (force-convergence)
+ *   OR (revisionDelta === "none" AND verdict === "approve") (stable approval)
+ *
+ * Structural interface — works with SelfReviewLoop, ImplReviewResult,
+ * or any object with the required shape. No type imports needed.
+ */
+export function isConverged(review: {
+  readonly iteration: number;
+  readonly maxIterations: number;
+  readonly revisionDelta: string;
+  readonly verdict: string;
+}): boolean {
+  return (
+    review.iteration >= review.maxIterations ||
+    (review.revisionDelta === "none" && review.verdict === "approve")
+  );
+}
+
+/**
+ * Self-review loop converged.
  * Used by both PLAN and ARCHITECTURE phases.
  */
 export const selfReviewMet: GuardFn = (s) => {
   if (s.selfReview === null) return false;
-  const { iteration, maxIterations, revisionDelta, verdict } = s.selfReview;
-  return (
-    iteration >= maxIterations ||
-    (revisionDelta === "none" && verdict === "approve")
-  );
+  return isConverged(s.selfReview);
 };
 
 /** Self-review loop still iterating. Used by both PLAN and ARCHITECTURE phases. */
@@ -88,11 +102,7 @@ export const implComplete: GuardFn = (s) =>
  */
 export const implReviewMet: GuardFn = (s) => {
   if (s.implReview === null) return false;
-  const { iteration, maxIterations, revisionDelta, verdict } = s.implReview;
-  return (
-    iteration >= maxIterations ||
-    (revisionDelta === "none" && verdict === "approve")
-  );
+  return isConverged(s.implReview);
 };
 
 /** Implementation review loop still iterating. */

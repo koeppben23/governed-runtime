@@ -10,6 +10,7 @@ import {
   implReviewMet,
   implReviewPending,
   reviewDone,
+  isConverged,
   GUARDS,
 } from "../machine/guards";
 import type { Phase } from "../state/schema";
@@ -69,6 +70,26 @@ describe("guards", () => {
 
     it("reviewDone fires when phase is REVIEW", () => {
       expect(reviewDone(makeState("REVIEW"))).toBe(true);
+    });
+
+    it("isConverged returns true on iteration limit", () => {
+      expect(isConverged({ iteration: 3, maxIterations: 3, revisionDelta: "major", verdict: "changes_requested" })).toBe(true);
+    });
+
+    it("isConverged returns true on digest-stop (none + approve)", () => {
+      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "none", verdict: "approve" })).toBe(true);
+    });
+
+    it("isConverged returns false when still iterating", () => {
+      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "minor", verdict: "changes_requested" })).toBe(false);
+    });
+
+    it("isConverged returns false on none + changes_requested (no approval)", () => {
+      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "none", verdict: "changes_requested" })).toBe(false);
+    });
+
+    it("isConverged returns false on approve + major (still changing)", () => {
+      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "major", verdict: "approve" })).toBe(false);
     });
   });
 

@@ -102,6 +102,8 @@ beforeEach(async () => {
       mode: "team",
       hash: "test-policy-hash",
       resolvedAt: new Date().toISOString(),
+      requestedMode: "team",
+      effectiveGateBehavior: "human_gated",
       requireHumanGates: true,
       maxSelfReviewIterations: 3,
       maxImplReviewIterations: 3,
@@ -111,6 +113,7 @@ beforeEach(async () => {
         emitToolCalls: true,
         enableChainHash: true,
       },
+      actorClassification: { flowguard_decision: "human" },
     },
   });
   await writeState(sessDir, state);
@@ -285,6 +288,8 @@ describe("plugin-integration", () => {
           mode: "team",
           hash: "test-policy-hash",
           resolvedAt: new Date().toISOString(),
+          requestedMode: "team",
+          effectiveGateBehavior: "human_gated",
           requireHumanGates: true,
           maxSelfReviewIterations: 3,
           maxImplReviewIterations: 3,
@@ -294,6 +299,7 @@ describe("plugin-integration", () => {
             emitToolCalls: true,
             enableChainHash: true,
           },
+          actorClassification: { flowguard_decision: "human" },
         },
       });
 
@@ -565,6 +571,8 @@ describe("plugin-integration", () => {
           mode: "solo",
           hash: "solo-hash",
           resolvedAt: new Date().toISOString(),
+          requestedMode: "solo",
+          effectiveGateBehavior: "auto_approve",
           requireHumanGates: false,
           maxSelfReviewIterations: 1,
           maxImplReviewIterations: 1,
@@ -574,6 +582,7 @@ describe("plugin-integration", () => {
             emitToolCalls: true,
             enableChainHash: false,
           },
+          actorClassification: { flowguard_decision: "system" },
         },
       });
       await writeState(sessDir, soloState);
@@ -628,6 +637,8 @@ describe("plugin-integration", () => {
           mode: "team",
           hash: "custom-hash",
           resolvedAt: new Date().toISOString(),
+          requestedMode: "team",
+          effectiveGateBehavior: "human_gated",
           requireHumanGates: true,
           maxSelfReviewIterations: 3,
           maxImplReviewIterations: 3,
@@ -637,6 +648,7 @@ describe("plugin-integration", () => {
             emitToolCalls: false, // snapshot says false...
             enableChainHash: true,
           },
+          actorClassification: { flowguard_decision: "human" },
         },
       });
       await writeState(sessDir, customState);
@@ -779,6 +791,8 @@ describe("plugin-integration", () => {
           mode: "team",
           hash: "test-policy-hash",
           resolvedAt: new Date().toISOString(),
+          requestedMode: "team",
+          effectiveGateBehavior: "human_gated",
           requireHumanGates: true,
           maxSelfReviewIterations: 3,
           maxImplReviewIterations: 3,
@@ -788,6 +802,7 @@ describe("plugin-integration", () => {
             emitToolCalls: true,
             enableChainHash: true,
           },
+          actorClassification: { flowguard_decision: "human" },
         },
       });
       await writeState(sessDir2, state2);

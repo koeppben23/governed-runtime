@@ -9,6 +9,7 @@ import {
   resolvePolicyWithContext,
   policyModes,
   createPolicySnapshot,
+  policyFromSnapshot,
 } from "../config/policy";
 import {
   ProfileRegistry,
@@ -139,6 +140,7 @@ describe("config/policy", () => {
       expect(snap.maxImplReviewIterations).toBe(3);
       expect(snap.allowSelfApproval).toBe(false);
       expect(snap.audit.enableChainHash).toBe(true);
+      expect(snap.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
     });
 
     it("different policies produce different hashes", () => {
@@ -146,6 +148,38 @@ describe("config/policy", () => {
       const solo = createPolicySnapshot(SOLO_POLICY, "2026-01-01T00:00:00.000Z", digest);
       const team = createPolicySnapshot(TEAM_POLICY, "2026-01-01T00:00:00.000Z", digest);
       expect(solo.hash).not.toBe(team.hash);
+    });
+
+    it("policyFromSnapshot reconstructs actorClassification from snapshot only", () => {
+      const digest = (s: string) => `hash-${s.length}`;
+      const snap = createPolicySnapshot(REGULATED_POLICY, "2026-01-01T00:00:00.000Z", digest);
+      const reconstructed = policyFromSnapshot(snap);
+      expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
+      expect(reconstructed.actorClassification).toEqual(snap.actorClassification);
+    });
+
+    it("policyFromSnapshot uses snapshot fields exclusively — no preset leak", () => {
+      const digest = (s: string) => `hash-${s.length}`;
+      // Create a snapshot with modified actorClassification
+      const snap = {
+        ...createPolicySnapshot(TEAM_POLICY, "2026-01-01T00:00:00.000Z", digest),
+        actorClassification: { custom_tool: "auditor" },
+      };
+      const reconstructed = policyFromSnapshot(snap);
+      // Must use snapshot value, not preset
+      expect(reconstructed.actorClassification).toEqual({ custom_tool: "auditor" });
+    });
+
+    it("snapshot includes requestedMode and effectiveGateBehavior", () => {
+      const digest = (s: string) => `hash-${s.length}`;
+      const snap = createPolicySnapshot(TEAM_POLICY, "2026-01-01T00:00:00.000Z", digest, {
+        requestedMode: "team-ci",
+        effectiveGateBehavior: "human_gated",
+        degradedReason: "ci_context_missing",
+      });
+      expect(snap.requestedMode).toBe("team-ci");
+      expect(snap.effectiveGateBehavior).toBe("human_gated");
+      expect(snap.degradedReason).toBe("ci_context_missing");
     });
   });
 

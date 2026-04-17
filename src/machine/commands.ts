@@ -14,6 +14,7 @@
  */
 
 import type { Phase } from "../state/schema";
+import { TERMINAL } from "./topology";
 
 // ─── Command Enum ─────────────────────────────────────────────────────────────
 
@@ -80,13 +81,6 @@ const MUTATING: ReadonlySet<Command> = new Set<Command>([
   Command.ABORT,
 ]);
 
-/** Terminal phases that block all mutating commands. */
-const TERMINALS: ReadonlySet<Phase> = new Set<Phase>([
-  "COMPLETE",
-  "ARCH_COMPLETE",
-  "REVIEW_COMPLETE",
-]);
-
 // ─── Admissibility Check ──────────────────────────────────────────────────────
 
 /**
@@ -99,7 +93,7 @@ const TERMINALS: ReadonlySet<Phase> = new Set<Phase>([
  */
 export function isCommandAllowed(phase: Phase, command: Command): boolean {
   // Rule 1: Terminal — only non-mutating commands (none currently)
-  if (TERMINALS.has(phase) && MUTATING.has(command)) {
+  if (TERMINAL.has(phase) && MUTATING.has(command)) {
     return false;
   }
 

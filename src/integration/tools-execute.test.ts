@@ -258,6 +258,61 @@ describe("hydrate", () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
     });
+
+    /**
+     * Rehydrate fail-closed: legacy session-state.json on disk with missing
+     * required snapshot fields must cause /hydrate to return an error.
+     *
+     * Proves the end-to-end path: file on disk → readState() → Zod reject →
+     * PersistenceError → formatError → { error: true }.
+     *
+     * This is the "no Legacy" proof the reviewer requires.
+     */
+    async function corruptSnapshotField(field: string): Promise<Record<string, unknown>> {
+      // 1. Create a valid session via /hydrate
+      await hydrateSession();
+
+      // 2. Locate session dir on disk
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import("../adapters/workspace");
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+      // 3. Read valid state, strip the required field, write raw JSON
+      //    (bypasses writeState validation — simulates legacy file on disk)
+      const state = await readState(sessDir);
+      const raw = JSON.parse(JSON.stringify(state));
+      delete raw.policySnapshot[field];
+      await fs.writeFile(
+        `${sessDir}/session-state.json`,
+        JSON.stringify(raw),
+      );
+
+      // 4. Re-hydrate the same session — readState must reject
+      const output = await hydrate.execute(
+        { policyMode: "solo", profileId: "baseline" },
+        ctx,
+      );
+      return parseToolResult(output);
+    }
+
+    it("rehydrate rejects legacy snapshot missing actorClassification", async () => {
+      const result = await corruptSnapshotField("actorClassification");
+      expect(result.error).toBe(true);
+      expect(result.message).toMatch(/actorClassification/);
+    });
+
+    it("rehydrate rejects legacy snapshot missing effectiveGateBehavior", async () => {
+      const result = await corruptSnapshotField("effectiveGateBehavior");
+      expect(result.error).toBe(true);
+      expect(result.message).toMatch(/effectiveGateBehavior/);
+    });
+
+    it("rehydrate rejects legacy snapshot missing requestedMode", async () => {
+      const result = await corruptSnapshotField("requestedMode");
+      expect(result.error).toBe(true);
+      expect(result.message).toMatch(/requestedMode/);
+    });
   });
 
   describe("CORNER", () => {

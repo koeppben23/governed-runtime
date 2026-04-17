@@ -382,19 +382,19 @@ export function createPolicySnapshot(
       emitToolCalls: policy.audit.emitToolCalls,
       enableChainHash: policy.audit.enableChainHash,
     },
+    actorClassification: { ...policy.actorClassification },
   };
 }
 
 /**
  * Reconstruct an executable policy from a frozen policy snapshot.
  *
- * Snapshot fields are authoritative for gate behavior and audit emission.
- * Actor classification comes from the policy preset for the snapshot mode.
+ * Snapshot fields are the sole authority. No preset fallback.
+ * All governance-critical fields including actorClassification
+ * are read exclusively from the snapshot.
  */
 export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
-  const preset = POLICIES[snapshot.mode] ?? TEAM_POLICY;
   return {
-    ...preset,
     mode: snapshot.mode as PolicyMode,
     requireHumanGates: snapshot.requireHumanGates,
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
@@ -405,5 +405,6 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
     },
+    actorClassification: { ...snapshot.actorClassification },
   };
 }

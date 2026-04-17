@@ -17,10 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/architecture` now auto-generates ADR IDs (`ADR-001`, `ADR-002`, ...) from session-local counter state
 - Export redaction support for archive artifacts (`mode: none|basic|strict`, default `basic`, `includeRaw=false`)
 - Bounded heuristic `code-surface-analysis` collector (endpoint/auth/data/integration hints with confidence + evidence)
+- `isConverged()` — shared convergence predicate for review loops, eliminating logic duplication between guards and next-action
+
+### Changed
+
+- **BREAKING:** `PolicySnapshotSchema` now requires `actorClassification`, `requestedMode`, and `effectiveGateBehavior` fields. Sessions with policy snapshots missing these fields are invalid and will fail on re-hydration. This is a deliberate hard break to restore single-authority snapshot semantics — no backward-compat fallback, no re-derivation from presets.
+- `policyFromSnapshot()` now reconstructs policies exclusively from snapshot fields. No preset fallback. The snapshot is the sole authority.
+- Terminal phase set (`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`) is now defined once in `topology.ts` and imported by `commands.ts` and `simple-tools.ts`. Eliminates triple-definition drift risk.
+- `DecisionDetail.verdict` in `audit/types.ts` now uses the `ReviewVerdict` type from `state/evidence.ts` instead of an inline string union.
+- `WRONG_PHASE` reason message corrected from stale "IMPL_REVIEW" reference to generic "current phase" wording.
 
 ### Removed
 
 - Untested performance budgets from test-policy.ts: profileDetect10kMs, reasonLookupMs
+- Backward-compat `??` fallback chains for `requestedMode` and `effectiveGateBehavior` in hydrate and plugin modules
+- Local terminal phase set definitions in `commands.ts` and `simple-tools.ts`
 
 ### Fixed
 
@@ -32,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed stale architecture command/test surfaces requiring user-provided ADR IDs
 - Archive export is now fail-closed when redaction is enabled and redaction input is invalid
 - Archive manifests now record redaction metadata (`redactionMode`, `rawIncluded`, `redactedArtifacts`, `excludedFiles`, `riskFlags`)
+- `FOUR_EYES_VIOLATION` → `SELF_APPROVAL_FORBIDDEN` in documentation (matches actual reason code in code)
+- Discovery collector count corrected from "5 collectors" to "6 collectors" in product identity
 
 ## [1.0.0] - 2026-04-16
 

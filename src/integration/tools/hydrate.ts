@@ -187,15 +187,14 @@ export const hydrate: ToolDefinition = {
         fingerprint,
         policyMode: existing ? existing.policySnapshot.mode : policyResolution.effectiveMode,
         requestedPolicyMode: existing
-          ? ((existing.policySnapshot.requestedMode ?? existing.policySnapshot.mode) as
+          ? existing.policySnapshot.requestedMode as
               | "solo"
               | "team"
               | "team-ci"
-              | "regulated")
+              | "regulated"
           : policyResolution.requestedMode,
         effectiveGateBehavior: existing
-          ? (existing.policySnapshot.effectiveGateBehavior
-              ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"))
+          ? existing.policySnapshot.effectiveGateBehavior
           : policyResolution.effectiveGateBehavior,
         policyDegradedReason: existing
           ? (existing.policySnapshot.degradedReason as "ci_context_missing" | undefined)

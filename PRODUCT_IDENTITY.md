@@ -54,7 +54,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced
-- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation
+- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
 
@@ -222,7 +222,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **5. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
 | **6. Logging** | Structured logging (logger interface + factories) | `logging/logger.ts` |
 | **7. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
-| **8. Discovery** | Repo discovery (5 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
+| **8. Discovery** | Repo discovery (6 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
 | **9. Archive** | Archive manifest types, verification | `archive/types.ts` |
 | **10. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
 | **11. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
@@ -296,7 +296,7 @@ Critical boundaries validate and fail closed:
 When the platform cannot proceed, it emits explicit blocked outcomes with specific codes:
 - `COMMAND_NOT_ALLOWED` — command not valid in current phase
 - `MISSING_SESSION_ID` — no session context available
-- `FOUR_EYES_VIOLATION` — reviewer same as initiator in regulated mode
+- `SELF_APPROVAL_FORBIDDEN` — reviewer same as initiator in regulated mode
 - `VALIDATION_INCOMPLETE` — not all checks passed
 - `EMPTY_PLAN` — plan text is empty
 - And 30+ more reason codes with recovery guidance

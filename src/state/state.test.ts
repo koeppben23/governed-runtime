@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { z } from "zod";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   CheckId,
   ReviewVerdict,
@@ -22,6 +25,7 @@ import {
 import { Phase, Event, Transition, SessionState } from "../state/schema";
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from "../__fixtures__";
 import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
+import { readState } from "../adapters/persistence";
 
 describe("state schemas", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -167,6 +171,54 @@ describe("state schemas", () => {
       const state = { ...makeState("TICKET"), schemaVersion: "v2" };
       expect(() => SessionState.parse(state)).toThrow();
     });
+
+    it("PolicySnapshotSchema rejects snapshot missing actorClassification", () => {
+      const snapshot = {
+        mode: "team",
+        hash: "abc",
+        resolvedAt: FIXED_TIME,
+        requestedMode: "team",
+        effectiveGateBehavior: "human_gated",
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it("PolicySnapshotSchema rejects snapshot missing requestedMode", () => {
+      const snapshot = {
+        mode: "team",
+        hash: "abc",
+        resolvedAt: FIXED_TIME,
+        effectiveGateBehavior: "human_gated",
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: "human" },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it("PolicySnapshotSchema rejects snapshot missing effectiveGateBehavior", () => {
+      const snapshot = {
+        mode: "team",
+        hash: "abc",
+        resolvedAt: FIXED_TIME,
+        requestedMode: "team",
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: "human" },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -250,6 +302,8 @@ describe("state schemas", () => {
         mode: "team",
         hash: "abc",
         resolvedAt: FIXED_TIME,
+        requestedMode: "team",
+        effectiveGateBehavior: "human_gated",
         requireHumanGates: true,
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
@@ -258,6 +312,9 @@ describe("state schemas", () => {
           emitTransitions: true,
           emitToolCalls: true,
           enableChainHash: true,
+        },
+        actorClassification: {
+          flowguard_decision: "human",
         },
       };
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
@@ -275,6 +332,54 @@ describe("state schemas", () => {
         findings: [],
         overallStatus: "clean",
       })).not.toThrow();
+    });
+  });
+
+  // ─── REHYDRATE (persistence-level fail-closed) ─────────────
+  describe("REHYDRATE", () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fg-rehydrate-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
+
+    /**
+     * Build a valid SessionState JSON, then remove a snapshot field.
+     * Written as raw JSON to bypass writeState validation.
+     */
+    function legacyStateWithout(field: string): string {
+      const state = makeState("TICKET");
+      const raw = JSON.parse(JSON.stringify(state));
+      delete raw.policySnapshot[field];
+      return JSON.stringify(raw);
+    }
+
+    it("readState rejects legacy snapshot missing actorClassification", async () => {
+      await fs.writeFile(
+        path.join(tmpDir, "session-state.json"),
+        legacyStateWithout("actorClassification"),
+      );
+      await expect(readState(tmpDir)).rejects.toThrow(/Zod validation.*actorClassification|actorClassification.*Required/s);
+    });
+
+    it("readState rejects legacy snapshot missing effectiveGateBehavior", async () => {
+      await fs.writeFile(
+        path.join(tmpDir, "session-state.json"),
+        legacyStateWithout("effectiveGateBehavior"),
+      );
+      await expect(readState(tmpDir)).rejects.toThrow(/Zod validation.*effectiveGateBehavior|effectiveGateBehavior.*Required/s);
+    });
+
+    it("readState rejects legacy snapshot missing requestedMode", async () => {
+      await fs.writeFile(
+        path.join(tmpDir, "session-state.json"),
+        legacyStateWithout("requestedMode"),
+      );
+      await expect(readState(tmpDir)).rejects.toThrow(/Zod validation.*requestedMode|requestedMode.*Required/s);
     });
   });
 

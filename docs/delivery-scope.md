@@ -85,7 +85,7 @@ These features are available in FlowGuard 1.0.0.
 | **Project installation** | Delivered | `.opencode/` |
 | **Pre-built distribution** | Delivered | `.tgz` artifact |
 | **Offline resolution** | Delivered | `file:`-based dependencies |
-| **5-collector discovery** | Delivered | Repo metadata, stack, topology, surface, domain |
+| **6-collector discovery** | Delivered | Repo metadata, stack, topology, surface, domain, code-surface analysis |
 
 ---
 

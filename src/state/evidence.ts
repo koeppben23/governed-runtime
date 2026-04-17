@@ -254,9 +254,9 @@ export const PolicySnapshotSchema = z.object({
   /** When the policy was resolved and frozen. */
   resolvedAt: z.string().datetime(),
   /** Original requested policy mode at hydrate time. */
-  requestedMode: z.string().optional(),
+  requestedMode: z.string(),
   /** Effective gate behavior after mode resolution. */
-  effectiveGateBehavior: z.enum(["auto_approve", "human_gated"]).optional(),
+  effectiveGateBehavior: z.enum(["auto_approve", "human_gated"]),
   /** Why requested mode was degraded (if applicable). */
   degradedReason: z.string().optional(),
 
@@ -270,6 +270,12 @@ export const PolicySnapshotSchema = z.object({
     emitToolCalls: z.boolean(),
     enableChainHash: z.boolean(),
   }),
+  /**
+   * Actor classification map — frozen copy from policy preset.
+   * Maps tool names to actor labels for the audit trail.
+   * Tools not listed default to "system" at runtime.
+   */
+  actorClassification: z.record(z.string(), z.string()),
 });
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 

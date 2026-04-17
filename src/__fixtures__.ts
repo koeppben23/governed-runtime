@@ -43,6 +43,8 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   mode: "team",
   hash: "policy-hash-team",
   resolvedAt: FIXED_TIME,
+  requestedMode: "team",
+  effectiveGateBehavior: "human_gated",
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -51,6 +53,9 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
+  },
+  actorClassification: {
+    flowguard_decision: "human",
   },
 };
 
