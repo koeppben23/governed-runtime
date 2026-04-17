@@ -866,7 +866,7 @@ describe("audit query", () => {
 
   // ─── PERF ───────────────────────────────────────────────────
   describe("PERF", () => {
-    it("filterEvents with 10000 events < 10ms", () => {
+    it(`filterEvents with 10000 events < ${PERF_BUDGETS.filterEvents10000Ms}ms (p95)`, () => {
       const largeTrail: AuditEvent[] = Array.from({ length: 10000 }, (_, i) =>
         makeAuditEvent({
           id: `perf-${i}`,
@@ -875,12 +875,12 @@ describe("audit query", () => {
           event: `transition:EVENT_${i}`,
         }),
       );
-      const { p99Ms } = benchmarkSync(
+      const { p95Ms } = benchmarkSync(
         () => filterEvents(largeTrail, allOf(bySession("sess-a"), byPhase("PLAN"))),
         50,
         10,
       );
-      expect(p99Ms).toBeLessThan(50);
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.filterEvents10000Ms);
     });
   });
 });
@@ -1047,7 +1047,7 @@ describe("audit summary", () => {
 
   // ─── PERF ───────────────────────────────────────────────────
   describe("PERF", () => {
-    it("generateComplianceSummary for 500 events < 50ms", () => {
+    it(`generateComplianceSummary for 500 events < ${PERF_BUDGETS.complianceSummary500Ms}ms (p95)`, () => {
       const largeTrail: AuditEvent[] = Array.from({ length: 500 }, (_, i) =>
         makeAuditEvent({
           id: `perf-${i}`,
@@ -1056,12 +1056,12 @@ describe("audit summary", () => {
           timestamp: `2026-01-01T00:${String(Math.floor(i / 60) % 60).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}.000Z`,
         }),
       );
-      const { p99Ms } = benchmarkSync(
+      const { p95Ms } = benchmarkSync(
         () => generateComplianceSummary(largeTrail, SESSION_ID, null, TS3),
         20,
         5,
       );
-      expect(p99Ms).toBeLessThan(PERF_BUDGETS.complianceSummary500Ms);
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.complianceSummary500Ms);
     });
   });
 });

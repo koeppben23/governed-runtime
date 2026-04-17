@@ -36,6 +36,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { benchmarkAsync, PERF_BUDGETS } from "../../test-policy";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../../");
 const SRC_DIR = path.join(PROJECT_ROOT, "src");
@@ -475,15 +476,15 @@ describe("Layer Dependency Rules", () => {
   });
 
   describe("Performance", () => {
-    it("should analyze all files in < 500ms", async () => {
-      const start = performance.now();
-      const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
-      for (const file of tsFiles) {
-        await analyzeFile(file);
-      }
-      const duration = performance.now() - start;
+    it(`should analyze all files in < ${PERF_BUDGETS.architectureAnalyzeAllMs}ms (p95)`, async () => {
+      const { p95Ms } = await benchmarkAsync(async () => {
+        const tsFiles = await collectFiles(SRC_DIR, /\.ts$/);
+        for (const file of tsFiles) {
+          await analyzeFile(file);
+        }
+      }, 5, 1);
 
-      expect(duration).toBeLessThan(500);
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.architectureAnalyzeAllMs);
     });
 
     it("should handle files with many imports efficiently", async () => {

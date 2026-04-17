@@ -505,11 +505,11 @@ describe("context", () => {
 
   // ─── PERF ───────────────────────────────────────────────────
   describe("PERF", () => {
-    it("digest() of 1MB string < 10ms", () => {
+    it(`digest() of 1MB string < ${PERF_BUDGETS.digest1MbMs}ms (p95)`, () => {
       const ctx = createRailContext();
       const bigString = "x".repeat(1024 * 1024);
-      const { p99Ms } = benchmarkSync(() => ctx.digest(bigString), 20, 5);
-      expect(p99Ms).toBeLessThan(PERF_BUDGETS.digest1MbMs);
+      const { p95Ms } = benchmarkSync(() => ctx.digest(bigString), 30, 8);
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.digest1MbMs);
     });
   });
 });

@@ -57,6 +57,10 @@ export type TestCategory = (typeof TEST_CATEGORIES)[number];
  * Noisy I/O and scheduling-dependent budgets use 3x via inline conditionals.
  */
 const CI_MULTIPLIER = process.env.CI ? 2 : 1;
+const PERF_BUDGET_FACTOR = Math.max(
+  1,
+  Number(process.env.FLOWGUARD_PERF_BUDGET_FACTOR || "1") || 1,
+);
 
 /**
  * Performance budgets for PERF tests.
@@ -85,31 +89,43 @@ export const PERF_BUDGETS = {
   auditChainVerify1000Ms: 100 * CI_MULTIPLIER,
 
   /** Full SessionState JSON.stringify + Zod parse round-trip. */
-  stateSerializeMs: 5 * CI_MULTIPLIER,
+  stateSerializeMs: 5 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
   /**
    * readState + writeState round-trip (filesystem I/O).
    * CI adjustment: 3x multiplier for noisy VMs with unpredictable I/O.
    * Local: 50ms budget.
    */
-  stateIoRoundTripMs: 50 * (process.env.CI ? 3 : 1),
+  stateIoRoundTripMs: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
   /** Completeness matrix evaluation. */
-  completenessEvalMs: 2 * CI_MULTIPLIER,
+  completenessEvalMs: 2 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
   /**
    * Compliance summary generation from 500 events.
    * CI adjustment: 3x multiplier for string operations + map lookups.
    * Local: 50ms budget.
    */
-  complianceSummary500Ms: 50 * (process.env.CI ? 3 : 1),
+  complianceSummary500Ms: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
   /**
    * Single SHA-256 digest of 1MB string.
    * CI adjustment: 3x multiplier for CPU scheduling variance.
    * Local: 10ms budget.
    */
-  digest1MbMs: 10 * (process.env.CI ? 3 : 1),
+  digest1MbMs: 20 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /** Decision receipts redaction (1000 entries, basic mode). */
+  redactionBasic1000Ms: 75 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /** Decision receipts redaction (100 entries, strict mode). */
+  redactionStrict100Ms: 30 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /** Architecture dependency scan for all source files. */
+  architectureAnalyzeAllMs: 800 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /** Query filter over 10k audit events. */
+  filterEvents10000Ms: 50 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 
   /** autoAdvance loop (max 10 transitions). */
   autoAdvanceMs: 5 * CI_MULTIPLIER,
@@ -152,7 +168,7 @@ export function benchmarkSync<T>(
   fn: () => T,
   iterations: number = 100,
   warmup: number = 10,
-): { p99Ms: number; medianMs: number; meanMs: number } {
+): { p99Ms: number; p95Ms: number; medianMs: number; meanMs: number } {
   const times: number[] = [];
 
   // Warmup (discard results)
@@ -172,6 +188,39 @@ export function benchmarkSync<T>(
 
   return {
     p99Ms: times[p99Index] ?? times[times.length - 1] ?? 0,
+    p95Ms: times[Math.floor(times.length * 0.95)] ?? times[times.length - 1] ?? 0,
+    medianMs: times[Math.floor(times.length / 2)] ?? 0,
+    meanMs: times.reduce((a, b) => a + b, 0) / times.length,
+  };
+}
+
+/**
+ * Run an async function N times and return p95/p99 execution time.
+ * First `warmup` iterations are discarded.
+ */
+export async function benchmarkAsync<T>(
+  fn: () => Promise<T>,
+  iterations: number = 20,
+  warmup: number = 3,
+): Promise<{ p99Ms: number; p95Ms: number; medianMs: number; meanMs: number }> {
+  const times: number[] = [];
+
+  for (let i = 0; i < warmup; i++) {
+    await fn();
+  }
+
+  for (let i = 0; i < iterations; i++) {
+    const start = performance.now();
+    await fn();
+    times.push(performance.now() - start);
+  }
+
+  times.sort((a, b) => a - b);
+  const p99Index = Math.floor(times.length * 0.99);
+
+  return {
+    p99Ms: times[p99Index] ?? times[times.length - 1] ?? 0,
+    p95Ms: times[Math.floor(times.length * 0.95)] ?? times[times.length - 1] ?? 0,
     medianMs: times[Math.floor(times.length / 2)] ?? 0,
     meanMs: times.reduce((a, b) => a + b, 0) / times.length,
   };

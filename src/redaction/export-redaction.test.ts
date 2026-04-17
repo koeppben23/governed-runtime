@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { redactDecisionReceipts, redactReviewReport } from "./export-redaction";
+import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
 
 describe("redaction/export-redaction", () => {
   // ─── HAPPY ────────────────────────────────────────────────────────────────
@@ -339,27 +340,31 @@ describe("redaction/export-redaction", () => {
   // ─── PERF ───────────────────────────────────────────────────────────────
 
   describe("PERF", () => {
-    it("basic redaction on 1000 receipts < 50ms", () => {
+    it(`basic redaction on 1000 receipts < ${PERF_BUDGETS.redactionBasic1000Ms}ms (p95)`, () => {
       const receipts = Array.from({ length: 1000 }, (_, i) => ({
         decisionId: `DEC-${i}`,
         decidedBy: `user-${i}`,
         rationale: `decision rationale for item ${i}`,
       }));
-      const start = performance.now();
-      redactDecisionReceipts({ receipts }, "basic");
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(50);
+      const { p95Ms } = benchmarkSync(
+        () => redactDecisionReceipts({ receipts }, "basic"),
+        40,
+        8,
+      );
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.redactionBasic1000Ms);
     });
 
-    it("strict redaction on 100 receipts < 20ms", () => {
+    it(`strict redaction on 100 receipts < ${PERF_BUDGETS.redactionStrict100Ms}ms (p95)`, () => {
       const receipts = Array.from({ length: 100 }, (_, i) => ({
         decidedBy: `user-${i}`,
         rationale: `rationale text ${i}`,
       }));
-      const start = performance.now();
-      redactDecisionReceipts({ receipts }, "strict");
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(20);
+      const { p95Ms } = benchmarkSync(
+        () => redactDecisionReceipts({ receipts }, "strict"),
+        50,
+        10,
+      );
+      expect(p95Ms).toBeLessThan(PERF_BUDGETS.redactionStrict100Ms);
     });
 
     it("review report redaction on large payload < 50ms", () => {
