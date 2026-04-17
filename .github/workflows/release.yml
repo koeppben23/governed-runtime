@@ -52,6 +52,11 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Verify ESM import correctness
+        run: npm run check:esm
+        env:
+          FORCE_COLOR: 0
+
   release:
     name: release
     needs: verify
@@ -70,6 +75,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify ESM import correctness
+        run: npm run check:esm
 
       - name: Copy LICENSE to dist
         run: cp LICENSE dist/

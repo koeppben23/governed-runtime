@@ -12,7 +12,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 |--------|-------|
 | **Distribution Model** | Pre-built npm pack output (`.tgz`) |
 | **Artifact** | `flowguard-core-{version}.tgz` |
-| **Acquisition** | Operator downloads from GitHub Releases |
+| **Acquisition** | Operator downloads from approved release distribution point (GitHub Releases or internal mirror) |
 | **Runtime Resolution** | Installer-managed local vendoring |
 | **Offline Compatible** | Yes — all dependencies resolved locally |
 
@@ -27,6 +27,8 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 | **Optional** | Can be enabled, not default | Regulated mode, custom profiles |
 | **Not Covered** | Intentionally not implemented | Multi-user, CI-native, compliance certification |
 | **Customer Responsibility** | Customer must handle | Backup, network segmentation, compliance mapping |
+
+Release publication is tag-driven (`v*`). If no release tag has been published yet, the GitHub Releases page can be empty for that snapshot.
 
 ---
 

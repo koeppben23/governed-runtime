@@ -7,6 +7,7 @@ This document describes how FlowGuard releases are produced, distributed, and su
 ## Overview
 
 FlowGuard uses semantic versioning and distributes pre-built proprietary artifacts via GitHub Releases.
+Release publication is tag-driven (`v*`): if no release tag has been published yet, the Releases page can be empty for that repository snapshot.
 
 ---
 
@@ -73,7 +74,7 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 ### GitHub Releases
 
-All FlowGuard releases are distributed via GitHub Releases:
+All FlowGuard releases are distributed via GitHub Releases (or an approved internal mirror):
 
 | Asset | Purpose |
 |-------|---------|

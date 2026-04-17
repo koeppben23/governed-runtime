@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, "..", "dist");
+const checkOnly = process.argv.includes("--check");
+let pendingIssues = 0;
 
 function fixImports(filePath) {
   let content = fs.readFileSync(filePath, "utf-8");
@@ -40,9 +42,14 @@ function fixImports(filePath) {
     return `from "${p1}.js"`;
   });
 
-  if (content !== original) {
+  if (content !== original && !checkOnly) {
     fs.writeFileSync(filePath, content);
     console.log("Fixed:", filePath);
+  }
+
+  if (content !== original && checkOnly) {
+    pendingIssues++;
+    console.log("Needs fix:", filePath);
   }
 }
 
@@ -62,6 +69,12 @@ if (!fs.existsSync(distDir)) {
   process.exit(0);
 }
 
-console.log("Fixing ESM imports in dist/...");
+console.log(checkOnly ? "Checking ESM imports in dist/..." : "Fixing ESM imports in dist/...");
 walk(distDir);
+
+if (checkOnly && pendingIssues > 0) {
+  console.error(`ESM import check failed: ${pendingIssues} file(s) need extension fixes.`);
+  process.exit(1);
+}
+
 console.log("Done.");

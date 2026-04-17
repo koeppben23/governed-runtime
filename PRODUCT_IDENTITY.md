@@ -233,7 +233,7 @@ Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine
 
 FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** with installer-managed local runtime materialization.
 
-1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases.
+1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases (tag-driven publication; Releases page can be empty before first published tag).
 2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
 3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
 4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.

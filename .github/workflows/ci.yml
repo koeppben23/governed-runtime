@@ -90,6 +90,11 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Verify ESM import correctness
+        run: npm run check:esm
+        env:
+          FORCE_COLOR: 0
+
   audit:
     name: audit
     runs-on: ubuntu-latest
@@ -109,7 +114,6 @@ jobs:
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -186,7 +190,8 @@ jobs:
       - name: Check for private vulnerability reporting
         run: |
           if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
-            echo "::warning::Private vulnerability reporting not configured. Consider enabling it at https://github.com/${{ github.repository }}/security/advisories/new"
+            echo "::error::Private vulnerability reporting not configured. Enable it at https://github.com/${{ github.repository }}/security/advisories/new"
+            exit 1
           fi
 
   install:

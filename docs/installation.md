@@ -1,6 +1,7 @@
 # Installation
 
 FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases. No build step required.
+Release publication is tag-driven (`v*`): if no release tag has been published yet, the Releases page can be empty for that repository snapshot.
 
 ## Prerequisites
 
