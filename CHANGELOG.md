@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-17
+
 ### Added
 
 - Full 5-category test coverage (HAPPY/BAD/CORNER/EDGE/PERF) for evaluate, workspace, and discovery modules
@@ -33,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release/build packaging integrity check: `npm run check:esm` verifies dist ESM imports after build
 - CI workflow linting now runs via `rhysd/actionlint@v1` (blocking) instead of direct docker image invocation
 - Added `.github/security-advisories.yml` so private vulnerability reporting policy check is materially configured
+- `/review-decision` now enforces four-eyes review with `SOLO_APPROVAL_FORBIDDEN` blocker when `allowSelfApproval=false`
+- NextAction system — deterministic next-step guidance on every tool response
+- `/review` as standalone flow (READY → REVIEW → REVIEW_COMPLETE) with phase transitions
+- `/architecture` command and tool for ADR creation with MADR format validation and self-review loop
+- `/continue` handles architecture phase with self-review iteration
 
 ### Changed
 
