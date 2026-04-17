@@ -189,6 +189,14 @@ Maps identity selectors (`subjectId`, `email`, `group`) to actor roles.
 
 Binding conditions can restrict applicability by identity source and minimum assurance.
 
+If no binding matches:
+
+- non-service identities fall back to actor role `operator`
+- service identities fall back to actor role `service`
+
+These fallback roles are classification defaults, not implicit approver grants.
+Approval still depends on `requiredApproverRolesByMode` constraints.
+
 ### rbac.approvalConstraints.dualControlRequiredModes
 
 **Type:** `enum[]`

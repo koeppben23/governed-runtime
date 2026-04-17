@@ -41,7 +41,7 @@ import {
 import { readState, writeState } from '../adapters/persistence';
 import * as persistence from '../adapters/persistence';
 import { makeState, makeProgressedState } from '../__fixtures__';
-import { configPath } from '../adapters/persistence';
+import { configPath, statePath } from '../adapters/persistence';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -851,6 +851,65 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
+    });
+
+    it('fails closed with INVALID_POLICY_MODE when snapshot mode is unknown', async () => {
+      await reachPlanReviewRegulated('initiator.user', {
+        rbac: {
+          roleBindings: [{ subjectMatcher: { subjectId: 'reviewer.user' }, roles: ['approver'] }],
+        },
+      });
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      const rawState = JSON.parse(JSON.stringify(state));
+      rawState.policySnapshot.mode = 'enterprise';
+      await fs.writeFile(statePath(sessDir), JSON.stringify(rawState), 'utf-8');
+
+      ctx.identityAssertion = {
+        subjectId: 'reviewer.user',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_POLICY_MODE');
+    });
+
+    it('returns PARSE_FAILED when config is invalid during decision path', async () => {
+      await reachPlanReviewRegulated('initiator.user', {
+        rbac: {
+          roleBindings: [{ subjectMatcher: { subjectId: 'reviewer.user' }, roles: ['approver'] }],
+        },
+      });
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      await fs.writeFile(configPath(wsDir), '{ invalid json', 'utf-8');
+
+      ctx.identityAssertion = {
+        subjectId: 'reviewer.user',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PARSE_FAILED');
     });
 
     it('blocks with APPROVER_ROLE_MISMATCH when reviewer lacks required regulated role', async () => {

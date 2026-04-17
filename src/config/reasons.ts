@@ -499,6 +499,16 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'If the error persists, abort the session with /abort',
     ],
   },
+  {
+    code: 'INVALID_POLICY_MODE',
+    category: 'state',
+    messageTemplate: 'Session contains unsupported policy mode: {mode}',
+    recoverySteps: [
+      'Re-hydrate the session with a supported mode (solo, team, team-ci, regulated)',
+      'If this is persisted state corruption, start a fresh session with /hydrate',
+    ],
+    quickFixCommand: '/hydrate',
+  },
 ];
 
 // ─── Default Registry ─────────────────────────────────────────────────────────

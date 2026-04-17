@@ -100,6 +100,13 @@ Fail-closed reason codes:
 - `DUAL_CONTROL_REQUIRED`
 - `APPROVER_ROLE_MISMATCH`
 
+Note on reason-code authority:
+
+- `DUAL_CONTROL_REQUIRED` is enforced at tool-level approval constraints
+- `SELF_APPROVAL_FORBIDDEN` remains enforced in rail-level four-eyes policy checks
+
+Both represent fail-closed separation-of-duties controls at different enforcement layers.
+
 ## Regulated Mode
 
 For compliance-required environments (banks, healthcare, etc.).

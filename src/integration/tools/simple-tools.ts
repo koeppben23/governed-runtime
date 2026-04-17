@@ -57,11 +57,11 @@ import { resolveContextIdentity } from '../identity';
 import { evaluateApprovalConstraints, resolveActorRoles } from '../rbac';
 import type { PolicyMode } from '../../config/policy';
 
-function normalizePolicyMode(value: string): PolicyMode {
+function parsePolicyMode(value: string): PolicyMode | null {
   if (value === 'solo' || value === 'team' || value === 'team-ci' || value === 'regulated') {
     return value;
   }
-  return 'team';
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -206,8 +206,30 @@ export const decision: ToolDefinition = {
       const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
-      const config = await readConfig(wsDir);
-      const effectiveMode = normalizePolicyMode(state.policySnapshot.mode);
+
+      const effectiveMode = parsePolicyMode(state.policySnapshot.mode);
+      if (!effectiveMode) {
+        return formatBlocked('INVALID_POLICY_MODE', { mode: state.policySnapshot.mode });
+      }
+
+      let config;
+      try {
+        config = await readConfig(wsDir);
+      } catch (err) {
+        if (err instanceof Error && 'code' in err) {
+          const code = String((err as { code: unknown }).code);
+          if (
+            code === 'READ_FAILED' ||
+            code === 'PARSE_FAILED' ||
+            code === 'SCHEMA_VALIDATION_FAILED'
+          ) {
+            return formatBlocked(code, {
+              message: err.message,
+            });
+          }
+        }
+        return formatError(err);
+      }
 
       const identityResult = resolveContextIdentity(context, config, effectiveMode, ctx.now());
       if (!identityResult.ok) {
