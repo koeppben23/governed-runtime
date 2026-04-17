@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/architecture` now auto-generates ADR IDs (`ADR-001`, `ADR-002`, ...) from session-local counter state
 - Export redaction support for archive artifacts (`mode: none|basic|strict`, default `basic`, `includeRaw=false`)
 - Bounded heuristic `code-surface-analysis` collector (endpoint/auth/data/integration hints with confidence + evidence)
+- Coverage gate enforcement in Vitest: global thresholds set to branches/lines/functions/statements >= 80%
+- Additional failure-path and edge coverage for archive redaction/read failures, discovery timeout degradation, and stack-derived validation hints (gradle/maven/cargo/go/jest)
 - `isConverged()` — shared convergence predicate for review loops, eliminating logic duplication between guards and next-action
 
 ### Changed

@@ -44,6 +44,9 @@ npm run check
 # Run tests
 npm test
 
+# Run coverage gate
+npm run test:coverage
+
 # Build
 npm run build
 ```
@@ -51,6 +54,11 @@ npm run build
 ## Testing
 
 FlowGuard uses Vitest for testing. All tests must pass before submitting a PR.
+Coverage thresholds are enforced globally and must remain green:
+- Branches: 80%
+- Lines: 80%
+- Functions: 80%
+- Statements: 80%
 
 ```bash
 # Run all tests
@@ -205,6 +213,7 @@ The following checks must pass for a PR to be merged:
 | Check | Command | Description |
 |-------|---------|-------------|
 | Tests | `npm test` | All tests must pass |
+| Coverage | `npm run test:coverage` | Global threshold gate (branches/lines/functions/statements >= 80%) |
 | Type Check | `npm run check` | TypeScript compilation |
 | Build | `npm run build` | Successful compilation to dist/ |
 

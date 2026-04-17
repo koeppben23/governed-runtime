@@ -333,7 +333,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
-- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories
+- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories and an enforced global coverage gate (branches/lines/functions/statements >= 80%)
 - **Self-Hosted:** Runs locally — no outbound network calls from FlowGuard itself. All data stays on the user's filesystem.
 
 ---

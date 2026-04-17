@@ -161,6 +161,9 @@ npm run check
 # Run tests
 npm test
 
+# Run coverage gate (global thresholds enforced)
+npm run test:coverage
+
 # Build
 npm run build
 ```
