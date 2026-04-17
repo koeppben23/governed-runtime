@@ -146,7 +146,8 @@ Override automatic profile detection:
 
 Allowlist of trusted OIDC issuers for host identity assertions at `/hydrate`.
 
-If empty, issuer trust is not restricted by allowlist (issuer claim is still required for `oidc` assertions).
+If empty, issuer trust is not restricted in non-regulated modes.
+In `regulated` mode, OIDC assertions require a non-empty allowlist and a matching issuer.
 
 ### identity.assertionMaxAgeSeconds
 

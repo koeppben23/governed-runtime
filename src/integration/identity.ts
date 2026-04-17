@@ -50,15 +50,13 @@ function extractHostAssertion(context: ToolContext): unknown {
     return hostContext['identityAssertion'];
   }
 
-  const claims = contextRecord['claims'];
-  if (claims !== undefined) return claims;
-
   return undefined;
 }
 
 function validateOidcIssuer(
   assertion: IdentityAssertionType,
   config: FlowGuardConfig,
+  effectiveMode: PolicyMode,
 ): ResolutionResult {
   if (assertion.identitySource !== 'oidc') {
     return {
@@ -81,6 +79,19 @@ function validateOidcIssuer(
   }
 
   const allowlist = config.identity.allowedIssuers;
+  if (effectiveMode === 'regulated' && allowlist.length === 0) {
+    return {
+      ok: false,
+      blocked: {
+        code: 'UNTRUSTED_IDENTITY_ISSUER',
+        vars: {
+          message:
+            'regulated mode requires explicit identity.allowedIssuers for OIDC trust boundary',
+        },
+      },
+    };
+  }
+
   if (allowlist.length > 0 && !allowlist.includes(assertion.issuer)) {
     return {
       ok: false,
@@ -190,7 +201,7 @@ export function resolveHydrateIdentity(
       };
     }
 
-    const issuerCheck = validateOidcIssuer(assertion, config);
+    const issuerCheck = validateOidcIssuer(assertion, config, effectiveMode);
     if (!issuerCheck.ok) return issuerCheck;
 
     if (assertion.identitySource === 'local' && !isLocalFallbackAllowed(config, effectiveMode)) {

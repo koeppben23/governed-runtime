@@ -77,6 +77,7 @@ Identity source policy:
 - **Primary path:** `oidc` (or `service` for CI contexts)
 - **Fallback path:** `local` only when mode is listed in `identity.allowLocalFallbackModes`
 - **Regulated by default:** local is blocked unless explicitly allowed in config
+- **Regulated OIDC trust boundary:** `identity.allowedIssuers` must be non-empty for OIDC assertions
 
 Fail-closed reason codes:
 

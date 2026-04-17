@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `audit/types.ts` decision detail contract now declares optional v2 receipt fields (`actorIdentity`, `actorRole`, `policyDecision`, obligations/result metadata) without changing current runtime emission
 - `/hydrate` now resolves initiator identity from validated assertion context (instead of raw session ID), with local fallback only in explicitly allowed modes
+- `/hydrate` config loading is now strict: invalid config JSON/schema blocks instead of silently falling back to defaults
+- OIDC issuer trust is hardened in `regulated` mode: empty `identity.allowedIssuers` now blocks host OIDC assertions
 
 ## [1.1.0] - 2026-04-17
 

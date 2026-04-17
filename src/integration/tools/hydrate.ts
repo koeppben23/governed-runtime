@@ -54,7 +54,6 @@ import { defaultProfileRegistry as profileRegistryForResolution } from '../../co
 
 // Config
 import { detectCiContext, resolvePolicyWithContext } from '../../config/policy';
-import { DEFAULT_CONFIG } from '../../config/flowguard-config';
 import { resolveHydrateIdentity } from '../identity';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -90,7 +89,7 @@ export const hydrate: ToolDefinition = {
       const { fingerprint, sessionDir: sessDir, workspaceDir: wsDir } = wsResult;
 
       const existing = await readState(sessDir);
-      const config = await readConfig(wsDir).catch(() => DEFAULT_CONFIG);
+      const config = await readConfig(wsDir);
 
       // Resolve policy for context
       const ciContext = detectCiContext();

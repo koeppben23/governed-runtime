@@ -47,7 +47,6 @@ export interface TestToolContext {
   identityAssertion?: unknown;
   identity?: unknown;
   hostContext?: unknown;
-  claims?: unknown;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 

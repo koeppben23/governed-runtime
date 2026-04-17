@@ -397,6 +397,22 @@ describe('hydrate', () => {
       expect(result.code).toBe('UNTRUSTED_IDENTITY_ISSUER');
     });
 
+    it('blocks regulated OIDC when allowlist is empty (UNTRUSTED_IDENTITY_ISSUER)', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'alice',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('UNTRUSTED_IDENTITY_ISSUER');
+    });
+
     it('blocks local source in regulated mode without explicit override (IDENTITY_SOURCE_NOT_ALLOWED)', async () => {
       ctx.identityAssertion = {
         subjectId: 'alice',
@@ -435,6 +451,36 @@ describe('hydrate', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IDENTITY_UNVERIFIED');
+    });
+
+    it('does not silently fallback when workspace config is invalid JSON', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      await fs.mkdir(wsDir, { recursive: true });
+      await fs.writeFile(configPath(wsDir), '{ invalid json', 'utf-8');
+
+      const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PARSE_FAILED');
+    });
+
+    it('does not silently fallback when workspace config fails schema validation', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      await fs.mkdir(wsDir, { recursive: true });
+      await fs.writeFile(
+        configPath(wsDir),
+        JSON.stringify({ schemaVersion: 'v1', identity: { assertionMaxAgeSeconds: 0 } }),
+        'utf-8',
+      );
+
+      const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SCHEMA_VALIDATION_FAILED');
     });
 
     /**

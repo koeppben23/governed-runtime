@@ -39,6 +39,7 @@ import {
 } from './tools';
 import { readState } from '../adapters/persistence';
 import { readAuditTrail } from '../adapters/persistence';
+import { configPath } from '../adapters/persistence';
 import { verifyChain } from '../audit/integrity';
 import { computeFingerprint, sessionDir as resolveSessionDir } from '../adapters/workspace';
 
@@ -109,6 +110,13 @@ async function getSessDir(context: TestToolContext = ctx): Promise<string> {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function writeWorkspaceConfig(config: Record<string, unknown>): Promise<void> {
+  const fp = await computeFingerprint(ws.tmpDir);
+  const wsDir = `${process.env.OPENCODE_CONFIG_DIR}/workspaces/${fp.fingerprint}`;
+  await fs.mkdir(wsDir, { recursive: true });
+  await fs.writeFile(configPath(wsDir), JSON.stringify(config), 'utf-8');
 }
 
 // =============================================================================
@@ -797,6 +805,15 @@ describe('e2e-workflow', () => {
         issuer: 'https://idp.example.com',
         sessionBindingId: ctx.sessionID,
       };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: ['https://idp.example.com'],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team'],
+        },
+      });
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated four-eyes test', source: 'user' });
       await callOk(plan, { planText: '## Regulated Plan\n\nThis plan requires external review.' });
@@ -840,6 +857,15 @@ describe('e2e-workflow', () => {
         issuer: 'https://idp.example.com',
         sessionBindingId: ctx.sessionID,
       };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: ['https://idp.example.com'],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team'],
+        },
+      });
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated changes test', source: 'user' });
       await callOk(plan, { planText: '## Plan needing changes' });

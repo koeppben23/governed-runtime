@@ -208,7 +208,7 @@ describe('integration/identity', () => {
   });
 
   describe('CORNER', () => {
-    it('accepts oidc issuer when allowlist is empty', () => {
+    it('accepts oidc issuer when allowlist is empty in non-regulated mode', () => {
       const context = createToolContext({
         sessionID: 'c2d4ce7f-9538-43e7-9697-c65f836471df',
         identityAssertion: {
@@ -220,9 +220,30 @@ describe('integration/identity', () => {
           sessionBindingId: 'c2d4ce7f-9538-43e7-9697-c65f836471df',
         },
       });
-      const result = resolveHydrateIdentity(context, config(), 'regulated', now);
+      const result = resolveHydrateIdentity(context, config(), 'team', now);
 
       expect(result.ok).toBe(true);
+    });
+
+    it('blocks oidc issuer with empty allowlist in regulated mode', () => {
+      const context = createToolContext({
+        sessionID: 'fdcb1b69-c8e0-49c8-b102-b3ddc169d58f',
+        identityAssertion: {
+          subjectId: 'alice',
+          identitySource: 'oidc',
+          assertedAt: now,
+          assuranceLevel: 'strong',
+          issuer: 'https://idp.example.com',
+          sessionBindingId: 'fdcb1b69-c8e0-49c8-b102-b3ddc169d58f',
+        },
+      });
+
+      const result = resolveHydrateIdentity(context, config(), 'regulated', now);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.blocked.code).toBe('UNTRUSTED_IDENTITY_ISSUER');
+      }
     });
   });
 
