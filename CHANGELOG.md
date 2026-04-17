@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance test calibration hardening: noisy PERF checks now use percentile benchmarking (p95), centralized budgets for redaction/architecture/filter/query paths, and optional `FLOWGUARD_PERF_BUDGET_FACTOR` for slower developer hardware
 - Policy API clarity: added `getPolicyPreset()` as explicit preset lookup surface; `resolvePolicy()` remains as compatibility wrapper
 - Release/build packaging integrity check: `npm run check:esm` verifies dist ESM imports after build
+- CI workflow linting now runs via `rhysd/actionlint@v1` (blocking) instead of direct docker image invocation
+- Added `.github/security-advisories.yml` so private vulnerability reporting policy check is materially configured
 
 ### Changed
 
