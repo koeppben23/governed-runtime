@@ -50,6 +50,52 @@ FlowGuard processes data in two contexts:
 - Backup and recovery
 - Encryption at rest (if required)
 
+### Risk Policy Matrix (WP4)
+
+The risk policy evaluates actions based on data classification and target environment:
+
+| Data Classification | Target Environment | Default Outcome | Required Obligations    |
+| -------------------- | ------------------- | ---------------- | --------------------- |
+| **public**            | dev, test           | Allow            | None                  |
+| **public**            | staging, prod      | Allow            | Ticket optional       |
+| **internal**         | dev, test          | Allow            | None                  |
+| **internal**         | staging, prod     | Allow w/ approval | Ticket + justification |
+| **confidential**     | dev, test          | Allow w/ approval | Ticket + justification |
+| **confidential**     | staging, prod     | Allow w/ approval | Ticket + dual approval |
+| **restricted**       | Any                | **Deny**         | N/A (blocked)         |
+
+**Technically Enforced:**
+
+- No match = deny by default (fail-closed)
+- Priority-based rule evaluation (lower priority = evaluated first)
+- Specific rules beat generic rules
+- All obligations must be satisfied for approval to proceed
+
+**Risk Policy Rule Structure:**
+
+```
+{
+  id: string,           // Unique rule identifier
+  priority: number,    // Lower = higher precedence
+  match: {
+    actionType: string[],
+    dataClassification?: string[],
+    targetEnvironment?: string[],
+    systemOfRecord?: string[],
+    changeWindow?: string[],
+    exceptionPolicy?: string[]
+  },
+  effect: 'allow' | 'allow_with_approval' | 'deny',
+  obligations?: {
+    justificationRequired?: boolean,
+    ticketRequired?: boolean,
+    dualApprovalRequired?: boolean,
+    requiredApproverRole?: string[],
+    minAssuranceLevel?: 'basic' | 'strong'
+  }
+}
+```
+
 ### Audit Trail
 
 | Attribute            | Classification     | Protection              |

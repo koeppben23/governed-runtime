@@ -50,18 +50,40 @@ FlowGuard has a flat ownership model:
 
 ### Session Roles
 
-FlowGuard supports two roles within a session:
+FlowGuard supports these roles within a session:
 
-| Role          | Description                   | Enforced             |
-| ------------- | ----------------------------- | -------------------- |
-| **Initiator** | Person who starts the session | Always tracked       |
-| **Reviewer**  | Person who approves at gates  | Team/Regulated modes |
+| Role             | Description                                | Enforced             |
+| ---------------- | ------------------------------------------ | -------------------- |
+| **Initiator**    | Person who starts the session             | Always tracked       |
+| **Reviewer**     | Person who approves at gates               | Team/Regulated modes |
+| **Operator**     | Default role for unauthenticated sessions   | solo/team modes     |
+| **Approver**     | Role required for approval in certain rules | Regulated mode      |
+| **Service**      | CI/system identity for automated flows   | team-ci mode        |
 
-**Technically Enforced:**
+**Technically Enforced (1.2.0):**
 
-- Regulated mode: reviewer must differ from initiator
+- Regulated mode: reviewer must differ from initiator (four-eyes)
 - Self-approval blocked in Regulated mode
-- Identity tracked in audit trail
+- Identity tracked in audit trail via OIDC assertions
+- Risk policy matrix: approval required based on data classification + environment
+- Role resolution via configured RBAC bindings
+
+**WP2 Identity Enforcement:**
+- OIDC-first: host identity assertion validated at session hydrate
+- Identity sources: oidc, scim, local (configurable per mode)
+- Assurance levels: none, basic, strong (multi-factor)
+- Regulated mode: requires strong assurance + validated issuer
+
+**WP3 RBAC:**
+- Role bindings configurable via config.rbac.roleBindings
+- Dual-control required in regulated mode
+- Required approver roles enforced per mode
+
+**WP4 Risk Policy Matrix:**
+- Action type, data classification, target environment matching
+- Priority-based first-match-wins evaluation
+- Denial by default (no match = deny)
+- Obligations: justification, ticket, dual approval, min assurance level
 
 **Customer Responsibility:**
 
