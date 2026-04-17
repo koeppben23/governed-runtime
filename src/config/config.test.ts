@@ -127,6 +127,14 @@ describe("config/policy", () => {
     it("resolvePolicy returns TEAM for undefined", () => {
       expect(resolvePolicy()).toBe(TEAM_POLICY);
     });
+
+    it("resolvePolicyWithContext falls back to TEAM for unknown mode", () => {
+      const result = resolvePolicyWithContext("enterprise", false);
+      expect(result.requestedMode).toBe("team");
+      expect(result.effectiveMode).toBe("team");
+      expect(result.policy).toBe(TEAM_POLICY);
+      expect(result.degradedReason).toBeUndefined();
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -199,6 +207,13 @@ describe("config/policy", () => {
         expect(p.audit.emitTransitions).toBe(true);
         expect(p.audit.emitToolCalls).toBe(true);
       }
+    });
+
+    it("resolvePolicyWithContext preserves requested/effective equality for regulated", () => {
+      const result = resolvePolicyWithContext("regulated", false);
+      expect(result.requestedMode).toBe("regulated");
+      expect(result.effectiveMode).toBe("regulated");
+      expect(result.effectiveGateBehavior).toBe("human_gated");
     });
   });
 

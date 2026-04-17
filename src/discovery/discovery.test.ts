@@ -555,6 +555,21 @@ describe("discovery/collectors/code-surface-analysis", () => {
       expect(result.status).toBe("partial");
       expect(result.data.status).toBe("partial");
     });
+
+    it("returns failed when candidate file entries are malformed", async () => {
+      const malformed = {
+        worktreePath: "/tmp",
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: [null as unknown as string],
+        packageFiles: [],
+        configFiles: [],
+      } as CollectorInput;
+
+      const result = await collectCodeSurfaces(malformed);
+      expect(result.status).toBe("failed");
+      expect(result.data.status).toBe("failed");
+      expect(result.data.budget.timedOut).toBe(true);
+    });
   });
 
   describe("CORNER", () => {
@@ -585,6 +600,37 @@ describe("discovery/collectors/code-surface-analysis", () => {
         expect(result.status).toBe("partial");
         expect(result.data.status).toBe("partial");
         expect(result.data.budget.scannedFiles).toBeLessThanOrEqual(200);
+      });
+    });
+
+    it("marks partial and truncates when a source file exceeds per-file byte budget", async () => {
+      await withTempProject(
+        {
+          "src/oversized.ts": `router.get('/x', () => {})\n${"x".repeat(80 * 1024)}`,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.status).toBe("partial");
+          expect(result.data.status).toBe("partial");
+          expect(result.data.budget.scannedBytes).toBeLessThanOrEqual(64 * 1024);
+          expect(result.data.endpoints.length).toBeGreaterThan(0);
+        },
+      );
+    });
+
+    it("marks partial when cumulative bytes exceed total budget", async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 32; i++) {
+        files[`src/heavy-${i}.ts`] = `export const n${i} = ${i};\n${"y".repeat(65480)}`;
+      }
+      files["src/heavy-overflow.ts"] = `export const overflow = true;\n${"z".repeat(2048)}`;
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe("partial");
+        expect(result.data.status).toBe("partial");
+        expect(result.data.budget.scannedBytes).toBeLessThanOrEqual(2 * 1024 * 1024);
+        expect(result.data.budget.scannedFiles).toBeLessThan(Object.keys(files).length);
       });
     });
   });
@@ -688,6 +734,57 @@ describe("discovery/orchestrator", () => {
       expect(result.topology.kind).toBe("monorepo");
       expect(result.topology.modules.length).toBeGreaterThanOrEqual(3);
     });
+
+    it("derives gradle/jest commands from detected stack", async () => {
+      const input: CollectorInput = {
+        worktreePath: "/test/gradle",
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: ["src/app.kt"],
+        packageFiles: ["build.gradle"],
+        configFiles: ["jest.config.ts"],
+      };
+
+      const result = await runDiscovery(input);
+      const commands = result.validationHints.commands.map((c) => c.command);
+
+      expect(commands).toContain("gradle build");
+      expect(commands).toContain("gradle test");
+      expect(commands).toContain("npx jest");
+    });
+
+    it("derives cargo and go-module commands from detected stack", async () => {
+      const input: CollectorInput = {
+        worktreePath: "/test/multi",
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: ["src/lib.rs", "main.go"],
+        packageFiles: ["Cargo.toml", "go.mod"],
+        configFiles: [],
+      };
+
+      const result = await runDiscovery(input);
+      const commands = result.validationHints.commands.map((c) => c.command);
+
+      expect(commands).toContain("cargo build");
+      expect(commands).toContain("cargo test");
+      expect(commands).toContain("go build ./...");
+      expect(commands).toContain("go test ./...");
+    });
+
+    it("derives maven commands from detected stack", async () => {
+      const input: CollectorInput = {
+        worktreePath: "/test/maven",
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: ["src/main/java/App.java"],
+        packageFiles: ["pom.xml"],
+        configFiles: [],
+      };
+
+      const result = await runDiscovery(input);
+      const commands = result.validationHints.commands.map((c) => c.command);
+
+      expect(commands).toContain("mvn compile");
+      expect(commands).toContain("mvn test");
+    });
   });
 
   describe("CORNER", () => {
@@ -739,6 +836,19 @@ describe("discovery/orchestrator", () => {
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       // Should complete within reasonable time (< 5 seconds)
       expect(elapsed).toBeLessThan(5000);
+    });
+
+    it("runDiscovery marks collector failures when timeout budget is exceeded", async () => {
+      vi.mocked(gitMock.defaultBranch).mockImplementationOnce(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return "main";
+      });
+
+      const result = await runDiscovery(TS_PROJECT_INPUT, 1);
+      const failedCollectors = Object.values(result.collectors).filter((s) => s === "failed");
+
+      expect(failedCollectors.length).toBeGreaterThan(0);
+      expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
     });
   });
 

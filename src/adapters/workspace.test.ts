@@ -679,6 +679,25 @@ describe("archiveSession", () => {
     expect(manifest.excludedFiles).not.toContain("decision-receipts.v1.json");
   });
 
+  it("redacts review-report and excludes raw report by default", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "archive-test-review-report-redaction";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"test": true}', "utf-8");
+    await fs.writeFile(
+      path.join(sessDir, "review-report.json"),
+      JSON.stringify({ findings: [{ message: "contains secret" }] }),
+      "utf-8",
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+    expect(manifest.redactedArtifacts).toContain("review-report.redacted.json");
+    expect(manifest.excludedFiles).toContain("review-report.json");
+  });
+
   it("mode=none: raw receipts included, no redacted artifact, rawIncluded=true", async () => {
     const worktree = path.resolve(".");
     const sessionId = "550e8400-e29b-41d4-a716-446655440010";
@@ -858,6 +877,18 @@ describe("archiveSession failure paths", () => {
     process.env.PATH = originalPath ?? "";
   });
 
+  it("throws ARCHIVE_FAILED when archive path collides with existing file", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440106";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    const archiveCollisionPath = path.join(workspacesHome(), fingerprint, "sessions", "archive");
+    await fs.writeFile(archiveCollisionPath, "not-a-directory", "utf-8");
+
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
+  });
+
   it("verifyArchive warns but passes when checksum sidecar is missing (non-fatal)", async () => {
     const worktree = path.resolve(".");
     const sessionId = "550e8400-e29b-41d4-a716-446655440102";
@@ -880,6 +911,59 @@ describe("archiveSession failure paths", () => {
     );
     expect(checksumWarning).toBeDefined();
     expect(checksumWarning?.severity).toBe("warning");
+  });
+
+  it("archives nested directories and verifies without unexpected file findings", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440103";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+    await fs.mkdir(path.join(sessDir, "nested", "deeper"), { recursive: true });
+    await fs.writeFile(path.join(sessDir, "nested", "deeper", "trace.json"), '{"ok":true}', "utf-8");
+
+    await archiveSession(fingerprint, sessionId);
+    const verification = await verifyArchive(fingerprint, sessionId);
+
+    expect(verification.findings.some((f) => f.code === "unexpected_file")).toBe(false);
+    expect(verification.findings.some((f) => f.code === "missing_file")).toBe(false);
+  });
+
+  it("fails closed when redaction transform throws non-Error value", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440104";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    const originalStructuredClone = globalThis.structuredClone;
+    globalThis.structuredClone = (() => {
+      throw "clone-failed";
+    }) as typeof globalThis.structuredClone;
+
+    try {
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
+    } finally {
+      globalThis.structuredClone = originalStructuredClone;
+    }
+  });
+
+  it("fails closed when redaction source read fails", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440105";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    const reviewPath = path.join(sessDir, "review-report.json");
+    await fs.writeFile(reviewPath, JSON.stringify({ findings: [{ message: "sensitive" }] }), "utf-8");
+    await fs.chmod(reviewPath, 0o000);
+
+    try {
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
+    } finally {
+      await fs.chmod(reviewPath, 0o644);
+    }
   });
 });
 

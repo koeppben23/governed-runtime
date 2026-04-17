@@ -206,6 +206,19 @@ describe("redaction/export-redaction", () => {
       expect(r.decidedBy).toBe(123);
       expect(r.rationale).toBe(false);
     });
+
+    it("review report leaves non-string finding message unchanged", () => {
+      const input = { findings: [{ message: 42 as unknown }] };
+      const out = redactReviewReport(input, "basic") as Record<string, unknown>;
+      expect((out.findings[0] as Record<string, unknown>).message).toBe(42);
+    });
+
+    it("review report leaves non-string slot detail unchanged", () => {
+      const input = { completeness: { slots: [{ detail: true as unknown }] } };
+      const out = redactReviewReport(input, "strict") as Record<string, unknown>;
+      const slot = ((out.completeness as Record<string, unknown>).slots as Array<Record<string, unknown>>)[0]!;
+      expect(slot.detail).toBe(true);
+    });
   });
 
   // ─── EDGE ───────────────────────────────────────────────────────────────

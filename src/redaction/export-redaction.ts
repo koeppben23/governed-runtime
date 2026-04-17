@@ -19,9 +19,8 @@ export interface RedactionOutcome {
   readonly rawPath: string;
 }
 
-function stableMask(value: unknown, mode: RedactionMode): string {
-  if (mode === "none") return String(value ?? "");
-  const base = value === null || value === undefined ? "" : String(value);
+function stableMask(value: string, mode: Exclude<RedactionMode, "none">): string {
+  const base = value;
   if (mode === "basic") return "[REDACTED]";
   const token = createHash("sha256").update(base).digest("hex").slice(0, 12);
   return `[REDACTED:${token}]`;
