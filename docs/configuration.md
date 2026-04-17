@@ -19,6 +19,7 @@ FlowGuard supports per-repository configuration via `config.json`.
   "policy": {
     "defaultMode": "solo"
   },
+  "profile": {},
   "archive": {
     "redaction": {
       "mode": "basic",
@@ -93,7 +94,24 @@ FlowGuard preserves raw runtime and audit state internally; redaction is applied
 When `false` (default), only redacted export artifacts are included in archives.
 When `true`, raw artifacts are included alongside redacted artifacts and the archive manifest is marked with a risk flag.
 
-### profile.default
+**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are redacted. `session-state.json` and `audit.jsonl` are always included as raw.
+
+### Discovery
+
+Discovery runs automatically on `/hydrate` and requires no user configuration. It collects repository signals through six built-in collectors:
+
+| Collector | Purpose |
+|-----------|---------|
+| `repo-metadata` | Git metadata (branch, commits, authors) |
+| `stack-detection` | Detected tech stack from files |
+| `topology` | Directory/file layout analysis |
+| `surface-detection` | Language/framework surface signals |
+| `code-surface-analysis` | Endpoint, auth, data, integration hints (bounded heuristic) |
+| `domain-signals` | Domain-specific indicators |
+
+Results are included in `discovery-snapshot.json` archives and used for profile resolution. Code surface signals are intentionally bounded and may be partial.
+
+### profile.defaultId
 
 **Type:** `string`
 **Default:** Auto-detected
@@ -103,14 +121,14 @@ Override automatic profile detection:
 ```json
 {
   "profile": {
-    "default": "typescript"
+    "defaultId": "typescript"
   }
 }
 ```
 
 ### profile.overrides
 
-**Type:** `object`
+**Type:** `object` (map of profile ID → override config)
 Custom profile configurations:
 
 ```json
@@ -151,16 +169,23 @@ Custom profile configurations:
     "level": "debug"
   },
   "policy": {
-    "defaultMode": "regulated"
+    "defaultMode": "regulated",
+    "modes": {
+      "regulated": {
+        "requireHumanGates": true,
+        "maxSelfReviewIterations": 5,
+        "maxImplReviewIterations": 3
+      }
+    }
+  },
+  "profile": {
+    "defaultId": "typescript"
   },
   "archive": {
     "redaction": {
       "mode": "strict",
       "includeRaw": false
     }
-  },
-  "profile": {
-    "default": "typescript"
   }
 }
 ```
