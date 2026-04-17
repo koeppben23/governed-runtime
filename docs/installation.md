@@ -142,7 +142,7 @@ npm run check
 
 ```
 ERROR: --core-tarball is required.
-Usage: flowguard install --core-tarball /path/to/flowguard-core-1.0.0.tgz
+Usage: flowguard install --core-tarball /path/to/flowguard-core-1.1.0.tgz
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 
