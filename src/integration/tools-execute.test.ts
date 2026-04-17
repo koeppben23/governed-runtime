@@ -176,6 +176,38 @@ describe("hydrate", () => {
       expect(result.phase).toBe("READY");
     });
 
+    it("team-ci degrades to team when CI context is missing", async () => {
+      const previousCi = process.env.CI;
+      delete process.env.CI;
+      try {
+        const result = await hydrateSession({ policyMode: "team-ci" });
+        const resolution = result.policyResolution as Record<string, unknown>;
+        expect(resolution.requestedMode).toBe("team-ci");
+        expect(resolution.effectiveMode).toBe("team");
+        expect(resolution.effectiveGateBehavior).toBe("human_gated");
+        expect(resolution.reason).toBe("ci_context_missing");
+      } finally {
+        if (previousCi === undefined) delete process.env.CI;
+        else process.env.CI = previousCi;
+      }
+    });
+
+    it("team-ci stays active when CI context is present", async () => {
+      const previousCi = process.env.CI;
+      process.env.CI = "true";
+      try {
+        const result = await hydrateSession({ policyMode: "team-ci" });
+        const resolution = result.policyResolution as Record<string, unknown>;
+        expect(resolution.requestedMode).toBe("team-ci");
+        expect(resolution.effectiveMode).toBe("team-ci");
+        expect(resolution.effectiveGateBehavior).toBe("auto_approve");
+        expect(resolution.reason).toBeNull();
+      } finally {
+        if (previousCi === undefined) delete process.env.CI;
+        else process.env.CI = previousCi;
+      }
+    });
+
     it("persists state to session directory on disk", async () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists

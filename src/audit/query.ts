@@ -17,6 +17,24 @@
 import type { AuditEvent } from "../state/evidence";
 import type { AuditEventKind } from "./types";
 
+/** Structured decision receipt derived from decision audit events. */
+export interface DecisionReceipt {
+  readonly decisionId: string;
+  readonly decisionSequence: number;
+  readonly gatePhase: string;
+  readonly verdict: "approve" | "changes_requested" | "reject";
+  readonly rationale: string;
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+  readonly fromPhase: string;
+  readonly toPhase: string;
+  readonly transitionEvent: string;
+  readonly policyMode: string;
+  readonly eventId: string;
+  readonly sessionId: string;
+  readonly timestamp: string;
+}
+
 // ─── Filter Predicate ─────────────────────────────────────────────────────────
 
 /** A predicate function for filtering audit events. */
@@ -135,6 +153,69 @@ export function toolCallEvents(events: AuditEvent[]): AuditEvent[] {
  */
 export function errorEvents(events: AuditEvent[]): AuditEvent[] {
   return filterEvents(events, byKind("error"));
+}
+
+/** Get all decision events from the trail. */
+export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
+  return filterEvents(events, byKind("decision"));
+}
+
+/**
+ * Extract structured decision receipts from decision events.
+ * Invalid/malformed decision event payloads are skipped.
+ */
+export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
+  const receipts: DecisionReceipt[] = [];
+  for (const event of decisionEvents(events)) {
+    const detail = event.detail as Record<string, unknown>;
+    const verdict = detail.verdict;
+    const validVerdict = verdict === "approve" || verdict === "changes_requested" || verdict === "reject";
+    if (!validVerdict) continue;
+
+    const decisionId = detail.decisionId;
+    const decisionSequence = detail.decisionSequence;
+    const gatePhase = detail.gatePhase;
+    const rationale = detail.rationale;
+    const decidedBy = detail.decidedBy;
+    const decidedAt = detail.decidedAt;
+    const fromPhase = detail.fromPhase;
+    const toPhase = detail.toPhase;
+    const transitionEvent = detail.transitionEvent;
+    const policyMode = detail.policyMode;
+
+    if (
+      typeof decisionId !== "string"
+      || typeof decisionSequence !== "number"
+      || typeof gatePhase !== "string"
+      || typeof rationale !== "string"
+      || typeof decidedBy !== "string"
+      || typeof decidedAt !== "string"
+      || typeof fromPhase !== "string"
+      || typeof toPhase !== "string"
+      || typeof transitionEvent !== "string"
+      || typeof policyMode !== "string"
+    ) {
+      continue;
+    }
+
+    receipts.push({
+      decisionId,
+      decisionSequence,
+      gatePhase,
+      verdict,
+      rationale,
+      decidedBy,
+      decidedAt,
+      fromPhase,
+      toPhase,
+      transitionEvent,
+      policyMode,
+      eventId: event.id,
+      sessionId: event.sessionId,
+      timestamp: event.timestamp,
+    });
+  }
+  return receipts;
 }
 
 /**

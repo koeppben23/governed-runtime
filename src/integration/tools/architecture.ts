@@ -4,7 +4,7 @@
  *
  * Multi-call pattern driven by the LLM:
  *
- * Step 1: LLM generates ADR, calls flowguard_architecture({ id, title, adrText })
+ * Step 1: LLM generates ADR, calls flowguard_architecture({ title, adrText })
  *   -> Tool records ADR, initializes self-review loop, returns "self-review needed"
  *
  * Step 2: LLM reviews ADR critically, calls flowguard_architecture({
@@ -61,19 +61,13 @@ import { validateAdrSections } from "../../state/evidence";
 export const architecture: ToolDefinition = {
   description:
     "Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n" +
-    "Mode A (submit ADR): provide id, title, adrText. Records the ADR and starts self-review loop.\n" +
+    "Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts self-review loop.\n" +
     "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
     "The self-review loop runs up to maxIterations (from policy). " +
     "On convergence, auto-advances to ARCH_REVIEW.\n" +
     "Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).",
   args: {
-    id: z
-      .string()
-      .optional()
-      .describe(
-        "ADR identifier (e.g., 'ADR-1'). Required for Mode A (initial submission).",
-      ),
     title: z
       .string()
       .optional()
@@ -109,9 +103,6 @@ export const architecture: ToolDefinition = {
 
       if (isInitialSubmission) {
         // ── Mode A: Initial ADR submission (delegates to rail) ────
-        if (!args.id) {
-          return formatBlocked("INVALID_ADR_ID");
-        }
         if (!args.title) {
           return formatBlocked("EMPTY_ADR_TITLE");
         }
@@ -120,7 +111,6 @@ export const architecture: ToolDefinition = {
         }
 
         const result = executeArchitecture(state, {
-          id: args.id,
           title: args.title,
           adrText: args.adrText,
         }, ctx);
@@ -139,8 +129,8 @@ export const architecture: ToolDefinition = {
 
         return appendNextAction(JSON.stringify({
           phase: result.state.phase,
-          status: `ADR ${args.id} submitted: ${args.title}`,
-          adrId: args.id,
+          status: `ADR ${result.state.architecture!.id} submitted: ${args.title}`,
+          adrId: result.state.architecture!.id,
           adrDigest: result.state.architecture!.digest,
           selfReviewIteration: 0,
           maxSelfReviewIterations,

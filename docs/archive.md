@@ -16,9 +16,10 @@ An archive includes:
 
 - `session-state.json` — Complete session state
 - `audit.jsonl` — Audit trail (if enabled)
+- `decision-receipts.v1.json` — Structured receipts derived from `decision:DEC-xxx` audit events
 - `review-report.json` — Final review report
 - `discovery-snapshot.json` — Repository discovery snapshot
-- `profile-resolution.json` — Profile that was active
+- `profile-resolution-snapshot.json` — Profile resolution snapshot
 
 ## Archive Location
 

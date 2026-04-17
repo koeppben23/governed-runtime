@@ -36,7 +36,11 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 - Discovery results (repository metadata, stack, topology)
 - Profile resolution
 
-**Arguments:** `policyMode` (optional): `solo`, `team`, or `regulated`
+**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`
+
+`team-ci` semantics:
+- In CI context: effective mode = `team-ci` (auto-approve at user gates)
+- Without CI context: degrades to `team` (human-gated), reason `ci_context_missing`
 **Starts at:** READY
 
 ### /ticket
@@ -68,6 +72,8 @@ Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REV
 
 **Four-eyes:** In regulated mode, reviewer must differ from session initiator.
 
+Every successful `/review-decision` emits a decision receipt in the audit trail (`decision:DEC-xxx`).
+
 ### /validate
 
 Run validation checks against the approved plan.
@@ -92,7 +98,7 @@ Execute the implementation plan.
 Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
-- **Mode A (submit ADR):** Provide `id`, `title`, `adrText`. Records ADR and starts self-review loop.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts self-review loop.
 - **Mode B (self-review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
@@ -138,6 +144,7 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
 - `archive-manifest.json`
+- `decision-receipts.v1.json` (derived from append-only audit trail)
 
 **Verification:** `verifyArchive()` validates integrity (10 finding codes).
 

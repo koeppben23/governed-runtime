@@ -39,7 +39,7 @@ After hydration, choose one of three flows:
 ### Architecture Flow (ADR Creation)
 
 ```
-/architecture <id, title, adrText>
+/architecture <title, adrText>
 /review-decision approve
 ```
 
@@ -116,9 +116,10 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
 | **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
-| **Policy Modes** | Solo (auto), Team (optional review), Regulated (mandatory review) |
+| **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Audit Trail** | Hash-chained, tamper-evident |
+| **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
 | **Archive** | Session archival with integrity verification |
 
 ---

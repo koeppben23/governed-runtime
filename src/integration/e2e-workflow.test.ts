@@ -456,6 +456,45 @@ describe("e2e-workflow", () => {
   // ─── EDGE ──────────────────────────────────────────────────
 
   describe("EDGE", () => {
+    it("team-ci without CI context degrades to team (human-gated)", async () => {
+      const previousCi = process.env.CI;
+      delete process.env.CI;
+      try {
+        const hydrateResult = await callOk(hydrate, { policyMode: "team-ci", profileId: "baseline" });
+        const resolution = hydrateResult.policyResolution as Record<string, unknown>;
+        expect(resolution.requestedMode).toBe("team-ci");
+        expect(resolution.effectiveMode).toBe("team");
+        expect(resolution.reason).toBe("ci_context_missing");
+
+        await callOk(ticket, { text: "CI-degrade task", source: "user" });
+        await callOk(plan, { planText: "## Plan\nHuman gate expected" });
+        await callOk(plan, { selfReviewVerdict: "approve" });
+        expect(await getPhase()).toBe("PLAN_REVIEW");
+      } finally {
+        if (previousCi === undefined) delete process.env.CI;
+        else process.env.CI = previousCi;
+      }
+    });
+
+    it("team-ci with CI context auto-approves PLAN_REVIEW gate", async () => {
+      const previousCi = process.env.CI;
+      process.env.CI = "true";
+      try {
+        const hydrateResult = await callOk(hydrate, { policyMode: "team-ci", profileId: "baseline" });
+        const resolution = hydrateResult.policyResolution as Record<string, unknown>;
+        expect(resolution.effectiveMode).toBe("team-ci");
+        expect(resolution.effectiveGateBehavior).toBe("auto_approve");
+
+        await callOk(ticket, { text: "CI auto gate", source: "user" });
+        await callOk(plan, { planText: "## Plan\nAuto gate expected" });
+        await callOk(plan, { selfReviewVerdict: "approve" });
+        expect(await getPhase()).toBe("VALIDATION");
+      } finally {
+        if (previousCi === undefined) delete process.env.CI;
+        else process.env.CI = previousCi;
+      }
+    });
+
     it("concurrent sessions in same workspace have independent state", async () => {
       // Session 1
       const ctx1 = ctx;
@@ -616,7 +655,7 @@ describe("e2e-workflow", () => {
       // 2. Submit ADR (Mode A: initial submission)
       const adrText =
         "## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.";
-      await callOk(architecture, { id: "ADR-1", title: "Use PostgreSQL", adrText });
+      await callOk(architecture, { title: "Use PostgreSQL", adrText });
       expect(await getPhase()).toBe("ARCHITECTURE");
 
       // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
@@ -628,7 +667,7 @@ describe("e2e-workflow", () => {
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
       expect(state!.architecture).not.toBeNull();
-      expect(state!.architecture!.id).toBe("ADR-1");
+      expect(state!.architecture!.id).toBe("ADR-001");
       expect(state!.architecture!.title).toBe("Use PostgreSQL");
       expect(state!.architecture!.status).toBe("accepted");
       expect(state!.selfReview).not.toBeNull();
@@ -642,7 +681,7 @@ describe("e2e-workflow", () => {
       // 2. Submit ADR
       const adrText =
         "## Context\nMicroservices comm.\n\n## Decision\nUse gRPC.\n\n## Consequences\nNeed proto files.";
-      await callOk(architecture, { id: "ADR-2", title: "gRPC for services", adrText });
+      await callOk(architecture, { title: "gRPC for services", adrText });
 
       // 3. Self-review loop to ARCH_REVIEW
       for (let i = 0; i < 5; i++) {
@@ -665,7 +704,7 @@ describe("e2e-workflow", () => {
       await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
       const adrText =
         "## Context\nLogging.\n\n## Decision\nUse ELK.\n\n## Consequences\nComplex setup.";
-      await callOk(architecture, { id: "ADR-3", title: "ELK for logging", adrText });
+      await callOk(architecture, { title: "ELK for logging", adrText });
       for (let i = 0; i < 5; i++) {
         if (await getPhase() === "ARCH_REVIEW") break;
         await callOk(architecture, { selfReviewVerdict: "approve" });
@@ -687,7 +726,7 @@ describe("e2e-workflow", () => {
       await callOk(hydrate, { policyMode: "team", profileId: "baseline" });
       const adrText =
         "## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs.";
-      await callOk(architecture, { id: "ADR-4", title: "REST APIs", adrText });
+      await callOk(architecture, { title: "REST APIs", adrText });
       for (let i = 0; i < 5; i++) {
         if (await getPhase() === "ARCH_REVIEW") break;
         await callOk(architecture, { selfReviewVerdict: "approve" });
@@ -701,7 +740,7 @@ describe("e2e-workflow", () => {
       // Re-submit revised ADR (Mode A — selfReview was cleared, must re-initialize)
       const revisedAdr =
         "## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs. Must version endpoints.";
-      await callOk(architecture, { id: "ADR-4", title: "REST APIs", adrText: revisedAdr });
+      await callOk(architecture, { title: "REST APIs", adrText: revisedAdr });
       for (let i = 0; i < 5; i++) {
         if (await getPhase() === "ARCH_REVIEW") break;
         await callOk(architecture, { selfReviewVerdict: "approve" });
@@ -712,16 +751,8 @@ describe("e2e-workflow", () => {
 
     it("regulated mode blocks self-approval at PLAN_REVIEW (four-eyes enforcement)", async () => {
       // Regulated mode: allowSelfApproval === false.
-      // The decision tool uses context.sessionID as decidedBy,
-      // and hydrate uses context.sessionID as initiatedBy.
-      // Same session = same actor = self-approval → must be blocked.
-      //
-      // Note: context.sessionID serves as both routing key (sessDir) and
-      // identity key (initiatedBy/decidedBy). This means a different reviewer
-      // would resolve to a different session directory at the E2E tool level.
-      // The "different reviewer succeeds" path is tested at the rail level
-      // (review-decision.ts), not here. This E2E test verifies the critical
-      // safety property: self-approval is blocked.
+      // In this E2E test, the same session actor attempts approval,
+      // so four-eyes must block self-approval.
 
       await callOk(hydrate, { policyMode: "regulated", profileId: "baseline" });
       await callOk(ticket, { text: "Regulated four-eyes test", source: "user" });

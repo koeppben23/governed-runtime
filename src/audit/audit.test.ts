@@ -20,6 +20,7 @@ import {
   createToolCallEvent,
   createErrorEvent,
   createLifecycleEvent,
+  createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
 } from "./types";
@@ -41,6 +42,8 @@ import {
   transitionEvents,
   toolCallEvents,
   errorEvents,
+  decisionEvents,
+  decisionReceipts,
   distinctSessions,
   countByKind,
   countByPhase,
@@ -256,6 +259,32 @@ describe("audit types", () => {
       expect(event.detail.kind).toBe("lifecycle");
     });
 
+    it("createDecisionEvent produces valid chained event", () => {
+      const event = createDecisionEvent(
+        SESSION_ID,
+        "PLAN_REVIEW",
+        {
+          decisionId: "DEC-001",
+          decisionSequence: 1,
+          verdict: "approve",
+          rationale: "LGTM",
+          decidedBy: "reviewer-1",
+          decidedAt: TS1,
+          fromPhase: "PLAN_REVIEW",
+          toPhase: "VALIDATION",
+          transitionEvent: "APPROVE",
+          policyMode: "team",
+        },
+        TS1,
+        "human",
+        GENESIS_HASH,
+      );
+      expect(event.event).toBe("decision:DEC-001");
+      expect(event.phase).toBe("PLAN_REVIEW");
+      expect(event.detail.kind).toBe("decision");
+      expect(event.detail.decisionSequence).toBe(1);
+    });
+
     it("summarizeArgs handles all scalar types", () => {
       const result = summarizeArgs({
         str: "hello",
@@ -355,11 +384,31 @@ describe("audit types", () => {
       const tc = createToolCallEvent(SESSION_ID, "PLAN", { tool: "test", argsSummary: {}, success: true, transitionCount: 0 }, TS1, "user", GENESIS_HASH);
       const e = createErrorEvent(SESSION_ID, { code: "ERR", message: "msg", recoveryHint: "fix", errorPhase: "PLAN" }, TS1, GENESIS_HASH);
       const l = createLifecycleEvent(SESSION_ID, { action: "session_created", finalPhase: "TICKET" }, TS1, "system", GENESIS_HASH);
+      const d = createDecisionEvent(
+        SESSION_ID,
+        "PLAN_REVIEW",
+        {
+          decisionId: "DEC-001",
+          decisionSequence: 1,
+          verdict: "approve",
+          rationale: "ok",
+          decidedBy: "r",
+          decidedAt: TS1,
+          fromPhase: "PLAN_REVIEW",
+          toPhase: "VALIDATION",
+          transitionEvent: "APPROVE",
+          policyMode: "team",
+        },
+        TS1,
+        "human",
+        GENESIS_HASH,
+      );
 
       expect(t.event).toMatch(/^transition:/);
       expect(tc.event).toMatch(/^tool_call:/);
       expect(e.event).toMatch(/^error:/);
       expect(l.event).toMatch(/^lifecycle:/);
+      expect(d.event).toMatch(/^decision:/);
     });
   });
 
@@ -591,13 +640,35 @@ describe("audit query", () => {
     makeAuditEvent({ id: "e3", sessionId: "sess-a", phase: "PLAN", event: "tool_call:flowguard_plan", timestamp: TS2, actor: "user-1" }),
     makeAuditEvent({ id: "e4", sessionId: "sess-b", phase: "TICKET", event: "lifecycle:session_created", timestamp: TS2, actor: "system" }),
     makeAuditEvent({ id: "e5", sessionId: "sess-a", phase: "VALIDATION", event: "error:CHECK_TIMEOUT", timestamp: TS3, actor: "machine", detail: { kind: "error", code: "CHECK_TIMEOUT" } }),
+    makeAuditEvent({
+      id: "e6",
+      sessionId: "sess-a",
+      phase: "PLAN_REVIEW",
+      event: "decision:DEC-001",
+      timestamp: TS3,
+      actor: "human",
+      detail: {
+        kind: "decision",
+        decisionId: "DEC-001",
+        decisionSequence: 1,
+        gatePhase: "PLAN_REVIEW",
+        verdict: "approve",
+        rationale: "looks good",
+        decidedBy: "reviewer-1",
+        decidedAt: TS3,
+        fromPhase: "PLAN_REVIEW",
+        toPhase: "VALIDATION",
+        transitionEvent: "APPROVE",
+        policyMode: "team",
+      },
+    }),
   ];
 
   // ─── HAPPY ──────────────────────────────────────────────────
   describe("HAPPY", () => {
     it("bySession filters by session ID", () => {
       const result = filterEvents(events, bySession("sess-a"));
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(5);
       expect(result.every(e => e.sessionId === "sess-a")).toBe(true);
     });
 
@@ -642,6 +713,21 @@ describe("audit query", () => {
       expect(result).toHaveLength(1);
     });
 
+    it("decisionEvents returns only decision events", () => {
+      const result = decisionEvents(events);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.event).toBe("decision:DEC-001");
+    });
+
+    it("decisionReceipts extracts structured receipt fields", () => {
+      const receipts = decisionReceipts(events);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]!.decisionId).toBe("DEC-001");
+      expect(receipts[0]!.decisionSequence).toBe(1);
+      expect(receipts[0]!.verdict).toBe("approve");
+      expect(receipts[0]!.policyMode).toBe("team");
+    });
+
     it("distinctSessions returns unique session IDs", () => {
       const ids = distinctSessions(events);
       expect(ids).toHaveLength(2);
@@ -655,6 +741,7 @@ describe("audit query", () => {
       expect(counts.transition).toBe(1);
       expect(counts.tool_call).toBe(1);
       expect(counts.error).toBe(1);
+      expect(counts.decision).toBe(1);
     });
 
     it("countByPhase counts events per phase", () => {
@@ -678,6 +765,7 @@ describe("audit query", () => {
     it("empty events array returns empty results", () => {
       expect(filterEvents([], byPhase("PLAN"))).toHaveLength(0);
       expect(transitionEvents([])).toHaveLength(0);
+      expect(decisionReceipts([])).toHaveLength(0);
       expect(distinctSessions([])).toHaveLength(0);
       expect(countByKind([])).toEqual({});
     });
@@ -696,7 +784,7 @@ describe("audit query", () => {
   describe("CORNER", () => {
     it("byTimeRange with only 'from' (open-ended to)", () => {
       const result = filterEvents(events, byTimeRange(TS2, null));
-      expect(result).toHaveLength(3); // TS2 and TS3 events
+      expect(result).toHaveLength(4); // TS2 and TS3 events
     });
 
     it("byTimeRange with only 'to' (open-ended from)", () => {
@@ -711,7 +799,7 @@ describe("audit query", () => {
 
     it("byTimeRange with null both → returns all", () => {
       const result = filterEvents(events, byTimeRange(null, null));
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
     });
 
     it("byPhases filters by multiple phases (Set-based)", () => {
@@ -746,7 +834,18 @@ describe("audit query", () => {
 
     it("allOf with zero filters matches everything", () => {
       const result = filterEvents(events, allOf());
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
+    });
+
+    it("decisionReceipts skips malformed decision payloads", () => {
+      const malformed = makeAuditEvent({
+        id: "bad-decision",
+        event: "decision:DEC-999",
+        detail: { kind: "decision", decisionId: 999 as unknown as string },
+      });
+      const receipts = decisionReceipts([...events, malformed]);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]!.decisionId).toBe("DEC-001");
     });
 
     it("anyOf with zero filters matches nothing", () => {
@@ -1163,7 +1262,7 @@ describe("audit completeness", () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
-      const state = makeState("TICKET", { policySnapshot: null });
+      const state = makeState("TICKET", { policySnapshot: undefined as any });
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe("unknown");
     });

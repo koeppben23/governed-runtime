@@ -38,7 +38,7 @@ import {
 } from "../../adapters/workspace";
 
 // Config
-import { resolvePolicy } from "../../config/policy";
+import { policyFromSnapshot, resolvePolicy } from "../../config/policy";
 import type { FlowGuardPolicy } from "../../config/policy";
 import { defaultReasonRegistry } from "../../config/reasons";
 import { createRailContext } from "../../adapters/context";
@@ -108,11 +108,22 @@ export function formatRailResult(result: RailResult): string {
     });
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
+  const reviewDecision = result.state.reviewDecision;
   const json = JSON.stringify({
     phase: result.state.phase,
     status: "ok",
     next: formatEval(result.evalResult),
     nextAction,
+    ...(reviewDecision
+      ? {
+          reviewDecision: {
+            verdict: reviewDecision.verdict,
+            rationale: reviewDecision.rationale,
+            decidedBy: reviewDecision.decidedBy,
+            decidedAt: reviewDecision.decidedAt,
+          },
+        }
+      : {}),
     _audit: { transitions: result.transitions },
   });
   return json + `\nNext action: ${nextAction.text}`;
@@ -203,7 +214,10 @@ export async function requireState(
  * or default to SOLO_POLICY (no session yet).
  */
 export function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
-  return resolvePolicy(state?.policySnapshot?.mode);
+  if (state?.policySnapshot) {
+    return policyFromSnapshot(state.policySnapshot);
+  }
+  return resolvePolicy();
 }
 
 /**

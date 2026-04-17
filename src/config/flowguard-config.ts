@@ -38,7 +38,7 @@ export const FlowGuardConfigSchema = z.object({
   policy: z
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
-      defaultMode: z.enum(["solo", "team", "regulated"]).optional(),
+      defaultMode: z.enum(["solo", "team", "team-ci", "regulated"]).optional(),
       /** Override max self-review iterations (PLAN phase). */
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */

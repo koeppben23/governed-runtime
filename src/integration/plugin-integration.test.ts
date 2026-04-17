@@ -134,6 +134,7 @@ beforeEach(async () => {
     directory: ws.tmpDir,
     worktree: ws.tmpDir,
     serverUrl: new URL("http://localhost:3000"),
+    experimental_workspace: undefined as never,
   });
 
   handler = hooks["tool.execute.after"]! as (
@@ -166,6 +167,8 @@ function makeToolOutput(fields: {
   status?: string;
   error?: boolean;
   errorMessage?: string;
+  policyResolution?: Record<string, unknown>;
+  reviewDecision?: Record<string, unknown>;
   _audit?: {
     transitions?: Array<{
       from: string;
@@ -339,6 +342,74 @@ describe("plugin-integration", () => {
       expect(toolCall).toBeDefined();
       expect(toolCall!.actor).toBe("human");
     });
+
+    it("emits decision receipt with DEC-001 format", async () => {
+      const transitions = [
+        {
+          from: "PLAN_REVIEW",
+          to: "VALIDATION",
+          event: "APPROVE",
+          at: new Date().toISOString(),
+        },
+      ];
+
+      await handler(
+        {
+          tool: "flowguard_decision",
+          sessionID: sessionId,
+          args: { verdict: "approve", rationale: "Looks good" },
+        },
+        {
+          title: "decision",
+          output: makeToolOutput({
+            phase: "VALIDATION",
+            reviewDecision: {
+              verdict: "approve",
+              rationale: "Looks good",
+              decidedBy: "reviewer-42",
+              decidedAt: transitions[0]!.at,
+            },
+            _audit: { transitions },
+          }),
+          metadata: {},
+        },
+      );
+
+      const { events } = await getEvents();
+      const decision = events.find((e) => eventKind(e) === "decision");
+      expect(decision).toBeDefined();
+      expect(decision!.event).toBe("decision:DEC-001");
+      expect(decision!.detail.decisionSequence).toBe(1);
+      expect(decision!.detail.verdict).toBe("approve");
+      expect(decision!.detail.rationale).toBe("Looks good");
+      expect(decision!.detail.decidedBy).toBe("reviewer-42");
+    });
+
+    it("session_created lifecycle reason includes policy resolution fields", async () => {
+      await handler(
+        { tool: "flowguard_hydrate", sessionID: sessionId },
+        {
+          title: "hydrate",
+          output: makeToolOutput({
+            phase: "READY",
+            policyResolution: {
+              requestedMode: "team-ci",
+              effectiveMode: "team",
+              effectiveGateBehavior: "human_gated",
+              reason: "ci_context_missing",
+            },
+          }),
+          metadata: {},
+        },
+      );
+
+      const { events } = await getEvents();
+      const lifecycle = events.find((e) => e.event === "lifecycle:session_created");
+      expect(lifecycle).toBeDefined();
+      expect(String(lifecycle!.detail.reason)).toContain("requested_mode:team-ci");
+      expect(String(lifecycle!.detail.reason)).toContain("effective_mode:team");
+      expect(String(lifecycle!.detail.reason)).toContain("reason:ci_context_missing");
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -375,6 +446,7 @@ describe("plugin-integration", () => {
         directory: "/nonexistent/path",
         worktree: "/nonexistent/path",
         serverUrl: new URL("http://localhost:3000"),
+        experimental_workspace: undefined as never,
       });
       const badHandler = hooks["tool.execute.after"]! as (
         input: PluginInput,
@@ -386,6 +458,71 @@ describe("plugin-integration", () => {
         { tool: "flowguard_status", sessionID: "fake" },
         { title: "status", output: "{}", metadata: {} },
       );
+    });
+
+    it("does not emit decision receipt when decision call fails", async () => {
+      await handler(
+        {
+          tool: "flowguard_decision",
+          sessionID: sessionId,
+          args: { verdict: "approve", rationale: "x" },
+        },
+        {
+          title: "decision",
+          output: makeToolOutput({
+            phase: "PLAN_REVIEW",
+            error: true,
+            errorMessage: "blocked",
+          }),
+          metadata: {},
+        },
+      );
+
+      const { events } = await getEvents();
+      const decisions = events.filter((e) => eventKind(e) === "decision");
+      expect(decisions).toHaveLength(0);
+      expect(events.some((e) => eventKind(e) === "tool_call")).toBe(true);
+      expect(events.some((e) => eventKind(e) === "error")).toBe(true);
+    });
+
+    it("skips decision receipt and emits explicit error when decidedBy is missing", async () => {
+      const transitions = [
+        {
+          from: "PLAN_REVIEW",
+          to: "VALIDATION",
+          event: "APPROVE",
+          at: new Date().toISOString(),
+        },
+      ];
+
+      await handler(
+        {
+          tool: "flowguard_decision",
+          sessionID: sessionId,
+          args: { verdict: "approve", rationale: "Missing actor test" },
+        },
+        {
+          title: "decision",
+          output: makeToolOutput({
+            phase: "VALIDATION",
+            reviewDecision: {
+              verdict: "approve",
+              rationale: "Missing actor test",
+              decidedAt: transitions[0]!.at,
+            },
+            _audit: { transitions },
+          }),
+          metadata: {},
+        },
+      );
+
+      const { events } = await getEvents();
+      const decisions = events.filter((e) => eventKind(e) === "decision");
+      expect(decisions).toHaveLength(0);
+      const missingActorErr = events.find(
+        (e) => eventKind(e) === "error" && e.event === "error:DECISION_RECEIPT_ACTOR_MISSING",
+      );
+      expect(missingActorErr).toBeDefined();
     });
   });
 
@@ -449,6 +586,7 @@ describe("plugin-integration", () => {
         directory: ws.tmpDir,
         worktree: ws.tmpDir,
         serverUrl: new URL("http://localhost:3000"),
+        experimental_workspace: undefined as never,
       });
       const soloHandler = hooks["tool.execute.after"]! as (
         input: PluginInput,
@@ -475,10 +613,9 @@ describe("plugin-integration", () => {
       expect(events[1].chainHash).toBeTruthy();
     });
 
-    it("policy is resolved from mode, not from snapshot audit fields", async () => {
+    it("policy is resolved from snapshot fields (frozen session authority)", async () => {
       // Write state with mode=team but snapshot claims emitToolCalls=false.
-      // The plugin resolves policy via resolvePolicy(mode), so the canonical
-      // TEAM_POLICY (emitToolCalls=true) governs — snapshot fields are not authoritative.
+      // The snapshot is authoritative for this session, so tool_call should be suppressed.
       const customState = makeState("TICKET", {
         id: crypto.randomUUID(),
         binding: {
@@ -512,6 +649,7 @@ describe("plugin-integration", () => {
         directory: ws.tmpDir,
         worktree: ws.tmpDir,
         serverUrl: new URL("http://localhost:3000"),
+        experimental_workspace: undefined as never,
       });
       const customHandler = hooks["tool.execute.after"]! as (
         input: PluginInput,
@@ -537,11 +675,67 @@ describe("plugin-integration", () => {
       );
 
       const { events } = await getEvents();
-      // ...but resolved TEAM_POLICY has emitToolCalls=true, so tool_call IS emitted
+      // Snapshot says emitToolCalls=false, so tool_call is suppressed.
       const toolCalls = events.filter((e) => eventKind(e) === "tool_call");
       const trans = events.filter((e) => eventKind(e) === "transition");
-      expect(toolCalls.length).toBe(1); // NOT suppressed — resolved from canonical policy
-      expect(trans.length).toBe(1); // also emitted
+      expect(toolCalls.length).toBe(0);
+      expect(trans.length).toBe(1);
+    });
+
+    it("decision IDs remain unique under parallel calls in one session", async () => {
+      const transitions = [
+        {
+          from: "PLAN_REVIEW",
+          to: "VALIDATION",
+          event: "APPROVE",
+          at: new Date().toISOString(),
+        },
+      ];
+
+      await Promise.all([
+        handler(
+          { tool: "flowguard_decision", sessionID: sessionId, args: { rationale: "r1" } },
+          {
+            title: "decision",
+            output: makeToolOutput({
+              phase: "VALIDATION",
+              reviewDecision: {
+                verdict: "approve",
+                rationale: "r1",
+                decidedBy: "reviewer-1",
+                decidedAt: transitions[0]!.at,
+              },
+              _audit: { transitions },
+            }),
+            metadata: {},
+          },
+        ),
+        handler(
+          { tool: "flowguard_decision", sessionID: sessionId, args: { rationale: "r2" } },
+          {
+            title: "decision",
+            output: makeToolOutput({
+              phase: "VALIDATION",
+              reviewDecision: {
+                verdict: "approve",
+                rationale: "r2",
+                decidedBy: "reviewer-2",
+                decidedAt: transitions[0]!.at,
+              },
+              _audit: { transitions },
+            }),
+            metadata: {},
+          },
+        ),
+      ]);
+
+      const { events } = await getEvents();
+      const decisions = events.filter((e) => eventKind(e) === "decision");
+      expect(decisions).toHaveLength(2);
+      const ids = decisions.map((d) => d.event).sort();
+      expect(ids).toEqual(["decision:DEC-001", "decision:DEC-002"]);
+      const decidedBy = decisions.map((d) => String(d.detail.decidedBy)).sort();
+      expect(decidedBy).toEqual(["reviewer-1", "reviewer-2"]);
     });
   });
 
@@ -605,6 +799,7 @@ describe("plugin-integration", () => {
         directory: ws.tmpDir,
         worktree: ws.tmpDir,
         serverUrl: new URL("http://localhost:3000"),
+        experimental_workspace: undefined as never,
       });
       const handler2 = hooks2["tool.execute.after"]! as (
         input: PluginInput,

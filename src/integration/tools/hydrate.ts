@@ -50,7 +50,7 @@ import { PROFILE_RESOLUTION_SCHEMA_VERSION } from "../../discovery/types";
 import { defaultProfileRegistry as profileRegistryForResolution } from "../../config/profile";
 
 // Config
-import { resolvePolicy } from "../../config/policy";
+import { detectCiContext, resolvePolicyWithContext } from "../../config/policy";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_hydrate — Bootstrap Session
@@ -64,7 +64,7 @@ export const hydrate: ToolDefinition = {
     "This MUST be the first FlowGuard tool call in any workflow.",
   args: {
     policyMode: z
-      .enum(["solo", "team", "regulated"])
+      .enum(["solo", "team", "team-ci", "regulated"])
       .default("solo")
       .describe(
         "FlowGuard policy mode. 'solo' = no human gates (default). " +
@@ -87,9 +87,11 @@ export const hydrate: ToolDefinition = {
       const existing = await readState(sessDir);
 
       // Resolve policy for context
+      const ciContext = detectCiContext();
+      const policyResolution = resolvePolicyWithContext(args.policyMode, ciContext);
       const policy = existing
         ? resolvePolicyFromState(existing)
-        : resolvePolicy(args.policyMode);
+        : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 
       // ── Discovery (only for new sessions) ──────────────────────
@@ -183,7 +185,21 @@ export const hydrate: ToolDefinition = {
         sessionId: context.sessionID,
         worktree,
         fingerprint,
-        policyMode: args.policyMode,
+        policyMode: existing ? existing.policySnapshot.mode : policyResolution.effectiveMode,
+        requestedPolicyMode: existing
+          ? ((existing.policySnapshot.requestedMode ?? existing.policySnapshot.mode) as
+              | "solo"
+              | "team"
+              | "team-ci"
+              | "regulated")
+          : policyResolution.requestedMode,
+        effectiveGateBehavior: existing
+          ? (existing.policySnapshot.effectiveGateBehavior
+              ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"))
+          : policyResolution.effectiveGateBehavior,
+        policyDegradedReason: existing
+          ? (existing.policySnapshot.degradedReason as "ci_context_missing" | undefined)
+          : policyResolution.degradedReason,
         profileId: args.profileId,
         repoSignals,
         initiatedBy: context.sessionID,
@@ -209,6 +225,12 @@ export const hydrate: ToolDefinition = {
           profileDetected: !!repoSignals,
           discoveryComplete: !!discoveryResult,
           discoverySummary: discoverySummary ?? null,
+          policyResolution: {
+            requestedMode: policyResolution.requestedMode,
+            effectiveMode: policyResolution.effectiveMode,
+            effectiveGateBehavior: policyResolution.effectiveGateBehavior,
+            reason: policyResolution.degradedReason ?? null,
+          },
         };
         if (discoveryError) {
           response.discoveryError = discoveryError;

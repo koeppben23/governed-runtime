@@ -39,7 +39,7 @@ import {
   type WorkspaceInfo,
 } from "./workspace";
 import * as crypto from "node:crypto";
-import { benchmarkSync } from "../test-policy";
+import { benchmarkSync, measureAsync } from "../test-policy";
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -638,6 +638,12 @@ describe("archiveSession", () => {
     // Archive file should exist
     const stats = await fs.stat(archivePath);
     expect(stats.size).toBeGreaterThan(0);
+
+    const receiptsPath = path.join(sessDir, "decision-receipts.v1.json");
+    const receiptsRaw = await fs.readFile(receiptsPath, "utf-8");
+    const receipts = JSON.parse(receiptsRaw);
+    expect(receipts.schemaVersion).toBe("decision-receipts.v1");
+    expect(Array.isArray(receipts.receipts)).toBe(true);
   });
 
   it("throws ARCHIVE_FAILED for non-existent session", async () => {
@@ -920,17 +926,17 @@ describe("PERF", () => {
     expect(p99Ms).toBeLessThan(1);
   });
 
-  it("initWorkspace is fast (<50ms)", () => {
-    const { p99Ms } = benchmarkSync(
-      async () => {
-        const td = await createTmpDir();
-        process.env.OPENCODE_CONFIG_DIR = td;
-        await initWorkspace(path.resolve("."), `perf-${Date.now()}`);
-        await cleanTmpDir(td);
-      },
-      10,
-    );
-    expect(p99Ms).toBeLessThan(50);
+  it("initWorkspace is fast (<50ms)", async () => {
+    const td = await createTmpDir();
+    process.env.OPENCODE_CONFIG_DIR = td;
+    try {
+      const { elapsedMs } = await measureAsync(
+        () => initWorkspace(path.resolve("."), `perf-${Date.now()}`),
+      );
+      expect(elapsedMs).toBeLessThan(50);
+    } finally {
+      await cleanTmpDir(td);
+    }
   });
 });
 

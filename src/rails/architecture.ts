@@ -3,7 +3,7 @@
  * @description /architecture rail — create an Architecture Decision Record (ADR).
  *
  * Behavior:
- * 1. Validate command admissibility (READY only)
+ * 1. Validate command admissibility (READY and ARCHITECTURE for revisions)
  * 2. Transition READY → ARCHITECTURE (flow selection)
  * 3. Validate input (title, adrText with required MADR sections)
  * 4. Create ArchitectureDecision evidence
@@ -32,8 +32,6 @@ import { blocked } from "../config/reasons";
 // ─── Input ────────────────────────────────────────────────────────────────────
 
 export interface ArchitectureInput {
-  /** ADR identifier (e.g., "ADR-1"). */
-  readonly id: string;
   /** Short title of the architecture decision. */
   readonly title: string;
   /** Full ADR body in Markdown (MADR format). */
@@ -56,12 +54,6 @@ export function executeArchitecture(
   }
 
   // 2. Validate input
-  if (!input.id.trim()) {
-    return blocked("INVALID_ADR_ID");
-  }
-  if (!/^ADR-\d+$/.test(input.id)) {
-    return blocked("INVALID_ADR_ID");
-  }
   if (!input.title.trim()) {
     return blocked("EMPTY_ADR_TITLE");
   }
@@ -90,9 +82,12 @@ export function executeArchitecture(
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
   }
 
+  const adrNumber = state.nextAdrNumber;
+  const adrId = `ADR-${String(adrNumber).padStart(3, "0")}`;
+
   // 5. Create ArchitectureDecision evidence
   const adr: ArchitectureDecision = {
-    id: input.id,
+    id: adrId,
     title: input.title,
     adrText: input.adrText,
     status: "proposed",
@@ -116,6 +111,7 @@ export function executeArchitecture(
       revisionDelta: "major" as RevisionDelta,
       verdict: "changes_requested" as LoopVerdict,
     },
+    nextAdrNumber: adrNumber + 1,
     error: null,
   };
 

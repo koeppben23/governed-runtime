@@ -36,6 +36,11 @@ import type { FlowGuardProfile, RepoSignals } from "../config/profile";
 import type { DiscoveryResult } from "../discovery/types";
 import { extractBaseInstructions, extractByPhaseInstructions } from "../config/profile";
 import { resolvePolicy, createPolicySnapshot } from "../config/policy";
+import type {
+  EffectiveGateBehavior,
+  PolicyDegradedReason,
+  PolicyMode,
+} from "../config/policy";
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +76,12 @@ export interface HydrateInput {
    * Defaults to "team" if not provided.
    */
   readonly policyMode?: string;
+  /** Requested policy mode before CI/context resolution. */
+  readonly requestedPolicyMode?: PolicyMode;
+  /** Effective gate behavior for the resolved policy mode. */
+  readonly effectiveGateBehavior?: EffectiveGateBehavior;
+  /** Optional reason why requested mode was degraded. */
+  readonly policyDegradedReason?: PolicyDegradedReason;
   /**
    * Identity of the session initiator (author).
    * Used for four-eyes principle enforcement.
@@ -164,7 +175,12 @@ export function executeHydrate(
   const policyMode = input.policyMode ?? "solo";
   const policy = resolvePolicy(policyMode);
   const now = ctx.now();
-  const policySnapshot = createPolicySnapshot(policy, now, ctx.digest);
+  const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
+    requestedMode: input.requestedPolicyMode ?? policy.mode,
+    effectiveGateBehavior:
+      input.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"),
+    degradedReason: input.policyDegradedReason,
+  });
 
   // 5. Create binding
   const binding: BindingInfo = {
@@ -191,11 +207,12 @@ export function executeHydrate(
     implementation: null,
     implReview: null,
     reviewDecision: null,
+    nextAdrNumber: 1,
 
     // Configuration
     activeProfile,
     activeChecks,
-    policySnapshot,
+    policySnapshot: snapshotWithContext,
     initiatedBy: input.initiatedBy ?? input.sessionId,
 
     // Discovery

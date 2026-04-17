@@ -327,7 +327,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: "precondition",
     messageTemplate: "No ADR exists to review.",
     recoverySteps: [
-      "Submit an ADR via flowguard_architecture with id, title, and adrText first",
+      "Submit an ADR via flowguard_architecture with title and adrText first",
     ],
     quickFixCommand: "/architecture",
   },
@@ -342,13 +342,6 @@ const SEED_REASONS: readonly BlockedReason[] = [
   },
 
   // ── Architecture Input ────────────────────────────────────────
-  {
-    code: "INVALID_ADR_ID",
-    category: "input",
-    messageTemplate:
-      "ADR ID must match the pattern ADR-<number> (e.g., ADR-1, ADR-42).",
-    recoverySteps: ["Provide a valid ADR ID in the format ADR-<number>"],
-  },
   {
     code: "EMPTY_ADR_TITLE",
     category: "input",

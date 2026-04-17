@@ -42,7 +42,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### FlowGuard & Compliance
 
-- **Three deployment profiles:** Solo (no human gates), Team (human gates, self-approval allowed), Regulated (human gates, four-eyes principle enforced)
+- **Four policy modes:** Solo (no human gates), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (human gates, four-eyes principle enforced)
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
@@ -50,7 +50,8 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### Audit & Evidence
 
 - **Hash-chained audit trail** — SHA-256 linked events, tamper-evident, JSONL append-only
-- **Structured event kinds** — transition, tool_call, error, lifecycle events with typed details
+- **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
+- **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation
@@ -76,6 +77,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification
 - **10-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, and state presence
+- **Receipt export** — archives include `decision-receipts.v1.json` derived from append-only audit events
 - **Soft-check design** — missing discovery snapshots warn (not fail-hard) for backward compatibility with pre-discovery sessions
 
 ---
@@ -104,7 +106,7 @@ Ten FlowGuard commands map to workflow phases:
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject) |
 | `/implement` | Execute implementation, record evidence, run review loop |
 | `/validate` | Run validation checks (test quality, rollback safety) |
-| `/architecture` | Create or revise an Architecture Decision Record (ADR) with self-review loop |
+| `/architecture` | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated) |
 | `/review` | Start standalone compliance review flow |
 | `/continue` | Universal routing — do the next appropriate action for the current phase |
 | `/abort` | Emergency session termination |
@@ -183,6 +185,10 @@ For individual engineers who want structured execution and complete work records
 ### Team
 
 For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed.
+
+### Team-CI
+
+For CI/CD pipelines that require explicit automation semantics. Auto-approve is active only when CI context is detected; otherwise behavior degrades safely to Team (human-gated) with explicit reason `ci_context_missing`.
 
 ### Regulated
 
@@ -303,7 +309,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
 - **No built-in multi-user coordination.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Multi-user access requires customer-managed controls (OS permissions, host account separation).
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
-- **No built-in CI integration.** FlowGuard operates within the developer's local environment. CI/CD pipeline integration requires wrapping FlowGuard operations in custom scripts.
+- **No full CI orchestrator.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
 - **Profile auto-detection is heuristic.** Tech-stack detection uses file-path-based signals (presence of `pom.xml`, `angular.json`, etc.). It does not read file contents and may misclassify repositories with non-standard layouts.
 
@@ -318,8 +324,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports (via `@flowguard/core/integration`)
-- **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
-- **Policy Modes:** 3 (Solo [default], Team, Regulated)
+- **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
+- **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Discovery Collectors:** 5 (repo-metadata, stack-detection, topology, surface-detection, domain-signals)
 - **Archive Verification Checks:** 10 finding codes
@@ -339,4 +345,4 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 *Version: 1.0.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Distribution: Pre-built proprietary artifact (GitHub Releases)*
-*Last Updated: 2026-04-15*
+*Last Updated: 2026-04-17*

@@ -2,8 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   SOLO_POLICY,
   TEAM_POLICY,
+  TEAM_CI_POLICY,
   REGULATED_POLICY,
+  detectCiContext,
   resolvePolicy,
+  resolvePolicyWithContext,
   policyModes,
   createPolicySnapshot,
 } from "../config/policy";
@@ -35,7 +38,26 @@ describe("config/policy", () => {
     it("resolvePolicy returns correct preset for each mode", () => {
       expect(resolvePolicy("solo")).toBe(SOLO_POLICY);
       expect(resolvePolicy("team")).toBe(TEAM_POLICY);
+      expect(resolvePolicy("team-ci")).toBe(TEAM_POLICY);
       expect(resolvePolicy("regulated")).toBe(REGULATED_POLICY);
+    });
+
+    it("resolvePolicyWithContext keeps team-ci when CI context exists", () => {
+      const result = resolvePolicyWithContext("team-ci", true);
+      expect(result.policy).toBe(TEAM_CI_POLICY);
+      expect(result.requestedMode).toBe("team-ci");
+      expect(result.effectiveMode).toBe("team-ci");
+      expect(result.effectiveGateBehavior).toBe("auto_approve");
+      expect(result.degradedReason).toBeUndefined();
+    });
+
+    it("resolvePolicyWithContext degrades team-ci to team without CI context", () => {
+      const result = resolvePolicyWithContext("team-ci", false);
+      expect(result.policy).toBe(TEAM_POLICY);
+      expect(result.requestedMode).toBe("team-ci");
+      expect(result.effectiveMode).toBe("team");
+      expect(result.effectiveGateBehavior).toBe("human_gated");
+      expect(result.degradedReason).toBe("ci_context_missing");
     });
 
     it("SOLO has no human gates and 1 iteration", () => {
@@ -56,6 +78,13 @@ describe("config/policy", () => {
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
     });
 
+    it("TEAM-CI enables auto-approval with full audit", () => {
+      expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
+      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
+    });
+
     it("createPolicySnapshot produces deterministic hash", () => {
       const digest = (s: string) => `hash-of-${s.length}`;
       const snap1 = createPolicySnapshot(TEAM_POLICY, "2026-01-01T00:00:00.000Z", digest);
@@ -63,12 +92,20 @@ describe("config/policy", () => {
       expect(snap1.hash).toBe(snap2.hash);
     });
 
-    it("policyModes returns all 3 modes", () => {
+    it("policyModes returns all 4 modes", () => {
       const modes = policyModes();
       expect(modes).toContain("solo");
       expect(modes).toContain("team");
+      expect(modes).toContain("team-ci");
       expect(modes).toContain("regulated");
-      expect(modes.length).toBe(3);
+      expect(modes.length).toBe(4);
+    });
+
+    it("detectCiContext recognizes common CI signals", () => {
+      expect(detectCiContext({ CI: "true" })).toBe(true);
+      expect(detectCiContext({ GITHUB_ACTIONS: "1" })).toBe(true);
+      expect(detectCiContext({ CI: "false" })).toBe(false);
+      expect(detectCiContext({})).toBe(false);
     });
   });
 

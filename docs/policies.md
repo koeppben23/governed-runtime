@@ -1,6 +1,6 @@
 # Policies
 
-FlowGuard supports three policy modes that determine the level of enforcement.
+FlowGuard supports four policy modes that determine the level of enforcement.
 
 ## Policy Modes
 
@@ -8,6 +8,7 @@ FlowGuard supports three policy modes that determine the level of enforcement.
 |------|-------------|-----------|---------------|
 | Solo | 0 | No | Allowed |
 | Team | 3 | Optional | Allowed |
+| Team-CI | 0 (CI only) | Optional | Allowed |
 | Regulated | 3 | **Required** | **Not Allowed** |
 
 ## Solo Mode
@@ -34,6 +35,20 @@ For team projects with optional human oversight.
 - Four-eyes optional (can be same person)
 - Self-approval allowed
 - Review documentation required
+
+## Team-CI Mode
+
+For CI/CD pipelines that should auto-advance user gates.
+
+**Characteristics:**
+- Auto-approve behavior at user gates when CI context is present
+- Full audit trail and hash chain
+- Same iteration limits as Team mode
+
+**Fail-safe degradation:**
+- If CI context is missing or unclear, `team-ci` degrades to `team`
+- Reason code: `ci_context_missing`
+- Effective behavior becomes human-gated (no silent auto-approve)
 
 **When to use:**
 - Team projects
@@ -89,10 +104,10 @@ In `config.json`:
 
 ## Policy Comparison
 
-| Setting | Solo | Team | Regulated |
-|---------|------|------|-----------|
-| Human gates | 0 | 3 | 3 |
-| Four-eyes required | No | No | **Yes** |
-| Self-approval | Allowed | Allowed | **Not Allowed** |
-| Audit trail | Optional | Recommended | **Mandatory** |
-| Hash chain | No | Optional | **Yes** |
+| Setting | Solo | Team | Team-CI | Regulated |
+|---------|------|------|---------|-----------|
+| Human gates | 0 | 3 | 0 (CI only) | 3 |
+| Four-eyes required | No | No | No | **Yes** |
+| Self-approval | Allowed | Allowed | Allowed | **Not Allowed** |
+| Audit trail | Optional | Recommended | Recommended | **Mandatory** |
+| Hash chain | No | Optional | **Yes** | **Yes** |

@@ -5,7 +5,6 @@ import { createTestContext } from "../testing";
 import {
   makeState,
   FIXED_TIME,
-  ARCHITECTURE_DECISION,
 } from "../__fixtures__";
 import { SOLO_POLICY, TEAM_POLICY } from "../config/policy";
 import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
@@ -18,7 +17,6 @@ const VALID_ADR_TEXT =
 
 /** Valid architecture input. */
 const VALID_INPUT: ArchitectureInput = {
-  id: "ADR-1",
   title: "Use PostgreSQL for primary storage",
   adrText: VALID_ADR_TEXT,
 };
@@ -33,7 +31,7 @@ describe("executeArchitecture", () => {
       if (result.kind === "ok") {
         expect(result.state.phase).toBe("ARCHITECTURE");
         expect(result.state.architecture).not.toBeNull();
-        expect(result.state.architecture!.id).toBe("ADR-1");
+        expect(result.state.architecture!.id).toBe("ADR-001");
         expect(result.state.architecture!.title).toBe("Use PostgreSQL for primary storage");
         expect(result.state.architecture!.status).toBe("proposed");
         expect(result.state.architecture!.adrText).toBe(VALID_ADR_TEXT);
@@ -113,33 +111,6 @@ describe("executeArchitecture", () => {
       }
     });
 
-    it("blocks for empty ADR ID", () => {
-      const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "" }, ctx);
-      expect(result.kind).toBe("blocked");
-      if (result.kind === "blocked") {
-        expect(result.code).toBe("INVALID_ADR_ID");
-      }
-    });
-
-    it("blocks for malformed ADR ID (no ADR- prefix)", () => {
-      const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "1" }, ctx);
-      expect(result.kind).toBe("blocked");
-      if (result.kind === "blocked") {
-        expect(result.code).toBe("INVALID_ADR_ID");
-      }
-    });
-
-    it("blocks for malformed ADR ID (non-numeric suffix)", () => {
-      const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "ADR-abc" }, ctx);
-      expect(result.kind).toBe("blocked");
-      if (result.kind === "blocked") {
-        expect(result.code).toBe("INVALID_ADR_ID");
-      }
-    });
-
     it("blocks for empty title", () => {
       const state = makeState("READY");
       const result = executeArchitecture(state, { ...VALID_INPUT, title: "" }, ctx);
@@ -183,15 +154,6 @@ describe("executeArchitecture", () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe("CORNER", () => {
-    it("whitespace-only ADR ID is blocked", () => {
-      const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "   " }, ctx);
-      expect(result.kind).toBe("blocked");
-      if (result.kind === "blocked") {
-        expect(result.code).toBe("INVALID_ADR_ID");
-      }
-    });
-
     it("whitespace-only title is blocked", () => {
       const state = makeState("READY");
       const result = executeArchitecture(state, { ...VALID_INPUT, title: "   " }, ctx);
@@ -210,16 +172,22 @@ describe("executeArchitecture", () => {
       }
     });
 
-    it("ADR-0 is a valid ID", () => {
+    it("uses existing session counter for generated ADR ID", () => {
       const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "ADR-0" }, ctx);
+      const result = executeArchitecture({ ...state, nextAdrNumber: 42 }, VALID_INPUT, ctx);
       expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.architecture!.id).toBe("ADR-042");
+      }
     });
 
-    it("large ADR ID numbers are valid", () => {
+    it("increments nextAdrNumber after ADR creation", () => {
       const state = makeState("READY");
-      const result = executeArchitecture(state, { ...VALID_INPUT, id: "ADR-9999" }, ctx);
+      const result = executeArchitecture(state, VALID_INPUT, ctx);
       expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.state.nextAdrNumber).toBe(state.nextAdrNumber + 1);
+      }
     });
 
     it("default maxIterations is 3 when no policy is set", () => {

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Full 5-category test coverage (HAPPY/BAD/CORNER/EDGE/PERF) for evaluate, workspace, and discovery modules
 - Performance benchmarks for evaluateWithEvent (<0.1ms p99), initWorkspace (<50ms), runDiscovery (<100ms)
+- Decision receipts in audit trail: successful `/review-decision` now emits `decision:DEC-xxx` events with sequence metadata
+- Archive export now includes `decision-receipts.v1.json` derived from the append-only audit chain
+- New policy mode `team-ci` for CI auto-approval with explicit CI-context checks
+- `/architecture` now auto-generates ADR IDs (`ADR-001`, `ADR-002`, ...) from session-local counter state
 
 ### Removed
 
@@ -20,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - LSP errors in config.test.ts from removed budget references
 - Type error: PhaseInstructions.length → extractBaseInstructions().length
+- Policy drift risk reduced: runtime policy resolution now reconstructs behavior from frozen `policySnapshot` fields
+- `team-ci` without CI context now degrades safely to `team` with explicit `ci_context_missing` reason
+- Decision receipts now fail-closed on missing reviewer identity (`DECISION_RECEIPT_ACTOR_MISSING`) instead of storing `unknown`
+- Removed stale architecture command/test surfaces requiring user-provided ADR IDs
 
 ## [1.0.0] - 2026-04-16
 

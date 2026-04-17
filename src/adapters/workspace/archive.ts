@@ -13,7 +13,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { readState } from "../persistence";
+import { readAuditTrail, readState } from "../persistence";
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -21,6 +21,7 @@ import {
   type ArchiveVerification,
   type ArchiveFinding,
 } from "../../archive/types";
+import { decisionReceipts } from "../../audit/query";
 
 import {
   WorkspaceError,
@@ -86,6 +87,21 @@ export async function archiveSession(
   }
 
   // ── Build and write archive manifest ──────────────────────────
+  const { events } = await readAuditTrail(sessDir).catch(() => ({ events: [] }));
+  const receipts = decisionReceipts(events).filter((r) => r.sessionId === validSessionId);
+  const receiptsPayload = {
+    schemaVersion: "decision-receipts.v1",
+    sessionId: validSessionId,
+    generatedAt: new Date().toISOString(),
+    count: receipts.length,
+    receipts,
+  };
+  await fs.writeFile(
+    path.join(sessDir, "decision-receipts.v1.json"),
+    JSON.stringify(receiptsPayload, null, 2) + "\n",
+    "utf-8",
+  );
+
   const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId);
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
   await fs.writeFile(path.join(sessDir, "archive-manifest.json"), manifestJson, "utf-8");

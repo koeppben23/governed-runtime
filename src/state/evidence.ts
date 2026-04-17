@@ -248,6 +248,12 @@ export const PolicySnapshotSchema = z.object({
   hash: z.string(),
   /** When the policy was resolved and frozen. */
   resolvedAt: z.string().datetime(),
+  /** Requested policy mode at hydrate time. */
+  requestedMode: z.string().optional(),
+  /** Effective gate behavior after mode resolution. */
+  effectiveGateBehavior: z.enum(["auto_approve", "human_gated"]).optional(),
+  /** Why requested mode was degraded (if applicable). */
+  degradedReason: z.string().optional(),
 
   // ── Governance-critical fields (frozen copy) ───────────────
   requireHumanGates: z.boolean(),

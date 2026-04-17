@@ -4,7 +4,7 @@
  * @description CLI for installing/uninstalling FlowGuard into an OpenCode environment.
  *
  * Usage:
- *   flowguard install --core-tarball <path> [--install-scope global|repo] [--policy-mode solo|team|regulated] [--force]
+ *   flowguard install --core-tarball <path> [--install-scope global|repo] [--policy-mode solo|team|team-ci|regulated] [--force]
  *   flowguard uninstall [--install-scope global|repo]
  *   flowguard doctor [--install-scope global|repo]
  *
@@ -67,7 +67,7 @@ import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from "../adap
 export type InstallScope = "global" | "repo";
 
 /** FlowGuard policy mode (runtime behavior, NOT install location). */
-export type PolicyMode = "solo" | "team" | "regulated";
+export type PolicyMode = "solo" | "team" | "team-ci" | "regulated";
 
 /** CLI action. */
 export type CliAction = "install" | "uninstall" | "doctor";
@@ -849,7 +849,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
-const VALID_POLICY_MODES: readonly PolicyMode[] = ["solo", "team", "regulated"] as const;
+const VALID_POLICY_MODES: readonly PolicyMode[] = ["solo", "team", "team-ci", "regulated"] as const;
 const VALID_SCOPES: readonly InstallScope[] = ["global", "repo"] as const;
 const VALID_ACTIONS: readonly CliAction[] = ["install", "uninstall", "doctor"] as const;
 
@@ -1023,7 +1023,7 @@ Commands:
 
 Options:
   --install-scope  Where to install: global (default) or repo
-  --policy-mode    FlowGuard policy: solo (default), team, regulated
+  --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
 

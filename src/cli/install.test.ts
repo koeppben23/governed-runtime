@@ -165,6 +165,12 @@ describe("cli/parseArgs", () => {
       expect(result!.args.force).toBe(true);
     });
 
+    it("parses 'install --policy-mode team-ci'", () => {
+      const result = parseArgs(["install", "--policy-mode", "team-ci"]);
+      expect(result).not.toBeNull();
+      expect(result!.args.policyMode).toBe("team-ci");
+    });
+
     it("parses 'install --core-tarball <path>'", () => {
       const result = parseArgs(["install", "--core-tarball", "/path/to/flowguard-core-${VERSION}.tgz"]);
       expect(result).not.toBeNull();
@@ -275,8 +281,8 @@ describe("cli/parseArgs", () => {
       expect(result!.args.installScope).toBe("repo");
     });
 
-    it("all three policy modes are accepted via --policy-mode", () => {
-      for (const mode of ["solo", "team", "regulated"] as const) {
+    it("all four policy modes are accepted via --policy-mode", () => {
+      for (const mode of ["solo", "team", "team-ci", "regulated"] as const) {
         const result = parseArgs(["install", "--policy-mode", mode]);
         expect(result).not.toBeNull();
         expect(result!.args.policyMode).toBe(mode);

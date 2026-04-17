@@ -73,17 +73,20 @@ import {
   createTransitionEvent,
   createLifecycleEvent,
   createErrorEvent,
+  createDecisionEvent,
   summarizeArgs,
   GENESIS_HASH,
   type ChainedAuditEvent,
 } from "../audit/types";
+import { decisionReceipts } from "../audit/query";
 import { getLastChainHash } from "../audit/integrity";
-import { resolvePolicy } from "../config/policy";
+import { detectCiContext, policyFromSnapshot, resolvePolicy, resolvePolicyWithContext } from "../config/policy";
 import type { FlowGuardPolicy } from "../config/policy";
 import type { FlowGuardConfig } from "../config/flowguard-config";
 import { DEFAULT_CONFIG } from "../config/flowguard-config";
 import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from "../logging/logger";
 import type { Phase, Event } from "../state/schema";
+import type { SessionState } from "../state/schema";
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = "flowguard_";
@@ -193,6 +196,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({
   // Only updated when policy.audit.enableChainHash is true.
   let lastHash: string | null = null;
   let chainInitialized = false;
+  const sessionQueues = new Map<string, Promise<void>>();
+  const decisionSequenceCache = new Map<string, number>();
 
   /**
    * Initialize the chain hash by reading the existing trail.
@@ -253,6 +258,55 @@ export const FlowGuardAuditPlugin: Plugin = async ({
   }
 
   /**
+   * Parse tool output JSON with fallback for NextAction footer lines.
+   */
+  function parseToolResult(rawOutput: unknown): Record<string, unknown> | null {
+    try {
+      const resultStr = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+      return JSON.parse(resultStr);
+    } catch {
+      try {
+        const resultStr = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+        const firstLine = resultStr.split("\n")[0] ?? "";
+        if (!firstLine.trim()) return null;
+        return JSON.parse(firstLine);
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
+    const cached = decisionSequenceCache.get(sessionId);
+    if (cached !== undefined) {
+      const next = cached + 1;
+      decisionSequenceCache.set(sessionId, next);
+      return next;
+    }
+
+    const { events } = await readAuditTrail(sessDir);
+    const receipts = decisionReceipts(events).filter((r) => r.sessionId === sessionId);
+    const maxSequence = receipts.reduce((max, r) => Math.max(max, r.decisionSequence), 0);
+    const next = maxSequence + 1;
+    decisionSequenceCache.set(sessionId, next);
+    return next;
+  }
+
+  async function runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void> {
+    const previous = sessionQueues.get(sessionId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(task)
+      .finally(() => {
+        if (sessionQueues.get(sessionId) === current) {
+          sessionQueues.delete(sessionId);
+        }
+      });
+    sessionQueues.set(sessionId, current);
+    await current;
+  }
+
+  /**
    * Resolve the FlowGuard policy for the current session.
    *
    * Resolution chain:
@@ -263,16 +317,32 @@ export const FlowGuardAuditPlugin: Plugin = async ({
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
    */
-  async function resolveSessionPolicy(sessDir: string | null): Promise<FlowGuardPolicy> {
+  async function resolveSessionPolicy(
+    sessDir: string | null,
+  ): Promise<{ policy: FlowGuardPolicy; state: SessionState | null }> {
     try {
-      if (!sessDir) return resolvePolicy(config.policy.defaultMode);
+      if (!sessDir) {
+        return { policy: resolvePolicy(config.policy.defaultMode), state: null };
+      }
       const state = await readState(sessDir);
-      const mode = state?.policySnapshot?.mode ?? config.policy.defaultMode;
-      log.debug("policy", "resolved session policy", { mode: mode ?? "default" });
-      return resolvePolicy(mode);
+      if (state?.policySnapshot) {
+        const policy = policyFromSnapshot(state.policySnapshot);
+        log.debug("policy", "resolved session policy", {
+          requestedMode: state.policySnapshot.requestedMode ?? state.policySnapshot.mode,
+          effectiveMode: state.policySnapshot.mode,
+        });
+        return { policy, state };
+      }
+
+      const resolution = resolvePolicyWithContext(config.policy.defaultMode, detectCiContext());
+      log.debug("policy", "resolved default policy", {
+        requestedMode: resolution.requestedMode,
+        effectiveMode: resolution.effectiveMode,
+      });
+      return { policy: resolution.policy, state };
     } catch {
       log.warn("policy", "failed to resolve session policy, using default");
-      return resolvePolicy(config.policy.defaultMode);
+      return { policy: resolvePolicy(config.policy.defaultMode), state: null };
     }
   }
 
@@ -282,15 +352,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({
       const toolName: string = input?.tool ?? "";
       if (!toolName.startsWith(FG_PREFIX)) return;
 
-      try {
-        // Resolve session directory from tool context
-        const sessionId: string = input?.sessionID ?? "unknown";
-        await resolveFingerprint();
-        const sessDir = getSessionDir(sessionId);
-        if (!sessDir) return;
+      const sessionId: string = input?.sessionID ?? "unknown";
+      await runSerializedForSession(sessionId, async () => {
+        try {
+          // Resolve session directory from tool context
+          await resolveFingerprint();
+          const sessDir = getSessionDir(sessionId);
+          if (!sessDir) return;
 
         // ── Resolve policy for emission controls + actor classification ──
-        const policy = await resolveSessionPolicy(sessDir);
+        const { policy, state } = await resolveSessionPolicy(sessDir);
         const { emitToolCalls, emitTransitions, enableChainHash } =
           policy.audit;
 
@@ -328,24 +399,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({
         }> = [];
         let success = true;
         let errorMessage: string | undefined;
+        const parsed = parseToolResult(output?.output);
+        if (parsed) {
+          phase = typeof parsed.phase === "string" ? parsed.phase : "unknown";
+          success = parsed.error !== true;
+          errorMessage = typeof parsed.errorMessage === "string" ? parsed.errorMessage : undefined;
 
-        try {
-          const resultStr =
-            typeof output?.output === "string"
-              ? output.output
-              : JSON.stringify(output?.output);
-          const result = JSON.parse(resultStr);
-
-          phase = result?.phase ?? "unknown";
-          success = !result?.error;
-          errorMessage = result?.errorMessage;
-
-          // Extract transitions from _audit field (set by FlowGuard tools)
-          if (Array.isArray(result?._audit?.transitions)) {
-            transitions = result._audit.transitions;
+          const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)?.transitions;
+          if (Array.isArray(rawTransitions)) {
+            transitions = rawTransitions as Array<{
+              from: Phase;
+              to: Phase;
+              event: Event;
+              at: string;
+            }>;
           }
-        } catch {
-          // Result wasn't JSON — still audit the tool call
         }
 
         // ── 1. Emit tool_call event (conditional on policy) ─────────────
@@ -395,7 +463,87 @@ export const FlowGuardAuditPlugin: Plugin = async ({
           }
         }
 
-        // ── 3. Emit lifecycle events (always — structural) ──────────────
+        // ── 3. Emit decision receipt (successful /review-decision only) ──
+        if (toolName === "flowguard_decision" && success && transitions.length > 0) {
+          const firstTransition = transitions[0]!;
+          const inferredVerdict =
+            firstTransition.event === "APPROVE"
+              ? "approve"
+              : firstTransition.event === "CHANGES_REQUESTED"
+                ? "changes_requested"
+                : firstTransition.event === "REJECT"
+                  ? "reject"
+                  : null;
+
+          if (inferredVerdict !== null) {
+            const sequence = await nextDecisionSequence(sessDir, sessionId);
+            const decisionId = `DEC-${String(sequence).padStart(3, "0")}`;
+            const parsedDecision =
+              typeof parsed?.reviewDecision === "object" && parsed.reviewDecision !== null
+                ? (parsed.reviewDecision as Record<string, unknown>)
+                : null;
+            const stateDecision = state?.reviewDecision;
+            const rationale =
+              (typeof parsedDecision?.rationale === "string" ? parsedDecision.rationale : undefined)
+              ?? stateDecision?.rationale
+              ?? (typeof (input?.args as { rationale?: unknown } | undefined)?.rationale === "string"
+                ? String((input?.args as { rationale?: unknown } | undefined)?.rationale)
+                : "");
+            const decidedBy =
+              (typeof parsedDecision?.decidedBy === "string" ? parsedDecision.decidedBy : undefined)
+              ?? stateDecision?.decidedBy
+              ?? undefined;
+            const decidedAt =
+              (typeof parsedDecision?.decidedAt === "string" ? parsedDecision.decidedAt : undefined)
+              ?? stateDecision?.decidedAt
+              ?? firstTransition.at;
+
+            if (!decidedBy || !decidedBy.trim()) {
+              log.warn("audit", "skipping decision receipt: missing decidedBy", {
+                tool: toolName,
+                sessionId,
+              });
+              const missingActorEvt = createErrorEvent(
+                sessionId,
+                {
+                  code: "DECISION_RECEIPT_ACTOR_MISSING",
+                  message: "Decision receipt skipped because decidedBy is missing",
+                  recoveryHint:
+                    "Ensure /review-decision output includes reviewDecision.decidedBy",
+                  errorPhase: firstTransition.from,
+                },
+                now,
+                prevHash,
+              );
+              await appendAndTrack(missingActorEvt, sessDir, enableChainHash);
+              if (enableChainHash) prevHash = missingActorEvt.chainHash;
+            } else {
+              const decisionEvt = createDecisionEvent(
+                sessionId,
+                firstTransition.from,
+                {
+                  decisionId,
+                  decisionSequence: sequence,
+                  verdict: inferredVerdict,
+                  rationale,
+                  decidedBy,
+                  decidedAt,
+                  fromPhase: firstTransition.from,
+                  toPhase: firstTransition.to,
+                  transitionEvent: firstTransition.event,
+                  policyMode: state?.policySnapshot.mode ?? policy.mode,
+                },
+                now,
+                actor,
+                prevHash,
+              );
+              await appendAndTrack(decisionEvt, sessDir, enableChainHash);
+              if (enableChainHash) prevHash = decisionEvt.chainHash;
+            }
+          }
+        }
+
+        // ── 4. Emit lifecycle events (always — structural) ──────────────
         // Lifecycle events (session_created, session_aborted) are always
         // emitted regardless of policy. They provide session-level
         // traceability that's needed even in solo/minimal-audit modes.
@@ -408,6 +556,15 @@ export const FlowGuardAuditPlugin: Plugin = async ({
               ? transitions[transitions.length - 1]!.to
               : (phase as Phase);
 
+          const lifecycleReason =
+            lifecycleAction === "session_created"
+              ? `${
+                typeof parsed?.policyResolution === "object"
+                  ? `requested_mode:${String((parsed.policyResolution as Record<string, unknown>).requestedMode ?? "unknown")};effective_mode:${String((parsed.policyResolution as Record<string, unknown>).effectiveMode ?? state?.policySnapshot.mode ?? policy.mode)};effective_gate_behavior:${String((parsed.policyResolution as Record<string, unknown>).effectiveGateBehavior ?? state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"))};reason:${String((parsed.policyResolution as Record<string, unknown>).reason ?? state?.policySnapshot.degradedReason ?? "none")}`
+                  : `requested_mode:${state?.policySnapshot.requestedMode ?? state?.policySnapshot.mode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve")};reason:${state?.policySnapshot.degradedReason ?? "none"}`
+              }`
+              : undefined;
+
           const lifecycleEvt = createLifecycleEvent(
             sessionId,
             {
@@ -416,6 +573,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
                 | "session_completed"
                 | "session_aborted",
               finalPhase,
+              ...(lifecycleReason ? { reason: lifecycleReason } : {}),
             },
             now,
             actor, // Actor from policy (e.g., REGULATED: abort is "human")
@@ -425,7 +583,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
           if (enableChainHash) prevHash = lifecycleEvt.chainHash;
         }
 
-        // ── 4. Detect session completion (always — structural) ──────────
+        // ── 5. Detect session completion (always — structural) ──────────
         // Session completion is a machine-driven event (topology transition
         // to COMPLETE). Always emitted, always attributed to "machine".
         const completionTransition = transitions.find(
@@ -455,7 +613,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({
           }
         }
 
-        // ── 5. Emit error event (always — structural) ───────────────────
+        // ── 6. Emit error event (always — structural) ───────────────────
         // Error events are always emitted. Suppressing errors from the
         // audit trail would be a compliance gap in any mode.
         if (!success && errorMessage) {
@@ -473,10 +631,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({
           );
           await appendAndTrack(errorEvt, sessDir, enableChainHash);
         }
-      } catch (err) {
-        // Fire-and-forget: log but never block the workflow
-        logError(`Failed to write audit events for ${toolName}`, err);
-      }
+        } catch (err) {
+          // Fire-and-forget: log but never block the workflow
+          logError(`Failed to write audit events for ${toolName}`, err);
+        }
+      });
     },
   };
 };

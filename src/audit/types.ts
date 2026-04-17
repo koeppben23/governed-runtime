@@ -31,7 +31,7 @@ import type { Phase, Event } from "../state/schema";
  * Closed set of audit event kinds.
  * Each kind has a specific detail payload structure.
  */
-export type AuditEventKind = "transition" | "tool_call" | "error" | "lifecycle";
+export type AuditEventKind = "transition" | "tool_call" | "error" | "lifecycle" | "decision";
 
 // ─── Detail Payloads (typed, but stored as Record<string, unknown>) ──────────
 
@@ -81,12 +81,29 @@ export interface LifecycleDetail {
   reason?: string;
 }
 
+/** Detail payload for decision receipt events. */
+export interface DecisionDetail {
+  kind: "decision";
+  decisionId: string;
+  decisionSequence: number;
+  gatePhase: Phase;
+  verdict: "approve" | "changes_requested" | "reject";
+  rationale: string;
+  decidedBy: string;
+  decidedAt: string;
+  fromPhase: Phase;
+  toPhase: Phase;
+  transitionEvent: Event;
+  policyMode: string;
+}
+
 /** Union of all typed detail payloads. */
 export type TypedDetail =
   | TransitionDetail
   | ToolCallDetail
   | ErrorDetail
-  | LifecycleDetail;
+  | LifecycleDetail
+  | DecisionDetail;
 
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────
 
@@ -251,6 +268,32 @@ export function createLifecycleEvent(
     timestamp,
     actor,
     detail: toDetailRecord({ ...detail, kind: "lifecycle" }),
+    prevHash,
+  };
+  return { ...base, chainHash: computeChainHash(prevHash, base) };
+}
+
+/**
+ * Create a decision receipt audit event.
+ * One event per successful /review-decision execution.
+ */
+export function createDecisionEvent(
+  sessionId: string,
+  gatePhase: Phase,
+  detail: Omit<DecisionDetail, "kind" | "gatePhase">,
+  timestamp: string,
+  actor: string,
+  prevHash: string,
+): ChainedAuditEvent {
+  const eventName = `decision:${detail.decisionId}`;
+  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: gatePhase,
+    event: eventName,
+    timestamp,
+    actor,
+    detail: toDetailRecord({ ...detail, gatePhase, kind: "decision" }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };

@@ -217,7 +217,7 @@ describe("FlowGuardConfigSchema", () => {
   });
 
   it("accepts all policy modes", () => {
-    for (const mode of ["solo", "team", "regulated"]) {
+    for (const mode of ["solo", "team", "team-ci", "regulated"]) {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: "v1",
         policy: { defaultMode: mode },
@@ -299,6 +299,7 @@ describe("readConfig", () => {
       logging: { level: "debug" },
       policy: { defaultMode: "regulated" },
       profile: { defaultId: "typescript" },
+      archive: {},
     };
     await writeRawConfig(tmpDir, JSON.stringify(custom));
     const config = await readConfig(tmpDir);

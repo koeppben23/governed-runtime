@@ -174,6 +174,7 @@ export function makeState(
     implementation: null,
     implReview: null,
     reviewDecision: null,
+    nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ["test_quality", "rollback_safety"],
     policySnapshot: POLICY_SNAPSHOT,

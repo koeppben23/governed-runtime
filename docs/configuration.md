@@ -44,10 +44,12 @@ Controls verbosity of FlowGuard logging.
 ### policy.defaultMode
 
 **Type:** `enum`
-**Values:** `solo`, `team`, `regulated`
+**Values:** `solo`, `team`, `team-ci`, `regulated`
 **Default:** `solo`
 
 Sets the default policy mode for new sessions.
+
+`team-ci` degrades to `team` when no CI context is detected (`ci_context_missing`).
 
 ### policy.modes
 
