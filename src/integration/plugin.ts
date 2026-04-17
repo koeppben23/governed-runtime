@@ -488,6 +488,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ project, client, $, directo
                 typeof parsed?.reviewDecision === 'object' && parsed.reviewDecision !== null
                   ? (parsed.reviewDecision as Record<string, unknown>)
                   : null;
+              const parsedDecisionMeta =
+                typeof parsed?._decision === 'object' && parsed._decision !== null
+                  ? (parsed._decision as Record<string, unknown>)
+                  : null;
               const stateDecision = state?.reviewDecision;
               const rationale =
                 (typeof parsedDecision?.rationale === 'string'
@@ -530,6 +534,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({ project, client, $, directo
                 await appendAndTrack(missingActorEvt, sessDir, enableChainHash);
                 if (enableChainHash) prevHash = missingActorEvt.chainHash;
               } else {
+                // Extract v2 fields from decisionMetadata if available
+                const matchedRuleId = parsedDecisionMeta?.matchedRuleId as string | null | undefined;
+                const obligationsResult = parsedDecisionMeta?.obligationsResult as Record<string, unknown> | undefined;
+                const reasonCode = parsedDecisionMeta?.reasonCode as string | undefined;
+                const outcome = parsedDecisionMeta?.outcome as 'approved' | 'blocked' | undefined;
+                const identitySource = parsedDecisionMeta?.identitySource as string | undefined;
+                const assuranceLevel = parsedDecisionMeta?.assuranceLevel as string | undefined;
+
                 const decisionEvt = createDecisionEvent(
                   sessionId,
                   firstTransition.from,
@@ -544,6 +556,13 @@ export const FlowGuardAuditPlugin: Plugin = async ({ project, client, $, directo
                     toPhase: firstTransition.to,
                     transitionEvent: firstTransition.event,
                     policyMode: normalizePolicyMode(state?.policySnapshot.mode, policy.mode),
+                    // v2 fields
+                    ...(matchedRuleId !== undefined ? { matchedRuleId } : {}),
+                    ...(obligationsResult !== undefined ? {obligationsResult} : {}),
+                    ...(reasonCode !== undefined ? {reasonCode} : {}),
+                    ...(outcome !== undefined ? {outcome} : {}),
+                    ...(identitySource !== undefined ? {identitySource} : {}),
+                    ...(assuranceLevel !== undefined ? {assuranceLevel} : {}),
                   },
                   now,
                   actor,
