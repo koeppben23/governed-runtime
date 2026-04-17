@@ -62,6 +62,15 @@ export interface RailOk {
    * The audit plugin reads this to emit per-transition audit events.
    */
   readonly transitions: readonly TransitionRecord[];
+  /** Optional decision metadata for audit/receipt v2 (WP5+) */
+  readonly decisionMetadata?: {
+    readonly matchedRuleId?: string | null;
+    readonly obligationsResult?: Record<string, unknown>;
+    readonly reasonCode?: string;
+    readonly outcome?: 'approved' | 'blocked';
+    readonly identitySource?: string;
+    readonly assuranceLevel?: string;
+  };
 }
 
 /** Rail was blocked — precondition failed, state is UNCHANGED. */

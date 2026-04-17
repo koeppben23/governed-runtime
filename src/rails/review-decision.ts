@@ -417,6 +417,17 @@ export function executeReviewDecision(
   // 11. Re-evaluate at new phase to get the eval result for the caller (policy-aware)
   const evalResult = evaluate(finalState, ctx.policy);
 
-  return { kind: 'ok', state: finalState, evalResult, transitions: [transition] };
+  // Build decision metadata for audit/receipt v2
+  const outcome: 'approved' | 'blocked' = policyDecision.outcome === 'allow' ? 'approved' : 'blocked';
+  const decisionMetadata = {
+    matchedRuleId: policyDecision.matchedRuleId,
+    obligationsResult: policyDecision.obligations as Record<string, unknown>,
+    reasonCode: policyDecision.blockedReasonCode,
+    outcome,
+    identitySource: identity?.identitySource,
+    assuranceLevel: identity?.assuranceLevel,
+  } as const;
+
+  return { kind: 'ok', state: finalState, evalResult, transitions: [transition], decisionMetadata };
 }
 
