@@ -100,14 +100,14 @@ When `true`, raw artifacts are included alongside redacted artifacts and the arc
 
 Discovery runs automatically on `/hydrate` and requires no user configuration. It collects repository signals through six built-in collectors:
 
-| Collector | Purpose |
-|-----------|---------|
-| `repo-metadata` | Git metadata (branch, commits, authors) |
-| `stack-detection` | Detected tech stack from files |
-| `topology` | Directory/file layout analysis |
-| `surface-detection` | Language/framework surface signals |
+| Collector               | Purpose                                                     |
+| ----------------------- | ----------------------------------------------------------- |
+| `repo-metadata`         | Git metadata (branch, commits, authors)                     |
+| `stack-detection`       | Detected tech stack from files                              |
+| `topology`              | Directory/file layout analysis                              |
+| `surface-detection`     | Language/framework surface signals                          |
 | `code-surface-analysis` | Endpoint, auth, data, integration hints (bounded heuristic) |
-| `domain-signals` | Domain-specific indicators |
+| `domain-signals`        | Domain-specific indicators                                  |
 
 Results are included in `discovery-snapshot.json` archives and used for profile resolution. Code surface signals are intentionally bounded and may be partial.
 
@@ -145,10 +145,10 @@ Custom profile configurations:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
+| Variable              | Description | Default              |
+| --------------------- | ----------- | -------------------- |
 | `OPENCODE_CONFIG_DIR` | Config root | `~/.config/opencode` |
-| `FLOWGUARD_LOG_LEVEL` | Log level | `info` |
+| `FLOWGUARD_LOG_LEVEL` | Log level   | `info`               |
 
 ## Examples
 

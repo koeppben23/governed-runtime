@@ -39,7 +39,7 @@
  * @version v2
  */
 
-import type { SessionState, Phase } from "../state/schema";
+import type { SessionState, Phase } from '../state/schema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ export interface EvidenceSlotStatus {
   /** Whether evidence is present in the state. */
   readonly present: boolean;
   /** Evaluated status. */
-  readonly status: "complete" | "missing" | "not_yet_required" | "failed";
+  readonly status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
   /** Optional detail (digest, iteration count, etc.). */
   readonly detail?: string;
 }
@@ -147,26 +147,26 @@ const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
 
 /** All evidence slots in evidence-chain order. */
 const ALL_SLOTS = [
-  "ticket",
-  "plan",
-  "selfReview",
-  "planReviewDecision",
-  "validation",
-  "implementation",
-  "implReview",
-  "evidenceReviewDecision",
+  'ticket',
+  'plan',
+  'selfReview',
+  'planReviewDecision',
+  'validation',
+  'implementation',
+  'implReview',
+  'evidenceReviewDecision',
 ] as const;
 
 /** Human-readable labels for each slot. */
 const SLOT_LABELS: Readonly<Record<string, string>> = {
-  ticket: "Ticket Evidence",
-  plan: "Plan Evidence",
-  selfReview: "Plan Self-Review",
-  planReviewDecision: "Plan Review Decision",
-  validation: "Validation Results",
-  implementation: "Implementation Evidence",
-  implReview: "Implementation Review",
-  evidenceReviewDecision: "Evidence Review Decision",
+  ticket: 'Ticket Evidence',
+  plan: 'Plan Evidence',
+  selfReview: 'Plan Self-Review',
+  planReviewDecision: 'Plan Review Decision',
+  validation: 'Validation Results',
+  implementation: 'Implementation Evidence',
+  implReview: 'Implementation Review',
+  evidenceReviewDecision: 'Evidence Review Decision',
 };
 
 // ─── Slot Evaluation ──────────────────────────────────────────────────────────
@@ -183,36 +183,34 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
   const phaseOrd = PHASE_ORDER[state.phase];
 
   switch (slot) {
-    case "ticket":
+    case 'ticket':
       return state.ticket !== null;
-    case "architecture":
+    case 'architecture':
       return state.architecture !== null;
-    case "plan":
+    case 'plan':
       return state.plan !== null;
-    case "selfReview":
+    case 'selfReview':
       return state.selfReview !== null;
-    case "planReviewDecision":
+    case 'planReviewDecision':
       // Topology invariant: if we reached VALIDATION or beyond,
       // PLAN_REVIEW was passed with APPROVE. No other path exists.
-      return phaseOrd >= (PHASE_ORDER["VALIDATION"]);
-    case "validation":
+      return phaseOrd >= PHASE_ORDER['VALIDATION'];
+    case 'validation':
       return (
         state.validation.length > 0 &&
         state.activeChecks.length > 0 &&
-        state.activeChecks.every((id) =>
-          state.validation.some((v) => v.checkId === id && v.passed),
-        )
+        state.activeChecks.every((id) => state.validation.some((v) => v.checkId === id && v.passed))
       );
-    case "implementation":
+    case 'implementation':
       return state.implementation !== null;
-    case "implReview":
+    case 'implReview':
       return state.implReview !== null;
-    case "evidenceReviewDecision":
+    case 'evidenceReviewDecision':
       // Topology invariant: COMPLETE with no error means EVIDENCE_REVIEW → APPROVE.
-      return state.phase === "COMPLETE" && state.error === null;
-    case "archReviewDecision":
+      return state.phase === 'COMPLETE' && state.error === null;
+    case 'archReviewDecision':
       // Topology invariant: ARCH_COMPLETE means ARCH_REVIEW → APPROVE.
-      return state.phase === "ARCH_COMPLETE" && state.error === null;
+      return state.phase === 'ARCH_COMPLETE' && state.error === null;
     default:
       return false;
   }
@@ -223,71 +221,63 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
  * Currently only applies to validation (some checks failed).
  */
 function isSlotFailed(state: SessionState, slot: string): boolean {
-  if (slot === "validation") {
-    return (
-      state.validation.length > 0 &&
-      state.validation.some((v) => !v.passed)
-    );
+  if (slot === 'validation') {
+    return state.validation.length > 0 && state.validation.some((v) => !v.passed);
   }
   return false;
 }
 
 /** Get a human-readable detail string for a slot. */
-function getSlotDetail(
-  state: SessionState,
-  slot: string,
-): string | undefined {
+function getSlotDetail(state: SessionState, slot: string): string | undefined {
   switch (slot) {
-    case "ticket":
+    case 'ticket':
       return state.ticket
         ? `source: ${state.ticket.source}, digest: ${state.ticket.digest.slice(0, 12)}...`
         : undefined;
-    case "architecture":
+    case 'architecture':
       return state.architecture
         ? `${state.architecture.id}: ${state.architecture.title}, status: ${state.architecture.status}`
         : undefined;
-    case "plan":
+    case 'plan':
       return state.plan
         ? `v${state.plan.history.length + 1}, digest: ${state.plan.current.digest.slice(0, 12)}...`
         : undefined;
-    case "selfReview":
+    case 'selfReview':
       return state.selfReview
         ? `iteration ${state.selfReview.iteration}/${state.selfReview.maxIterations}, verdict: ${state.selfReview.verdict}`
         : undefined;
-    case "planReviewDecision": {
+    case 'planReviewDecision': {
       const phaseOrd = PHASE_ORDER[state.phase];
-      return phaseOrd >= (PHASE_ORDER["VALIDATION"])
-        ? "Approved (verified by topology invariant)"
+      return phaseOrd >= PHASE_ORDER['VALIDATION']
+        ? 'Approved (verified by topology invariant)'
         : undefined;
     }
-    case "validation": {
+    case 'validation': {
       if (state.validation.length === 0) return undefined;
       const passed = state.validation.filter((v) => v.passed).length;
       const total = state.validation.length;
-      const failedIds = state.validation
-        .filter((v) => !v.passed)
-        .map((v) => v.checkId);
+      const failedIds = state.validation.filter((v) => !v.passed).map((v) => v.checkId);
       return failedIds.length > 0
-        ? `${passed}/${total} passed, failed: ${failedIds.join(", ")}`
+        ? `${passed}/${total} passed, failed: ${failedIds.join(', ')}`
         : `${passed}/${total} passed`;
     }
-    case "implementation":
+    case 'implementation':
       return state.implementation
         ? `${state.implementation.changedFiles.length} files changed, digest: ${state.implementation.digest.slice(0, 12)}...`
         : undefined;
-    case "implReview":
+    case 'implReview':
       return state.implReview
         ? `iteration ${state.implReview.iteration}/${state.implReview.maxIterations}, verdict: ${state.implReview.verdict}`
         : undefined;
-    case "evidenceReviewDecision":
-      return state.phase === "COMPLETE" && state.error === null
-        ? "Approved (verified by topology invariant)"
+    case 'evidenceReviewDecision':
+      return state.phase === 'COMPLETE' && state.error === null
+        ? 'Approved (verified by topology invariant)'
         : state.error
           ? `Session has error: ${state.error.code}`
           : undefined;
-    case "archReviewDecision":
-      return state.phase === "ARCH_COMPLETE" && state.error === null
-        ? "Approved (verified by topology invariant)"
+    case 'archReviewDecision':
+      return state.phase === 'ARCH_COMPLETE' && state.error === null
+        ? 'Approved (verified by topology invariant)'
         : undefined;
     default:
       return undefined;
@@ -298,13 +288,13 @@ function getSlotDetail(
 
 /** Architecture flow phases. */
 const ARCHITECTURE_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  "ARCHITECTURE", "ARCH_REVIEW", "ARCH_COMPLETE",
+  'ARCHITECTURE',
+  'ARCH_REVIEW',
+  'ARCH_COMPLETE',
 ]);
 
 /** Review flow phases. */
-const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>([
-  "REVIEW", "REVIEW_COMPLETE",
-]);
+const REVIEW_FLOW_PHASES: ReadonlySet<Phase> = new Set<Phase>(['REVIEW', 'REVIEW_COMPLETE']);
 
 /** Architecture flow ordinals (independent from ticket flow). */
 const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
@@ -314,22 +304,18 @@ const ARCH_PHASE_ORDER: Readonly<Record<string, number>> = {
 };
 
 /** Architecture flow evidence slots. */
-const ARCH_SLOTS = [
-  "architecture",
-  "selfReview",
-  "archReviewDecision",
-] as const;
+const ARCH_SLOTS = ['architecture', 'selfReview', 'archReviewDecision'] as const;
 
 const ARCH_SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
-  architecture: 0,       // ARCHITECTURE
-  selfReview: 1,         // ARCH_REVIEW
+  architecture: 0, // ARCHITECTURE
+  selfReview: 1, // ARCH_REVIEW
   archReviewDecision: 2, // ARCH_COMPLETE
 };
 
 const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
-  architecture: "Architecture Decision Record",
-  selfReview: "ADR Self-Review",
-  archReviewDecision: "Architecture Review Decision",
+  architecture: 'Architecture Decision Record',
+  selfReview: 'ADR Self-Review',
+  archReviewDecision: 'Architecture Review Decision',
 };
 
 // ─── Evaluator ────────────────────────────────────────────────────────────────
@@ -349,9 +335,7 @@ const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
  * @param state - Current session state.
  * @returns Structured completeness report.
  */
-export function evaluateCompleteness(
-  state: SessionState,
-): CompletenessReport {
+export function evaluateCompleteness(state: SessionState): CompletenessReport {
   // Determine which flow we're in and get appropriate slots
   const isArchFlow = ARCHITECTURE_FLOW_PHASES.has(state.phase);
   const isReviewFlow = REVIEW_FLOW_PHASES.has(state.phase);
@@ -367,15 +351,15 @@ export function evaluateCompleteness(
       const present = isSlotPresent(state, slot);
       const failed = isSlotFailed(state, slot);
 
-      let status: EvidenceSlotStatus["status"];
+      let status: EvidenceSlotStatus['status'];
       if (!isRequired) {
-        status = "not_yet_required";
+        status = 'not_yet_required';
       } else if (failed) {
-        status = "failed";
+        status = 'failed';
       } else if (present) {
-        status = "complete";
+        status = 'complete';
       } else {
-        status = "missing";
+        status = 'missing';
       }
 
       return {
@@ -399,15 +383,15 @@ export function evaluateCompleteness(
       const present = isSlotPresent(state, slot);
       const failed = isSlotFailed(state, slot);
 
-      let status: EvidenceSlotStatus["status"];
+      let status: EvidenceSlotStatus['status'];
       if (!isRequired) {
-        status = "not_yet_required";
+        status = 'not_yet_required';
       } else if (failed) {
-        status = "failed";
+        status = 'failed';
       } else if (present) {
-        status = "complete";
+        status = 'complete';
       } else {
-        status = "missing";
+        status = 'missing';
       }
 
       return {
@@ -422,19 +406,16 @@ export function evaluateCompleteness(
   }
 
   // ── Evaluate four-eyes principle ───────────────────────────
-  const fourEyesRequired =
-    state.policySnapshot?.allowSelfApproval === false;
+  const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
   const decidedBy = state.reviewDecision?.decidedBy ?? null;
   const fourEyesSatisfied =
-    !fourEyesRequired ||
-    (decidedBy !== null && decidedBy !== state.initiatedBy);
+    !fourEyesRequired || (decidedBy !== null && decidedBy !== state.initiatedBy);
 
   let fourEyesDetail: string;
   if (!fourEyesRequired) {
-    fourEyesDetail = "Four-eyes not required by policy";
+    fourEyesDetail = 'Four-eyes not required by policy';
   } else if (decidedBy === null) {
-    fourEyesDetail =
-      "Four-eyes pending: no review decision recorded yet";
+    fourEyesDetail = 'Four-eyes pending: no review decision recorded yet';
   } else if (fourEyesSatisfied) {
     fourEyesDetail = `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
   } else {
@@ -450,22 +431,22 @@ export function evaluateCompleteness(
   };
 
   // ── Summary counts ─────────────────────────────────────────
-  const complete = slots.filter((s) => s.status === "complete").length;
-  const missing = slots.filter((s) => s.status === "missing").length;
-  const notYetRequired = slots.filter(
-    (s) => s.status === "not_yet_required",
-  ).length;
-  const failed = slots.filter((s) => s.status === "failed").length;
+  const complete = slots.filter((s) => s.status === 'complete').length;
+  const missing = slots.filter((s) => s.status === 'missing').length;
+  const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
+  const failed = slots.filter((s) => s.status === 'failed').length;
 
   const overallComplete =
-    missing === 0 && failed === 0 && fourEyesSatisfied &&
+    missing === 0 &&
+    failed === 0 &&
+    fourEyesSatisfied &&
     // READY is the routing phase — no flow selected, so never "complete"
-    state.phase !== "READY";
+    state.phase !== 'READY';
 
   return {
     sessionId: state.id,
     phase: state.phase,
-    policyMode: state.policySnapshot?.mode ?? "unknown",
+    policyMode: state.policySnapshot?.mode ?? 'unknown',
     overallComplete,
     slots,
     fourEyes,

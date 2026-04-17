@@ -12,14 +12,14 @@
  * @version v1
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as crypto from "node:crypto";
-import type { ArchitectureDecision } from "../../state/evidence";
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import type { ArchitectureDecision } from '../../state/evidence';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MADR_SCHEMA_VERSION = "madr-artifact.v1";
+const MADR_SCHEMA_VERSION = 'madr-artifact.v1';
 
 // ─── MADR Content ─────────────────────────────────────────────────────────────
 
@@ -30,15 +30,15 @@ const MADR_SCHEMA_VERSION = "madr-artifact.v1";
 export function formatMadrContent(adr: ArchitectureDecision): string {
   return [
     `# ${adr.id}: ${adr.title}`,
-    "",
+    '',
     `- Status: ${adr.status}`,
     `- Date: ${adr.createdAt}`,
     `- Schema: ${MADR_SCHEMA_VERSION}`,
     `- Digest: ${adr.digest}`,
-    "",
+    '',
     adr.adrText,
-    "", // trailing newline
-  ].join("\n");
+    '', // trailing newline
+  ].join('\n');
 }
 
 /**
@@ -71,13 +71,10 @@ export async function writeMadrArtifact(
 
   // Atomic write: temp -> rename (same pattern as persistence.ts)
   await fs.mkdir(sessionDir, { recursive: true });
-  const tempPath = path.join(
-    sessionDir,
-    `.${fileName}.${crypto.randomUUID()}.tmp`,
-  );
+  const tempPath = path.join(sessionDir, `.${fileName}.${crypto.randomUUID()}.tmp`);
 
   try {
-    await fs.writeFile(tempPath, content, "utf-8");
+    await fs.writeFile(tempPath, content, 'utf-8');
     await fs.rename(tempPath, filePath);
   } catch (err) {
     // Best-effort cleanup

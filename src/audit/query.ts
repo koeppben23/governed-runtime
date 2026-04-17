@@ -14,15 +14,15 @@
  * @version v1
  */
 
-import type { AuditEvent } from "../state/evidence";
-import type { AuditEventKind } from "./types";
+import type { AuditEvent } from '../state/evidence';
+import type { AuditEventKind } from './types';
 
 /** Structured decision receipt derived from decision audit events. */
 export interface DecisionReceipt {
   readonly decisionId: string;
   readonly decisionSequence: number;
   readonly gatePhase: string;
-  readonly verdict: "approve" | "changes_requested" | "reject";
+  readonly verdict: 'approve' | 'changes_requested' | 'reject';
   readonly rationale: string;
   readonly decidedBy: string;
   readonly decidedAt: string;
@@ -138,26 +138,26 @@ export function sessionEvents(events: AuditEvent[], sessionId: string): AuditEve
  * Get all transition events from the trail.
  */
 export function transitionEvents(events: AuditEvent[]): AuditEvent[] {
-  return filterEvents(events, byKind("transition"));
+  return filterEvents(events, byKind('transition'));
 }
 
 /**
  * Get all tool call events from the trail.
  */
 export function toolCallEvents(events: AuditEvent[]): AuditEvent[] {
-  return filterEvents(events, byKind("tool_call"));
+  return filterEvents(events, byKind('tool_call'));
 }
 
 /**
  * Get all error events from the trail.
  */
 export function errorEvents(events: AuditEvent[]): AuditEvent[] {
-  return filterEvents(events, byKind("error"));
+  return filterEvents(events, byKind('error'));
 }
 
 /** Get all decision events from the trail. */
 export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
-  return filterEvents(events, byKind("decision"));
+  return filterEvents(events, byKind('decision'));
 }
 
 /**
@@ -169,7 +169,8 @@ export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
   for (const event of decisionEvents(events)) {
     const detail = event.detail;
     const verdict = detail.verdict;
-    const validVerdict = verdict === "approve" || verdict === "changes_requested" || verdict === "reject";
+    const validVerdict =
+      verdict === 'approve' || verdict === 'changes_requested' || verdict === 'reject';
     if (!validVerdict) continue;
 
     const decisionId = detail.decisionId;
@@ -184,16 +185,16 @@ export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
     const policyMode = detail.policyMode;
 
     if (
-      typeof decisionId !== "string"
-      || typeof decisionSequence !== "number"
-      || typeof gatePhase !== "string"
-      || typeof rationale !== "string"
-      || typeof decidedBy !== "string"
-      || typeof decidedAt !== "string"
-      || typeof fromPhase !== "string"
-      || typeof toPhase !== "string"
-      || typeof transitionEvent !== "string"
-      || typeof policyMode !== "string"
+      typeof decisionId !== 'string' ||
+      typeof decisionSequence !== 'number' ||
+      typeof gatePhase !== 'string' ||
+      typeof rationale !== 'string' ||
+      typeof decidedBy !== 'string' ||
+      typeof decidedAt !== 'string' ||
+      typeof fromPhase !== 'string' ||
+      typeof toPhase !== 'string' ||
+      typeof transitionEvent !== 'string' ||
+      typeof policyMode !== 'string'
     ) {
       continue;
     }
@@ -236,7 +237,7 @@ export function countByKind(events: AuditEvent[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const event of events) {
     // Extract kind from "kind:detail" format
-    const kind = event.event.split(":")[0] || "unknown";
+    const kind = event.event.split(':')[0] || 'unknown';
     counts[kind] = (counts[kind] || 0) + 1;
   }
   return counts;

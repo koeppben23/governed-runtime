@@ -4,12 +4,12 @@ Profiles define validation rules and guidelines for different tech stacks.
 
 ## Built-in Profiles
 
-| Profile | Language/Framework | Description |
-|---------|-------------------|-------------|
-| Baseline | Any | Universal rules for all projects |
-| TypeScript | TypeScript/Node.js | TS-specific validation |
-| Java | Java/Spring Boot | Java enterprise rules |
-| Angular | Angular/Nx | Angular-specific guidelines |
+| Profile    | Language/Framework | Description                      |
+| ---------- | ------------------ | -------------------------------- |
+| Baseline   | Any                | Universal rules for all projects |
+| TypeScript | TypeScript/Node.js | TS-specific validation           |
+| Java       | Java/Spring Boot   | Java enterprise rules            |
+| Angular    | Angular/Nx         | Angular-specific guidelines      |
 
 ## Profile Detection
 
@@ -30,6 +30,7 @@ Universal rules for all projects:
 **Purpose:** Verify test coverage and quality
 
 **Signals:**
+
 - Presence of test files
 - Test naming conventions
 - Test frameworks detected
@@ -40,6 +41,7 @@ Universal rules for all projects:
 **Purpose:** Ensure changes can be reverted
 
 **Signals:**
+
 - Version control usage
 - Deployment documentation
 - Rollback procedures

@@ -15,13 +15,12 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const DISCOVERY_SCHEMA_VERSION = "discovery.v1" as const;
-export const PROFILE_RESOLUTION_SCHEMA_VERSION =
-  "profile-resolution.v1" as const;
+export const DISCOVERY_SCHEMA_VERSION = 'discovery.v1' as const;
+export const PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1' as const;
 
 // ─── Evidence Classification ──────────────────────────────────────────────────
 
@@ -32,11 +31,7 @@ export const PROFILE_RESOLUTION_SCHEMA_VERSION =
  * - derived_signal: inferred from a combination of facts (framework detected from dependencies)
  * - hypothesis: low-confidence guess based on heuristics
  */
-export const EvidenceClassSchema = z.enum([
-  "fact",
-  "derived_signal",
-  "hypothesis",
-]);
+export const EvidenceClassSchema = z.enum(['fact', 'derived_signal', 'hypothesis']);
 export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
 
 // ─── Collector Status ─────────────────────────────────────────────────────────
@@ -48,7 +43,7 @@ export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
  * - partial: some detection logic succeeded, some failed (degraded)
  * - failed: collector could not produce any result
  */
-export const CollectorStatusSchema = z.enum(["complete", "partial", "failed"]);
+export const CollectorStatusSchema = z.enum(['complete', 'partial', 'failed']);
 export type CollectorStatus = z.infer<typeof CollectorStatusSchema>;
 
 // ─── Detected Item ────────────────────────────────────────────────────────────
@@ -99,11 +94,7 @@ export type StackInfo = z.infer<typeof StackInfoSchema>;
 // ─── Topology ─────────────────────────────────────────────────────────────────
 
 /** Topology kind: monorepo, single-project, or unknown. */
-export const TopologyKindSchema = z.enum([
-  "monorepo",
-  "single-project",
-  "unknown",
-]);
+export const TopologyKindSchema = z.enum(['monorepo', 'single-project', 'unknown']);
 export type TopologyKind = z.infer<typeof TopologyKindSchema>;
 
 /** Information about a module/package within the repository. */
@@ -122,7 +113,7 @@ export const EntryPointInfoSchema = z.object({
   /** Relative path from worktree root. */
   path: z.string().min(1),
   /** Kind of entry point. */
-  kind: z.enum(["main", "bin", "script", "handler", "other"]),
+  kind: z.enum(['main', 'bin', 'script', 'handler', 'other']),
 });
 export type EntryPointInfo = z.infer<typeof EntryPointInfoSchema>;
 
@@ -186,7 +177,7 @@ export const CodeSurfaceSignalSchema = z.object({
 export type CodeSurfaceSignal = z.infer<typeof CodeSurfaceSignalSchema>;
 
 /** Code-surface collector status. */
-export const CodeSurfaceStatusSchema = z.enum(["ok", "partial", "failed"]);
+export const CodeSurfaceStatusSchema = z.enum(['ok', 'partial', 'failed']);
 export type CodeSurfaceStatus = z.infer<typeof CodeSurfaceStatusSchema>;
 
 /** Collector budget stats for code-surface analysis. */
@@ -237,7 +228,7 @@ export type DomainSignals = z.infer<typeof DomainSignalsSchema>;
 /** A command hint for validation (build, test, lint, etc.). */
 export const CommandHintSchema = z.object({
   /** Command category. */
-  kind: z.enum(["build", "test", "lint", "typecheck", "format", "other"]),
+  kind: z.enum(['build', 'test', 'lint', 'typecheck', 'format', 'other']),
   /** The command string (e.g., "npm test", "mvn verify"). */
   command: z.string().min(1),
   /** Confidence that this is the right command. */

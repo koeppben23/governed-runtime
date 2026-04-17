@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from 'vitest';
 import {
   hasError,
   hasPlanReady,
@@ -12,8 +12,8 @@ import {
   reviewDone,
   isConverged,
   GUARDS,
-} from "../machine/guards";
-import type { Phase } from "../state/schema";
+} from '../machine/guards';
+import type { Phase } from '../state/schema';
 import {
   makeState,
   TICKET,
@@ -26,181 +26,221 @@ import {
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
   ERROR_INFO,
-} from "../__fixtures__";
-import { benchmarkSync, PERF_BUDGETS } from "../test-policy";
+} from '../__fixtures__';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
 
-describe("guards", () => {
+describe('guards', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
-  describe("HAPPY", () => {
-    it("hasError fires when error is present", () => {
-      expect(hasError(makeState("TICKET", { error: ERROR_INFO }))).toBe(true);
+  describe('HAPPY', () => {
+    it('hasError fires when error is present', () => {
+      expect(hasError(makeState('TICKET', { error: ERROR_INFO }))).toBe(true);
     });
 
-    it("hasPlanReady fires when ticket and plan are present", () => {
-      expect(hasPlanReady(makeState("TICKET", { ticket: TICKET, plan: PLAN_RECORD }))).toBe(true);
+    it('hasPlanReady fires when ticket and plan are present', () => {
+      expect(hasPlanReady(makeState('TICKET', { ticket: TICKET, plan: PLAN_RECORD }))).toBe(true);
     });
 
-    it("selfReviewMet fires when converged (approve + none)", () => {
-      expect(selfReviewMet(makeState("PLAN", { selfReview: SELF_REVIEW_CONVERGED }))).toBe(true);
+    it('selfReviewMet fires when converged (approve + none)', () => {
+      expect(selfReviewMet(makeState('PLAN', { selfReview: SELF_REVIEW_CONVERGED }))).toBe(true);
     });
 
-    it("selfReviewPending fires when not converged", () => {
-      expect(selfReviewPending(makeState("PLAN", { selfReview: SELF_REVIEW_PENDING_FIX }))).toBe(true);
+    it('selfReviewPending fires when not converged', () => {
+      expect(selfReviewPending(makeState('PLAN', { selfReview: SELF_REVIEW_PENDING_FIX }))).toBe(
+        true,
+      );
     });
 
-    it("allValidationsPassed fires when all checks pass", () => {
-      expect(allValidationsPassed(makeState("VALIDATION", { validation: VALIDATION_PASSED }))).toBe(true);
+    it('allValidationsPassed fires when all checks pass', () => {
+      expect(allValidationsPassed(makeState('VALIDATION', { validation: VALIDATION_PASSED }))).toBe(
+        true,
+      );
     });
 
-    it("checkFailed fires when some checks fail", () => {
-      expect(checkFailed(makeState("VALIDATION", { validation: VALIDATION_FAILED }))).toBe(true);
+    it('checkFailed fires when some checks fail', () => {
+      expect(checkFailed(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(true);
     });
 
-    it("implComplete fires when implementation is present", () => {
-      expect(implComplete(makeState("IMPLEMENTATION", { implementation: IMPL_EVIDENCE }))).toBe(true);
+    it('implComplete fires when implementation is present', () => {
+      expect(implComplete(makeState('IMPLEMENTATION', { implementation: IMPL_EVIDENCE }))).toBe(
+        true,
+      );
     });
 
-    it("implReviewMet fires when impl review converged", () => {
-      expect(implReviewMet(makeState("IMPL_REVIEW", { implReview: IMPL_REVIEW_CONVERGED }))).toBe(true);
+    it('implReviewMet fires when impl review converged', () => {
+      expect(implReviewMet(makeState('IMPL_REVIEW', { implReview: IMPL_REVIEW_CONVERGED }))).toBe(
+        true,
+      );
     });
 
-    it("implReviewPending fires when impl review not converged", () => {
-      expect(implReviewPending(makeState("IMPL_REVIEW", { implReview: IMPL_REVIEW_PENDING_RESULT }))).toBe(true);
+    it('implReviewPending fires when impl review not converged', () => {
+      expect(
+        implReviewPending(makeState('IMPL_REVIEW', { implReview: IMPL_REVIEW_PENDING_RESULT })),
+      ).toBe(true);
     });
 
-    it("reviewDone fires when phase is REVIEW", () => {
-      expect(reviewDone(makeState("REVIEW"))).toBe(true);
+    it('reviewDone fires when phase is REVIEW', () => {
+      expect(reviewDone(makeState('REVIEW'))).toBe(true);
     });
 
-    it("isConverged returns true on iteration limit", () => {
-      expect(isConverged({ iteration: 3, maxIterations: 3, revisionDelta: "major", verdict: "changes_requested" })).toBe(true);
+    it('isConverged returns true on iteration limit', () => {
+      expect(
+        isConverged({
+          iteration: 3,
+          maxIterations: 3,
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        }),
+      ).toBe(true);
     });
 
-    it("isConverged returns true on digest-stop (none + approve)", () => {
-      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "none", verdict: "approve" })).toBe(true);
+    it('isConverged returns true on digest-stop (none + approve)', () => {
+      expect(
+        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'none', verdict: 'approve' }),
+      ).toBe(true);
     });
 
-    it("isConverged returns false when still iterating", () => {
-      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "minor", verdict: "changes_requested" })).toBe(false);
+    it('isConverged returns false when still iterating', () => {
+      expect(
+        isConverged({
+          iteration: 1,
+          maxIterations: 3,
+          revisionDelta: 'minor',
+          verdict: 'changes_requested',
+        }),
+      ).toBe(false);
     });
 
-    it("isConverged returns false on none + changes_requested (no approval)", () => {
-      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "none", verdict: "changes_requested" })).toBe(false);
+    it('isConverged returns false on none + changes_requested (no approval)', () => {
+      expect(
+        isConverged({
+          iteration: 1,
+          maxIterations: 3,
+          revisionDelta: 'none',
+          verdict: 'changes_requested',
+        }),
+      ).toBe(false);
     });
 
-    it("isConverged returns false on approve + major (still changing)", () => {
-      expect(isConverged({ iteration: 1, maxIterations: 3, revisionDelta: "major", verdict: "approve" })).toBe(false);
+    it('isConverged returns false on approve + major (still changing)', () => {
+      expect(
+        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'major', verdict: 'approve' }),
+      ).toBe(false);
     });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
-  describe("BAD", () => {
-    it("hasError does not fire when error is null", () => {
-      expect(hasError(makeState("TICKET"))).toBe(false);
+  describe('BAD', () => {
+    it('hasError does not fire when error is null', () => {
+      expect(hasError(makeState('TICKET'))).toBe(false);
     });
 
-    it("hasPlanReady does not fire without ticket", () => {
-      expect(hasPlanReady(makeState("TICKET", { plan: PLAN_RECORD }))).toBe(false);
+    it('hasPlanReady does not fire without ticket', () => {
+      expect(hasPlanReady(makeState('TICKET', { plan: PLAN_RECORD }))).toBe(false);
     });
 
-    it("hasPlanReady does not fire without plan", () => {
-      expect(hasPlanReady(makeState("TICKET", { ticket: TICKET }))).toBe(false);
+    it('hasPlanReady does not fire without plan', () => {
+      expect(hasPlanReady(makeState('TICKET', { ticket: TICKET }))).toBe(false);
     });
 
-    it("selfReviewMet does not fire when selfReview is null", () => {
-      expect(selfReviewMet(makeState("PLAN"))).toBe(false);
+    it('selfReviewMet does not fire when selfReview is null', () => {
+      expect(selfReviewMet(makeState('PLAN'))).toBe(false);
     });
 
-    it("selfReviewPending does not fire when selfReview is null", () => {
-      expect(selfReviewPending(makeState("PLAN"))).toBe(false);
+    it('selfReviewPending does not fire when selfReview is null', () => {
+      expect(selfReviewPending(makeState('PLAN'))).toBe(false);
     });
 
-    it("allValidationsPassed does not fire with empty activeChecks", () => {
-      expect(allValidationsPassed(makeState("VALIDATION", { activeChecks: [] }))).toBe(false);
+    it('allValidationsPassed does not fire with empty activeChecks', () => {
+      expect(allValidationsPassed(makeState('VALIDATION', { activeChecks: [] }))).toBe(false);
     });
 
-    it("checkFailed does not fire with empty validation results", () => {
-      expect(checkFailed(makeState("VALIDATION"))).toBe(false);
+    it('checkFailed does not fire with empty validation results', () => {
+      expect(checkFailed(makeState('VALIDATION'))).toBe(false);
     });
 
-    it("implComplete does not fire without implementation", () => {
-      expect(implComplete(makeState("IMPLEMENTATION"))).toBe(false);
+    it('implComplete does not fire without implementation', () => {
+      expect(implComplete(makeState('IMPLEMENTATION'))).toBe(false);
     });
 
-    it("implReviewMet does not fire when implReview is null", () => {
-      expect(implReviewMet(makeState("IMPL_REVIEW"))).toBe(false);
+    it('implReviewMet does not fire when implReview is null', () => {
+      expect(implReviewMet(makeState('IMPL_REVIEW'))).toBe(false);
     });
 
-    it("reviewDone does not fire when phase is not REVIEW", () => {
-      expect(reviewDone(makeState("TICKET"))).toBe(false);
-      expect(reviewDone(makeState("READY"))).toBe(false);
+    it('reviewDone does not fire when phase is not REVIEW', () => {
+      expect(reviewDone(makeState('TICKET'))).toBe(false);
+      expect(reviewDone(makeState('READY'))).toBe(false);
     });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
-  describe("CORNER", () => {
-    it("selfReviewMet fires when iteration equals maxIterations", () => {
-      const atMax = makeState("PLAN", {
+  describe('CORNER', () => {
+    it('selfReviewMet fires when iteration equals maxIterations', () => {
+      const atMax = makeState('PLAN', {
         selfReview: {
           iteration: 3,
           maxIterations: 3,
-          prevDigest: "d1",
-          currDigest: "d2",
-          revisionDelta: "minor",
-          verdict: "changes_requested",
+          prevDigest: 'd1',
+          currDigest: 'd2',
+          revisionDelta: 'minor',
+          verdict: 'changes_requested',
         },
       });
       expect(selfReviewMet(atMax)).toBe(true);
     });
 
-    it("selfReviewMet does not fire at iteration < maxIterations with pending", () => {
-      const notAtMax = makeState("PLAN", {
+    it('selfReviewMet does not fire at iteration < maxIterations with pending', () => {
+      const notAtMax = makeState('PLAN', {
         selfReview: {
           iteration: 2,
           maxIterations: 3,
-          prevDigest: "d1",
-          currDigest: "d2",
-          revisionDelta: "minor",
-          verdict: "changes_requested",
+          prevDigest: 'd1',
+          currDigest: 'd2',
+          revisionDelta: 'minor',
+          verdict: 'changes_requested',
         },
       });
       expect(selfReviewMet(notAtMax)).toBe(false);
     });
 
-    it("implReviewMet fires at exactly maxIterations even with pending verdict", () => {
-      const atMax = makeState("IMPL_REVIEW", {
+    it('implReviewMet fires at exactly maxIterations even with pending verdict', () => {
+      const atMax = makeState('IMPL_REVIEW', {
         implReview: {
           iteration: 3,
           maxIterations: 3,
-          prevDigest: "d1",
-          currDigest: "d2",
-          revisionDelta: "minor",
-          verdict: "changes_requested",
-          executedAt: "2026-01-01T00:00:00.000Z",
+          prevDigest: 'd1',
+          currDigest: 'd2',
+          revisionDelta: 'minor',
+          verdict: 'changes_requested',
+          executedAt: '2026-01-01T00:00:00.000Z',
         },
       });
       expect(implReviewMet(atMax)).toBe(true);
     });
 
-    it("allValidationsPassed requires EVERY active check to pass", () => {
-      const onePass = makeState("VALIDATION", {
+    it('allValidationsPassed requires EVERY active check to pass', () => {
+      const onePass = makeState('VALIDATION', {
         validation: [
-          { checkId: "test_quality", passed: true, detail: "ok", executedAt: "2026-01-01T00:00:00.000Z" },
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'ok',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
         ],
       });
       // activeChecks has 2 but only 1 passed
       expect(allValidationsPassed(onePass)).toBe(false);
     });
 
-    it("selfReviewMet works identically for ARCHITECTURE phase", () => {
-      const archState = makeState("ARCHITECTURE", {
+    it('selfReviewMet works identically for ARCHITECTURE phase', () => {
+      const archState = makeState('ARCHITECTURE', {
         selfReview: SELF_REVIEW_CONVERGED,
       });
       expect(selfReviewMet(archState)).toBe(true);
     });
 
-    it("selfReviewPending works identically for ARCHITECTURE phase", () => {
-      const archState = makeState("ARCHITECTURE", {
+    it('selfReviewPending works identically for ARCHITECTURE phase', () => {
+      const archState = makeState('ARCHITECTURE', {
         selfReview: SELF_REVIEW_PENDING_FIX,
       });
       expect(selfReviewPending(archState)).toBe(true);
@@ -208,68 +248,98 @@ describe("guards", () => {
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
-  describe("EDGE", () => {
-    it("GUARDS table covers all guard-based phases", () => {
+  describe('EDGE', () => {
+    it('GUARDS table covers all guard-based phases', () => {
       const guardPhases: Phase[] = [
-        "TICKET", "PLAN", "VALIDATION", "IMPLEMENTATION", "IMPL_REVIEW",
-        "ARCHITECTURE", "REVIEW",
+        'TICKET',
+        'PLAN',
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'IMPL_REVIEW',
+        'ARCHITECTURE',
+        'REVIEW',
       ];
       for (const phase of guardPhases) {
         expect(GUARDS.has(phase)).toBe(true);
       }
     });
 
-    it("GUARDS table does not include READY, user gates, or terminals", () => {
-      expect(GUARDS.has("READY")).toBe(false);
-      expect(GUARDS.has("PLAN_REVIEW")).toBe(false);
-      expect(GUARDS.has("EVIDENCE_REVIEW")).toBe(false);
-      expect(GUARDS.has("ARCH_REVIEW")).toBe(false);
-      expect(GUARDS.has("COMPLETE")).toBe(false);
-      expect(GUARDS.has("ARCH_COMPLETE")).toBe(false);
-      expect(GUARDS.has("REVIEW_COMPLETE")).toBe(false);
+    it('GUARDS table does not include READY, user gates, or terminals', () => {
+      expect(GUARDS.has('READY')).toBe(false);
+      expect(GUARDS.has('PLAN_REVIEW')).toBe(false);
+      expect(GUARDS.has('EVIDENCE_REVIEW')).toBe(false);
+      expect(GUARDS.has('ARCH_REVIEW')).toBe(false);
+      expect(GUARDS.has('COMPLETE')).toBe(false);
+      expect(GUARDS.has('ARCH_COMPLETE')).toBe(false);
+      expect(GUARDS.has('REVIEW_COMPLETE')).toBe(false);
     });
 
     it("ERROR guard is always first in each phase's guard list", () => {
       for (const [_phase, entries] of GUARDS) {
-        expect(entries[0]?.event).toBe("ERROR");
+        expect(entries[0]?.event).toBe('ERROR');
       }
     });
 
-    it("allValidationsPassed with duplicate passing checkIds still passes", () => {
-      const withDup = makeState("VALIDATION", {
-        activeChecks: ["test_quality", "rollback_safety"],
+    it('allValidationsPassed with duplicate passing checkIds still passes', () => {
+      const withDup = makeState('VALIDATION', {
+        activeChecks: ['test_quality', 'rollback_safety'],
         validation: [
-          { checkId: "test_quality", passed: true, detail: "ok", executedAt: "2026-01-01T00:00:00.000Z" },
-          { checkId: "test_quality", passed: true, detail: "ok2", executedAt: "2026-01-01T00:00:00.000Z" },
-          { checkId: "rollback_safety", passed: true, detail: "ok", executedAt: "2026-01-01T00:00:00.000Z" },
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'ok',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'ok2',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'ok',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
         ],
       });
       expect(allValidationsPassed(withDup)).toBe(true);
     });
 
-    it("allValidationsPassed ignores extra validation results not in activeChecks", () => {
-      const withExtra = makeState("VALIDATION", {
-        activeChecks: ["test_quality"],
+    it('allValidationsPassed ignores extra validation results not in activeChecks', () => {
+      const withExtra = makeState('VALIDATION', {
+        activeChecks: ['test_quality'],
         validation: [
-          { checkId: "test_quality", passed: true, detail: "ok", executedAt: "2026-01-01T00:00:00.000Z" },
-          { checkId: "rollback_safety", passed: false, detail: "fail", executedAt: "2026-01-01T00:00:00.000Z" },
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'ok',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: false,
+            detail: 'fail',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
         ],
       });
       expect(allValidationsPassed(withExtra)).toBe(true);
     });
 
-    it("ARCHITECTURE guards are identical to PLAN guards (same convergence logic)", () => {
-      const planGuards = GUARDS.get("PLAN")!;
-      const archGuards = GUARDS.get("ARCHITECTURE")!;
+    it('ARCHITECTURE guards are identical to PLAN guards (same convergence logic)', () => {
+      const planGuards = GUARDS.get('PLAN')!;
+      const archGuards = GUARDS.get('ARCHITECTURE')!;
       expect(archGuards.length).toBe(planGuards.length);
-      expect(archGuards.map(g => g.event)).toEqual(planGuards.map(g => g.event));
+      expect(archGuards.map((g) => g.event)).toEqual(planGuards.map((g) => g.event));
     });
   });
 
   // ─── PERF ──────────────────────────────────────────────────
-  describe("PERF", () => {
-    it("guard predicate evaluation < 0.1ms (p99)", () => {
-      const state = makeState("VALIDATION", { validation: VALIDATION_PASSED });
+  describe('PERF', () => {
+    it('guard predicate evaluation < 0.1ms (p99)', () => {
+      const state = makeState('VALIDATION', { validation: VALIDATION_PASSED });
       const result = benchmarkSync(() => {
         allValidationsPassed(state);
       });

@@ -15,12 +15,8 @@
  * @version v1
  */
 
-import type {
-  CollectorInput,
-  CollectorOutput,
-  RepoMetadata,
-} from "../types";
-import * as git from "../../adapters/git";
+import type { CollectorInput, CollectorOutput, RepoMetadata } from '../types';
+import * as git from '../../adapters/git';
 
 /**
  * Collect repository metadata.
@@ -42,7 +38,7 @@ export async function collectRepoMetadata(
     ]);
 
     return {
-      status: "complete",
+      status: 'complete',
       data: {
         defaultBranch: branch,
         headCommit: commit,
@@ -55,7 +51,7 @@ export async function collectRepoMetadata(
   } catch {
     // Partial: return what we can with safe defaults
     return {
-      status: "partial",
+      status: 'partial',
       data: {
         defaultBranch: null,
         headCommit: null,

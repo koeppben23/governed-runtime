@@ -29,7 +29,7 @@
  * @version v1
  */
 
-import type { PolicySnapshot } from "../state/evidence";
+import type { PolicySnapshot } from '../state/evidence';
 
 // ─── Audit Policy ─────────────────────────────────────────────────────────────
 
@@ -85,20 +85,20 @@ export interface FlowGuardPolicy {
 
   /**
    * Actor classification per tool name.
-    * Maps FlowGuard tool names to actor labels for the audit trail.
+   * Maps FlowGuard tool names to actor labels for the audit trail.
    * Tools not listed default to "system".
    */
   readonly actorClassification: Readonly<Record<string, string>>;
 }
 
 /** Supported policy modes. */
-export type PolicyMode = "solo" | "team" | "team-ci" | "regulated";
+export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
 
 /** Effective gate behavior after policy resolution. */
-export type EffectiveGateBehavior = "auto_approve" | "human_gated";
+export type EffectiveGateBehavior = 'auto_approve' | 'human_gated';
 
 /** Why policy mode was degraded. */
-export type PolicyDegradedReason = "ci_context_missing";
+export type PolicyDegradedReason = 'ci_context_missing';
 
 /** Detailed policy resolution result (requested vs effective). */
 export interface PolicyResolution {
@@ -121,7 +121,7 @@ export interface PolicyResolution {
  * - Audit events still emitted (traceability even in solo)
  */
 export const SOLO_POLICY: FlowGuardPolicy = {
-  mode: "solo",
+  mode: 'solo',
   requireHumanGates: false,
   maxSelfReviewIterations: 1,
   maxImplReviewIterations: 1,
@@ -132,7 +132,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
     enableChainHash: false,
   },
   actorClassification: {
-    flowguard_decision: "system",
+    flowguard_decision: 'system',
   },
 };
 
@@ -145,7 +145,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
  * - Full audit with hash chain
  */
 export const TEAM_POLICY: FlowGuardPolicy = {
-  mode: "team",
+  mode: 'team',
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -156,7 +156,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: "human",
+    flowguard_decision: 'human',
   },
 };
 
@@ -169,7 +169,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
  * - Full audit with hash chain
  */
 export const TEAM_CI_POLICY: FlowGuardPolicy = {
-  mode: "team-ci",
+  mode: 'team-ci',
   requireHumanGates: false,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -180,7 +180,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: "system",
+    flowguard_decision: 'system',
   },
 };
 
@@ -202,7 +202,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
  * - DORA Art. 9: ICT change management with audit trail
  */
 export const REGULATED_POLICY: FlowGuardPolicy = {
-  mode: "regulated",
+  mode: 'regulated',
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -213,8 +213,8 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: "human",
-    flowguard_abort_session: "human",
+    flowguard_decision: 'human',
+    flowguard_abort_session: 'human',
   },
 };
 
@@ -224,13 +224,13 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
 const POLICIES: Readonly<Record<string, FlowGuardPolicy>> = {
   solo: SOLO_POLICY,
   team: TEAM_POLICY,
-  "team-ci": TEAM_CI_POLICY,
+  'team-ci': TEAM_CI_POLICY,
   regulated: REGULATED_POLICY,
 };
 
 function isTruthyEnv(value: string | undefined): boolean {
   if (!value) return false;
-  return !["0", "false", "no", "off"].includes(value.trim().toLowerCase());
+  return !['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
 }
 
 /**
@@ -256,11 +256,11 @@ export function detectCiContext(env: Record<string, string | undefined> = proces
 }
 
 function normalizePolicyMode(mode?: string): PolicyMode {
-  if (!mode) return "team";
-  if (mode === "solo" || mode === "team" || mode === "team-ci" || mode === "regulated") {
+  if (!mode) return 'team';
+  if (mode === 'solo' || mode === 'team' || mode === 'team-ci' || mode === 'regulated') {
     return mode;
   }
-  return "team";
+  return 'team';
 }
 
 /**
@@ -281,12 +281,12 @@ export function resolvePolicyWithContext(
   ciContext = detectCiContext(),
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
-  if (requestedMode === "team-ci" && !ciContext) {
+  if (requestedMode === 'team-ci' && !ciContext) {
     return {
       requestedMode,
-      effectiveMode: "team",
-      effectiveGateBehavior: "human_gated",
-      degradedReason: "ci_context_missing",
+      effectiveMode: 'team',
+      effectiveGateBehavior: 'human_gated',
+      degradedReason: 'ci_context_missing',
       policy: TEAM_POLICY,
     };
   }
@@ -295,7 +295,7 @@ export function resolvePolicyWithContext(
   return {
     requestedMode,
     effectiveMode: policy.mode,
-    effectiveGateBehavior: policy.requireHumanGates ? "human_gated" : "auto_approve",
+    effectiveGateBehavior: policy.requireHumanGates ? 'human_gated' : 'auto_approve',
     policy,
   };
 }
@@ -378,8 +378,9 @@ export function createPolicySnapshot(
     hash: digestFn(canonical),
     resolvedAt,
     requestedMode: resolution?.requestedMode ?? policy.mode,
-    effectiveGateBehavior: resolution?.effectiveGateBehavior
-      ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"),
+    effectiveGateBehavior:
+      resolution?.effectiveGateBehavior ??
+      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,

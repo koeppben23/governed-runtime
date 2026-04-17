@@ -4,24 +4,26 @@ FlowGuard supports four policy modes that determine the level of enforcement.
 
 ## Policy Modes
 
-| Mode | Human Gates | Four-Eyes | Self-Approval |
-|------|-------------|-----------|---------------|
-| Solo | 0 | No | Allowed |
-| Team | 3 | Optional | Allowed |
-| Team-CI | 0 (CI only) | Optional | Allowed |
-| Regulated | 3 | **Required** | **Not Allowed** |
+| Mode      | Human Gates | Four-Eyes    | Self-Approval   |
+| --------- | ----------- | ------------ | --------------- |
+| Solo      | 0           | No           | Allowed         |
+| Team      | 3           | Optional     | Allowed         |
+| Team-CI   | 0 (CI only) | Optional     | Allowed         |
+| Regulated | 3           | **Required** | **Not Allowed** |
 
 ## Solo Mode
 
 Default mode for personal projects.
 
 **Characteristics:**
+
 - No mandatory human gates
 - AI drives the entire workflow
 - Self-approval allowed
 - Fast iteration
 
 **When to use:**
+
 - Personal projects
 - Prototypes
 - Exploratory work
@@ -31,6 +33,7 @@ Default mode for personal projects.
 For team projects with optional human oversight.
 
 **Characteristics:**
+
 - 3 mandatory human gates (PLAN_REVIEW, IMPL_REVIEW, EVIDENCE_REVIEW)
 - Four-eyes optional (can be same person)
 - Self-approval allowed
@@ -41,16 +44,19 @@ For team projects with optional human oversight.
 For CI/CD pipelines that should auto-advance user gates.
 
 **Characteristics:**
+
 - Auto-approve behavior at user gates when CI context is present
 - Full audit trail and hash chain
 - Same iteration limits as Team mode
 
 **Fail-safe degradation:**
+
 - If CI context is missing or unclear, `team-ci` degrades to `team`
 - Reason code: `ci_context_missing`
 - Effective behavior becomes human-gated (no silent auto-approve)
 
 **When to use:**
+
 - Team projects
 - Shared codebases
 - When review documentation is desired
@@ -60,6 +66,7 @@ For CI/CD pipelines that should auto-advance user gates.
 For compliance-required environments (banks, healthcare, etc.).
 
 **Characteristics:**
+
 - 3 mandatory human gates
 - Four-eyes **required** — reviewer must differ from initiator
 - Self-approval **not allowed**
@@ -67,6 +74,7 @@ For compliance-required environments (banks, healthcare, etc.).
 - Hash chain verification
 
 **When to use:**
+
 - Regulated industries
 - Compliance requirements
 - Audit-ready documentation
@@ -104,10 +112,10 @@ In `config.json`:
 
 ## Policy Comparison
 
-| Setting | Solo | Team | Team-CI | Regulated |
-|---------|------|------|---------|-----------|
-| Human gates | 0 | 3 | 0 (CI only) | 3 |
-| Four-eyes required | No | No | No | **Yes** |
-| Self-approval | Allowed | Allowed | Allowed | **Not Allowed** |
-| Audit trail | Optional | Recommended | Recommended | **Mandatory** |
-| Hash chain | No | Optional | **Yes** | **Yes** |
+| Setting            | Solo     | Team        | Team-CI     | Regulated       |
+| ------------------ | -------- | ----------- | ----------- | --------------- |
+| Human gates        | 0        | 3           | 0 (CI only) | 3               |
+| Four-eyes required | No       | No          | No          | **Yes**         |
+| Self-approval      | Allowed  | Allowed     | Allowed     | **Not Allowed** |
+| Audit trail        | Optional | Recommended | Recommended | **Mandatory**   |
+| Hash chain         | No       | Optional    | **Yes**     | **Yes**         |

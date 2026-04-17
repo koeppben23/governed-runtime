@@ -25,10 +25,10 @@
  * @version v1
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import * as path from "node:path";
-import { isEnoent } from "./persistence";
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import * as path from 'node:path';
+import { isEnoent } from './persistence';
 
 const execFileAsync = promisify(execFile);
 
@@ -52,7 +52,7 @@ export class GitError extends Error {
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = "GitError";
+    this.name = 'GitError';
     this.code = code;
   }
 }
@@ -74,7 +74,7 @@ async function git(
   timeoutMs: number = GIT_TIMEOUT_MS,
 ): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", args, {
+    const { stdout } = await execFileAsync('git', args, {
       cwd,
       timeout: timeoutMs,
       windowsHide: true,
@@ -85,26 +85,20 @@ async function git(
   } catch (err: unknown) {
     if (isEnoent(err)) {
       throw new GitError(
-        "GIT_NOT_FOUND",
-        "git executable not found in PATH. Ensure git is installed.",
+        'GIT_NOT_FOUND',
+        'git executable not found in PATH. Ensure git is installed.',
       );
     }
     if (isTimedOut(err)) {
-      throw new GitError(
-        "GIT_TIMEOUT",
-        `git ${args[0]} timed out after ${timeoutMs}ms`,
-      );
+      throw new GitError('GIT_TIMEOUT', `git ${args[0]} timed out after ${timeoutMs}ms`);
     }
     // Extract stderr for diagnostics
     const stderr =
-      typeof err === "object" && err !== null && "stderr" in err
+      typeof err === 'object' && err !== null && 'stderr' in err
         ? String((err as { stderr: unknown }).stderr).trim()
-        : "";
+        : '';
     const msg = stderr || (err instanceof Error ? err.message : String(err));
-    throw new GitError(
-      "GIT_COMMAND_FAILED",
-      `git ${args.join(" ")} failed: ${msg}`,
-    );
+    throw new GitError('GIT_COMMAND_FAILED', `git ${args.join(' ')} failed: ${msg}`);
   }
 }
 
@@ -119,15 +113,12 @@ async function git(
  */
 export async function resolveRoot(dir: string): Promise<string> {
   try {
-    const root = await git(dir, ["rev-parse", "--show-toplevel"]);
+    const root = await git(dir, ['rev-parse', '--show-toplevel']);
     // git always outputs forward slashes; normalize for the OS
     return path.normalize(root);
   } catch (err) {
-    if (err instanceof GitError && err.code === "GIT_COMMAND_FAILED") {
-      throw new GitError(
-        "NOT_GIT_REPO",
-        `Directory is not inside a git repository: ${dir}`,
-      );
+    if (err instanceof GitError && err.code === 'GIT_COMMAND_FAILED') {
+      throw new GitError('NOT_GIT_REPO', `Directory is not inside a git repository: ${dir}`);
     }
     throw err;
   }
@@ -139,7 +130,7 @@ export async function resolveRoot(dir: string): Promise<string> {
  */
 export async function isGitRepo(dir: string): Promise<boolean> {
   try {
-    await git(dir, ["rev-parse", "--is-inside-work-tree"]);
+    await git(dir, ['rev-parse', '--is-inside-work-tree']);
     return true;
   } catch {
     return false;
@@ -153,13 +144,9 @@ export async function isGitRepo(dir: string): Promise<boolean> {
  */
 export async function currentBranch(worktree: string): Promise<string | null> {
   try {
-    const branch = await git(worktree, [
-      "rev-parse",
-      "--abbrev-ref",
-      "HEAD",
-    ]);
+    const branch = await git(worktree, ['rev-parse', '--abbrev-ref', 'HEAD']);
     // Detached HEAD returns literal "HEAD"
-    return branch === "HEAD" ? null : branch;
+    return branch === 'HEAD' ? null : branch;
   } catch {
     return null;
   }
@@ -170,8 +157,8 @@ export async function currentBranch(worktree: string): Promise<string | null> {
  * Useful for pre-implementation baseline checks.
  */
 export async function isClean(worktree: string): Promise<boolean> {
-  const status = await git(worktree, ["status", "--porcelain"]);
-  return status === "";
+  const status = await git(worktree, ['status', '--porcelain']);
+  return status === '';
 }
 
 /**
@@ -189,19 +176,19 @@ export async function isClean(worktree: string): Promise<boolean> {
  * For renames: "XY old -> new" -- we include BOTH paths.
  */
 export async function changedFiles(worktree: string): Promise<string[]> {
-  const status = await git(worktree, ["status", "--porcelain"]);
+  const status = await git(worktree, ['status', '--porcelain']);
   if (!status) return [];
 
   const files = new Set<string>();
 
-  for (const line of status.split("\n")) {
+  for (const line of status.split('\n')) {
     if (!line || line.length < 4) continue;
 
     // Status is characters 0-1, space at 2, filename starts at 3
     const entry = line.slice(3);
 
     // Handle renames: "old -> new"
-    const arrowIdx = entry.indexOf(" -> ");
+    const arrowIdx = entry.indexOf(' -> ');
     if (arrowIdx !== -1) {
       files.add(path.normalize(entry.slice(0, arrowIdx)));
       files.add(path.normalize(entry.slice(arrowIdx + 4)));
@@ -226,15 +213,12 @@ export async function changedFiles(worktree: string): Promise<string[]> {
  * Falls back to changedFiles() if the base ref doesn't exist
  * (e.g., initial repository with no commits).
  */
-export async function diffFiles(
-  worktree: string,
-  base: string = "HEAD",
-): Promise<string[]> {
+export async function diffFiles(worktree: string, base: string = 'HEAD'): Promise<string[]> {
   try {
-    const output = await git(worktree, ["diff", "--name-only", base]);
+    const output = await git(worktree, ['diff', '--name-only', base]);
     if (!output) return [];
     return output
-      .split("\n")
+      .split('\n')
       .filter((f) => f.trim())
       .map((f) => path.normalize(f))
       .sort();
@@ -251,14 +235,10 @@ export async function diffFiles(
  */
 export async function stagedFiles(worktree: string): Promise<string[]> {
   try {
-    const output = await git(worktree, [
-      "diff",
-      "--name-only",
-      "--cached",
-    ]);
+    const output = await git(worktree, ['diff', '--name-only', '--cached']);
     if (!output) return [];
     return output
-      .split("\n")
+      .split('\n')
       .filter((f) => f.trim())
       .map((f) => path.normalize(f))
       .sort();
@@ -273,7 +253,7 @@ export async function stagedFiles(worktree: string): Promise<string[]> {
  */
 export async function headCommit(worktree: string): Promise<string | null> {
   try {
-    return await git(worktree, ["rev-parse", "--short", "HEAD"]);
+    return await git(worktree, ['rev-parse', '--short', 'HEAD']);
   } catch {
     return null;
   }
@@ -291,12 +271,9 @@ export async function headCommit(worktree: string): Promise<string | null> {
  */
 export async function defaultBranch(worktree: string): Promise<string | null> {
   try {
-    const ref = await git(worktree, [
-      "symbolic-ref",
-      "refs/remotes/origin/HEAD",
-    ]);
+    const ref = await git(worktree, ['symbolic-ref', 'refs/remotes/origin/HEAD']);
     // ref is "refs/remotes/origin/main" — extract last segment
-    const parts = ref.split("/");
+    const parts = ref.split('/');
     return parts[parts.length - 1] || null;
   } catch {
     return null;
@@ -315,7 +292,7 @@ export async function defaultBranch(worktree: string): Promise<string | null> {
  */
 export async function remoteOriginUrl(worktree: string): Promise<string | null> {
   try {
-    const url = await git(worktree, ["remote", "get-url", "origin"]);
+    const url = await git(worktree, ['remote', 'get-url', 'origin']);
     return url || null;
   } catch {
     return null;
@@ -344,67 +321,67 @@ export async function listRepoSignals(worktree: string): Promise<{
 }> {
   /** Known package/dependency manifest filenames. */
   const PACKAGE_FILES = new Set([
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "package.json",
-    "Cargo.toml",
-    "go.mod",
-    "pyproject.toml",
-    "setup.py",
-    "requirements.txt",
-    "Gemfile",
-    "composer.json",
-    "*.csproj",
-    "*.sln",
+    'pom.xml',
+    'build.gradle',
+    'build.gradle.kts',
+    'package.json',
+    'Cargo.toml',
+    'go.mod',
+    'pyproject.toml',
+    'setup.py',
+    'requirements.txt',
+    'Gemfile',
+    'composer.json',
+    '*.csproj',
+    '*.sln',
   ]);
 
   /** Known config filenames (exact match on basename). */
   const CONFIG_FILES = new Set([
-    "tsconfig.json",
-    "angular.json",
-    "nx.json",
-    ".eslintrc",
-    ".eslintrc.js",
-    ".eslintrc.json",
-    ".eslintrc.yml",
-    "eslint.config.js",
-    "eslint.config.mjs",
-    ".prettierrc",
-    ".prettierrc.json",
-    "Dockerfile",
-    "docker-compose.yml",
-    "docker-compose.yaml",
-    "jest.config.js",
-    "jest.config.ts",
-    "vitest.config.ts",
-    "vitest.config.js",
-    "webpack.config.js",
-    "vite.config.ts",
-    "vite.config.js",
-    "rollup.config.js",
-    "tailwind.config.js",
-    "tailwind.config.ts",
-    "next.config.js",
-    "next.config.mjs",
-    "nuxt.config.ts",
+    'tsconfig.json',
+    'angular.json',
+    'nx.json',
+    '.eslintrc',
+    '.eslintrc.js',
+    '.eslintrc.json',
+    '.eslintrc.yml',
+    'eslint.config.js',
+    'eslint.config.mjs',
+    '.prettierrc',
+    '.prettierrc.json',
+    'Dockerfile',
+    'docker-compose.yml',
+    'docker-compose.yaml',
+    'jest.config.js',
+    'jest.config.ts',
+    'vitest.config.ts',
+    'vitest.config.js',
+    'webpack.config.js',
+    'vite.config.ts',
+    'vite.config.js',
+    'rollup.config.js',
+    'tailwind.config.js',
+    'tailwind.config.ts',
+    'next.config.js',
+    'next.config.mjs',
+    'nuxt.config.ts',
   ]);
 
   let allFiles: string[] = [];
 
   try {
     // Tracked files
-    const tracked = await git(worktree, ["ls-files"]);
+    const tracked = await git(worktree, ['ls-files']);
     if (tracked) {
-      allFiles = tracked.split("\n").filter((f) => f.trim());
+      allFiles = tracked.split('\n').filter((f) => f.trim());
     }
   } catch {
     // No commits yet or not a git repo — try status-based fallback
     try {
-      const status = await git(worktree, ["status", "--porcelain"]);
+      const status = await git(worktree, ['status', '--porcelain']);
       if (status) {
         allFiles = status
-          .split("\n")
+          .split('\n')
           .filter((line) => line && line.length >= 4)
           .map((line) => line.slice(3).trim());
       }
@@ -424,7 +401,7 @@ export async function listRepoSignals(worktree: string): Promise<{
     const basename = path.basename(filePath);
     if (PACKAGE_FILES.has(basename)) {
       packageFiles.push(basename);
-    } else if (basename.endsWith(".csproj") || basename.endsWith(".sln")) {
+    } else if (basename.endsWith('.csproj') || basename.endsWith('.sln')) {
       packageFiles.push(basename);
     }
     if (CONFIG_FILES.has(basename)) {
@@ -441,13 +418,12 @@ export async function listRepoSignals(worktree: string): Promise<{
 
 // -- Internals ----------------------------------------------------------------
 
-
 /** Type-safe timeout check (process killed). */
 function isTimedOut(err: unknown): boolean {
   return (
-    typeof err === "object" &&
+    typeof err === 'object' &&
     err !== null &&
-    "killed" in err &&
+    'killed' in err &&
     (err as { killed: unknown }).killed === true
   );
 }

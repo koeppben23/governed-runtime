@@ -18,9 +18,9 @@
  * @version v3
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
-import type { ToolDefinition } from "./helpers";
+import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
   requireState,
@@ -31,25 +31,21 @@ import {
   formatError,
   extractSections,
   appendNextAction,
-} from "./helpers";
+} from './helpers';
 
 // State & Machine
-import type { SessionState } from "../../state/schema";
-import { evaluate } from "../../machine/evaluate";
-import { isCommandAllowed, Command } from "../../machine/commands";
+import type { SessionState } from '../../state/schema';
+import { evaluate } from '../../machine/evaluate';
+import { isCommandAllowed, Command } from '../../machine/commands';
 
 // Rail helpers
-import { autoAdvance } from "../../rails/types";
+import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { writeState } from "../../adapters/persistence";
+import { writeState } from '../../adapters/persistence';
 
 // Evidence types
-import type {
-  PlanEvidence,
-  LoopVerdict,
-  RevisionDelta,
-} from "../../state/evidence";
+import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
@@ -57,27 +53,27 @@ import type {
 
 export const plan: ToolDefinition = {
   description:
-    "Submit a plan OR record a self-review verdict. Two modes:\n" +
-    "Mode A (submit plan): provide planText. Records the plan and starts self-review loop.\n" +
+    'Submit a plan OR record a self-review verdict. Two modes:\n' +
+    'Mode A (submit plan): provide planText. Records the plan and starts self-review loop.\n' +
     "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised planText.\n" +
-    "The self-review loop runs up to maxIterations (from policy). " +
-    "On convergence, auto-advances to PLAN_REVIEW.",
+    'The self-review loop runs up to maxIterations (from policy). ' +
+    'On convergence, auto-advances to PLAN_REVIEW.',
   args: {
     planText: z
       .string()
       .optional()
       .describe(
-        "Plan body text (markdown). Required for Mode A (initial submission) " +
-        "and when selfReviewVerdict is 'changes_requested' (revised plan).",
+        'Plan body text (markdown). Required for Mode A (initial submission) ' +
+          "and when selfReviewVerdict is 'changes_requested' (revised plan).",
       ),
     selfReviewVerdict: z
-      .enum(["approve", "changes_requested"])
+      .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        "Self-review verdict. Omit for initial plan submission. " +
-        "'approve' = plan is good, advance. " +
-        "'changes_requested' = plan needs revision, provide updated planText.",
+        'Self-review verdict. Omit for initial plan submission. ' +
+          "'approve' = plan is good, advance. " +
+          "'changes_requested' = plan needs revision, provide updated planText.",
       ),
   },
   async execute(args, context) {
@@ -90,15 +86,15 @@ export const plan: ToolDefinition = {
 
       // Admissibility
       if (!isCommandAllowed(state.phase, Command.PLAN)) {
-        return formatBlocked("COMMAND_NOT_ALLOWED", {
-          command: "/plan",
+        return formatBlocked('COMMAND_NOT_ALLOWED', {
+          command: '/plan',
           phase: state.phase,
         });
       }
 
       // Require ticket
       if (!state.ticket) {
-        return formatBlocked("TICKET_REQUIRED", { action: "creating a plan" });
+        return formatBlocked('TICKET_REQUIRED', { action: 'creating a plan' });
       }
 
       const isInitialSubmission = !args.selfReviewVerdict;
@@ -107,7 +103,7 @@ export const plan: ToolDefinition = {
         // ── Mode A: Initial plan submission ──────────────────────
         const planBody = args.planText?.trim();
         if (!planBody) {
-          return formatBlocked("EMPTY_PLAN");
+          return formatBlocked('EMPTY_PLAN');
         }
 
         const planEvidence: PlanEvidence = {
@@ -118,9 +114,7 @@ export const plan: ToolDefinition = {
         };
 
         // Preserve version history
-        const history = state.plan
-          ? [state.plan.current, ...state.plan.history]
-          : [];
+        const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
 
         const nextState: SessionState = {
           ...state,
@@ -130,40 +124,43 @@ export const plan: ToolDefinition = {
             maxIterations: maxSelfReviewIterations,
             prevDigest: null,
             currDigest: planEvidence.digest,
-            revisionDelta: "major" as RevisionDelta,
-            verdict: "changes_requested" as LoopVerdict,
+            revisionDelta: 'major' as RevisionDelta,
+            verdict: 'changes_requested' as LoopVerdict,
           },
           error: null,
         };
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: finalState, evalResult: ev, transitions } = autoAdvance(
-          nextState,
-          evalFn,
-          ctx,
-        );
+        const {
+          state: finalState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
         await writeState(sessDir, finalState);
 
-        return appendNextAction(JSON.stringify({
-          phase: finalState.phase,
-          status: "Plan submitted (v" + (history.length + 1) + ").",
-          planDigest: planEvidence.digest,
-          selfReviewIteration: 0,
-          maxSelfReviewIterations,
-          next:
-            "Self-review needed. Review the plan critically against the ticket. " +
-            "Check for completeness, correctness, edge cases, and feasibility. " +
-            "Then call flowguard_plan with selfReviewVerdict.",
-          _audit: { transitions },
-        }), finalState);
+        return appendNextAction(
+          JSON.stringify({
+            phase: finalState.phase,
+            status: 'Plan submitted (v' + (history.length + 1) + ').',
+            planDigest: planEvidence.digest,
+            selfReviewIteration: 0,
+            maxSelfReviewIterations,
+            next:
+              'Self-review needed. Review the plan critically against the ticket. ' +
+              'Check for completeness, correctness, edge cases, and feasibility. ' +
+              'Then call flowguard_plan with selfReviewVerdict.',
+            _audit: { transitions },
+          }),
+          finalState,
+        );
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
         if (!state.selfReview) {
-          return formatBlocked("NO_SELF_REVIEW");
+          return formatBlocked('NO_SELF_REVIEW');
         }
         if (!state.plan) {
-          return formatBlocked("NO_PLAN");
+          return formatBlocked('NO_PLAN');
         }
 
         const iteration = state.selfReview.iteration + 1;
@@ -172,12 +169,12 @@ export const plan: ToolDefinition = {
 
         let currentPlan = state.plan.current;
         let history = [...state.plan.history];
-        let revisionDelta: RevisionDelta = "none";
+        let revisionDelta: RevisionDelta = 'none';
 
-        if (verdict === "changes_requested") {
+        if (verdict === 'changes_requested') {
           const revisedBody = args.planText?.trim();
           if (!revisedBody) {
-            return formatBlocked("REVISED_PLAN_REQUIRED");
+            return formatBlocked('REVISED_PLAN_REQUIRED');
           }
 
           const revised: PlanEvidence = {
@@ -187,7 +184,7 @@ export const plan: ToolDefinition = {
             createdAt: ctx.now(),
           };
 
-          revisionDelta = revised.digest === prevDigest ? "none" : "minor";
+          revisionDelta = revised.digest === prevDigest ? 'none' : 'minor';
           history = [currentPlan, ...history];
           currentPlan = revised;
         }
@@ -209,40 +206,46 @@ export const plan: ToolDefinition = {
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: finalState, evalResult: ev, transitions } = autoAdvance(
-          nextState,
-          evalFn,
-          ctx,
-        );
+        const {
+          state: finalState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
         await writeState(sessDir, finalState);
 
         // Check convergence for messaging
         const converged =
           iteration >= maxSelfReviewIterations ||
-          (revisionDelta === "none" && verdict === "approve");
+          (revisionDelta === 'none' && verdict === 'approve');
 
         if (converged) {
-          return appendNextAction(JSON.stringify({
-            phase: finalState.phase,
-            status: `Self-review converged at iteration ${iteration}. Plan approved.`,
-            planDigest: currentPlan.digest,
-            selfReviewIteration: iteration,
-            next: formatEval(ev),
-            _audit: { transitions },
-          }), finalState);
+          return appendNextAction(
+            JSON.stringify({
+              phase: finalState.phase,
+              status: `Self-review converged at iteration ${iteration}. Plan approved.`,
+              planDigest: currentPlan.digest,
+              selfReviewIteration: iteration,
+              next: formatEval(ev),
+              _audit: { transitions },
+            }),
+            finalState,
+          );
         }
 
-        return appendNextAction(JSON.stringify({
-          phase: finalState.phase,
-          status: `Self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
-          planDigest: currentPlan.digest,
-          selfReviewIteration: iteration,
-          revisionDelta,
-          next:
-            "Review the plan again. Check if the revisions address all issues. " +
-            "Call flowguard_plan with selfReviewVerdict.",
-          _audit: { transitions },
-        }), finalState);
+        return appendNextAction(
+          JSON.stringify({
+            phase: finalState.phase,
+            status: `Self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
+            planDigest: currentPlan.digest,
+            selfReviewIteration: iteration,
+            revisionDelta,
+            next:
+              'Review the plan again. Check if the revisions address all issues. ' +
+              'Call flowguard_plan with selfReviewVerdict.',
+            _audit: { transitions },
+          }),
+          finalState,
+        );
       }
     } catch (err) {
       return formatError(err);

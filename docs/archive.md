@@ -24,6 +24,7 @@ An archive includes:
 By default (`archive.redaction.mode=basic`, `includeRaw=false`), raw decision receipts and raw review report are excluded from archives.
 
 **Redaction scope:** Redaction is applied only to export artifacts (`decision-receipts.*.json`, `review-report.*.json`). The following artifacts are **always included as raw** and are **never redacted**:
+
 - `session-state.json` — raw session state (internal SSOT)
 - `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
 
@@ -56,10 +57,7 @@ Each archive includes an `archive-manifest.json`:
     "decision-receipts.redacted.v1.json",
     "review-report.redacted.json"
   ],
-  "excludedFiles": [
-    "decision-receipts.v1.json",
-    "review-report.json"
-  ],
+  "excludedFiles": ["decision-receipts.v1.json", "review-report.json"],
   "riskFlags": [],
   "includedFiles": ["session-state.json", "audit.jsonl"],
   "fileDigests": {
@@ -78,18 +76,18 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 
 ### Finding Codes
 
-| Code | Description |
-|------|-------------|
-| `missing_manifest` | Archive manifest not found |
-| `manifest_parse_error` | Manifest is malformed |
-| `missing_file` | File listed in manifest missing |
-| `unexpected_file` | File not listed in manifest |
-| `file_digest_mismatch` | File hash doesn't match manifest |
-| `content_digest_mismatch` | Content hash incorrect |
-| `archive_checksum_missing` | SHA256 sidecar not found |
-| `archive_checksum_mismatch` | Archive hash doesn't match |
-| `state_missing` | Session state missing |
-| `snapshot_missing` | Discovery snapshot missing |
+| Code                        | Description                      |
+| --------------------------- | -------------------------------- |
+| `missing_manifest`          | Archive manifest not found       |
+| `manifest_parse_error`      | Manifest is malformed            |
+| `missing_file`              | File listed in manifest missing  |
+| `unexpected_file`           | File not listed in manifest      |
+| `file_digest_mismatch`      | File hash doesn't match manifest |
+| `content_digest_mismatch`   | Content hash incorrect           |
+| `archive_checksum_missing`  | SHA256 sidecar not found         |
+| `archive_checksum_mismatch` | Archive hash doesn't match       |
+| `state_missing`             | Session state missing            |
+| `snapshot_missing`          | Discovery snapshot missing       |
 
 ### Verification Example
 

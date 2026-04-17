@@ -12,13 +12,13 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ## Delivery Scope
 
-| Category | Description | Example |
-|----------|-------------|---------|
-| **Technically Enforced** | Guarantees by implementation | Hash chain, state schema |
-| **Currently Delivered** | Available in current release | Archive with verification |
-| **Optional** | Can be configured | Retention policies |
-| **Not Covered** | Intentionally not provided | Automated backup, cloud storage |
-| **Customer Responsibility** | External to FlowGuard | Backup schedules, archival storage |
+| Category                    | Description                  | Example                            |
+| --------------------------- | ---------------------------- | ---------------------------------- |
+| **Technically Enforced**    | Guarantees by implementation | Hash chain, state schema           |
+| **Currently Delivered**     | Available in current release | Archive with verification          |
+| **Optional**                | Can be configured            | Retention policies                 |
+| **Not Covered**             | Intentionally not provided   | Automated backup, cloud storage    |
+| **Customer Responsibility** | External to FlowGuard        | Backup schedules, archival storage |
 
 ---
 
@@ -26,29 +26,29 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### FlowGuard Data Lifecycle
 
-| Data Type | FlowGuard Preserves | Until | Customer Retains |
-|-----------|---------------------|-------|------------------|
-| **Session state** | Yes | Archived or cleaned | Archive indefinitely |
-| **Audit trail** | Yes | Archived | Archive indefinitely |
-| **Discovery snapshot** | Yes | Archived | Archive indefinitely |
-| **Archives** | — | — | Customer responsibility |
+| Data Type              | FlowGuard Preserves | Until               | Customer Retains        |
+| ---------------------- | ------------------- | ------------------- | ----------------------- |
+| **Session state**      | Yes                 | Archived or cleaned | Archive indefinitely    |
+| **Audit trail**        | Yes                 | Archived            | Archive indefinitely    |
+| **Discovery snapshot** | Yes                 | Archived            | Archive indefinitely    |
+| **Archives**           | —                   | —                   | Customer responsibility |
 
 ### Installation Data Lifecycle
 
-| Data Type | FlowGuard Preserves | Until | Customer Responsibility |
-|-----------|---------------------|-------|------------------------|
-| **CLI installation** | Yes | Uninstalled | Archive artifacts |
-| **Configuration** | Yes | Changed | Version control |
-| **Mandates** | Yes | Updated | Content verification |
+| Data Type            | FlowGuard Preserves | Until       | Customer Responsibility |
+| -------------------- | ------------------- | ----------- | ----------------------- |
+| **CLI installation** | Yes                 | Uninstalled | Archive artifacts       |
+| **Configuration**    | Yes                 | Changed     | Version control         |
+| **Mandates**         | Yes                 | Updated     | Content verification    |
 
 ### Retention Triggers
 
-| Event | FlowGuard Action | Customer Action |
-|-------|------------------|-----------------|
-| **Session complete** | Preserves state | Archive recommended |
-| **Session abort** | Preserves state | Archive for analysis |
-| **Workspace change** | Marks session invalid | Archive before change |
-| **Version upgrade** | Installs new version | Archive previous artifact |
+| Event                | FlowGuard Action      | Customer Action           |
+| -------------------- | --------------------- | ------------------------- |
+| **Session complete** | Preserves state       | Archive recommended       |
+| **Session abort**    | Preserves state       | Archive for analysis      |
+| **Workspace change** | Marks session invalid | Archive before change     |
+| **Version upgrade**  | Installs new version  | Archive previous artifact |
 
 ---
 
@@ -56,14 +56,15 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Archive Creation
 
-| Step | Command | Description |
-|------|---------|-------------|
-| 1 | `/review` | Verify session completeness |
-| 2 | `/archive` | Create `.tar.gz` with manifest |
-| 3 | Verify | Run integrity checks |
-| 4 | Store | Move to archival storage |
+| Step | Command    | Description                    |
+| ---- | ---------- | ------------------------------ |
+| 1    | `/review`  | Verify session completeness    |
+| 2    | `/archive` | Create `.tar.gz` with manifest |
+| 3    | Verify     | Run integrity checks           |
+| 4    | Store      | Move to archival storage       |
 
 **Currently Delivered:**
+
 - `verifyArchive()` with multi-check validation
 - SHA-256 file hashes in manifest
 - Content digest for complete archive
@@ -81,16 +82,17 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Archive Verification
 
-| Check | Purpose |
-|-------|---------|
-| Manifest presence | Archive is complete |
-| File completeness | All expected files present |
-| File digests | Individual file integrity |
-| Content digest | Overall archive integrity |
-| Discovery consistency | State linked to discovery |
-| State validity | Session state is parseable |
+| Check                 | Purpose                    |
+| --------------------- | -------------------------- |
+| Manifest presence     | Archive is complete        |
+| File completeness     | All expected files present |
+| File digests          | Individual file integrity  |
+| Content digest        | Overall archive integrity  |
+| Discovery consistency | State linked to discovery  |
+| State validity        | Session state is parseable |
 
 **Currently Delivered:**
+
 - Multi-check `verifyArchive()` function
 - Structured finding codes for each check
 
@@ -100,13 +102,14 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Session Recovery
 
-| Scenario | Recovery Method | Notes |
-|----------|-----------------|-------|
-| **State lost** | Extract from archive | Verify hash chain integrity |
-| **Audit lost** | Extract from archive | Verify hash chain integrity |
-| **Disk failure** | Fresh install + archive extract | Restore session files |
+| Scenario         | Recovery Method                 | Notes                       |
+| ---------------- | ------------------------------- | --------------------------- |
+| **State lost**   | Extract from archive            | Verify hash chain integrity |
+| **Audit lost**   | Extract from archive            | Verify hash chain integrity |
+| **Disk failure** | Fresh install + archive extract | Restore session files       |
 
 **Procedure:**
+
 1. Install FlowGuard on new machine
 2. Extract archive: `tar -xzf session-{id}.tar.gz`
 3. Verify archive integrity
@@ -114,23 +117,24 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Disaster Recovery
 
-| Step | Action | Owner |
-|------|--------|-------|
-| 1 | Restore `.opencode/` directory | Customer |
-| 2 | Verify installation: `flowguard doctor` | Customer |
-| 3 | Verify archives | Customer |
-| 4 | Archive incomplete sessions | Session owner |
+| Step | Action                                  | Owner         |
+| ---- | --------------------------------------- | ------------- |
+| 1    | Restore `.opencode/` directory          | Customer      |
+| 2    | Verify installation: `flowguard doctor` | Customer      |
+| 3    | Verify archives                         | Customer      |
+| 4    | Archive incomplete sessions             | Session owner |
 
 ### Backup Recommendations
 
-| Data | Frequency | Method |
-|------|-----------|--------|
-| **Active sessions** | Daily or per session | Archive + external storage |
-| **Archives** | Weekly incremental | External storage |
-| **Installation artifact** | Per version | Artifact repository |
-| **Configuration** | On change | Version control |
+| Data                      | Frequency            | Method                     |
+| ------------------------- | -------------------- | -------------------------- |
+| **Active sessions**       | Daily or per session | Archive + external storage |
+| **Archives**              | Weekly incremental   | External storage           |
+| **Installation artifact** | Per version          | Artifact repository        |
+| **Configuration**         | On change            | Version control            |
 
 **Customer Responsibility:**
+
 - Automated backup scheduling
 - Off-site storage
 - Backup encryption (if required)
@@ -142,24 +146,25 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Session Data Disposal
 
-| Data | Disposal Method | Notes |
-|------|-----------------|-------|
-| **Active session** | Complete and archive first | Preserves evidence |
-| **Audit trail** | Archive or delete | Archive recommended |
-| **Discovery snapshot** | Archive or delete | Archive recommended |
-| **Session files** | Customer-managed | Delete after archival |
+| Data                   | Disposal Method            | Notes                 |
+| ---------------------- | -------------------------- | --------------------- |
+| **Active session**     | Complete and archive first | Preserves evidence    |
+| **Audit trail**        | Archive or delete          | Archive recommended   |
+| **Discovery snapshot** | Archive or delete          | Archive recommended   |
+| **Session files**      | Customer-managed           | Delete after archival |
 
 ### Installation Data Disposal
 
-| Data | Disposal Method | Notes |
-|------|-----------------|-------|
-| **CLI** | `flowguard uninstall` | Removes installed files |
-| **Configuration** | Delete `flowguard.json` | Uses defaults |
-| **Mandates** | Overwritten on update | Content-digested |
+| Data              | Disposal Method         | Notes                   |
+| ----------------- | ----------------------- | ----------------------- |
+| **CLI**           | `flowguard uninstall`   | Removes installed files |
+| **Configuration** | Delete `flowguard.json` | Uses defaults           |
+| **Mandates**      | Overwritten on update   | Content-digested        |
 
 ### Secure Disposal
 
 **Customer Responsibility:**
+
 - Secure deletion of session directories
 - Archive encryption during storage
 - Compliance with retention policies
@@ -171,21 +176,21 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Regulatory Considerations
 
-| Requirement | FlowGuard Capability | Customer Responsibility |
-|-------------|---------------------|------------------------|
-| **Evidence retention** | Archive format | Storage duration |
-| **Audit trail** | Hash-chained JSONL | Archival policy |
-| **Data minimization** | Manual disposal | Retention schedule |
-| **Right to erasure** | Manual deletion | Compliance implementation |
+| Requirement            | FlowGuard Capability | Customer Responsibility   |
+| ---------------------- | -------------------- | ------------------------- |
+| **Evidence retention** | Archive format       | Storage duration          |
+| **Audit trail**        | Hash-chained JSONL   | Archival policy           |
+| **Data minimization**  | Manual disposal      | Retention schedule        |
+| **Right to erasure**   | Manual deletion      | Compliance implementation |
 
 ### Retention Schedule (Customer Responsibility)
 
-| Data Type | Recommendation | Notes |
-|-----------|----------------|-------|
-| **Session archives** | Per organizational policy | Regulatory requirements vary |
-| **Audit trails** | With archive | Retained as part of archive |
-| **Configuration** | Per version | Version control recommended |
-| **Installation artifacts** | 2-3 versions | For rollback capability |
+| Data Type                  | Recommendation            | Notes                        |
+| -------------------------- | ------------------------- | ---------------------------- |
+| **Session archives**       | Per organizational policy | Regulatory requirements vary |
+| **Audit trails**           | With archive              | Retained as part of archive  |
+| **Configuration**          | Per version               | Version control recommended  |
+| **Installation artifacts** | 2-3 versions              | For rollback capability      |
 
 ---
 
@@ -193,23 +198,23 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Health Indicators
 
-| Indicator | Normal | Action |
-|-----------|--------|--------|
-| **Archive verification** | Pass | None |
-| **Archive verification** | Fail | Investigate + restore |
-| **Session state** | Valid | None |
-| **Session state** | Invalid | Recover from archive |
-| **Disk space** | > 10% free | Archive old sessions |
+| Indicator                | Normal     | Action                |
+| ------------------------ | ---------- | --------------------- |
+| **Archive verification** | Pass       | None                  |
+| **Archive verification** | Fail       | Investigate + restore |
+| **Session state**        | Valid      | None                  |
+| **Session state**        | Invalid    | Recover from archive  |
+| **Disk space**           | > 10% free | Archive old sessions  |
 
 ### Audit Trail Health
 
-| Check | Frequency | Owner |
-|-------|-----------|-------|
-| Archive verification | On archive creation | Session owner |
-| Integrity spot-check | Monthly | Installation owner |
-| Full archive audit | Quarterly | Compliance team |
+| Check                | Frequency           | Owner              |
+| -------------------- | ------------------- | ------------------ |
+| Archive verification | On archive creation | Session owner      |
+| Integrity spot-check | Monthly             | Installation owner |
+| Full archive audit   | Quarterly           | Compliance team    |
 
 ---
 
-*FlowGuard Version: 1.0.0*
-*Last Updated: 2026-04-15*
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_

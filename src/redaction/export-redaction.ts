@@ -5,9 +5,9 @@
  * Runtime/session SSOT stays raw. This module only transforms export artifacts.
  */
 
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto';
 
-export type RedactionMode = "none" | "basic" | "strict";
+export type RedactionMode = 'none' | 'basic' | 'strict';
 
 export interface ArchiveRedactionPolicy {
   readonly mode: RedactionMode;
@@ -19,10 +19,10 @@ export interface RedactionOutcome {
   readonly rawPath: string;
 }
 
-function stableMask(value: string, mode: Exclude<RedactionMode, "none">): string {
+function stableMask(value: string, mode: Exclude<RedactionMode, 'none'>): string {
   const base = value;
-  if (mode === "basic") return "[REDACTED]";
-  const token = createHash("sha256").update(base).digest("hex").slice(0, 12);
+  if (mode === 'basic') return '[REDACTED]';
+  const token = createHash('sha256').update(base).digest('hex').slice(0, 12);
   return `[REDACTED:${token}]`;
 }
 
@@ -33,7 +33,7 @@ export function redactReviewReport(
   payload: Record<string, unknown>,
   mode: RedactionMode,
 ): Record<string, unknown> {
-  if (mode === "none") return payload;
+  if (mode === 'none') return payload;
 
   const out = structuredClone(payload);
   const report = out;
@@ -42,7 +42,7 @@ export function redactReviewReport(
     ? (report.findings as Array<Record<string, unknown>>)
     : [];
   for (const finding of findings) {
-    if (typeof finding.message === "string") {
+    if (typeof finding.message === 'string') {
       finding.message = stableMask(finding.message, mode);
     }
   }
@@ -51,29 +51,29 @@ export function redactReviewReport(
     ? (report.validationSummary as Array<Record<string, unknown>>)
     : [];
   for (const item of validationSummary) {
-    if (typeof item.detail === "string") {
+    if (typeof item.detail === 'string') {
       item.detail = stableMask(item.detail, mode);
     }
   }
 
   const completeness =
-    typeof report.completeness === "object" && report.completeness !== null
+    typeof report.completeness === 'object' && report.completeness !== null
       ? (report.completeness as Record<string, unknown>)
       : null;
 
   if (completeness) {
     const fourEyes =
-      typeof completeness.fourEyes === "object" && completeness.fourEyes !== null
+      typeof completeness.fourEyes === 'object' && completeness.fourEyes !== null
         ? (completeness.fourEyes as Record<string, unknown>)
         : null;
     if (fourEyes) {
-      if (typeof fourEyes.initiatedBy === "string") {
+      if (typeof fourEyes.initiatedBy === 'string') {
         fourEyes.initiatedBy = stableMask(fourEyes.initiatedBy, mode);
       }
-      if (typeof fourEyes.decidedBy === "string") {
+      if (typeof fourEyes.decidedBy === 'string') {
         fourEyes.decidedBy = stableMask(fourEyes.decidedBy, mode);
       }
-      if (typeof fourEyes.detail === "string") {
+      if (typeof fourEyes.detail === 'string') {
         fourEyes.detail = stableMask(fourEyes.detail, mode);
       }
     }
@@ -82,7 +82,7 @@ export function redactReviewReport(
       ? (completeness.slots as Array<Record<string, unknown>>)
       : [];
     for (const slot of slots) {
-      if (typeof slot.detail === "string") {
+      if (typeof slot.detail === 'string') {
         slot.detail = stableMask(slot.detail, mode);
       }
     }
@@ -98,7 +98,7 @@ export function redactDecisionReceipts(
   payload: Record<string, unknown>,
   mode: RedactionMode,
 ): Record<string, unknown> {
-  if (mode === "none") return payload;
+  if (mode === 'none') return payload;
   const out = structuredClone(payload);
   const root = out;
   const receipts = Array.isArray(root.receipts)
@@ -106,10 +106,10 @@ export function redactDecisionReceipts(
     : [];
 
   for (const receipt of receipts) {
-    if (typeof receipt.decidedBy === "string") {
+    if (typeof receipt.decidedBy === 'string') {
       receipt.decidedBy = stableMask(receipt.decidedBy, mode);
     }
-    if (typeof receipt.rationale === "string") {
+    if (typeof receipt.rationale === 'string') {
       receipt.rationale = stableMask(receipt.rationale, mode);
     }
   }

@@ -16,15 +16,15 @@
  * @version v2
  */
 
-import type { SessionState } from "../state/schema";
-import type { ReviewReport } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import { evaluate } from "../machine/evaluate";
-import { evaluateCompleteness } from "../audit/completeness";
-import type { CompletenessReport } from "../audit/completeness";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
-import { autoAdvance, applyTransition } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { ReviewReport } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import { evaluate } from '../machine/evaluate';
+import { evaluateCompleteness } from '../audit/completeness';
+import type { CompletenessReport } from '../audit/completeness';
+import type { RailResult, RailContext, TransitionRecord } from './types';
+import { autoAdvance, applyTransition } from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -35,7 +35,9 @@ export interface ReviewExecutors {
    */
   analyze?: (
     state: SessionState,
-  ) => Promise<Array<{ severity: "info" | "warning" | "error"; category: string; message: string }>>;
+  ) => Promise<
+    Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>
+  >;
 }
 
 // ─── Extended Review Report ───────────────────────────────────────────────────
@@ -75,35 +77,47 @@ export async function executeReview(
   const completeness = evaluateCompleteness(state);
 
   // 3. Generate findings (LLM or mechanical)
-  let findings: Array<{ severity: "info" | "warning" | "error"; category: string; message: string }> = [];
+  let findings: Array<{
+    severity: 'info' | 'warning' | 'error';
+    category: string;
+    message: string;
+  }> = [];
 
   // Mechanical findings (always)
   if (!state.ticket) {
-    findings.push({ severity: "warning", category: "completeness", message: "No ticket evidence" });
+    findings.push({ severity: 'warning', category: 'completeness', message: 'No ticket evidence' });
   }
   if (!state.plan) {
-    findings.push({ severity: "warning", category: "completeness", message: "No plan evidence" });
+    findings.push({ severity: 'warning', category: 'completeness', message: 'No plan evidence' });
   }
   if (state.error) {
-    findings.push({ severity: "error", category: "error", message: `Error: ${state.error.code} — ${state.error.message}` });
+    findings.push({
+      severity: 'error',
+      category: 'error',
+      message: `Error: ${state.error.code} — ${state.error.message}`,
+    });
   }
   if (state.validation.some((v) => !v.passed)) {
     const failed = state.validation.filter((v) => !v.passed).map((v) => v.checkId);
-    findings.push({ severity: "error", category: "validation", message: `Failed checks: ${failed.join(", ")}` });
+    findings.push({
+      severity: 'error',
+      category: 'validation',
+      message: `Failed checks: ${failed.join(', ')}`,
+    });
   }
 
   // Four-eyes findings
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
     if (completeness.fourEyes.decidedBy === null) {
       findings.push({
-        severity: "warning",
-        category: "four-eyes",
-        message: "Four-eyes principle required but no review decision recorded yet",
+        severity: 'warning',
+        category: 'four-eyes',
+        message: 'Four-eyes principle required but no review decision recorded yet',
       });
     } else {
       findings.push({
-        severity: "error",
-        category: "four-eyes",
+        severity: 'error',
+        category: 'four-eyes',
         message: `Four-eyes principle VIOLATED: initiator (${completeness.fourEyes.initiatedBy}) and reviewer (${completeness.fourEyes.decidedBy}) are the same person`,
       });
     }
@@ -111,16 +125,16 @@ export async function executeReview(
 
   // Evidence completeness findings
   for (const slot of completeness.slots) {
-    if (slot.status === "missing") {
+    if (slot.status === 'missing') {
       findings.push({
-        severity: "warning",
-        category: "completeness",
+        severity: 'warning',
+        category: 'completeness',
         message: `${slot.label} is missing (required at phase ${state.phase})`,
       });
-    } else if (slot.status === "failed") {
+    } else if (slot.status === 'failed') {
       findings.push({
-        severity: "error",
-        category: "completeness",
+        severity: 'error',
+        category: 'completeness',
         message: `${slot.label} has failed`,
       });
     }
@@ -133,13 +147,13 @@ export async function executeReview(
   }
 
   // 4. Determine overall status
-  const hasErrors = findings.some((f) => f.severity === "error");
-  const hasWarnings = findings.some((f) => f.severity === "warning");
-  const overallStatus = hasErrors ? "issues" : hasWarnings ? "warnings" : "clean";
+  const hasErrors = findings.some((f) => f.severity === 'error');
+  const hasWarnings = findings.some((f) => f.severity === 'warning');
+  const overallStatus = hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
 
   // 5. Build report
   return {
-    schemaVersion: "flowguard-review-report.v1",
+    schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
     generatedAt: now,
     phase: state.phase,
@@ -166,14 +180,11 @@ export async function executeReview(
  * 3. autoAdvance: REVIEW → REVIEW_COMPLETE (reviewDone guard fires immediately)
  * 4. Returns RailResult with terminal state
  */
-export function executeReviewFlow(
-  state: SessionState,
-  ctx: RailContext,
-): RailResult {
+export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.REVIEW)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/review",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/review',
       phase: state.phase,
     });
   }
@@ -181,25 +192,25 @@ export function executeReviewFlow(
   // 2. Pre-transition: READY → REVIEW
   const preTransitions: TransitionRecord[] = [];
   const at = ctx.now();
-  const tr: TransitionRecord = { from: "READY", to: "REVIEW", event: "REVIEW_SELECTED", at };
+  const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
   preTransitions.push(tr);
 
   const reviewState: SessionState = applyTransition(
     state,
-    "READY",
-    "REVIEW",
-    "REVIEW_SELECTED",
+    'READY',
+    'REVIEW',
+    'REVIEW_SELECTED',
     at,
   );
 
   // 3. autoAdvance: REVIEW → REVIEW_COMPLETE (reviewDone guard fires immediately)
   const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-  const { state: finalState, evalResult, transitions: advanceTransitions } = autoAdvance(
-    reviewState,
-    evalFn,
-    ctx,
-  );
+  const {
+    state: finalState,
+    evalResult,
+    transitions: advanceTransitions,
+  } = autoAdvance(reviewState, evalFn, ctx);
   const transitions = [...preTransitions, ...advanceTransitions];
 
-  return { kind: "ok", state: finalState, evalResult, transitions };
+  return { kind: 'ok', state: finalState, evalResult, transitions };
 }

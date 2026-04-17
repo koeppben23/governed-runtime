@@ -6,10 +6,10 @@ FlowGuard distinguishes between **Workflow Commands** (drive session state) and 
 
 FlowGuard uses a two-level command surface:
 
-| Level | Syntax | Example | Purpose |
-|-------|--------|---------|---------|
-| **User-facing** | `/command` | `/hydrate`, `/ticket` | OpenCode chat commands |
-| **Internal** | `flowguard_command` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
+| Level           | Syntax              | Example                                 | Purpose                |
+| --------------- | ------------------- | --------------------------------------- | ---------------------- |
+| **User-facing** | `/command`          | `/hydrate`, `/ticket`                   | OpenCode chat commands |
+| **Internal**    | `flowguard_command` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
 
 The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
 
@@ -17,11 +17,11 @@ The `/command` syntax invokes the corresponding `flowguard_command` tool interna
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow | Command | Phases | Purpose |
-|------|---------|--------|---------|
-| **Ticket** | `/ticket` | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE | Create an Architecture Decision Record (ADR) |
-| **Review** | `/review` | READY → REVIEW → REVIEW_COMPLETE | Generate a compliance review report |
+| Flow             | Command         | Phases                                                                                                       | Purpose                                      |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                   |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR) |
+| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance review report          |
 
 ## Workflow Commands
 
@@ -32,6 +32,7 @@ These commands drive the session through the workflow phases.
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
 
 **Creates:**
+
 - Session state in workspace registry
 - Discovery results (repository metadata, stack, topology)
 - Profile resolution
@@ -39,9 +40,10 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 **Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`
 
 `team-ci` semantics:
+
 - In CI context: effective mode = `team-ci` (auto-approve at user gates)
 - Without CI context: degrades to `team` (human-gated), reason `ci_context_missing`
-**Starts at:** READY
+  **Starts at:** READY
 
 ### /ticket
 
@@ -66,6 +68,7 @@ Generate an implementation plan with self-review loop.
 Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
 
 **Verdicts:**
+
 - `approve` → advance to next phase
 - `changes_requested` → return to previous phase for revision
 - `reject` → restart (TICKET for ticket flow, READY for architecture flow)
@@ -98,6 +101,7 @@ Execute the implementation plan.
 Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
+
 - **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts self-review loop.
 - **Mode B (self-review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
 
@@ -111,6 +115,7 @@ Start the standalone review flow. Generates a compliance report.
 
 **Allowed in:** READY
 **Produces:**
+
 - Evidence completeness matrix
 - Four-eyes status
 - Validation summary
@@ -141,6 +146,7 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 
 **Phase:** COMPLETE
 **Creates:**
+
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
 - `archive-manifest.json`

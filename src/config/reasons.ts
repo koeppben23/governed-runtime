@@ -33,12 +33,12 @@
 
 /** Category for blocked reason classification. */
 export type BlockedCategory =
-  | "admissibility"
-  | "precondition"
-  | "input"
-  | "identity"
-  | "adapter"
-  | "state";
+  | 'admissibility'
+  | 'precondition'
+  | 'input'
+  | 'identity'
+  | 'adapter'
+  | 'state';
 
 /** A registered blocked reason with metadata. */
 export interface BlockedReason {
@@ -71,15 +71,9 @@ export interface FormattedBlock {
  * Replace {variable} placeholders in a template string.
  * Unknown variables are left as-is (visible in output for debugging).
  */
-function interpolate(
-  template: string,
-  vars?: Record<string, string>,
-): string {
+function interpolate(template: string, vars?: Record<string, string>): string {
   if (!vars) return template;
-  return template.replace(
-    /\{(\w+)\}/g,
-    (match, key: string) => vars[key] ?? match,
-  );
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => vars[key] ?? match);
 }
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
@@ -128,9 +122,7 @@ export class BlockedReasonRegistry {
       code: reason.code,
       reason: interpolate(reason.messageTemplate, vars),
       recovery: reason.recoverySteps.map((step) => interpolate(step, vars)),
-      quickFix: reason.quickFixCommand
-        ? interpolate(reason.quickFixCommand, vars)
-        : undefined,
+      quickFix: reason.quickFixCommand ? interpolate(reason.quickFixCommand, vars) : undefined,
     };
   }
 
@@ -159,333 +151,304 @@ export class BlockedReasonRegistry {
 const SEED_REASONS: readonly BlockedReason[] = [
   // ── Admissibility ─────────────────────────────────────────────
   {
-    code: "COMMAND_NOT_ALLOWED",
-    category: "admissibility",
-    messageTemplate: "{command} is not allowed in phase {phase}",
+    code: 'COMMAND_NOT_ALLOWED',
+    category: 'admissibility',
+    messageTemplate: '{command} is not allowed in phase {phase}',
     recoverySteps: [
-      "Check the current phase with flowguard_status",
-      "Use a command that is allowed in the current phase",
+      'Check the current phase with flowguard_status',
+      'Use a command that is allowed in the current phase',
     ],
   },
   {
-    code: "WRONG_PHASE",
-    category: "admissibility",
-    messageTemplate:
-      "Command is not valid in the current phase (current: {phase})",
-    recoverySteps: ["Check the current phase with flowguard_status"],
+    code: 'WRONG_PHASE',
+    category: 'admissibility',
+    messageTemplate: 'Command is not valid in the current phase (current: {phase})',
+    recoverySteps: ['Check the current phase with flowguard_status'],
   },
 
   // ── Input Validation ──────────────────────────────────────────
   {
-    code: "EMPTY_TICKET",
-    category: "input",
-    messageTemplate: "Ticket text must not be empty",
-    recoverySteps: ["Provide a non-empty task description"],
+    code: 'EMPTY_TICKET',
+    category: 'input',
+    messageTemplate: 'Ticket text must not be empty',
+    recoverySteps: ['Provide a non-empty task description'],
   },
   {
-    code: "EMPTY_PLAN",
-    category: "input",
-    messageTemplate: "Plan body must not be empty",
-    recoverySteps: ["Provide plan text via planText parameter"],
+    code: 'EMPTY_PLAN',
+    category: 'input',
+    messageTemplate: 'Plan body must not be empty',
+    recoverySteps: ['Provide plan text via planText parameter'],
   },
   {
-    code: "MISSING_SESSION_ID",
-    category: "input",
-    messageTemplate:
-      "sessionId is required (from OpenCode context.sessionID)",
+    code: 'MISSING_SESSION_ID',
+    category: 'input',
+    messageTemplate: 'sessionId is required (from OpenCode context.sessionID)',
     recoverySteps: [
-      "Ensure OpenCode context provides a valid sessionID",
-      "This is usually an integration error — check tool context",
+      'Ensure OpenCode context provides a valid sessionID',
+      'This is usually an integration error — check tool context',
     ],
   },
   {
-    code: "MISSING_WORKTREE",
-    category: "input",
-    messageTemplate:
-      "worktree is required (from OpenCode context.worktree)",
+    code: 'MISSING_WORKTREE',
+    category: 'input',
+    messageTemplate: 'worktree is required (from OpenCode context.worktree)',
     recoverySteps: [
-      "Ensure OpenCode context provides a valid worktree path",
-      "This is usually an integration error — check tool context",
+      'Ensure OpenCode context provides a valid worktree path',
+      'This is usually an integration error — check tool context',
     ],
   },
   {
-    code: "INVALID_FINGERPRINT",
-    category: "input",
-    messageTemplate:
-      "fingerprint is missing or malformed (expected 24 hex chars)",
+    code: 'INVALID_FINGERPRINT',
+    category: 'input',
+    messageTemplate: 'fingerprint is missing or malformed (expected 24 hex chars)',
     recoverySteps: [
-      "Ensure OpenCode context provides a valid worktree and fingerprint",
-      "Fingerprint must be a 24-character lowercase hex string",
+      'Ensure OpenCode context provides a valid worktree and fingerprint',
+      'Fingerprint must be a 24-character lowercase hex string',
     ],
   },
   {
-    code: "INVALID_VERDICT",
-    category: "input",
-    messageTemplate:
-      "Invalid verdict: {verdict}. Must be approve, changes_requested, or reject.",
+    code: 'INVALID_VERDICT',
+    category: 'input',
+    messageTemplate: 'Invalid verdict: {verdict}. Must be approve, changes_requested, or reject.',
+    recoverySteps: ["Provide a valid verdict: 'approve', 'changes_requested', or 'reject'"],
+  },
+  {
+    code: 'INVALID_TRANSITION',
+    category: 'input',
+    messageTemplate: 'Event {event} is not valid in phase {phase}',
     recoverySteps: [
-      "Provide a valid verdict: 'approve', 'changes_requested', or 'reject'",
+      'Check the current phase with flowguard_status',
+      'Use a valid event for the current phase',
     ],
   },
   {
-    code: "INVALID_TRANSITION",
-    category: "input",
-    messageTemplate: "Event {event} is not valid in phase {phase}",
-    recoverySteps: [
-      "Check the current phase with flowguard_status",
-      "Use a valid event for the current phase",
-    ],
-  },
-  {
-    code: "REVISED_PLAN_REQUIRED",
-    category: "input",
+    code: 'REVISED_PLAN_REQUIRED',
+    category: 'input',
     messageTemplate:
       "When selfReviewVerdict is 'changes_requested', planText with the revised plan is required.",
-    recoverySteps: [
-      "Provide revised planText alongside selfReviewVerdict: 'changes_requested'",
-    ],
+    recoverySteps: ["Provide revised planText alongside selfReviewVerdict: 'changes_requested'"],
   },
   {
-    code: "MISSING_CHECKS",
-    category: "input",
+    code: 'MISSING_CHECKS',
+    category: 'input',
     messageTemplate:
-      "Missing results for active checks: {checks}. All active checks must be reported.",
+      'Missing results for active checks: {checks}. All active checks must be reported.',
     recoverySteps: [
-      "Submit results for all active checks",
-      "Check activeChecks in the session state via flowguard_status",
+      'Submit results for all active checks',
+      'Check activeChecks in the session state via flowguard_status',
     ],
   },
 
   // ── Precondition ──────────────────────────────────────────────
   {
-    code: "TICKET_REQUIRED",
-    category: "precondition",
-    messageTemplate:
-      "A ticket must exist before {action}. Use /ticket first.",
-    recoverySteps: ["Run /ticket to record the task description first"],
-    quickFixCommand: "/ticket",
+    code: 'TICKET_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'A ticket must exist before {action}. Use /ticket first.',
+    recoverySteps: ['Run /ticket to record the task description first'],
+    quickFixCommand: '/ticket',
   },
   {
-    code: "PLAN_REQUIRED",
-    category: "precondition",
-    messageTemplate: "An approved plan is required before {action}",
+    code: 'PLAN_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'An approved plan is required before {action}',
+    recoverySteps: ['Run /plan to create a plan', 'Get the plan approved at PLAN_REVIEW'],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'VALIDATION_INCOMPLETE',
+    category: 'precondition',
+    messageTemplate: 'All validation checks must pass before implementation',
     recoverySteps: [
-      "Run /plan to create a plan",
-      "Get the plan approved at PLAN_REVIEW",
+      'Run /validate or /continue at VALIDATION phase',
+      'Fix any failing checks and re-validate',
     ],
-    quickFixCommand: "/plan",
+    quickFixCommand: '/continue',
   },
   {
-    code: "VALIDATION_INCOMPLETE",
-    category: "precondition",
-    messageTemplate:
-      "All validation checks must pass before implementation",
+    code: 'NO_ACTIVE_CHECKS',
+    category: 'precondition',
+    messageTemplate: 'No validation checks configured. Set activeChecks via /hydrate.',
     recoverySteps: [
-      "Run /validate or /continue at VALIDATION phase",
-      "Fix any failing checks and re-validate",
-    ],
-    quickFixCommand: "/continue",
-  },
-  {
-    code: "NO_ACTIVE_CHECKS",
-    category: "precondition",
-    messageTemplate:
-      "No validation checks configured. Set activeChecks via /hydrate.",
-    recoverySteps: [
-      "Configure a profile with activeChecks during /hydrate",
-      "The baseline profile includes test_quality and rollback_safety",
+      'Configure a profile with activeChecks during /hydrate',
+      'The baseline profile includes test_quality and rollback_safety',
     ],
   },
   {
-    code: "NO_SESSION",
-    category: "precondition",
-    messageTemplate:
-      "No FlowGuard session found. Run /hydrate first to bootstrap a session.",
-    recoverySteps: ["Run /hydrate to create a new FlowGuard session"],
-    quickFixCommand: "/hydrate",
+    code: 'NO_SESSION',
+    category: 'precondition',
+    messageTemplate: 'No FlowGuard session found. Run /hydrate first to bootstrap a session.',
+    recoverySteps: ['Run /hydrate to create a new FlowGuard session'],
+    quickFixCommand: '/hydrate',
   },
   {
-    code: "NO_SELF_REVIEW",
-    category: "precondition",
-    messageTemplate:
-      "No self-review loop is active. Submit a plan first.",
-    recoverySteps: [
-      "Submit a plan via flowguard_plan with planText first",
-    ],
+    code: 'NO_SELF_REVIEW',
+    category: 'precondition',
+    messageTemplate: 'No self-review loop is active. Submit a plan first.',
+    recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
   },
   {
-    code: "NO_PLAN",
-    category: "precondition",
-    messageTemplate: "No plan exists to review.",
-    recoverySteps: [
-      "Submit a plan via flowguard_plan with planText first",
-    ],
-    quickFixCommand: "/plan",
+    code: 'NO_PLAN',
+    category: 'precondition',
+    messageTemplate: 'No plan exists to review.',
+    recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
+    quickFixCommand: '/plan',
   },
   {
-    code: "NO_ARCHITECTURE",
-    category: "precondition",
-    messageTemplate: "No ADR exists to review.",
-    recoverySteps: [
-      "Submit an ADR via flowguard_architecture with title and adrText first",
-    ],
-    quickFixCommand: "/architecture",
+    code: 'NO_ARCHITECTURE',
+    category: 'precondition',
+    messageTemplate: 'No ADR exists to review.',
+    recoverySteps: ['Submit an ADR via flowguard_architecture with title and adrText first'],
+    quickFixCommand: '/architecture',
   },
   {
-    code: "NO_IMPLEMENTATION",
-    category: "precondition",
-    messageTemplate: "No implementation evidence to review.",
-    recoverySteps: [
-      "Record implementation via flowguard_implement first",
-    ],
-    quickFixCommand: "/implement",
+    code: 'NO_IMPLEMENTATION',
+    category: 'precondition',
+    messageTemplate: 'No implementation evidence to review.',
+    recoverySteps: ['Record implementation via flowguard_implement first'],
+    quickFixCommand: '/implement',
   },
 
   // ── Architecture Input ────────────────────────────────────────
   {
-    code: "EMPTY_ADR_TITLE",
-    category: "input",
-    messageTemplate: "ADR title must not be empty.",
-    recoverySteps: ["Provide a short, descriptive title for the architecture decision"],
+    code: 'EMPTY_ADR_TITLE',
+    category: 'input',
+    messageTemplate: 'ADR title must not be empty.',
+    recoverySteps: ['Provide a short, descriptive title for the architecture decision'],
   },
   {
-    code: "EMPTY_ADR_TEXT",
-    category: "input",
-    messageTemplate: "ADR body text must not be empty.",
+    code: 'EMPTY_ADR_TEXT',
+    category: 'input',
+    messageTemplate: 'ADR body text must not be empty.',
     recoverySteps: [
-      "Provide the full ADR body in MADR format",
-      "Must include ## Context, ## Decision, and ## Consequences sections",
+      'Provide the full ADR body in MADR format',
+      'Must include ## Context, ## Decision, and ## Consequences sections',
     ],
   },
   {
-    code: "MISSING_ADR_SECTIONS",
-    category: "input",
-    messageTemplate:
-      "ADR is missing required MADR sections: {sections}",
+    code: 'MISSING_ADR_SECTIONS',
+    category: 'input',
+    messageTemplate: 'ADR is missing required MADR sections: {sections}',
     recoverySteps: [
-      "Add the missing sections to the ADR body",
-      "Required: ## Context, ## Decision, ## Consequences",
+      'Add the missing sections to the ADR body',
+      'Required: ## Context, ## Decision, ## Consequences',
     ],
   },
 
   // ── Identity / Four-Eyes ──────────────────────────────────────
   {
-    code: "SELF_APPROVAL_FORBIDDEN",
-    category: "identity",
+    code: 'SELF_APPROVAL_FORBIDDEN',
+    category: 'identity',
     messageTemplate:
-      "Four-eyes principle: session initiator ({initiator}) cannot approve their own work. A different reviewer is required.",
+      'Four-eyes principle: session initiator ({initiator}) cannot approve their own work. A different reviewer is required.',
     recoverySteps: [
-      "A different person must provide the review decision",
-      "The session was initiated by {initiator}",
-      "Ask a colleague with reviewer permissions to run /review-decision",
+      'A different person must provide the review decision',
+      'The session was initiated by {initiator}',
+      'Ask a colleague with reviewer permissions to run /review-decision',
     ],
   },
 
   // ── Adapter ───────────────────────────────────────────────────
   {
-    code: "GIT_NOT_FOUND",
-    category: "adapter",
-    messageTemplate: "git executable not found on PATH",
+    code: 'GIT_NOT_FOUND',
+    category: 'adapter',
+    messageTemplate: 'git executable not found on PATH',
     recoverySteps: [
-      "Install git: https://git-scm.com/downloads",
-      "Ensure git is on the system PATH",
+      'Install git: https://git-scm.com/downloads',
+      'Ensure git is on the system PATH',
     ],
   },
   {
-    code: "GIT_COMMAND_FAILED",
-    category: "adapter",
-    messageTemplate: "git command failed: {message}",
+    code: 'GIT_COMMAND_FAILED',
+    category: 'adapter',
+    messageTemplate: 'git command failed: {message}',
     recoverySteps: [
-      "Check if the directory is a valid git repository",
-      "Ensure there are no git lock files (.git/index.lock)",
+      'Check if the directory is a valid git repository',
+      'Ensure there are no git lock files (.git/index.lock)',
     ],
   },
   {
-    code: "READ_FAILED",
-    category: "adapter",
-    messageTemplate: "Failed to read FlowGuard state: {message}",
+    code: 'READ_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Failed to read FlowGuard state: {message}',
     recoverySteps: [
-      "Check if the session state file exists and is readable",
-      "Verify file permissions",
+      'Check if the session state file exists and is readable',
+      'Verify file permissions',
     ],
   },
   {
-    code: "PARSE_FAILED",
-    category: "adapter",
-    messageTemplate: "Failed to parse FlowGuard state: {message}",
+    code: 'PARSE_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Failed to parse FlowGuard state: {message}',
     recoverySteps: [
-      "The state file may be corrupted",
-      "Check the session state file for valid JSON",
-      "Consider starting a new session with /hydrate",
+      'The state file may be corrupted',
+      'Check the session state file for valid JSON',
+      'Consider starting a new session with /hydrate',
     ],
   },
   {
-    code: "SCHEMA_VALIDATION_FAILED",
-    category: "adapter",
-    messageTemplate: "State schema validation failed: {message}",
+    code: 'SCHEMA_VALIDATION_FAILED',
+    category: 'adapter',
+    messageTemplate: 'State schema validation failed: {message}',
     recoverySteps: [
-      "The state file does not match the expected schema",
-      "This may indicate a version mismatch",
-      "Consider starting a new session with /hydrate",
+      'The state file does not match the expected schema',
+      'This may indicate a version mismatch',
+      'Consider starting a new session with /hydrate',
     ],
   },
   {
-    code: "WRITE_FAILED",
-    category: "adapter",
-    messageTemplate: "Failed to write FlowGuard state: {message}",
+    code: 'WRITE_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Failed to write FlowGuard state: {message}',
     recoverySteps: [
-      "Check file system permissions for the workspace directory",
-      "Ensure sufficient disk space",
+      'Check file system permissions for the workspace directory',
+      'Ensure sufficient disk space',
     ],
   },
 
   // ── Binding ───────────────────────────────────────────────────
   {
-    code: "NOT_GIT_REPO",
-    category: "adapter",
-    messageTemplate: "Directory is not a git repository: {path}",
+    code: 'NOT_GIT_REPO',
+    category: 'adapter',
+    messageTemplate: 'Directory is not a git repository: {path}',
     recoverySteps: [
-      "Initialize a git repository: git init",
-      "Or navigate to an existing git repository",
+      'Initialize a git repository: git init',
+      'Or navigate to an existing git repository',
     ],
   },
   {
-    code: "WORKTREE_MISMATCH",
-    category: "adapter",
-    messageTemplate:
-      "Worktree mismatch: expected {expected}, got {actual}",
+    code: 'WORKTREE_MISMATCH',
+    category: 'adapter',
+    messageTemplate: 'Worktree mismatch: expected {expected}, got {actual}',
     recoverySteps: [
-      "The session was created for a different worktree",
-      "Start a new session with /hydrate in the correct directory",
+      'The session was created for a different worktree',
+      'Start a new session with /hydrate in the correct directory',
     ],
   },
 
   // ── State ─────────────────────────────────────────────────────
   {
-    code: "ABORTED",
-    category: "state",
-    messageTemplate: "Session aborted: {reason}",
+    code: 'ABORTED',
+    category: 'state',
+    messageTemplate: 'Session aborted: {reason}',
     recoverySteps: [
-      "Start a new session with /hydrate",
-      "The aborted session is preserved in the audit trail",
+      'Start a new session with /hydrate',
+      'The aborted session is preserved in the audit trail',
     ],
-    quickFixCommand: "/hydrate",
+    quickFixCommand: '/hydrate',
   },
   {
-    code: "TOOL_ERROR",
-    category: "state",
-    messageTemplate: "Tool execution error: {message}",
-    recoverySteps: [
-      "Check the error details and retry the operation",
-    ],
+    code: 'TOOL_ERROR',
+    category: 'state',
+    messageTemplate: 'Tool execution error: {message}',
+    recoverySteps: ['Check the error details and retry the operation'],
   },
   {
-    code: "INTERNAL_ERROR",
-    category: "state",
-    messageTemplate: "Internal error: {message}",
+    code: 'INTERNAL_ERROR',
+    category: 'state',
+    messageTemplate: 'Internal error: {message}',
     recoverySteps: [
-      "This is an unexpected error — check logs for details",
-      "If the error persists, abort the session with /abort",
+      'This is an unexpected error — check logs for details',
+      'If the error persists, abort the session with /abort',
     ],
   },
 ];
@@ -514,7 +477,7 @@ export function blocked(
   code: string,
   vars?: Record<string, string>,
 ): {
-  readonly kind: "blocked";
+  readonly kind: 'blocked';
   readonly code: string;
   readonly reason: string;
   readonly recovery: readonly string[];
@@ -522,7 +485,7 @@ export function blocked(
 } {
   const formatted = defaultReasonRegistry.format(code, vars);
   return {
-    kind: "blocked" as const,
+    kind: 'blocked' as const,
     code: formatted.code,
     reason: formatted.reason,
     recovery: formatted.recovery,

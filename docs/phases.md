@@ -97,66 +97,70 @@ approve │     │    │ reject
    └──────────┘
 ```
 
-| Symbol | Meaning |
-|--------|---------|
-| `■` | Terminal phase (session complete, `/archive` available) |
-| `◄` / `►` | Backward transition (changes_requested / reject / CHECK_FAILED) |
+| Symbol             | Meaning                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| `■`                | Terminal phase (session complete, `/archive` available)           |
+| `◄` / `►`          | Backward transition (changes_requested / reject / CHECK_FAILED)   |
 | `self-review loop` | LLM reviews own output iteratively (digest-stop / max iterations) |
-| `auto` | Automatic transition without user intervention |
+| `auto`             | Automatic transition without user intervention                    |
 
 ## Phase Reference
 
 ### Shared Entry Point
 
-| Phase | Description | Gate Type |
-|-------|-------------|-----------|
+| Phase | Description                             | Gate Type      |
+| ----- | --------------------------------------- | -------------- |
 | READY | Post-hydrate entry point, choose a flow | Command-driven |
 
 ### Ticket Flow
 
-| Phase | Description | Gate Type |
-|-------|-------------|-----------|
-| TICKET | Record task description | Automatic |
-| PLAN | Generate plan + self-review | Automatic (self-review) |
-| PLAN_REVIEW | Human approves plan | **User Gate** |
-| VALIDATION | Run validation checks | Automatic |
-| IMPLEMENTATION | Execute plan | Automatic |
-| IMPL_REVIEW | LLM reviews implementation | Automatic (self-review) |
-| EVIDENCE_REVIEW | Human reviews evidence | **User Gate** |
-| COMPLETE | Session complete | Terminal |
+| Phase           | Description                 | Gate Type               |
+| --------------- | --------------------------- | ----------------------- |
+| TICKET          | Record task description     | Automatic               |
+| PLAN            | Generate plan + self-review | Automatic (self-review) |
+| PLAN_REVIEW     | Human approves plan         | **User Gate**           |
+| VALIDATION      | Run validation checks       | Automatic               |
+| IMPLEMENTATION  | Execute plan                | Automatic               |
+| IMPL_REVIEW     | LLM reviews implementation  | Automatic (self-review) |
+| EVIDENCE_REVIEW | Human reviews evidence      | **User Gate**           |
+| COMPLETE        | Session complete            | Terminal                |
 
 ### Architecture Flow
 
-| Phase | Description | Gate Type |
-|-------|-------------|-----------|
-| ARCHITECTURE | Create ADR + self-review | Automatic (self-review) |
-| ARCH_REVIEW | Human reviews ADR | **User Gate** |
-| ARCH_COMPLETE | ADR accepted | Terminal |
+| Phase         | Description              | Gate Type               |
+| ------------- | ------------------------ | ----------------------- |
+| ARCHITECTURE  | Create ADR + self-review | Automatic (self-review) |
+| ARCH_REVIEW   | Human reviews ADR        | **User Gate**           |
+| ARCH_COMPLETE | ADR accepted             | Terminal                |
 
 ### Review Flow
 
-| Phase | Description | Gate Type |
-|-------|-------------|-----------|
-| REVIEW | Generate compliance report | Automatic |
-| REVIEW_COMPLETE | Report delivered | Terminal |
+| Phase           | Description                | Gate Type |
+| --------------- | -------------------------- | --------- |
+| REVIEW          | Generate compliance report | Automatic |
+| REVIEW_COMPLETE | Report delivered           | Terminal  |
 
 ## Gate Types
 
 ### Command-Driven (READY)
+
 - User selects a flow via command (`/ticket`, `/architecture`, `/review`)
 - No guards — evaluator returns `pending` until a command is issued
 
 ### Automatic Gates
+
 - No human intervention required
 - Machine evaluates state and advances
 - Examples: TICKET → PLAN, VALIDATION → IMPLEMENTATION
 
 ### Self-Review Gates
+
 - LLM reviews its own output iteratively
 - Convergence via digest-stop (output unchanged) or max iterations from policy
 - Examples: PLAN, IMPL_REVIEW, ARCHITECTURE
 
 ### User Gates
+
 - Require explicit human approval via `/review-decision`
 - Four-eyes principle in regulated mode (reviewer must differ from session initiator)
 - Examples: PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW

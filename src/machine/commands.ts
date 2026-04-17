@@ -13,30 +13,30 @@
  * @version v2
  */
 
-import type { Phase } from "../state/schema";
-import { TERMINAL } from "./topology";
+import type { Phase } from '../state/schema';
+import { TERMINAL } from './topology';
 
 // ─── Command Enum ─────────────────────────────────────────────────────────────
 
 /** All FlowGuard commands (user-facing). */
 export const Command = {
-  HYDRATE:         "hydrate",
-  TICKET:          "ticket",
-  PLAN:            "plan",
-  CONTINUE:        "continue",
-  IMPLEMENT:       "implement",
-  REVIEW_DECISION: "review-decision",
-  VALIDATE:        "validate",
-  REVIEW:          "review",
-  ARCHITECTURE:    "architecture",
-  ABORT:           "abort",
+  HYDRATE: 'hydrate',
+  TICKET: 'ticket',
+  PLAN: 'plan',
+  CONTINUE: 'continue',
+  IMPLEMENT: 'implement',
+  REVIEW_DECISION: 'review-decision',
+  VALIDATE: 'validate',
+  REVIEW: 'review',
+  ARCHITECTURE: 'architecture',
+  ABORT: 'abort',
 } as const;
 export type Command = (typeof Command)[keyof typeof Command];
 
 // ─── Admissibility ────────────────────────────────────────────────────────────
 
 /** Allowed-in specification: explicit set of phases, or "*" for all phases. */
-type AllowedIn = ReadonlySet<Phase> | "*";
+type AllowedIn = ReadonlySet<Phase> | '*';
 
 /**
  * Command admissibility map.
@@ -55,16 +55,16 @@ type AllowedIn = ReadonlySet<Phase> | "*";
  * | /abort           | * (all, except terminals)                     | Yes      | Emergency termination                    |
  */
 const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, AllowedIn>([
-  [Command.HYDRATE,         "*"],
-  [Command.TICKET,          new Set<Phase>(["READY", "TICKET"])],
-  [Command.PLAN,            new Set<Phase>(["READY", "TICKET", "PLAN"])],
-  [Command.CONTINUE,        "*"],
-  [Command.IMPLEMENT,       new Set<Phase>(["IMPLEMENTATION"])],
-  [Command.REVIEW_DECISION, new Set<Phase>(["PLAN_REVIEW", "EVIDENCE_REVIEW", "ARCH_REVIEW"])],
-  [Command.VALIDATE,        new Set<Phase>(["VALIDATION"])],
-  [Command.REVIEW,          new Set<Phase>(["READY"])],
-  [Command.ARCHITECTURE,    new Set<Phase>(["READY", "ARCHITECTURE"])],
-  [Command.ABORT,           "*"],
+  [Command.HYDRATE, '*'],
+  [Command.TICKET, new Set<Phase>(['READY', 'TICKET'])],
+  [Command.PLAN, new Set<Phase>(['READY', 'TICKET', 'PLAN'])],
+  [Command.CONTINUE, '*'],
+  [Command.IMPLEMENT, new Set<Phase>(['IMPLEMENTATION'])],
+  [Command.REVIEW_DECISION, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],
+  [Command.VALIDATE, new Set<Phase>(['VALIDATION'])],
+  [Command.REVIEW, new Set<Phase>(['READY'])],
+  [Command.ARCHITECTURE, new Set<Phase>(['READY', 'ARCHITECTURE'])],
+  [Command.ABORT, '*'],
 ]);
 
 /** Set of commands that mutate state (all commands are mutating now). */
@@ -100,6 +100,6 @@ export function isCommandAllowed(phase: Phase, command: Command): boolean {
   // Rule 2: Check policy
   const allowedIn = COMMAND_POLICY.get(command);
   if (allowedIn === undefined) return false;
-  if (allowedIn === "*") return true;
+  if (allowedIn === '*') return true;
   return allowedIn.has(phase);
 }

@@ -20,14 +20,14 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from "../state/evidence";
-import { validateAdrSections } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
-import { autoAdvance } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence';
+import { validateAdrSections } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import { evaluate } from '../machine/evaluate';
+import type { RailResult, RailContext, TransitionRecord } from './types';
+import { autoAdvance } from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -47,25 +47,25 @@ export function executeArchitecture(
 ): RailResult {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.ARCHITECTURE)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/architecture",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/architecture',
       phase: state.phase,
     });
   }
 
   // 2. Validate input
   if (!input.title.trim()) {
-    return blocked("EMPTY_ADR_TITLE");
+    return blocked('EMPTY_ADR_TITLE');
   }
   if (!input.adrText.trim()) {
-    return blocked("EMPTY_ADR_TEXT");
+    return blocked('EMPTY_ADR_TEXT');
   }
 
   // 3. Validate MADR sections
   const missingSections = validateAdrSections(input.adrText);
   if (missingSections.length > 0) {
-    return blocked("MISSING_ADR_SECTIONS", {
-      sections: missingSections.join(", "),
+    return blocked('MISSING_ADR_SECTIONS', {
+      sections: missingSections.join(', '),
     });
   }
 
@@ -74,23 +74,28 @@ export function executeArchitecture(
   let basePhase = state.phase;
   let baseTransition = state.transition;
 
-  if (state.phase === "READY") {
+  if (state.phase === 'READY') {
     const at = ctx.now();
-    basePhase = "ARCHITECTURE";
-    const tr: TransitionRecord = { from: "READY", to: "ARCHITECTURE", event: "ARCHITECTURE_SELECTED", at };
+    basePhase = 'ARCHITECTURE';
+    const tr: TransitionRecord = {
+      from: 'READY',
+      to: 'ARCHITECTURE',
+      event: 'ARCHITECTURE_SELECTED',
+      at,
+    };
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
   }
 
   const adrNumber = state.nextAdrNumber;
-  const adrId = `ADR-${String(adrNumber).padStart(3, "0")}`;
+  const adrId = `ADR-${String(adrNumber).padStart(3, '0')}`;
 
   // 5. Create ArchitectureDecision evidence
   const adr: ArchitectureDecision = {
     id: adrId,
     title: input.title,
     adrText: input.adrText,
-    status: "proposed",
+    status: 'proposed',
     createdAt: ctx.now(),
     digest: ctx.digest(input.adrText),
   };
@@ -108,8 +113,8 @@ export function executeArchitecture(
       maxIterations,
       prevDigest: null,
       currDigest: adr.digest,
-      revisionDelta: "major" as RevisionDelta,
-      verdict: "changes_requested" as LoopVerdict,
+      revisionDelta: 'major' as RevisionDelta,
+      verdict: 'changes_requested' as LoopVerdict,
     },
     nextAdrNumber: adrNumber + 1,
     error: null,
@@ -117,8 +122,12 @@ export function executeArchitecture(
 
   // 7. Auto-advance (ARCHITECTURE → ARCH_REVIEW if loop converges)
   const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-  const { state: finalState, evalResult: result, transitions: advanceTransitions } = autoAdvance(nextState, evalFn, ctx);
+  const {
+    state: finalState,
+    evalResult: result,
+    transitions: advanceTransitions,
+  } = autoAdvance(nextState, evalFn, ctx);
   const transitions = [...preTransitions, ...advanceTransitions];
 
-  return { kind: "ok", state: finalState, evalResult: result, transitions };
+  return { kind: 'ok', state: finalState, evalResult: result, transitions };
 }

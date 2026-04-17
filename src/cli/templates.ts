@@ -74,7 +74,7 @@ export { FlowGuardAuditPlugin } from "@flowguard/core/integration";
  * that the installer writes into `.opencode/commands/`.
  */
 export const COMMANDS: Record<string, string> = {
-  "hydrate.md": `\
+  'hydrate.md': `\
 ---
 description: Bootstrap or reload the FlowGuard session. Run this FIRST before any other FlowGuard command.
 ---
@@ -109,7 +109,7 @@ Bootstrap the FlowGuard session for this project.
 - Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to start a task, /architecture to create an ADR, or /review for a compliance report.\`
 `,
 
-  "ticket.md": `\
+  'ticket.md': `\
 ---
 description: Record a task or ticket for the FlowGuard session.
 ---
@@ -147,7 +147,7 @@ $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line. After successful ticket: \`Next action: run /plan to generate an implementation plan.\`
 `,
 
-  "plan.md": `\
+  'plan.md': `\
 ---
 description: Generate a plan with self-review loop for the current ticket.
 ---
@@ -219,7 +219,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
-  "continue.md": `\
+  'continue.md': `\
 ---
 description: Continue the FlowGuard workflow — do the next thing based on the current phase.
 ---
@@ -311,7 +311,7 @@ Determine what the FlowGuard workflow needs next and do it.
 - Always end your response with exactly one \`Next action:\` line stating the next step for the user.
 `,
 
-  "implement.md": `\
+  'implement.md': `\
 ---
 description: Implement the approved plan and review the implementation.
 ---
@@ -382,7 +382,7 @@ Implement the approved plan and review the implementation.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
-  "validate.md": `\
+  'validate.md': `\
 ---
 description: Run validation checks on the approved plan.
 ---
@@ -486,7 +486,7 @@ Execute validation checks for the FlowGuard session.
 - Always end your response with exactly one \`Next action:\` line. If all checks passed: \`Next action: run /implement to start implementation.\` If any check failed: \`Next action: run /plan to revise the plan and address the failed checks.\`
 `,
 
-  "review-decision.md": `\
+  'review-decision.md': `\
 ---
 description: Submit a human review decision (approve, changes_requested, reject) at a User Gate.
 ---
@@ -536,7 +536,7 @@ Decision: $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line stating the next workflow step based on the verdict and phase.
 `,
 
-  "review.md": `\
+  'review.md': `\
 ---
 description: Start the standalone compliance review flow (READY → REVIEW → REVIEW_COMPLETE).
 ---
@@ -577,7 +577,7 @@ Start the compliance review flow for the current FlowGuard session.
 - Always end your response with a \`Next action:\` line based on the current phase and report findings.
 `,
 
-  "architecture.md": `\
+  'architecture.md': `\
 ---
 description: Create or revise an Architecture Decision Record (ADR) in MADR format.
 ---
@@ -625,7 +625,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 - Always end your response with a \`Next action:\` line based on the current phase.
 `,
 
-  "abort.md": `\\
+  'abort.md': `\\
 ---
 description: Emergency termination of the FlowGuard session.
 ---
@@ -666,7 +666,7 @@ Reason: $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
 `,
 
-  "archive.md": `\
+  'archive.md': `\
 ---
 description: Archive a completed FlowGuard session as a compressed tar.gz file.
 ---
@@ -708,7 +708,7 @@ Archive the current (or a specified) completed FlowGuard session.
 // ---------------------------------------------------------------------------
 
 /** Filename for the FlowGuard mandates artifact. */
-export const MANDATES_FILENAME = "flowguard-mandates.md";
+export const MANDATES_FILENAME = 'flowguard-mandates.md';
 
 /**
  * Returns the instruction entry path for opencode.json based on install scope.
@@ -716,12 +716,12 @@ export const MANDATES_FILENAME = "flowguard-mandates.md";
  * - global: bare filename (resolved relative to ~/.config/opencode/)
  * - repo:   .opencode/ prefixed path (resolved relative to project root where opencode.json lives)
  */
-export function mandatesInstructionEntry(scope: "global" | "repo"): string {
-  return scope === "global" ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
+export function mandatesInstructionEntry(scope: 'global' | 'repo'): string {
+  return scope === 'global' ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
 }
 
 /** Legacy instruction entry that must be removed during migration. */
-export const LEGACY_INSTRUCTION_ENTRY = "AGENTS.md";
+export const LEGACY_INSTRUCTION_ENTRY = 'AGENTS.md';
 
 /**
  * Body of the FlowGuard mandates (without managed-artifact header).
@@ -1263,7 +1263,9 @@ export function isManagedArtifact(content: string): boolean {
 export function extractManagedBody(content: string): string | null {
   if (!isManagedArtifact(content)) return null;
   // Find the body after the header (two comment lines + blank line)
-  const match = content.match(/^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/);
+  const match = content.match(
+    /^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/,
+  );
   return match?.[1] ?? null;
 }
 // ---------------------------------------------------------------------------

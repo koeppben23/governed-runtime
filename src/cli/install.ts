@@ -35,12 +35,12 @@
  *   user-owned:     AGENTS.md (never touched)
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, realpathSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, unlink, copyFile, rm } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { join, resolve, dirname, basename } from "node:path";
-import { homedir } from "node:os";
+import { createHash } from 'node:crypto';
+import { existsSync, realpathSync, readFileSync } from 'node:fs';
+import { mkdir, readFile, writeFile, unlink, copyFile, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join, resolve, dirname, basename } from 'node:path';
+import { homedir } from 'node:os';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
@@ -56,21 +56,21 @@ import {
   isManagedArtifact,
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
-} from "./templates";
-import { configPath, readConfig, writeDefaultConfig } from "../adapters/persistence";
-import { PersistenceError } from "../adapters/persistence";
-import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from "../adapters/workspace";
+} from './templates';
+import { configPath, readConfig, writeDefaultConfig } from '../adapters/persistence';
+import { PersistenceError } from '../adapters/persistence';
+import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from '../adapters/workspace';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Install scope: where FlowGuard artifacts are placed. */
-export type InstallScope = "global" | "repo";
+export type InstallScope = 'global' | 'repo';
 
 /** FlowGuard policy mode (runtime behavior, NOT install location). */
-export type PolicyMode = "solo" | "team" | "team-ci" | "regulated";
+export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
 
 /** CLI action. */
-export type CliAction = "install" | "uninstall" | "doctor";
+export type CliAction = 'install' | 'uninstall' | 'doctor';
 
 /** Parsed CLI arguments. */
 export interface CliArgs {
@@ -84,7 +84,7 @@ export interface CliArgs {
 /** Result of a single file operation. */
 export interface FileOp {
   path: string;
-  action: "written" | "skipped" | "merged" | "removed" | "not_found";
+  action: 'written' | 'skipped' | 'merged' | 'removed' | 'not_found';
   reason?: string;
 }
 
@@ -98,14 +98,14 @@ export interface CliResult {
 
 /** Extended doctor check status for managed artifacts. */
 export type DoctorStatus =
-  | "ok"
-  | "missing"
-  | "modified"
-  | "unmanaged"
-  | "version_mismatch"
-  | "instruction_missing"
-  | "instruction_stale"
-  | "error";
+  | 'ok'
+  | 'missing'
+  | 'modified'
+  | 'unmanaged'
+  | 'version_mismatch'
+  | 'instruction_missing'
+  | 'instruction_stale'
+  | 'error';
 
 /** Status of a single doctor check. */
 export interface DoctorCheck {
@@ -122,9 +122,9 @@ export interface DoctorCheck {
  * Both package.json and the release workflow validate against this value.
  */
 function getPackageVersion(): string {
-  const versionFile = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "VERSION");
+  const versionFile = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'VERSION');
   try {
-    return readFileSync(versionFile, "utf-8").trim();
+    return readFileSync(versionFile, 'utf-8').trim();
   } catch {
     throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
   }
@@ -142,10 +142,10 @@ function PACKAGE_VERSION(): string {
 /** Files owned by FlowGuard that uninstall may remove. */
 const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
-  "tools/flowguard.ts",
-  "plugins/flowguard-audit.ts",
+  'tools/flowguard.ts',
+  'plugins/flowguard-audit.ts',
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
-  "vendor",
+  'vendor',
 ] as const;
 
 // ─── Path Resolution ──────────────────────────────────────────────────────────
@@ -157,10 +157,10 @@ const FLOWGUARD_OWNED_FILES = [
  * @returns Absolute path to the target directory.
  */
 export function resolveTarget(scope: InstallScope): string {
-  if (scope === "global") {
-    return join(homedir(), ".config", "opencode");
+  if (scope === 'global') {
+    return join(homedir(), '.config', 'opencode');
   }
-  return resolve(".opencode");
+  return resolve('.opencode');
 }
 
 // ─── Crypto Helpers ───────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ export function resolveTarget(scope: InstallScope): string {
  * Compute SHA-256 hex digest of a string.
  */
 export function sha256(content: string): string {
-  return createHash("sha256").update(content, "utf-8").digest("hex");
+  return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 /**
@@ -195,7 +195,7 @@ async function ensureDir(dir: string): Promise<void> {
  */
 async function safeRead(filePath: string): Promise<string | null> {
   try {
-    return await readFile(filePath, "utf-8");
+    return await readFile(filePath, 'utf-8');
   } catch {
     return null;
   }
@@ -227,18 +227,14 @@ function vendorDependency(version: string): string {
  * Used for hard-managed artifacts OTHER than flowguard-mandates.md
  * (which is always replaced).
  */
-async function writeIfAbsent(
-  filePath: string,
-  content: string,
-  force: boolean,
-): Promise<FileOp> {
+async function writeIfAbsent(filePath: string, content: string, force: boolean): Promise<FileOp> {
   if (!force && existsSync(filePath)) {
-    return { path: filePath, action: "skipped", reason: "already exists" };
+    return { path: filePath, action: 'skipped', reason: 'already exists' };
   }
   const dir = dirname(filePath);
   if (dir) await ensureDir(dir);
-  await writeFile(filePath, content, "utf-8");
-  return { path: filePath, action: "written" };
+  await writeFile(filePath, content, 'utf-8');
+  return { path: filePath, action: 'written' };
 }
 
 // ─── JSON Merge Helpers ───────────────────────────────────────────────────────
@@ -252,32 +248,29 @@ async function writeIfAbsent(
  * - Never removes existing dependencies.
  * - Removes legacy @opencode-ai/plugin dependency if present (no longer needed).
  */
-async function mergePackageJson(
-  filePath: string,
-  version: string,
-): Promise<FileOp> {
+async function mergePackageJson(filePath: string, version: string): Promise<FileOp> {
   const existing = await safeRead(filePath);
 
   if (!existing) {
     await ensureDir(dirname(filePath));
-    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), "utf-8");
-    return { path: filePath, action: "written" };
+    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
+    return { path: filePath, action: 'written' };
   }
 
   try {
     const parsed = JSON.parse(existing) as Record<string, unknown>;
-    const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-    deps["@flowguard/core"] = vendorDependency(version);
-    if (!deps["zod"]) deps["zod"] = "^3.23.0";
+    const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+    deps['@flowguard/core'] = vendorDependency(version);
+    if (!deps['zod']) deps['zod'] = '^3.23.0';
     // Remove legacy dependency that is no longer needed
-    delete deps["@opencode-ai/plugin"];
-    parsed["dependencies"] = deps;
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-    return { path: filePath, action: "merged" };
+    delete deps['@opencode-ai/plugin'];
+    parsed['dependencies'] = deps;
+    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    return { path: filePath, action: 'merged' };
   } catch {
     // Malformed JSON — overwrite with template
-    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), "utf-8");
-    return { path: filePath, action: "written", reason: "existing file was malformed JSON" };
+    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
+    return { path: filePath, action: 'written', reason: 'existing file was malformed JSON' };
   }
 }
 
@@ -294,18 +287,15 @@ async function mergePackageJson(
  * @param filePath - Path to opencode.json
  * @param scope    - Install scope (determines the instruction entry path)
  */
-async function mergeOpencodeJson(
-  filePath: string,
-  scope: InstallScope,
-): Promise<FileOp> {
+async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
   const entry = mandatesInstructionEntry(scope);
   const existing = await safeRead(filePath);
 
   if (!existing) {
     const dir = dirname(filePath);
     if (dir) await ensureDir(dir);
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), "utf-8");
-    return { path: filePath, action: "written" };
+    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
+    return { path: filePath, action: 'written' };
   }
 
   try {
@@ -314,12 +304,12 @@ async function mergeOpencodeJson(
     // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
     // Desktop app owns its own plugin/instruction config — do NOT touch it.
     // FlowGuard only manages its own mandates entry.
-    const hasPluginField = "plugin" in parsed;
-    const existingInstructions = Array.isArray(parsed["instructions"])
-      ? (parsed["instructions"] as string[])
+    const hasPluginField = 'plugin' in parsed;
+    const existingInstructions = Array.isArray(parsed['instructions'])
+      ? (parsed['instructions'] as string[])
       : [];
     const hasDesktopInstructions = existingInstructions.some(
-      (i) => !i.includes("flowguard-mandates") && !i.includes("AGENTS.md"),
+      (i) => !i.includes('flowguard-mandates') && !i.includes('AGENTS.md'),
     );
 
     if (hasPluginField || hasDesktopInstructions) {
@@ -328,15 +318,15 @@ async function mergeOpencodeJson(
       if (!instructions.includes(entry)) {
         instructions.push(entry);
       }
-      parsed["instructions"] = instructions;
+      parsed['instructions'] = instructions;
 
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-      return { path: filePath, action: "merged" };
+      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+      return { path: filePath, action: 'merged' };
     }
 
     // Standard merge for FlowGuard-only configs
-    let instructions = Array.isArray(parsed["instructions"])
-      ? (parsed["instructions"] as string[])
+    let instructions = Array.isArray(parsed['instructions'])
+      ? (parsed['instructions'] as string[])
       : [];
 
     // Migration: remove legacy "AGENTS.md" entry (only the exact FlowGuard-owned one)
@@ -346,16 +336,16 @@ async function mergeOpencodeJson(
     instructions = instructions.filter((i) => i !== entry);
     instructions.push(entry);
 
-    parsed["instructions"] = instructions;
+    parsed['instructions'] = instructions;
 
-    if (!parsed["$schema"]) {
-      parsed["$schema"] = "https://opencode.ai/config.json";
+    if (!parsed['$schema']) {
+      parsed['$schema'] = 'https://opencode.ai/config.json';
     }
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-    return { path: filePath, action: "merged" };
+    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    return { path: filePath, action: 'merged' };
   } catch {
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), "utf-8");
-    return { path: filePath, action: "written", reason: "existing file was malformed JSON" };
+    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
+    return { path: filePath, action: 'written', reason: 'existing file was malformed JSON' };
   }
 }
 
@@ -363,13 +353,10 @@ async function mergeOpencodeJson(
  * Remove FlowGuard instruction entries from opencode.json during uninstall.
  * Removes both current and legacy entries. Preserves everything else.
  */
-async function removeFromOpencodeJson(
-  filePath: string,
-  scope: InstallScope,
-): Promise<FileOp> {
+async function removeFromOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
   const existing = await safeRead(filePath);
   if (!existing) {
-    return { path: filePath, action: "not_found" };
+    return { path: filePath, action: 'not_found' };
   }
 
   try {
@@ -377,51 +364,47 @@ async function removeFromOpencodeJson(
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
     // touch desktop app's plugin/instruction configuration)
-    const hasPluginField = "plugin" in parsed;
-    const existingInstructions = Array.isArray(parsed["instructions"])
-      ? (parsed["instructions"] as string[])
+    const hasPluginField = 'plugin' in parsed;
+    const existingInstructions = Array.isArray(parsed['instructions'])
+      ? (parsed['instructions'] as string[])
       : [];
     const hasDesktopInstructions = existingInstructions.some(
-      (i) => !i.includes("flowguard-mandates") && !i.includes("AGENTS.md"),
+      (i) => !i.includes('flowguard-mandates') && !i.includes('AGENTS.md'),
     );
 
     if (hasPluginField || hasDesktopInstructions) {
       // Desktop app owns this config — only remove FlowGuard mandates entry
       const entry = mandatesInstructionEntry(scope);
-      const before = parsed["instructions"] as string[];
-      const after = before.filter(
-        (i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY,
-      );
+      const before = parsed['instructions'] as string[];
+      const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
 
       if (after.length === before.length) {
-        return { path: filePath, action: "skipped", reason: "no FlowGuard entries found" };
+        return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       }
 
-      parsed["instructions"] = after;
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-      return { path: filePath, action: "merged", reason: "removed FlowGuard mandates entry" };
+      parsed['instructions'] = after;
+      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+      return { path: filePath, action: 'merged', reason: 'removed FlowGuard mandates entry' };
     }
 
     // Standard removal for FlowGuard-only configs
-    if (!Array.isArray(parsed["instructions"])) {
-      return { path: filePath, action: "skipped", reason: "no instructions array" };
+    if (!Array.isArray(parsed['instructions'])) {
+      return { path: filePath, action: 'skipped', reason: 'no instructions array' };
     }
 
     const entry = mandatesInstructionEntry(scope);
-    const before = parsed["instructions"] as string[];
-    const after = before.filter(
-      (i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY,
-    );
+    const before = parsed['instructions'] as string[];
+    const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
 
     if (after.length === before.length) {
-      return { path: filePath, action: "skipped", reason: "no FlowGuard entries found" };
+      return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
     }
 
-    parsed["instructions"] = after;
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-    return { path: filePath, action: "merged", reason: "removed FlowGuard instruction entries" };
+    parsed['instructions'] = after;
+    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
   } catch {
-    return { path: filePath, action: "skipped", reason: "malformed JSON" };
+    return { path: filePath, action: 'skipped', reason: 'malformed JSON' };
   }
 }
 
@@ -451,8 +434,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
     if (!args.coreTarball) {
       errors.push(
         `ERROR: --core-tarball is required.\n` +
-        `Usage: flowguard install --core-tarball /path/to/flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
-        `Download from: https://github.com/koeppben23/governed-runtime/releases`
+          `Usage: flowguard install --core-tarball /path/to/flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
+          `Download from: https://github.com/koeppben23/governed-runtime/releases`,
       );
       return { target, ops, errors, warnings };
     }
@@ -471,8 +454,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
     const versionMatch = tarballName.match(/^flowguard-core-(\d+\.\d+\.\d+)\.tgz$/);
     if (!versionMatch) {
       errors.push(
-        "ERROR: Tarball filename must match flowguard-core-{version}.tgz\n" +
-        `  Found: ${tarballName}`
+        'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
+          `  Found: ${tarballName}`,
       );
       return { target, ops, errors, warnings };
     }
@@ -482,59 +465,60 @@ export async function install(args: CliArgs): Promise<CliResult> {
     if (tarballVersion !== PACKAGE_VERSION()) {
       errors.push(
         `ERROR: Version mismatch.\n` +
-        `  Tarball: ${tarballVersion}\n` +
-        `  Installer: ${PACKAGE_VERSION()}\n` +
-        `  Please use the correct tarball version.`
+          `  Tarball: ${tarballVersion}\n` +
+          `  Installer: ${PACKAGE_VERSION()}\n` +
+          `  Please use the correct tarball version.`,
       );
       return { target, ops, errors, warnings };
     }
 
     // Ensure base directories
-    await ensureDir(join(target, "tools"));
-    await ensureDir(join(target, "plugins"));
-    await ensureDir(join(target, "commands"));
+    await ensureDir(join(target, 'tools'));
+    await ensureDir(join(target, 'plugins'));
+    await ensureDir(join(target, 'commands'));
 
     // 1. Copy tarball to vendor directory (fixed path for A1 model)
-    const vendorPath = join(target, "vendor");
+    const vendorPath = join(target, 'vendor');
     await ensureDir(vendorPath);
     const vendorTarballPath = join(vendorPath, tarballName);
     await copyFile(tarballPath, vendorTarballPath);
-    ops.push({ path: vendorTarballPath, action: "written" });
+    ops.push({ path: vendorTarballPath, action: 'written' });
 
     // 2. flowguard-mandates.md (always replace — managed artifact)
     const digest = computeMandatesDigest();
     const mandatesContent = buildMandatesContent(PACKAGE_VERSION(), digest);
     const mandatesPath = join(target, MANDATES_FILENAME);
     await ensureDir(dirname(mandatesPath));
-    await writeFile(mandatesPath, mandatesContent, "utf-8");
-    ops.push({ path: mandatesPath, action: "written" });
+    await writeFile(mandatesPath, mandatesContent, 'utf-8');
+    ops.push({ path: mandatesPath, action: 'written' });
 
     // 3. Tool wrapper (write if absent, --force to replace)
-    ops.push(
-      await writeIfAbsent(join(target, "tools", "flowguard.ts"), TOOL_WRAPPER, args.force),
-    );
+    ops.push(await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force));
 
     // 4. Plugin wrapper (write if absent, --force to replace)
     ops.push(
-      await writeIfAbsent(join(target, "plugins", "flowguard-audit.ts"), PLUGIN_WRAPPER, args.force),
+      await writeIfAbsent(
+        join(target, 'plugins', 'flowguard-audit.ts'),
+        PLUGIN_WRAPPER,
+        args.force,
+      ),
     );
 
     // 5. Command files (write if absent, --force to replace)
     for (const [name, content] of Object.entries(COMMANDS)) {
-      ops.push(
-        await writeIfAbsent(join(target, "commands", name), content, args.force),
-      );
+      ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
     }
 
     // 6. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
-    ops.push(await mergePackageJson(join(target, "package.json"), PACKAGE_VERSION()));
+    ops.push(await mergePackageJson(join(target, 'package.json'), PACKAGE_VERSION()));
 
     // 7. opencode.json (merge with migration)
     //    - global: merge into ~/.config/opencode/opencode.json
     //    - repo: merge into ./opencode.json (project root, parent of .opencode/)
-    const opencodeJsonPath = args.installScope === "global"
-      ? join(target, "opencode.json")
-      : join(resolve("."), "opencode.json");
+    const opencodeJsonPath =
+      args.installScope === 'global'
+        ? join(target, 'opencode.json')
+        : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
@@ -586,17 +570,17 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       }
 
       // Handle vendor directory specially (recursively remove)
-      if (relPath === "vendor") {
+      if (relPath === 'vendor') {
         try {
           if (existsSync(fullPath)) {
             await rm(fullPath, { recursive: true, force: true });
-            ops.push({ path: fullPath, action: "removed" });
+            ops.push({ path: fullPath, action: 'removed' });
           } else {
-            ops.push({ path: fullPath, action: "not_found" });
+            ops.push({ path: fullPath, action: 'not_found' });
           }
           continue;
         } catch {
-          ops.push({ path: fullPath, action: "not_found" });
+          ops.push({ path: fullPath, action: 'not_found' });
           continue;
         }
       }
@@ -604,31 +588,32 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       const removed = await safeUnlink(fullPath);
       ops.push({
         path: fullPath,
-        action: removed ? "removed" : "not_found",
+        action: removed ? 'removed' : 'not_found',
       });
     }
 
     // Remove @flowguard/core from package.json
-    const pkgPath = join(target, "package.json");
+    const pkgPath = join(target, 'package.json');
     const pkgContent = await safeRead(pkgPath);
     if (pkgContent) {
       try {
         const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-        const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-        delete deps["@flowguard/core"];
-        delete deps["@opencode-ai/plugin"]; // Clean up legacy dep too
-        parsed["dependencies"] = deps;
-        await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
-        ops.push({ path: pkgPath, action: "merged", reason: "removed FlowGuard dependencies" });
+        const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+        delete deps['@flowguard/core'];
+        delete deps['@opencode-ai/plugin']; // Clean up legacy dep too
+        parsed['dependencies'] = deps;
+        await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+        ops.push({ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' });
       } catch {
-        ops.push({ path: pkgPath, action: "skipped", reason: "malformed JSON" });
+        ops.push({ path: pkgPath, action: 'skipped', reason: 'malformed JSON' });
       }
     }
 
     // Remove FlowGuard instruction entries from opencode.json
-    const opencodeJsonPath = args.installScope === "global"
-      ? join(target, "opencode.json")
-      : join(resolve("."), "opencode.json");
+    const opencodeJsonPath =
+      args.installScope === 'global'
+        ? join(target, 'opencode.json')
+        : join(resolve('.'), 'opencode.json');
     ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
@@ -663,9 +648,9 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   const mandatesPath = join(target, MANDATES_FILENAME);
   const mandatesContent = await safeRead(mandatesPath);
   if (!mandatesContent) {
-    checks.push({ file: mandatesPath, status: "missing" });
+    checks.push({ file: mandatesPath, status: 'missing' });
   } else if (!isManagedArtifact(mandatesContent)) {
-    checks.push({ file: mandatesPath, status: "unmanaged", detail: "no managed-artifact header" });
+    checks.push({ file: mandatesPath, status: 'unmanaged', detail: 'no managed-artifact header' });
   } else {
     const fileDigest = extractManagedDigest(mandatesContent);
     const expectedDigest = computeMandatesDigest();
@@ -673,104 +658,133 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     const fileBody = extractManagedBody(mandatesContent);
 
     if (!fileDigest) {
-      checks.push({ file: mandatesPath, status: "error", detail: "managed header found but no digest" });
+      checks.push({
+        file: mandatesPath,
+        status: 'error',
+        detail: 'managed header found but no digest',
+      });
     } else if (fileDigest !== expectedDigest) {
       // Header claims a different digest than the canonical body — version/content drift
-      checks.push({ file: mandatesPath, status: "modified", detail: "content-digest mismatch — file was locally edited" });
+      checks.push({
+        file: mandatesPath,
+        status: 'modified',
+        detail: 'content-digest mismatch — file was locally edited',
+      });
     } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
       // Header digest matches canonical, but actual body was modified (e.g. appended)
-      checks.push({ file: mandatesPath, status: "modified", detail: "content-digest mismatch — file body was locally edited" });
+      checks.push({
+        file: mandatesPath,
+        status: 'modified',
+        detail: 'content-digest mismatch — file body was locally edited',
+      });
     } else if (fileVersion !== PACKAGE_VERSION()) {
-      checks.push({ file: mandatesPath, status: "version_mismatch", detail: `header v${fileVersion} != installed v${PACKAGE_VERSION()}` });
+      checks.push({
+        file: mandatesPath,
+        status: 'version_mismatch',
+        detail: `header v${fileVersion} != installed v${PACKAGE_VERSION()}`,
+      });
     } else {
-      checks.push({ file: mandatesPath, status: "ok" });
+      checks.push({ file: mandatesPath, status: 'ok' });
     }
   }
 
   // 2. Check tool wrapper
-  const toolPath = join(target, "tools", "flowguard.ts");
+  const toolPath = join(target, 'tools', 'flowguard.ts');
   const toolContent = await safeRead(toolPath);
   if (!toolContent) {
-    checks.push({ file: toolPath, status: "missing" });
+    checks.push({ file: toolPath, status: 'missing' });
   } else if (toolContent.trim() !== TOOL_WRAPPER.trim()) {
-    checks.push({ file: toolPath, status: "modified", detail: "content differs from template" });
+    checks.push({ file: toolPath, status: 'modified', detail: 'content differs from template' });
   } else {
-    checks.push({ file: toolPath, status: "ok" });
+    checks.push({ file: toolPath, status: 'ok' });
   }
 
   // 3. Check plugin wrapper
-  const pluginPath = join(target, "plugins", "flowguard-audit.ts");
+  const pluginPath = join(target, 'plugins', 'flowguard-audit.ts');
   const pluginContent = await safeRead(pluginPath);
   if (!pluginContent) {
-    checks.push({ file: pluginPath, status: "missing" });
+    checks.push({ file: pluginPath, status: 'missing' });
   } else if (pluginContent.trim() !== PLUGIN_WRAPPER.trim()) {
-    checks.push({ file: pluginPath, status: "modified", detail: "content differs from template" });
+    checks.push({ file: pluginPath, status: 'modified', detail: 'content differs from template' });
   } else {
-    checks.push({ file: pluginPath, status: "ok" });
+    checks.push({ file: pluginPath, status: 'ok' });
   }
 
   // 4. Check command files
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
-    const cmdPath = join(target, "commands", name);
+    const cmdPath = join(target, 'commands', name);
     const cmdContent = await safeRead(cmdPath);
     if (!cmdContent) {
-      checks.push({ file: cmdPath, status: "missing" });
+      checks.push({ file: cmdPath, status: 'missing' });
     } else if (cmdContent.trim() !== expectedContent.trim()) {
-      checks.push({ file: cmdPath, status: "modified", detail: "content differs from template" });
+      checks.push({ file: cmdPath, status: 'modified', detail: 'content differs from template' });
     } else {
-      checks.push({ file: cmdPath, status: "ok" });
+      checks.push({ file: cmdPath, status: 'ok' });
     }
   }
 
   // 5. Check package.json (A1 model validation)
-  const pkgPath = join(target, "package.json");
+  const pkgPath = join(target, 'package.json');
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) {
-    checks.push({ file: pkgPath, status: "missing" });
+    checks.push({ file: pkgPath, status: 'missing' });
   } else {
     try {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-      const deps = (parsed["dependencies"] ?? {}) as Record<string, string>;
-      const coreDep = deps["@flowguard/core"];
+      const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+      const coreDep = deps['@flowguard/core'];
       const expectedDep = vendorDependency(PACKAGE_VERSION());
 
       if (!coreDep) {
-        checks.push({ file: pkgPath, status: "error", detail: "missing @flowguard/core dependency" });
+        checks.push({
+          file: pkgPath,
+          status: 'error',
+          detail: 'missing @flowguard/core dependency',
+        });
       } else if (coreDep !== expectedDep) {
-        checks.push({ file: pkgPath, status: "error", detail: `@flowguard/core must be "${expectedDep}" (got: ${coreDep})` });
+        checks.push({
+          file: pkgPath,
+          status: 'error',
+          detail: `@flowguard/core must be "${expectedDep}" (got: ${coreDep})`,
+        });
       } else {
-        checks.push({ file: pkgPath, status: "ok" });
+        checks.push({ file: pkgPath, status: 'ok' });
       }
     } catch {
-      checks.push({ file: pkgPath, status: "error", detail: "malformed JSON" });
+      checks.push({ file: pkgPath, status: 'error', detail: 'malformed JSON' });
     }
   }
 
   // 5b. Check vendor tarball exists (A1 model validation)
-  const vendorTarballPath = join(target, "vendor", `flowguard-core-${PACKAGE_VERSION()}.tgz`);
+  const vendorTarballPath = join(target, 'vendor', `flowguard-core-${PACKAGE_VERSION()}.tgz`);
   if (existsSync(vendorTarballPath)) {
-    checks.push({ file: vendorTarballPath, status: "ok" });
+    checks.push({ file: vendorTarballPath, status: 'ok' });
   } else {
-    checks.push({ file: vendorTarballPath, status: "missing", detail: "vendor tarball not found — run install with --core-tarball" });
+    checks.push({
+      file: vendorTarballPath,
+      status: 'missing',
+      detail: 'vendor tarball not found — run install with --core-tarball',
+    });
   }
 
   // 6. Check opencode.json instruction entries
-  const opencodeJsonPath = args.installScope === "global"
-    ? join(target, "opencode.json")
-    : join(resolve("."), "opencode.json");
+  const opencodeJsonPath =
+    args.installScope === 'global'
+      ? join(target, 'opencode.json')
+      : join(resolve('.'), 'opencode.json');
   const opencodeContent = await safeRead(opencodeJsonPath);
   if (opencodeContent) {
     try {
       const parsed = JSON.parse(opencodeContent) as Record<string, unknown>;
-      const instructions = Array.isArray(parsed["instructions"])
-        ? (parsed["instructions"] as string[])
+      const instructions = Array.isArray(parsed['instructions'])
+        ? (parsed['instructions'] as string[])
         : [];
       const entry = mandatesInstructionEntry(args.installScope);
 
       if (!instructions.includes(entry)) {
         checks.push({
           file: opencodeJsonPath,
-          status: "instruction_missing",
+          status: 'instruction_missing',
           detail: `instructions array does not contain "${entry}"`,
         });
       }
@@ -778,21 +792,22 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
       if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
         checks.push({
           file: opencodeJsonPath,
-          status: "instruction_stale",
+          status: 'instruction_stale',
           detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
         });
       }
 
       // If both checks passed (no missing, no stale), report ok
       const hasInstructionIssue = checks.some(
-        (c) => c.file === opencodeJsonPath &&
-          (c.status === "instruction_missing" || c.status === "instruction_stale"),
+        (c) =>
+          c.file === opencodeJsonPath &&
+          (c.status === 'instruction_missing' || c.status === 'instruction_stale'),
       );
       if (!hasInstructionIssue) {
-        checks.push({ file: opencodeJsonPath, status: "ok" });
+        checks.push({ file: opencodeJsonPath, status: 'ok' });
       }
     } catch {
-      checks.push({ file: opencodeJsonPath, status: "error", detail: "malformed JSON" });
+      checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
     }
   }
 
@@ -801,18 +816,18 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   //    But if present, it must be valid JSON and pass schema validation.
   //    Config lives at ~/.config/opencode/workspaces/{fingerprint}/config.json
   try {
-    const fpResult = await computeFingerprint(resolve("."));
+    const fpResult = await computeFingerprint(resolve('.'));
     const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
     const cfgPath = configPath(wsDir);
     try {
       const config = await readConfig(wsDir);
       const fileExists = existsSync(cfgPath);
       if (!fileExists) {
-        checks.push({ file: cfgPath, status: "ok", detail: "no config file — using defaults" });
+        checks.push({ file: cfgPath, status: 'ok', detail: 'no config file — using defaults' });
       } else {
         // File exists and parsed successfully — check if any fields differ from defaults
         const hasCustom =
-          config.logging.level !== "info" ||
+          config.logging.level !== 'info' ||
           config.policy.defaultMode !== undefined ||
           config.policy.maxSelfReviewIterations !== undefined ||
           config.policy.maxImplReviewIterations !== undefined ||
@@ -820,26 +835,34 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
           config.profile.activeChecks !== undefined;
         checks.push({
           file: cfgPath,
-          status: "ok",
-          detail: hasCustom ? "config valid (customized)" : "config valid (defaults only)",
+          status: 'ok',
+          detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
         });
       }
     } catch (err) {
       if (err instanceof PersistenceError) {
-        if (err.code === "PARSE_FAILED" || err.code === "SCHEMA_VALIDATION_FAILED") {
-          checks.push({ file: cfgPath, status: "error", detail: err.message });
+        if (err.code === 'PARSE_FAILED' || err.code === 'SCHEMA_VALIDATION_FAILED') {
+          checks.push({ file: cfgPath, status: 'error', detail: err.message });
         } else {
-          checks.push({ file: cfgPath, status: "error", detail: `cannot read config: ${err.message}` });
+          checks.push({
+            file: cfgPath,
+            status: 'error',
+            detail: `cannot read config: ${err.message}`,
+          });
         }
       } else {
-        checks.push({ file: cfgPath, status: "error", detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}` });
+        checks.push({
+          file: cfgPath,
+          status: 'error',
+          detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     }
   } catch (err) {
     // Fingerprint computation failed (e.g., git not available)
     checks.push({
-      file: "config.json",
-      status: "error",
+      file: 'config.json',
+      status: 'error',
       detail: `cannot resolve workspace: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
@@ -849,9 +872,9 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
-const VALID_POLICY_MODES: readonly PolicyMode[] = ["solo", "team", "team-ci", "regulated"] as const;
-const VALID_SCOPES: readonly InstallScope[] = ["global", "repo"] as const;
-const VALID_ACTIONS: readonly CliAction[] = ["install", "uninstall", "doctor"] as const;
+const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
+const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
+const VALID_ACTIONS: readonly CliAction[] = ['install', 'uninstall', 'doctor'] as const;
 
 /**
  * Parse CLI arguments from process.argv.
@@ -868,8 +891,8 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
     return null;
   }
 
-  let installScope: InstallScope = "global";
-  let policyMode: PolicyMode = "solo";
+  let installScope: InstallScope = 'global';
+  let policyMode: PolicyMode = 'solo';
   let force = false;
   let coreTarball: string | undefined;
   const deprecations: string[] = [];
@@ -878,7 +901,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
     const arg = argv[i];
     switch (arg) {
       // ── New flags ──────────────────────────────────────────
-      case "--install-scope": {
+      case '--install-scope': {
         const next = argv[i + 1];
         if (next && VALID_SCOPES.includes(next as InstallScope)) {
           installScope = next as InstallScope;
@@ -888,7 +911,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
-      case "--policy-mode": {
+      case '--policy-mode': {
         const next = argv[i + 1];
         if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
           policyMode = next as PolicyMode;
@@ -898,10 +921,10 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
-      case "--force":
+      case '--force':
         force = true;
         break;
-      case "--core-tarball": {
+      case '--core-tarball': {
         const next = argv[i + 1];
         if (next) {
           coreTarball = next;
@@ -913,19 +936,19 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
       }
 
       // ── Deprecated aliases ─────────────────────────────────
-      case "--global":
-        installScope = "global";
-        deprecations.push("--global is deprecated, use --install-scope global");
+      case '--global':
+        installScope = 'global';
+        deprecations.push('--global is deprecated, use --install-scope global');
         break;
-      case "--project":
-        installScope = "repo";
-        deprecations.push("--project is deprecated, use --install-scope repo");
+      case '--project':
+        installScope = 'repo';
+        deprecations.push('--project is deprecated, use --install-scope repo');
         break;
-      case "--mode": {
+      case '--mode': {
         const next = argv[i + 1];
         if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
           policyMode = next as PolicyMode;
-          deprecations.push("--mode is deprecated, use --policy-mode");
+          deprecations.push('--mode is deprecated, use --policy-mode');
           i++;
         } else {
           return null;
@@ -952,17 +975,17 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
  */
 export function formatResult(result: CliResult): string {
   const lines: string[] = [];
-  const written = result.ops.filter((o) => o.action === "written").length;
-  const merged = result.ops.filter((o) => o.action === "merged").length;
-  const skipped = result.ops.filter((o) => o.action === "skipped").length;
-  const removed = result.ops.filter((o) => o.action === "removed").length;
+  const written = result.ops.filter((o) => o.action === 'written').length;
+  const merged = result.ops.filter((o) => o.action === 'merged').length;
+  const skipped = result.ops.filter((o) => o.action === 'skipped').length;
+  const removed = result.ops.filter((o) => o.action === 'removed').length;
 
   for (const op of result.ops) {
-    const suffix = op.reason ? ` (${op.reason})` : "";
+    const suffix = op.reason ? ` (${op.reason})` : '';
     lines.push(`  [${op.action}] ${op.path}${suffix}`);
   }
 
-  lines.push("");
+  lines.push('');
   if (written > 0) lines.push(`  Written: ${written} files`);
   if (merged > 0) lines.push(`  Merged:  ${merged} files`);
   if (skipped > 0) lines.push(`  Skipped: ${skipped} files`);
@@ -973,13 +996,13 @@ export function formatResult(result: CliResult): string {
   }
 
   if (result.errors.length > 0) {
-    lines.push("");
+    lines.push('');
     for (const err of result.errors) {
       lines.push(`  [error] ${err}`);
     }
   }
 
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /**
@@ -988,27 +1011,27 @@ export function formatResult(result: CliResult): string {
 export function formatDoctor(checks: DoctorCheck[]): string {
   const lines: string[] = [];
   const iconMap: Record<DoctorStatus, string> = {
-    ok: "ok",
-    missing: "MISSING",
-    modified: "MODIFIED",
-    unmanaged: "UNMANAGED",
-    version_mismatch: "VERSION",
-    instruction_missing: "INSTR_MISSING",
-    instruction_stale: "INSTR_STALE",
-    error: "ERROR",
+    ok: 'ok',
+    missing: 'MISSING',
+    modified: 'MODIFIED',
+    unmanaged: 'UNMANAGED',
+    version_mismatch: 'VERSION',
+    instruction_missing: 'INSTR_MISSING',
+    instruction_stale: 'INSTR_STALE',
+    error: 'ERROR',
   };
 
   for (const check of checks) {
-    const suffix = check.detail ? ` — ${check.detail}` : "";
+    const suffix = check.detail ? ` — ${check.detail}` : '';
     lines.push(`  [${iconMap[check.status]}] ${check.file}${suffix}`);
   }
 
-  const ok = checks.filter((c) => c.status === "ok").length;
+  const ok = checks.filter((c) => c.status === 'ok').length;
   const total = checks.length;
-  lines.push("");
+  lines.push('');
   lines.push(`  ${ok}/${total} checks passed`);
 
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 function getUsage(): string {
@@ -1059,36 +1082,36 @@ export async function main(argv: string[]): Promise<number> {
     console.error(`  [deprecated] ${d}`);
   }
 
-  const targetLabel = args.installScope === "global" ? "~/.config/opencode/" : "./.opencode/";
+  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
 
   switch (args.action) {
-    case "install": {
+    case 'install': {
       console.log(`Installing FlowGuard to ${targetLabel}...`);
       console.log(`  Install scope: ${args.installScope}`);
       console.log(`  Policy mode: ${args.policyMode}`);
-      console.log("");
+      console.log('');
       const result = await install(args);
       console.log(formatResult(result));
       if (result.errors.length > 0) return 1;
-      console.log("");
+      console.log('');
       console.log(`  Run 'npm install' in ${targetLabel} to install dependencies.`);
       return 0;
     }
 
-    case "uninstall": {
+    case 'uninstall': {
       console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
-      console.log("");
+      console.log('');
       const result = await uninstall(args);
       console.log(formatResult(result));
       return result.errors.length > 0 ? 1 : 0;
     }
 
-    case "doctor": {
+    case 'doctor': {
       console.log(`Checking FlowGuard installation at ${targetLabel}...`);
-      console.log("");
+      console.log('');
       const checks = await doctor(args);
       console.log(formatDoctor(checks));
-      const allOk = checks.every((c) => c.status === "ok");
+      const allOk = checks.every((c) => c.status === 'ok');
       return allOk ? 0 : 1;
     }
   }
@@ -1098,9 +1121,9 @@ export async function main(argv: string[]): Promise<number> {
 // realpathSync resolves symlinks so that both `flowguard` (symlink) and
 // `install.js` (direct) executions trigger main().
 const isDirectExecution =
-  typeof process !== "undefined" &&
+  typeof process !== 'undefined' &&
   process.argv[1] !== undefined &&
-  realpathSync(process.argv[1]).endsWith("install.js");
+  realpathSync(process.argv[1]).endsWith('install.js');
 
 if (isDirectExecution) {
   main(process.argv.slice(2)).then((code) => process.exit(code));

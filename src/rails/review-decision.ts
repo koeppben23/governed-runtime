@@ -29,13 +29,13 @@
  * @version v1
  */
 
-import type { SessionState, Event } from "../state/schema";
-import type { ReviewDecision, ReviewVerdict, ValidationResult } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import { evaluate, evaluateWithEvent } from "../machine/evaluate";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
-import { applyTransition } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState, Event } from '../state/schema';
+import type { ReviewDecision, ReviewVerdict, ValidationResult } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import { evaluate, evaluateWithEvent } from '../machine/evaluate';
+import type { RailResult, RailContext, TransitionRecord } from './types';
+import { applyTransition } from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -48,9 +48,9 @@ export interface ReviewDecisionInput {
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
 
 const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
-  approve: "APPROVE",
-  changes_requested: "CHANGES_REQUESTED",
-  reject: "REJECT",
+  approve: 'APPROVE',
+  changes_requested: 'CHANGES_REQUESTED',
+  reject: 'REJECT',
 };
 
 // ─── State Clearing ───────────────────────────────────────────────────────────
@@ -87,33 +87,30 @@ const ARCH_REJECT_CLEAR = {
  * - reject at PLAN_REVIEW/EVIDENCE_REVIEW: clear everything downstream of TICKET
  * - reject at ARCH_REVIEW: clear architecture + selfReview (back to READY)
  */
-function applyStateClearingPattern(
-  state: SessionState,
-  verdict: ReviewVerdict,
-): SessionState {
-  if (verdict === "approve") {
+function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict): SessionState {
+  if (verdict === 'approve') {
     // At ARCH_REVIEW, set architecture status to "accepted" on approval
-    if (state.phase === "ARCH_REVIEW" && state.architecture) {
-      return { ...state, architecture: { ...state.architecture, status: "accepted" } };
+    if (state.phase === 'ARCH_REVIEW' && state.architecture) {
+      return { ...state, architecture: { ...state.architecture, status: 'accepted' } };
     }
     return state;
   }
 
-  if (verdict === "reject") {
-    if (state.phase === "ARCH_REVIEW") {
+  if (verdict === 'reject') {
+    if (state.phase === 'ARCH_REVIEW') {
       return { ...state, ...ARCH_REJECT_CLEAR };
     }
     return { ...state, ...REJECT_CLEAR };
   }
 
   // changes_requested
-  if (state.phase === "PLAN_REVIEW") {
+  if (state.phase === 'PLAN_REVIEW') {
     return { ...state, selfReview: null };
   }
-  if (state.phase === "EVIDENCE_REVIEW") {
+  if (state.phase === 'EVIDENCE_REVIEW') {
     return { ...state, implementation: null, implReview: null };
   }
-  if (state.phase === "ARCH_REVIEW") {
+  if (state.phase === 'ARCH_REVIEW') {
     return { ...state, selfReview: null };
   }
 
@@ -129,8 +126,8 @@ export function executeReviewDecision(
 ): RailResult {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.REVIEW_DECISION)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/review-decision",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/review-decision',
       phase: state.phase,
     });
   }
@@ -138,7 +135,7 @@ export function executeReviewDecision(
   // 2. Validate verdict
   const event = VERDICT_TO_EVENT[input.verdict];
   if (!event) {
-    return blocked("INVALID_VERDICT", { verdict: String(input.verdict) });
+    return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
   // 3. Four-eyes principle enforcement
@@ -147,7 +144,7 @@ export function executeReviewDecision(
   //    This satisfies MaRisk AT 7.2 (5) — separation of duties.
   if (ctx.policy?.allowSelfApproval === false) {
     if (input.decidedBy === state.initiatedBy) {
-      return blocked("SELF_APPROVAL_FORBIDDEN", {
+      return blocked('SELF_APPROVAL_FORBIDDEN', {
         initiator: state.initiatedBy,
       });
     }
@@ -156,7 +153,7 @@ export function executeReviewDecision(
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);
   if (target === undefined) {
-    return blocked("INVALID_TRANSITION", {
+    return blocked('INVALID_TRANSITION', {
       event: String(event),
       phase: state.phase,
     });
@@ -191,5 +188,5 @@ export function executeReviewDecision(
   // 8. Re-evaluate at new phase to get the eval result for the caller (policy-aware)
   const evalResult = evaluate(finalState, ctx.policy);
 
-  return { kind: "ok", state: finalState, evalResult, transitions: [transition] };
+  return { kind: 'ok', state: finalState, evalResult, transitions: [transition] };
 }

@@ -15,19 +15,19 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { TicketEvidence } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
-import { autoAdvance, applyTransition } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { TicketEvidence } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import { evaluate } from '../machine/evaluate';
+import type { RailResult, RailContext, TransitionRecord } from './types';
+import { autoAdvance, applyTransition } from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
 export interface TicketInput {
   readonly text: string;
-  readonly source: "user" | "external";
+  readonly source: 'user' | 'external';
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -39,15 +39,15 @@ export function executeTicket(
 ): RailResult {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.TICKET)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/ticket",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/ticket',
       phase: state.phase,
     });
   }
 
   // 2. Validate input
   if (!input.text.trim()) {
-    return blocked("EMPTY_TICKET");
+    return blocked('EMPTY_TICKET');
   }
 
   // 3. Create evidence
@@ -64,10 +64,10 @@ export function executeTicket(
   let basePhase = state.phase;
   let baseTransition = state.transition;
 
-  if (state.phase === "READY") {
+  if (state.phase === 'READY') {
     const at = ctx.now();
-    basePhase = "TICKET";
-    const tr: TransitionRecord = { from: "READY", to: "TICKET", event: "TICKET_SELECTED", at };
+    basePhase = 'TICKET';
+    const tr: TransitionRecord = { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED', at };
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
   }
@@ -88,8 +88,12 @@ export function executeTicket(
 
   // 5. Auto-advance (policy-aware)
   const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-  const { state: finalState, evalResult: result, transitions: advanceTransitions } = autoAdvance(nextState, evalFn, ctx);
+  const {
+    state: finalState,
+    evalResult: result,
+    transitions: advanceTransitions,
+  } = autoAdvance(nextState, evalFn, ctx);
   const transitions = [...preTransitions, ...advanceTransitions];
 
-  return { kind: "ok", state: finalState, evalResult: result, transitions };
+  return { kind: 'ok', state: finalState, evalResult: result, transitions };
 }

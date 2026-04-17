@@ -17,7 +17,7 @@
  * @version v1
  */
 
-import * as path from "node:path";
+import * as path from 'node:path';
 import type {
   CollectorInput,
   CollectorOutput,
@@ -25,59 +25,54 @@ import type {
   TopologyKind,
   ModuleInfo,
   EntryPointInfo,
-} from "../types";
+} from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Package manifest filenames (basename match). */
 const MANIFEST_BASENAMES = new Set([
-  "package.json",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-  "Cargo.toml",
-  "go.mod",
-  "pyproject.toml",
-  "setup.py",
-  "composer.json",
+  'package.json',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'Cargo.toml',
+  'go.mod',
+  'pyproject.toml',
+  'setup.py',
+  'composer.json',
 ]);
 
 /** Monorepo indicator config files. */
-const MONOREPO_INDICATORS = new Set([
-  "nx.json",
-  "lerna.json",
-  "pnpm-workspace.yaml",
-  "rush.json",
-]);
+const MONOREPO_INDICATORS = new Set(['nx.json', 'lerna.json', 'pnpm-workspace.yaml', 'rush.json']);
 
 /** Standard ignore paths. */
 const IGNORE_PATHS = [
-  "node_modules",
-  "dist",
-  "build",
-  "out",
-  ".git",
-  "coverage",
-  ".next",
-  ".nuxt",
-  "target",
-  "vendor",
-  "__pycache__",
-  ".gradle",
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.git',
+  'coverage',
+  '.next',
+  '.nuxt',
+  'target',
+  'vendor',
+  '__pycache__',
+  '.gradle',
 ];
 
 /** Common entry point patterns (basename). */
 const ENTRY_POINT_PATTERNS: ReadonlyArray<{
   pattern: RegExp;
-  kind: EntryPointInfo["kind"];
+  kind: EntryPointInfo['kind'];
 }> = [
-  { pattern: /^(?:index|main|app|server)\.[tj]sx?$/, kind: "main" },
-  { pattern: /^handler\.[tj]sx?$/, kind: "handler" },
-  { pattern: /^cli\.[tj]sx?$/, kind: "bin" },
-  { pattern: /^Main\.java$/, kind: "main" },
-  { pattern: /^main\.go$/, kind: "main" },
-  { pattern: /^main\.py$/, kind: "main" },
-  { pattern: /^main\.rs$/, kind: "main" },
+  { pattern: /^(?:index|main|app|server)\.[tj]sx?$/, kind: 'main' },
+  { pattern: /^handler\.[tj]sx?$/, kind: 'handler' },
+  { pattern: /^cli\.[tj]sx?$/, kind: 'bin' },
+  { pattern: /^Main\.java$/, kind: 'main' },
+  { pattern: /^main\.go$/, kind: 'main' },
+  { pattern: /^main\.py$/, kind: 'main' },
+  { pattern: /^main\.rs$/, kind: 'main' },
 ];
 
 // ─── Collector ────────────────────────────────────────────────────────────────
@@ -102,7 +97,7 @@ export async function collectTopology(
     const rootConfigs = detectRootConfigs(input.allFiles);
 
     return {
-      status: "complete",
+      status: 'complete',
       data: {
         kind,
         modules,
@@ -113,9 +108,9 @@ export async function collectTopology(
     };
   } catch {
     return {
-      status: "failed",
+      status: 'failed',
       data: {
-        kind: "unknown",
+        kind: 'unknown',
         modules: [],
         entryPoints: [],
         rootConfigs: [],
@@ -142,14 +137,14 @@ function detectModules(allFiles: readonly string[]): ModuleInfo[] {
 
     const dir = path.dirname(filePath);
     // Normalize: root-level files have dir === "." — skip those
-    if (dir === "." || dir === "") continue;
+    if (dir === '.' || dir === '') continue;
     // Skip files deep in node_modules, dist, etc.
-    const normalized = filePath.replace(/\\/g, "/");
+    const normalized = filePath.replace(/\\/g, '/');
     if (IGNORE_PATHS.some((p) => normalized.includes(`${p}/`))) continue;
 
     modules.push({
       path: dir,
-      name: dir.replace(/\\/g, "/").split("/").pop() ?? dir,
+      name: dir.replace(/\\/g, '/').split('/').pop() ?? dir,
       manifestFile: basename,
     });
   }
@@ -167,18 +162,16 @@ function detectTopologyKind(
   const configSet = new Set(configFiles);
 
   // Strong monorepo signals
-  const hasMonorepoIndicator = [...MONOREPO_INDICATORS].some((f) =>
-    configSet.has(f),
-  );
-  if (hasMonorepoIndicator) return "monorepo";
+  const hasMonorepoIndicator = [...MONOREPO_INDICATORS].some((f) => configSet.has(f));
+  if (hasMonorepoIndicator) return 'monorepo';
 
   // Multiple modules (subdirectory manifests) → monorepo
-  if (modules.length >= 2) return "monorepo";
+  if (modules.length >= 2) return 'monorepo';
 
   // Has at least one config or package file → single project
-  if (configFiles.length > 0) return "single-project";
+  if (configFiles.length > 0) return 'single-project';
 
-  return "unknown";
+  return 'unknown';
 }
 
 /**
@@ -190,8 +183,8 @@ function detectEntryPoints(allFiles: readonly string[]): EntryPointInfo[] {
   const seen = new Set<string>();
 
   for (const filePath of allFiles) {
-    const normalized = filePath.replace(/\\/g, "/");
-    const depth = normalized.split("/").length;
+    const normalized = filePath.replace(/\\/g, '/');
+    const depth = normalized.split('/').length;
     // Only root (depth 1) or one level deep (depth 2, e.g., src/main.ts)
     if (depth > 2) continue;
 
@@ -218,26 +211,26 @@ function detectRootConfigs(allFiles: readonly string[]): string[] {
   const configs: string[] = [];
 
   for (const filePath of allFiles) {
-    const normalized = filePath.replace(/\\/g, "/");
+    const normalized = filePath.replace(/\\/g, '/');
     // Root-level only: no directory separator
-    if (normalized.includes("/")) continue;
+    if (normalized.includes('/')) continue;
 
     const ext = path.extname(filePath).toLowerCase();
     const basename = filePath.toLowerCase();
 
     // Config patterns: dotfiles, .json, .yaml, .yml, .toml, .xml, Makefile, Dockerfile
     if (
-      basename.startsWith(".") ||
-      ext === ".json" ||
-      ext === ".yaml" ||
-      ext === ".yml" ||
-      ext === ".toml" ||
-      ext === ".xml" ||
-      ext === ".config" ||
-      basename === "makefile" ||
-      basename === "dockerfile" ||
-      basename === "rakefile" ||
-      basename === "gemfile"
+      basename.startsWith('.') ||
+      ext === '.json' ||
+      ext === '.yaml' ||
+      ext === '.yml' ||
+      ext === '.toml' ||
+      ext === '.xml' ||
+      ext === '.config' ||
+      basename === 'makefile' ||
+      basename === 'dockerfile' ||
+      basename === 'rakefile' ||
+      basename === 'gemfile'
     ) {
       configs.push(filePath);
     }

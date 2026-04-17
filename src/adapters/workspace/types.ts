@@ -17,21 +17,21 @@ export const FINGERPRINT_RE = /^[0-9a-f]{24}$/;
 export const UNSAFE_PATH_CHARS_RE = /[/\\:\0]/;
 
 /** Workspace metadata filename. */
-export const WORKSPACE_FILE = "workspace.json";
+export const WORKSPACE_FILE = 'workspace.json';
 
 /** Session pointer filename (global, non-authoritative). */
-export const POINTER_FILE = "SESSION_POINTER.json";
+export const POINTER_FILE = 'SESSION_POINTER.json';
 
 /** Workspace metadata schema version. */
-export const WORKSPACE_SCHEMA_VERSION = "v1";
+export const WORKSPACE_SCHEMA_VERSION = 'v1';
 
 /** Session pointer schema identifier. */
-export const POINTER_SCHEMA = "flowguard-session-pointer.v1";
+export const POINTER_SCHEMA = 'flowguard-session-pointer.v1';
 
 // -- Types --------------------------------------------------------------------
 
 /** Material class for fingerprint derivation. */
-export type MaterialClass = "remote_canonical" | "local_path";
+export type MaterialClass = 'remote_canonical' | 'local_path';
 
 /** Result of fingerprint computation. */
 export interface FingerprintResult {
@@ -78,7 +78,7 @@ export class WorkspaceError extends Error {
 
   constructor(code: string, message: string) {
     super(`[${code}] ${message}`);
-    this.name = "WorkspaceError";
+    this.name = 'WorkspaceError';
     this.code = code;
   }
 }
@@ -94,7 +94,7 @@ export class WorkspaceError extends Error {
 export function validateFingerprint(fingerprint: string): string {
   if (!FINGERPRINT_RE.test(fingerprint)) {
     throw new WorkspaceError(
-      "INVALID_FINGERPRINT",
+      'INVALID_FINGERPRINT',
       `Invalid fingerprint format: expected 24 hex chars, got "${fingerprint}"`,
     );
   }
@@ -111,19 +111,16 @@ export function validateFingerprint(fingerprint: string): string {
 export function validateSessionId(sessionId: string): string {
   const trimmed = sessionId.trim();
   if (!trimmed) {
-    throw new WorkspaceError("INVALID_SESSION_ID", "Session ID is empty");
+    throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID is empty');
   }
   if (UNSAFE_PATH_CHARS_RE.test(trimmed)) {
     throw new WorkspaceError(
-      "INVALID_SESSION_ID",
+      'INVALID_SESSION_ID',
       `Session ID contains unsafe characters: "${trimmed}"`,
     );
   }
-  if (trimmed === "." || trimmed === "..") {
-    throw new WorkspaceError(
-      "INVALID_SESSION_ID",
-      "Session ID is a path traversal component",
-    );
+  if (trimmed === '.' || trimmed === '..') {
+    throw new WorkspaceError('INVALID_SESSION_ID', 'Session ID is a path traversal component');
   }
   return trimmed;
 }

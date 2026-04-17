@@ -16,13 +16,13 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { CheckId, ValidationResult } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext } from "./types";
-import { autoAdvance } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { CheckId, ValidationResult } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import { evaluate } from '../machine/evaluate';
+import type { RailResult, RailContext } from './types';
+import { autoAdvance } from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -44,19 +44,19 @@ export async function executeValidate(
 ): Promise<RailResult> {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/validate",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/validate',
       phase: state.phase,
     });
   }
 
   // 2. Preconditions
   if (state.activeChecks.length === 0) {
-    return blocked("NO_ACTIVE_CHECKS");
+    return blocked('NO_ACTIVE_CHECKS');
   }
 
   if (!state.plan) {
-    return blocked("PLAN_REQUIRED", { action: "validation" });
+    return blocked('PLAN_REQUIRED', { action: 'validation' });
   }
 
   // 3. Run all active checks
@@ -71,7 +71,7 @@ export async function executeValidate(
   // If any check failed, clear planning evidence so the plan must be revised and
   // re-approved (CHECK_FAILED → PLAN). Without clearing, autoAdvance would see
   // stale self-review/reviewDecision and skip past PLAN immediately.
-  const allPassed = results.every(r => r.passed);
+  const allPassed = results.every((r) => r.passed);
   const nextState: SessionState = {
     ...state,
     validation: results,
@@ -83,5 +83,5 @@ export async function executeValidate(
   const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
   const { state: finalState, evalResult, transitions } = autoAdvance(nextState, evalFn, ctx);
 
-  return { kind: "ok", state: finalState, evalResult, transitions };
+  return { kind: 'ok', state: finalState, evalResult, transitions };
 }

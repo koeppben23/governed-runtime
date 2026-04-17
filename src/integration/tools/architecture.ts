@@ -18,9 +18,9 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
-import type { ToolDefinition } from "./helpers";
+import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
   requireState,
@@ -30,29 +30,25 @@ import {
   formatBlocked,
   formatError,
   appendNextAction,
-} from "./helpers";
+} from './helpers';
 
 // State & Machine
-import type { SessionState } from "../../state/schema";
-import { evaluate } from "../../machine/evaluate";
-import { isCommandAllowed, Command } from "../../machine/commands";
+import type { SessionState } from '../../state/schema';
+import { evaluate } from '../../machine/evaluate';
+import { isCommandAllowed, Command } from '../../machine/commands';
 
 // Rails
-import { executeArchitecture } from "../../rails/architecture";
+import { executeArchitecture } from '../../rails/architecture';
 
 // Rail helpers
-import { autoAdvance } from "../../rails/types";
+import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { writeState } from "../../adapters/persistence";
+import { writeState } from '../../adapters/persistence';
 
 // Evidence types
-import type {
-  ArchitectureDecision,
-  LoopVerdict,
-  RevisionDelta,
-} from "../../state/evidence";
-import { validateAdrSections } from "../../state/evidence";
+import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../../state/evidence';
+import { validateAdrSections } from '../../state/evidence';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
@@ -60,35 +56,33 @@ import { validateAdrSections } from "../../state/evidence";
 
 export const architecture: ToolDefinition = {
   description:
-    "Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n" +
-    "Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts self-review loop.\n" +
+    'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
+    'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts self-review loop.\n' +
     "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
-    "The self-review loop runs up to maxIterations (from policy). " +
-    "On convergence, auto-advances to ARCH_REVIEW.\n" +
-    "Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).",
+    'The self-review loop runs up to maxIterations (from policy). ' +
+    'On convergence, auto-advances to ARCH_REVIEW.\n' +
+    'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).',
   args: {
     title: z
       .string()
       .optional()
-      .describe(
-        "Short title of the architecture decision. Required for Mode A.",
-      ),
+      .describe('Short title of the architecture decision. Required for Mode A.'),
     adrText: z
       .string()
       .optional()
       .describe(
-        "Full ADR body in MADR Markdown format. " +
-        "Must include ## Context, ## Decision, and ## Consequences sections. " +
-        "Required for Mode A and when selfReviewVerdict is 'changes_requested'.",
+        'Full ADR body in MADR Markdown format. ' +
+          'Must include ## Context, ## Decision, and ## Consequences sections. ' +
+          "Required for Mode A and when selfReviewVerdict is 'changes_requested'.",
       ),
     selfReviewVerdict: z
-      .enum(["approve", "changes_requested"])
+      .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        "Self-review verdict. Omit for initial ADR submission. " +
-        "'approve' = ADR is good, advance. " +
-        "'changes_requested' = ADR needs revision, provide updated adrText.",
+        'Self-review verdict. Omit for initial ADR submission. ' +
+          "'approve' = ADR is good, advance. " +
+          "'changes_requested' = ADR needs revision, provide updated adrText.",
       ),
   },
   async execute(args, context) {
@@ -104,18 +98,22 @@ export const architecture: ToolDefinition = {
       if (isInitialSubmission) {
         // ── Mode A: Initial ADR submission (delegates to rail) ────
         if (!args.title) {
-          return formatBlocked("EMPTY_ADR_TITLE");
+          return formatBlocked('EMPTY_ADR_TITLE');
         }
         if (!args.adrText) {
-          return formatBlocked("EMPTY_ADR_TEXT");
+          return formatBlocked('EMPTY_ADR_TEXT');
         }
 
-        const result = executeArchitecture(state, {
-          title: args.title,
-          adrText: args.adrText,
-        }, ctx);
+        const result = executeArchitecture(
+          state,
+          {
+            title: args.title,
+            adrText: args.adrText,
+          },
+          ctx,
+        );
 
-        if (result.kind === "blocked") {
+        if (result.kind === 'blocked') {
           return JSON.stringify({
             error: true,
             code: result.code,
@@ -127,34 +125,40 @@ export const architecture: ToolDefinition = {
 
         await writeState(sessDir, result.state);
 
-        return appendNextAction(JSON.stringify({
-          phase: result.state.phase,
-          status: `ADR ${result.state.architecture!.id} submitted: ${args.title}`,
-          adrId: result.state.architecture!.id,
-          adrDigest: result.state.architecture!.digest,
-          selfReviewIteration: 0,
-          maxSelfReviewIterations,
-          next:
-            "Self-review needed. Review the ADR critically against MADR standards. " +
-            "Check for completeness, clarity, and consequences coverage. " +
-            "Then call flowguard_architecture with selfReviewVerdict.",
-          _audit: { transitions: result.transitions },
-        }), result.state);
+        return appendNextAction(
+          JSON.stringify({
+            phase: result.state.phase,
+            status: `ADR ${result.state.architecture!.id} submitted: ${args.title}`,
+            adrId: result.state.architecture!.id,
+            adrDigest: result.state.architecture!.digest,
+            selfReviewIteration: 0,
+            maxSelfReviewIterations,
+            next:
+              'Self-review needed. Review the ADR critically against MADR standards. ' +
+              'Check for completeness, clarity, and consequences coverage. ' +
+              'Then call flowguard_architecture with selfReviewVerdict.',
+            _audit: { transitions: result.transitions },
+          }),
+          result.state,
+        );
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
         // Admissibility: must be in ARCHITECTURE phase
-        if (!isCommandAllowed(state.phase, Command.ARCHITECTURE) && state.phase !== "ARCHITECTURE") {
-          return formatBlocked("COMMAND_NOT_ALLOWED", {
-            command: "/architecture",
+        if (
+          !isCommandAllowed(state.phase, Command.ARCHITECTURE) &&
+          state.phase !== 'ARCHITECTURE'
+        ) {
+          return formatBlocked('COMMAND_NOT_ALLOWED', {
+            command: '/architecture',
             phase: state.phase,
           });
         }
 
         if (!state.selfReview) {
-          return formatBlocked("NO_SELF_REVIEW");
+          return formatBlocked('NO_SELF_REVIEW');
         }
         if (!state.architecture) {
-          return formatBlocked("NO_ARCHITECTURE");
+          return formatBlocked('NO_ARCHITECTURE');
         }
 
         const iteration = state.selfReview.iteration + 1;
@@ -162,24 +166,24 @@ export const architecture: ToolDefinition = {
         const prevDigest = state.architecture.digest;
 
         let currentAdr = state.architecture;
-        let revisionDelta: RevisionDelta = "none";
+        let revisionDelta: RevisionDelta = 'none';
 
-        if (verdict === "changes_requested") {
+        if (verdict === 'changes_requested') {
           const revisedText = args.adrText?.trim();
           if (!revisedText) {
-            return formatBlocked("EMPTY_ADR_TEXT");
+            return formatBlocked('EMPTY_ADR_TEXT');
           }
 
           // Validate MADR sections on revision
           const missingSections = validateAdrSections(revisedText);
           if (missingSections.length > 0) {
-            return formatBlocked("MISSING_ADR_SECTIONS", {
-              sections: missingSections.join(", "),
+            return formatBlocked('MISSING_ADR_SECTIONS', {
+              sections: missingSections.join(', '),
             });
           }
 
           const revisedDigest = ctx.digest(revisedText);
-          revisionDelta = revisedDigest === prevDigest ? "none" : "minor";
+          revisionDelta = revisedDigest === prevDigest ? 'none' : 'minor';
           currentAdr = {
             ...currentAdr,
             adrText: revisedText,
@@ -204,46 +208,56 @@ export const architecture: ToolDefinition = {
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: advancedState, evalResult: ev, transitions } = autoAdvance(
-          nextState,
-          evalFn,
-          ctx,
-        );
+        const {
+          state: advancedState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
         // Finalize ADR status on architecture flow completion (solo auto-approve)
-        const finalState = advancedState.phase === "ARCH_COMPLETE" && advancedState.architecture
-          ? { ...advancedState, architecture: { ...advancedState.architecture, status: "accepted" as const } }
-          : advancedState;
+        const finalState =
+          advancedState.phase === 'ARCH_COMPLETE' && advancedState.architecture
+            ? {
+                ...advancedState,
+                architecture: { ...advancedState.architecture, status: 'accepted' as const },
+              }
+            : advancedState;
         await writeState(sessDir, finalState);
 
         // Check convergence for messaging
         const converged =
           iteration >= maxSelfReviewIterations ||
-          (revisionDelta === "none" && verdict === "approve");
+          (revisionDelta === 'none' && verdict === 'approve');
 
         if (converged) {
-          return appendNextAction(JSON.stringify({
+          return appendNextAction(
+            JSON.stringify({
+              phase: finalState.phase,
+              status: `ADR self-review converged at iteration ${iteration}. ADR approved.`,
+              adrId: currentAdr.id,
+              adrDigest: currentAdr.digest,
+              selfReviewIteration: iteration,
+              next: formatEval(ev),
+              _audit: { transitions },
+            }),
+            finalState,
+          );
+        }
+
+        return appendNextAction(
+          JSON.stringify({
             phase: finalState.phase,
-            status: `ADR self-review converged at iteration ${iteration}. ADR approved.`,
+            status: `ADR self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
             adrId: currentAdr.id,
             adrDigest: currentAdr.digest,
             selfReviewIteration: iteration,
-            next: formatEval(ev),
+            revisionDelta,
+            next:
+              'Review the ADR again. Check if the revisions address all issues. ' +
+              'Call flowguard_architecture with selfReviewVerdict.',
             _audit: { transitions },
-          }), finalState);
-        }
-
-        return appendNextAction(JSON.stringify({
-          phase: finalState.phase,
-          status: `ADR self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
-          adrId: currentAdr.id,
-          adrDigest: currentAdr.digest,
-          selfReviewIteration: iteration,
-          revisionDelta,
-          next:
-            "Review the ADR again. Check if the revisions address all issues. " +
-            "Call flowguard_architecture with selfReviewVerdict.",
-          _audit: { transitions },
-        }), finalState);
+          }),
+          finalState,
+        );
       }
     } catch (err) {
       return formatError(err);

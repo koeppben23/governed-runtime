@@ -22,9 +22,9 @@
  * @version v1
  */
 
-import * as crypto from "node:crypto";
-import type { Phase, Event } from "../state/schema";
-import type { ReviewVerdict } from "../state/evidence";
+import * as crypto from 'node:crypto';
+import type { Phase, Event } from '../state/schema';
+import type { ReviewVerdict } from '../state/evidence';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -32,13 +32,13 @@ import type { ReviewVerdict } from "../state/evidence";
  * Closed set of audit event kinds.
  * Each kind has a specific detail payload structure.
  */
-export type AuditEventKind = "transition" | "tool_call" | "error" | "lifecycle" | "decision";
+export type AuditEventKind = 'transition' | 'tool_call' | 'error' | 'lifecycle' | 'decision';
 
 // ─── Detail Payloads (typed, but stored as Record<string, unknown>) ──────────
 
 /** Detail payload for transition events. */
 export interface TransitionDetail {
-  kind: "transition";
+  kind: 'transition';
   from: Phase;
   to: Phase;
   event: Event;
@@ -50,7 +50,7 @@ export interface TransitionDetail {
 
 /** Detail payload for tool call events. */
 export interface ToolCallDetail {
-  kind: "tool_call";
+  kind: 'tool_call';
   tool: string;
   /** Summarized args (no sensitive data — just keys and scalar values). */
   argsSummary: Record<string, string>;
@@ -64,7 +64,7 @@ export interface ToolCallDetail {
 
 /** Detail payload for error events. */
 export interface ErrorDetail {
-  kind: "error";
+  kind: 'error';
   code: string;
   message: string;
   recoveryHint: string;
@@ -74,8 +74,8 @@ export interface ErrorDetail {
 
 /** Detail payload for lifecycle events. */
 export interface LifecycleDetail {
-  kind: "lifecycle";
-  action: "session_created" | "session_completed" | "session_aborted";
+  kind: 'lifecycle';
+  action: 'session_created' | 'session_completed' | 'session_aborted';
   /** Final phase at lifecycle event. */
   finalPhase: Phase;
   /** Optional reason (e.g., abort reason). */
@@ -84,7 +84,7 @@ export interface LifecycleDetail {
 
 /** Detail payload for decision receipt events. */
 export interface DecisionDetail {
-  kind: "decision";
+  kind: 'decision';
   decisionId: string;
   decisionSequence: number;
   gatePhase: Phase;
@@ -132,7 +132,7 @@ export interface ChainedAuditEvent {
 // ─── Genesis Constant ─────────────────────────────────────────────────────────
 
 /** The prevHash value for the first event in a chain. */
-export const GENESIS_HASH = "genesis";
+export const GENESIS_HASH = 'genesis';
 
 // ─── Hash Computation ─────────────────────────────────────────────────────────
 
@@ -145,12 +145,12 @@ export const GENESIS_HASH = "genesis";
  */
 export function computeChainHash(
   prevHash: string,
-  event: Omit<ChainedAuditEvent, "chainHash">,
+  event: Omit<ChainedAuditEvent, 'chainHash'>,
 ): string {
   // Create a canonical representation: sorted keys, no whitespace
   const canonical = JSON.stringify(event, Object.keys(event).sort());
   const input = prevHash + canonical;
-  return crypto.createHash("sha256").update(input, "utf-8").digest("hex");
+  return crypto.createHash('sha256').update(input, 'utf-8').digest('hex');
 }
 
 // ─── Detail Conversion ────────────────────────────────────────────────────────
@@ -181,19 +181,19 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 export function createTransitionEvent(
   sessionId: string,
   phase: Phase,
-  detail: Omit<TransitionDetail, "kind">,
+  detail: Omit<TransitionDetail, 'kind'>,
   timestamp: string,
   prevHash: string,
 ): ChainedAuditEvent {
   const eventName = `transition:${detail.event}`;
-  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
     sessionId,
     phase,
     event: eventName,
     timestamp,
-    actor: "machine",
-    detail: toDetailRecord({ ...detail, kind: "transition" }),
+    actor: 'machine',
+    detail: toDetailRecord({ ...detail, kind: 'transition' }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -206,20 +206,20 @@ export function createTransitionEvent(
 export function createToolCallEvent(
   sessionId: string,
   phase: string,
-  detail: Omit<ToolCallDetail, "kind">,
+  detail: Omit<ToolCallDetail, 'kind'>,
   timestamp: string,
   actor: string,
   prevHash: string,
 ): ChainedAuditEvent {
   const eventName = `tool_call:${detail.tool}`;
-  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
     sessionId,
     phase,
     event: eventName,
     timestamp,
     actor,
-    detail: toDetailRecord({ ...detail, kind: "tool_call" }),
+    detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -231,19 +231,19 @@ export function createToolCallEvent(
  */
 export function createErrorEvent(
   sessionId: string,
-  detail: Omit<ErrorDetail, "kind">,
+  detail: Omit<ErrorDetail, 'kind'>,
   timestamp: string,
   prevHash: string,
 ): ChainedAuditEvent {
   const eventName = `error:${detail.code}`;
-  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
     sessionId,
     phase: detail.errorPhase,
     event: eventName,
     timestamp,
-    actor: "machine",
-    detail: toDetailRecord({ ...detail, kind: "error" }),
+    actor: 'machine',
+    detail: toDetailRecord({ ...detail, kind: 'error' }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -255,20 +255,20 @@ export function createErrorEvent(
  */
 export function createLifecycleEvent(
   sessionId: string,
-  detail: Omit<LifecycleDetail, "kind">,
+  detail: Omit<LifecycleDetail, 'kind'>,
   timestamp: string,
   actor: string,
   prevHash: string,
 ): ChainedAuditEvent {
   const eventName = `lifecycle:${detail.action}`;
-  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
     sessionId,
     phase: detail.finalPhase,
     event: eventName,
     timestamp,
     actor,
-    detail: toDetailRecord({ ...detail, kind: "lifecycle" }),
+    detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -281,20 +281,20 @@ export function createLifecycleEvent(
 export function createDecisionEvent(
   sessionId: string,
   gatePhase: Phase,
-  detail: Omit<DecisionDetail, "kind" | "gatePhase">,
+  detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>,
   timestamp: string,
   actor: string,
   prevHash: string,
 ): ChainedAuditEvent {
   const eventName = `decision:${detail.decisionId}`;
-  const base: Omit<ChainedAuditEvent, "chainHash"> = {
+  const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
     sessionId,
     phase: gatePhase,
     event: eventName,
     timestamp,
     actor,
-    detail: toDetailRecord({ ...detail, gatePhase, kind: "decision" }),
+    detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
     prevHash,
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
@@ -311,15 +311,15 @@ export function summarizeArgs(args: Record<string, unknown>): Record<string, str
   const summary: Record<string, string> = {};
   for (const [key, value] of Object.entries(args)) {
     if (value === null || value === undefined) {
-      summary[key] = "null";
-    } else if (typeof value === "string") {
-      summary[key] = value.length > 100 ? value.slice(0, 100) + "..." : value;
-    } else if (typeof value === "number" || typeof value === "boolean") {
+      summary[key] = 'null';
+    } else if (typeof value === 'string') {
+      summary[key] = value.length > 100 ? value.slice(0, 100) + '...' : value;
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
       summary[key] = String(value);
     } else if (Array.isArray(value)) {
       summary[key] = `[Array(${value.length})]`;
     } else {
-      summary[key] = "[Object]";
+      summary[key] = '[Object]';
     }
   }
   return summary;

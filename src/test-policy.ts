@@ -40,13 +40,7 @@ declare const performance: {
  * The five mandatory test categories.
  * Every test suite must have a describe block for each.
  */
-export const TEST_CATEGORIES = [
-  "HAPPY",
-  "BAD",
-  "CORNER",
-  "EDGE",
-  "PERF",
-] as const;
+export const TEST_CATEGORIES = ['HAPPY', 'BAD', 'CORNER', 'EDGE', 'PERF'] as const;
 
 export type TestCategory = (typeof TEST_CATEGORIES)[number];
 
@@ -59,7 +53,7 @@ export type TestCategory = (typeof TEST_CATEGORIES)[number];
 const CI_MULTIPLIER = process.env.CI ? 2 : 1;
 const PERF_BUDGET_FACTOR = Math.max(
   1,
-  Number(process.env.FLOWGUARD_PERF_BUDGET_FACTOR || "1") || 1,
+  Number(process.env.FLOWGUARD_PERF_BUDGET_FACTOR || '1') || 1,
 );
 
 /**

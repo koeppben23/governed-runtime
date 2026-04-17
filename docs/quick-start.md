@@ -90,14 +90,14 @@ Generate a compliance review report from READY:
 
 ## Common Commands
 
-| Command | Description |
-|---------|-------------|
-| `/hydrate` | Bootstrap session → READY |
-| `/ticket <text>` | Record task, start ticket flow |
-| `/plan` | Generate plan |
-| `/architecture` | Create/revise ADR |
-| `/review` | Start compliance review flow |
-| `/continue` | Auto-advance |
-| `/review-decision approve` | Approve |
-| `/review-decision changes_requested` | Request changes |
-| `/abort` | Terminate session |
+| Command                              | Description                    |
+| ------------------------------------ | ------------------------------ |
+| `/hydrate`                           | Bootstrap session → READY      |
+| `/ticket <text>`                     | Record task, start ticket flow |
+| `/plan`                              | Generate plan                  |
+| `/architecture`                      | Create/revise ADR              |
+| `/review`                            | Start compliance review flow   |
+| `/continue`                          | Auto-advance                   |
+| `/review-decision approve`           | Approve                        |
+| `/review-decision changes_requested` | Request changes                |
+| `/abort`                             | Terminate session              |

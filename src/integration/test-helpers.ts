@@ -22,10 +22,10 @@
  * @version v1
  */
 
-import * as crypto from "node:crypto";
-import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 // ─── TestToolContext ─────────────────────────────────────────────────────────
 
@@ -44,10 +44,7 @@ export interface TestToolContext {
   directory: string;
   worktree: string;
   abort: AbortSignal;
-  metadata(input: {
-    title?: string;
-    metadata?: Record<string, unknown>;
-  }): void;
+  metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 
 /**
@@ -59,15 +56,13 @@ export interface TestToolContext {
  *
  * @param overrides - Partial overrides for any context field.
  */
-export function createToolContext(
-  overrides: Partial<TestToolContext> = {},
-): TestToolContext {
+export function createToolContext(overrides: Partial<TestToolContext> = {}): TestToolContext {
   return {
     sessionID: crypto.randomUUID(),
-    messageID: "msg-test-1",
-    agent: "test-agent",
-    directory: overrides.worktree ?? "/tmp/test-dir",
-    worktree: "/tmp/test-worktree",
+    messageID: 'msg-test-1',
+    agent: 'test-agent',
+    directory: overrides.worktree ?? '/tmp/test-dir',
+    worktree: '/tmp/test-worktree',
     abort: new AbortController().signal,
     metadata: () => {},
     ...overrides,
@@ -98,7 +93,7 @@ export interface TestWorkspace {
  */
 export async function createTestWorkspace(): Promise<TestWorkspace> {
   const originalEnv = process.env.OPENCODE_CONFIG_DIR;
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fg-integ-"));
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
   process.env.OPENCODE_CONFIG_DIR = tmpDir;
 
   return {
@@ -136,10 +131,10 @@ export async function isTarAvailable(): Promise<boolean> {
   if (tarAvailableCache !== null) return tarAvailableCache;
 
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
     const execFileAsync = promisify(execFile);
-    await execFileAsync("tar", ["--version"], {
+    await execFileAsync('tar', ['--version'], {
       timeout: 5_000,
       windowsHide: true,
     });
@@ -173,17 +168,17 @@ export async function isTarAvailable(): Promise<boolean> {
  */
 export const GIT_MOCK_DEFAULTS = {
   /** Standard HTTPS remote — produces a deterministic fingerprint. */
-  remoteOriginUrl: "https://github.com/test/repo.git",
+  remoteOriginUrl: 'https://github.com/test/repo.git',
   /** Standard set of changed files for implement tool tests. */
-  changedFiles: ["src/foo.ts", "src/bar.ts"],
+  changedFiles: ['src/foo.ts', 'src/bar.ts'],
   /**
    * Standard repo signals — triggers TypeScript profile detection.
    * Must match the RepoSignals shape returned by the real listRepoSignals().
    */
   repoSignals: {
-    files: ["tsconfig.json", "package.json", "src/index.ts"],
-    packageFiles: ["package.json"],
-    configFiles: ["tsconfig.json"],
+    files: ['tsconfig.json', 'package.json', 'src/index.ts'],
+    packageFiles: ['package.json'],
+    configFiles: ['tsconfig.json'],
   },
 } as const;
 
@@ -197,12 +192,10 @@ export const GIT_MOCK_DEFAULTS = {
  *
  * @throws if the string is not valid JSON (indicates a tool bug).
  */
-export function parseToolResult<T = Record<string, unknown>>(
-  jsonStr: string,
-): T {
+export function parseToolResult<T = Record<string, unknown>>(jsonStr: string): T {
   // Tool output may include a "\nNext action: ..." footer after the JSON.
   // JSON.stringify never produces literal newlines, so the first \n is the boundary.
-  const idx = jsonStr.indexOf("\n");
+  const idx = jsonStr.indexOf('\n');
   const jsonPart = idx >= 0 ? jsonStr.slice(0, idx) : jsonStr;
   return JSON.parse(jsonPart) as T;
 }
@@ -239,8 +232,6 @@ export interface ToolBlockedResult {
 /**
  * Type guard: check if a parsed tool result is an error/blocked response.
  */
-export function isBlockedResult(
-  result: Record<string, unknown>,
-): boolean {
-  return result.error === true && typeof result.code === "string";
+export function isBlockedResult(result: Record<string, unknown>): boolean {
+  return result.error === true && typeof result.code === 'string';
 }

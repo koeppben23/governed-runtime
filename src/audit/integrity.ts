@@ -24,7 +24,7 @@
  * @version v1
  */
 
-import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from "./types";
+import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types';
 
 // ─── Verification Result ──────────────────────────────────────────────────────
 
@@ -110,9 +110,7 @@ export function verifyEvent(
  * @param events - The audit trail events in chronological order.
  * @returns ChainVerification with full results.
  */
-export function verifyChain(
-  events: Array<Record<string, unknown>>,
-): ChainVerification {
+export function verifyChain(events: Array<Record<string, unknown>>): ChainVerification {
   const results: EventVerification[] = [];
   let skippedCount = 0;
   let lastHash = GENESIS_HASH;
@@ -156,9 +154,7 @@ export function verifyChain(
  * @param events - The audit trail events in chronological order.
  * @returns The chainHash of the last chained event, or GENESIS_HASH if none.
  */
-export function getLastChainHash(
-  events: Array<Record<string, unknown>>,
-): string {
+export function getLastChainHash(events: Array<Record<string, unknown>>): string {
   for (let i = events.length - 1; i >= 0; i--) {
     const raw = events[i]!;
     if (isChainedEvent(raw)) {
@@ -176,8 +172,8 @@ export function getLastChainHash(
  */
 function isChainedEvent(event: Record<string, unknown>): boolean {
   return (
-    typeof event.chainHash === "string" &&
-    typeof event.prevHash === "string" &&
+    typeof event.chainHash === 'string' &&
+    typeof event.prevHash === 'string' &&
     event.chainHash.length > 0 &&
     event.prevHash.length > 0
   );

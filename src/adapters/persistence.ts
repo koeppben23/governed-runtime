@@ -41,29 +41,29 @@
  * @version v2
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as crypto from "node:crypto";
-import { SessionState } from "../state/schema";
-import { AuditEvent, ReviewReport } from "../state/evidence";
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { SessionState } from '../state/schema';
+import { AuditEvent, ReviewReport } from '../state/evidence';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
   type DiscoveryResult,
   type ProfileResolution,
-} from "../discovery/types";
+} from '../discovery/types';
 import {
   FlowGuardConfigSchema,
   DEFAULT_CONFIG,
   type FlowGuardConfig,
-} from "../config/flowguard-config";
+} from '../config/flowguard-config';
 
 // -- Constants ----------------------------------------------------------------
 
-const STATE_FILE = "session-state.json";
-const REPORT_FILE = "review-report.json";
-const AUDIT_FILE = "audit.jsonl";
-const CONFIG_FILE = "config.json";
+const STATE_FILE = 'session-state.json';
+const REPORT_FILE = 'review-report.json';
+const AUDIT_FILE = 'audit.jsonl';
+const CONFIG_FILE = 'config.json';
 
 // -- Path Helpers -------------------------------------------------------------
 
@@ -102,7 +102,7 @@ export class PersistenceError extends Error {
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = "PersistenceError";
+    this.name = 'PersistenceError';
     this.code = code;
   }
 }
@@ -135,7 +135,7 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
 
   try {
-    await fs.writeFile(tempPath, content, "utf-8");
+    await fs.writeFile(tempPath, content, 'utf-8');
     await fs.rename(tempPath, filePath);
   } catch (err) {
     // Best-effort cleanup of temp file
@@ -145,7 +145,7 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
       /* ignore -- temp file may not have been created */
     }
     throw new PersistenceError(
-      "WRITE_FAILED",
+      'WRITE_FAILED',
       `Atomic write failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -168,11 +168,11 @@ export async function readState(sessionDir: string): Promise<SessionState | null
 
   let raw: string;
   try {
-    raw = await fs.readFile(filePath, "utf-8");
+    raw = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
     throw new PersistenceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read state file: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -181,16 +181,13 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new PersistenceError(
-      "PARSE_FAILED",
-      `State file is not valid JSON: ${filePath}`,
-    );
+    throw new PersistenceError('PARSE_FAILED', `State file is not valid JSON: ${filePath}`);
   }
 
   const result = SessionState.safeParse(json);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `State file failed Zod validation: ${result.error.message}`,
     );
   }
@@ -211,21 +208,18 @@ export async function readState(sessionDir: string): Promise<SessionState | null
  * @param state - SessionState to persist.
  * @throws PersistenceError if validation fails or write fails.
  */
-export async function writeState(
-  sessionDir: string,
-  state: SessionState,
-): Promise<void> {
+export async function writeState(sessionDir: string, state: SessionState): Promise<void> {
   // Validate BEFORE writing -- fail-closed
   const result = SessionState.safeParse(state);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Refusing to persist invalid state: ${result.error.message}`,
     );
   }
 
   await ensureDir(sessionDir);
-  const json = JSON.stringify(result.data, null, 2) + "\n";
+  const json = JSON.stringify(result.data, null, 2) + '\n';
   await atomicWrite(statePath(sessionDir), json);
 }
 
@@ -253,20 +247,17 @@ export async function stateExists(sessionDir: string): Promise<boolean> {
  * @param sessionDir - Absolute path to the session directory.
  * @param report - ReviewReport to persist.
  */
-export async function writeReport(
-  sessionDir: string,
-  report: ReviewReport,
-): Promise<void> {
+export async function writeReport(sessionDir: string, report: ReviewReport): Promise<void> {
   const result = ReviewReport.safeParse(report);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Refusing to persist invalid report: ${result.error.message}`,
     );
   }
 
   await ensureDir(sessionDir);
-  const json = JSON.stringify(result.data, null, 2) + "\n";
+  const json = JSON.stringify(result.data, null, 2) + '\n';
   await atomicWrite(reportPath(sessionDir), json);
 }
 
@@ -275,16 +266,14 @@ export async function writeReport(
  *
  * @param sessionDir - Absolute path to the session directory.
  */
-export async function readReport(
-  sessionDir: string,
-): Promise<ReviewReport | null> {
+export async function readReport(sessionDir: string): Promise<ReviewReport | null> {
   let raw: string;
   try {
-    raw = await fs.readFile(reportPath(sessionDir), "utf-8");
+    raw = await fs.readFile(reportPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
     throw new PersistenceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read report: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -293,16 +282,13 @@ export async function readReport(
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new PersistenceError(
-      "PARSE_FAILED",
-      `Report file is not valid JSON`,
-    );
+    throw new PersistenceError('PARSE_FAILED', `Report file is not valid JSON`);
   }
 
   const result = ReviewReport.safeParse(json);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Report file failed Zod validation: ${result.error.message}`,
     );
   }
@@ -325,21 +311,18 @@ export async function readReport(
  * @param sessionDir - Absolute path to the session directory.
  * @param event - AuditEvent to append.
  */
-export async function appendAuditEvent(
-  sessionDir: string,
-  event: AuditEvent,
-): Promise<void> {
+export async function appendAuditEvent(sessionDir: string, event: AuditEvent): Promise<void> {
   const result = AuditEvent.safeParse(event);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Refusing to append invalid audit event: ${result.error.message}`,
     );
   }
 
   await ensureDir(sessionDir);
-  const line = JSON.stringify(result.data) + "\n";
-  await fs.appendFile(auditPath(sessionDir), line, "utf-8");
+  const line = JSON.stringify(result.data) + '\n';
+  await fs.appendFile(auditPath(sessionDir), line, 'utf-8');
 }
 
 /**
@@ -359,11 +342,11 @@ export async function readAuditTrail(
 ): Promise<{ events: AuditEvent[]; skipped: number }> {
   let raw: string;
   try {
-    raw = await fs.readFile(auditPath(sessionDir), "utf-8");
+    raw = await fs.readFile(auditPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return { events: [], skipped: 0 };
     throw new PersistenceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read audit trail: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -371,7 +354,7 @@ export async function readAuditTrail(
   const events: AuditEvent[] = [];
   let skipped = 0;
 
-  for (const line of raw.split("\n")) {
+  for (const line of raw.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
@@ -413,11 +396,11 @@ export async function readConfig(workspaceDir: string): Promise<FlowGuardConfig>
 
   let raw: string;
   try {
-    raw = await fs.readFile(filePath, "utf-8");
+    raw = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return DEFAULT_CONFIG;
     throw new PersistenceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read config file: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -426,16 +409,13 @@ export async function readConfig(workspaceDir: string): Promise<FlowGuardConfig>
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new PersistenceError(
-      "PARSE_FAILED",
-      `Config file is not valid JSON: ${filePath}`,
-    );
+    throw new PersistenceError('PARSE_FAILED', `Config file is not valid JSON: ${filePath}`);
   }
 
   const result = FlowGuardConfigSchema.safeParse(json);
   if (!result.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Config file failed schema validation: ${result.error.message}`,
     );
   }
@@ -454,7 +434,7 @@ export async function readConfig(workspaceDir: string): Promise<FlowGuardConfig>
  */
 export async function writeDefaultConfig(workspaceDir: string): Promise<void> {
   await ensureDir(workspaceDir);
-  const json = JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n";
+  const json = JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n';
   await atomicWrite(configPath(workspaceDir), json);
 }
 
@@ -469,21 +449,18 @@ export async function writeDefaultConfig(workspaceDir: string): Promise<void> {
  * @param workspaceDir - Absolute path to the workspace directory.
  * @param result - The DiscoveryResult to persist.
  */
-export async function writeDiscovery(
-  workspaceDir: string,
-  result: DiscoveryResult,
-): Promise<void> {
+export async function writeDiscovery(workspaceDir: string, result: DiscoveryResult): Promise<void> {
   const parsed = DiscoveryResultSchema.safeParse(result);
   if (!parsed.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `DiscoveryResult failed schema validation: ${parsed.error.message}`,
     );
   }
-  const dir = path.join(workspaceDir, "discovery");
+  const dir = path.join(workspaceDir, 'discovery');
   await ensureDir(dir);
-  const json = JSON.stringify(parsed.data, null, 2) + "\n";
-  await atomicWrite(path.join(dir, "discovery.json"), json);
+  const json = JSON.stringify(parsed.data, null, 2) + '\n';
+  await atomicWrite(path.join(dir, 'discovery.json'), json);
 }
 
 /**
@@ -494,17 +471,15 @@ export async function writeDiscovery(
  *
  * @param workspaceDir - Absolute path to the workspace directory.
  */
-export async function readDiscovery(
-  workspaceDir: string,
-): Promise<DiscoveryResult | null> {
-  const filePath = path.join(workspaceDir, "discovery", "discovery.json");
+export async function readDiscovery(workspaceDir: string): Promise<DiscoveryResult | null> {
+  const filePath = path.join(workspaceDir, 'discovery', 'discovery.json');
   let raw: string;
   try {
-    raw = await fs.readFile(filePath, "utf-8");
+    raw = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
     throw new PersistenceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read discovery file: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -513,16 +488,13 @@ export async function readDiscovery(
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new PersistenceError(
-      "PARSE_FAILED",
-      `Discovery file is not valid JSON`,
-    );
+    throw new PersistenceError('PARSE_FAILED', `Discovery file is not valid JSON`);
   }
 
   const parsed = DiscoveryResultSchema.safeParse(json);
   if (!parsed.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Discovery file failed schema validation: ${parsed.error.message}`,
     );
   }
@@ -544,14 +516,14 @@ export async function writeProfileResolution(
   const parsed = ProfileResolutionSchema.safeParse(resolution);
   if (!parsed.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `ProfileResolution failed schema validation: ${parsed.error.message}`,
     );
   }
-  const dir = path.join(workspaceDir, "discovery");
+  const dir = path.join(workspaceDir, 'discovery');
   await ensureDir(dir);
-  const json = JSON.stringify(parsed.data, null, 2) + "\n";
-  await atomicWrite(path.join(dir, "profile-resolution.json"), json);
+  const json = JSON.stringify(parsed.data, null, 2) + '\n';
+  await atomicWrite(path.join(dir, 'profile-resolution.json'), json);
 }
 
 /**
@@ -569,13 +541,13 @@ export async function writeDiscoverySnapshot(
   const parsed = DiscoveryResultSchema.safeParse(result);
   if (!parsed.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Discovery snapshot failed schema validation: ${parsed.error.message}`,
     );
   }
   await ensureDir(sessionDir);
-  const json = JSON.stringify(parsed.data, null, 2) + "\n";
-  await atomicWrite(path.join(sessionDir, "discovery-snapshot.json"), json);
+  const json = JSON.stringify(parsed.data, null, 2) + '\n';
+  await atomicWrite(path.join(sessionDir, 'discovery-snapshot.json'), json);
 }
 
 /**
@@ -593,16 +565,13 @@ export async function writeProfileResolutionSnapshot(
   const parsed = ProfileResolutionSchema.safeParse(resolution);
   if (!parsed.success) {
     throw new PersistenceError(
-      "SCHEMA_VALIDATION_FAILED",
+      'SCHEMA_VALIDATION_FAILED',
       `Profile resolution snapshot failed schema validation: ${parsed.error.message}`,
     );
   }
   await ensureDir(sessionDir);
-  const json = JSON.stringify(parsed.data, null, 2) + "\n";
-  await atomicWrite(
-    path.join(sessionDir, "profile-resolution-snapshot.json"),
-    json,
-  );
+  const json = JSON.stringify(parsed.data, null, 2) + '\n';
+  await atomicWrite(path.join(sessionDir, 'profile-resolution-snapshot.json'), json);
 }
 
 // -- Internals ----------------------------------------------------------------
@@ -610,9 +579,9 @@ export async function writeProfileResolutionSnapshot(
 /** Type-safe ENOENT check. Shared by persistence and git adapters. */
 export function isEnoent(err: unknown): boolean {
   return (
-    typeof err === "object" &&
+    typeof err === 'object' &&
     err !== null &&
-    "code" in err &&
-    (err as { code: unknown }).code === "ENOENT"
+    'code' in err &&
+    (err as { code: unknown }).code === 'ENOENT'
   );
 }

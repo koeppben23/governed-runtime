@@ -12,11 +12,11 @@
  * @version v1
  */
 
-import type { SessionState, Phase, Event } from "../state/schema";
-import type { LoopVerdict, RevisionDelta } from "../state/evidence";
-import { evaluate } from "../machine/evaluate";
-import type { EvalResult } from "../machine/evaluate";
-import type { FlowGuardPolicy } from "../config/policy";
+import type { SessionState, Phase, Event } from '../state/schema';
+import type { LoopVerdict, RevisionDelta } from '../state/evidence';
+import { evaluate } from '../machine/evaluate';
+import type { EvalResult } from '../machine/evaluate';
+import type { FlowGuardPolicy } from '../config/policy';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ export interface AutoAdvanceResult {
 
 /** Rail succeeded — state was mutated, evaluation was performed. */
 export interface RailOk {
-  readonly kind: "ok";
+  readonly kind: 'ok';
   /** The new session state (caller MUST persist atomically). */
   readonly state: SessionState;
   /** The evaluation result at the final phase. */
@@ -66,7 +66,7 @@ export interface RailOk {
 
 /** Rail was blocked — precondition failed, state is UNCHANGED. */
 export interface RailBlocked {
-  readonly kind: "blocked";
+  readonly kind: 'blocked';
   /** Machine-readable block code (e.g., "COMMAND_NOT_ALLOWED", "TICKET_REQUIRED"). */
   readonly code: string;
   /** Human-readable explanation. */
@@ -112,9 +112,7 @@ export const DEFAULT_MAX_REVIEW_ITERATIONS = 3;
  * Create a policy-aware evaluation closure.
  * Eliminates the repeated `const evalFn = (s: SessionState) => evaluate(s, ctx.policy)` pattern.
  */
-export function createPolicyEvalFn(
-  ctx: RailContext,
-): (state: SessionState) => EvalResult {
+export function createPolicyEvalFn(ctx: RailContext): (state: SessionState) => EvalResult {
   return (s: SessionState) => evaluate(s, ctx.policy);
 }
 
@@ -160,7 +158,7 @@ export function autoAdvance(
   let current = state;
   let result = evalFn(current);
 
-  for (let step = 0; step < MAX_STEPS && result.kind === "transition"; step++) {
+  for (let step = 0; step < MAX_STEPS && result.kind === 'transition'; step++) {
     // Self-loop guard: if the transition targets the same phase, the state
     // won't change from the guards' perspective → stop to avoid pointless cycles.
     // Example: PLAN + SELF_REVIEW_PENDING → PLAN (waiting for LLM review).
@@ -215,12 +213,11 @@ function processIteration<T extends { readonly digest: string }>(
   current: T,
   result: IterationResult<T>,
 ): { readonly artifact: T; readonly revisionDelta: RevisionDelta } {
-  if (result.verdict === "changes_requested" && result.updated) {
-    const delta: RevisionDelta =
-      result.updated.digest === current.digest ? "none" : "minor";
+  if (result.verdict === 'changes_requested' && result.updated) {
+    const delta: RevisionDelta = result.updated.digest === current.digest ? 'none' : 'minor';
     return { artifact: result.updated, revisionDelta: delta };
   }
-  return { artifact: current, revisionDelta: "none" };
+  return { artifact: current, revisionDelta: 'none' };
 }
 
 /**
@@ -239,8 +236,8 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
 ): Promise<ConvergenceResult<T>> {
   let current = initial;
   let prevDigest: string | null = null;
-  let revisionDelta: RevisionDelta = "major";
-  let verdict: LoopVerdict = "changes_requested";
+  let revisionDelta: RevisionDelta = 'major';
+  let verdict: LoopVerdict = 'changes_requested';
   let iteration = 0;
 
   while (iteration < maxIterations) {
@@ -253,7 +250,7 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
     revisionDelta = processed.revisionDelta;
     current = processed.artifact;
 
-    if (revisionDelta === "none" && verdict === "approve") break;
+    if (revisionDelta === 'none' && verdict === 'approve') break;
   }
 
   return {
@@ -287,8 +284,8 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
       maxIterations,
       prevDigest: null,
       currDigest: current.digest,
-      revisionDelta: "none",
-      verdict: "approve",
+      revisionDelta: 'none',
+      verdict: 'approve',
     };
   }
 

@@ -25,22 +25,18 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { BindingInfo } from "../state/evidence";
-import type { DiscoverySummary } from "../discovery/types";
-import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext } from "./types";
-import { blocked } from "../config/reasons";
-import { defaultProfileRegistry } from "../config/profile";
-import type { FlowGuardProfile, RepoSignals } from "../config/profile";
-import type { DiscoveryResult } from "../discovery/types";
-import { extractBaseInstructions, extractByPhaseInstructions } from "../config/profile";
-import { resolvePolicy, createPolicySnapshot } from "../config/policy";
-import type {
-  EffectiveGateBehavior,
-  PolicyDegradedReason,
-  PolicyMode,
-} from "../config/policy";
+import type { SessionState } from '../state/schema';
+import type { BindingInfo } from '../state/evidence';
+import type { DiscoverySummary } from '../discovery/types';
+import { evaluate } from '../machine/evaluate';
+import type { RailResult, RailContext } from './types';
+import { blocked } from '../config/reasons';
+import { defaultProfileRegistry } from '../config/profile';
+import type { FlowGuardProfile, RepoSignals } from '../config/profile';
+import type { DiscoveryResult } from '../discovery/types';
+import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile';
+import { resolvePolicy, createPolicySnapshot } from '../config/policy';
+import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -123,25 +119,25 @@ export function executeHydrate(
 ): RailResult {
   // 1. Validate input
   if (!input.sessionId.trim()) {
-    return blocked("MISSING_SESSION_ID");
+    return blocked('MISSING_SESSION_ID');
   }
   if (!input.worktree.trim()) {
-    return blocked("MISSING_WORKTREE");
+    return blocked('MISSING_WORKTREE');
   }
   if (!input.fingerprint || !/^[0-9a-f]{24}$/.test(input.fingerprint)) {
-    return blocked("INVALID_FINGERPRINT");
+    return blocked('INVALID_FINGERPRINT');
   }
 
   // 2. Idempotent: if state exists, return it unchanged
   if (existingState !== null) {
     const result = evaluate(existingState, ctx.policy);
-    return { kind: "ok", state: existingState, evalResult: result, transitions: [] };
+    return { kind: 'ok', state: existingState, evalResult: result, transitions: [] };
   }
 
   // 3. Resolve profile → activeChecks + activeProfile
   let profile: FlowGuardProfile | undefined;
 
-  if (input.profileId && input.profileId !== "baseline") {
+  if (input.profileId && input.profileId !== 'baseline') {
     // Explicit profile requested — look up by ID
     profile = defaultProfileRegistry.get(input.profileId);
   } else if (input.repoSignals) {
@@ -154,11 +150,11 @@ export function executeHydrate(
 
   // Fall back to baseline if nothing matched
   if (!profile) {
-    profile = defaultProfileRegistry.get("baseline");
+    profile = defaultProfileRegistry.get('baseline');
   }
 
-  const activeChecks =
-    input.activeChecks ?? profile?.activeChecks?.slice() ?? ["test_quality", "rollback_safety"];
+  const activeChecks = input.activeChecks ??
+    profile?.activeChecks?.slice() ?? ['test_quality', 'rollback_safety'];
 
   const activeProfile = profile
     ? {
@@ -172,13 +168,13 @@ export function executeHydrate(
     : null;
 
   // 4. Resolve policy → immutable snapshot
-  const policyMode = input.policyMode ?? "solo";
+  const policyMode = input.policyMode ?? 'solo';
   const policy = resolvePolicy(policyMode);
   const now = ctx.now();
   const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
     requestedMode: input.requestedPolicyMode ?? policy.mode,
     effectiveGateBehavior:
-      input.effectiveGateBehavior ?? (policy.requireHumanGates ? "human_gated" : "auto_approve"),
+      input.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     degradedReason: input.policyDegradedReason,
   });
 
@@ -193,8 +189,8 @@ export function executeHydrate(
   // 6. Create new state
   const newState: SessionState = {
     id: crypto.randomUUID(),
-    schemaVersion: "v1",
-    phase: "READY",
+    schemaVersion: 'v1',
+    phase: 'READY',
 
     binding,
 
@@ -228,5 +224,5 @@ export function executeHydrate(
   // 7. Evaluate (will be "pending" at READY — waiting for flow selection)
   const result = evaluate(newState, ctx.policy);
 
-  return { kind: "ok", state: newState, evalResult: result, transitions: [] };
+  return { kind: 'ok', state: newState, evalResult: result, transitions: [] };
 }

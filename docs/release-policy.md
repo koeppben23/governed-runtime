@@ -13,11 +13,11 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 ## Delivery Scope
 
-| Category | Description | Example |
-|----------|-------------|---------|
-| **Technically Enforced** | Guarantees by implementation | SHA-256 checksums, Zod validation |
-| **Currently Delivered** | Available in current release | Release artifacts, checksums |
-| **Customer Responsibility** | Customer handles | Monitoring releases, testing upgrades |
+| Category                    | Description                  | Example                               |
+| --------------------------- | ---------------------------- | ------------------------------------- |
+| **Technically Enforced**    | Guarantees by implementation | SHA-256 checksums, Zod validation     |
+| **Currently Delivered**     | Available in current release | Release artifacts, checksums          |
+| **Customer Responsibility** | Customer handles             | Monitoring releases, testing upgrades |
 
 ---
 
@@ -27,19 +27,19 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 FlowGuard uses [Semantic Versioning](https://semver.org/):
 
-| Version | Example | Meaning |
-|---------|---------|---------|
-| **Major** | 2.0.0 | Breaking changes — check release notes |
-| **Minor** | 1.0.0 | New features — test before production use |
-| **Patch** | 1.0.0 | Bug fixes — typically compatible |
+| Version   | Example | Meaning                                   |
+| --------- | ------- | ----------------------------------------- |
+| **Major** | 2.0.0   | Breaking changes — check release notes    |
+| **Minor** | 1.0.0   | New features — test before production use |
+| **Patch** | 1.0.0   | Bug fixes — typically compatible          |
 
 ### Version Lifecycle
 
-| Status | Description | Duration |
-|--------|-------------|----------|
-| **Latest** | Current stable release | Until next release |
-| **Previous** | Prior release | Best-effort support |
-| **Older** | Unsupported | No updates |
+| Status       | Description            | Duration            |
+| ------------ | ---------------------- | ------------------- |
+| **Latest**   | Current stable release | Until next release  |
+| **Previous** | Prior release          | Best-effort support |
+| **Older**    | Unsupported            | No updates          |
 
 ---
 
@@ -54,19 +54,19 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 ### Artifact Contents
 
-| Component | Description |
-|-----------|-------------|
-| **CLI** | `flowguard` command |
-| **Core** | State machine, rails, adapters, audit |
-| **Integration** | OpenCode tools, plugin, commands |
-| **Templates** | Package.json, opencode.json templates |
+| Component       | Description                           |
+| --------------- | ------------------------------------- |
+| **CLI**         | `flowguard` command                   |
+| **Core**        | State machine, rails, adapters, audit |
+| **Integration** | OpenCode tools, plugin, commands      |
+| **Templates**   | Package.json, opencode.json templates |
 
 ### Integrity Verification
 
-| Check | Mechanism |
-|-------|-----------|
-| **Artifact integrity** | SHA-256 checksum published on Releases page |
-| **Content integrity** | SHA-256 content digest in `flowguard-mandates.md` |
+| Check                  | Mechanism                                         |
+| ---------------------- | ------------------------------------------------- |
+| **Artifact integrity** | SHA-256 checksum published on Releases page       |
+| **Content integrity**  | SHA-256 content digest in `flowguard-mandates.md` |
 
 ---
 
@@ -76,14 +76,15 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 
 All FlowGuard releases are distributed via GitHub Releases (or an approved internal mirror):
 
-| Asset | Purpose |
-|-------|---------|
-| `flowguard-core-{version}.tgz` | Pre-built npm package |
-| `checksums.sha256` | Checksum file for verification |
+| Asset                          | Purpose                        |
+| ------------------------------ | ------------------------------ |
+| `flowguard-core-{version}.tgz` | Pre-built npm package          |
+| `checksums.sha256`             | Checksum file for verification |
 
 ### Release Announcements
 
 Release notes are published on the GitHub Releases page, including:
+
 - Changes since previous version
 - Known issues
 - Upgrade considerations
@@ -94,15 +95,16 @@ Release notes are published on the GitHub Releases page, including:
 
 ### Version Support
 
-| Version Type | Support Level |
-|--------------|---------------|
-| **Latest patch** | Full support — bug fixes, security patches |
-| **Previous minor** | Best-effort — security patches only |
-| **Older major** | Unsupported |
+| Version Type       | Support Level                              |
+| ------------------ | ------------------------------------------ |
+| **Latest patch**   | Full support — bug fixes, security patches |
+| **Previous minor** | Best-effort — security patches only        |
+| **Older major**    | Unsupported                                |
 
 ### Security Updates
 
 Critical security vulnerabilities are addressed in the latest patch release. Organizations should:
+
 - Monitor releases for security updates
 - Test security patches before deploying
 - Maintain rollback capability
@@ -130,6 +132,7 @@ Critical security vulnerabilities are addressed in the latest patch release. Org
 ### Customer Responsibility
 
 Organizations should maintain:
+
 - Copies of current and previous release artifacts
 - Checksums for verification
 - Rollback procedure documentation
@@ -151,10 +154,11 @@ Organizations should maintain:
 ## Contact
 
 For release-related questions:
+
 - Check [GitHub Releases](https://github.com/koeppben23/governed-runtime/releases)
 - Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues)
 
 ---
 
-*FlowGuard Version: 1.0.0*
-*Last Updated: 2026-04-15*
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_

@@ -28,10 +28,10 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { ErrorInfo } from "../state/evidence";
-import { evaluate } from "../machine/evaluate";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
+import type { SessionState } from '../state/schema';
+import type { ErrorInfo } from '../state/evidence';
+import { evaluate } from '../machine/evaluate';
+import type { RailResult, RailContext, TransitionRecord } from './types';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -44,35 +44,31 @@ export interface AbortInput {
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
-export function executeAbort(
-  state: SessionState,
-  input: AbortInput,
-  ctx: RailContext,
-): RailResult {
+export function executeAbort(state: SessionState, input: AbortInput, ctx: RailContext): RailResult {
   // 1. Idempotent at COMPLETE — already terminal
-  if (state.phase === "COMPLETE") {
+  if (state.phase === 'COMPLETE') {
     const result = evaluate(state, ctx.policy);
-    return { kind: "ok", state, evalResult: result, transitions: [] };
+    return { kind: 'ok', state, evalResult: result, transitions: [] };
   }
 
   // 2. Record abort error
   const now = ctx.now();
 
   const error: ErrorInfo = {
-    code: "ABORTED",
-    message: input.reason || "Session aborted",
-    recoveryHint: "Start a new session with /hydrate",
+    code: 'ABORTED',
+    message: input.reason || 'Session aborted',
+    recoveryHint: 'Start a new session with /hydrate',
     occurredAt: now,
   };
 
   // 3. Directly set terminal state (bypasses topology)
   const finalState: SessionState = {
     ...state,
-    phase: "COMPLETE",
+    phase: 'COMPLETE',
     transition: {
       from: state.phase,
-      to: "COMPLETE",
-      event: "ABORT",
+      to: 'COMPLETE',
+      event: 'ABORT',
       at: now,
     },
     error,
@@ -81,13 +77,13 @@ export function executeAbort(
   // Record the bypass transition for audit
   const transition: TransitionRecord = {
     from: state.phase,
-    to: "COMPLETE",
-    event: "ABORT",
+    to: 'COMPLETE',
+    event: 'ABORT',
     at: now,
   };
 
   // 4. Evaluate (returns "terminal") — policy-aware
   const result = evaluate(finalState, ctx.policy);
 
-  return { kind: "ok", state: finalState, evalResult: result, transitions: [transition] };
+  return { kind: 'ok', state: finalState, evalResult: result, transitions: [transition] };
 }

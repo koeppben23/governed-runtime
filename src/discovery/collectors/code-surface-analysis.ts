@@ -8,15 +8,15 @@
  * This collector is heuristic and confidence-based. It is not semantic truth.
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type {
   CollectorInput,
   CollectorOutput,
   CodeSurfaceSignal,
   CodeSurfacesInfo,
   EvidenceClass,
-} from "../types";
+} from '../types';
 
 const MAX_FILES = 200;
 const MAX_BYTES_PER_FILE = 64 * 1024;
@@ -24,8 +24,18 @@ const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 2_500;
 
 const SOURCE_EXTENSIONS = new Set([
-  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-  ".java", ".kt", ".go", ".py", ".rb", ".cs",
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.java',
+  '.kt',
+  '.go',
+  '.py',
+  '.rb',
+  '.cs',
 ]);
 
 interface Rule {
@@ -38,30 +48,30 @@ interface Rule {
 
 const ENDPOINT_RULES: readonly Rule[] = [
   {
-    id: "http-endpoint",
-    label: "HTTP route handler",
+    id: 'http-endpoint',
+    label: 'HTTP route handler',
     confidence: 0.85,
-    classification: "derived_signal",
+    classification: 'derived_signal',
     patterns: [
       /\b(?:app|router|fastify)\.(?:get|post|put|patch|delete|route)\s*\(/,
       /@(Get|Post|Put|Patch|Delete|Request)Mapping\b/,
     ],
   },
   {
-    id: "graphql-endpoint",
-    label: "GraphQL endpoint",
+    id: 'graphql-endpoint',
+    label: 'GraphQL endpoint',
     confidence: 0.8,
-    classification: "derived_signal",
+    classification: 'derived_signal',
     patterns: [/\bgraphql\s*\(/, /\bApolloServer\b/, /type\s+Query\s*\{/],
   },
 ];
 
 const AUTH_RULES: readonly Rule[] = [
   {
-    id: "auth-boundary",
-    label: "Authentication/Authorization boundary",
+    id: 'auth-boundary',
+    label: 'Authentication/Authorization boundary',
     confidence: 0.8,
-    classification: "derived_signal",
+    classification: 'derived_signal',
     patterns: [
       /\b(authenticate|authorize|authMiddleware|requireAuth)\b/,
       /\bpassport\b|\bjwt\b|\boauth\b/i,
@@ -72,10 +82,10 @@ const AUTH_RULES: readonly Rule[] = [
 
 const DATA_RULES: readonly Rule[] = [
   {
-    id: "data-access",
-    label: "Data access boundary",
+    id: 'data-access',
+    label: 'Data access boundary',
     confidence: 0.8,
-    classification: "derived_signal",
+    classification: 'derived_signal',
     patterns: [
       /\bprisma\.[a-z]+\b/i,
       /\b(sequelize|typeorm|mongoose)\b/i,
@@ -88,10 +98,10 @@ const DATA_RULES: readonly Rule[] = [
 
 const INTEGRATION_RULES: readonly Rule[] = [
   {
-    id: "external-integration",
-    label: "External system integration",
+    id: 'external-integration',
+    label: 'External system integration',
     confidence: 0.75,
-    classification: "derived_signal",
+    classification: 'derived_signal',
     patterns: [
       /\b(axios|fetch|HttpClient)\s*\(/,
       /\b(kafka|rabbitmq|sqs|pubsub|nats)\b/i,
@@ -106,14 +116,14 @@ export async function collectCodeSurfaces(
   try {
     const result = await withTimeout(runCollector(input), TIMEOUT_MS);
     return {
-      status: result.status === "ok" ? "complete" : result.status,
+      status: result.status === 'ok' ? 'complete' : result.status,
       data: result,
     };
   } catch {
     return {
-      status: "failed",
+      status: 'failed',
       data: {
-        status: "failed",
+        status: 'failed',
         endpoints: [],
         authBoundaries: [],
         dataAccess: [],
@@ -154,18 +164,18 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
     const fullPath = path.join(input.worktreePath, relPath);
     let content: string;
     try {
-      content = await fs.readFile(fullPath, "utf-8");
+      content = await fs.readFile(fullPath, 'utf-8');
     } catch {
       degraded = true;
       continue;
     }
 
-    if (Buffer.byteLength(content, "utf-8") > MAX_BYTES_PER_FILE) {
+    if (Buffer.byteLength(content, 'utf-8') > MAX_BYTES_PER_FILE) {
       degraded = true;
       content = content.slice(0, MAX_BYTES_PER_FILE);
     }
 
-    const consumed = Buffer.byteLength(content, "utf-8");
+    const consumed = Buffer.byteLength(content, 'utf-8');
     if (scannedBytes + consumed > MAX_TOTAL_BYTES) {
       degraded = true;
       break;
@@ -181,7 +191,7 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
   }
 
   return {
-    status: degraded ? "partial" : "ok",
+    status: degraded ? 'partial' : 'ok',
     endpoints,
     authBoundaries,
     dataAccess,
@@ -203,10 +213,10 @@ function detectSignals(
   rules: readonly Rule[],
   out: CodeSurfaceSignal[],
 ): void {
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   for (const rule of rules) {
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
+      const line = lines[i] ?? '';
       if (!rule.patterns.some((r) => r.test(line))) continue;
       out.push({
         id: rule.id,

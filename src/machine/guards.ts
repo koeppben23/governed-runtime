@@ -15,7 +15,7 @@
  * @version v2
  */
 
-import type { SessionState, Phase, Event } from "../state/schema";
+import type { SessionState, Phase, Event } from '../state/schema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,12 +31,10 @@ export interface GuardEntry {
 // ─── Guard Predicates ─────────────────────────────────────────────────────────
 
 /** Error is present — triggers ERROR event (always checked first). */
-export const hasError: GuardFn = (s) =>
-  s.error !== null;
+export const hasError: GuardFn = (s) => s.error !== null;
 
 /** Ticket present AND plan has a current version → ready to advance. */
-export const hasPlanReady: GuardFn = (s) =>
-  s.ticket !== null && s.plan !== null;
+export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null;
 
 /**
  * Convergence predicate for review loops (digest-stop).
@@ -56,7 +54,7 @@ export function isConverged(review: {
 }): boolean {
   return (
     review.iteration >= review.maxIterations ||
-    (review.revisionDelta === "none" && review.verdict === "approve")
+    (review.revisionDelta === 'none' && review.verdict === 'approve')
   );
 }
 
@@ -70,8 +68,7 @@ export const selfReviewMet: GuardFn = (s) => {
 };
 
 /** Self-review loop still iterating. Used by both PLAN and ARCHITECTURE phases. */
-export const selfReviewPending: GuardFn = (s) =>
-  s.selfReview !== null && !selfReviewMet(s);
+export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfReviewMet(s);
 
 /**
  * All active validation checks passed.
@@ -89,12 +86,10 @@ export const allValidationsPassed: GuardFn = (s) => {
 };
 
 /** At least one validation check was executed and not all passed. */
-export const checkFailed: GuardFn = (s) =>
-  s.validation.length > 0 && !allValidationsPassed(s);
+export const checkFailed: GuardFn = (s) => s.validation.length > 0 && !allValidationsPassed(s);
 
 /** Implementation evidence is present. */
-export const implComplete: GuardFn = (s) =>
-  s.implementation !== null;
+export const implComplete: GuardFn = (s) => s.implementation !== null;
 
 /**
  * Implementation review loop converged.
@@ -106,12 +101,10 @@ export const implReviewMet: GuardFn = (s) => {
 };
 
 /** Implementation review loop still iterating. */
-export const implReviewPending: GuardFn = (s) =>
-  s.implReview !== null && !implReviewMet(s);
+export const implReviewPending: GuardFn = (s) => s.implReview !== null && !implReviewMet(s);
 
 /** Review report has been generated (review flow completion). */
-export const reviewDone: GuardFn = (s) =>
-  s.phase === "REVIEW";
+export const reviewDone: GuardFn = (s) => s.phase === 'REVIEW';
 
 // ─── Guard Table ──────────────────────────────────────────────────────────────
 
@@ -132,48 +125,71 @@ export const reviewDone: GuardFn = (s) =>
  * - PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW: user gates
  * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE: terminal
  */
-export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<Phase, readonly GuardEntry[]>([
+export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
+  Phase,
+  readonly GuardEntry[]
+>([
+  [
+    'TICKET',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'PLAN_READY', guard: hasPlanReady },
+    ],
+  ],
 
-  ["TICKET", [
-    { event: "ERROR",      guard: hasError },
-    { event: "PLAN_READY", guard: hasPlanReady },
-  ]],
+  [
+    'PLAN',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'SELF_REVIEW_MET', guard: selfReviewMet },
+      { event: 'SELF_REVIEW_PENDING', guard: selfReviewPending },
+    ],
+  ],
 
-  ["PLAN", [
-    { event: "ERROR",               guard: hasError },
-    { event: "SELF_REVIEW_MET",     guard: selfReviewMet },
-    { event: "SELF_REVIEW_PENDING", guard: selfReviewPending },
-  ]],
+  [
+    'VALIDATION',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'ALL_PASSED', guard: allValidationsPassed },
+      { event: 'CHECK_FAILED', guard: checkFailed },
+    ],
+  ],
 
-  ["VALIDATION", [
-    { event: "ERROR",        guard: hasError },
-    { event: "ALL_PASSED",   guard: allValidationsPassed },
-    { event: "CHECK_FAILED", guard: checkFailed },
-  ]],
+  [
+    'IMPLEMENTATION',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'IMPL_COMPLETE', guard: implComplete },
+    ],
+  ],
 
-  ["IMPLEMENTATION", [
-    { event: "ERROR",         guard: hasError },
-    { event: "IMPL_COMPLETE", guard: implComplete },
-  ]],
-
-  ["IMPL_REVIEW", [
-    { event: "ERROR",          guard: hasError },
-    { event: "REVIEW_MET",     guard: implReviewMet },
-    { event: "REVIEW_PENDING", guard: implReviewPending },
-  ]],
+  [
+    'IMPL_REVIEW',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'REVIEW_MET', guard: implReviewMet },
+      { event: 'REVIEW_PENDING', guard: implReviewPending },
+    ],
+  ],
 
   // ARCHITECTURE reuses the same self-review convergence guards as PLAN.
-  ["ARCHITECTURE", [
-    { event: "ERROR",               guard: hasError },
-    { event: "SELF_REVIEW_MET",     guard: selfReviewMet },
-    { event: "SELF_REVIEW_PENDING", guard: selfReviewPending },
-  ]],
+  [
+    'ARCHITECTURE',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'SELF_REVIEW_MET', guard: selfReviewMet },
+      { event: 'SELF_REVIEW_PENDING', guard: selfReviewPending },
+    ],
+  ],
 
   // REVIEW: auto-advances to REVIEW_COMPLETE after report generation.
   // The reviewDone guard fires immediately (the rail sets phase to REVIEW
   // after generating the report, then autoAdvance fires this guard).
-  ["REVIEW", [
-    { event: "ERROR",       guard: hasError },
-    { event: "REVIEW_DONE", guard: reviewDone },
-  ]],
+  [
+    'REVIEW',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'REVIEW_DONE', guard: reviewDone },
+    ],
+  ],
 ]);

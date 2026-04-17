@@ -10,18 +10,18 @@
  * Run as part of: npm version (preversion hook) or manually.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(__dirname, "..");
+const REPO_ROOT = join(__dirname, '..');
 
-const versionFile = join(REPO_ROOT, "VERSION");
-const packageFile = join(REPO_ROOT, "package.json");
+const versionFile = join(REPO_ROOT, 'VERSION');
+const packageFile = join(REPO_ROOT, 'package.json');
 
-const version = readFileSync(versionFile, "utf-8").trim();
-const pkg = JSON.parse(readFileSync(packageFile, "utf-8"));
+const version = readFileSync(versionFile, 'utf-8').trim();
+const pkg = JSON.parse(readFileSync(packageFile, 'utf-8'));
 
 if (pkg.version === version) {
   console.log(`package.json version already up to date: ${version}`);
@@ -29,5 +29,5 @@ if (pkg.version === version) {
 }
 
 pkg.version = version;
-writeFileSync(packageFile, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
+writeFileSync(packageFile, JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
 console.log(`Synced package.json version to ${version}`);

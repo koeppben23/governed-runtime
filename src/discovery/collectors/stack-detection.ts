@@ -16,13 +16,8 @@
  * @version v1
  */
 
-import * as path from "node:path";
-import type {
-  CollectorInput,
-  CollectorOutput,
-  StackInfo,
-  DetectedItem,
-} from "../types";
+import * as path from 'node:path';
+import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types';
 
 // ─── Detection Rules ──────────────────────────────────────────────────────────
 
@@ -31,18 +26,18 @@ const LANGUAGE_EXTENSIONS: ReadonlyArray<{
   id: string;
   extensions: ReadonlySet<string>;
 }> = [
-  { id: "typescript", extensions: new Set([".ts", ".tsx", ".mts", ".cts"]) },
-  { id: "javascript", extensions: new Set([".js", ".jsx", ".mjs", ".cjs"]) },
-  { id: "java", extensions: new Set([".java"]) },
-  { id: "python", extensions: new Set([".py", ".pyi"]) },
-  { id: "go", extensions: new Set([".go"]) },
-  { id: "rust", extensions: new Set([".rs"]) },
-  { id: "csharp", extensions: new Set([".cs"]) },
-  { id: "ruby", extensions: new Set([".rb"]) },
-  { id: "php", extensions: new Set([".php"]) },
-  { id: "kotlin", extensions: new Set([".kt", ".kts"]) },
-  { id: "swift", extensions: new Set([".swift"]) },
-  { id: "scala", extensions: new Set([".scala"]) },
+  { id: 'typescript', extensions: new Set(['.ts', '.tsx', '.mts', '.cts']) },
+  { id: 'javascript', extensions: new Set(['.js', '.jsx', '.mjs', '.cjs']) },
+  { id: 'java', extensions: new Set(['.java']) },
+  { id: 'python', extensions: new Set(['.py', '.pyi']) },
+  { id: 'go', extensions: new Set(['.go']) },
+  { id: 'rust', extensions: new Set(['.rs']) },
+  { id: 'csharp', extensions: new Set(['.cs']) },
+  { id: 'ruby', extensions: new Set(['.rb']) },
+  { id: 'php', extensions: new Set(['.php']) },
+  { id: 'kotlin', extensions: new Set(['.kt', '.kts']) },
+  { id: 'swift', extensions: new Set(['.swift']) },
+  { id: 'scala', extensions: new Set(['.scala']) },
 ];
 
 /** Package file → build tool mapping. */
@@ -50,79 +45,79 @@ const BUILD_TOOL_RULES: ReadonlyArray<{
   id: string;
   packageFile: string;
 }> = [
-  { id: "npm", packageFile: "package.json" },
-  { id: "maven", packageFile: "pom.xml" },
-  { id: "gradle", packageFile: "build.gradle" },
-  { id: "gradle-kotlin", packageFile: "build.gradle.kts" },
-  { id: "cargo", packageFile: "Cargo.toml" },
-  { id: "go-modules", packageFile: "go.mod" },
-  { id: "pip", packageFile: "requirements.txt" },
-  { id: "poetry", packageFile: "pyproject.toml" },
-  { id: "setuptools", packageFile: "setup.py" },
-  { id: "bundler", packageFile: "Gemfile" },
-  { id: "composer", packageFile: "composer.json" },
+  { id: 'npm', packageFile: 'package.json' },
+  { id: 'maven', packageFile: 'pom.xml' },
+  { id: 'gradle', packageFile: 'build.gradle' },
+  { id: 'gradle-kotlin', packageFile: 'build.gradle.kts' },
+  { id: 'cargo', packageFile: 'Cargo.toml' },
+  { id: 'go-modules', packageFile: 'go.mod' },
+  { id: 'pip', packageFile: 'requirements.txt' },
+  { id: 'poetry', packageFile: 'pyproject.toml' },
+  { id: 'setuptools', packageFile: 'setup.py' },
+  { id: 'bundler', packageFile: 'Gemfile' },
+  { id: 'composer', packageFile: 'composer.json' },
 ];
 
 /** Config file → framework/tool mapping. */
 const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
   id: string;
   configFiles: readonly string[];
-  category: "framework" | "testFramework" | "runtime";
+  category: 'framework' | 'testFramework' | 'runtime';
 }> = [
   {
-    id: "angular",
-    configFiles: ["angular.json"],
-    category: "framework",
+    id: 'angular',
+    configFiles: ['angular.json'],
+    category: 'framework',
   },
   {
-    id: "next",
-    configFiles: ["next.config.js", "next.config.mjs"],
-    category: "framework",
+    id: 'next',
+    configFiles: ['next.config.js', 'next.config.mjs'],
+    category: 'framework',
   },
   {
-    id: "nuxt",
-    configFiles: ["nuxt.config.ts"],
-    category: "framework",
+    id: 'nuxt',
+    configFiles: ['nuxt.config.ts'],
+    category: 'framework',
   },
   {
-    id: "vite",
-    configFiles: ["vite.config.ts", "vite.config.js"],
-    category: "framework",
+    id: 'vite',
+    configFiles: ['vite.config.ts', 'vite.config.js'],
+    category: 'framework',
   },
   {
-    id: "vitest",
-    configFiles: ["vitest.config.ts", "vitest.config.js"],
-    category: "testFramework",
+    id: 'vitest',
+    configFiles: ['vitest.config.ts', 'vitest.config.js'],
+    category: 'testFramework',
   },
   {
-    id: "jest",
-    configFiles: ["jest.config.js", "jest.config.ts"],
-    category: "testFramework",
+    id: 'jest',
+    configFiles: ['jest.config.js', 'jest.config.ts'],
+    category: 'testFramework',
   },
   {
-    id: "webpack",
-    configFiles: ["webpack.config.js"],
-    category: "framework",
+    id: 'webpack',
+    configFiles: ['webpack.config.js'],
+    category: 'framework',
   },
   {
-    id: "rollup",
-    configFiles: ["rollup.config.js"],
-    category: "framework",
+    id: 'rollup',
+    configFiles: ['rollup.config.js'],
+    category: 'framework',
   },
   {
-    id: "nx",
-    configFiles: ["nx.json"],
-    category: "framework",
+    id: 'nx',
+    configFiles: ['nx.json'],
+    category: 'framework',
   },
   {
-    id: "docker",
-    configFiles: ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"],
-    category: "runtime",
+    id: 'docker',
+    configFiles: ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml'],
+    category: 'runtime',
   },
   {
-    id: "tailwind",
-    configFiles: ["tailwind.config.js", "tailwind.config.ts"],
-    category: "framework",
+    id: 'tailwind',
+    configFiles: ['tailwind.config.js', 'tailwind.config.ts'],
+    category: 'framework',
   },
 ];
 
@@ -138,22 +133,19 @@ const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
  * - Test frameworks (by config file presence)
  * - Runtimes (by config file presence)
  */
-export async function collectStack(
-  input: CollectorInput,
-): Promise<CollectorOutput<StackInfo>> {
+export async function collectStack(input: CollectorInput): Promise<CollectorOutput<StackInfo>> {
   try {
     const languages = detectLanguages(input.allFiles);
     const buildTools = detectBuildTools(input.packageFiles);
-    const { frameworks, testFrameworks, runtimes } =
-      detectFromConfigs(input.configFiles);
+    const { frameworks, testFrameworks, runtimes } = detectFromConfigs(input.configFiles);
 
     return {
-      status: "complete",
+      status: 'complete',
       data: { languages, frameworks, buildTools, testFrameworks, runtimes },
     };
   } catch {
     return {
-      status: "failed",
+      status: 'failed',
       data: {
         languages: [],
         frameworks: [],
@@ -206,7 +198,7 @@ function detectLanguages(allFiles: readonly string[]): DetectedItem[] {
     items.push({
       id,
       confidence: Math.round(confidence * 100) / 100,
-      classification: "fact",
+      classification: 'fact',
       evidence: evidenceMap.get(id) ?? [],
     });
   }
@@ -228,7 +220,7 @@ function detectBuildTools(packageFiles: readonly string[]): DetectedItem[] {
       items.push({
         id: rule.id,
         confidence: 0.9,
-        classification: "fact",
+        classification: 'fact',
         evidence: [rule.packageFile],
       });
     }
@@ -258,18 +250,18 @@ function detectFromConfigs(configFiles: readonly string[]): {
     const item: DetectedItem = {
       id: rule.id,
       confidence: 0.85,
-      classification: "fact",
+      classification: 'fact',
       evidence: matchedConfigs,
     };
 
     switch (rule.category) {
-      case "framework":
+      case 'framework':
         frameworks.push(item);
         break;
-      case "testFramework":
+      case 'testFramework':
         testFrameworks.push(item);
         break;
-      case "runtime":
+      case 'runtime':
         runtimes.push(item);
         break;
     }

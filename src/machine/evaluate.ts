@@ -26,29 +26,29 @@
  * @version v2
  */
 
-import type { SessionState, Phase, Event } from "../state/schema";
-import { GUARDS } from "./guards";
-import { resolveTransition, USER_GATES, TERMINAL } from "./topology";
+import type { SessionState, Phase, Event } from '../state/schema';
+import { GUARDS } from './guards';
+import { resolveTransition, USER_GATES, TERMINAL } from './topology';
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
 /** Guard matched → transition to target phase. */
 export interface EvalTransition {
-  readonly kind: "transition";
+  readonly kind: 'transition';
   readonly event: Event;
   readonly target: Phase;
 }
 
 /** User Gate — machine is waiting for explicit human command. */
 export interface EvalWaiting {
-  readonly kind: "waiting";
+  readonly kind: 'waiting';
   readonly phase: Phase;
   readonly reason: string;
 }
 
 /** Terminal — workflow complete, no further transitions. */
 export interface EvalTerminal {
-  readonly kind: "terminal";
+  readonly kind: 'terminal';
 }
 
 /**
@@ -62,7 +62,7 @@ export interface EvalTerminal {
  * The rail/caller decides what to do: prompt user, run work, etc.
  */
 export interface EvalPending {
-  readonly kind: "pending";
+  readonly kind: 'pending';
   readonly phase: Phase;
 }
 
@@ -71,9 +71,9 @@ export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPendi
 // ─── Waiting Reason Messages ──────────────────────────────────────────────────
 
 const GATE_REASONS: Record<string, string> = {
-  PLAN_REVIEW: "Awaiting plan review decision (approve / changes_requested / reject)",
-  EVIDENCE_REVIEW: "Awaiting evidence review decision (approve / changes_requested / reject)",
-  ARCH_REVIEW: "Awaiting architecture decision review (approve / changes_requested / reject)",
+  PLAN_REVIEW: 'Awaiting plan review decision (approve / changes_requested / reject)',
+  EVIDENCE_REVIEW: 'Awaiting evidence review decision (approve / changes_requested / reject)',
+  ARCH_REVIEW: 'Awaiting architecture decision review (approve / changes_requested / reject)',
 };
 
 // ─── Evaluator ────────────────────────────────────────────────────────────────
@@ -106,27 +106,27 @@ export function evaluate(
 
   // 1. Terminal — done
   if (TERMINAL.has(phase)) {
-    return { kind: "terminal" };
+    return { kind: 'terminal' };
   }
 
   // 2. READY — command-driven, no auto-advance
-  if (phase === "READY") {
-    return { kind: "pending", phase };
+  if (phase === 'READY') {
+    return { kind: 'pending', phase };
   }
 
   // 3. User Gate — policy-dependent
   if (USER_GATES.has(phase)) {
     // Solo mode: auto-approve at user gates.
     if (policy?.requireHumanGates === false) {
-      const target = resolveTransition(phase, "APPROVE");
+      const target = resolveTransition(phase, 'APPROVE');
       if (target) {
-        return { kind: "transition", event: "APPROVE", target };
+        return { kind: 'transition', event: 'APPROVE', target };
       }
     }
 
     // Team/regulated mode (or no policy): wait for human decision.
     return {
-      kind: "waiting",
+      kind: 'waiting',
       phase,
       reason: GATE_REASONS[phase] ?? `Awaiting review decision at ${phase}`,
     };
@@ -135,7 +135,7 @@ export function evaluate(
   // 4. Guard-based — evaluate guards in order
   const guardEntries = GUARDS.get(phase);
   if (!guardEntries) {
-    return { kind: "pending", phase };
+    return { kind: 'pending', phase };
   }
 
   for (const { event, guard } of guardEntries) {
@@ -144,14 +144,14 @@ export function evaluate(
       if (target === undefined) {
         // Topology gap — guards and topology are misaligned.
         // This IS a bug (unlike pending). Log and treat as pending.
-        return { kind: "pending", phase };
+        return { kind: 'pending', phase };
       }
-      return { kind: "transition", event, target };
+      return { kind: 'transition', event, target };
     }
   }
 
   // 5. No guard matched — phase needs more work or evidence
-  return { kind: "pending", phase };
+  return { kind: 'pending', phase };
 }
 
 // ─── User-Event Evaluator ─────────────────────────────────────────────────────

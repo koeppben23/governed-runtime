@@ -22,7 +22,7 @@ import type {
   SurfaceInfo,
   LayerInfo,
   EvidenceClass,
-} from "../types";
+} from '../types';
 
 // ─── Detection Rules ──────────────────────────────────────────────────────────
 
@@ -35,115 +35,115 @@ interface SurfaceRule {
 
 const API_RULES: readonly SurfaceRule[] = [
   {
-    id: "express-routes",
-    label: "Express/Fastify routes",
+    id: 'express-routes',
+    label: 'Express/Fastify routes',
     patterns: [/routes?\//i, /controllers?\//i, /api\//i],
-    classification: "derived_signal",
+    classification: 'derived_signal',
   },
   {
-    id: "openapi-spec",
-    label: "OpenAPI specification",
+    id: 'openapi-spec',
+    label: 'OpenAPI specification',
     patterns: [/openapi\.(ya?ml|json)$/i, /swagger\.(ya?ml|json)$/i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "graphql",
-    label: "GraphQL schema",
+    id: 'graphql',
+    label: 'GraphQL schema',
     patterns: [/\.graphql$/i, /schema\.gql$/i, /graphql\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "grpc",
-    label: "gRPC protobuf",
+    id: 'grpc',
+    label: 'gRPC protobuf',
     patterns: [/\.proto$/i, /proto\//i],
-    classification: "fact",
+    classification: 'fact',
   },
 ];
 
 const PERSISTENCE_RULES: readonly SurfaceRule[] = [
   {
-    id: "prisma",
-    label: "Prisma ORM",
+    id: 'prisma',
+    label: 'Prisma ORM',
     patterns: [/prisma\/schema\.prisma$/i, /prisma\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "typeorm",
-    label: "TypeORM",
+    id: 'typeorm',
+    label: 'TypeORM',
     patterns: [/ormconfig/i, /entity\//i, /migration\//i],
-    classification: "derived_signal",
+    classification: 'derived_signal',
   },
   {
-    id: "sequelize",
-    label: "Sequelize",
+    id: 'sequelize',
+    label: 'Sequelize',
     patterns: [/\.sequelizerc$/i, /seeders?\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "sql-migrations",
-    label: "SQL migrations",
+    id: 'sql-migrations',
+    label: 'SQL migrations',
     patterns: [/migrations?\//i, /\.sql$/i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "hibernate",
-    label: "Hibernate/JPA",
+    id: 'hibernate',
+    label: 'Hibernate/JPA',
     patterns: [/persistence\.xml$/i, /hibernate\.cfg/i],
-    classification: "fact",
+    classification: 'fact',
   },
 ];
 
 const CICD_RULES: readonly SurfaceRule[] = [
   {
-    id: "github-actions",
-    label: "GitHub Actions",
+    id: 'github-actions',
+    label: 'GitHub Actions',
     patterns: [/\.github\/workflows\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "gitlab-ci",
-    label: "GitLab CI",
+    id: 'gitlab-ci',
+    label: 'GitLab CI',
     patterns: [/\.gitlab-ci\.ya?ml$/i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "jenkins",
-    label: "Jenkins",
+    id: 'jenkins',
+    label: 'Jenkins',
     patterns: [/Jenkinsfile$/i, /jenkins\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "circleci",
-    label: "CircleCI",
+    id: 'circleci',
+    label: 'CircleCI',
     patterns: [/\.circleci\//i],
-    classification: "fact",
+    classification: 'fact',
   },
   {
-    id: "azure-pipelines",
-    label: "Azure Pipelines",
+    id: 'azure-pipelines',
+    label: 'Azure Pipelines',
     patterns: [/azure-pipelines\.ya?ml$/i],
-    classification: "fact",
+    classification: 'fact',
   },
 ];
 
 const SECURITY_RULES: readonly SurfaceRule[] = [
   {
-    id: "auth-config",
-    label: "Authentication config",
+    id: 'auth-config',
+    label: 'Authentication config',
     patterns: [/auth\//i, /passport/i, /oauth/i, /jwt/i],
-    classification: "derived_signal",
+    classification: 'derived_signal',
   },
   {
-    id: "security-headers",
-    label: "Security headers / CSP",
+    id: 'security-headers',
+    label: 'Security headers / CSP',
     patterns: [/csp/i, /helmet/i, /security\.config/i],
-    classification: "derived_signal",
+    classification: 'derived_signal',
   },
   {
-    id: "secret-management",
-    label: "Secret management",
+    id: 'secret-management',
+    label: 'Secret management',
     patterns: [/\.env\.example$/i, /vault/i, /secrets?\//i],
-    classification: "derived_signal",
+    classification: 'derived_signal',
   },
 ];
 
@@ -152,12 +152,12 @@ const LAYER_PATTERNS: ReadonlyArray<{
   name: string;
   patterns: string[];
 }> = [
-  { name: "controller", patterns: ["controllers/", "controller/"] },
-  { name: "service", patterns: ["services/", "service/"] },
-  { name: "repository", patterns: ["repositories/", "repository/", "repos/"] },
-  { name: "model", patterns: ["models/", "model/", "entities/", "entity/"] },
-  { name: "middleware", patterns: ["middleware/", "middlewares/"] },
-  { name: "util", patterns: ["utils/", "util/", "helpers/", "lib/"] },
+  { name: 'controller', patterns: ['controllers/', 'controller/'] },
+  { name: 'service', patterns: ['services/', 'service/'] },
+  { name: 'repository', patterns: ['repositories/', 'repository/', 'repos/'] },
+  { name: 'model', patterns: ['models/', 'model/', 'entities/', 'entity/'] },
+  { name: 'middleware', patterns: ['middleware/', 'middlewares/'] },
+  { name: 'util', patterns: ['utils/', 'util/', 'helpers/', 'lib/'] },
 ];
 
 // ─── Collector ────────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ export async function collectSurfaces(
   input: CollectorInput,
 ): Promise<CollectorOutput<SurfacesInfo>> {
   try {
-    const normalized = input.allFiles.map((f) => f.replace(/\\/g, "/"));
+    const normalized = input.allFiles.map((f) => f.replace(/\\/g, '/'));
 
     const api = detectSurfaces(normalized, API_RULES);
     const persistence = detectSurfaces(normalized, PERSISTENCE_RULES);
@@ -181,12 +181,12 @@ export async function collectSurfaces(
     const layers = detectLayers(normalized);
 
     return {
-      status: "complete",
+      status: 'complete',
       data: { api, persistence, cicd, security, layers },
     };
   } catch {
     return {
-      status: "failed",
+      status: 'failed',
       data: { api: [], persistence: [], cicd: [], security: [], layers: [] },
     };
   }
@@ -198,10 +198,7 @@ export async function collectSurfaces(
  * Detect surfaces by matching file paths against rules.
  * Returns one SurfaceInfo per rule that has at least one match.
  */
-function detectSurfaces(
-  files: readonly string[],
-  rules: readonly SurfaceRule[],
-): SurfaceInfo[] {
+function detectSurfaces(files: readonly string[], rules: readonly SurfaceRule[]): SurfaceInfo[] {
   const surfaces: SurfaceInfo[] = [];
 
   for (const rule of rules) {
@@ -236,9 +233,7 @@ function detectLayers(files: readonly string[]): LayerInfo[] {
   const layers: LayerInfo[] = [];
 
   for (const layer of LAYER_PATTERNS) {
-    const hasMatch = files.some((f) =>
-      layer.patterns.some((p) => f.includes(p)),
-    );
+    const hasMatch = files.some((f) => layer.patterns.some((p) => f.includes(p)));
     if (hasMatch) {
       layers.push({
         name: layer.name,

@@ -34,6 +34,7 @@ This guide covers the preparation (on an internet-connected machine) and the ins
 Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
 
 Download the checksums file:
+
 - `checksums.sha256`
 
 ---
@@ -100,6 +101,7 @@ flowguard doctor
 **Important:** The `--core-tarball` argument is required and must point to the locally available release artifact.
 
 Expected `doctor` output:
+
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/tools/flowguard.ts
@@ -193,5 +195,5 @@ chmod 755 ~/.config/opencode/
 
 ---
 
-*FlowGuard Version: 1.0.0*
-*Last Updated: 2026-04-15*
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_

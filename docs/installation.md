@@ -16,6 +16,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
 
 Verify the checksum:
+
 ```bash
 sha256sum flowguard-core-{version}.tgz
 ```
@@ -45,6 +46,7 @@ flowguard doctor
 ```
 
 Expected output:
+
 ```
   [ok] ~/.config/opencode/flowguard-mandates.md
   [ok] ~/.config/opencode/tools/flowguard.ts
@@ -61,12 +63,12 @@ Expected output:
 
 ## Installation Options
 
-| Option | Description |
-|--------|-------------|
-| `--install-scope global` | Install to `~/.config/opencode/` (default) |
-| `--install-scope repo` | Install to `.opencode/` (committed to repo) |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode |
-| `--core-tarball <path>` | **Required.** Path to `flowguard-core-{version}.tgz` |
+| Option                                         | Description                                          |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| `--install-scope global`                       | Install to `~/.config/opencode/` (default)           |
+| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)          |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode                              |
+| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz` |
 
 ## How It Works
 
@@ -76,35 +78,35 @@ FlowGuard integrates with OpenCode via a two-level command surface:
 
 Use these commands in OpenCode chat to drive workflows:
 
-| Command | Description |
-|---------|-------------|
-| `/hydrate` | Bootstrap session |
-| `/ticket <text>` | Record task |
-| `/plan` | Generate plan |
-| `/continue` | Auto-advance |
-| `/validate` | Run checks |
-| `/implement` | Execute plan |
-| `/review-decision approve\|reject` | Human approval |
-| `/review` | Generate report |
-| `/abort` | Terminate session |
-| `/archive` | Archive session |
+| Command                            | Description       |
+| ---------------------------------- | ----------------- |
+| `/hydrate`                         | Bootstrap session |
+| `/ticket <text>`                   | Record task       |
+| `/plan`                            | Generate plan     |
+| `/continue`                        | Auto-advance      |
+| `/validate`                        | Run checks        |
+| `/implement`                       | Execute plan      |
+| `/review-decision approve\|reject` | Human approval    |
+| `/review`                          | Generate report   |
+| `/abort`                           | Terminate session |
+| `/archive`                         | Archive session   |
 
 ### Internal Tool Bindings (OpenCode Infrastructure)
 
 These are the underlying tool names that FlowGuard installs into OpenCode:
 
-| Tool Name | Purpose |
-|-----------|---------|
-| `flowguard_status` | Check session state |
-| `flowguard_hydrate` | Session bootstrap |
-| `flowguard_ticket` | Task recording |
-| `flowguard_plan` | Plan generation |
-| `flowguard_decision` | Record review verdict |
-| `flowguard_validate` | Validation runner |
-| `flowguard_implement` | Plan executor |
-| `flowguard_review` | Generate compliance report |
-| `flowguard_abort_session` | Session termination |
-| `flowguard_archive` | Session archival |
+| Tool Name                 | Purpose                    |
+| ------------------------- | -------------------------- |
+| `flowguard_status`        | Check session state        |
+| `flowguard_hydrate`       | Session bootstrap          |
+| `flowguard_ticket`        | Task recording             |
+| `flowguard_plan`          | Plan generation            |
+| `flowguard_decision`      | Record review verdict      |
+| `flowguard_validate`      | Validation runner          |
+| `flowguard_implement`     | Plan executor              |
+| `flowguard_review`        | Generate compliance report |
+| `flowguard_abort_session` | Session termination        |
+| `flowguard_archive`       | Session archival           |
 
 ## Uninstall
 

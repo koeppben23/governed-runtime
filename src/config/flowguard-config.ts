@@ -16,21 +16,19 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 export const FlowGuardConfigSchema = z.object({
   /** Schema version for forward compatibility. Always "v1". */
-  schemaVersion: z.literal("v1"),
+  schemaVersion: z.literal('v1'),
 
   /** Logging configuration. */
   logging: z
     .object({
       /** Minimum log level. Messages below this level are suppressed. */
-      level: z
-        .enum(["debug", "info", "warn", "error", "silent"])
-        .default("info"),
+      level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
     })
     .default({}),
 
@@ -38,7 +36,7 @@ export const FlowGuardConfigSchema = z.object({
   policy: z
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
-      defaultMode: z.enum(["solo", "team", "team-ci", "regulated"]).optional(),
+      defaultMode: z.enum(['solo', 'team', 'team-ci', 'regulated']).optional(),
       /** Override max self-review iterations (PLAN phase). */
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */
@@ -69,7 +67,7 @@ export const FlowGuardConfigSchema = z.object({
       redaction: z
         .object({
           /** Redaction mode for export artifacts. */
-          mode: z.enum(["none", "basic", "strict"]).default("basic"),
+          mode: z.enum(['none', 'basic', 'strict']).default('basic'),
           /** Include raw artifacts in archive alongside redacted artifacts. */
           includeRaw: z.boolean().default(false),
         })
@@ -84,7 +82,7 @@ export const FlowGuardConfigSchema = z.object({
 export type FlowGuardConfig = z.infer<typeof FlowGuardConfigSchema>;
 
 /** Log level union type. */
-export type LogLevel = FlowGuardConfig["logging"]["level"];
+export type LogLevel = FlowGuardConfig['logging']['level'];
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -93,5 +91,5 @@ export type LogLevel = FlowGuardConfig["logging"]["level"];
  * Zod's .default() on every nested object guarantees all fields are present.
  */
 export const DEFAULT_CONFIG: FlowGuardConfig = FlowGuardConfigSchema.parse({
-  schemaVersion: "v1",
+  schemaVersion: 'v1',
 });

@@ -27,9 +27,9 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import { resolveRoot, isGitRepo } from "./git";
-import * as path from "node:path";
+import type { SessionState } from '../state/schema';
+import { resolveRoot, isGitRepo } from './git';
+import * as path from 'node:path';
 
 // -- Error --------------------------------------------------------------------
 
@@ -46,7 +46,7 @@ export class BindingError extends Error {
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = "BindingError";
+    this.name = 'BindingError';
     this.code = code;
   }
 }
@@ -101,37 +101,35 @@ export interface ResolvedBinding {
  * @returns Resolved binding with validated worktree root.
  * @throws BindingError if resolution fails.
  */
-export async function resolveBinding(
-  ctx: ToolContext,
-): Promise<ResolvedBinding> {
+export async function resolveBinding(ctx: ToolContext): Promise<ResolvedBinding> {
   // 1. Session ID is required
   if (!ctx.sessionId?.trim()) {
     throw new BindingError(
-      "MISSING_SESSION_ID",
-      "OpenCode session ID is required (context.sessionID). " +
-        "This should never be empty in a Custom Tool call.",
+      'MISSING_SESSION_ID',
+      'OpenCode session ID is required (context.sessionID). ' +
+        'This should never be empty in a Custom Tool call.',
     );
   }
 
   // 2. Prefer context.worktree (fast path)
-  let worktreeRoot = ctx.worktree?.trim() || "";
+  let worktreeRoot = ctx.worktree?.trim() || '';
 
   // 3. Fallback: resolve from directory
   if (!worktreeRoot) {
     if (!ctx.directory?.trim()) {
       throw new BindingError(
-        "NO_WORKTREE",
-        "Neither context.worktree nor context.directory is available. " +
-          "Cannot determine FlowGuard session location.",
+        'NO_WORKTREE',
+        'Neither context.worktree nor context.directory is available. ' +
+          'Cannot determine FlowGuard session location.',
       );
     }
 
     const isRepo = await isGitRepo(ctx.directory);
     if (!isRepo) {
       throw new BindingError(
-        "NOT_GIT_REPO",
+        'NOT_GIT_REPO',
         `Directory is not inside a git repository: ${ctx.directory}. ` +
-          "FlowGuard requires a git repository.",
+          'FlowGuard requires a git repository.',
       );
     }
 
@@ -166,16 +164,13 @@ export async function resolveBinding(
  * @returns true if compatible.
  * @throws BindingError if worktree mismatch.
  */
-export function validateBinding(
-  state: SessionState,
-  binding: ResolvedBinding,
-): true {
+export function validateBinding(state: SessionState, binding: ResolvedBinding): true {
   const stateWorktree = normalizePath(state.binding.worktree);
   const currentWorktree = normalizePath(binding.worktreeRoot);
 
   if (stateWorktree !== currentWorktree) {
     throw new BindingError(
-      "WORKTREE_MISMATCH",
+      'WORKTREE_MISMATCH',
       `Session was created for worktree "${state.binding.worktree}" ` +
         `but current worktree is "${binding.worktreeRoot}". ` +
         `This state file belongs to a different project. ` +
@@ -215,10 +210,10 @@ export function fromOpenCodeContext(openCodeCtx: {
  * - Lowercase on Windows (NTFS is case-insensitive)
  */
 function normalizePath(p: string): string {
-  let normalized = path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "");
+  let normalized = path.resolve(p).replace(/\\/g, '/').replace(/\/+$/, '');
 
   // Windows: case-insensitive comparison
-  if (process.platform === "win32") {
+  if (process.platform === 'win32') {
     normalized = normalized.toLowerCase();
   }
 

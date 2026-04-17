@@ -13,7 +13,7 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 import {
   ArchitectureDecision,
   BindingInfo,
@@ -27,8 +27,8 @@ import {
   SelfReviewLoop,
   TicketEvidence,
   ValidationResult,
-} from "./evidence";
-import { DiscoverySummarySchema } from "../discovery/types";
+} from './evidence';
+import { DiscoverySummarySchema } from '../discovery/types';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -57,20 +57,20 @@ import { DiscoverySummarySchema } from "../discovery/types";
  *   ARCH_REVIEW --reject--> READY
  */
 export const Phase = z.enum([
-  "READY",
-  "TICKET",
-  "PLAN",
-  "PLAN_REVIEW",
-  "VALIDATION",
-  "IMPLEMENTATION",
-  "IMPL_REVIEW",
-  "EVIDENCE_REVIEW",
-  "COMPLETE",
-  "ARCHITECTURE",
-  "ARCH_REVIEW",
-  "ARCH_COMPLETE",
-  "REVIEW",
-  "REVIEW_COMPLETE",
+  'READY',
+  'TICKET',
+  'PLAN',
+  'PLAN_REVIEW',
+  'VALIDATION',
+  'IMPLEMENTATION',
+  'IMPL_REVIEW',
+  'EVIDENCE_REVIEW',
+  'COMPLETE',
+  'ARCHITECTURE',
+  'ARCH_REVIEW',
+  'ARCH_COMPLETE',
+  'REVIEW',
+  'REVIEW_COMPLETE',
 ]);
 export type Phase = z.infer<typeof Phase>;
 
@@ -83,41 +83,41 @@ export type Phase = z.infer<typeof Phase>;
  */
 export const Event = z.enum([
   // READY → flow selection
-  "TICKET_SELECTED",
-  "ARCHITECTURE_SELECTED",
-  "REVIEW_SELECTED",
+  'TICKET_SELECTED',
+  'ARCHITECTURE_SELECTED',
+  'REVIEW_SELECTED',
 
   // TICKET → PLAN
-  "PLAN_READY",
+  'PLAN_READY',
 
   // PLAN self-review loop
-  "SELF_REVIEW_MET",
-  "SELF_REVIEW_PENDING",
+  'SELF_REVIEW_MET',
+  'SELF_REVIEW_PENDING',
 
   // User Gate decisions (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW)
-  "APPROVE",
-  "CHANGES_REQUESTED",
-  "REJECT",
+  'APPROVE',
+  'CHANGES_REQUESTED',
+  'REJECT',
 
   // VALIDATION
-  "ALL_PASSED",
-  "CHECK_FAILED",
+  'ALL_PASSED',
+  'CHECK_FAILED',
 
   // IMPLEMENTATION → IMPL_REVIEW
-  "IMPL_COMPLETE",
+  'IMPL_COMPLETE',
 
   // IMPL_REVIEW loop
-  "REVIEW_MET",
-  "REVIEW_PENDING",
+  'REVIEW_MET',
+  'REVIEW_PENDING',
 
   // REVIEW flow → REVIEW_COMPLETE
-  "REVIEW_DONE",
+  'REVIEW_DONE',
 
   // Error recovery (non-user-gate, non-terminal phases)
-  "ERROR",
+  'ERROR',
 
   // Emergency escape — bypasses topology, used only by /abort rail
-  "ABORT",
+  'ABORT',
 ]);
 export type Event = z.infer<typeof Event>;
 
@@ -153,7 +153,7 @@ export const SessionState = z.object({
   id: z.string().uuid(),
 
   /** Schema version — always "v1" for this generation. */
-  schemaVersion: z.literal("v1"),
+  schemaVersion: z.literal('v1'),
 
   /** Current FlowGuard phase. */
   phase: Phase,
