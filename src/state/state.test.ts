@@ -17,6 +17,16 @@ import {
   ImplEvidence,
   ImplReviewResult,
   ReviewDecision,
+  IdentitySource,
+  AssuranceLevel,
+  ActorRole,
+  DataClassification,
+  TargetEnvironment,
+  IdentityAssertion,
+  RoleBinding,
+  RiskPolicyRule,
+  PolicyDecisionV2,
+  DecisionReceiptV2,
   ErrorInfo,
   PolicySnapshotSchema,
   AuditEvent,
@@ -121,6 +131,91 @@ describe('state schemas', () => {
         chainHash: 'abc123',
       };
       expect(() => AuditEvent.parse(event)).not.toThrow();
+    });
+
+    it('IdentityAssertion parses valid OIDC assertion', () => {
+      const assertion = {
+        subjectId: 'user-123',
+        displayName: 'Alice Approver',
+        identitySource: 'oidc',
+        assertedAt: FIXED_TIME,
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        tenantId: 'tenant-1',
+        email: 'alice@example.com',
+        groups: ['engineering', 'approvers'],
+        claimsRef: 'claims-abc',
+        sessionBindingId: FIXED_SESSION_UUID,
+      };
+      expect(() => IdentityAssertion.parse(assertion)).not.toThrow();
+    });
+
+    it('RoleBinding parses valid subject matcher and roles', () => {
+      const binding = {
+        subjectMatcher: { email: 'alice@example.com' },
+        roles: ['approver', 'policy_owner'],
+        conditions: {
+          identitySource: ['oidc'],
+          minAssuranceLevel: 'strong',
+        },
+      };
+      expect(() => RoleBinding.parse(binding)).not.toThrow();
+    });
+
+    it('RiskPolicyRule parses valid matrix rule', () => {
+      const rule = {
+        id: 'rule-prod-confidential',
+        priority: 10,
+        match: {
+          actionType: ['review_decision'],
+          dataClassification: ['confidential'],
+          targetEnvironment: ['prod'],
+        },
+        effect: 'allow_with_approval',
+        obligations: {
+          justificationRequired: true,
+          ticketRequired: true,
+          dualApprovalRequired: true,
+          requiredApproverRole: ['approver'],
+          minAssuranceLevel: 'strong',
+        },
+      };
+      expect(() => RiskPolicyRule.parse(rule)).not.toThrow();
+    });
+
+    it('DecisionReceiptV2 parses valid receipt payload', () => {
+      const receipt = {
+        schemaVersion: 'flowguard-decision-receipt.v2',
+        decisionId: 'DEC-001',
+        decisionSequence: 1,
+        gatePhase: 'PLAN_REVIEW',
+        verdict: 'approve',
+        rationale: 'Looks compliant',
+        decidedAt: FIXED_TIME,
+        actorIdentity: {
+          subjectId: 'user-123',
+          identitySource: 'oidc',
+          assertedAt: FIXED_TIME,
+          assuranceLevel: 'strong',
+          issuer: 'https://idp.example.com',
+          sessionBindingId: FIXED_SESSION_UUID,
+        },
+        actorRole: 'approver',
+        policyDecision: {
+          requestedMode: 'regulated',
+          effectiveMode: 'regulated',
+          effectiveGateBehavior: 'human_gated',
+          matchedRuleId: 'rule-prod-confidential',
+          obligations: {
+            justificationRequired: true,
+            ticketRequired: true,
+          },
+          outcome: 'allow_with_approval',
+        },
+        obligationsSatisfied: true,
+        outcome: 'approved',
+      };
+      expect(() => DecisionReceiptV2.parse(receipt)).not.toThrow();
     });
   });
 
@@ -242,6 +337,68 @@ describe('state schemas', () => {
       };
       expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
     });
+
+    it('IdentityAssertion rejects missing subjectId', () => {
+      expect(() =>
+        IdentityAssertion.parse({
+          identitySource: 'oidc',
+          assertedAt: FIXED_TIME,
+          assuranceLevel: 'strong',
+        }),
+      ).toThrow();
+    });
+
+    it('RoleBinding rejects empty subjectMatcher', () => {
+      expect(() =>
+        RoleBinding.parse({
+          subjectMatcher: {},
+          roles: ['approver'],
+        }),
+      ).toThrow(/subjectMatcher requires subjectId, email, or group/);
+    });
+
+    it('RiskPolicyRule rejects invalid effect', () => {
+      expect(() =>
+        RiskPolicyRule.parse({
+          id: 'rule-1',
+          priority: 1,
+          match: {},
+          effect: 'permit',
+        }),
+      ).toThrow();
+    });
+
+    it('DecisionReceiptV2 rejects invalid schemaVersion', () => {
+      expect(() =>
+        DecisionReceiptV2.parse({
+          schemaVersion: 'flowguard-decision-receipt.v1',
+          decisionId: 'DEC-1',
+          decisionSequence: 1,
+          gatePhase: 'PLAN_REVIEW',
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedAt: FIXED_TIME,
+          actorIdentity: {
+            subjectId: 'user-123',
+            identitySource: 'oidc',
+            assertedAt: FIXED_TIME,
+            assuranceLevel: 'strong',
+          },
+          actorRole: 'approver',
+          policyDecision: {
+            requestedMode: 'regulated',
+            effectiveMode: 'regulated',
+            effectiveGateBehavior: 'human_gated',
+            matchedRuleId: null,
+            obligations: {},
+            outcome: 'deny',
+          },
+          obligationsSatisfied: false,
+          outcome: 'blocked',
+          reasonCode: 'RISK_POLICY_NO_MATCH_DENY',
+        }),
+      ).toThrow();
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -308,6 +465,29 @@ describe('state schemas', () => {
       expect(state.error).toBeNull();
       expect(state.transition).toBeNull();
     });
+
+    it('IdentityAssertion accepts minimal local assertion', () => {
+      const assertion = {
+        subjectId: 'dev-local',
+        identitySource: 'local',
+        assertedAt: FIXED_TIME,
+        assuranceLevel: 'basic',
+      };
+      expect(() => IdentityAssertion.parse(assertion)).not.toThrow();
+    });
+
+    it('PolicyDecisionV2 allows matchedRuleId to be null', () => {
+      const decision = {
+        requestedMode: 'regulated',
+        effectiveMode: 'regulated',
+        effectiveGateBehavior: 'human_gated',
+        matchedRuleId: null,
+        obligations: {},
+        outcome: 'deny',
+        blockedReasonCode: 'RISK_POLICY_NO_MATCH_DENY',
+      };
+      expect(() => PolicyDecisionV2.parse(decision)).not.toThrow();
+    });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
@@ -357,6 +537,25 @@ describe('state schemas', () => {
           overallStatus: 'clean',
         }),
       ).not.toThrow();
+    });
+
+    it('identity/rbac/risk enums expose expected option sets', () => {
+      expect(IdentitySource.options).toEqual(['local', 'oidc', 'scim', 'service']);
+      expect(AssuranceLevel.options).toEqual(['none', 'basic', 'strong']);
+      expect(ActorRole.options).toEqual([
+        'operator',
+        'approver',
+        'policy_owner',
+        'auditor',
+        'service',
+      ]);
+      expect(DataClassification.options).toEqual([
+        'public',
+        'internal',
+        'confidential',
+        'restricted',
+      ]);
+      expect(TargetEnvironment.options).toEqual(['dev', 'test', 'staging', 'prod']);
     });
   });
 

@@ -42,6 +42,26 @@ export type RevisionDelta = z.infer<typeof RevisionDelta>;
 export const LoopVerdict = z.enum(['approve', 'changes_requested']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
+/** Identity assertion source for approval-relevant actions. */
+export const IdentitySource = z.enum(['local', 'oidc', 'scim', 'service']);
+export type IdentitySource = z.infer<typeof IdentitySource>;
+
+/** Assurance level of an identity assertion. */
+export const AssuranceLevel = z.enum(['none', 'basic', 'strong']);
+export type AssuranceLevel = z.infer<typeof AssuranceLevel>;
+
+/** Actor role used for approval and governance decisions. */
+export const ActorRole = z.enum(['operator', 'approver', 'policy_owner', 'auditor', 'service']);
+export type ActorRole = z.infer<typeof ActorRole>;
+
+/** Data classification for risk policy matching. */
+export const DataClassification = z.enum(['public', 'internal', 'confidential', 'restricted']);
+export type DataClassification = z.infer<typeof DataClassification>;
+
+/** Target environment for risk policy matching. */
+export const TargetEnvironment = z.enum(['dev', 'test', 'staging', 'prod']);
+export type TargetEnvironment = z.infer<typeof TargetEnvironment>;
+
 // ─── Binding ──────────────────────────────────────────────────────────────────
 
 /**
@@ -209,6 +229,127 @@ export const ReviewDecision = z.object({
   decidedBy: z.string().min(1),
 });
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
+
+// ─── Identity / RBAC / Risk Contracts (v1.2.0 groundwork) ───────────────────
+
+/**
+ * Trusted identity assertion consumed from host context.
+ *
+ * Runtime enforcement is implemented in later WP stages.
+ * This schema defines the contract and strict parse behavior.
+ */
+export const IdentityAssertion = z.object({
+  subjectId: z.string().min(1),
+  displayName: z.string().min(1).optional(),
+  identitySource: IdentitySource,
+  assertedAt: z.string().datetime(),
+  assuranceLevel: AssuranceLevel,
+  issuer: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  groups: z.array(z.string().min(1)).optional(),
+  claimsRef: z.string().min(1).optional(),
+  sessionBindingId: z.string().min(1).optional(),
+});
+export type IdentityAssertion = z.infer<typeof IdentityAssertion>;
+
+/** Subject matcher used by role bindings. */
+export const RoleBindingSubjectMatcher = z
+  .object({
+    subjectId: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    group: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.subjectId && !value.email && !value.group) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'role binding subjectMatcher requires subjectId, email, or group',
+      });
+    }
+  });
+export type RoleBindingSubjectMatcher = z.infer<typeof RoleBindingSubjectMatcher>;
+
+/** Optional conditions attached to a role binding. */
+export const RoleBindingConditions = z.object({
+  identitySource: z.array(IdentitySource).min(1).optional(),
+  minAssuranceLevel: z.enum(['basic', 'strong']).optional(),
+});
+export type RoleBindingConditions = z.infer<typeof RoleBindingConditions>;
+
+/** Role binding contract for identity -> role resolution. */
+export const RoleBinding = z.object({
+  subjectMatcher: RoleBindingSubjectMatcher,
+  roles: z.array(ActorRole).min(1),
+  conditions: RoleBindingConditions.optional(),
+});
+export type RoleBinding = z.infer<typeof RoleBinding>;
+
+/** Rule obligations derived from risk policy matrix decisions. */
+export const RiskPolicyObligations = z.object({
+  justificationRequired: z.boolean().optional(),
+  ticketRequired: z.boolean().optional(),
+  dualApprovalRequired: z.boolean().optional(),
+  requiredApproverRole: z.array(ActorRole).min(1).optional(),
+  minAssuranceLevel: z.enum(['basic', 'strong']).optional(),
+});
+export type RiskPolicyObligations = z.infer<typeof RiskPolicyObligations>;
+
+/** Matching criteria for risk policy matrix rules. */
+export const RiskPolicyMatch = z.object({
+  actionType: z.array(z.string().min(1)).min(1).optional(),
+  dataClassification: z.array(DataClassification).min(1).optional(),
+  targetEnvironment: z.array(TargetEnvironment).min(1).optional(),
+  systemOfRecord: z.array(z.string().min(1)).min(1).optional(),
+  changeWindow: z.array(z.string().min(1)).min(1).optional(),
+  exceptionPolicy: z.array(z.string().min(1)).min(1).optional(),
+});
+export type RiskPolicyMatch = z.infer<typeof RiskPolicyMatch>;
+
+/** Risk policy matrix rule contract. */
+export const RiskPolicyRule = z.object({
+  id: z.string().min(1),
+  priority: z.number().int(),
+  match: RiskPolicyMatch,
+  effect: z.enum(['allow', 'allow_with_approval', 'deny']),
+  obligations: RiskPolicyObligations.optional(),
+});
+export type RiskPolicyRule = z.infer<typeof RiskPolicyRule>;
+
+/** Effective decision payload produced by the risk policy engine. */
+export const PolicyDecisionV2 = z.object({
+  requestedMode: z.string().min(1),
+  effectiveMode: z.string().min(1),
+  effectiveGateBehavior: z.enum(['auto_approve', 'human_gated']),
+  matchedRuleId: z.string().min(1).nullable(),
+  obligations: RiskPolicyObligations.default({}),
+  outcome: z.enum(['allow', 'allow_with_approval', 'deny']),
+  blockedReasonCode: z.string().min(1).optional(),
+});
+export type PolicyDecisionV2 = z.infer<typeof PolicyDecisionV2>;
+
+/**
+ * Decision receipt v2 contract.
+ *
+ * Note: Runtime emission of this schema is added in later WPs.
+ * This schema defines the strict contract and compatibility surface.
+ */
+export const DecisionReceiptV2 = z.object({
+  schemaVersion: z.literal('flowguard-decision-receipt.v2'),
+  decisionId: z.string().min(1),
+  decisionSequence: z.number().int().positive(),
+  gatePhase: z.string().min(1),
+  verdict: ReviewVerdict,
+  rationale: z.string(),
+  decidedAt: z.string().datetime(),
+  actorIdentity: IdentityAssertion,
+  actorRole: ActorRole,
+  policyDecision: PolicyDecisionV2,
+  obligationsSatisfied: z.boolean(),
+  outcome: z.enum(['approved', 'blocked']),
+  reasonCode: z.string().min(1).optional(),
+});
+export type DecisionReceiptV2 = z.infer<typeof DecisionReceiptV2>;
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 

@@ -43,6 +43,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### FlowGuard & Compliance
 
 - **Four policy modes:** Solo (no human gates), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (human gates, four-eyes principle enforced)
+- **1.2.0 governance contracts (foundation):** Identity assertions, role bindings, and risk policy matrix rule contracts are defined as strict schemas for OIDC-first approval enforcement
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
@@ -52,6 +53,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Hash-chained audit trail** — SHA-256 linked events, tamper-evident, JSONL append-only
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
+- **Decision receipt v2 contract (foundation)** — schema includes actor identity/source/assurance, actor role, policy decision context, and obligations outcome for enterprise provenance replay
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)

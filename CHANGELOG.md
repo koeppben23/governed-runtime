@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- WP1 groundwork for 1.2.0 enterprise governance: strict contracts for `IdentityAssertion`, `RoleBinding`, `RiskPolicyRule`, `PolicyDecisionV2`, and `DecisionReceiptV2`
+- Config schema extensions for identity validation (`identity`), role bindings (`rbac`), and risk matrix defaults (`risk`) with deterministic defaults
+- Test coverage for new contracts across HAPPY/BAD/CORNER/EDGE categories in state and config schema suites
+
+### Changed
+
+- `audit/types.ts` decision detail contract now declares optional v2 receipt fields (`actorIdentity`, `actorRole`, `policyDecision`, obligations/result metadata) without changing current runtime emission
+
 ## [1.1.0] - 2026-04-17
 
 ### Added

@@ -18,6 +18,11 @@
 
 import { z } from 'zod';
 
+const IdentitySourceSchema = z.enum(['local', 'oidc', 'scim', 'service']);
+const ActorRoleSchema = z.enum(['operator', 'approver', 'policy_owner', 'auditor', 'service']);
+const DataClassificationSchema = z.enum(['public', 'internal', 'confidential', 'restricted']);
+const TargetEnvironmentSchema = z.enum(['dev', 'test', 'staging', 'prod']);
+
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 export const FlowGuardConfigSchema = z.object({
@@ -51,6 +56,85 @@ export const FlowGuardConfigSchema = z.object({
       defaultId: z.string().optional(),
       /** Override the set of active validation checks. */
       activeChecks: z.array(z.string()).optional(),
+    })
+    .default({}),
+
+  /** Identity assertion validation and source policy configuration. */
+  identity: z
+    .object({
+      /** Allowed OIDC issuers for host assertions. */
+      allowedIssuers: z.array(z.string().min(1)).default([]),
+      /** Maximum assertion age (seconds) before stale fail-closed. */
+      assertionMaxAgeSeconds: z.number().int().min(1).max(3600).default(300),
+      /** Require assertion sessionBindingId to match current session context. */
+      requireSessionBinding: z.boolean().default(true),
+      /** Modes where local identity fallback is allowed. */
+      allowLocalFallbackModes: z.array(z.enum(['solo', 'team'])).default(['solo', 'team']),
+    })
+    .default({}),
+
+  /** Role binding configuration for approval and governance role resolution. */
+  rbac: z
+    .object({
+      roleBindings: z
+        .array(
+          z.object({
+            subjectMatcher: z
+              .object({
+                subjectId: z.string().min(1).optional(),
+                email: z.string().email().optional(),
+                group: z.string().min(1).optional(),
+              })
+              .superRefine((value, ctx) => {
+                if (!value.subjectId && !value.email && !value.group) {
+                  ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'subjectMatcher requires subjectId, email, or group',
+                  });
+                }
+              }),
+            roles: z.array(ActorRoleSchema).min(1),
+            conditions: z
+              .object({
+                identitySource: z.array(IdentitySourceSchema).min(1).optional(),
+                minAssuranceLevel: z.enum(['basic', 'strong']).optional(),
+              })
+              .optional(),
+          }),
+        )
+        .default([]),
+    })
+    .default({}),
+
+  /** Risk policy matrix configuration (deterministic first-match, deny-default). */
+  risk: z
+    .object({
+      rules: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            priority: z.number().int(),
+            match: z.object({
+              actionType: z.array(z.string().min(1)).min(1).optional(),
+              dataClassification: z.array(DataClassificationSchema).min(1).optional(),
+              targetEnvironment: z.array(TargetEnvironmentSchema).min(1).optional(),
+              systemOfRecord: z.array(z.string().min(1)).min(1).optional(),
+            }),
+            effect: z.enum(['allow', 'allow_with_approval', 'deny']),
+            obligations: z
+              .object({
+                justificationRequired: z.boolean().optional(),
+                ticketRequired: z.boolean().optional(),
+                dualApprovalRequired: z.boolean().optional(),
+                requiredApproverRole: z.array(ActorRoleSchema).min(1).optional(),
+                minAssuranceLevel: z.enum(['basic', 'strong']).optional(),
+              })
+              .optional(),
+          }),
+        )
+        .default([]),
+      /** Optional explicit mode to resolve when no rule matches. */
+      noMatchDecision: z.enum(['deny', 'defer_to_mode']).default('deny'),
     })
     .default({}),
 

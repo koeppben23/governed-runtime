@@ -85,6 +85,8 @@ export interface LifecycleDetail {
 /** Detail payload for decision receipt events. */
 export interface DecisionDetail {
   kind: 'decision';
+  /** Schema version for decision receipt payloads. Default is v1 when omitted. */
+  schemaVersion?: 'flowguard-decision-receipt.v1' | 'flowguard-decision-receipt.v2';
   decisionId: string;
   decisionSequence: number;
   gatePhase: Phase;
@@ -96,6 +98,42 @@ export interface DecisionDetail {
   toPhase: Phase;
   transitionEvent: Event;
   policyMode: string;
+
+  /** v2 optional fields (not emitted until later WP stages). */
+  actorIdentity?: {
+    subjectId: string;
+    displayName?: string;
+    identitySource: 'local' | 'oidc' | 'scim' | 'service';
+    assertedAt: string;
+    assuranceLevel: 'none' | 'basic' | 'strong';
+    issuer?: string;
+    tenantId?: string;
+    email?: string;
+    groups?: string[];
+    claimsRef?: string;
+    sessionBindingId?: string;
+  };
+  actorRole?: 'operator' | 'approver' | 'policy_owner' | 'auditor' | 'service';
+  policyDecision?: {
+    requestedMode: string;
+    effectiveMode: string;
+    effectiveGateBehavior: 'auto_approve' | 'human_gated';
+    matchedRuleId: string | null;
+    obligations: {
+      justificationRequired?: boolean;
+      ticketRequired?: boolean;
+      dualApprovalRequired?: boolean;
+      requiredApproverRole?: Array<
+        'operator' | 'approver' | 'policy_owner' | 'auditor' | 'service'
+      >;
+      minAssuranceLevel?: 'basic' | 'strong';
+    };
+    outcome: 'allow' | 'allow_with_approval' | 'deny';
+    blockedReasonCode?: string;
+  };
+  obligationsSatisfied?: boolean;
+  outcome?: 'approved' | 'blocked';
+  reasonCode?: string;
 }
 
 /** Union of all typed detail payloads. */

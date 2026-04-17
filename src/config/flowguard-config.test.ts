@@ -61,6 +61,13 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.logging.level).toBe('info');
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
+      expect(result.data.identity.allowedIssuers).toEqual([]);
+      expect(result.data.identity.assertionMaxAgeSeconds).toBe(300);
+      expect(result.data.identity.requireSessionBinding).toBe(true);
+      expect(result.data.identity.allowLocalFallbackModes).toEqual(['solo', 'team']);
+      expect(result.data.rbac.roleBindings).toEqual([]);
+      expect(result.data.risk.rules).toEqual([]);
+      expect(result.data.risk.noMatchDecision).toBe('deny');
       expect(result.data.archive.redaction.mode).toBe('basic');
       expect(result.data.archive.redaction.includeRaw).toBe(false);
     }
@@ -79,6 +86,40 @@ describe('FlowGuardConfigSchema', () => {
         defaultId: 'typescript',
         activeChecks: ['test_quality', 'rollback_safety', 'type_coverage'],
       },
+      identity: {
+        allowedIssuers: ['https://idp.example.com'],
+        assertionMaxAgeSeconds: 120,
+        requireSessionBinding: true,
+        allowLocalFallbackModes: ['solo'],
+      },
+      rbac: {
+        roleBindings: [
+          {
+            subjectMatcher: { email: 'alice@example.com' },
+            roles: ['approver'],
+            conditions: { identitySource: ['oidc'], minAssuranceLevel: 'strong' },
+          },
+        ],
+      },
+      risk: {
+        rules: [
+          {
+            id: 'rule-prod-restricted',
+            priority: 10,
+            match: {
+              actionType: ['review_decision'],
+              dataClassification: ['restricted'],
+              targetEnvironment: ['prod'],
+            },
+            effect: 'allow_with_approval',
+            obligations: {
+              ticketRequired: true,
+              minAssuranceLevel: 'strong',
+            },
+          },
+        ],
+        noMatchDecision: 'deny',
+      },
       archive: {
         redaction: {
           mode: 'strict',
@@ -94,6 +135,9 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy.maxSelfReviewIterations).toBe(5);
       expect(result.data.policy.maxImplReviewIterations).toBe(7);
       expect(result.data.profile.defaultId).toBe('typescript');
+      expect(result.data.identity.allowedIssuers).toEqual(['https://idp.example.com']);
+      expect(result.data.rbac.roleBindings).toHaveLength(1);
+      expect(result.data.risk.rules).toHaveLength(1);
       expect(result.data.profile.activeChecks).toEqual([
         'test_quality',
         'rollback_safety',
@@ -187,6 +231,30 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects invalid assertionMaxAgeSeconds (0)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      identity: { assertionMaxAgeSeconds: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects role binding with empty subjectMatcher', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      rbac: { roleBindings: [{ subjectMatcher: {}, roles: ['approver'] }] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid risk noMatchDecision', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      risk: { noMatchDecision: 'allow' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── CORNER ─────────────────────────────────────────────────────────────
 
   it('accepts boundary values for iterations (1 and 10)', () => {
@@ -242,6 +310,35 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
+  it('accepts all local fallback modes', () => {
+    for (const mode of ['solo', 'team']) {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        identity: { allowLocalFallbackModes: [mode] },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it('accepts all risk effects', () => {
+    for (const effect of ['allow', 'allow_with_approval', 'deny']) {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        risk: {
+          rules: [
+            {
+              id: 'r1',
+              priority: 1,
+              match: {},
+              effect,
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
   it('rejects invalid redaction mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
@@ -275,6 +372,9 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.logging.level).toBe('info');
     expect(DEFAULT_CONFIG.policy).toBeDefined();
     expect(DEFAULT_CONFIG.profile).toBeDefined();
+    expect(DEFAULT_CONFIG.identity).toBeDefined();
+    expect(DEFAULT_CONFIG.rbac).toBeDefined();
+    expect(DEFAULT_CONFIG.risk).toBeDefined();
   });
 
   it('round-trips through schema parse', () => {
@@ -323,6 +423,14 @@ describe('readConfig', () => {
       logging: { level: 'debug' },
       policy: { defaultMode: 'regulated' },
       profile: { defaultId: 'typescript' },
+      identity: {
+        allowedIssuers: ['https://idp.example.com'],
+        assertionMaxAgeSeconds: 300,
+        requireSessionBinding: true,
+        allowLocalFallbackModes: ['solo', 'team'],
+      },
+      rbac: { roleBindings: [] },
+      risk: { rules: [], noMatchDecision: 'deny' },
       archive: { redaction: { mode: 'basic', includeRaw: false } },
     };
     await writeRawConfig(tmpDir, JSON.stringify(custom));
