@@ -40,7 +40,7 @@ const filesToUpdate = [
 ];
 
 function replaceVersion(content) {
-  const escaped = version.replace(/\./g, "\\.");
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   content = content.replace(
     new RegExp(`FlowGuard Version: ${escaped}`, "g"),
     `FlowGuard Version: ${version}`,
