@@ -399,6 +399,82 @@ describe('state schemas', () => {
         }),
       ).toThrow();
     });
+
+    it('DecisionReceiptV2 rejects unknown fields (strict contract)', () => {
+      expect(() =>
+        DecisionReceiptV2.parse({
+          schemaVersion: 'flowguard-decision-receipt.v2',
+          decisionId: 'DEC-1',
+          decisionSequence: 1,
+          gatePhase: 'PLAN_REVIEW',
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedAt: FIXED_TIME,
+          actorIdentity: {
+            subjectId: 'user-123',
+            identitySource: 'oidc',
+            assertedAt: FIXED_TIME,
+            assuranceLevel: 'strong',
+          },
+          actorRole: 'approver',
+          policyDecision: {
+            requestedMode: 'regulated',
+            effectiveMode: 'regulated',
+            effectiveGateBehavior: 'human_gated',
+            matchedRuleId: null,
+            obligations: {},
+            outcome: 'deny',
+          },
+          obligationsSatisfied: false,
+          outcome: 'blocked',
+          unknownField: true,
+        }),
+      ).toThrow();
+    });
+
+    it('DecisionReceiptV2 rejects non-gate phase values', () => {
+      expect(() =>
+        DecisionReceiptV2.parse({
+          schemaVersion: 'flowguard-decision-receipt.v2',
+          decisionId: 'DEC-1',
+          decisionSequence: 1,
+          gatePhase: 'PLAN',
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedAt: FIXED_TIME,
+          actorIdentity: {
+            subjectId: 'user-123',
+            identitySource: 'oidc',
+            assertedAt: FIXED_TIME,
+            assuranceLevel: 'strong',
+          },
+          actorRole: 'approver',
+          policyDecision: {
+            requestedMode: 'regulated',
+            effectiveMode: 'regulated',
+            effectiveGateBehavior: 'human_gated',
+            matchedRuleId: null,
+            obligations: {},
+            outcome: 'deny',
+          },
+          obligationsSatisfied: false,
+          outcome: 'blocked',
+        }),
+      ).toThrow();
+    });
+
+    it('PolicyDecisionV2 rejects unknown policy modes', () => {
+      expect(() =>
+        PolicyDecisionV2.parse({
+          requestedMode: 'enterprise',
+          effectiveMode: 'regulated',
+          effectiveGateBehavior: 'human_gated',
+          matchedRuleId: null,
+          obligations: {},
+          outcome: 'deny',
+        }),
+      ).toThrow();
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────

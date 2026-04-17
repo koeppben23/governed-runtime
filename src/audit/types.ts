@@ -24,7 +24,12 @@
 
 import * as crypto from 'node:crypto';
 import type { Phase, Event } from '../state/schema';
-import type { ReviewVerdict } from '../state/evidence';
+import type {
+  ReviewVerdict,
+  IdentityAssertion,
+  ActorRole,
+  PolicyDecisionV2,
+} from '../state/evidence';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -100,37 +105,9 @@ export interface DecisionDetail {
   policyMode: string;
 
   /** v2 optional fields (not emitted until later WP stages). */
-  actorIdentity?: {
-    subjectId: string;
-    displayName?: string;
-    identitySource: 'local' | 'oidc' | 'scim' | 'service';
-    assertedAt: string;
-    assuranceLevel: 'none' | 'basic' | 'strong';
-    issuer?: string;
-    tenantId?: string;
-    email?: string;
-    groups?: string[];
-    claimsRef?: string;
-    sessionBindingId?: string;
-  };
-  actorRole?: 'operator' | 'approver' | 'policy_owner' | 'auditor' | 'service';
-  policyDecision?: {
-    requestedMode: string;
-    effectiveMode: string;
-    effectiveGateBehavior: 'auto_approve' | 'human_gated';
-    matchedRuleId: string | null;
-    obligations: {
-      justificationRequired?: boolean;
-      ticketRequired?: boolean;
-      dualApprovalRequired?: boolean;
-      requiredApproverRole?: Array<
-        'operator' | 'approver' | 'policy_owner' | 'auditor' | 'service'
-      >;
-      minAssuranceLevel?: 'basic' | 'strong';
-    };
-    outcome: 'allow' | 'allow_with_approval' | 'deny';
-    blockedReasonCode?: string;
-  };
+  actorIdentity?: IdentityAssertion;
+  actorRole?: ActorRole;
+  policyDecision?: PolicyDecisionV2;
   obligationsSatisfied?: boolean;
   outcome?: 'approved' | 'blocked';
   reasonCode?: string;

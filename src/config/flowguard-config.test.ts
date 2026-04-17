@@ -110,6 +110,8 @@ describe('FlowGuardConfigSchema', () => {
               actionType: ['review_decision'],
               dataClassification: ['restricted'],
               targetEnvironment: ['prod'],
+              changeWindow: ['business_hours'],
+              exceptionPolicy: ['approved_exception_only'],
             },
             effect: 'allow_with_approval',
             obligations: {
@@ -255,6 +257,14 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects non deny-default noMatchDecision (defer_to_mode)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      risk: { noMatchDecision: 'defer_to_mode' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── CORNER ─────────────────────────────────────────────────────────────
 
   it('accepts boundary values for iterations (1 and 10)', () => {
@@ -349,16 +359,13 @@ describe('FlowGuardConfigSchema', () => {
 
   // ── EDGE ───────────────────────────────────────────────────────────────
 
-  it('strips unknown properties (Zod default strip behavior)', () => {
+  it('rejects unknown properties (strict contract behavior)', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
       unknownField: 'should be stripped',
       logging: { level: 'warn', extra: true },
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect((result.data as Record<string, unknown>)['unknownField']).toBeUndefined();
-    }
+    expect(result.success).toBe(false);
   });
 });
 
