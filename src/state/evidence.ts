@@ -242,13 +242,18 @@ export type ErrorInfo = z.infer<typeof ErrorInfo>;
  * the innermost layer must not depend on outer layers.
  */
 export const PolicySnapshotSchema = z.object({
-  /** Policy mode identifier. */
+  /**
+   * The effective policy mode at session creation time.
+   * This is the result of resolvePolicyWithContext(requestedMode) —
+   * may differ from requestedMode when team-ci degrades without CI.
+   * Use requestedMode to see what was originally requested.
+   */
   mode: z.string(),
   /** SHA-256 hash of the canonical JSON of the full GovernancePolicy. */
   hash: z.string(),
   /** When the policy was resolved and frozen. */
   resolvedAt: z.string().datetime(),
-  /** Requested policy mode at hydrate time. */
+  /** Original requested policy mode at hydrate time. */
   requestedMode: z.string().optional(),
   /** Effective gate behavior after mode resolution. */
   effectiveGateBehavior: z.enum(["auto_approve", "human_gated"]).optional(),

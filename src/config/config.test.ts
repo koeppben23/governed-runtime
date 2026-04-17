@@ -42,6 +42,14 @@ describe("config/policy", () => {
       expect(resolvePolicy("regulated")).toBe(REGULATED_POLICY);
     });
 
+    it("resolvePolicy vs resolvePolicyWithContext — team-ci authority is in WithContext", () => {
+      expect(resolvePolicy("team-ci")).toBe(TEAM_CI_POLICY);
+      const withContext = resolvePolicyWithContext("team-ci", false);
+      expect(withContext.policy).toBe(TEAM_POLICY);
+      expect(withContext.effectiveMode).toBe("team");
+      expect(withContext.degradedReason).toBe("ci_context_missing");
+    });
+
     it("resolvePolicyWithContext keeps team-ci when CI context exists", () => {
       const result = resolvePolicyWithContext("team-ci", true);
       expect(result.policy).toBe(TEAM_CI_POLICY);

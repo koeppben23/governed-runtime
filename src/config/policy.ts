@@ -264,10 +264,17 @@ function normalizePolicyMode(mode?: string): PolicyMode {
 }
 
 /**
- * Resolve policy with explicit requested/effective mode semantics.
+ * Resolve policy with runtime context awareness.
  *
- * team-ci is only effective when CI context is detected.
- * Without CI context it degrades to team (human-gated).
+ * THIS IS THE RUNTIME AUTHORITY. Use this for session creation and any
+ * user-facing resolution where the effective mode matters.
+ *
+ * Degradation rules:
+ * - team-ci + no CI detected → effectiveMode="team", effectiveGateBehavior="human_gated"
+ * - All other modes → effectiveMode = requestedMode
+ *
+ * The returned policy object reflects the effective (possibly degraded) policy.
+ * Compare: resolvePolicy() returns the raw preset without context.
  */
 export function resolvePolicyWithContext(
   mode?: string,
@@ -294,11 +301,21 @@ export function resolvePolicyWithContext(
 }
 
 /**
- * Resolve a FlowGuard policy by mode name.
+ * Resolve a FlowGuard policy PRESET by mode name.
  *
- * Returns TEAM_POLICY if mode is unknown or undefined.
- * TEAM is the safe default: human gates on, audit on, self-approval on.
- * If you need regulated, you must explicitly say so.
+ * NOT the runtime authority. This returns the raw policy object for a given
+ * mode string without applying runtime context (CI detection, etc.).
+ *
+ * Authority rules:
+ * - For session creation: use resolvePolicyWithContext() — applies CI context
+ * - For snapshot factory: use this — accepts the already-resolved effective mode
+ * - For config lookups: use this — maps mode strings to policy objects
+ *
+ * team-ci returns TEAM_CI_POLICY (the preset, not the degraded result).
+ * Degradation to TEAM_POLICY only happens inside resolvePolicyWithContext.
+ *
+ * @param mode - Policy mode string (solo | team | team-ci | regulated).
+ *               Falls back to "team" for unknown or undefined values.
  */
 export function resolvePolicy(mode?: string): FlowGuardPolicy {
   const m = normalizePolicyMode(mode);
