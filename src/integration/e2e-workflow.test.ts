@@ -457,8 +457,9 @@ describe("e2e-workflow", () => {
 
   describe("EDGE", () => {
     it("team-ci without CI context degrades to team (human-gated)", async () => {
-      const previousCi = process.env.CI;
-      delete process.env.CI;
+      const ciVars = ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "JENKINS_URL", "TF_BUILD", "TEAMCITY_VERSION", "CIRCLECI", "DRONE", "BITBUCKET_BUILD_NUMBER", "BUILDKITE_BUILD_ID"];
+      const previous = Object.fromEntries(ciVars.map((v) => [v, process.env[v]]));
+      ciVars.forEach((v) => delete process.env[v]);
       try {
         const hydrateResult = await callOk(hydrate, { policyMode: "team-ci", profileId: "baseline" });
         const resolution = hydrateResult.policyResolution as Record<string, unknown>;
@@ -471,8 +472,10 @@ describe("e2e-workflow", () => {
         await callOk(plan, { selfReviewVerdict: "approve" });
         expect(await getPhase()).toBe("PLAN_REVIEW");
       } finally {
-        if (previousCi === undefined) delete process.env.CI;
-        else process.env.CI = previousCi;
+        ciVars.forEach((v) => {
+          if (previous[v] === undefined) delete process.env[v];
+          else process.env[v] = previous[v];
+        });
       }
     });
 

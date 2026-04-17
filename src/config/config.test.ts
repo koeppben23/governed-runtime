@@ -38,7 +38,7 @@ describe("config/policy", () => {
     it("resolvePolicy returns correct preset for each mode", () => {
       expect(resolvePolicy("solo")).toBe(SOLO_POLICY);
       expect(resolvePolicy("team")).toBe(TEAM_POLICY);
-      expect(resolvePolicy("team-ci")).toBe(TEAM_POLICY);
+      expect(resolvePolicy("team-ci")).toBe(TEAM_CI_POLICY);
       expect(resolvePolicy("regulated")).toBe(REGULATED_POLICY);
     });
 

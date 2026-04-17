@@ -301,7 +301,8 @@ export function resolvePolicyWithContext(
  * If you need regulated, you must explicitly say so.
  */
 export function resolvePolicy(mode?: string): FlowGuardPolicy {
-  return resolvePolicyWithContext(mode).policy;
+  const m = normalizePolicyMode(mode);
+  return POLICIES[m] ?? TEAM_POLICY;
 }
 
 /** All known policy mode names. */

@@ -177,8 +177,9 @@ describe("hydrate", () => {
     });
 
     it("team-ci degrades to team when CI context is missing", async () => {
-      const previousCi = process.env.CI;
-      delete process.env.CI;
+      const ciVars = ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "JENKINS_URL", "TF_BUILD", "TEAMCITY_VERSION", "CIRCLECI", "DRONE", "BITBUCKET_BUILD_NUMBER", "BUILDKITE_BUILD_ID"];
+      const previous = Object.fromEntries(ciVars.map((v) => [v, process.env[v]]));
+      ciVars.forEach((v) => delete process.env[v]);
       try {
         const result = await hydrateSession({ policyMode: "team-ci" });
         const resolution = result.policyResolution as Record<string, unknown>;
@@ -187,8 +188,10 @@ describe("hydrate", () => {
         expect(resolution.effectiveGateBehavior).toBe("human_gated");
         expect(resolution.reason).toBe("ci_context_missing");
       } finally {
-        if (previousCi === undefined) delete process.env.CI;
-        else process.env.CI = previousCi;
+        ciVars.forEach((v) => {
+          if (previous[v] === undefined) delete process.env[v];
+          else process.env[v] = previous[v];
+        });
       }
     });
 
