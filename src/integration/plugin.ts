@@ -81,7 +81,7 @@ import {
   resolvePolicy,
   resolvePolicyWithContext,
 } from '../config/policy';
-import type { FlowGuardPolicy } from '../config/policy';
+import type { FlowGuardPolicy, PolicyMode } from '../config/policy';
 import type { FlowGuardConfig } from '../config/flowguard-config';
 import { DEFAULT_CONFIG } from '../config/flowguard-config';
 import {
@@ -104,6 +104,13 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
   flowguard_hydrate: 'session_created',
   flowguard_abort_session: 'session_aborted',
 };
+
+function normalizePolicyMode(value: string | undefined, fallback: PolicyMode): PolicyMode {
+  if (value === 'solo' || value === 'team' || value === 'team-ci' || value === 'regulated') {
+    return value;
+  }
+  return fallback;
+}
 
 /**
  * FlowGuard Audit Plugin.
@@ -536,7 +543,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ project, client, $, directo
                     fromPhase: firstTransition.from,
                     toPhase: firstTransition.to,
                     transitionEvent: firstTransition.event,
-                    policyMode: state?.policySnapshot.mode ?? policy.mode,
+                    policyMode: normalizePolicyMode(state?.policySnapshot.mode, policy.mode),
                   },
                   now,
                   actor,

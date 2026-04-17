@@ -66,7 +66,12 @@ export type TargetEnvironment = z.infer<typeof TargetEnvironment>;
 export const PolicyMode = z.enum(['solo', 'team', 'team-ci', 'regulated']);
 export type PolicyMode = z.infer<typeof PolicyMode>;
 
-/** User gate phases that can produce review decisions/receipts. */
+/**
+ * User-gate phases that can produce /review-decision receipts.
+ *
+ * Contract source: command admissibility allows /review-decision only at
+ * PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW.
+ */
 export const UserGatePhase = z.enum(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW']);
 export type UserGatePhase = z.infer<typeof UserGatePhase>;
 

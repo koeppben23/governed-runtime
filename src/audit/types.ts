@@ -29,6 +29,7 @@ import type {
   IdentityAssertion,
   ActorRole,
   PolicyDecisionV2,
+  PolicyMode,
 } from '../state/evidence';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ export interface DecisionDetail {
   fromPhase: Phase;
   toPhase: Phase;
   transitionEvent: Event;
-  policyMode: string;
+  policyMode: PolicyMode;
 
   /** v2 optional fields (not emitted until later WP stages). */
   actorIdentity?: IdentityAssertion;

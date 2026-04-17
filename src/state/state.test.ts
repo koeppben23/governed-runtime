@@ -217,6 +217,38 @@ describe('state schemas', () => {
       };
       expect(() => DecisionReceiptV2.parse(receipt)).not.toThrow();
     });
+
+    it('DecisionReceiptV2 accepts all user gate phases', () => {
+      const base = {
+        schemaVersion: 'flowguard-decision-receipt.v2' as const,
+        decisionId: 'DEC-001',
+        decisionSequence: 1,
+        verdict: 'approve' as const,
+        rationale: 'Looks compliant',
+        decidedAt: FIXED_TIME,
+        actorIdentity: {
+          subjectId: 'user-123',
+          identitySource: 'oidc' as const,
+          assertedAt: FIXED_TIME,
+          assuranceLevel: 'strong' as const,
+        },
+        actorRole: 'approver' as const,
+        policyDecision: {
+          requestedMode: 'regulated' as const,
+          effectiveMode: 'regulated' as const,
+          effectiveGateBehavior: 'human_gated' as const,
+          matchedRuleId: 'rule-prod-confidential',
+          obligations: {},
+          outcome: 'allow_with_approval' as const,
+        },
+        obligationsSatisfied: true,
+        outcome: 'approved' as const,
+      };
+
+      for (const gatePhase of ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'] as const) {
+        expect(() => DecisionReceiptV2.parse({ ...base, gatePhase })).not.toThrow();
+      }
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
