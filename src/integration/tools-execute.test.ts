@@ -792,6 +792,41 @@ describe('decision', () => {
     }
   }
 
+  async function reachPlanReviewRegulated(
+    initiatorSubject = 'initiator.user',
+    extraConfig?: Record<string, unknown>,
+  ): Promise<void> {
+    ctx.identityAssertion = {
+      subjectId: initiatorSubject,
+      identitySource: 'oidc',
+      assertedAt: nowIso(),
+      assuranceLevel: 'strong',
+      issuer: 'https://idp.example.com',
+      sessionBindingId: ctx.sessionID,
+    };
+    await writeWorkspaceConfig({
+      schemaVersion: 'v1',
+      identity: {
+        allowedIssuers: ['https://idp.example.com'],
+        assertionMaxAgeSeconds: 300,
+        requireSessionBinding: true,
+        allowLocalFallbackModes: ['solo', 'team'],
+      },
+      ...(extraConfig ?? {}),
+    });
+
+    await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+    await ticket.execute({ text: 'Regulated decision role test', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Regulated flow' }, ctx);
+    for (let i = 0; i < 5; i++) {
+      const s = parseToolResult(await status.execute({}, ctx));
+      if (s.phase === 'PLAN_REVIEW') break;
+      await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    }
+    const atGate = parseToolResult(await status.execute({}, ctx));
+    expect(atGate.phase).toBe('PLAN_REVIEW');
+  }
+
   describe('HAPPY', () => {
     it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
       await reachPlanReview();
@@ -817,6 +852,46 @@ describe('decision', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
     });
+
+    it('blocks with APPROVER_ROLE_MISMATCH when reviewer lacks required regulated role', async () => {
+      await reachPlanReviewRegulated('initiator.user');
+
+      ctx.identityAssertion = {
+        subjectId: 'reviewer.user',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('APPROVER_ROLE_MISMATCH');
+    });
+
+    it('blocks with DUAL_CONTROL_REQUIRED when initiator tries to approve in regulated mode', async () => {
+      await reachPlanReviewRegulated('initiator.user', {
+        rbac: {
+          roleBindings: [{ subjectMatcher: { subjectId: 'initiator.user' }, roles: ['approver'] }],
+        },
+      });
+
+      ctx.identityAssertion = {
+        subjectId: 'initiator.user',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Self approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('DUAL_CONTROL_REQUIRED');
+    });
   });
 
   describe('CORNER', () => {
@@ -837,6 +912,31 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+    });
+
+    it('regulated approval succeeds when reviewer has required approver role and is different identity', async () => {
+      await reachPlanReviewRegulated('initiator.user', {
+        rbac: {
+          roleBindings: [{ subjectMatcher: { subjectId: 'reviewer.user' }, roles: ['approver'] }],
+        },
+      });
+
+      ctx.identityAssertion = {
+        subjectId: 'reviewer.user',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await decision.execute(
+        { verdict: 'approve', rationale: 'Approved by reviewer' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
     });
   });
 });

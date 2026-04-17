@@ -27,7 +27,13 @@ FlowGuard supports per-repository configuration via `config.json`.
     "allowLocalFallbackModes": ["solo", "team"]
   },
   "rbac": {
-    "roleBindings": []
+    "roleBindings": [],
+    "approvalConstraints": {
+      "dualControlRequiredModes": ["regulated"],
+      "requiredApproverRolesByMode": {
+        "regulated": ["approver", "policy_owner"]
+      }
+    }
   },
   "risk": {
     "rules": [],
@@ -173,6 +179,33 @@ When enabled, `sessionBindingId` in identity assertions must match the active Op
 Policy modes where local fallback identity is allowed when no trusted host assertion is present.
 
 Regulated mode blocks local identity by default unless explicitly included here.
+
+### rbac.roleBindings
+
+**Type:** `array`
+**Default:** `[]`
+
+Maps identity selectors (`subjectId`, `email`, `group`) to actor roles.
+
+Binding conditions can restrict applicability by identity source and minimum assurance.
+
+### rbac.approvalConstraints.dualControlRequiredModes
+
+**Type:** `enum[]`
+**Values:** `solo`, `team`, `team-ci`, `regulated`
+**Default:** `regulated`
+
+Modes where approval must come from a different identity than the session initiator.
+Violations block with `DUAL_CONTROL_REQUIRED`.
+
+### rbac.approvalConstraints.requiredApproverRolesByMode
+
+**Type:** `object`
+**Default:** `{ "regulated": ["approver", "policy_owner"] }`
+
+Per-mode required roles for `/review-decision` approvers.
+If a reviewer does not have at least one required role, FlowGuard blocks with
+`APPROVER_ROLE_MISMATCH`.
 
 ### profile.overrides
 

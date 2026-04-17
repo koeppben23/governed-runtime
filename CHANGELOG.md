@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WP1 groundwork for 1.2.0 enterprise governance: strict contracts for `IdentityAssertion`, `RoleBinding`, `RiskPolicyRule`, `PolicyDecisionV2`, and `DecisionReceiptV2`
 - Config schema extensions for identity validation (`identity`), role bindings (`rbac`), and risk matrix defaults (`risk`) with deterministic defaults
 - Test coverage for new contracts across HAPPY/BAD/CORNER/EDGE categories in state and config schema suites
-- WP2 OIDC-first identity validation for `/hydrate` via host assertions (`identityAssertion`, `identity`, `hostContext.identityAssertion`, `claims` aliases)
+- WP2 OIDC-first identity validation for `/hydrate` via host assertions (`identityAssertion`, `identity`, `hostContext.identityAssertion` aliases)
 - Fail-closed identity reason codes for hydrate entry: `IDENTITY_UNVERIFIED`, `UNTRUSTED_IDENTITY_ISSUER`, `IDENTITY_SOURCE_NOT_ALLOWED`
+- WP3 RBAC role resolution module (`integration/rbac.ts`) with role binding matchers (subject/email/group), condition checks (source/assurance), and fallback actor roles
+- WP3 approval constraint enforcement for `/review-decision`: `DUAL_CONTROL_REQUIRED` and `APPROVER_ROLE_MISMATCH`
 
 ### Changed
 
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/hydrate` now resolves initiator identity from validated assertion context (instead of raw session ID), with local fallback only in explicitly allowed modes
 - `/hydrate` config loading is now strict: invalid config JSON/schema blocks instead of silently falling back to defaults
 - OIDC issuer trust is hardened in `regulated` mode: empty `identity.allowedIssuers` now blocks host OIDC assertions
+- `/review-decision` now resolves reviewer identity from host assertion context and enforces role/dual-control constraints before rail execution
 
 ## [1.1.0] - 2026-04-17
 

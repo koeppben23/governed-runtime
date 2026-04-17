@@ -85,6 +85,21 @@ Fail-closed reason codes:
 - `UNTRUSTED_IDENTITY_ISSUER`
 - `IDENTITY_SOURCE_NOT_ALLOWED`
 
+## RBAC Approval Constraints
+
+At `/review-decision`, FlowGuard resolves reviewer roles from `rbac.roleBindings` and enforces
+mode-aware approval constraints.
+
+Default constraints:
+
+- `regulated` requires dual control (reviewer identity must differ from initiator)
+- `regulated` requires reviewer role `approver` or `policy_owner`
+
+Fail-closed reason codes:
+
+- `DUAL_CONTROL_REQUIRED`
+- `APPROVER_ROLE_MISMATCH`
+
 ## Regulated Mode
 
 For compliance-required environments (banks, healthcare, etc.).

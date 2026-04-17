@@ -374,6 +374,26 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'If required, explicitly allow the source in config.identity.allowLocalFallbackModes',
     ],
   },
+  {
+    code: 'APPROVER_ROLE_MISMATCH',
+    category: 'identity',
+    messageTemplate:
+      'Approver role mismatch in mode {mode}. Required roles: {requiredRoles}. Actual roles: {actualRoles}.',
+    recoverySteps: [
+      'Bind the reviewer identity to one of the required approver roles via config.rbac.roleBindings',
+      'Or adjust config.rbac.approvalConstraints.requiredApproverRolesByMode for the target mode',
+    ],
+  },
+  {
+    code: 'DUAL_CONTROL_REQUIRED',
+    category: 'identity',
+    messageTemplate:
+      'Dual control required in mode {mode}: initiator {initiatedBy} cannot approve as {decidedBy}.',
+    recoverySteps: [
+      'A different identity must perform /review-decision',
+      'Adjust dual control policy only if your governance model explicitly allows it',
+    ],
+  },
 
   // ── Adapter ───────────────────────────────────────────────────
   {

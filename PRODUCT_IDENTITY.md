@@ -45,6 +45,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Four policy modes:** Solo (no human gates), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (human gates, four-eyes principle enforced)
 - **1.2.0 governance contracts (foundation):** Identity assertions, role bindings, and risk policy matrix rule contracts are defined as strict schemas for OIDC-first approval enforcement
 - **OIDC-first hydrate identity boundary:** session bootstrap validates trusted host identity assertions (issuer allowlist, freshness, session binding) and fails closed for invalid/disallowed identity sources
+- **Role-backed review approvals:** `/review-decision` resolves reviewer roles from configurable role bindings and enforces mode-aware dual-control + required approver roles
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix

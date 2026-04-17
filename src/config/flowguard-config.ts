@@ -114,6 +114,23 @@ export const FlowGuardConfigSchema = z
               .strict(),
           )
           .default([]),
+        approvalConstraints: z
+          .object({
+            /** Policy modes that require two different identities for approval paths. */
+            dualControlRequiredModes: z.array(PolicyMode).default(['regulated']),
+            /** Required approver roles by policy mode. Omitted mode => no role gate. */
+            requiredApproverRolesByMode: z
+              .object({
+                solo: z.array(ActorRole).min(1).optional(),
+                team: z.array(ActorRole).min(1).optional(),
+                'team-ci': z.array(ActorRole).min(1).optional(),
+                regulated: z.array(ActorRole).min(1).optional(),
+              })
+              .strict()
+              .default({ regulated: ['approver', 'policy_owner'] }),
+          })
+          .strict()
+          .default({}),
       })
       .strict()
       .default({}),

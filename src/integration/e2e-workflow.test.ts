@@ -832,7 +832,7 @@ describe('e2e-workflow', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(result.code).toBe('DUAL_CONTROL_REQUIRED');
       expect(result.recovery).toBeDefined();
 
       // Phase must not have changed — still at PLAN_REVIEW
@@ -884,13 +884,13 @@ describe('e2e-workflow', () => {
       );
       const crResult = parseToolResult(crRaw);
       expect(crResult.error).toBe(true);
-      expect(crResult.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(crResult.code).toBe('DUAL_CONTROL_REQUIRED');
 
       // reject by same actor — also blocked
       const rejRaw = await decision.execute({ verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejResult = parseToolResult(rejRaw);
       expect(rejResult.error).toBe(true);
-      expect(rejResult.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(rejResult.code).toBe('DUAL_CONTROL_REQUIRED');
 
       // Phase unchanged — still PLAN_REVIEW
       expect(await getPhase()).toBe('PLAN_REVIEW');

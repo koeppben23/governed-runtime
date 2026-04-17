@@ -66,6 +66,10 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.identity.requireSessionBinding).toBe(true);
       expect(result.data.identity.allowLocalFallbackModes).toEqual(['solo', 'team']);
       expect(result.data.rbac.roleBindings).toEqual([]);
+      expect(result.data.rbac.approvalConstraints.dualControlRequiredModes).toEqual(['regulated']);
+      expect(result.data.rbac.approvalConstraints.requiredApproverRolesByMode).toEqual({
+        regulated: ['approver', 'policy_owner'],
+      });
       expect(result.data.risk.rules).toEqual([]);
       expect(result.data.risk.noMatchDecision).toBe('deny');
       expect(result.data.archive.redaction.mode).toBe('basic');
@@ -100,6 +104,13 @@ describe('FlowGuardConfigSchema', () => {
             conditions: { identitySource: ['oidc'], minAssuranceLevel: 'strong' },
           },
         ],
+        approvalConstraints: {
+          dualControlRequiredModes: ['regulated', 'team'],
+          requiredApproverRolesByMode: {
+            regulated: ['approver'],
+            team: ['approver', 'policy_owner'],
+          },
+        },
       },
       risk: {
         rules: [
@@ -139,6 +150,10 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.profile.defaultId).toBe('typescript');
       expect(result.data.identity.allowedIssuers).toEqual(['https://idp.example.com']);
       expect(result.data.rbac.roleBindings).toHaveLength(1);
+      expect(result.data.rbac.approvalConstraints.dualControlRequiredModes).toEqual([
+        'regulated',
+        'team',
+      ]);
       expect(result.data.risk.rules).toHaveLength(1);
       expect(result.data.profile.activeChecks).toEqual([
         'test_quality',
@@ -245,6 +260,20 @@ describe('FlowGuardConfigSchema', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
       rbac: { roleBindings: [{ subjectMatcher: {}, roles: ['approver'] }] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid requiredApproverRolesByMode role value', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      rbac: {
+        approvalConstraints: {
+          requiredApproverRolesByMode: {
+            regulated: ['chief_approver'],
+          },
+        },
+      },
     });
     expect(result.success).toBe(false);
   });
@@ -436,7 +465,13 @@ describe('readConfig', () => {
         requireSessionBinding: true,
         allowLocalFallbackModes: ['solo', 'team'],
       },
-      rbac: { roleBindings: [] },
+      rbac: {
+        roleBindings: [],
+        approvalConstraints: {
+          dualControlRequiredModes: ['regulated'],
+          requiredApproverRolesByMode: { regulated: ['approver', 'policy_owner'] },
+        },
+      },
       risk: { rules: [], noMatchDecision: 'deny' },
       archive: { redaction: { mode: 'basic', includeRaw: false } },
     };

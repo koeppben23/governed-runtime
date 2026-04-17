@@ -40,7 +40,7 @@ import { executeAbort } from '../../rails/abort';
 import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { readState, writeState, writeReport } from '../../adapters/persistence';
+import { readState, readConfig, writeState, writeReport } from '../../adapters/persistence';
 
 // Workspace
 import { archiveSession } from '../../adapters/workspace';
@@ -53,6 +53,16 @@ import type { CheckId, ValidationResult } from '../../state/evidence';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness';
+import { resolveContextIdentity } from '../identity';
+import { evaluateApprovalConstraints, resolveActorRoles } from '../rbac';
+import type { PolicyMode } from '../../config/policy';
+
+function normalizePolicyMode(value: string): PolicyMode {
+  if (value === 'solo' || value === 'team' || value === 'team-ci' || value === 'regulated') {
+    return value;
+  }
+  return 'team';
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_status — Read-Only State Check
@@ -192,17 +202,36 @@ export const decision: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
+      const { sessDir, wsDir } = await resolveWorkspacePaths(context);
       const state = await requireState(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
+      const config = await readConfig(wsDir);
+      const effectiveMode = normalizePolicyMode(state.policySnapshot.mode);
+
+      const identityResult = resolveContextIdentity(context, config, effectiveMode, ctx.now());
+      if (!identityResult.ok) {
+        return formatBlocked(identityResult.blocked.code, identityResult.blocked.vars);
+      }
+
+      const roleResolution = resolveActorRoles(identityResult.value.assertion, config);
+      const constraintBlocked = evaluateApprovalConstraints({
+        mode: effectiveMode,
+        initiatedBy: state.initiatedBy,
+        decidedBy: identityResult.value.assertion.subjectId,
+        actorRoles: roleResolution.roles,
+        config,
+      });
+      if (constraintBlocked) {
+        return formatBlocked(constraintBlocked.code, constraintBlocked.vars);
+      }
 
       const result = executeReviewDecision(
         state,
         {
           verdict: args.verdict,
           rationale: args.rationale,
-          decidedBy: context.sessionID,
+          decidedBy: identityResult.value.assertion.subjectId,
         },
         ctx,
       );

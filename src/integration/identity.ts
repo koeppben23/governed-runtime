@@ -247,3 +247,6 @@ export function resolveHydrateIdentity(
     },
   };
 }
+
+/** Generic alias for context identity resolution (used beyond hydrate). */
+export const resolveContextIdentity = resolveHydrateIdentity;
