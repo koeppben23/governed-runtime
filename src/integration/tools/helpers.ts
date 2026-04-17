@@ -111,6 +111,7 @@ export function formatRailResult(result: RailResult): string {
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
   const reviewDecision = result.state.reviewDecision;
+  const metadata = 'decisionMetadata' in result ? (result as { decisionMetadata?: unknown }).decisionMetadata : undefined;
   const json = JSON.stringify({
     phase: result.state.phase,
     status: 'ok',
@@ -126,6 +127,7 @@ export function formatRailResult(result: RailResult): string {
           },
         }
       : {}),
+    ...(metadata ? { _decision: metadata } : {}),
     _audit: { transitions: result.transitions },
   });
   return json + `\nNext action: ${nextAction.text}`;
