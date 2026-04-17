@@ -205,6 +205,7 @@ function isAssuranceSufficient(
 function getDefaultDecisionConfig(): FlowGuardConfig {
   // Default: catch-all allow rule for backward compatibility
   // 1.2.0 callers should provide their own config for proper governance
+  // Allow all action types by using an empty match (matches everything)
   return {
     schemaVersion: 'v1',
     risk: {
@@ -212,7 +213,7 @@ function getDefaultDecisionConfig(): FlowGuardConfig {
         {
           id: 'default-allow',
           priority: 9999,
-          match: { actionType: ['*'] },
+          match: {},  // Empty match = matches everything
           effect: 'allow',
         },
       ],
