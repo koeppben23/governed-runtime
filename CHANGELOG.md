@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fail-closed identity reason codes for hydrate entry: `IDENTITY_UNVERIFIED`, `UNTRUSTED_IDENTITY_ISSUER`, `IDENTITY_SOURCE_NOT_ALLOWED`
 - WP3 RBAC role resolution module (`integration/rbac.ts`) with role binding matchers (subject/email/group), condition checks (source/assurance), and fallback actor roles
 - WP3 approval constraint enforcement for `/review-decision`: `DUAL_CONTROL_REQUIRED` and `APPROVER_ROLE_MISMATCH`
+- WP4 Risk Policy Matrix Engine: deterministic evaluation of action type, data classification, target environment against configurable rules with priority-based first-match-wins, deny-by-default semantics
+- WP5 `/review-decision` production path: identity validation (WP2) → role resolution (WP3) → risk evaluation (WP4) → obligations check → approval decision, with full governance enforcement
+- WP6 Decision Receipt v2: audit plugin emits receipt with actor identity, role, matched rule ID, obligations result, reason code, outcome for enterprise provenance replay
+- WP7 Documentation: admin-model, policies, data-classification updated to reflect WP4/5 runtime semantics
+
+### Breaking Changes
+
+- `/review-decision` now requires `ReviewDecisionContext` parameter with config for governance enforcement. Callers must provide config or will receive `INTERNAL_ERROR`
+- Identity assertion required in regulated mode: missing identity blocks decision
+- Unknown policy mode/gate behavior now blocks with `INVALID_POLICY_MODE` instead of silent fallback
+- No-match in risk policy equals deny (no silent allow fallback)
 
 ### Changed
 
