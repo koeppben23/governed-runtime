@@ -57,13 +57,6 @@ import { resolveContextIdentity } from '../identity';
 import { evaluateApprovalConstraints, resolveActorRoles } from '../rbac';
 import type { PolicyMode } from '../../config/policy';
 
-function parsePolicyMode(value: string): PolicyMode | null {
-  if (value === 'solo' || value === 'team' || value === 'team-ci' || value === 'regulated') {
-    return value;
-  }
-  return null;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_status — Read-Only State Check
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -207,10 +200,11 @@ export const decision: ToolDefinition = {
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
-      const effectiveMode = parsePolicyMode(state.policySnapshot.mode);
-      if (!effectiveMode) {
+      const rawMode = state.policySnapshot.mode;
+      if (rawMode !== 'solo' && rawMode !== 'team' && rawMode !== 'team-ci' && rawMode !== 'regulated') {
         return formatBlocked('INVALID_POLICY_MODE', { mode: state.policySnapshot.mode });
       }
+      const effectiveMode: PolicyMode = rawMode;
 
       let config;
       try {
