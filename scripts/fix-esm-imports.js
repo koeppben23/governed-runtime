@@ -24,7 +24,7 @@ function fixImports(filePath) {
   const original = content;
   const fileDir = path.dirname(filePath);
 
-  content = content.replace(/from "(\.\.?\/[^"]+)"/g, (match, p1) => {
+  content = content.replace(/from ["'](\.\.?\/[^"']+)["']/g, (match, p1) => {
     if (p1.endsWith('.js')) return match;
 
     // Resolve the import relative to the importing file's directory
