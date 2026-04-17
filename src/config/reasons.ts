@@ -346,6 +346,34 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Ask a colleague with reviewer permissions to run /review-decision',
     ],
   },
+  {
+    code: 'IDENTITY_UNVERIFIED',
+    category: 'identity',
+    messageTemplate: 'Identity assertion could not be verified: {message}',
+    recoverySteps: [
+      'Ensure the host runtime provides a valid identity assertion',
+      'For OIDC: include subjectId, identitySource=oidc, assertedAt, assuranceLevel, issuer, and sessionBindingId',
+      'For local fallback: use solo/team mode or explicitly allow local fallback in config',
+    ],
+  },
+  {
+    code: 'UNTRUSTED_IDENTITY_ISSUER',
+    category: 'identity',
+    messageTemplate: 'Identity issuer is not trusted: {message}',
+    recoverySteps: [
+      'Add the issuer to config.identity.allowedIssuers for this workspace',
+      'Ensure the host assertion includes a valid issuer claim',
+    ],
+  },
+  {
+    code: 'IDENTITY_SOURCE_NOT_ALLOWED',
+    category: 'identity',
+    messageTemplate: 'Identity source {source} is not allowed for mode {mode}: {message}',
+    recoverySteps: [
+      'Use an allowed identity source for the selected mode (OIDC for regulated contexts)',
+      'If required, explicitly allow the source in config.identity.allowLocalFallbackModes',
+    ],
+  },
 
   // ── Adapter ───────────────────────────────────────────────────
   {

@@ -107,6 +107,10 @@ async function getSessDir(context: TestToolContext = ctx): Promise<string> {
   return resolveSessionDir(fp.fingerprint, context.sessionID);
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 // =============================================================================
 // E2E Workflows
 // =============================================================================
@@ -500,6 +504,13 @@ describe('e2e-workflow', () => {
     it('team-ci with CI context auto-approves PLAN_REVIEW gate', async () => {
       const previousCi = process.env.CI;
       process.env.CI = 'true';
+      ctx.identityAssertion = {
+        subjectId: 'ci-bot',
+        identitySource: 'service',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        sessionBindingId: ctx.sessionID,
+      };
       try {
         const hydrateResult = await callOk(hydrate, {
           policyMode: 'team-ci',
@@ -778,6 +789,14 @@ describe('e2e-workflow', () => {
       // In this E2E test, the same session actor attempts approval,
       // so four-eyes must block self-approval.
 
+      ctx.identityAssertion = {
+        subjectId: ctx.sessionID,
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated four-eyes test', source: 'user' });
       await callOk(plan, { planText: '## Regulated Plan\n\nThis plan requires external review.' });
@@ -813,6 +832,14 @@ describe('e2e-workflow', () => {
       // (approve, changes_requested, reject) by the session initiator.
       // The check is identity-based: decidedBy !== initiatedBy.
 
+      ctx.identityAssertion = {
+        subjectId: ctx.sessionID,
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated changes test', source: 'user' });
       await callOk(plan, { planText: '## Plan needing changes' });

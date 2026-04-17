@@ -320,8 +320,8 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
-  it('accepts all local fallback modes', () => {
-    for (const mode of ['solo', 'team']) {
+  it('accepts all policy modes for local fallback override', () => {
+    for (const mode of ['solo', 'team', 'team-ci', 'regulated']) {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
         identity: { allowLocalFallbackModes: [mode] },

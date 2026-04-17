@@ -41,6 +41,7 @@ import {
 import { readState, writeState } from '../adapters/persistence';
 import * as persistence from '../adapters/persistence';
 import { makeState, makeProgressedState } from '../__fixtures__';
+import { configPath } from '../adapters/persistence';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,18 @@ async function hydrateSession(
     ctx,
   );
   return parseToolResult(raw);
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+async function writeWorkspaceConfig(config: Record<string, unknown>): Promise<void> {
+  const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+  const fp = await computeFingerprint(ws.tmpDir);
+  const wsDir = workspaceDir(fp.fingerprint);
+  await fs.mkdir(wsDir, { recursive: true });
+  await fs.writeFile(configPath(wsDir), JSON.stringify(config), 'utf-8');
 }
 
 /** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
@@ -174,6 +187,73 @@ describe('hydrate', () => {
       expect(result.phase).toBe('READY');
     });
 
+    it('returns identity resolution metadata for local fallback in solo mode', async () => {
+      const result = await hydrateSession({ policyMode: 'solo' });
+      const identityResolution = result.identityResolution as Record<string, unknown>;
+      expect(identityResolution.source).toBe('local_fallback');
+      expect(identityResolution.identitySource).toBe('local');
+      expect(identityResolution.assuranceLevel).toBe('basic');
+      expect(identityResolution.subjectId).toBe(ctx.agent);
+    });
+
+    it('accepts strong OIDC assertion in regulated mode and sets initiatedBy', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'alice.approver',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: ['https://idp.example.com'],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team'],
+        },
+      });
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      const identityResolution = result.identityResolution as Record<string, unknown>;
+      expect(identityResolution.source).toBe('host_assertion');
+      expect(identityResolution.identitySource).toBe('oidc');
+      expect(identityResolution.subjectId).toBe('alice.approver');
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.initiatedBy).toBe('alice.approver');
+    });
+
+    it('allows explicit local override for regulated mode via config', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'regulated.local.override',
+        identitySource: 'local',
+        assertedAt: nowIso(),
+        assuranceLevel: 'basic',
+        sessionBindingId: ctx.sessionID,
+      };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: [],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team', 'regulated'],
+        },
+      });
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.error).toBeUndefined();
+      const identityResolution = result.identityResolution as Record<string, unknown>;
+      expect(identityResolution.identitySource).toBe('local');
+    });
+
     it('team-ci degrades to team when CI context is missing', async () => {
       const ciVars = [
         'CI',
@@ -208,6 +288,13 @@ describe('hydrate', () => {
     it('team-ci stays active when CI context is present', async () => {
       const previousCi = process.env.CI;
       process.env.CI = 'true';
+      ctx.identityAssertion = {
+        subjectId: 'ci-bot',
+        identitySource: 'service',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        sessionBindingId: ctx.sessionID,
+      };
       try {
         const result = await hydrateSession({ policyMode: 'team-ci' });
         const resolution = result.policyResolution as Record<string, unknown>;
@@ -268,6 +355,86 @@ describe('hydrate', () => {
       const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, badCtx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
+    });
+
+    it('regulated mode fails closed without host assertion (IDENTITY_UNVERIFIED)', async () => {
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IDENTITY_UNVERIFIED');
+    });
+
+    it('blocks malformed host assertion (IDENTITY_UNVERIFIED)', async () => {
+      ctx.identityAssertion = { identitySource: 'oidc' };
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IDENTITY_UNVERIFIED');
+    });
+
+    it('blocks untrusted issuer (UNTRUSTED_IDENTITY_ISSUER)', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'alice',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://evil.example.com',
+        sessionBindingId: ctx.sessionID,
+      };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: ['https://idp.example.com'],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team'],
+        },
+      });
+
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('UNTRUSTED_IDENTITY_ISSUER');
+    });
+
+    it('blocks local source in regulated mode without explicit override (IDENTITY_SOURCE_NOT_ALLOWED)', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'alice',
+        identitySource: 'local',
+        assertedAt: nowIso(),
+        assuranceLevel: 'basic',
+        sessionBindingId: ctx.sessionID,
+      };
+
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IDENTITY_SOURCE_NOT_ALLOWED');
+    });
+
+    it('blocks assertion with session binding mismatch (IDENTITY_UNVERIFIED)', async () => {
+      ctx.identityAssertion = {
+        subjectId: 'alice',
+        identitySource: 'oidc',
+        assertedAt: nowIso(),
+        assuranceLevel: 'strong',
+        issuer: 'https://idp.example.com',
+        sessionBindingId: 'wrong-session',
+      };
+      await writeWorkspaceConfig({
+        schemaVersion: 'v1',
+        identity: {
+          allowedIssuers: ['https://idp.example.com'],
+          assertionMaxAgeSeconds: 300,
+          requireSessionBinding: true,
+          allowLocalFallbackModes: ['solo', 'team'],
+        },
+      });
+
+      const raw = await hydrate.execute({ policyMode: 'regulated', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IDENTITY_UNVERIFIED');
     });
 
     /**

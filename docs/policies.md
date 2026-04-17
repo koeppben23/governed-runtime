@@ -61,6 +61,29 @@ For CI/CD pipelines that should auto-advance user gates.
 - Shared codebases
 - When review documentation is desired
 
+## Identity Assertions (OIDC-first)
+
+At `/hydrate`, FlowGuard resolves session identity from trusted host assertions.
+
+Validation is fail-closed and checks:
+
+- required assertion schema (`subjectId`, `identitySource`, `assertedAt`, `assuranceLevel`)
+- OIDC issuer trust (`identity.allowedIssuers`)
+- freshness (`identity.assertionMaxAgeSeconds`)
+- session binding (`identity.requireSessionBinding` + `sessionBindingId`)
+
+Identity source policy:
+
+- **Primary path:** `oidc` (or `service` for CI contexts)
+- **Fallback path:** `local` only when mode is listed in `identity.allowLocalFallbackModes`
+- **Regulated by default:** local is blocked unless explicitly allowed in config
+
+Fail-closed reason codes:
+
+- `IDENTITY_UNVERIFIED`
+- `UNTRUSTED_IDENTITY_ISSUER`
+- `IDENTITY_SOURCE_NOT_ALLOWED`
+
 ## Regulated Mode
 
 For compliance-required environments (banks, healthcare, etc.).

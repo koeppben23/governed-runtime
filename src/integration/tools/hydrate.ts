@@ -17,6 +17,7 @@ import {
   resolvePolicyFromState,
   createPolicyContext,
   persistAndFormat,
+  formatBlocked,
   formatError,
   appendNextAction,
 } from './helpers';
@@ -29,6 +30,7 @@ import { executeHydrate } from '../../rails/hydrate';
 
 // Adapters
 import { readState } from '../../adapters/persistence';
+import { readConfig } from '../../adapters/persistence';
 import { listRepoSignals } from '../../adapters/git';
 import {
   writeDiscovery,
@@ -52,6 +54,8 @@ import { defaultProfileRegistry as profileRegistryForResolution } from '../../co
 
 // Config
 import { detectCiContext, resolvePolicyWithContext } from '../../config/policy';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config';
+import { resolveHydrateIdentity } from '../identity';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_hydrate — Bootstrap Session
@@ -86,10 +90,24 @@ export const hydrate: ToolDefinition = {
       const { fingerprint, sessionDir: sessDir, workspaceDir: wsDir } = wsResult;
 
       const existing = await readState(sessDir);
+      const config = await readConfig(wsDir).catch(() => DEFAULT_CONFIG);
 
       // Resolve policy for context
       const ciContext = detectCiContext();
       const policyResolution = resolvePolicyWithContext(args.policyMode, ciContext);
+      const now = new Date().toISOString();
+      const identityResolution = resolveHydrateIdentity(
+        context,
+        config,
+        existing
+          ? (existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated')
+          : policyResolution.effectiveMode,
+        now,
+      );
+      if (!identityResolution.ok) {
+        return formatBlocked(identityResolution.blocked.code, identityResolution.blocked.vars);
+      }
+
       const policy = existing ? resolvePolicyFromState(existing) : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 
@@ -200,7 +218,7 @@ export const hydrate: ToolDefinition = {
             : policyResolution.degradedReason,
           profileId: args.profileId,
           repoSignals,
-          initiatedBy: context.sessionID,
+          initiatedBy: identityResolution.value.assertion.subjectId,
           discoveryResult,
           discoveryDigest,
           discoverySummary,
@@ -230,6 +248,13 @@ export const hydrate: ToolDefinition = {
             effectiveMode: policyResolution.effectiveMode,
             effectiveGateBehavior: policyResolution.effectiveGateBehavior,
             reason: policyResolution.degradedReason ?? null,
+          },
+          identityResolution: {
+            source: identityResolution.value.source,
+            identitySource: identityResolution.value.assertion.identitySource,
+            assuranceLevel: identityResolution.value.assertion.assuranceLevel,
+            subjectId: identityResolution.value.assertion.subjectId,
+            issuer: identityResolution.value.assertion.issuer ?? null,
           },
         };
         if (discoveryError) {

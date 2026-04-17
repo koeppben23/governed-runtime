@@ -67,6 +67,12 @@ export interface ToolContext {
   directory: string;
   worktree: string;
   abort: AbortSignal;
+  /** Optional trusted host assertion payload (OIDC-first identity path). */
+  identityAssertion?: unknown;
+  /** Optional fallback host assertion aliases for compatibility. */
+  identity?: unknown;
+  hostContext?: unknown;
+  claims?: unknown;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 

@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WP1 groundwork for 1.2.0 enterprise governance: strict contracts for `IdentityAssertion`, `RoleBinding`, `RiskPolicyRule`, `PolicyDecisionV2`, and `DecisionReceiptV2`
 - Config schema extensions for identity validation (`identity`), role bindings (`rbac`), and risk matrix defaults (`risk`) with deterministic defaults
 - Test coverage for new contracts across HAPPY/BAD/CORNER/EDGE categories in state and config schema suites
+- WP2 OIDC-first identity validation for `/hydrate` via host assertions (`identityAssertion`, `identity`, `hostContext.identityAssertion`, `claims` aliases)
+- Fail-closed identity reason codes for hydrate entry: `IDENTITY_UNVERIFIED`, `UNTRUSTED_IDENTITY_ISSUER`, `IDENTITY_SOURCE_NOT_ALLOWED`
 
 ### Changed
 
 - `audit/types.ts` decision detail contract now declares optional v2 receipt fields (`actorIdentity`, `actorRole`, `policyDecision`, obligations/result metadata) without changing current runtime emission
+- `/hydrate` now resolves initiator identity from validated assertion context (instead of raw session ID), with local fallback only in explicitly allowed modes
 
 ## [1.1.0] - 2026-04-17
 

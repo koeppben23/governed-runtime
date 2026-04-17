@@ -22,6 +22,7 @@ import {
   ActorRole,
   DataClassification,
   TargetEnvironment,
+  PolicyMode,
 } from '../state/evidence';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -74,7 +75,7 @@ export const FlowGuardConfigSchema = z
         /** Require assertion sessionBindingId to match current session context. */
         requireSessionBinding: z.boolean().default(true),
         /** Modes where local identity fallback is allowed. */
-        allowLocalFallbackModes: z.array(z.enum(['solo', 'team'])).default(['solo', 'team']),
+        allowLocalFallbackModes: z.array(PolicyMode).default(['solo', 'team']),
       })
       .strict()
       .default({}),

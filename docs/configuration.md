@@ -20,6 +20,19 @@ FlowGuard supports per-repository configuration via `config.json`.
     "defaultMode": "solo"
   },
   "profile": {},
+  "identity": {
+    "allowedIssuers": [],
+    "assertionMaxAgeSeconds": 300,
+    "requireSessionBinding": true,
+    "allowLocalFallbackModes": ["solo", "team"]
+  },
+  "rbac": {
+    "roleBindings": []
+  },
+  "risk": {
+    "rules": [],
+    "noMatchDecision": "deny"
+  },
   "archive": {
     "redaction": {
       "mode": "basic",
@@ -125,6 +138,40 @@ Override automatic profile detection:
   }
 }
 ```
+
+### identity.allowedIssuers
+
+**Type:** `string[]`
+**Default:** `[]`
+
+Allowlist of trusted OIDC issuers for host identity assertions at `/hydrate`.
+
+If empty, issuer trust is not restricted by allowlist (issuer claim is still required for `oidc` assertions).
+
+### identity.assertionMaxAgeSeconds
+
+**Type:** `integer`
+**Range:** `1..3600`
+**Default:** `300`
+
+Maximum age for host assertions. Older assertions fail closed with `IDENTITY_UNVERIFIED`.
+
+### identity.requireSessionBinding
+
+**Type:** `boolean`
+**Default:** `true`
+
+When enabled, `sessionBindingId` in identity assertions must match the active OpenCode session ID.
+
+### identity.allowLocalFallbackModes
+
+**Type:** `enum[]`
+**Values:** `solo`, `team`, `team-ci`, `regulated`
+**Default:** `solo`, `team`
+
+Policy modes where local fallback identity is allowed when no trusted host assertion is present.
+
+Regulated mode blocks local identity by default unless explicitly included here.
 
 ### profile.overrides
 

@@ -44,6 +44,10 @@ export interface TestToolContext {
   directory: string;
   worktree: string;
   abort: AbortSignal;
+  identityAssertion?: unknown;
+  identity?: unknown;
+  hostContext?: unknown;
+  claims?: unknown;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 
