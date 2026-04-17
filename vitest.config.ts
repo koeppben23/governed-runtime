@@ -12,6 +12,7 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/**/__tests__/**",
         "src/**/__fixtures__*",
+        "src/test-policy.ts",
       ],
       thresholds: {
         branches: 80,
