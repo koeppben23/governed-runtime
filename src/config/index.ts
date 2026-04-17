@@ -31,6 +31,7 @@ export {
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,
+  getPolicyPreset,
   resolvePolicy,
   policyModes,
   createPolicySnapshot,

@@ -21,9 +21,6 @@ import {
   countByKind,
   countByPhase,
   timeSpan,
-  transitionEvents,
-  errorEvents,
-  bySession,
   filterEvents,
   byKind,
 } from "./query";

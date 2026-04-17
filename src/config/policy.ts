@@ -327,9 +327,17 @@ export function resolvePolicyWithContext(
  * @param mode - Policy mode string (solo | team | team-ci | regulated).
  *               Falls back to "team" for unknown or undefined values.
  */
-export function resolvePolicy(mode?: string): FlowGuardPolicy {
+export function getPolicyPreset(mode?: string): FlowGuardPolicy {
   const m = normalizePolicyMode(mode);
   return POLICIES[m] ?? TEAM_POLICY;
+}
+
+/**
+ * @deprecated Use getPolicyPreset() for preset lookup, or
+ * resolvePolicyWithContext() for runtime authority.
+ */
+export function resolvePolicy(mode?: string): FlowGuardPolicy {
+  return getPolicyPreset(mode);
 }
 
 /** All known policy mode names. */

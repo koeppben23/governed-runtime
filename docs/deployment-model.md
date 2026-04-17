@@ -9,7 +9,7 @@ This document describes how FlowGuard is deployed, where it runs, and how it int
 | Aspect | Value |
 |--------|-------|
 | **Deployment Type** | Self-hosted, locally installed |
-| **Runtime Environment** | OpenCode / Bun (same process) |
+| **Runtime Environment** | OpenCode-hosted runtime environment (same host integration model, no external Python bridge) |
 | **Installation Target** | `~/.config/opencode/` (global) or `.opencode/` (project) |
 | **Network Behavior** | No outbound connections required |
 | **Multi-Instance** | Not supported (single-machine, no built-in multi-user coordination) |

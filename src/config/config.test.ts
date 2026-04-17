@@ -5,6 +5,7 @@ import {
   TEAM_CI_POLICY,
   REGULATED_POLICY,
   detectCiContext,
+  getPolicyPreset,
   resolvePolicy,
   resolvePolicyWithContext,
   policyModes,
@@ -36,6 +37,13 @@ import type { PlanEvidence, PlanRecord } from "../state/evidence";
 describe("config/policy", () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe("HAPPY", () => {
+    it("getPolicyPreset returns correct preset for each mode", () => {
+      expect(getPolicyPreset("solo")).toBe(SOLO_POLICY);
+      expect(getPolicyPreset("team")).toBe(TEAM_POLICY);
+      expect(getPolicyPreset("team-ci")).toBe(TEAM_CI_POLICY);
+      expect(getPolicyPreset("regulated")).toBe(REGULATED_POLICY);
+    });
+
     it("resolvePolicy returns correct preset for each mode", () => {
       expect(resolvePolicy("solo")).toBe(SOLO_POLICY);
       expect(resolvePolicy("team")).toBe(TEAM_POLICY);
