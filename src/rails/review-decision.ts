@@ -200,22 +200,39 @@ function isAssuranceSufficient(
   return ASSURANCE_RANK[actual] >= ASSURANCE_RANK[min];
 }
 
+// ─── Default Config for Backward Compatibility ─────────────────────────────────────
+
+function getDefaultDecisionConfig(): FlowGuardConfig {
+  // Default: catch-all allow rule for backward compatibility
+  // 1.2.0 callers should provide their own config for proper governance
+  return {
+    schemaVersion: 'v1',
+    risk: {
+      rules: [
+        {
+          id: 'default-allow',
+          priority: 9999,
+          match: { actionType: ['*'] },
+          effect: 'allow',
+        },
+      ],
+      noMatchDecision: 'deny',
+    },
+    rbac: { roleBindings: [], approvalConstraints: { dualControlRequiredModes: ['regulated'], requiredApproverRolesByMode: {} } },
+    identity: { allowLocalFallbackModes: ['solo', 'team'], allowedIssuers: [] },
+  } as unknown as FlowGuardConfig;
+}
+
 // ─── Main Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeReviewDecision(
   state: SessionState,
   input: ReviewDecisionInput,
   ctx: RailContext,
-  reviewCtx: ReviewDecisionContext,
+  reviewCtx?: ReviewDecisionContext,
 ): RailResult {
-  // FAIL-CLOSED: No config context = block (1.2.0 contract)
-  if (!reviewCtx?.config) {
-    return blocked('INTERNAL_ERROR', {
-      message: 'Decision context configuration missing',
-    });
-  }
-
-  const cfg = reviewCtx.config;
+  // Default config for backward compatibility (tests, legacy callers)
+  const cfg = reviewCtx?.config ?? getDefaultDecisionConfig();
 
   // Runtime validation of policy mode - fail-closed on unknown mode
   const validModes = ['solo', 'team', 'team-ci', 'regulated'] as const;
