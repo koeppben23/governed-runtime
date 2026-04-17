@@ -644,6 +644,46 @@ describe("archiveSession", () => {
     const receipts = JSON.parse(receiptsRaw);
     expect(receipts.schemaVersion).toBe("decision-receipts.v1");
     expect(Array.isArray(receipts.receipts)).toBe(true);
+
+    const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+    expect(manifest.redactionMode).toBe("basic");
+    expect(manifest.rawIncluded).toBe(false);
+    expect(manifest.redactedArtifacts).toContain("decision-receipts.redacted.v1.json");
+    expect(manifest.excludedFiles).toContain("decision-receipts.v1.json");
+  });
+
+  it("includes raw artifacts only when includeRaw=true", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "archive-test-raw-opt-in";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"test": true}', "utf-8");
+    await fs.writeFile(
+      path.join(workspaceDir(fingerprint), "config.json"),
+      JSON.stringify({
+        schemaVersion: "v1",
+        archive: { redaction: { mode: "basic", includeRaw: true } },
+      }),
+      "utf-8",
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+    expect(manifest.rawIncluded).toBe(true);
+    expect(manifest.riskFlags).toContain("raw_export_enabled");
+    expect(manifest.excludedFiles).not.toContain("decision-receipts.v1.json");
+  });
+
+  it("fails closed when redaction source is invalid JSON", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "archive-test-redaction-fail";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"test": true}', "utf-8");
+    await fs.writeFile(path.join(sessDir, "review-report.json"), "{invalid-json", "utf-8");
+
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
   });
 
   it("throws ARCHIVE_FAILED for non-existent session", async () => {

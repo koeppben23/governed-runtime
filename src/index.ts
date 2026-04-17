@@ -283,6 +283,10 @@ export {
   type SurfaceInfo,
   type LayerInfo,
   type SurfacesInfo,
+  type CodeSurfaceSignal,
+  type CodeSurfaceStatus,
+  type CodeSurfaceBudget,
+  type CodeSurfacesInfo,
   type DomainKeyword,
   type DomainSignals,
   type CommandHint,
@@ -316,6 +320,7 @@ export { collectRepoMetadata } from "./discovery/collectors/repo-metadata";
 export { collectStack } from "./discovery/collectors/stack-detection";
 export { collectTopology } from "./discovery/collectors/topology";
 export { collectSurfaces } from "./discovery/collectors/surface-detection";
+export { collectCodeSurfaces } from "./discovery/collectors/code-surface-analysis";
 export { collectDomainSignals } from "./discovery/collectors/domain-signals";
 
 // ─── Layer 8: Archive ────────────────────────────────────────────────────────

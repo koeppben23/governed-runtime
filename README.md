@@ -120,7 +120,8 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Audit Trail** | Hash-chained, tamper-evident |
 | **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
-| **Archive** | Session archival with integrity verification |
+| **Archive** | Session archival with integrity verification + redacted export artifacts by default |
+| **Code Surface Analysis** | Bounded heuristic detection of endpoints/auth/data/integration surfaces |
 
 ---
 

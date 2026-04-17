@@ -34,6 +34,7 @@ import { collectRepoMetadata } from "./collectors/repo-metadata";
 import { collectStack } from "./collectors/stack-detection";
 import { collectTopology } from "./collectors/topology";
 import { collectSurfaces } from "./collectors/surface-detection";
+import { collectCodeSurfaces } from "./collectors/code-surface-analysis";
 import { collectDomainSignals } from "./collectors/domain-signals";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,12 +60,13 @@ export async function runDiscovery(
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
   // Run all collectors in parallel with timeout budget
-  const [metaResult, stackResult, topoResult, surfaceResult, domainResult] =
+  const [metaResult, stackResult, topoResult, surfaceResult, codeSurfaceResult, domainResult] =
     await Promise.allSettled([
       withTimeout(collectRepoMetadata(input), timeoutMs),
       withTimeout(collectStack(input), timeoutMs),
       withTimeout(collectTopology(input), timeoutMs),
       withTimeout(collectSurfaces(input), timeoutMs),
+      withTimeout(collectCodeSurfaces(input), timeoutMs),
       withTimeout(collectDomainSignals(input), timeoutMs),
     ]);
 
@@ -104,6 +106,22 @@ export async function runDiscovery(
     layers: [],
   });
 
+  const codeSurfaces = extractResult(codeSurfaceResult, "code-surface-analysis", collectors, {
+    status: "failed" as const,
+    endpoints: [],
+    authBoundaries: [],
+    dataAccess: [],
+    integrations: [],
+    budget: {
+      scannedFiles: 0,
+      scannedBytes: 0,
+      maxFiles: 200,
+      maxBytesPerFile: 64 * 1024,
+      maxTotalBytes: 2 * 1024 * 1024,
+      timedOut: false,
+    },
+  });
+
   const domain = extractResult(domainResult, "domain-signals", collectors, {
     keywords: [],
     glossarySources: [],
@@ -120,6 +138,7 @@ export async function runDiscovery(
     stack,
     topology,
     surfaces,
+    codeSurfaces,
     domainSignals: domain,
     validationHints,
   };
@@ -146,6 +165,9 @@ export function extractDiscoverySummary(
     hasPersistenceSurface: result.surfaces.persistence.length > 0,
     hasCiCd: result.surfaces.cicd.length > 0,
     hasSecuritySurface: result.surfaces.security.length > 0,
+    codeSurfaceStatus: result.codeSurfaces?.status,
+    apiEndpointCount: result.codeSurfaces?.endpoints.length,
+    hasAuthBoundary: (result.codeSurfaces?.authBoundaries.length ?? 0) > 0,
   };
 }
 

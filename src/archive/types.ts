@@ -110,6 +110,16 @@ export const ArchiveManifestSchema = z.object({
   fileDigests: z.record(z.string(), z.string()),
   /** SHA-256 of the sorted, concatenated file digest values. */
   contentDigest: z.string(),
+  /** Export redaction mode used while creating archive artifacts. */
+  redactionMode: z.enum(["none", "basic", "strict"]).optional(),
+  /** Whether raw (non-redacted) artifacts were included in archive export. */
+  rawIncluded: z.boolean().optional(),
+  /** Artifact paths generated as redacted export surfaces. */
+  redactedArtifacts: z.array(z.string()).optional(),
+  /** Artifact paths intentionally excluded from export. */
+  excludedFiles: z.array(z.string()).optional(),
+  /** Risk markers attached to this archive export. */
+  riskFlags: z.array(z.string()).optional(),
 });
 export type ArchiveManifest = z.infer<typeof ArchiveManifestSchema>;
 

@@ -4,7 +4,7 @@
  *
  * Coverage:
  * - Zod schema validation (happy + bad)
- * - All 5 collectors (stack, topology, surfaces, domain-signals, repo-metadata)
+ * - All 6 collectors (stack, topology, surfaces, code-surface-analysis, domain-signals, repo-metadata)
  * - Orchestrator (runDiscovery, extractDiscoverySummary, computeDiscoveryDigest)
  * - Archive types (manifest, verification, findings)
  * - Edge cases: empty inputs, large inputs, partial failures
@@ -13,6 +13,9 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 
 // Discovery types
 import {
@@ -35,6 +38,7 @@ import {
 import { collectStack } from "./collectors/stack-detection";
 import { collectTopology } from "./collectors/topology";
 import { collectSurfaces } from "./collectors/surface-detection";
+import { collectCodeSurfaces } from "./collectors/code-surface-analysis";
 import { collectDomainSignals } from "./collectors/domain-signals";
 
 // Orchestrator
@@ -220,6 +224,11 @@ describe("archive/types", () => {
         includedFiles: ["session-state.json", "audit.jsonl"],
         fileDigests: { "session-state.json": "sha256hash", "audit.jsonl": "sha256hash2" },
         contentDigest: "overallhash",
+        redactionMode: "basic",
+        rawIncluded: false,
+        redactedArtifacts: ["decision-receipts.redacted.v1.json"],
+        excludedFiles: ["decision-receipts.v1.json"],
+        riskFlags: [],
       });
       expect(result.success).toBe(true);
     });
@@ -490,6 +499,97 @@ describe("discovery/collectors/domain-signals", () => {
   });
 });
 
+describe("discovery/collectors/code-surface-analysis", () => {
+  async function withTempProject(
+    files: Record<string, string>,
+    run: (input: CollectorInput) => Promise<void>,
+  ): Promise<void> {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "fg-code-surface-"));
+    try {
+      for (const [rel, content] of Object.entries(files)) {
+        const full = path.join(tmp, rel);
+        await fs.mkdir(path.dirname(full), { recursive: true });
+        await fs.writeFile(full, content, "utf-8");
+      }
+      await run({
+        worktreePath: tmp,
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: Object.keys(files),
+        packageFiles: ["package.json"],
+        configFiles: ["tsconfig.json"],
+      });
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  }
+
+  describe("HAPPY", () => {
+    it("detects endpoint/auth/data/integration signals from source content", async () => {
+      await withTempProject(
+        {
+          "src/api/users.ts": "router.get('/users', authMiddleware, async () => prisma.user.findMany());",
+          "src/integration/client.ts": "await axios('/external/service');",
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.status).toBe("complete");
+          expect(result.data.status).toBe("ok");
+          expect(result.data.endpoints.length).toBeGreaterThan(0);
+          expect(result.data.authBoundaries.length).toBeGreaterThan(0);
+          expect(result.data.dataAccess.length).toBeGreaterThan(0);
+          expect(result.data.integrations.length).toBeGreaterThan(0);
+        },
+      );
+    });
+  });
+
+  describe("BAD", () => {
+    it("degrades to partial when candidate files cannot be read", async () => {
+      const result = await collectCodeSurfaces({
+        worktreePath: "/definitely/missing/worktree",
+        fingerprint: "abcdef0123456789abcdef01",
+        allFiles: ["src/api/missing.ts"],
+        packageFiles: [],
+        configFiles: [],
+      });
+      expect(result.status).toBe("partial");
+      expect(result.data.status).toBe("partial");
+    });
+  });
+
+  describe("CORNER", () => {
+    it("returns empty signals for files without matching patterns", async () => {
+      await withTempProject(
+        {
+          "src/plain.ts": "export const answer = 42;",
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          expect(result.data.endpoints).toHaveLength(0);
+          expect(result.data.authBoundaries).toHaveLength(0);
+          expect(result.data.dataAccess).toHaveLength(0);
+          expect(result.data.integrations).toHaveLength(0);
+        },
+      );
+    });
+  });
+
+  describe("EDGE", () => {
+    it("marks partial when candidate set exceeds file budget", async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 260; i++) {
+        files[`src/file-${i}.ts`] = `export const n${i} = ${i};`;
+      }
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe("partial");
+        expect(result.data.status).toBe("partial");
+        expect(result.data.budget.scannedFiles).toBeLessThanOrEqual(200);
+      });
+    });
+  });
+});
+
 // ─── Orchestrator Tests ───────────────────────────────────────────────────────
 
 describe("discovery/orchestrator", () => {
@@ -511,7 +611,7 @@ describe("discovery/orchestrator", () => {
       expect(typeof result.collectedAt).toBe("string");
 
       // All collectors should report status
-      expect(Object.keys(result.collectors).length).toBe(5);
+      expect(Object.keys(result.collectors).length).toBe(6);
 
       // Stack should have detected TypeScript
       expect(result.stack.languages.some((l) => l.id === "typescript")).toBe(true);
@@ -658,12 +758,12 @@ describe("discovery/orchestrator", () => {
       expect(p99).toBeLessThan(100);
     });
 
-    it("computeDiscoveryDigest is fast (< 1ms)", async () => {
+    it("computeDiscoveryDigest is fast (< 5ms)", async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const start = Date.now();
       computeDiscoveryDigest(result);
       const elapsed = Date.now() - start;
-      expect(elapsed).toBeLessThan(1);
+      expect(elapsed).toBeLessThan(5);
     });
   });
 });

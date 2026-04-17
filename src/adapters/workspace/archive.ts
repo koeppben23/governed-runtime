@@ -13,7 +13,8 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import { readAuditTrail, readState } from "../persistence";
+import { readAuditTrail, readConfig, readState } from "../persistence";
+import { DEFAULT_CONFIG } from "../../config/flowguard-config";
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -22,13 +23,18 @@ import {
   type ArchiveFinding,
 } from "../../archive/types";
 import { decisionReceipts } from "../../audit/query";
+import {
+  redactDecisionReceipts,
+  redactReviewReport,
+  type RedactionMode,
+} from "../../redaction/export-redaction";
 
 import {
   WorkspaceError,
   validateFingerprint,
   validateSessionId,
 } from "./types";
-import { workspacesHome, sessionDir } from "./init";
+import { workspacesHome, sessionDir, workspaceDir } from "./init";
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -60,6 +66,7 @@ export async function archiveSession(
   const validSessionId = validateSessionId(sessionId);
 
   const sessDir = sessionDir(fingerprint, validSessionId);
+  const wsDir = workspaceDir(fingerprint);
   const archiveDir = path.join(workspacesHome(), fingerprint, "sessions", "archive");
   const archivePath = path.join(archiveDir, `${validSessionId}.tar.gz`);
   const checksumPath = `${archivePath}.sha256`;
@@ -86,6 +93,10 @@ export async function archiveSession(
     }
   }
 
+  const config = await readConfig(wsDir).catch(() => DEFAULT_CONFIG);
+  const redactionMode = config.archive.redaction.mode;
+  const includeRaw = config.archive.redaction.includeRaw;
+
   // ── Build and write archive manifest ──────────────────────────
   const { events } = await readAuditTrail(sessDir).catch(() => ({ events: [] }));
   const receipts = decisionReceipts(events).filter((r) => r.sessionId === validSessionId);
@@ -102,7 +113,52 @@ export async function archiveSession(
     "utf-8",
   );
 
-  const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId);
+  const redactedArtifacts: string[] = [];
+  const excludedFiles: string[] = [];
+  const riskFlags: string[] = [];
+
+  if (redactionMode !== "none") {
+    await writeRedactedExportArtifact(
+      sessDir,
+      "decision-receipts.v1.json",
+      "decision-receipts.redacted.v1.json",
+      redactionMode,
+      redactDecisionReceipts,
+    );
+    redactedArtifacts.push("decision-receipts.redacted.v1.json");
+    if (!includeRaw) excludedFiles.push("decision-receipts.v1.json");
+
+    const reviewPath = path.join(sessDir, "review-report.json");
+    if (await fileExists(reviewPath)) {
+      await writeRedactedExportArtifact(
+        sessDir,
+        "review-report.json",
+        "review-report.redacted.json",
+        redactionMode,
+        redactReviewReport,
+      );
+      redactedArtifacts.push("review-report.redacted.json");
+      if (!includeRaw) excludedFiles.push("review-report.json");
+    }
+  }
+
+  if (includeRaw) {
+    riskFlags.push("raw_export_enabled");
+  }
+
+  const manifest = await buildArchiveManifest(
+    sessDir,
+    state,
+    fingerprint,
+    validSessionId,
+    {
+      redactionMode,
+      rawIncluded: includeRaw || redactionMode === "none",
+      redactedArtifacts,
+      excludedFiles,
+      riskFlags,
+    },
+  );
   const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
   await fs.writeFile(path.join(sessDir, "archive-manifest.json"), manifestJson, "utf-8");
 
@@ -124,13 +180,15 @@ export async function archiveSession(
   try {
     // Use -C to change to parent directory, archive the session subdirectory
     const sessionsParent = path.join(workspacesHome(), fingerprint, "sessions");
-    await execFileAsync("tar", [
+    const tarArgs = [
       "czf",
       archivePath,
       "-C",
       sessionsParent,
+      ...excludedFiles.map((relPath) => `--exclude=${path.posix.join(validSessionId, relPath)}`),
       validSessionId,
-    ], {
+    ];
+    await execFileAsync("tar", tarArgs, {
       timeout: 30_000,
       windowsHide: true,
     });
@@ -281,9 +339,11 @@ export async function verifyArchive(
 
   // 5. Check for unexpected files
   const manifestFileSet = new Set(manifest.includedFiles);
+  const excludedSet = new Set(manifest.excludedFiles ?? []);
   try {
     const actualFiles = await listSessionFiles(sessDir);
     for (const file of actualFiles) {
+      if (excludedSet.has(file)) continue;
       if (!manifestFileSet.has(file)) {
         findings.push({
           code: "unexpected_file",
@@ -362,8 +422,15 @@ async function buildArchiveManifest(
   state: import("../../state/schema").SessionState | null,
   fingerprint: string,
   sessionId: string,
+  redaction: {
+    redactionMode: RedactionMode;
+    rawIncluded: boolean;
+    redactedArtifacts: string[];
+    excludedFiles: string[];
+    riskFlags: string[];
+  },
 ): Promise<ArchiveManifest> {
-  const files = await listSessionFiles(sessDir);
+  const files = await listSessionFiles(sessDir, new Set(redaction.excludedFiles));
   const fileDigests: Record<string, string> = {};
 
   for (const relPath of files) {
@@ -400,6 +467,11 @@ async function buildArchiveManifest(
     includedFiles,
     fileDigests,
     contentDigest,
+    redactionMode: redaction.redactionMode,
+    rawIncluded: redaction.rawIncluded,
+    redactedArtifacts: [...redaction.redactedArtifacts],
+    excludedFiles: [...redaction.excludedFiles],
+    riskFlags: [...redaction.riskFlags],
   };
 }
 
@@ -407,7 +479,7 @@ async function buildArchiveManifest(
  * List all files in a session directory (relative paths, sorted).
  * Excludes the archive-manifest.json itself (it's added separately).
  */
-async function listSessionFiles(sessDir: string): Promise<string[]> {
+async function listSessionFiles(sessDir: string, excluded = new Set<string>()): Promise<string[]> {
   const files: string[] = [];
 
   async function walk(dir: string, prefix: string): Promise<void> {
@@ -417,13 +489,54 @@ async function listSessionFiles(sessDir: string): Promise<string[]> {
       if (entry.isDirectory()) {
         await walk(path.join(dir, entry.name), relPath);
       } else if (entry.isFile() && entry.name !== "archive-manifest.json") {
-        files.push(relPath);
+        if (!excluded.has(relPath)) {
+          files.push(relPath);
+        }
       }
     }
   }
 
   await walk(sessDir, "");
   return files.sort();
+}
+
+async function writeRedactedExportArtifact(
+  sessDir: string,
+  rawFile: string,
+  redactedFile: string,
+  mode: RedactionMode,
+  redact: (payload: Record<string, unknown>, mode: RedactionMode) => Record<string, unknown>,
+): Promise<void> {
+  const rawPath = path.join(sessDir, rawFile);
+
+  let rawContent: string;
+  try {
+    rawContent = await fs.readFile(rawPath, "utf-8");
+  } catch (err) {
+    throw new WorkspaceError(
+      "ARCHIVE_FAILED",
+      `Redaction source read failed (${rawFile}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(rawContent) as Record<string, unknown>;
+  } catch {
+    throw new WorkspaceError("ARCHIVE_FAILED", `Redaction source is invalid JSON: ${rawFile}`);
+  }
+
+  let redacted: Record<string, unknown>;
+  try {
+    redacted = redact(payload, mode);
+  } catch (err) {
+    throw new WorkspaceError(
+      "ARCHIVE_FAILED",
+      `Redaction failed for ${rawFile}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  await fs.writeFile(path.join(sessDir, redactedFile), JSON.stringify(redacted, null, 2) + "\n", "utf-8");
 }
 
 /** Check if a file exists (non-throwing). */

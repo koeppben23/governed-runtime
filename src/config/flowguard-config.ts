@@ -65,6 +65,15 @@ export const FlowGuardConfigSchema = z.object({
       autoCleanupSessions: z.boolean().optional(),
       /** Custom export path for archived sessions. Null = default location. */
       exportPath: z.string().optional(),
+      /** Export redaction policy for archive artifacts. */
+      redaction: z
+        .object({
+          /** Redaction mode for export artifacts. */
+          mode: z.enum(["none", "basic", "strict"]).default("basic"),
+          /** Include raw artifacts in archive alongside redacted artifacts. */
+          includeRaw: z.boolean().default(false),
+        })
+        .default({}),
     })
     .default({}),
 });

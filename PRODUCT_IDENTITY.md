@@ -66,9 +66,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Repository Discovery
 
-- **5-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, domain signals — all run in parallel with budget guards
+- **6-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals — all run in parallel with budget guards
 - **Evidence-classified** — every detected item carries `fact`, `derived_signal`, or `hypothesis` classification
-- **File-path-based** — no file content reading, fast and predictable detection from repository file listing
+- **Bounded heuristic semantics** — code-surface collector reads a capped subset of source files (hard file/byte/time budgets) to derive endpoint/auth/data/integration hints with confidence and evidence
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
 
@@ -77,7 +77,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification
 - **10-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, and state presence
-- **Receipt export** — archives include `decision-receipts.v1.json` derived from append-only audit events
+- **Redacted export by default** — archive artifacts are export-redacted (`mode=basic`, `includeRaw=false`) while runtime/audit SSOT remains raw internally
+- **Receipt export** — archives include `decision-receipts.redacted.v1.json` (and raw receipts only when explicitly opted in)
+- **Manifest risk signaling** — manifest records redaction mode, raw inclusion, redacted artifacts, excluded raw artifacts, and `raw_export_enabled` when raw export is opt-in
 - **Soft-check design** — missing discovery snapshots warn (not fail-hard) for backward compatibility with pre-discovery sessions
 
 ---
@@ -92,7 +94,7 @@ Every governed session starts with explicit hydration:
 /hydrate
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 5-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
+The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 6-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
 
 ### 2. Governed Command Surface
 
@@ -311,7 +313,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
 - **No full CI orchestrator.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
-- **Profile auto-detection is heuristic.** Tech-stack detection uses file-path-based signals (presence of `pom.xml`, `angular.json`, etc.). It does not read file contents and may misclassify repositories with non-standard layouts.
+- **Profile auto-detection is heuristic.** Tech-stack detection primarily uses repository signals and may misclassify non-standard layouts. Code-surface analysis adds bounded file-content heuristics but is confidence-based, not semantic truth.
 
 ---
 
@@ -327,7 +329,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
-- **Discovery Collectors:** 5 (repo-metadata, stack-detection, topology, surface-detection, domain-signals)
+- **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas

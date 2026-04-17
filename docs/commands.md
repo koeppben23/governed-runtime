@@ -144,7 +144,11 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
 - `archive-manifest.json`
-- `decision-receipts.v1.json` (derived from append-only audit trail)
+- `decision-receipts.redacted.v1.json` (default)
+- `review-report.redacted.json` (when review report exists)
+
+Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
+If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
 
 **Verification:** `verifyArchive()` validates integrity (10 finding codes).
 

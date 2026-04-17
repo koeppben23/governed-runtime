@@ -19,9 +19,11 @@ FlowGuard supports per-repository configuration via `config.json`.
   "policy": {
     "defaultMode": "solo"
   },
-  "discovery": {
-    "enabled": true,
-    "collectors": ["repo-metadata", "stack-detection"]
+  "archive": {
+    "redaction": {
+      "mode": "basic",
+      "includeRaw": false
+    }
   }
 }
 ```
@@ -73,20 +75,23 @@ Override or extend policy configurations:
 }
 ```
 
-### discovery.enabled
+### archive.redaction.mode
+
+**Type:** `enum`
+**Values:** `none`, `basic`, `strict`
+**Default:** `basic`
+
+Controls export-time redaction for archive artifacts.
+
+FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+
+### archive.redaction.includeRaw
 
 **Type:** `boolean`
-**Default:** `true`
+**Default:** `false`
 
-Enable or disable repository discovery.
-
-### discovery.collectors
-
-**Type:** `array`
-**Values:** `repo-metadata`, `stack-detection`, `topology`, `surface-detection`, `domain-signals`
-**Default:** All collectors
-
-Select which discovery collectors to run.
+When `false` (default), only redacted export artifacts are included in archives.
+When `true`, raw artifacts are included alongside redacted artifacts and the archive manifest is marked with a risk flag.
 
 ### profile.default
 
@@ -148,9 +153,11 @@ Custom profile configurations:
   "policy": {
     "defaultMode": "regulated"
   },
-  "discovery": {
-    "enabled": true,
-    "collectors": ["repo-metadata", "stack-detection"]
+  "archive": {
+    "redaction": {
+      "mode": "strict",
+      "includeRaw": false
+    }
   },
   "profile": {
     "default": "typescript"

@@ -67,6 +67,20 @@ FlowGuard processes data in two contexts:
 - Long-term retention
 - Archive integrity verification
 
+### Export Redaction
+
+FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+
+**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are subject to export redaction. The following are always included as raw and are never redacted:
+- `session-state.json` — raw session state (internal SSOT)
+- `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
+
+Default archive behavior:
+- `archive.redaction.mode = basic`
+- `archive.redaction.includeRaw = false`
+
+Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests with a risk flag.
+
 ### Configuration
 
 | Attribute | Classification | Protection |

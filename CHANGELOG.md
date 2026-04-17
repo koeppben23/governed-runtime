@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Archive export now includes `decision-receipts.v1.json` derived from the append-only audit chain
 - New policy mode `team-ci` for CI auto-approval with explicit CI-context checks
 - `/architecture` now auto-generates ADR IDs (`ADR-001`, `ADR-002`, ...) from session-local counter state
+- Export redaction support for archive artifacts (`mode: none|basic|strict`, default `basic`, `includeRaw=false`)
+- Bounded heuristic `code-surface-analysis` collector (endpoint/auth/data/integration hints with confidence + evidence)
 
 ### Removed
 
@@ -28,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `team-ci` without CI context now degrades safely to `team` with explicit `ci_context_missing` reason
 - Decision receipts now fail-closed on missing reviewer identity (`DECISION_RECEIPT_ACTOR_MISSING`) instead of storing `unknown`
 - Removed stale architecture command/test surfaces requiring user-provided ADR IDs
+- Archive export is now fail-closed when redaction is enabled and redaction input is invalid
+- Archive manifests now record redaction metadata (`redactionMode`, `rawIncluded`, `redactedArtifacts`, `excludedFiles`, `riskFlags`)
 
 ## [1.0.0] - 2026-04-16
 

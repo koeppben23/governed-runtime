@@ -172,6 +172,45 @@ export const SurfacesInfoSchema = z.object({
 });
 export type SurfacesInfo = z.infer<typeof SurfacesInfoSchema>;
 
+// ─── Code Surface Analysis ────────────────────────────────────────────────────
+
+/** A semantically detected code-surface signal. */
+export const CodeSurfaceSignalSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  classification: EvidenceClassSchema,
+  evidence: z.array(z.string()),
+  location: z.string().min(1),
+});
+export type CodeSurfaceSignal = z.infer<typeof CodeSurfaceSignalSchema>;
+
+/** Code-surface collector status. */
+export const CodeSurfaceStatusSchema = z.enum(["ok", "partial", "failed"]);
+export type CodeSurfaceStatus = z.infer<typeof CodeSurfaceStatusSchema>;
+
+/** Collector budget stats for code-surface analysis. */
+export const CodeSurfaceBudgetSchema = z.object({
+  scannedFiles: z.number().int().nonnegative(),
+  scannedBytes: z.number().int().nonnegative(),
+  maxFiles: z.number().int().positive(),
+  maxBytesPerFile: z.number().int().positive(),
+  maxTotalBytes: z.number().int().positive(),
+  timedOut: z.boolean(),
+});
+export type CodeSurfaceBudget = z.infer<typeof CodeSurfaceBudgetSchema>;
+
+/** Bounded heuristic code-surface analysis result. */
+export const CodeSurfacesInfoSchema = z.object({
+  status: CodeSurfaceStatusSchema,
+  endpoints: z.array(CodeSurfaceSignalSchema),
+  authBoundaries: z.array(CodeSurfaceSignalSchema),
+  dataAccess: z.array(CodeSurfaceSignalSchema),
+  integrations: z.array(CodeSurfaceSignalSchema),
+  budget: CodeSurfaceBudgetSchema,
+});
+export type CodeSurfacesInfo = z.infer<typeof CodeSurfacesInfoSchema>;
+
 // ─── Domain Signals ───────────────────────────────────────────────────────────
 
 /** A domain keyword detected in the repository. */
@@ -220,12 +259,13 @@ export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
 /**
  * Complete discovery result — output of the discovery orchestrator.
  *
- * Contains comprehensive repository analysis from all 5 collectors:
+ * Contains comprehensive repository analysis from all 6 collectors:
  * 1. repo-metadata: git info (branch, commit, remote, fingerprint)
  * 2. stack-detection: languages, frameworks, build tools, test frameworks, runtimes
  * 3. topology: monorepo vs single-project, modules, entry points
  * 4. surface-detection: API, persistence, CI/CD, security surfaces
- * 5. domain-signals: domain keywords, glossary sources
+ * 5. code-surface-analysis: bounded heuristic endpoint/auth/data/integration signals
+ * 6. domain-signals: domain keywords, glossary sources
  *
  * Plus validation hints derived from stack + topology.
  *
@@ -241,6 +281,7 @@ export const DiscoveryResultSchema = z.object({
   stack: StackInfoSchema,
   topology: TopologyInfoSchema,
   surfaces: SurfacesInfoSchema,
+  codeSurfaces: CodeSurfacesInfoSchema.optional(),
   domainSignals: DomainSignalsSchema,
   validationHints: ValidationHintsSchema,
 });
@@ -306,6 +347,9 @@ export const DiscoverySummarySchema = z.object({
   hasPersistenceSurface: z.boolean(),
   hasCiCd: z.boolean(),
   hasSecuritySurface: z.boolean(),
+  codeSurfaceStatus: CodeSurfaceStatusSchema.optional(),
+  apiEndpointCount: z.number().int().nonnegative().optional(),
+  hasAuthBoundary: z.boolean().optional(),
 });
 export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
 

@@ -65,6 +65,8 @@ describe("FlowGuardConfigSchema", () => {
       expect(result.data.logging.level).toBe("info");
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
+      expect(result.data.archive.redaction.mode).toBe("basic");
+      expect(result.data.archive.redaction.includeRaw).toBe(false);
     }
   });
 
@@ -81,6 +83,12 @@ describe("FlowGuardConfigSchema", () => {
         defaultId: "typescript",
         activeChecks: ["test_quality", "rollback_safety", "type_coverage"],
       },
+      archive: {
+        redaction: {
+          mode: "strict",
+          includeRaw: true,
+        },
+      },
     };
     const result = FlowGuardConfigSchema.safeParse(full);
     expect(result.success).toBe(true);
@@ -95,6 +103,8 @@ describe("FlowGuardConfigSchema", () => {
         "rollback_safety",
         "type_coverage",
       ]);
+      expect(result.data.archive.redaction.mode).toBe("strict");
+      expect(result.data.archive.redaction.includeRaw).toBe(true);
     }
   });
 
@@ -226,6 +236,24 @@ describe("FlowGuardConfigSchema", () => {
     }
   });
 
+  it("accepts all redaction modes", () => {
+    for (const mode of ["none", "basic", "strict"]) {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: "v1",
+        archive: { redaction: { mode } },
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects invalid redaction mode", () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: "v1",
+      archive: { redaction: { mode: "unsafe" } },
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── EDGE ───────────────────────────────────────────────────────────────
 
   it("strips unknown properties (Zod default strip behavior)", () => {
@@ -299,7 +327,7 @@ describe("readConfig", () => {
       logging: { level: "debug" },
       policy: { defaultMode: "regulated" },
       profile: { defaultId: "typescript" },
-      archive: {},
+      archive: { redaction: { mode: "basic", includeRaw: false } },
     };
     await writeRawConfig(tmpDir, JSON.stringify(custom));
     const config = await readConfig(tmpDir);
