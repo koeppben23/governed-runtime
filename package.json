@@ -1,6 +1,6 @@
 {
   "name": "@flowguard/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "FlowGuard runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
   "type": "module",
   "main": "dist/index.js",
