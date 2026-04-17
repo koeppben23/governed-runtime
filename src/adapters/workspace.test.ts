@@ -40,6 +40,10 @@ import {
 } from "./workspace";
 import * as crypto from "node:crypto";
 import { benchmarkSync, measureAsync } from "../test-policy";
+import {
+  createDecisionEvent,
+  GENESIS_HASH,
+} from "../audit/types";
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -673,6 +677,117 @@ describe("archiveSession", () => {
     expect(manifest.rawIncluded).toBe(true);
     expect(manifest.riskFlags).toContain("raw_export_enabled");
     expect(manifest.excludedFiles).not.toContain("decision-receipts.v1.json");
+  });
+
+  it("mode=none: raw receipts included, no redacted artifact, rawIncluded=true", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440010";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    const wsDir = workspaceDir(fingerprint);
+    const ts = "2026-04-17T00:00:00.000Z";
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+    const event = createDecisionEvent(
+      sessionId, "PLAN_REVIEW",
+      { decisionId: "DEC-NONE-01", decisionSequence: 1, verdict: "approve", rationale: "secret-alice", decidedBy: "alice", decidedAt: ts, fromPhase: "PLAN_REVIEW", toPhase: "VALIDATION", transitionEvent: "APPROVE", policyMode: "team" },
+      ts, "alice", GENESIS_HASH,
+    );
+    await fs.writeFile(path.join(sessDir, "audit.jsonl"), JSON.stringify(event) + "\n", "utf-8");
+    await fs.writeFile(
+      path.join(wsDir, "config.json"),
+      JSON.stringify({ schemaVersion: "v1", archive: { redaction: { mode: "none" } } }),
+      "utf-8",
+    );
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain(".tar.gz");
+
+    const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+    expect(manifest.redactionMode).toBe("none");
+    expect(manifest.rawIncluded).toBe(true);
+    expect(manifest.redactedArtifacts ?? []).toHaveLength(0);
+    expect(manifest.excludedFiles ?? []).not.toContain("decision-receipts.v1.json");
+
+    const receipts = JSON.parse(await fs.readFile(path.join(sessDir, "decision-receipts.v1.json"), "utf-8"));
+    expect(receipts.count).toBe(1);
+    const rawEntry = receipts.receipts[0] as Record<string, unknown>;
+    expect(String(rawEntry.decidedBy ?? "")).toBe("alice");
+    expect(String(rawEntry.rationale ?? "")).toBe("secret-alice");
+
+    const redactedExists = await fs.access(path.join(sessDir, "decision-receipts.redacted.v1.json")).then(() => true).catch(() => false);
+    expect(redactedExists).toBe(false);
+  });
+
+  it("mode=strict: redacted artifact with deterministic tokens, raw excluded by default", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440011";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    const wsDir = workspaceDir(fingerprint);
+    const ts = "2026-04-17T00:00:00.000Z";
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+    const event = createDecisionEvent(
+      sessionId, "PLAN_REVIEW",
+      { decisionId: "DEC-STRICT-01", decisionSequence: 1, verdict: "approve", rationale: "Token: ghp_SECRET", decidedBy: "bob@secret.io", decidedAt: ts, fromPhase: "PLAN_REVIEW", toPhase: "VALIDATION", transitionEvent: "APPROVE", policyMode: "team" },
+      ts, "bob", GENESIS_HASH,
+    );
+    await fs.writeFile(path.join(sessDir, "audit.jsonl"), JSON.stringify(event) + "\n", "utf-8");
+    await fs.writeFile(
+      path.join(wsDir, "config.json"),
+      JSON.stringify({ schemaVersion: "v1", archive: { redaction: { mode: "strict" } } }),
+      "utf-8",
+    );
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain(".tar.gz");
+
+    const manifest = JSON.parse(await fs.readFile(path.join(sessDir, "archive-manifest.json"), "utf-8"));
+    expect(manifest.redactionMode).toBe("strict");
+    expect(manifest.rawIncluded).toBe(false);
+    expect(manifest.redactedArtifacts).toContain("decision-receipts.redacted.v1.json");
+    expect(manifest.excludedFiles).toContain("decision-receipts.v1.json");
+
+    const redacted = JSON.parse(await fs.readFile(path.join(sessDir, "decision-receipts.redacted.v1.json"), "utf-8"));
+    const entry = redacted.receipts[0] as Record<string, unknown>;
+    const decidedByStr = String(entry.decidedBy ?? "");
+    const rationaleStr = String(entry.rationale ?? "");
+    expect(decidedByStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    expect(rationaleStr).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    expect(decidedByStr).not.toContain("bob");
+    expect(rationaleStr).not.toContain("ghp_");
+  });
+
+  it("pipeline end-to-end: archive produces correctly redacted decision-receipts with sensitive data removed", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440012";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    const ts = "2026-04-17T00:00:00.000Z";
+
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+    const event = createDecisionEvent(
+      sessionId, "PLAN_REVIEW",
+      { decisionId: "DEC-E2E-01", decisionSequence: 1, verdict: "approve", rationale: "PII: carol@corp.com, IP 10.0.0.1", decidedBy: "carol", decidedAt: ts, fromPhase: "PLAN_REVIEW", toPhase: "VALIDATION", transitionEvent: "APPROVE", policyMode: "team" },
+      ts, "carol", GENESIS_HASH,
+    );
+    await fs.writeFile(path.join(sessDir, "audit.jsonl"), JSON.stringify(event) + "\n", "utf-8");
+
+    await archiveSession(fingerprint, sessionId);
+
+    const redacted = JSON.parse(await fs.readFile(path.join(sessDir, "decision-receipts.redacted.v1.json"), "utf-8"));
+    expect(redacted.schemaVersion).toBe("decision-receipts.v1");
+    expect(redacted.count).toBe(1);
+
+    const raw = JSON.parse(await fs.readFile(path.join(sessDir, "decision-receipts.v1.json"), "utf-8"));
+    const rawEntry = raw.receipts[0] as Record<string, unknown>;
+    expect(rawEntry.decidedBy).toBe("carol");
+    expect(String(rawEntry.rationale ?? "")).toContain("carol@corp.com");
+
+    const entry = redacted.receipts[0] as Record<string, unknown>;
+    expect(entry.decidedBy).toBe("[REDACTED]");
+    expect(entry.rationale).toBe("[REDACTED]");
+    expect(String(entry.decidedBy)).not.toContain("carol");
+    expect(String(entry.rationale)).not.toContain("carol@corp.com");
+    expect(String(entry.rationale)).not.toContain("10.0.0.1");
   });
 
   it("fails closed when redaction source is invalid JSON", async () => {
