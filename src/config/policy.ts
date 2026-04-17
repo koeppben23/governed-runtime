@@ -303,13 +303,23 @@ export function resolvePolicyWithContext(
 /**
  * Resolve a FlowGuard policy PRESET by mode name.
  *
- * NOT the runtime authority. This returns the raw policy object for a given
- * mode string without applying runtime context (CI detection, etc.).
+ * ⚠ Authority scope: PRESET LOOKUP ONLY.
+ * Returns the raw policy object for a given mode string without applying
+ * runtime context (CI detection, degradation, etc.).
  *
- * Authority rules:
- * - For session creation: use resolvePolicyWithContext() — applies CI context
- * - For snapshot factory: use this — accepts the already-resolved effective mode
- * - For config lookups: use this — maps mode strings to policy objects
+ * Use for:
+ *   - Config lookups (map mode strings to policy objects)
+ *   - PolicySnapshot factory input (pass the already-resolved effective mode)
+ *   - Preset comparison (e.g., policyTests)
+ *
+ * Do NOT use for:
+ *   - Session creation → resolvePolicyWithContext()
+ *   - Runtime gate evaluation → resolvePolicyWithContext()
+ *
+ * Runtime authority is resolvePolicyWithContext():
+ *   - Applies CI context detection
+ *   - Degrades team-ci to team when CI is not detected
+ *   - Returns effective mode, effective gate behavior, and degradedReason
  *
  * team-ci returns TEAM_CI_POLICY (the preset, not the degraded result).
  * Degradation to TEAM_POLICY only happens inside resolvePolicyWithContext.

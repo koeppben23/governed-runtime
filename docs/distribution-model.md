@@ -103,11 +103,11 @@ After installation, FlowGuard requires **no outbound network connections**. All 
 ### Upgrade
 
 ```bash
-# Download new release
-wget https://github.com/koeppben23/governed-runtime/releases/download/v{new}/flowguard-core-{new}.tgz
+# Acquire the artifact from your organization's approved release distribution point.
+# Verify the SHA-256 checksum against the published release record before installation.
 
 # Reinstall with new tarball
-flowguard install --core-tarball ./flowguard-core-{new}.tgz --force
+flowguard install --core-tarball ./flowguard-core-{version}.tgz --force
 ```
 
 ### Rollback

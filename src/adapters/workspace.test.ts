@@ -819,6 +819,71 @@ describe("archiveSession", () => {
 });
 
 // =============================================================================
+// archiveSession failure paths
+// =============================================================================
+
+describe("archiveSession failure paths", () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.OPENCODE_CONFIG_DIR;
+    await cleanTmpDir(tmpDir);
+  });
+
+  it("throws ARCHIVE_FAILED when archive directory cannot be created (permission denied)", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440100";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create
+    const originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    process.env.OPENCODE_CONFIG_DIR = "/root/fail-permission-test";
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
+    process.env.OPENCODE_CONFIG_DIR = originalConfigDir ?? "";
+  });
+
+  it("throws ARCHIVE_FAILED when tar execution fails (missing binary)", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440101";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = "/nonexistent/path/with/no/tar";
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow("ARCHIVE_FAILED");
+    process.env.PATH = originalPath ?? "";
+  });
+
+  it("verifyArchive warns but passes when checksum sidecar is missing (non-fatal)", async () => {
+    const worktree = path.resolve(".");
+    const sessionId = "550e8400-e29b-41d4-a716-446655440102";
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+    await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": "COMPLETE"}', "utf-8");
+
+    // Create archive (includes sidecar)
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain(".tar.gz");
+
+    // Delete the checksum sidecar to simulate write failure (non-fatal by design)
+    const checksumPath = `${archivePath}.sha256`;
+    await fs.unlink(checksumPath);
+
+    // verifyArchive must pass (non-fatal) and emit a warning about missing sidecar
+    const verification = await verifyArchive(fingerprint, sessionId);
+    expect(verification.passed).toBe(true);
+    const checksumWarning = verification.findings.find(
+      (f: { code: string }) => f.code === "archive_checksum_missing",
+    );
+    expect(checksumWarning).toBeDefined();
+    expect(checksumWarning?.severity).toBe("warning");
+  });
+});
+
+// =============================================================================
 // verifyArchive
 // =============================================================================
 

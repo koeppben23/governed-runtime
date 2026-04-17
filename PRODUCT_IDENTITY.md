@@ -313,7 +313,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
 - **No full CI orchestrator.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
-- **Profile auto-detection is heuristic.** Tech-stack detection primarily uses repository signals and may misclassify non-standard layouts. Code-surface analysis adds bounded file-content heuristics but is confidence-based, not semantic truth.
+- **Profile auto-detection is heuristic.** Tech-stack detection primarily uses repository signals and may misclassify non-standard layouts. Code-surface analysis adds bounded file-content heuristics but is confidence-based, not semantic truth. Monorepo and mixed-language repository detection is limited to signal-based heuristics with no deep package-graph traversal.
 
 ---
 
