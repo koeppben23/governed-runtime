@@ -12,13 +12,8 @@
  * @version v1
  */
 
-import * as path from "node:path";
-import type {
-  CollectorInput,
-  CollectorOutput,
-  DomainSignals,
-  DomainKeyword,
-} from "../types";
+import * as path from 'node:path';
+import type { CollectorInput, CollectorOutput, DomainSignals, DomainKeyword } from '../types';
 
 // ─── Domain Keyword Rules ─────────────────────────────────────────────────────
 
@@ -30,16 +25,16 @@ const DOMAIN_KEYWORDS: ReadonlyArray<{
   term: string;
   patterns: readonly RegExp[];
 }> = [
-  { term: "authentication", patterns: [/\bauth\b/i, /\blogin\b/i, /\bsignup\b/i] },
-  { term: "authorization", patterns: [/\bpermission/i, /\broles?\b/i, /\bacl\b/i] },
-  { term: "payment", patterns: [/\bpayment/i, /\bbilling\b/i, /\binvoice/i, /\bcheckout\b/i] },
-  { term: "user-management", patterns: [/\busers?\b/i, /\bprofile/i, /\baccount/i] },
-  { term: "messaging", patterns: [/\bmessag/i, /\bnotif/i, /\bemail/i, /\bchat\b/i] },
-  { term: "scheduling", patterns: [/\bschedul/i, /\bcron\b/i, /\bjob/i, /\bqueue/i] },
-  { term: "analytics", patterns: [/\banalytics?\b/i, /\bmetric/i, /\btelemetry/i] },
-  { term: "storage", patterns: [/\bstorage\b/i, /\bupload/i, /\bblob\b/i, /\bs3\b/i] },
-  { term: "search", patterns: [/\bsearch\b/i, /\belastic/i, /\bindex/i] },
-  { term: "configuration", patterns: [/\bconfig\b/i, /\bsettings?\b/i, /\bpreferenc/i] },
+  { term: 'authentication', patterns: [/\bauth\b/i, /\blogin\b/i, /\bsignup\b/i] },
+  { term: 'authorization', patterns: [/\bpermission/i, /\broles?\b/i, /\bacl\b/i] },
+  { term: 'payment', patterns: [/\bpayment/i, /\bbilling\b/i, /\binvoice/i, /\bcheckout\b/i] },
+  { term: 'user-management', patterns: [/\busers?\b/i, /\bprofile/i, /\baccount/i] },
+  { term: 'messaging', patterns: [/\bmessag/i, /\bnotif/i, /\bemail/i, /\bchat\b/i] },
+  { term: 'scheduling', patterns: [/\bschedul/i, /\bcron\b/i, /\bjob/i, /\bqueue/i] },
+  { term: 'analytics', patterns: [/\banalytics?\b/i, /\bmetric/i, /\btelemetry/i] },
+  { term: 'storage', patterns: [/\bstorage\b/i, /\bupload/i, /\bblob\b/i, /\bs3\b/i] },
+  { term: 'search', patterns: [/\bsearch\b/i, /\belastic/i, /\bindex/i] },
+  { term: 'configuration', patterns: [/\bconfig\b/i, /\bsettings?\b/i, /\bpreferenc/i] },
 ];
 
 /** Files that might contain domain glossary or documentation. */
@@ -67,17 +62,17 @@ export async function collectDomainSignals(
   input: CollectorInput,
 ): Promise<CollectorOutput<DomainSignals>> {
   try {
-    const normalized = input.allFiles.map((f) => f.replace(/\\/g, "/"));
+    const normalized = input.allFiles.map((f) => f.replace(/\\/g, '/'));
     const keywords = detectKeywords(normalized);
     const glossarySources = detectGlossarySources(normalized);
 
     return {
-      status: "complete",
+      status: 'complete',
       data: { keywords, glossarySources },
     };
   } catch {
     return {
-      status: "failed",
+      status: 'failed',
       data: { keywords: [], glossarySources: [] },
     };
   }
@@ -93,8 +88,8 @@ function detectKeywords(files: readonly string[]): DomainKeyword[] {
 
   for (const filePath of files) {
     // Extract path segments for matching
-    const segments = filePath.split("/");
-    const pathStr = segments.join(" ") + " " + path.basename(filePath);
+    const segments = filePath.split('/');
+    const pathStr = segments.join(' ') + ' ' + path.basename(filePath);
 
     for (const rule of DOMAIN_KEYWORDS) {
       if (rule.patterns.some((p) => p.test(pathStr))) {
@@ -108,7 +103,7 @@ function detectKeywords(files: readonly string[]): DomainKeyword[] {
     keywords.push({
       term,
       occurrences,
-      classification: "derived_signal",
+      classification: 'derived_signal',
     });
   }
 

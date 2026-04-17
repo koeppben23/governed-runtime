@@ -24,12 +24,17 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { TicketEvidence, PlanEvidence, LoopVerdict } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import type { RailResult, RailContext } from "./types";
-import { autoAdvance, runConvergenceLoop, createPolicyEvalFn, DEFAULT_MAX_REVIEW_ITERATIONS } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import type { RailResult, RailContext } from './types';
+import {
+  autoAdvance,
+  runConvergenceLoop,
+  createPolicyEvalFn,
+  DEFAULT_MAX_REVIEW_ITERATIONS,
+} from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -63,9 +68,9 @@ export interface PlanInput {
 /** Extract markdown section headers from plan text. */
 function extractSections(body: string): string[] {
   return body
-    .split("\n")
+    .split('\n')
     .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, "").trim());
+    .map((line) => line.replace(/^#+\s*/, '').trim());
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -78,24 +83,22 @@ export async function executePlan(
 ): Promise<RailResult> {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.PLAN)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/plan",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/plan',
       phase: state.phase,
     });
   }
 
   // 2. Require ticket
   if (!state.ticket) {
-    return blocked("TICKET_REQUIRED", { action: "creating a plan" });
+    return blocked('TICKET_REQUIRED', { action: 'creating a plan' });
   }
 
   // 3. Generate or accept plan body
-  const planBody = input.text?.trim()
-    ? input.text
-    : await executors.generate(state.ticket);
+  const planBody = input.text?.trim() ? input.text : await executors.generate(state.ticket);
 
   if (!planBody.trim()) {
-    return blocked("EMPTY_PLAN");
+    return blocked('EMPTY_PLAN');
   }
 
   // 4. Create initial plan evidence
@@ -107,9 +110,7 @@ export async function executePlan(
   };
 
   // 5. Preserve version history
-  const history = state.plan
-    ? [state.plan.current, ...state.plan.history]
-    : [];
+  const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
 
   // 6. Self-review loop (digest-stop)
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
@@ -117,7 +118,7 @@ export async function executePlan(
 
   const loop = await runConvergenceLoop(currentPlan, maxIterations, async (plan, iter) => {
     const review = await executors.selfReview(plan, iter);
-    if (review.verdict === "changes_requested" && review.revisedBody?.trim()) {
+    if (review.verdict === 'changes_requested' && review.revisedBody?.trim()) {
       history.unshift(plan);
       return {
         verdict: review.verdict,
@@ -149,7 +150,11 @@ export async function executePlan(
 
   // 8. Auto-advance (TICKET → PLAN → PLAN_REVIEW if converged) — policy-aware
   const evalFn = createPolicyEvalFn(ctx);
-  const { state: finalState, evalResult: result, transitions } = autoAdvance(nextState, evalFn, ctx);
+  const {
+    state: finalState,
+    evalResult: result,
+    transitions,
+  } = autoAdvance(nextState, evalFn, ctx);
 
-  return { kind: "ok", state: finalState, evalResult: result, transitions };
+  return { kind: 'ok', state: finalState, evalResult: result, transitions };
 }

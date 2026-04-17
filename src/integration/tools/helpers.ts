@@ -13,33 +13,32 @@
  * @version v3
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // State & Machine
-import type { SessionState } from "../../state/schema";
-import type { EvalResult } from "../../machine/evaluate";
+import type { SessionState } from '../../state/schema';
+import type { EvalResult } from '../../machine/evaluate';
+import { resolveNextAction } from '../../machine/next-action';
+import type { NextAction } from '../../machine/next-action';
 
 // Rail helpers
-import type { RailResult, RailContext } from "../../rails/types";
+import type { RailResult, RailContext } from '../../rails/types';
 
 // Adapters
-import {
-  readState,
-  writeState,
-} from "../../adapters/persistence";
+import { readState, writeState } from '../../adapters/persistence';
 
 // Workspace
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
-} from "../../adapters/workspace";
+} from '../../adapters/workspace';
 
 // Config
-import { resolvePolicy } from "../../config/policy";
-import type { FlowGuardPolicy } from "../../config/policy";
-import { defaultReasonRegistry } from "../../config/reasons";
-import { createRailContext } from "../../adapters/context";
+import { policyFromSnapshot, resolvePolicy } from '../../config/policy';
+import type { FlowGuardPolicy } from '../../config/policy';
+import { defaultReasonRegistry } from '../../config/reasons';
+import { createRailContext } from '../../adapters/context';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -83,20 +82,20 @@ export type ToolDefinition = {
 /** Format an EvalResult into a human-readable next-action string. */
 export function formatEval(ev: EvalResult): string {
   switch (ev.kind) {
-    case "transition":
+    case 'transition':
       return `Auto-advanced to ${ev.target} via ${ev.event}.`;
-    case "waiting":
+    case 'waiting':
       return ev.reason;
-    case "terminal":
-      return "Workflow complete. Session is terminal.";
-    case "pending":
+    case 'terminal':
+      return 'Workflow complete. Session is terminal.';
+    case 'pending':
       return `Phase ${ev.phase} needs more work.`;
   }
 }
 
 /** Format a RailResult for LLM consumption. Includes _audit for the audit plugin. */
 export function formatRailResult(result: RailResult): string {
-  if (result.kind === "blocked") {
+  if (result.kind === 'blocked') {
     return JSON.stringify({
       error: true,
       code: result.code,
@@ -105,22 +104,33 @@ export function formatRailResult(result: RailResult): string {
       quickFix: result.quickFix,
     });
   }
-  return JSON.stringify({
+  const nextAction = resolveNextAction(result.state.phase, result.state);
+  const reviewDecision = result.state.reviewDecision;
+  const json = JSON.stringify({
     phase: result.state.phase,
-    status: "ok",
+    status: 'ok',
     next: formatEval(result.evalResult),
+    nextAction,
+    ...(reviewDecision
+      ? {
+          reviewDecision: {
+            verdict: reviewDecision.verdict,
+            rationale: reviewDecision.rationale,
+            decidedBy: reviewDecision.decidedBy,
+            decidedAt: reviewDecision.decidedAt,
+          },
+        }
+      : {}),
     _audit: { transitions: result.transitions },
   });
+  return json + `\nNext action: ${nextAction.text}`;
 }
 
 /**
  * Format a blocked error using the reason registry.
  * Used for inline blocked returns in tool logic (outside rail calls).
  */
-export function formatBlocked(
-  code: string,
-  vars?: Record<string, string>,
-): string {
+export function formatBlocked(code: string, vars?: Record<string, string>): string {
   const info = defaultReasonRegistry.format(code, vars);
   return JSON.stringify({
     error: true,
@@ -133,12 +143,11 @@ export function formatBlocked(
 
 /** Wrap any thrown error into a structured JSON string via the registry. */
 export function formatError(err: unknown): string {
-  const message =
-    err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
   const code =
-    err instanceof Error && "code" in err
+    err instanceof Error && 'code' in err
       ? String((err as { code: unknown }).code)
-      : "INTERNAL_ERROR";
+      : 'INTERNAL_ERROR';
   return formatBlocked(code, { message });
 }
 
@@ -178,16 +187,12 @@ export async function resolveWorkspacePaths(context: {
 // ─── State Helpers ────────────────────────────────────────────────────────────
 
 /** Read state with null-safety messaging. */
-export async function requireState(
-  sessDir: string,
-): Promise<SessionState> {
+export async function requireState(sessDir: string): Promise<SessionState> {
   const state = await readState(sessDir);
   if (!state) {
     throw Object.assign(
-      new Error(
-        "No FlowGuard session found. Run /hydrate first to bootstrap a session.",
-      ),
-      { code: "NO_SESSION" },
+      new Error('No FlowGuard session found. Run /hydrate first to bootstrap a session.'),
+      { code: 'NO_SESSION' },
     );
   }
   return state;
@@ -198,7 +203,10 @@ export async function requireState(
  * or default to SOLO_POLICY (no session yet).
  */
 export function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
-  return resolvePolicy(state?.policySnapshot?.mode);
+  if (state?.policySnapshot) {
+    return policyFromSnapshot(state.policySnapshot);
+  }
+  return resolvePolicy();
 }
 
 /**
@@ -213,14 +221,28 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
  * Rails don't persist — the caller (this tool layer) does it atomically.
  */
-export async function persistAndFormat(
-  sessDir: string,
-  result: RailResult,
-): Promise<string> {
-  if (result.kind === "ok") {
+export async function persistAndFormat(sessDir: string, result: RailResult): Promise<string> {
+  if (result.kind === 'ok') {
     await writeState(sessDir, result.state);
   }
   return formatRailResult(result);
+}
+
+/**
+ * Append NextAction to a custom JSON response string.
+ *
+ * Use this when a tool builds custom JSON (not via formatRailResult)
+ * but still needs the mandatory NextAction footer.
+ *
+ * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
+ * @param state - Current session state for NextAction resolution.
+ * @returns JSON string with nextAction field + trailing footer line.
+ */
+export function appendNextAction(jsonStr: string, state: SessionState): string {
+  const nextAction = resolveNextAction(state.phase, state);
+  const parsed = JSON.parse(jsonStr);
+  parsed.nextAction = nextAction;
+  return JSON.stringify(parsed) + `\nNext action: ${nextAction.text}`;
 }
 
 // ─── Plan Parsing ─────────────────────────────────────────────────────────────
@@ -228,7 +250,7 @@ export async function persistAndFormat(
 /** Extract markdown section headers from plan text. */
 export function extractSections(body: string): string[] {
   return body
-    .split("\n")
+    .split('\n')
     .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, "").trim());
+    .map((line) => line.replace(/^#+\s*/, '').trim());
 }

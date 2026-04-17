@@ -1,6 +1,6 @@
 {
   "name": "@flowguard/core",
-  "version": "1.3.0",
+  "version": "1.0.0",
   "description": "FlowGuard runtime for OpenCode — deterministic, fail-closed, audit-ready workflow engine.",
   "type": "module",
   "main": "dist/index.js",
@@ -19,12 +19,21 @@
     "flowguard": "./dist/cli/install.js"
   },
   "scripts": {
-    "build": "tsc && npm run fix-esm",
+    "build": "npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
     "fix-esm": "node scripts/fix-esm-imports.js",
+    "check:esm": "node scripts/fix-esm-imports.js --check",
     "check": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
+    "check:format": "prettier --check \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
+    "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sync-version": "node scripts/sync-version.js",
+    "generate-docs": "node scripts/generate-docs.js",
+    "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
+    "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ && git commit -m 'chore: sync version from VERSION to package.json and docs'"
   },
   "engines": {
     "node": ">=20"
@@ -35,10 +44,19 @@
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
+    "@eslint/js": "^9.37.0",
     "@opencode-ai/plugin": "^1.4.3",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.49.2",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",
+    "@opentelemetry/sdk-node": "^0.57.2",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.4",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
+    "eslint": "^9.37.0",
+    "prettier": "^3.4.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.46.1",
     "vitest": "^4.1.4"
   },
   "files": [

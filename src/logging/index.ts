@@ -11,4 +11,4 @@ export {
   type LogSink,
   createLogger,
   createNoopLogger,
-} from "./logger";
+} from './logger';

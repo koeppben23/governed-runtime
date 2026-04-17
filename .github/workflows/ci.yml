@@ -54,6 +54,42 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+        env:
+          FORCE_COLOR: 0
+
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run check:format
+        env:
+          FORCE_COLOR: 0
+
   build:
     name: build
     runs-on: ubuntu-latest
@@ -72,12 +108,14 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Verify ESM import correctness
+        run: npm run check:esm
+        env:
+          FORCE_COLOR: 0
+
   audit:
     name: audit
     runs-on: ubuntu-latest
-    # Non-blocking: signal-only, not a required status check.
-    # Observe results before promoting to merge-blocker.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,21 +126,20 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: npm audit (moderate+)
-        run: npm audit --audit-level=moderate
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
 
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Run actionlint
-        uses: docker://rhysd/actionlint:latest
+        uses: rhysd/actionlint@v1.7.12
         with:
-          args: "-config-file .github/actionlint.yaml -color"
+          args: '-config-file .github/actionlint.yaml -color'
 
   secrets-scan:
     name: secrets-scan
@@ -151,7 +188,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:typescript"
+          category: '/language:typescript'
 
   security-policy:
     name: security-policy
@@ -171,7 +208,8 @@ jobs:
       - name: Check for private vulnerability reporting
         run: |
           if [ ! -f .github/security-advisories.yml ] && [ ! -d .github/security-advisories ]; then
-            echo "::warning::Private vulnerability reporting not configured. Consider enabling it at https://github.com/${{ github.repository }}/security/advisories/new"
+            echo "::error::Private vulnerability reporting not configured. Enable it at https://github.com/${{ github.repository }}/security/advisories/new"
+            exit 1
           fi
 
   install:

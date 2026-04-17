@@ -14,21 +14,21 @@ FlowGuard is a **locally installed development tool**, not a hosted service. The
 
 ## Responsibility Matrix
 
-| Area | Responsible Party | Description |
-|------|-------------------|-------------|
-| FlowGuard source code | **Maintainer** | Bug fixes, security patches, releases |
-| Installation and CLI | **Maintainer** | Installer, doctor, upgrade path |
-| Documentation | **Maintainer** | Accuracy of docs, guides, and references |
-| Security vulnerabilities | **Maintainer** | Triage, fix, coordinated disclosure |
-| OpenCode integration | **Maintainer** | Tool bindings, plugin, command prompts |
-| OpenCode runtime | **OpenCode project** | OpenCode bugs, updates, LLM integration |
-| Node.js / Bun runtime | **Runtime project** | Node.js or Bun bugs and updates |
-| Host environment | **Organization / User** | OS, filesystem, network, permissions |
-| Policy configuration | **Organization / User** | Choosing policy mode, profile, active checks |
-| Compliance assessment | **Organization / User** | Mapping FlowGuard controls to regulatory requirements |
-| Audit trail retention | **Organization / User** | Storing, archiving, and managing session data |
-| Access control | **Organization / User** | Who can run FlowGuard, who can review |
-| CI/CD integration | **Organization / User** | Wrapping FlowGuard in pipeline scripts |
+| Area                     | Responsible Party       | Description                                           |
+| ------------------------ | ----------------------- | ----------------------------------------------------- |
+| FlowGuard source code    | **Maintainer**          | Bug fixes, security patches, releases                 |
+| Installation and CLI     | **Maintainer**          | Installer, doctor, upgrade path                       |
+| Documentation            | **Maintainer**          | Accuracy of docs, guides, and references              |
+| Security vulnerabilities | **Maintainer**          | Triage, fix, coordinated disclosure                   |
+| OpenCode integration     | **Maintainer**          | Tool bindings, plugin, command prompts                |
+| OpenCode runtime         | **OpenCode project**    | OpenCode bugs, updates, LLM integration               |
+| Node.js / Bun runtime    | **Runtime project**     | Node.js or Bun bugs and updates                       |
+| Host environment         | **Organization / User** | OS, filesystem, network, permissions                  |
+| Policy configuration     | **Organization / User** | Choosing policy mode, profile, active checks          |
+| Compliance assessment    | **Organization / User** | Mapping FlowGuard controls to regulatory requirements |
+| Audit trail retention    | **Organization / User** | Storing, archiving, and managing session data         |
+| Access control           | **Organization / User** | Who can run FlowGuard, who can review                 |
+| CI/CD integration        | **Organization / User** | Wrapping FlowGuard in pipeline scripts                |
 
 ---
 
@@ -39,6 +39,7 @@ FlowGuard is a **locally installed development tool**, not a hosted service. The
 Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues).
 
 Include:
+
 - FlowGuard version (`flowguard --version` or check `VERSION` file)
 - Node.js version (`node --version`)
 - Operating system
@@ -66,14 +67,14 @@ Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues) wit
 
 FlowGuard is maintained as a proprietary commercial product. Response times are best-effort, not contractual SLAs.
 
-| Category | Target Response | Target Resolution |
-|----------|----------------|-------------------|
-| **Security — Critical** | 72 hours (acknowledgment) | 14 days |
-| **Security — Non-critical** | 1 week | Next release |
-| **Bug — Workflow blocked** | 1 week | Best effort |
-| **Bug — Non-blocking** | 2 weeks | Best effort |
-| **Feature request** | 2 weeks (triage) | Roadmap dependent |
-| **Question** | 2 weeks | Best effort |
+| Category                    | Target Response           | Target Resolution |
+| --------------------------- | ------------------------- | ----------------- |
+| **Security — Critical**     | 72 hours (acknowledgment) | 14 days           |
+| **Security — Non-critical** | 1 week                    | Next release      |
+| **Bug — Workflow blocked**  | 1 week                    | Best effort       |
+| **Bug — Non-blocking**      | 2 weeks                   | Best effort       |
+| **Feature request**         | 2 weeks (triage)          | Roadmap dependent |
+| **Question**                | 2 weeks                   | Best effort       |
 
 These are targets, not guarantees. Response and resolution times depend on severity, complexity, and maintainer availability.
 
@@ -93,10 +94,10 @@ These are targets, not guarantees. Response and resolution times depend on sever
 
 ## Supported Versions
 
-| Version | Status |
-|---------|--------|
+| Version      | Status                                              |
+| ------------ | --------------------------------------------------- |
 | 1.x (latest) | Supported — receives bug fixes and security patches |
-| < 1.0 | Not supported |
+| < 1.0        | Not supported                                       |
 
 Only the latest release within the supported major version receives patches. Users should upgrade to the latest release before reporting issues.
 
@@ -106,13 +107,13 @@ Only the latest release within the supported major version receives patches. Use
 
 Before opening an issue, check these resources:
 
-| Resource | Location | Content |
-|----------|----------|---------|
-| Installation guide | [docs/installation.md](./installation.md) | Standard installation steps |
-| Air-gapped guide | [docs/air-gapped-guide.md](./air-gapped-guide.md) | Offline installation |
-| Troubleshooting | [docs/troubleshooting.md](./troubleshooting.md) | FAQ and common errors |
-| Reason codes | FlowGuard output | Every block includes a reason code and recovery guidance |
-| Doctor command | `flowguard doctor` | Verifies installation integrity |
+| Resource           | Location                                          | Content                                                  |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------------- |
+| Installation guide | [docs/installation.md](./installation.md)         | Standard installation steps                              |
+| Air-gapped guide   | [docs/air-gapped-guide.md](./air-gapped-guide.md) | Offline installation                                     |
+| Troubleshooting    | [docs/troubleshooting.md](./troubleshooting.md)   | FAQ and common errors                                    |
+| Reason codes       | FlowGuard output                                  | Every block includes a reason code and recovery guidance |
+| Doctor command     | `flowguard doctor`                                | Verifies installation integrity                          |
 
 ### Using Reason Codes
 
@@ -146,5 +147,5 @@ Bug fixes and improvements are welcome. See [CONTRIBUTING.md](../CONTRIBUTING.md
 
 ---
 
-*FlowGuard Version: 1.3.0*
-*Last Updated: 2026-04-15*
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_

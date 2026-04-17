@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import type { RailContext } from "./rails/types";
+import type { RailContext } from './rails/types';
 
 // ─── Test Context Factory ────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ import type { RailContext } from "./rails/types";
  *   expect(ctx.digest("hello")).toBe("digest-of-hello"); // predictable
  */
 export function createTestContext(
-  fixedTime: string = "2026-01-01T00:00:00.000Z",
+  fixedTime: string = '2026-01-01T00:00:00.000Z',
   digestFn?: (text: string) => string,
 ): RailContext {
   return {

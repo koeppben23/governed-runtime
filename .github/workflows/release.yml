@@ -52,6 +52,11 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Verify ESM import correctness
+        run: npm run check:esm
+        env:
+          FORCE_COLOR: 0
+
   release:
     name: release
     needs: verify
@@ -70,6 +75,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify ESM import correctness
+        run: npm run check:esm
 
       - name: Copy LICENSE to dist
         run: cp LICENSE dist/
@@ -97,6 +105,20 @@ jobs:
         run: |
           sha256sum ./*.tgz > checksums.sha256
 
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm@4.1.1 \
+            --spec-version 1.6 \
+            --output-format JSON \
+            --output-reproducible \
+            --output-file release/sbom.cdx.json \
+            --validate
+
+      - name: Attest package provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/*.tgz
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -104,7 +126,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             release/*.tgz \
             release/checksums.sha256 \
+            release/sbom.cdx.json \
             LICENSE \
             --title "FlowGuard v${GITHUB_REF_NAME#v}" \
-            --generate-notes \
+            --notes-from-file CHANGELOG.md \
             --verify-tag

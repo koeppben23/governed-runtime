@@ -33,7 +33,8 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **8 explicit phases** from ticket intake through completion
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance report)
+- **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
@@ -41,7 +42,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### FlowGuard & Compliance
 
-- **Three deployment profiles:** Solo (no human gates), Team (human gates, self-approval allowed), Regulated (human gates, four-eyes principle enforced)
+- **Four policy modes:** Solo (no human gates), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (human gates, four-eyes principle enforced)
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
@@ -49,14 +50,15 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### Audit & Evidence
 
 - **Hash-chained audit trail** — SHA-256 linked events, tamper-evident, JSONL append-only
-- **Structured event kinds** — transition, tool_call, error, lifecycle events with typed details
+- **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
+- **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced
-- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation
+- **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
 
-- **OpenCode-native** — zero-bridge TypeScript architecture, runs in the same Bun runtime
+- **OpenCode-native** — TypeScript architecture, runs within the OpenCode host runtime
 - **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
@@ -64,9 +66,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Repository Discovery
 
-- **5-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, domain signals — all run in parallel with budget guards
+- **6-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals — all run in parallel with budget guards
 - **Evidence-classified** — every detected item carries `fact`, `derived_signal`, or `hypothesis` classification
-- **File-path-based** — no file content reading, fast and predictable detection from repository file listing
+- **Bounded heuristic semantics** — code-surface collector reads a capped subset of source files (hard file/byte/time budgets) to derive endpoint/auth/data/integration hints with confidence and evidence
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
 
@@ -75,6 +77,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification
 - **10-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, and state presence
+- **Redacted export by default** — archive artifacts are export-redacted (`mode=basic`, `includeRaw=false`) while runtime/audit SSOT remains raw internally
+- **Receipt export** — archives include `decision-receipts.redacted.v1.json` (and raw receipts only when explicitly opted in)
+- **Manifest risk signaling** — manifest records redaction mode, raw inclusion, redacted artifacts, excluded raw artifacts, and `raw_export_enabled` when raw export is opt-in
 - **Soft-check design** — missing discovery snapshots warn (not fail-hard) for backward compatibility with pre-discovery sessions
 
 ---
@@ -89,7 +94,7 @@ Every governed session starts with explicit hydration:
 /hydrate
 ```
 
-The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 5-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
+The system establishes workspace binding (OpenCode session to git worktree via repository fingerprint), runs a 6-collector discovery pipeline (repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals), resolves the FlowGuard profile via repository signals and discovery results, creates an immutable policy snapshot, writes discovery and profile-resolution snapshots, and initializes canonical state in the workspace registry. If prerequisites are missing, execution **blocks** with a reason code.
 
 ### 2. Governed Command Surface
 
@@ -103,8 +108,9 @@ Ten FlowGuard commands map to workflow phases:
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject) |
 | `/implement` | Execute implementation, record evidence, run review loop |
 | `/validate` | Run validation checks (test quality, rollback safety) |
+| `/architecture` | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated) |
+| `/review` | Start standalone compliance review flow |
 | `/continue` | Universal routing — do the next appropriate action for the current phase |
-| `/review` | Read-only compliance report with evidence completeness matrix |
 | `/abort` | Emergency session termination |
 | `/archive` | Archive a completed session as `.tar.gz` |
 
@@ -112,21 +118,34 @@ Each command is tied to phase admissibility rules, evidence requirements, and st
 
 ### 3. Phase Workflow
 
-The platform moves work through **8 explicit phases** rather than allowing arbitrary jumps:
+The platform offers **three independent flows** starting from a shared READY entry point:
 
+**Ticket Flow (Full Development Lifecycle):**
 ```
-TICKET -> PLAN -> PLAN_REVIEW -> VALIDATION -> IMPLEMENTATION -> IMPL_REVIEW -> EVIDENCE_REVIEW -> COMPLETE
+READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
 ```
 
-**User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW.
+**Architecture Flow (ADR Creation):**
+```
+READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
+```
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern).
+**Review Flow (Compliance Report):**
+```
+READY → REVIEW → REVIEW_COMPLETE
+```
+
+**User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
+
+**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality.
 
 **Backward Transitions**:
 - `changes_requested` at PLAN_REVIEW -> back to PLAN
 - `reject` at PLAN_REVIEW or EVIDENCE_REVIEW -> back to TICKET
 - `changes_requested` at EVIDENCE_REVIEW -> back to IMPLEMENTATION
 - `CHECK_FAILED` at VALIDATION -> back to PLAN (plan must be revised and re-approved)
+- `changes_requested` at ARCH_REVIEW -> back to ARCHITECTURE
+- `reject` at ARCH_REVIEW -> back to READY
 
 **Every phase transition requires evidence.** The system computes whether progression is allowed.
 
@@ -169,6 +188,10 @@ For individual engineers who want structured execution and complete work records
 
 For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed.
 
+### Team-CI
+
+For CI/CD pipelines that require explicit automation semantics. Auto-approve is active only when CI context is detected; otherwise behavior degrades safely to Team (human-gated) with explicit reason `ci_context_missing`.
+
 ### Regulated
 
 For organizations requiring controlled approvals, auditable decisions, retained evidence, and **four-eyes principle enforcement** (reviewer must differ from session initiator). Fail-closed on any ambiguity.
@@ -182,7 +205,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | Property | Value |
 |----------|-------|
 | **Language** | TypeScript (100%, zero-bridge) |
-| **Runtime** | OpenCode / Bun (same process, no subprocess bridge) |
+| **Runtime** | OpenCode host runtime (process-injected) |
 | **State Validation** | Zod schemas, validated on every write |
 | **Audit Integrity** | SHA-256 hash chain, JSONL append-only |
 | **Module System** | ES2022 modules, Bundler resolution |
@@ -199,7 +222,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **5. Config** | Extension points, per-worktree config schema | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts` |
 | **6. Logging** | Structured logging (logger interface + factories) | `logging/logger.ts` |
 | **7. Audit** | Hash chain, query, summary, completeness matrix | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts` |
-| **8. Discovery** | Repo discovery (5 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
+| **8. Discovery** | Repo discovery (6 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
 | **9. Archive** | Archive manifest types, verification | `archive/types.ts` |
 | **10. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
 | **11. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
@@ -210,15 +233,15 @@ Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine
 
 FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** with installer-managed local runtime materialization.
 
-1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases.
+1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases (tag-driven publication; Releases page can be empty before first published tag).
 2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
 3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
 4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.
 
 ### OpenCode Integration
 
-- **10 Custom Tools** (`integration/tools.ts`) — bridge between LLM and state machine, installed as thin wrappers
-- **10 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
+- **11 Custom Tools** (`integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers
+- **11 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
@@ -273,7 +296,7 @@ Critical boundaries validate and fail closed:
 When the platform cannot proceed, it emits explicit blocked outcomes with specific codes:
 - `COMMAND_NOT_ALLOWED` — command not valid in current phase
 - `MISSING_SESSION_ID` — no session context available
-- `FOUR_EYES_VIOLATION` — reviewer same as initiator in regulated mode
+- `SELF_APPROVAL_FORBIDDEN` — reviewer same as initiator in regulated mode
 - `VALIDATION_INCOMPLETE` — not all checks passed
 - `EMPTY_PLAN` — plan text is empty
 - And 30+ more reason codes with recovery guidance
@@ -288,29 +311,30 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
 - **No built-in multi-user coordination.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Multi-user access requires customer-managed controls (OS permissions, host account separation).
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
-- **No built-in CI integration.** FlowGuard operates within the developer's local environment. CI/CD pipeline integration requires wrapping FlowGuard operations in custom scripts.
-- **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. There is no remote attestation or third-party verification service.
-- **Profile auto-detection is heuristic.** Tech-stack detection uses file-path-based signals (presence of `pom.xml`, `angular.json`, etc.). It does not read file contents and may misclassify repositories with non-standard layouts.
+- **No full CI orchestrator.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services.
+- **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. Release package provenance is separately attested in GitHub Releases, but session archive verification remains local.
+- **Profile auto-detection is heuristic.** Tech-stack detection primarily uses repository signals and may misclassify non-standard layouts. Code-surface analysis adds bounded file-content heuristics but is confidence-based, not semantic truth. Monorepo and mixed-language repository detection is limited to signal-based heuristics with no deep package-graph traversal.
 
 ---
 
 ## Product Facts
 
-- **Version:** 1.3.0
+- **Version:** 1.0.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
-- **Phase Count:** 8 explicit workflow phases
-- **Workflow Commands:** 9 (hydrate, ticket, plan, continue, implement, review-decision, validate, review, abort)
+- **Release Integrity Artifacts:** SHA-256 checksums + CycloneDX SBOM + GitHub build provenance attestation for release tarballs
+- **Phase Count:** 14 explicit workflow phases across 3 flows
+- **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
-- **Custom Tools:** 10 OpenCode tool exports (via `@flowguard/core/integration`)
-- **Audit Events:** 4 structured kinds (transition, tool_call, error, lifecycle)
-- **Policy Modes:** 3 (Solo [default], Team, Regulated)
+- **Custom Tools:** 11 OpenCode tool exports (via `@flowguard/core/integration`)
+- **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
+- **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
-- **Discovery Collectors:** 5 (repo-metadata, stack-detection, topology, surface-detection, domain-signals)
+- **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
-- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories
+- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories and an enforced global coverage gate (branches/lines/functions/statements >= 80%)
 - **Self-Hosted:** Runs locally — no outbound network calls from FlowGuard itself. All data stays on the user's filesystem.
 
 ---
@@ -321,7 +345,7 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-*Version: 1.3.0*
+*Version: 1.0.0*
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Distribution: Pre-built proprietary artifact (GitHub Releases)*
-*Last Updated: 2026-04-15*
+*Last Updated: 2026-04-17*

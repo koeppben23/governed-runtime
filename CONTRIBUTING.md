@@ -17,13 +17,13 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Key Layers
 
-| Layer | Purpose | Rules |
-|-------|---------|-------|
-| `state/` | Core domain model (Zod schemas, types) | Leaf module - may import discovery/types only |
-| `machine/` | State machine (topology, guards, evaluation) | Only imports state/ |
-| `rails/` | Workflow orchestrators (stateless) | No integration/ imports, prefer adapter I/O |
-| `adapters/` | File I/O, git, workspace management | May import config/, discovery/, archive/, state/, machine/, rails/ |
-| `integration/` | OpenCode tool bindings | Entry point - may import any layer |
+| Layer          | Purpose                                      | Rules                                                              |
+| -------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| `state/`       | Core domain model (Zod schemas, types)       | Leaf module - may import discovery/types only                      |
+| `machine/`     | State machine (topology, guards, evaluation) | Only imports state/                                                |
+| `rails/`       | Workflow orchestrators (stateless)           | No integration/ imports, prefer adapter I/O                        |
+| `adapters/`    | File I/O, git, workspace management          | May import config/, discovery/, archive/, state/, machine/, rails/ |
+| `integration/` | OpenCode tool bindings                       | Entry point - may import any layer                                 |
 
 ## Development Setup
 
@@ -41,8 +41,14 @@ npm install
 # Type check
 npm run check
 
+# Lint
+npm run lint
+
 # Run tests
 npm test
+
+# Run coverage gate
+npm run test:coverage
 
 # Build
 npm run build
@@ -51,6 +57,13 @@ npm run build
 ## Testing
 
 FlowGuard uses Vitest for testing. All tests must pass before submitting a PR.
+Linting is enforced on `src/**/*.ts` with an additional type-aware safety profile on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`).
+Coverage thresholds are enforced globally and must remain green:
+
+- Branches: 80%
+- Lines: 80%
+- Functions: 80%
+- Statements: 80%
 
 ```bash
 # Run all tests
@@ -58,6 +71,15 @@ npm test
 
 # Run tests in watch mode
 npm run test:watch
+
+# Check code formatting (Prettier)
+npm run check:format
+
+# Format code
+npm run format
+
+# Generate changelog
+npm run changelog
 
 # Run specific test file
 npm test -- src/state/state.test.ts
@@ -68,35 +90,35 @@ npm test -- src/architecture/__tests__/dependency-rules.test.ts
 
 ### Test Categories
 
-| Category | Files | Purpose |
-|----------|-------|---------|
-| Unit | `*.test.ts` in each module | Core logic testing |
-| Architecture | `src/architecture/__tests__/` | Dependency rule verification |
-| Integration | `src/integration/*.test.ts` | OpenCode tool integration |
-| CLI | `src/cli/*.test.ts` | Command-line interface |
-| Performance | `*.test.ts` with PERF describe | Performance regression prevention |
+| Category     | Files                          | Purpose                           |
+| ------------ | ------------------------------ | --------------------------------- |
+| Unit         | `*.test.ts` in each module     | Core logic testing                |
+| Architecture | `src/architecture/__tests__/`  | Dependency rule verification      |
+| Integration  | `src/integration/*.test.ts`    | OpenCode tool integration         |
+| CLI          | `src/cli/*.test.ts`            | Command-line interface            |
+| Performance  | `*.test.ts` with PERF describe | Performance regression prevention |
 
 ### Test Naming Conventions
 
 ```typescript
-describe("ModuleName / Feature", () => {
-  describe("Happy Path", () => {
-    it("should do X when Y");
+describe('ModuleName / Feature', () => {
+  describe('Happy Path', () => {
+    it('should do X when Y');
   });
 
-  describe("Edge Cases", () => {
-    it("should handle empty input");
-    it("should handle null/undefined");
-    it("should handle maximum size");
+  describe('Edge Cases', () => {
+    it('should handle empty input');
+    it('should handle null/undefined');
+    it('should handle maximum size');
   });
 
-  describe("Error Handling", () => {
-    it("should throw SPECIFIC_ERROR when invalid input");
-    it("should return BlockedResult when precondition fails");
+  describe('Error Handling', () => {
+    it('should throw SPECIFIC_ERROR when invalid input');
+    it('should return BlockedResult when precondition fails');
   });
 
-  describe("Performance", () => {
-    it("should complete in < Xms");
+  describe('Performance', () => {
+    it('should complete in < Xms');
   });
 });
 ```
@@ -112,37 +134,37 @@ describe("ModuleName / Feature", () => {
 
 ### Naming Conventions
 
-| Element | Convention | Example |
-|---------|------------|---------|
-| Files | kebab-case | `session-state.ts` |
-| Functions | camelCase | `executeHydrate()` |
-| Classes | PascalCase | `PersistenceError` |
-| Constants | SCREAMING_SNAKE | `MAX_ITERATIONS` |
-| Types/Interfaces | PascalCase | `RailResult` |
-| Enums | PascalCase | `Command.HYDRATE` |
+| Element          | Convention      | Example            |
+| ---------------- | --------------- | ------------------ |
+| Files            | kebab-case      | `session-state.ts` |
+| Functions        | camelCase       | `executeHydrate()` |
+| Classes          | PascalCase      | `PersistenceError` |
+| Constants        | SCREAMING_SNAKE | `MAX_ITERATIONS`   |
+| Types/Interfaces | PascalCase      | `RailResult`       |
+| Enums            | PascalCase      | `Command.HYDRATE`  |
 
 ### Import Organization
 
 ```typescript
 // 1. Node built-ins
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 // 2. External packages
-import { z } from "zod";
+import { z } from 'zod';
 
 // 3. FlowGuard state/machine (domain)
-import type { SessionState } from "../state/schema";
-import { evaluate } from "../machine/evaluate";
+import type { SessionState } from '../state/schema';
+import { evaluate } from '../machine/evaluate';
 
 // 4. FlowGuard application (rails)
-import { executeHydrate } from "../rails/hydrate";
+import { executeHydrate } from '../rails/hydrate';
 
 // 5. FlowGuard infrastructure (adapters)
-import { readState } from "../adapters/persistence";
+import { readState } from '../adapters/persistence';
 
 // 6. FlowGuard config/extension
-import { defaultProfileRegistry } from "../config/profile";
+import { defaultProfileRegistry } from '../config/profile';
 ```
 
 ## Repository Governance
@@ -171,18 +193,19 @@ All commit messages must follow the [Conventional Commits](https://www.conventio
 
 **Allowed types:**
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation changes |
-| `test` | Adding or updating tests |
+| Type       | Description                              |
+| ---------- | ---------------------------------------- |
+| `feat`     | New feature                              |
+| `fix`      | Bug fix                                  |
+| `docs`     | Documentation changes                    |
+| `test`     | Adding or updating tests                 |
 | `refactor` | Code refactoring without behavior change |
-| `chore` | Maintenance tasks, dependency updates |
-| `perf` | Performance improvements |
-| `ci` | CI/CD changes |
+| `chore`    | Maintenance tasks, dependency updates    |
+| `perf`     | Performance improvements                 |
+| `ci`       | CI/CD changes                            |
 
 **Examples:**
+
 ```bash
 feat: add archive verification command
 fix: correct session state validation
@@ -202,11 +225,15 @@ refactor: extract validation helpers
 
 The following checks must pass for a PR to be merged:
 
-| Check | Command | Description |
-|-------|---------|-------------|
-| Tests | `npm test` | All tests must pass |
-| Type Check | `npm run check` | TypeScript compilation |
-| Build | `npm run build` | Successful compilation to dist/ |
+| Check      | Command                        | Description                                                                            |
+| ---------- | ------------------------------ | -------------------------------------------------------------------------------------- |
+| Tests      | `npm test`                     | All tests must pass                                                                    |
+| Coverage   | `npm run test:coverage`        | Global threshold gate (branches/lines/functions/statements >= 80%)                     |
+| Format     | `npm run check:format`         | Prettier formatting check (blocking in CI)                                             |
+| Lint       | `npm run lint`                 | ESLint gate (`src/**/*.ts`) + type-aware safety rules for critical governance surfaces |
+| Type Check | `npm run check`                | TypeScript compilation                                                                 |
+| Build      | `npm run build`                | Successful compilation to dist/                                                        |
+| Audit      | `npm audit --audit-level=high` | High+ vulnerabilities block CI                                                         |
 
 ## Pull Request Process
 
@@ -269,17 +296,17 @@ These rules are enforced by `src/architecture/__tests__/dependency-rules.test.ts
 ```typescript
 // Good: Typed error with code
 export class PersistenceError extends Error {
-  readonly code: "READ_FAILED" | "WRITE_FAILED" | "SCHEMA_VALIDATION_FAILED";
+  readonly code: 'READ_FAILED' | 'WRITE_FAILED' | 'SCHEMA_VALIDATION_FAILED';
 
-  constructor(code: this["code"], message: string) {
+  constructor(code: this['code'], message: string) {
     super(message);
-    this.name = "PersistenceError";
+    this.name = 'PersistenceError';
     this.code = code;
   }
 }
 
 // Bad: Generic error
-throw new Error("Something went wrong");
+throw new Error('Something went wrong');
 ```
 
 ### Use Blocked Results
@@ -289,10 +316,10 @@ throw new Error("Something went wrong");
 export function validate(input: unknown): RailResult {
   if (!isValid(input)) {
     return {
-      kind: "blocked",
-      code: "INVALID_INPUT",
-      reason: "Input does not match expected schema",
-      recovery: ["Provide valid input matching the schema"],
+      kind: 'blocked',
+      code: 'INVALID_INPUT',
+      reason: 'Input does not match expected schema',
+      recovery: ['Provide valid input matching the schema'],
     };
   }
   // ...
@@ -321,8 +348,8 @@ export function validate(input: unknown): RailResult {
 - Use `performance.now()` for benchmarks in tests
 
 ```typescript
-describe("Performance", () => {
-  it("should complete in < 10ms", () => {
+describe('Performance', () => {
+  it('should complete in < 10ms', () => {
     const start = performance.now();
     doOperation();
     expect(performance.now() - start).toBeLessThan(10);

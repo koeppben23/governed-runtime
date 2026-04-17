@@ -9,14 +9,11 @@
  * @version v1
  */
 
-import * as path from "node:path";
-import * as crypto from "node:crypto";
-import { remoteOriginUrl } from "../git";
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { remoteOriginUrl } from '../git';
 
-import {
-  FINGERPRINT_LENGTH,
-  type FingerprintResult,
-} from "./types";
+import { FINGERPRINT_LENGTH, type FingerprintResult } from './types';
 
 // -- URL Canonicalization -----------------------------------------------------
 
@@ -38,8 +35,8 @@ export function canonicalizeOriginUrl(rawUrl: string): string {
 
   // SCP-style: git@github.com:org/repo.git → ssh://git@github.com/org/repo.git
   const scpMatch = url.match(/^([A-Za-z0-9._-]+@)?([A-Za-z0-9._-]+):(.+)$/);
-  if (scpMatch && !url.includes("://")) {
-    const user = scpMatch[1] ?? "";
+  if (scpMatch && !url.includes('://')) {
+    const user = scpMatch[1] ?? '';
     const host = scpMatch[2];
     const repoPath = scpMatch[3];
     url = `ssh://${user}${host}/${repoPath}`;
@@ -58,32 +55,32 @@ export function canonicalizeOriginUrl(rawUrl: string): string {
     pathname = parsed.pathname;
   } catch {
     // Unparseable URL — use as-is with basic normalization
-    hostname = "";
+    hostname = '';
     pathname = url;
   }
 
   // Normalize path: replace backslashes, collapse multiple slashes
-  pathname = pathname.replace(/\\/g, "/").replace(/\/+/g, "/");
+  pathname = pathname.replace(/\\/g, '/').replace(/\/+/g, '/');
 
   // Strip trailing slash (but keep leading /) — must happen before .git strip
   // so that "repo.git/" becomes "repo.git" which then becomes "repo"
-  if (pathname.length > 1 && pathname.endsWith("/")) {
+  if (pathname.length > 1 && pathname.endsWith('/')) {
     pathname = pathname.slice(0, -1);
   }
 
   // Strip trailing .git suffix
-  if (pathname.endsWith(".git")) {
+  if (pathname.endsWith('.git')) {
     pathname = pathname.slice(0, -4);
   }
 
   // Strip any trailing slash left after .git removal (e.g. "/org/.git" → "/org/")
-  if (pathname.length > 1 && pathname.endsWith("/")) {
+  if (pathname.length > 1 && pathname.endsWith('/')) {
     pathname = pathname.slice(0, -1);
   }
 
   // Ensure leading slash
-  if (!pathname.startsWith("/")) {
-    pathname = "/" + pathname;
+  if (!pathname.startsWith('/')) {
+    pathname = '/' + pathname;
   }
 
   // Casefold path for case-insensitive matching
@@ -109,8 +106,8 @@ export function canonicalizeOriginUrl(rawUrl: string): string {
 export function normalizeForFingerprint(absPath: string): string {
   let normalized = path.resolve(absPath);
   normalized = path.normalize(normalized);
-  normalized = normalized.replace(/\\/g, "/");
-  if (process.platform === "win32") {
+  normalized = normalized.replace(/\\/g, '/');
+  if (process.platform === 'win32') {
     normalized = normalized.toLowerCase();
   }
   return normalized;
@@ -133,22 +130,20 @@ export function normalizeForFingerprint(absPath: string): string {
  * @param worktree - Git worktree root path.
  * @returns FingerprintResult with fingerprint, material class, and derivation metadata.
  */
-export async function computeFingerprint(
-  worktree: string,
-): Promise<FingerprintResult> {
+export async function computeFingerprint(worktree: string): Promise<FingerprintResult> {
   const remote = await remoteOriginUrl(worktree);
 
   if (remote) {
     const canonical = canonicalizeOriginUrl(remote);
     const material = `repo:${canonical}`;
     const fingerprint = crypto
-      .createHash("sha256")
-      .update(material, "utf-8")
-      .digest("hex")
+      .createHash('sha256')
+      .update(material, 'utf-8')
+      .digest('hex')
       .slice(0, FINGERPRINT_LENGTH);
     return {
       fingerprint,
-      materialClass: "remote_canonical",
+      materialClass: 'remote_canonical',
       canonicalRemote: canonical,
       normalizedRoot: normalizeForFingerprint(worktree),
     };
@@ -158,13 +153,13 @@ export async function computeFingerprint(
   const normalizedRoot = normalizeForFingerprint(worktree);
   const material = `repo:local:${normalizedRoot}`;
   const fingerprint = crypto
-    .createHash("sha256")
-    .update(material, "utf-8")
-    .digest("hex")
+    .createHash('sha256')
+    .update(material, 'utf-8')
+    .digest('hex')
     .slice(0, FINGERPRINT_LENGTH);
   return {
     fingerprint,
-    materialClass: "local_path",
+    materialClass: 'local_path',
     canonicalRemote: null,
     normalizedRoot,
   };
@@ -177,9 +172,9 @@ export async function computeFingerprint(
 export function computeFingerprintFromRemote(canonicalRemote: string): string {
   const material = `repo:${canonicalRemote}`;
   return crypto
-    .createHash("sha256")
-    .update(material, "utf-8")
-    .digest("hex")
+    .createHash('sha256')
+    .update(material, 'utf-8')
+    .digest('hex')
     .slice(0, FINGERPRINT_LENGTH);
 }
 
@@ -190,8 +185,8 @@ export function computeFingerprintFromRemote(canonicalRemote: string): string {
 export function computeFingerprintFromPath(normalizedPath: string): string {
   const material = `repo:local:${normalizedPath}`;
   return crypto
-    .createHash("sha256")
-    .update(material, "utf-8")
-    .digest("hex")
+    .createHash('sha256')
+    .update(material, 'utf-8')
+    .digest('hex')
     .slice(0, FINGERPRINT_LENGTH);
 }

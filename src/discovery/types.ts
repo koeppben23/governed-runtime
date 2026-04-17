@@ -15,13 +15,12 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const DISCOVERY_SCHEMA_VERSION = "discovery.v1" as const;
-export const PROFILE_RESOLUTION_SCHEMA_VERSION =
-  "profile-resolution.v1" as const;
+export const DISCOVERY_SCHEMA_VERSION = 'discovery.v1' as const;
+export const PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1' as const;
 
 // ─── Evidence Classification ──────────────────────────────────────────────────
 
@@ -32,11 +31,7 @@ export const PROFILE_RESOLUTION_SCHEMA_VERSION =
  * - derived_signal: inferred from a combination of facts (framework detected from dependencies)
  * - hypothesis: low-confidence guess based on heuristics
  */
-export const EvidenceClassSchema = z.enum([
-  "fact",
-  "derived_signal",
-  "hypothesis",
-]);
+export const EvidenceClassSchema = z.enum(['fact', 'derived_signal', 'hypothesis']);
 export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
 
 // ─── Collector Status ─────────────────────────────────────────────────────────
@@ -48,7 +43,7 @@ export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
  * - partial: some detection logic succeeded, some failed (degraded)
  * - failed: collector could not produce any result
  */
-export const CollectorStatusSchema = z.enum(["complete", "partial", "failed"]);
+export const CollectorStatusSchema = z.enum(['complete', 'partial', 'failed']);
 export type CollectorStatus = z.infer<typeof CollectorStatusSchema>;
 
 // ─── Detected Item ────────────────────────────────────────────────────────────
@@ -99,11 +94,7 @@ export type StackInfo = z.infer<typeof StackInfoSchema>;
 // ─── Topology ─────────────────────────────────────────────────────────────────
 
 /** Topology kind: monorepo, single-project, or unknown. */
-export const TopologyKindSchema = z.enum([
-  "monorepo",
-  "single-project",
-  "unknown",
-]);
+export const TopologyKindSchema = z.enum(['monorepo', 'single-project', 'unknown']);
 export type TopologyKind = z.infer<typeof TopologyKindSchema>;
 
 /** Information about a module/package within the repository. */
@@ -122,7 +113,7 @@ export const EntryPointInfoSchema = z.object({
   /** Relative path from worktree root. */
   path: z.string().min(1),
   /** Kind of entry point. */
-  kind: z.enum(["main", "bin", "script", "handler", "other"]),
+  kind: z.enum(['main', 'bin', 'script', 'handler', 'other']),
 });
 export type EntryPointInfo = z.infer<typeof EntryPointInfoSchema>;
 
@@ -172,6 +163,45 @@ export const SurfacesInfoSchema = z.object({
 });
 export type SurfacesInfo = z.infer<typeof SurfacesInfoSchema>;
 
+// ─── Code Surface Analysis ────────────────────────────────────────────────────
+
+/** A semantically detected code-surface signal. */
+export const CodeSurfaceSignalSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  classification: EvidenceClassSchema,
+  evidence: z.array(z.string()),
+  location: z.string().min(1),
+});
+export type CodeSurfaceSignal = z.infer<typeof CodeSurfaceSignalSchema>;
+
+/** Code-surface collector status. */
+export const CodeSurfaceStatusSchema = z.enum(['ok', 'partial', 'failed']);
+export type CodeSurfaceStatus = z.infer<typeof CodeSurfaceStatusSchema>;
+
+/** Collector budget stats for code-surface analysis. */
+export const CodeSurfaceBudgetSchema = z.object({
+  scannedFiles: z.number().int().nonnegative(),
+  scannedBytes: z.number().int().nonnegative(),
+  maxFiles: z.number().int().positive(),
+  maxBytesPerFile: z.number().int().positive(),
+  maxTotalBytes: z.number().int().positive(),
+  timedOut: z.boolean(),
+});
+export type CodeSurfaceBudget = z.infer<typeof CodeSurfaceBudgetSchema>;
+
+/** Bounded heuristic code-surface analysis result. */
+export const CodeSurfacesInfoSchema = z.object({
+  status: CodeSurfaceStatusSchema,
+  endpoints: z.array(CodeSurfaceSignalSchema),
+  authBoundaries: z.array(CodeSurfaceSignalSchema),
+  dataAccess: z.array(CodeSurfaceSignalSchema),
+  integrations: z.array(CodeSurfaceSignalSchema),
+  budget: CodeSurfaceBudgetSchema,
+});
+export type CodeSurfacesInfo = z.infer<typeof CodeSurfacesInfoSchema>;
+
 // ─── Domain Signals ───────────────────────────────────────────────────────────
 
 /** A domain keyword detected in the repository. */
@@ -198,7 +228,7 @@ export type DomainSignals = z.infer<typeof DomainSignalsSchema>;
 /** A command hint for validation (build, test, lint, etc.). */
 export const CommandHintSchema = z.object({
   /** Command category. */
-  kind: z.enum(["build", "test", "lint", "typecheck", "format", "other"]),
+  kind: z.enum(['build', 'test', 'lint', 'typecheck', 'format', 'other']),
   /** The command string (e.g., "npm test", "mvn verify"). */
   command: z.string().min(1),
   /** Confidence that this is the right command. */
@@ -220,12 +250,13 @@ export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
 /**
  * Complete discovery result — output of the discovery orchestrator.
  *
- * Contains comprehensive repository analysis from all 5 collectors:
+ * Contains comprehensive repository analysis from all 6 collectors:
  * 1. repo-metadata: git info (branch, commit, remote, fingerprint)
  * 2. stack-detection: languages, frameworks, build tools, test frameworks, runtimes
  * 3. topology: monorepo vs single-project, modules, entry points
  * 4. surface-detection: API, persistence, CI/CD, security surfaces
- * 5. domain-signals: domain keywords, glossary sources
+ * 5. code-surface-analysis: bounded heuristic endpoint/auth/data/integration signals
+ * 6. domain-signals: domain keywords, glossary sources
  *
  * Plus validation hints derived from stack + topology.
  *
@@ -241,6 +272,7 @@ export const DiscoveryResultSchema = z.object({
   stack: StackInfoSchema,
   topology: TopologyInfoSchema,
   surfaces: SurfacesInfoSchema,
+  codeSurfaces: CodeSurfacesInfoSchema.optional(),
   domainSignals: DomainSignalsSchema,
   validationHints: ValidationHintsSchema,
 });
@@ -306,6 +338,9 @@ export const DiscoverySummarySchema = z.object({
   hasPersistenceSurface: z.boolean(),
   hasCiCd: z.boolean(),
   hasSecuritySurface: z.boolean(),
+  codeSurfaceStatus: CodeSurfaceStatusSchema.optional(),
+  apiEndpointCount: z.number().int().nonnegative().optional(),
+  hasAuthBoundary: z.boolean().optional(),
 });
 export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
 

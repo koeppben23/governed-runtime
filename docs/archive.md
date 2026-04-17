@@ -16,9 +16,19 @@ An archive includes:
 
 - `session-state.json` — Complete session state
 - `audit.jsonl` — Audit trail (if enabled)
-- `review-report.json` — Final review report
+- `decision-receipts.redacted.v1.json` — Redacted decision receipts export artifact
+- `review-report.redacted.json` — Redacted review report export artifact (when review report exists)
 - `discovery-snapshot.json` — Repository discovery snapshot
-- `profile-resolution.json` — Profile that was active
+- `profile-resolution-snapshot.json` — Profile resolution snapshot
+
+By default (`archive.redaction.mode=basic`, `includeRaw=false`), raw decision receipts and raw review report are excluded from archives.
+
+**Redaction scope:** Redaction is applied only to export artifacts (`decision-receipts.*.json`, `review-report.*.json`). The following artifacts are **always included as raw** and are **never redacted**:
+
+- `session-state.json` — raw session state (internal SSOT)
+- `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
+
+Raw runtime and audit state is preserved internally; redaction is applied only to export artifacts according to the configured archive policy.
 
 ## Archive Location
 
@@ -41,6 +51,14 @@ Each archive includes an `archive-manifest.json`:
   "policyMode": "regulated",
   "profileId": "typescript",
   "discoveryDigest": "sha256...",
+  "redactionMode": "basic",
+  "rawIncluded": false,
+  "redactedArtifacts": [
+    "decision-receipts.redacted.v1.json",
+    "review-report.redacted.json"
+  ],
+  "excludedFiles": ["decision-receipts.v1.json", "review-report.json"],
+  "riskFlags": [],
   "includedFiles": ["session-state.json", "audit.jsonl"],
   "fileDigests": {
     "session-state.json": "sha256...",
@@ -50,24 +68,26 @@ Each archive includes an `archive-manifest.json`:
 }
 ```
 
+If `includeRaw=true`, `riskFlags` includes `raw_export_enabled`.
+
 ## Verification
 
 FlowGuard provides `verifyArchive()` to validate archive integrity.
 
 ### Finding Codes
 
-| Code | Description |
-|------|-------------|
-| `missing_manifest` | Archive manifest not found |
-| `manifest_parse_error` | Manifest is malformed |
-| `missing_file` | File listed in manifest missing |
-| `unexpected_file` | File not listed in manifest |
-| `file_digest_mismatch` | File hash doesn't match manifest |
-| `content_digest_mismatch` | Content hash incorrect |
-| `archive_checksum_missing` | SHA256 sidecar not found |
-| `archive_checksum_mismatch` | Archive hash doesn't match |
-| `state_missing` | Session state missing |
-| `snapshot_missing` | Discovery snapshot missing |
+| Code                        | Description                      |
+| --------------------------- | -------------------------------- |
+| `missing_manifest`          | Archive manifest not found       |
+| `manifest_parse_error`      | Manifest is malformed            |
+| `missing_file`              | File listed in manifest missing  |
+| `unexpected_file`           | File not listed in manifest      |
+| `file_digest_mismatch`      | File hash doesn't match manifest |
+| `content_digest_mismatch`   | Content hash incorrect           |
+| `archive_checksum_missing`  | SHA256 sidecar not found         |
+| `archive_checksum_mismatch` | Archive hash doesn't match       |
+| `state_missing`             | Session state missing            |
+| `snapshot_missing`          | Discovery snapshot missing       |
 
 ### Verification Example
 

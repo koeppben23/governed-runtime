@@ -12,13 +12,13 @@ FlowGuard uses a pre-built proprietary distribution model. Upgrades involve down
 
 ## Delivery Scope
 
-| Category | Description | Example |
-|----------|-------------|---------|
-| **Technically Enforced** | Guarantees by implementation | Zod validation, hash chain |
-| **Currently Delivered** | Available in current release | CLI install, uninstall, doctor |
-| **Optional** | Can be configured | Version pinning |
-| **Not Covered** | Intentionally not provided | Automated upgrades, rollback automation |
-| **Customer Responsibility** | External to FlowGuard | Artifact archival, testing, compatibility verification |
+| Category                    | Description                  | Example                                                |
+| --------------------------- | ---------------------------- | ------------------------------------------------------ |
+| **Technically Enforced**    | Guarantees by implementation | Zod validation, hash chain                             |
+| **Currently Delivered**     | Available in current release | CLI install, uninstall, doctor                         |
+| **Optional**                | Can be configured            | Version pinning                                        |
+| **Not Covered**             | Intentionally not provided   | Automated upgrades, rollback automation                |
+| **Customer Responsibility** | External to FlowGuard        | Artifact archival, testing, compatibility verification |
 
 ---
 
@@ -50,26 +50,27 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo
 
 ### What Gets Updated
 
-| Component | Updated | Notes |
-|----------|---------|-------|
-| **CLI binary** | Yes | New `flowguard` command |
-| **Core package** | Yes | Via vendor tarball |
-| **Tools** | Yes | Re-installed from new core |
-| **Commands** | Yes | Updated prompts |
-| **Plugin** | Yes | Updated audit hook |
-| **Mandates** | Yes | Content-digested, versioned |
-| **Configuration** | No | Preserved |
+| Component         | Updated | Notes                       |
+| ----------------- | ------- | --------------------------- |
+| **CLI binary**    | Yes     | New `flowguard` command     |
+| **Core package**  | Yes     | Via vendor tarball          |
+| **Tools**         | Yes     | Re-installed from new core  |
+| **Commands**      | Yes     | Updated prompts             |
+| **Plugin**        | Yes     | Updated audit hook          |
+| **Mandates**      | Yes     | Content-digested, versioned |
+| **Configuration** | No      | Preserved                   |
 
 ### What Is Preserved
 
-| Component | Preserved | Notes |
-|-----------|-----------|-------|
-| **Session state** | Yes | File-based, readable after reinstall |
-| **Audit trails** | Yes | File-based |
-| **Archives** | Yes | File-based |
-| **Configuration** | Yes | `flowguard.json` unchanged |
+| Component         | Preserved | Notes                                |
+| ----------------- | --------- | ------------------------------------ |
+| **Session state** | Yes       | File-based, readable after reinstall |
+| **Audit trails**  | Yes       | File-based                           |
+| **Archives**      | Yes       | File-based                           |
+| **Configuration** | Yes       | `flowguard.json` unchanged           |
 
 **Customer Responsibility:**
+
 - Archive active sessions before upgrade
 - Verify archives after upgrade
 - Test upgrade in non-production
@@ -80,14 +81,15 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo
 
 ### State Schema Compatibility
 
-| From Version | To Version | Recommendation |
-|-------------|-----------|---------------|
-| 1.x | 1.y | Test before production use |
-| 1.x | 2.0 | Check release notes for breaking changes |
+| From Version | To Version | Recommendation                           |
+| ------------ | ---------- | ---------------------------------------- |
+| 1.x          | 1.y        | Test before production use               |
+| 1.x          | 2.0        | Check release notes for breaking changes |
 
 **FlowGuard validates state on read.** If a version change introduces incompatible state format, FlowGuard will reject the state and block operations.
 
 **Customer Responsibility:**
+
 - Test upgrade in non-production
 - Archive sessions before upgrading
 - Verify state readability after upgrade
@@ -97,6 +99,7 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo
 Archives are tar.gz files containing structured JSON. Archive readability depends on the archive format used by each version.
 
 **Customer Responsibility:**
+
 - Verify archive readability after upgrade
 - Maintain archives in accessible storage
 
@@ -137,11 +140,11 @@ flowguard doctor
 
 **Customer Responsibility:**
 
-| Action | Frequency | Storage |
-|--------|-----------|---------|
-| **Download artifacts** | On release | Internal artifact store |
-| **Verify checksums** | On download | Before use |
-| **Maintain rollback copies** | Continuous | Last 2-3 versions |
+| Action                       | Frequency   | Storage                 |
+| ---------------------------- | ----------- | ----------------------- |
+| **Download artifacts**       | On release  | Internal artifact store |
+| **Verify checksums**         | On download | Before use              |
+| **Maintain rollback copies** | Continuous  | Last 2-3 versions       |
 
 ### Artifact Storage Recommendations
 
@@ -149,7 +152,7 @@ flowguard doctor
 /artifact-store/
 ├── flowguard-core-1.1.0.tgz
 ├── flowguard-core-1.2.0.tgz
-├── flowguard-core-1.3.0.tgz
+├── flowguard-core-1.0.0.tgz
 └── checksums.sha256
 ```
 
@@ -159,13 +162,13 @@ flowguard doctor
 
 ### Pre-Upgrade Checklist
 
-| Step | Action | Verified |
-|------|--------|----------|
-| 1 | Archive active sessions | ☐ |
-| 2 | Verify archives | ☐ |
-| 3 | Download new artifact | ☐ |
-| 4 | Verify checksum | ☐ |
-| 5 | Test in non-production | ☐ |
+| Step | Action                  | Verified |
+| ---- | ----------------------- | -------- |
+| 1    | Archive active sessions | ☐        |
+| 2    | Verify archives         | ☐        |
+| 3    | Download new artifact   | ☐        |
+| 4    | Verify checksum         | ☐        |
+| 5    | Test in non-production  | ☐        |
 
 ### Non-Production Testing
 
@@ -201,6 +204,7 @@ flowguard doctor
 Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard reinstalls the CLI and core package but does not modify existing session files.
 
 **Customer Responsibility:**
+
 - Complete or archive sessions before major upgrades
 - Verify session state is readable after upgrade
 
@@ -210,21 +214,21 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 ### Upgrade Fails
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `tarball not found` | Wrong path | Verify path to artifact |
-| `checksum mismatch` | Corrupt download | Re-download, verify |
-| `install failed` | Permission issue | Check directory permissions |
-| `doctor fails` | Incomplete install | Re-run install with --force |
+| Error               | Cause              | Solution                    |
+| ------------------- | ------------------ | --------------------------- |
+| `tarball not found` | Wrong path         | Verify path to artifact     |
+| `checksum mismatch` | Corrupt download   | Re-download, verify         |
+| `install failed`    | Permission issue   | Check directory permissions |
+| `doctor fails`      | Incomplete install | Re-run install with --force |
 
 ### Rollback Fails
 
-| Error | Cause | Solution |
-|-------|-------|----------|
+| Error                | Cause            | Solution                     |
+| -------------------- | ---------------- | ---------------------------- |
 | `artifact not found` | No rollback copy | Obtain from backups/releases |
-| `doctor fails` | Partial rollback | Re-run install |
+| `doctor fails`       | Partial rollback | Re-run install               |
 
 ---
 
-*FlowGuard Version: 1.3.0*
-*Last Updated: 2026-04-15*
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_

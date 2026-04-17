@@ -5,47 +5,59 @@ Welcome to the FlowGuard documentation. FlowGuard is a deterministic, fail-close
 ## Getting Started
 
 ### [Installation](./installation.md)
+
 Learn how to install and configure FlowGuard.
 
 ### [Quick Start](./quick-start.md)
+
 Get up and running in 5 minutes.
 
 ## User Guide
 
 ### [Commands](./commands.md)
+
 Reference for all FlowGuard commands.
 
 ### [Phases](./phases.md)
-Understanding the 8 workflow phases.
+
+Understanding the 14 workflow phases across 3 flows.
 
 ### [Policies](./policies.md)
+
 Policy modes: Solo, Team, and Regulated.
 
 ### [Profiles](./profiles.md)
+
 Profile system for different tech stacks.
 
 ### [Archive](./archive.md)
+
 Session archiving and verification.
 
 ### [Configuration](./configuration.md)
+
 Configuration file reference.
 
 ### [Troubleshooting](./troubleshooting.md)
+
 FAQ and error handling.
 
 ## Deployment
 
 ### [Air-Gapped Installation](./air-gapped-guide.md)
+
 How to install FlowGuard in environments without internet access.
 
 ## Compliance
 
 ### [BSI C5 Mapping](./bsi-c5-mapping.md)
+
 How FlowGuard capabilities map to BSI C5:2020 control domains.
 
 ## Support
 
 ### [Support Model](./support-model.md)
+
 Responsibilities, contact channels, and expectations.
 
 ## Additional Resources
@@ -56,15 +68,16 @@ Responsibilities, contact channels, and expectations.
 
 ## Quick Reference
 
-| Command | Phase | Description |
-|---------|-------|-------------|
-| `/hydrate` | Any | Bootstrap session |
-| `/ticket` | TICKET | Record task |
-| `/plan` | TICKET, PLAN | Generate plan |
-| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW | Human approval |
-| `/validate` | VALIDATION | Run checks |
-| `/implement` | IMPLEMENTATION | Execute plan |
-| `/continue` | Any | Auto-advance |
-| `/review` | Any | Generate report |
-| `/abort` | Any | Terminate |
-| `/archive` | COMPLETE | Archive session |
+| Command            | Allowed In                                | Description                    |
+| ------------------ | ----------------------------------------- | ------------------------------ |
+| `/hydrate`         | Any                                       | Bootstrap session → READY      |
+| `/ticket`          | READY, TICKET                             | Record task, start ticket flow |
+| `/plan`            | READY, TICKET, PLAN                       | Generate plan                  |
+| `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW | Human approval                 |
+| `/validate`        | VALIDATION                                | Run checks                     |
+| `/implement`       | IMPLEMENTATION                            | Execute plan                   |
+| `/architecture`    | READY, ARCHITECTURE                       | Create/revise ADR              |
+| `/review`          | READY                                     | Start compliance review flow   |
+| `/continue`        | Any                                       | Auto-advance                   |
+| `/abort`           | Any                                       | Terminate                      |
+| `/archive`         | COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE  | Archive session                |

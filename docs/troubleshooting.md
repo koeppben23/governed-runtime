@@ -7,6 +7,7 @@
 **Symptom:** FlowGuard commands not available in OpenCode.
 
 **Solution:**
+
 ```bash
 # Reinstall tools
 flowguard install --force
@@ -20,6 +21,7 @@ flowguard doctor
 **Symptom:** `NO_SESSION` error when running commands.
 
 **Solution:**
+
 ```bash
 # Create new session
 /hydrate
@@ -33,11 +35,13 @@ ls ~/.config/opencode/workspaces/*/sessions/
 **Symptom:** Session stuck at a phase.
 
 **Common causes:**
+
 1. Missing required evidence
 2. Validation checks failing
 3. Required human approval not given
 
 **Solution:**
+
 ```bash
 # Check current state
 /review
@@ -51,11 +55,13 @@ ls ~/.config/opencode/workspaces/*/sessions/
 **Symptom:** `verifyArchive()` returns findings.
 
 **Common causes:**
+
 1. File was modified after archiving
 2. Archive is corrupted
 3. Missing files in archive
 
 **Solution:**
+
 ```bash
 # Re-archive the session
 # (Original session must still exist)
@@ -67,6 +73,7 @@ ls ~/.config/opencode/workspaces/*/sessions/
 **Symptom:** Four-eyes not enforced in regulated mode.
 
 **Solution:**
+
 1. Verify config has correct mode:
    ```bash
    cat ~/.config/opencode/workspaces/{fingerprint}/config.json
@@ -80,27 +87,27 @@ ls ~/.config/opencode/workspaces/*/sessions/
 
 ### Session Errors
 
-| Code | Description | Solution |
-|------|-------------|----------|
-| `NO_SESSION` | No session exists | Run `/hydrate` first |
-| `INVALID_STATE` | State corrupted | Check session-state.json |
-| `SCHEMA_VALIDATION_FAILED` | State invalid | Restore from backup |
+| Code                       | Description       | Solution                 |
+| -------------------------- | ----------------- | ------------------------ |
+| `NO_SESSION`               | No session exists | Run `/hydrate` first     |
+| `INVALID_STATE`            | State corrupted   | Check session-state.json |
+| `SCHEMA_VALIDATION_FAILED` | State invalid     | Restore from backup      |
 
 ### Command Errors
 
-| Code | Description | Solution |
-|------|-------------|----------|
+| Code                  | Description                          | Solution                   |
+| --------------------- | ------------------------------------ | -------------------------- |
 | `COMMAND_NOT_ALLOWED` | Command not allowed in current phase | Check command requirements |
-| `INVALID_INPUT` | Input validation failed | Check arguments |
-| `POLICY_VIOLATION` | Action violates policy | Review policy settings |
+| `INVALID_INPUT`       | Input validation failed              | Check arguments            |
+| `POLICY_VIOLATION`    | Action violates policy               | Review policy settings     |
 
 ### Archive Errors
 
-| Code | Description | Solution |
-|------|-------------|----------|
-| `ARCHIVE_FAILED` | Archive creation failed | Check disk space, permissions |
-| `MANIFEST_INVALID` | Manifest malformed | Archive may be corrupted |
-| `VERIFICATION_FAILED` | Archive integrity check failed | Archive was modified |
+| Code                  | Description                    | Solution                      |
+| --------------------- | ------------------------------ | ----------------------------- |
+| `ARCHIVE_FAILED`      | Archive creation failed        | Check disk space, permissions |
+| `MANIFEST_INVALID`    | Manifest malformed             | Archive may be corrupted      |
+| `VERIFICATION_FAILED` | Archive integrity check failed | Archive was modified          |
 
 ## Debug Mode
 

@@ -2,17 +2,19 @@
 
 Deterministic, fail-closed workflow engine for AI-assisted software delivery.
 
-> **Version:** v1.3.0 | TypeScript | OpenCode-native
+> **Version:** 1.0.0 | TypeScript | OpenCode-native
 
 ---
 
 ## Installation
 
 FlowGuard is distributed as a pre-built proprietary release artifact via GitHub Releases.
+Release publication is tag-driven (`v*`): if no release tag has been published yet, the Releases page can be empty for that snapshot.
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npm install -g ./flowguard-core-{version}.tgz`
 3. Initialize: `flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz`
+4. Install dependencies: `cd ~/.config/opencode && npm install`
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 
@@ -22,7 +24,9 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 /hydrate
 ```
 
-### Follow the Workflow
+After hydration, choose one of three flows:
+
+### Ticket Flow (Full Development Lifecycle)
 
 ```
 /ticket <describe the task>
@@ -33,18 +37,92 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 /review-decision approve
 ```
 
+### Architecture Flow (ADR Creation)
+
+```
+/architecture <title, adrText>
+/review-decision approve
+```
+
+### Review Flow (Compliance Report)
+
+```
+/review
+```
+
+### Flow Overview
+
+```
+                         ┌──────────┐
+                         │ /hydrate │
+                         └────┬─────┘
+                              │
+                         ┌────▼────┐
+                         │  READY  │
+                         └┬───┬───┬┘
+              ┌───────────┘   │   └───────────┐
+         /ticket         /architecture     /review
+              │               │               │
+              ▼               ▼               ▼
+         ┌────────┐    ┌─────────────┐   ┌────────┐
+         │ TICKET │    │ARCHITECTURE │   │ REVIEW │
+         └───┬────┘    └──────┬──────┘   └───┬────┘
+             ▼          self- ▼ review        ▼
+         ┌────────┐    ┌─────────────┐   ┌────────────────┐
+         │  PLAN  │◄┐  │ ARCH_REVIEW │   │REVIEW_COMPLETE │ ■
+         └───┬────┘ │  └──┬──┬──┬────┘   └────────────────┘
+   self-     ▼      │     │  │  └──► READY (reject)
+   review┌──────────┤  ◄──┘  └──► ARCHITECTURE
+    loop │PLAN_     │  approve     (changes_requested)
+         │REVIEW    │     ▼
+         └┬──┬──┬───┘  ┌───────────────┐
+          │  │  └──► TICKET (reject)
+          │  │      │  │ ARCH_COMPLETE  │ ■
+   approve│  └──► PLAN └───────────────┘
+          ▼  (changes_requested)
+     ┌────────────┐
+     │ VALIDATION │
+     └──┬─────┬───┘
+        │     └──► PLAN (CHECK_FAILED)
+        ▼
+  ┌────────────────┐
+  │IMPLEMENTATION  │
+  └───────┬────────┘
+          ▼
+  ┌────────────────┐
+  │  IMPL_REVIEW   │ ◄── self-review loop
+  └───────┬────────┘
+          ▼
+  ┌────────────────┐
+  │EVIDENCE_REVIEW │
+  └─┬─────┬────┬───┘
+    │     │    └──► TICKET (reject)
+    │     └──► IMPLEMENTATION (changes_requested)
+    ▼
+ ┌──────────┐
+ │ COMPLETE │ ■
+ └──────────┘
+
+■ = Terminal   ◄ = Backward transition   ► = Reject/revise path
+```
+
+See [docs/phases.md](./docs/phases.md) for full phase details.
+
 ---
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **8 Phases** | TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE |
+| **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
+| **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
-| **Policy Modes** | Solo (auto), Team (optional review), Regulated (mandatory review) |
+| **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Audit Trail** | Hash-chained, tamper-evident |
-| **Archive** | Session archival with integrity verification |
+| **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
+| **Archive** | Session archival with integrity verification + redacted export artifacts by default |
+| **Code Surface Analysis** | Bounded heuristic detection of endpoints/auth/data/integration surfaces |
 
 ---
 
@@ -81,8 +159,14 @@ npm install
 # Type check
 npm run check
 
+# Lint
+npm run lint
+
 # Run tests
 npm test
+
+# Run coverage gate (global thresholds enforced)
+npm run test:coverage
 
 # Build
 npm run build

@@ -21,12 +21,18 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from "../state/evidence";
-import { Command, isCommandAllowed } from "../machine/commands";
-import type { RailResult, RailContext, TransitionRecord } from "./types";
-import { applyTransition, autoAdvance, runConvergenceLoop, createPolicyEvalFn, DEFAULT_MAX_REVIEW_ITERATIONS } from "./types";
-import { blocked } from "../config/reasons";
+import type { SessionState } from '../state/schema';
+import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../state/evidence';
+import { Command, isCommandAllowed } from '../machine/commands';
+import type { RailResult, RailContext, TransitionRecord } from './types';
+import {
+  applyTransition,
+  autoAdvance,
+  runConvergenceLoop,
+  createPolicyEvalFn,
+  DEFAULT_MAX_REVIEW_ITERATIONS,
+} from './types';
+import { blocked } from '../config/reasons';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -61,23 +67,24 @@ export async function executeImplement(
 ): Promise<RailResult> {
   // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
-    return blocked("COMMAND_NOT_ALLOWED", {
-      command: "/implement",
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/implement',
       phase: state.phase,
     });
   }
 
   // 2. Preconditions
   if (!state.ticket) {
-    return blocked("TICKET_REQUIRED", { action: "implementation" });
+    return blocked('TICKET_REQUIRED', { action: 'implementation' });
   }
   if (!state.plan) {
-    return blocked("PLAN_REQUIRED", { action: "implementation" });
+    return blocked('PLAN_REQUIRED', { action: 'implementation' });
   }
-  if (state.activeChecks.length > 0 && !state.activeChecks.every((id) =>
-    state.validation.some((v) => v.checkId === id && v.passed),
-  )) {
-    return blocked("VALIDATION_INCOMPLETE");
+  if (
+    state.activeChecks.length > 0 &&
+    !state.activeChecks.every((id) => state.validation.some((v) => v.checkId === id && v.passed))
+  ) {
+    return blocked('VALIDATION_INCOMPLETE');
   }
 
   // Policy-aware eval closure
@@ -90,7 +97,7 @@ export async function executeImplement(
   const currentImpl: ImplEvidence = {
     changedFiles,
     domainFiles,
-    digest: ctx.digest(changedFiles.sort().join("\n")),
+    digest: ctx.digest(changedFiles.sort().join('\n')),
     executedAt: ctx.now(),
   };
 
@@ -107,7 +114,7 @@ export async function executeImplement(
 
   // 6. Auto-advance to IMPL_REVIEW
   const evalAfterImpl = evalFn(nextState);
-  if (evalAfterImpl.kind === "transition") {
+  if (evalAfterImpl.kind === 'transition') {
     const at = ctx.now();
     allTransitions.push({
       from: nextState.phase,
@@ -128,7 +135,7 @@ export async function executeImplement(
   // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
   const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
-  if (nextState.phase === "IMPL_REVIEW") {
+  if (nextState.phase === 'IMPL_REVIEW') {
     const plan = state.plan;
     const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
       const review = await executors.reviewAndRevise(impl, plan, iter);
@@ -150,11 +157,20 @@ export async function executeImplement(
     };
 
     // 8. Auto-advance from IMPL_REVIEW (→ EVIDENCE_REVIEW if converged) — policy-aware
-    const { state: finalState, evalResult: result, transitions } = autoAdvance(nextState, evalFn, ctx);
-    return { kind: "ok", state: finalState, evalResult: result, transitions: [...allTransitions, ...transitions] };
+    const {
+      state: finalState,
+      evalResult: result,
+      transitions,
+    } = autoAdvance(nextState, evalFn, ctx);
+    return {
+      kind: 'ok',
+      state: finalState,
+      evalResult: result,
+      transitions: [...allTransitions, ...transitions],
+    };
   }
 
   // Fallback: didn't reach IMPL_REVIEW (ERROR event kept us in IMPLEMENTATION)
   const result = evalFn(nextState);
-  return { kind: "ok", state: nextState, evalResult: result, transitions: allTransitions };
+  return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };
 }

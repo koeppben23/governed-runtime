@@ -15,19 +15,9 @@
  * @version v1
  */
 
-import type { AuditEvent } from "../state/evidence";
-import {
-  sessionEvents,
-  countByKind,
-  countByPhase,
-  timeSpan,
-  transitionEvents,
-  errorEvents,
-  bySession,
-  filterEvents,
-  byKind,
-} from "./query";
-import type { ChainVerification } from "./integrity";
+import type { AuditEvent } from '../state/evidence';
+import { sessionEvents, countByKind, countByPhase, timeSpan, filterEvents, byKind } from './query';
+import type { ChainVerification } from './integrity';
 
 // ─── Timeline Types ───────────────────────────────────────────────────────────
 
@@ -100,10 +90,7 @@ export interface ComplianceSummary {
  * @param sessionId - The session to generate a timeline for.
  * @returns SessionTimeline with ordered entries.
  */
-export function generateTimeline(
-  events: AuditEvent[],
-  sessionId: string,
-): SessionTimeline {
+export function generateTimeline(events: AuditEvent[], sessionId: string): SessionTimeline {
   const filtered = sessionEvents(events, sessionId);
   const span = timeSpan(filtered);
 
@@ -119,7 +106,7 @@ export function generateTimeline(
   // Build timeline entries
   const entries: TimelineEntry[] = filtered.map((event) => ({
     timestamp: event.timestamp,
-    kind: event.event.split(":")[0] || "unknown",
+    kind: event.event.split(':')[0] || 'unknown',
     event: event.event,
     phase: event.phase,
     actor: event.actor,
@@ -160,7 +147,7 @@ export function generateComplianceSummary(
   now: string,
 ): ComplianceSummary {
   const filtered = sessionEvents(events, sessionId);
-  const transitions = filterEvents(filtered, byKind("transition"));
+  const transitions = filterEvents(filtered, byKind('transition'));
 
   const checks: ComplianceCheck[] = [
     checkSessionCreated(filtered),
@@ -194,50 +181,46 @@ export function generateComplianceSummary(
 
 /** Check 1: Session was properly created. */
 function checkSessionCreated(filtered: AuditEvent[]): ComplianceCheck {
-  const hasCreation = filtered.some(
-    (e) => e.event === "lifecycle:session_created",
-  );
+  const hasCreation = filtered.some((e) => e.event === 'lifecycle:session_created');
   return {
-    name: "session_created",
+    name: 'session_created',
     passed: hasCreation,
     detail: hasCreation
-      ? "Session was properly initialized"
-      : "No session creation event found (may be a legacy session)",
+      ? 'Session was properly initialized'
+      : 'No session creation event found (may be a legacy session)',
   };
 }
 
 /** Check 2: Session reached terminal state. */
 function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
   const hasCompletion = filtered.some(
-    (e) =>
-      e.event === "lifecycle:session_completed" ||
-      e.event === "lifecycle:session_aborted",
+    (e) => e.event === 'lifecycle:session_completed' || e.event === 'lifecycle:session_aborted',
   );
-  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : "unknown";
+  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
   return {
-    name: "session_terminated",
-    passed: hasCompletion || lastPhase === "COMPLETE",
+    name: 'session_terminated',
+    passed: hasCompletion || lastPhase === 'COMPLETE',
     detail: hasCompletion
-      ? `Session terminated (${filtered.find((e) => e.event.startsWith("lifecycle:session_"))?.event ?? "unknown"})`
-      : lastPhase === "COMPLETE"
-        ? "Session reached COMPLETE phase"
+      ? `Session terminated (${filtered.find((e) => e.event.startsWith('lifecycle:session_'))?.event ?? 'unknown'})`
+      : lastPhase === 'COMPLETE'
+        ? 'Session reached COMPLETE phase'
         : `Session is in phase ${lastPhase} (not terminated)`,
   };
 }
 
 /** Check 3: No unresolved errors at session end. */
 function checkNoUnresolvedErrors(filtered: AuditEvent[]): ComplianceCheck {
-  const errors = filterEvents(filtered, byKind("error"));
+  const errors = filterEvents(filtered, byKind('error'));
   const lastError = errors.length > 0 ? errors[errors.length - 1] : null;
-  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : "unknown";
-  const hasUnresolvedError = lastError !== null && lastPhase !== "COMPLETE";
+  const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
+  const hasUnresolvedError = lastError !== null && lastPhase !== 'COMPLETE';
   return {
-    name: "no_unresolved_errors",
+    name: 'no_unresolved_errors',
     passed: !hasUnresolvedError,
     detail: hasUnresolvedError
       ? `Unresolved error: ${lastError!.event} in phase ${lastError!.phase}`
       : errors.length === 0
-        ? "No errors recorded"
+        ? 'No errors recorded'
         : `${errors.length} error(s) recorded, all resolved`,
   };
 }
@@ -250,62 +233,59 @@ function checkReviewGatesHonored(
   filtered: AuditEvent[],
   transitions: AuditEvent[],
 ): readonly [ComplianceCheck, ComplianceCheck] {
-  const passedPlanReview = transitions.some(
-    (e) => e.detail?.from === "PLAN_REVIEW",
-  );
-  const passedEvidenceReview = transitions.some(
-    (e) => e.detail?.from === "EVIDENCE_REVIEW",
-  );
-  const reachedValidation = filtered.some((e) => e.phase === "VALIDATION");
-  const reachedComplete = filtered.some((e) => e.phase === "COMPLETE");
+  const passedPlanReview = transitions.some((e) => e.detail?.from === 'PLAN_REVIEW');
+  const passedEvidenceReview = transitions.some((e) => e.detail?.from === 'EVIDENCE_REVIEW');
+  const reachedValidation = filtered.some((e) => e.phase === 'VALIDATION');
+  const reachedComplete = filtered.some((e) => e.phase === 'COMPLETE');
 
   return [
     {
-      name: "plan_review_honored",
+      name: 'plan_review_honored',
       passed: passedPlanReview || !reachedValidation,
       detail: passedPlanReview
-        ? "Plan was reviewed by a human before validation"
+        ? 'Plan was reviewed by a human before validation'
         : reachedValidation
-          ? "WARNING: Reached VALIDATION without plan review transition record"
-          : "Session did not reach VALIDATION (plan review not applicable)",
+          ? 'WARNING: Reached VALIDATION without plan review transition record'
+          : 'Session did not reach VALIDATION (plan review not applicable)',
     },
     {
-      name: "evidence_review_honored",
+      name: 'evidence_review_honored',
       passed: passedEvidenceReview || !reachedComplete,
       detail: passedEvidenceReview
-        ? "Evidence was reviewed by a human before completion"
+        ? 'Evidence was reviewed by a human before completion'
         : reachedComplete
-          ? "WARNING: Reached COMPLETE without evidence review transition record"
-          : "Session did not reach COMPLETE (evidence review not applicable)",
+          ? 'WARNING: Reached COMPLETE without evidence review transition record'
+          : 'Session did not reach COMPLETE (evidence review not applicable)',
     },
   ];
 }
 
 /** Check 5: Validation phase was executed with tool calls. */
 function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
-  const reachedValidation = filtered.some((e) => e.phase === "VALIDATION");
+  const reachedValidation = filtered.some((e) => e.phase === 'VALIDATION');
   const validationEvents = filtered.filter(
-    (e) => e.phase === "VALIDATION" && e.event.startsWith("tool_call:flowguard_validate"),
+    (e) => e.phase === 'VALIDATION' && e.event.startsWith('tool_call:flowguard_validate'),
   );
   return {
-    name: "validation_executed",
+    name: 'validation_executed',
     passed: validationEvents.length > 0 || !reachedValidation,
-    detail: validationEvents.length > 0
-      ? `${validationEvents.length} validation check(s) recorded`
-      : reachedValidation
-        ? "WARNING: Reached VALIDATION but no validation tool calls recorded"
-        : "Session did not reach VALIDATION (validation not applicable)",
+    detail:
+      validationEvents.length > 0
+        ? `${validationEvents.length} validation check(s) recorded`
+        : reachedValidation
+          ? 'WARNING: Reached VALIDATION but no validation tool calls recorded'
+          : 'Session did not reach VALIDATION (validation not applicable)',
   };
 }
 
 /** Check 6: Chain integrity verification. */
 function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCheck {
   return {
-    name: "chain_integrity",
+    name: 'chain_integrity',
     passed: chainVerification.valid,
     detail: chainVerification.valid
       ? `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} legacy`
-      : `Chain BROKEN at event #${chainVerification.firstBreak?.index ?? "?"}: ${chainVerification.firstBreak?.reason ?? "unknown"}`,
+      : `Chain BROKEN at event #${chainVerification.firstBreak?.index ?? '?'}: ${chainVerification.firstBreak?.reason ?? 'unknown'}`,
   };
 }
 
@@ -315,19 +295,19 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
  * Generate a human-readable one-line description for an audit event.
  */
 function describeEvent(event: AuditEvent): string {
-  const parts = event.event.split(":");
+  const parts = event.event.split(':');
   const kind = parts[0];
-  const detail = parts.slice(1).join(":");
+  const detail = parts.slice(1).join(':');
 
   switch (kind) {
-    case "transition":
-      return `State transition: ${event.detail?.from ?? "?"} → ${event.detail?.to ?? "?"} via ${detail}`;
-    case "tool_call":
-      return `Tool call: ${detail} (${event.detail?.success ? "success" : "failed"})`;
-    case "error":
-      return `Error: ${event.detail?.code ?? detail} — ${event.detail?.message ?? "no message"}`;
-    case "lifecycle":
-      return `Lifecycle: ${detail.replace(/_/g, " ")}`;
+    case 'transition':
+      return `State transition: ${event.detail?.from ?? '?'} → ${event.detail?.to ?? '?'} via ${detail}`;
+    case 'tool_call':
+      return `Tool call: ${detail} (${event.detail?.success ? 'success' : 'failed'})`;
+    case 'error':
+      return `Error: ${event.detail?.code ?? detail} — ${event.detail?.message ?? 'no message'}`;
+    case 'lifecycle':
+      return `Lifecycle: ${detail.replace(/_/g, ' ')}`;
     default:
       return event.event;
   }

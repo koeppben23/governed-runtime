@@ -8,7 +8,7 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 
@@ -28,22 +28,18 @@ export const CheckId = z.string().min(1);
 export type CheckId = z.infer<typeof CheckId>;
 
 /** User review verdict at a User Gate (approve, request changes, or reject). */
-export const ReviewVerdict = z.enum([
-  "approve",
-  "changes_requested",
-  "reject",
-]);
+export const ReviewVerdict = z.enum(['approve', 'changes_requested', 'reject']);
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 
 /** Revision delta between iterations (digest comparison result). */
-export const RevisionDelta = z.enum(["none", "minor", "major"]);
+export const RevisionDelta = z.enum(['none', 'minor', 'major']);
 export type RevisionDelta = z.infer<typeof RevisionDelta>;
 
 /**
  * Self-review / impl-review loop verdict.
  * Only approve or changes_requested — no reject (that's a human-only action).
  */
-export const LoopVerdict = z.enum(["approve", "changes_requested"]);
+export const LoopVerdict = z.enum(['approve', 'changes_requested']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
 // ─── Binding ──────────────────────────────────────────────────────────────────
@@ -72,7 +68,7 @@ export type BindingInfo = z.infer<typeof BindingInfo>;
 export const TicketEvidence = z.object({
   text: z.string().min(1),
   digest: z.string().min(1),
-  source: z.enum(["user", "external"]),
+  source: z.enum(['user', 'external']),
   createdAt: z.string().datetime(),
 });
 export type TicketEvidence = z.infer<typeof TicketEvidence>;
@@ -158,9 +154,54 @@ export const ImplReviewResult = z.object({
 });
 export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
 
+// ─── Architecture Decision Record ─────────────────────────────────────────────
+
+/** Status of an Architecture Decision Record. */
+export const AdrStatus = z.enum(['proposed', 'accepted', 'deprecated']);
+export type AdrStatus = z.infer<typeof AdrStatus>;
+
+/**
+ * Required MADR sections in the ADR text.
+ * The adrText MUST contain these markdown headings for section validation.
+ */
+export const REQUIRED_ADR_SECTIONS = ['## Context', '## Decision', '## Consequences'] as const;
+
+/**
+ * Validate that an ADR text contains all required MADR sections.
+ * Returns the list of missing section headings (empty = valid).
+ */
+export function validateAdrSections(adrText: string): string[] {
+  return REQUIRED_ADR_SECTIONS.filter((heading) => !adrText.includes(heading));
+}
+
+/**
+ * Architecture Decision Record (ADR) evidence.
+ * Produced by the /architecture flow. Follows MADR format.
+ *
+ * The adrText is free-form Markdown that MUST contain:
+ * - ## Context
+ * - ## Decision
+ * - ## Consequences
+ */
+export const ArchitectureDecision = z.object({
+  /** ADR identifier (e.g., "ADR-1", "ADR-42"). */
+  id: z.string().regex(/^ADR-\d+$/),
+  /** Short title of the architecture decision. */
+  title: z.string().min(1),
+  /** Full ADR body in Markdown (MADR format with required sections). */
+  adrText: z.string().min(1),
+  /** Lifecycle status of the ADR. */
+  status: AdrStatus,
+  /** When the ADR was created. */
+  createdAt: z.string().datetime(),
+  /** SHA-256 digest of the adrText for integrity verification. */
+  digest: z.string().min(1),
+});
+export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
+
 // ─── Review Decision ──────────────────────────────────────────────────────────
 
-/** Human review decision at a User Gate (PLAN_REVIEW or EVIDENCE_REVIEW). */
+/** Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). */
 export const ReviewDecision = z.object({
   verdict: ReviewVerdict,
   rationale: z.string(),
@@ -195,12 +236,23 @@ export type ErrorInfo = z.infer<typeof ErrorInfo>;
  * the innermost layer must not depend on outer layers.
  */
 export const PolicySnapshotSchema = z.object({
-  /** Policy mode identifier. */
+  /**
+   * The effective policy mode at session creation time.
+   * This is the result of resolvePolicyWithContext(requestedMode) —
+   * may differ from requestedMode when team-ci degrades without CI.
+   * Use requestedMode to see what was originally requested.
+   */
   mode: z.string(),
   /** SHA-256 hash of the canonical JSON of the full GovernancePolicy. */
   hash: z.string(),
   /** When the policy was resolved and frozen. */
   resolvedAt: z.string().datetime(),
+  /** Original requested policy mode at hydrate time. */
+  requestedMode: z.string(),
+  /** Effective gate behavior after mode resolution. */
+  effectiveGateBehavior: z.enum(['auto_approve', 'human_gated']),
+  /** Why requested mode was degraded (if applicable). */
+  degradedReason: z.string().optional(),
 
   // ── Governance-critical fields (frozen copy) ───────────────
   requireHumanGates: z.boolean(),
@@ -212,6 +264,12 @@ export const PolicySnapshotSchema = z.object({
     emitToolCalls: z.boolean(),
     enableChainHash: z.boolean(),
   }),
+  /**
+   * Actor classification map — frozen copy from policy preset.
+   * Maps tool names to actor labels for the audit trail.
+   * Tools not listed default to "system" at runtime.
+   */
+  actorClassification: z.record(z.string(), z.string()),
 });
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 
@@ -249,7 +307,7 @@ export type AuditEvent = z.infer<typeof AuditEvent>;
  * Generated by /review (read-only, always available).
  */
 export const ReviewReport = z.object({
-  schemaVersion: z.literal("flowguard-review-report.v1"),
+  schemaVersion: z.literal('flowguard-review-report.v1'),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),
   phase: z.string(),
@@ -264,11 +322,11 @@ export const ReviewReport = z.object({
   ),
   findings: z.array(
     z.object({
-      severity: z.enum(["info", "warning", "error"]),
+      severity: z.enum(['info', 'warning', 'error']),
       category: z.string(),
       message: z.string(),
     }),
   ),
-  overallStatus: z.enum(["clean", "warnings", "issues"]),
+  overallStatus: z.enum(['clean', 'warnings', 'issues']),
 });
 export type ReviewReport = z.infer<typeof ReviewReport>;

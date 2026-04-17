@@ -21,9 +21,9 @@
  * @version v3
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
-import type { ToolDefinition } from "./helpers";
+import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
   requireState,
@@ -32,25 +32,23 @@ import {
   formatEval,
   formatBlocked,
   formatError,
-} from "./helpers";
+  appendNextAction,
+} from './helpers';
 
 // State & Machine
-import type { SessionState } from "../../state/schema";
-import { evaluate } from "../../machine/evaluate";
-import { isCommandAllowed, Command } from "../../machine/commands";
+import type { SessionState } from '../../state/schema';
+import { evaluate } from '../../machine/evaluate';
+import { isCommandAllowed, Command } from '../../machine/commands';
 
 // Rail helpers
-import { autoAdvance } from "../../rails/types";
+import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { writeState } from "../../adapters/persistence";
-import { changedFiles } from "../../adapters/git";
+import { writeState } from '../../adapters/persistence';
+import { changedFiles } from '../../adapters/git';
 
 // Evidence types
-import type {
-  LoopVerdict,
-  RevisionDelta,
-} from "../../state/evidence";
+import type { LoopVerdict, RevisionDelta } from '../../state/evidence';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
@@ -58,21 +56,21 @@ import type {
 
 export const implement: ToolDefinition = {
   description:
-    "Record implementation evidence OR submit implementation review verdict. Two modes:\n" +
-    "Mode A (record impl): no reviewVerdict. Auto-detects changed files via git. " +
-    "Use AFTER making code changes with read/write/bash tools.\n" +
+    'Record implementation evidence OR submit implementation review verdict. Two modes:\n' +
+    'Mode A (record impl): no reviewVerdict. Auto-detects changed files via git. ' +
+    'Use AFTER making code changes with read/write/bash tools.\n' +
     "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
-    "Use at IMPL_REVIEW after reviewing the implementation.\n" +
-    "Review loop runs up to maxIterations (from policy). " +
-    "On convergence, auto-advances to EVIDENCE_REVIEW.",
+    'Use at IMPL_REVIEW after reviewing the implementation.\n' +
+    'Review loop runs up to maxIterations (from policy). ' +
+    'On convergence, auto-advances to EVIDENCE_REVIEW.',
   args: {
     reviewVerdict: z
-      .enum(["approve", "changes_requested"])
+      .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        "Implementation review verdict. Omit to record implementation evidence. " +
-        "'approve' = implementation is correct. " +
-        "'changes_requested' = implementation needs revision.",
+        'Implementation review verdict. Omit to record implementation evidence. ' +
+          "'approve' = implementation is correct. " +
+          "'changes_requested' = implementation needs revision.",
       ),
   },
   async execute(args, context) {
@@ -88,32 +86,30 @@ export const implement: ToolDefinition = {
       if (isRecordImpl) {
         // ── Mode A: Record implementation evidence ───────────────
         if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
-          return formatBlocked("COMMAND_NOT_ALLOWED", {
-            command: "/implement",
+          return formatBlocked('COMMAND_NOT_ALLOWED', {
+            command: '/implement',
             phase: state.phase,
           });
         }
 
         if (!state.ticket) {
-          return formatBlocked("TICKET_REQUIRED", { action: "implementation" });
+          return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
         }
         if (!state.plan) {
-          return formatBlocked("PLAN_REQUIRED", { action: "implementation" });
+          return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
         }
 
         // Auto-detect changed files via git
         const files = await changedFiles(worktree);
         // Separate domain files (non-config, non-test, non-infrastructure)
         const domainFiles = files.filter(
-          (f) =>
-            !f.startsWith(".opencode/") &&
-            !f.includes("node_modules/"),
+          (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),
         );
 
         const implEvidence = {
           changedFiles: files,
           domainFiles,
-          digest: ctx.digest(files.sort().join("\n")),
+          digest: ctx.digest(files.sort().join('\n')),
           executedAt: ctx.now(),
         };
 
@@ -126,31 +122,34 @@ export const implement: ToolDefinition = {
 
         // Auto-advance to IMPL_REVIEW (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: finalState, evalResult: ev, transitions } = autoAdvance(
-          nextState,
-          evalFn,
-          ctx,
-        );
+        const {
+          state: finalState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
         await writeState(sessDir, finalState);
 
-        return JSON.stringify({
-          phase: finalState.phase,
-          status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
-          changedFiles: files,
-          domainFiles,
-          next:
-            "Review the implementation against the plan. Check correctness, completeness, " +
-            "edge cases, and code quality. Then call flowguard_implement with reviewVerdict.",
-          _audit: { transitions },
-        });
+        return appendNextAction(
+          JSON.stringify({
+            phase: finalState.phase,
+            status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
+            changedFiles: files,
+            domainFiles,
+            next:
+              'Review the implementation against the plan. Check correctness, completeness, ' +
+              'edge cases, and code quality. Then call flowguard_implement with reviewVerdict.',
+            _audit: { transitions },
+          }),
+          finalState,
+        );
       } else {
         // ── Mode B: Implementation review verdict ────────────────
-        if (state.phase !== "IMPL_REVIEW") {
-          return formatBlocked("WRONG_PHASE", { phase: state.phase });
+        if (state.phase !== 'IMPL_REVIEW') {
+          return formatBlocked('WRONG_PHASE', { phase: state.phase });
         }
 
         if (!state.implementation) {
-          return formatBlocked("NO_IMPLEMENTATION");
+          return formatBlocked('NO_IMPLEMENTATION');
         }
 
         const iteration = (state.implReview?.iteration ?? 0) + 1;
@@ -160,7 +159,7 @@ export const implement: ToolDefinition = {
         // For changes_requested, the LLM should make changes and call
         // flowguard_implement({}) again (Mode A). Here we just record
         // the review verdict.
-        const revisionDelta: RevisionDelta = "none";
+        const revisionDelta: RevisionDelta = 'none';
 
         const nextState: SessionState = {
           ...state,
@@ -178,47 +177,56 @@ export const implement: ToolDefinition = {
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: finalState, evalResult: ev, transitions } = autoAdvance(
-          nextState,
-          evalFn,
-          ctx,
-        );
+        const {
+          state: finalState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
         await writeState(sessDir, finalState);
 
         const converged =
           iteration >= maxImplReviewIterations ||
-          (revisionDelta === "none" && verdict === "approve");
+          (revisionDelta === 'none' && verdict === 'approve');
 
-        if (converged && verdict === "approve") {
-          return JSON.stringify({
-            phase: finalState.phase,
-            status: `Implementation review converged at iteration ${iteration}. Approved.`,
-            implReviewIteration: iteration,
-            next: formatEval(ev),
-            _audit: { transitions },
-          });
+        if (converged && verdict === 'approve') {
+          return appendNextAction(
+            JSON.stringify({
+              phase: finalState.phase,
+              status: `Implementation review converged at iteration ${iteration}. Approved.`,
+              implReviewIteration: iteration,
+              next: formatEval(ev),
+              _audit: { transitions },
+            }),
+            finalState,
+          );
         }
 
-        if (verdict === "changes_requested") {
-          return JSON.stringify({
-            phase: finalState.phase,
-            status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
-            implReviewIteration: iteration,
-            next:
-              "Make the requested code changes using read/write/bash tools, " +
-              "then call flowguard_implement (without reviewVerdict) to re-record the implementation.",
-            _audit: { transitions },
-          });
+        if (verdict === 'changes_requested') {
+          return appendNextAction(
+            JSON.stringify({
+              phase: finalState.phase,
+              status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
+              implReviewIteration: iteration,
+              next:
+                'Make the requested code changes using read/write/bash tools, ' +
+                'then call flowguard_implement (without reviewVerdict) to re-record the implementation.',
+              _audit: { transitions },
+            }),
+            finalState,
+          );
         }
 
         // Forced convergence (max iterations reached, verdict was not approve)
-        return JSON.stringify({
-          phase: finalState.phase,
-          status: `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`,
-          implReviewIteration: iteration,
-          next: formatEval(ev),
-          _audit: { transitions },
-        });
+        return appendNextAction(
+          JSON.stringify({
+            phase: finalState.phase,
+            status: `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`,
+            implReviewIteration: iteration,
+            next: formatEval(ev),
+            _audit: { transitions },
+          }),
+          finalState,
+        );
       }
     } catch (err) {
       return formatError(err);

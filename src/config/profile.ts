@@ -24,13 +24,13 @@
  * @version v1
  */
 
-import type { SessionState } from "../state/schema";
-import type { Phase } from "../state/schema";
-import type { DiscoveryResult } from "../discovery/types";
-import { profileRuleContent as javaRuleContent } from "./profiles/content/java";
-import { profileRuleContent as angularRuleContent } from "./profiles/content/angular";
-import { profileRuleContent as typescriptRuleContent } from "./profiles/content/typescript";
-import { profileRuleContent as baselineRuleContent } from "./profiles/content/baseline";
+import type { SessionState } from '../state/schema';
+import type { Phase } from '../state/schema';
+import type { DiscoveryResult } from '../discovery/types';
+import { profileRuleContent as javaRuleContent } from './profiles/content/java';
+import { profileRuleContent as angularRuleContent } from './profiles/content/angular';
+import { profileRuleContent as typescriptRuleContent } from './profiles/content/typescript';
+import { profileRuleContent as baselineRuleContent } from './profiles/content/baseline';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,11 +69,11 @@ export function resolveProfileInstructions(
   instructions: string | PhaseInstructions | undefined,
   phase: Phase,
 ): string {
-  if (instructions === undefined) return "";
-  if (typeof instructions === "string") return instructions;
+  if (instructions === undefined) return '';
+  if (typeof instructions === 'string') return instructions;
   const phaseExtra = instructions.byPhase?.[phase];
   if (!phaseExtra) return instructions.base;
-  return instructions.base + "\n\n" + phaseExtra;
+  return instructions.base + '\n\n' + phaseExtra;
 }
 
 /**
@@ -86,8 +86,8 @@ export function resolveProfileInstructions(
 export function extractBaseInstructions(
   instructions: string | PhaseInstructions | undefined,
 ): string {
-  if (instructions === undefined) return "";
-  if (typeof instructions === "string") return instructions;
+  if (instructions === undefined) return '';
+  if (typeof instructions === 'string') return instructions;
   return instructions.base;
 }
 
@@ -102,7 +102,7 @@ export function extractByPhaseInstructions(
   instructions: string | PhaseInstructions | undefined,
 ): Partial<Record<Phase, string>> | undefined {
   if (instructions === undefined) return undefined;
-  if (typeof instructions === "string") return undefined;
+  if (typeof instructions === 'string') return undefined;
   return instructions.byPhase;
 }
 
@@ -264,8 +264,15 @@ export class ProfileRegistry {
  * Lowercase for case-insensitive matching.
  */
 const TEST_QUALITY_SIGNALS = [
-  "test", "testing", "test plan", "test coverage", "unit test",
-  "integration test", "test case", "assertion", "spec",
+  'test',
+  'testing',
+  'test plan',
+  'test coverage',
+  'unit test',
+  'integration test',
+  'test case',
+  'assertion',
+  'spec',
 ] as const;
 
 /**
@@ -273,8 +280,13 @@ const TEST_QUALITY_SIGNALS = [
  * Used by the rollback_safety executor to scan plan evidence.
  */
 const ROLLBACK_SIGNALS = [
-  "rollback", "backward compat", "backwards compat",
-  "feature flag", "revert", "undo", "reversible",
+  'rollback',
+  'backward compat',
+  'backwards compat',
+  'feature flag',
+  'revert',
+  'undo',
+  'reversible',
 ] as const;
 
 /**
@@ -283,8 +295,15 @@ const ROLLBACK_SIGNALS = [
  * rollback_safety fails.
  */
 const HIGH_RISK_SIGNALS = [
-  "database", "schema", "migration", "auth", "security",
-  "payment", "messaging", "async", "queue",
+  'database',
+  'schema',
+  'migration',
+  'auth',
+  'security',
+  'payment',
+  'messaging',
+  'async',
+  'queue',
 ] as const;
 
 /**
@@ -292,7 +311,7 @@ const HIGH_RISK_SIGNALS = [
  */
 function containsSignal(text: string, signals: readonly string[]): boolean {
   const lower = text.toLowerCase();
-  return signals.some(s => lower.includes(s));
+  return signals.some((s) => lower.includes(s));
 }
 
 /**
@@ -307,21 +326,21 @@ function containsSignal(text: string, signals: readonly string[]): boolean {
  * demonstrate that test quality was considered before implementation.
  */
 const baselineTestQuality: CheckExecutor = {
-  id: "test_quality",
-  description: "Verify test coverage and quality for changed code",
+  id: 'test_quality',
+  description: 'Verify test coverage and quality for changed code',
   execute: async (state) => {
     const now = new Date().toISOString();
-    const planBody = state.plan?.current?.body ?? "";
+    const planBody = state.plan?.current?.body ?? '';
 
     // Check 1: Plan addresses testing
     if (!containsSignal(planBody, [...TEST_QUALITY_SIGNALS])) {
       return {
-        checkId: "test_quality",
+        checkId: 'test_quality',
         passed: false,
         detail:
-          "Plan does not address test quality. " +
-          "The plan body should describe the test strategy, expected test types, " +
-          "or specific test cases for the changed behavior.",
+          'Plan does not address test quality. ' +
+          'The plan body should describe the test strategy, expected test types, ' +
+          'or specific test cases for the changed behavior.',
         executedAt: now,
       };
     }
@@ -329,12 +348,10 @@ const baselineTestQuality: CheckExecutor = {
     // Check 2: If implementation exists, verify test files are included
     if (state.implementation) {
       const changedFiles = state.implementation.changedFiles ?? [];
-      const hasTestFiles = changedFiles.some(
-        f => /test|spec/i.test(f),
-      );
+      const hasTestFiles = changedFiles.some((f) => /test|spec/i.test(f));
       if (changedFiles.length > 0 && !hasTestFiles) {
         return {
-          checkId: "test_quality",
+          checkId: 'test_quality',
           passed: false,
           detail:
             `Implementation has ${changedFiles.length} changed files but none appear to be test files. ` +
@@ -345,10 +362,11 @@ const baselineTestQuality: CheckExecutor = {
     }
 
     return {
-      checkId: "test_quality",
+      checkId: 'test_quality',
       passed: true,
-      detail: "Plan addresses test quality" +
-        (state.implementation ? " and implementation includes test files." : "."),
+      detail:
+        'Plan addresses test quality' +
+        (state.implementation ? ' and implementation includes test files.' : '.'),
       executedAt: now,
     };
   },
@@ -365,33 +383,33 @@ const baselineTestQuality: CheckExecutor = {
  * Fails when high-risk changes are planned without rollback consideration.
  */
 const baselineRollbackSafety: CheckExecutor = {
-  id: "rollback_safety",
-  description: "Verify rollback safety for the implementation",
+  id: 'rollback_safety',
+  description: 'Verify rollback safety for the implementation',
   execute: async (state) => {
     const now = new Date().toISOString();
-    const planBody = state.plan?.current?.body ?? "";
+    const planBody = state.plan?.current?.body ?? '';
 
     const hasHighRisk = containsSignal(planBody, [...HIGH_RISK_SIGNALS]);
     const hasRollback = containsSignal(planBody, [...ROLLBACK_SIGNALS]);
 
     if (hasHighRisk && !hasRollback) {
       return {
-        checkId: "rollback_safety",
+        checkId: 'rollback_safety',
         passed: false,
         detail:
-          "Plan contains high-risk signals (database, auth, migration, etc.) " +
-          "but does not address rollback safety. " +
-          "Add a rollback plan, backward compatibility analysis, or feature flag strategy.",
+          'Plan contains high-risk signals (database, auth, migration, etc.) ' +
+          'but does not address rollback safety. ' +
+          'Add a rollback plan, backward compatibility analysis, or feature flag strategy.',
         executedAt: now,
       };
     }
 
     return {
-      checkId: "rollback_safety",
+      checkId: 'rollback_safety',
       passed: true,
       detail: hasHighRisk
-        ? "Plan addresses rollback safety for high-risk changes."
-        : "No high-risk signals detected; rollback safety is acceptable.",
+        ? 'Plan addresses rollback safety for high-risk changes.'
+        : 'No high-risk signals detected; rollback safety is acceptable.',
       executedAt: now,
     };
   },
@@ -402,15 +420,15 @@ const baselineRollbackSafety: CheckExecutor = {
  * All built-in profiles use these two checks by default.
  * Tech-specific profiles may extend this list with additional checks.
  */
-const BASELINE_ACTIVE_CHECKS: readonly string[] = ["test_quality", "rollback_safety"];
+const BASELINE_ACTIVE_CHECKS: readonly string[] = ['test_quality', 'rollback_safety'];
 
 /**
  * Shared baseline check executor map.
  * ReadonlyMap — safe to share across profiles (no mutation possible).
  */
 const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, CheckExecutor>([
-  ["test_quality", baselineTestQuality],
-  ["rollback_safety", baselineRollbackSafety],
+  ['test_quality', baselineTestQuality],
+  ['rollback_safety', baselineRollbackSafety],
 ]);
 
 // ─── Baseline Profile ─────────────────────────────────────────────────────────
@@ -426,8 +444,8 @@ const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, Chec
  * Any tech-specific profile will score higher and take precedence.
  */
 export const baselineProfile: FlowGuardProfile = {
-  id: "baseline",
-  name: "Baseline FlowGuard",
+  id: 'baseline',
+  name: 'Baseline FlowGuard',
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (_input) => 0.1,
@@ -448,16 +466,13 @@ export const baselineProfile: FlowGuardProfile = {
  * that guide the LLM on Java-specific conventions.
  */
 export const javaProfile: FlowGuardProfile = {
-  id: "backend-java",
-  name: "Java / Spring Boot",
+  id: 'backend-java',
+  name: 'Java / Spring Boot',
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
     const hasJavaBuild = input.repoSignals.packageFiles.some(
-      (f) =>
-        f === "pom.xml" ||
-        f === "build.gradle" ||
-        f === "build.gradle.kts",
+      (f) => f === 'pom.xml' || f === 'build.gradle' || f === 'build.gradle.kts',
     );
     return hasJavaBuild ? 0.8 : 0;
   },
@@ -477,13 +492,13 @@ export const javaProfile: FlowGuardProfile = {
  * projects always have TypeScript but not vice versa.
  */
 export const angularProfile: FlowGuardProfile = {
-  id: "frontend-angular",
-  name: "Angular / Nx",
+  id: 'frontend-angular',
+  name: 'Angular / Nx',
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
     const hasAngular = input.repoSignals.configFiles.some(
-      (f) => f === "angular.json" || f === "nx.json",
+      (f) => f === 'angular.json' || f === 'nx.json',
     );
     return hasAngular ? 0.85 : 0;
   },
@@ -503,14 +518,12 @@ export const angularProfile: FlowGuardProfile = {
  * Higher than baseline (0.7 > 0.1) so any TS repo gets TS rules.
  */
 export const typescriptProfile: FlowGuardProfile = {
-  id: "typescript",
-  name: "TypeScript / Node.js",
+  id: 'typescript',
+  name: 'TypeScript / Node.js',
   activeChecks: BASELINE_ACTIVE_CHECKS,
   checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
-    const hasTs = input.repoSignals.configFiles.some(
-      (f) => f === "tsconfig.json",
-    );
+    const hasTs = input.repoSignals.configFiles.some((f) => f === 'tsconfig.json');
     return hasTs ? 0.7 : 0;
   },
   instructions: typescriptRuleContent,

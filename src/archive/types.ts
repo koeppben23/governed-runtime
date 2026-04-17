@@ -16,12 +16,11 @@
  * @version v1
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const ARCHIVE_MANIFEST_SCHEMA_VERSION =
-  "archive-manifest.v1" as const;
+export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1' as const;
 
 // ─── Finding Codes ────────────────────────────────────────────────────────────
 
@@ -41,30 +40,24 @@ export const ARCHIVE_MANIFEST_SCHEMA_VERSION =
  * - state_missing: session-state.json not found in archive
  */
 export const ArchiveFindingCodeSchema = z.enum([
-  "missing_manifest",
-  "manifest_parse_error",
-  "missing_file",
-  "unexpected_file",
-  "file_digest_mismatch",
-  "content_digest_mismatch",
-  "archive_checksum_missing",
-  "archive_checksum_mismatch",
-  "snapshot_missing",
-  "state_missing",
+  'missing_manifest',
+  'manifest_parse_error',
+  'missing_file',
+  'unexpected_file',
+  'file_digest_mismatch',
+  'content_digest_mismatch',
+  'archive_checksum_missing',
+  'archive_checksum_mismatch',
+  'snapshot_missing',
+  'state_missing',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 
 // ─── Finding Severity ─────────────────────────────────────────────────────────
 
 /** Severity of an archive verification finding. */
-export const ArchiveFindingSeveritySchema = z.enum([
-  "error",
-  "warning",
-  "info",
-]);
-export type ArchiveFindingSeverity = z.infer<
-  typeof ArchiveFindingSeveritySchema
->;
+export const ArchiveFindingSeveritySchema = z.enum(['error', 'warning', 'info']);
+export type ArchiveFindingSeverity = z.infer<typeof ArchiveFindingSeveritySchema>;
 
 // ─── Archive Finding ──────────────────────────────────────────────────────────
 
@@ -110,6 +103,16 @@ export const ArchiveManifestSchema = z.object({
   fileDigests: z.record(z.string(), z.string()),
   /** SHA-256 of the sorted, concatenated file digest values. */
   contentDigest: z.string(),
+  /** Export redaction mode used while creating archive artifacts. */
+  redactionMode: z.enum(['none', 'basic', 'strict']).optional(),
+  /** Whether raw (non-redacted) artifacts were included in archive export. */
+  rawIncluded: z.boolean().optional(),
+  /** Artifact paths generated as redacted export surfaces. */
+  redactedArtifacts: z.array(z.string()).optional(),
+  /** Artifact paths intentionally excluded from export. */
+  excludedFiles: z.array(z.string()).optional(),
+  /** Risk markers attached to this archive export. */
+  riskFlags: z.array(z.string()).optional(),
 });
 export type ArchiveManifest = z.infer<typeof ArchiveManifestSchema>;
 

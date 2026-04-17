@@ -9,47 +9,49 @@
  * @version v3
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
-import type { ToolDefinition } from "./helpers";
+import type { ToolDefinition } from './helpers';
 import {
   getWorktree,
   resolvePolicyFromState,
   createPolicyContext,
   persistAndFormat,
   formatError,
-} from "./helpers";
+  appendNextAction,
+} from './helpers';
 
 // State
-import type { SessionState } from "../../state/schema";
+import type { SessionState } from '../../state/schema';
 
 // Rails
-import { executeHydrate } from "../../rails/hydrate";
+import { executeHydrate } from '../../rails/hydrate';
 
 // Adapters
-import { readState } from "../../adapters/persistence";
-import { listRepoSignals } from "../../adapters/git";
+import { readState } from '../../adapters/persistence';
+import { listRepoSignals } from '../../adapters/git';
 import {
   writeDiscovery,
   writeProfileResolution,
   writeDiscoverySnapshot,
   writeProfileResolutionSnapshot,
-} from "../../adapters/persistence";
+} from '../../adapters/persistence';
 
 // Workspace
-import {
-  initWorkspace,
-  writeSessionPointer,
-} from "../../adapters/workspace";
+import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 
 // Discovery
-import { runDiscovery, extractDiscoverySummary, computeDiscoveryDigest } from "../../discovery/orchestrator";
-import type { DiscoveryResult, ProfileResolution } from "../../discovery/types";
-import { PROFILE_RESOLUTION_SCHEMA_VERSION } from "../../discovery/types";
-import { defaultProfileRegistry as profileRegistryForResolution } from "../../config/profile";
+import {
+  runDiscovery,
+  extractDiscoverySummary,
+  computeDiscoveryDigest,
+} from '../../discovery/orchestrator';
+import type { DiscoveryResult, ProfileResolution } from '../../discovery/types';
+import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types';
+import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
 
 // Config
-import { resolvePolicy } from "../../config/policy";
+import { detectCiContext, resolvePolicyWithContext } from '../../config/policy';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_hydrate — Bootstrap Session
@@ -57,22 +59,22 @@ import { resolvePolicy } from "../../config/policy";
 
 export const hydrate: ToolDefinition = {
   description:
-    "Bootstrap or reload the FlowGuard session. Creates a new session if none exists, " +
-    "or returns the existing session unchanged (idempotent). " +
-    "Optionally configure policy mode (solo/team/regulated) and profile. " +
-    "This MUST be the first FlowGuard tool call in any workflow.",
+    'Bootstrap or reload the FlowGuard session. Creates a new session if none exists, ' +
+    'or returns the existing session unchanged (idempotent). ' +
+    'Optionally configure policy mode (solo/team/regulated) and profile. ' +
+    'This MUST be the first FlowGuard tool call in any workflow.',
   args: {
     policyMode: z
-      .enum(["solo", "team", "regulated"])
-      .default("solo")
+      .enum(['solo', 'team', 'team-ci', 'regulated'])
+      .default('solo')
       .describe(
         "FlowGuard policy mode. 'solo' = no human gates (default). " +
-        "'team' = human gates, self-approval allowed. " +
-        "'regulated' = human gates, four-eyes principle enforced.",
+          "'team' = human gates, self-approval allowed. " +
+          "'regulated' = human gates, four-eyes principle enforced.",
       ),
     profileId: z
       .string()
-      .default("baseline")
+      .default('baseline')
       .describe("Governance profile ID. Defaults to 'baseline'."),
   },
   async execute(args, context) {
@@ -86,13 +88,13 @@ export const hydrate: ToolDefinition = {
       const existing = await readState(sessDir);
 
       // Resolve policy for context
-      const policy = existing
-        ? resolvePolicyFromState(existing)
-        : resolvePolicy(args.policyMode);
+      const ciContext = detectCiContext();
+      const policyResolution = resolvePolicyWithContext(args.policyMode, ciContext);
+      const policy = existing ? resolvePolicyFromState(existing) : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 
       // ── Discovery (only for new sessions) ──────────────────────
-      let repoSignals = existing ? undefined : await listRepoSignals(worktree);
+      const repoSignals = existing ? undefined : await listRepoSignals(worktree);
       let discoveryResult: DiscoveryResult | undefined;
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
@@ -116,11 +118,11 @@ export const hydrate: ToolDefinition = {
           // 3. Detect profile with discovery context
           const detectionInput = { repoSignals, discovery: discoveryResult };
           const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-          const selectedProfile = detectedProfile ?? profileRegistryForResolution.get("baseline");
+          const selectedProfile = detectedProfile ?? profileRegistryForResolution.get('baseline');
 
           // 4. Build profile resolution (including rejected candidates)
-          const allCandidates: ProfileResolution["secondary"] = [];
-          const rejectedCandidates: ProfileResolution["rejected"] = [];
+          const allCandidates: ProfileResolution['secondary'] = [];
+          const rejectedCandidates: ProfileResolution['rejected'] = [];
 
           for (const pid of profileRegistryForResolution.ids()) {
             const p = profileRegistryForResolution.get(pid);
@@ -138,7 +140,7 @@ export const hydrate: ToolDefinition = {
               rejectedCandidates.push({
                 id: p.id,
                 score: 0,
-                reason: "No matching signals",
+                reason: 'No matching signals',
               });
             }
           }
@@ -147,14 +149,16 @@ export const hydrate: ToolDefinition = {
             schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
             resolvedAt: ctx.now(),
             primary: {
-              id: selectedProfile?.id ?? "baseline",
-              name: selectedProfile?.name ?? "Baseline FlowGuard",
+              id: selectedProfile?.id ?? 'baseline',
+              name: selectedProfile?.name ?? 'Baseline FlowGuard',
               confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
               evidence: [],
             },
             secondary: allCandidates,
             rejected: rejectedCandidates,
-            activeChecks: [...(selectedProfile?.activeChecks ?? ["test_quality", "rollback_safety"])],
+            activeChecks: [
+              ...(selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
+            ],
           };
 
           // 5. Write workspace-level profile resolution
@@ -178,38 +182,60 @@ export const hydrate: ToolDefinition = {
         }
       }
 
-      const result = executeHydrate(existing, {
-        sessionId: context.sessionID,
-        worktree,
-        fingerprint,
-        policyMode: args.policyMode,
-        profileId: args.profileId,
-        repoSignals,
-        initiatedBy: context.sessionID,
-        discoveryResult,
-        discoveryDigest,
-        discoverySummary,
-      }, ctx);
+      const result = executeHydrate(
+        existing,
+        {
+          sessionId: context.sessionID,
+          worktree,
+          fingerprint,
+          policyMode: existing ? existing.policySnapshot.mode : policyResolution.effectiveMode,
+          requestedPolicyMode: existing
+            ? (existing.policySnapshot.requestedMode as 'solo' | 'team' | 'team-ci' | 'regulated')
+            : policyResolution.requestedMode,
+          effectiveGateBehavior: existing
+            ? existing.policySnapshot.effectiveGateBehavior
+            : policyResolution.effectiveGateBehavior,
+          policyDegradedReason: existing
+            ? (existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined)
+            : policyResolution.degradedReason,
+          profileId: args.profileId,
+          repoSignals,
+          initiatedBy: context.sessionID,
+          discoveryResult,
+          discoveryDigest,
+          discoverySummary,
+        },
+        ctx,
+      );
 
       // Write session pointer (fire-and-forget, non-authoritative)
       writeSessionPointer(fingerprint, context.sessionID, sessDir).catch(() => {});
 
       // Include detected profile info in the response for new sessions
-      if (result.kind === "ok" && !existing) {
+      if (result.kind === 'ok' && !existing) {
         const state = result.state;
-        const formatted = JSON.parse(await persistAndFormat(sessDir, result));
+        // persistAndFormat returns JSON + optional "\nNext action: ..." footer — strip before parsing
+        const rawFormatted = await persistAndFormat(sessDir, result);
+        const jsonEnd = rawFormatted.indexOf('\n');
+        const formatted = JSON.parse(jsonEnd >= 0 ? rawFormatted.slice(0, jsonEnd) : rawFormatted);
         const response: Record<string, unknown> = {
           ...formatted,
-          profileId: state.activeProfile?.id ?? "baseline",
-          profileName: state.activeProfile?.name ?? "Baseline Governance",
+          profileId: state.activeProfile?.id ?? 'baseline',
+          profileName: state.activeProfile?.name ?? 'Baseline Governance',
           profileDetected: !!repoSignals,
           discoveryComplete: !!discoveryResult,
           discoverySummary: discoverySummary ?? null,
+          policyResolution: {
+            requestedMode: policyResolution.requestedMode,
+            effectiveMode: policyResolution.effectiveMode,
+            effectiveGateBehavior: policyResolution.effectiveGateBehavior,
+            reason: policyResolution.degradedReason ?? null,
+          },
         };
         if (discoveryError) {
           response.discoveryError = discoveryError;
         }
-        return JSON.stringify(response);
+        return appendNextAction(JSON.stringify(response), state);
       }
 
       return await persistAndFormat(sessDir, result);

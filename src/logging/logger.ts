@@ -24,7 +24,7 @@
  * @version v2
  */
 
-import type { LogLevel } from "../config/flowguard-config";
+import type { LogLevel } from '../config/flowguard-config';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ export interface FlowGuardLogger {
  */
 export interface LogEntry {
   /** Log level: "debug" | "info" | "warn" | "error" (never "silent"). */
-  level: "debug" | "info" | "warn" | "error";
+  level: 'debug' | 'info' | 'warn' | 'error';
   /** Caller identity (e.g. "plugin", "policy", "audit"). */
   service: string;
   /** Human-readable message. */
@@ -105,7 +105,12 @@ export type LogSink = (entry: LogEntry) => void;
  * @param sink - Optional structured output function (e.g. wrapping client.app.log).
  */
 export function createLogger(minLevel: LogLevel, sink?: LogSink): FlowGuardLogger {
-  function emit(level: "debug" | "info" | "warn" | "error", service: string, message: string, extra?: Record<string, unknown>): void {
+  function emit(
+    level: 'debug' | 'info' | 'warn' | 'error',
+    service: string,
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
     if (!sink) return;
 
@@ -113,10 +118,10 @@ export function createLogger(minLevel: LogLevel, sink?: LogSink): FlowGuardLogge
   }
 
   return {
-    debug: (service, message, extra) => emit("debug", service, message, extra),
-    info: (service, message, extra) => emit("info", service, message, extra),
-    warn: (service, message, extra) => emit("warn", service, message, extra),
-    error: (service, message, extra) => emit("error", service, message, extra),
+    debug: (service, message, extra) => emit('debug', service, message, extra),
+    info: (service, message, extra) => emit('info', service, message, extra),
+    warn: (service, message, extra) => emit('warn', service, message, extra),
+    error: (service, message, extra) => emit('error', service, message, extra),
   };
 }
 

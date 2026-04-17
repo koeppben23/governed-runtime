@@ -22,7 +22,7 @@ export {
   angularProfile,
   typescriptProfile,
   defaultProfileRegistry,
-} from "./profile";
+} from './profile';
 
 // ── Policy ───────────────────────────────────────────────────────────────────
 export {
@@ -31,10 +31,11 @@ export {
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,
+  getPolicyPreset,
   resolvePolicy,
   policyModes,
   createPolicySnapshot,
-} from "./policy";
+} from './policy';
 
 // ── Reasons ──────────────────────────────────────────────────────────────────
 export {
@@ -44,7 +45,7 @@ export {
   BlockedReasonRegistry,
   defaultReasonRegistry,
   blocked,
-} from "./reasons";
+} from './reasons';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 export {
@@ -52,4 +53,4 @@ export {
   type FlowGuardConfig,
   type LogLevel,
   DEFAULT_CONFIG,
-} from "./flowguard-config";
+} from './flowguard-config';

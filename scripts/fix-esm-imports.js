@@ -10,20 +10,22 @@
  * - Rewrites directory imports to /index.js (for barrel re-exports).
  */
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.join(__dirname, "..", "dist");
+const distDir = path.join(__dirname, '..', 'dist');
+const checkOnly = process.argv.includes('--check');
+let pendingIssues = 0;
 
 function fixImports(filePath) {
-  let content = fs.readFileSync(filePath, "utf-8");
+  let content = fs.readFileSync(filePath, 'utf-8');
   const original = content;
   const fileDir = path.dirname(filePath);
 
-  content = content.replace(/from "(\.\.?\/[^"]+)"/g, (match, p1) => {
-    if (p1.endsWith(".js")) return match;
+  content = content.replace(/from ["'](\.\.?\/[^"']+)["']/g, (match, p1) => {
+    if (p1.endsWith('.js')) return match;
 
     // Resolve the import relative to the importing file's directory
     const resolved = path.resolve(fileDir, p1);
@@ -32,7 +34,7 @@ function fixImports(filePath) {
     if (
       fs.existsSync(resolved) &&
       fs.statSync(resolved).isDirectory() &&
-      fs.existsSync(path.join(resolved, "index.js"))
+      fs.existsSync(path.join(resolved, 'index.js'))
     ) {
       return `from "${p1}/index.js"`;
     }
@@ -40,9 +42,14 @@ function fixImports(filePath) {
     return `from "${p1}.js"`;
   });
 
-  if (content !== original) {
+  if (content !== original && !checkOnly) {
     fs.writeFileSync(filePath, content);
-    console.log("Fixed:", filePath);
+    console.log('Fixed:', filePath);
+  }
+
+  if (content !== original && checkOnly) {
+    pendingIssues++;
+    console.log('Needs fix:', filePath);
   }
 }
 
@@ -51,17 +58,23 @@ function walk(dir) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       walk(full);
-    } else if (entry.name.endsWith(".js")) {
+    } else if (entry.name.endsWith('.js')) {
       fixImports(full);
     }
   }
 }
 
 if (!fs.existsSync(distDir)) {
-  console.log("No dist directory found - skipping ESM fix");
+  console.log('No dist directory found - skipping ESM fix');
   process.exit(0);
 }
 
-console.log("Fixing ESM imports in dist/...");
+console.log(checkOnly ? 'Checking ESM imports in dist/...' : 'Fixing ESM imports in dist/...');
 walk(distDir);
-console.log("Done.");
+
+if (checkOnly && pendingIssues > 0) {
+  console.error(`ESM import check failed: ${pendingIssues} file(s) need extension fixes.`);
+  process.exit(1);
+}
+
+console.log('Done.');

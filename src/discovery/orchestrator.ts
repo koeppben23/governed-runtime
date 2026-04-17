@@ -16,7 +16,8 @@
  * @version v1
  */
 
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto';
+import { withSpan, addFingerprint } from '../telemetry';
 import type {
   CollectorInput,
   CollectorStatus,
@@ -28,13 +29,14 @@ import type {
   SurfacesInfo,
   DomainSignals,
   ValidationHints,
-} from "./types";
-import { DISCOVERY_SCHEMA_VERSION } from "./types";
-import { collectRepoMetadata } from "./collectors/repo-metadata";
-import { collectStack } from "./collectors/stack-detection";
-import { collectTopology } from "./collectors/topology";
-import { collectSurfaces } from "./collectors/surface-detection";
-import { collectDomainSignals } from "./collectors/domain-signals";
+} from './types';
+import { DISCOVERY_SCHEMA_VERSION } from './types';
+import { collectRepoMetadata } from './collectors/repo-metadata';
+import { collectStack } from './collectors/stack-detection';
+import { collectTopology } from './collectors/topology';
+import { collectSurfaces } from './collectors/surface-detection';
+import { collectCodeSurfaces } from './collectors/code-surface-analysis';
+import { collectDomainSignals } from './collectors/domain-signals';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,20 +60,35 @@ export async function runDiscovery(
   input: CollectorInput,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
+  return withSpan(
+    'discovery.run',
+    async () => {
+      addFingerprint(input.fingerprint);
+      return runDiscoveryImpl(input, timeoutMs);
+    },
+    { 'flowguard.fingerprint': input.fingerprint },
+  );
+}
+
+async function runDiscoveryImpl(
+  input: CollectorInput,
+  timeoutMs: number = COLLECTOR_TIMEOUT_MS,
+): Promise<DiscoveryResult> {
   // Run all collectors in parallel with timeout budget
-  const [metaResult, stackResult, topoResult, surfaceResult, domainResult] =
+  const [metaResult, stackResult, topoResult, surfaceResult, codeSurfaceResult, domainResult] =
     await Promise.allSettled([
       withTimeout(collectRepoMetadata(input), timeoutMs),
       withTimeout(collectStack(input), timeoutMs),
       withTimeout(collectTopology(input), timeoutMs),
       withTimeout(collectSurfaces(input), timeoutMs),
+      withTimeout(collectCodeSurfaces(input), timeoutMs),
       withTimeout(collectDomainSignals(input), timeoutMs),
     ]);
 
   // Extract results with safe defaults for failures
   const collectors: Record<string, CollectorStatus> = {};
 
-  const meta = extractResult(metaResult, "repo-metadata", collectors, {
+  const meta = extractResult(metaResult, 'repo-metadata', collectors, {
     defaultBranch: null,
     headCommit: null,
     isDirty: true,
@@ -80,7 +97,7 @@ export async function runDiscovery(
     fingerprint: input.fingerprint,
   });
 
-  const stack = extractResult(stackResult, "stack-detection", collectors, {
+  const stack = extractResult(stackResult, 'stack-detection', collectors, {
     languages: [],
     frameworks: [],
     buildTools: [],
@@ -88,15 +105,15 @@ export async function runDiscovery(
     runtimes: [],
   });
 
-  const topology = extractResult(topoResult, "topology", collectors, {
-    kind: "unknown" as const,
+  const topology = extractResult(topoResult, 'topology', collectors, {
+    kind: 'unknown' as const,
     modules: [],
     entryPoints: [],
     rootConfigs: [],
     ignorePaths: [],
   });
 
-  const surfaces = extractResult(surfaceResult, "surface-detection", collectors, {
+  const surfaces = extractResult(surfaceResult, 'surface-detection', collectors, {
     api: [],
     persistence: [],
     cicd: [],
@@ -104,7 +121,23 @@ export async function runDiscovery(
     layers: [],
   });
 
-  const domain = extractResult(domainResult, "domain-signals", collectors, {
+  const codeSurfaces = extractResult(codeSurfaceResult, 'code-surface-analysis', collectors, {
+    status: 'failed' as const,
+    endpoints: [],
+    authBoundaries: [],
+    dataAccess: [],
+    integrations: [],
+    budget: {
+      scannedFiles: 0,
+      scannedBytes: 0,
+      maxFiles: 200,
+      maxBytesPerFile: 64 * 1024,
+      maxTotalBytes: 2 * 1024 * 1024,
+      timedOut: false,
+    },
+  });
+
+  const domain = extractResult(domainResult, 'domain-signals', collectors, {
     keywords: [],
     glossarySources: [],
   });
@@ -120,6 +153,7 @@ export async function runDiscovery(
     stack,
     topology,
     surfaces,
+    codeSurfaces,
     domainSignals: domain,
     validationHints,
   };
@@ -132,13 +166,9 @@ export async function runDiscovery(
  *
  * Used to embed a small summary in SessionState without bloating it.
  */
-export function extractDiscoverySummary(
-  result: DiscoveryResult,
-): DiscoverySummary {
+export function extractDiscoverySummary(result: DiscoveryResult): DiscoverySummary {
   return {
-    primaryLanguages: result.stack.languages
-      .filter((l) => l.confidence >= 0.3)
-      .map((l) => l.id),
+    primaryLanguages: result.stack.languages.filter((l) => l.confidence >= 0.3).map((l) => l.id),
     frameworks: result.stack.frameworks.map((f) => f.id),
     topologyKind: result.topology.kind,
     moduleCount: result.topology.modules.length,
@@ -146,6 +176,9 @@ export function extractDiscoverySummary(
     hasPersistenceSurface: result.surfaces.persistence.length > 0,
     hasCiCd: result.surfaces.cicd.length > 0,
     hasSecuritySurface: result.surfaces.security.length > 0,
+    codeSurfaceStatus: result.codeSurfaces?.status,
+    apiEndpointCount: result.codeSurfaces?.endpoints.length,
+    hasAuthBoundary: (result.codeSurfaces?.authBoundaries.length ?? 0) > 0,
   };
 }
 
@@ -157,7 +190,7 @@ export function extractDiscoverySummary(
  */
 export function computeDiscoveryDigest(result: DiscoveryResult): string {
   const canonical = JSON.stringify(canonicalize(result));
-  return createHash("sha256").update(canonical).digest("hex");
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
@@ -174,7 +207,7 @@ export function computeDiscoveryDigest(result: DiscoveryResult): string {
  */
 function canonicalize(value: unknown): unknown {
   if (value === null || value === undefined) return value;
-  if (typeof value !== "object") return value;
+  if (typeof value !== 'object') return value;
 
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -194,10 +227,7 @@ function canonicalize(value: unknown): unknown {
  */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Collector timed out after ${ms}ms`)),
-      ms,
-    );
+    const timer = setTimeout(() => reject(new Error(`Collector timed out after ${ms}ms`)), ms);
     promise
       .then((v) => {
         clearTimeout(timer);
@@ -220,12 +250,12 @@ function extractResult<T>(
   collectors: Record<string, CollectorStatus>,
   defaultData: T,
 ): T {
-  if (settled.status === "fulfilled") {
+  if (settled.status === 'fulfilled') {
     collectors[name] = settled.value.status;
     return settled.value.data;
   }
   // Collector failed or timed out
-  collectors[name] = "failed";
+  collectors[name] = 'failed';
   return defaultData;
 }
 
@@ -239,107 +269,121 @@ function deriveValidationHints(
   topology: TopologyInfo,
   input: CollectorInput,
 ): ValidationHints {
-  const commands: ValidationHints["commands"] = [];
-  const lintTools: ValidationHints["lintTools"] = [];
+  const commands: ValidationHints['commands'] = [];
+  const lintTools: ValidationHints['lintTools'] = [];
 
   // Detect build/test commands from build tools
   const buildToolIds = new Set(stack.buildTools.map((t) => t.id));
 
-  if (buildToolIds.has("npm")) {
+  if (buildToolIds.has('npm')) {
     commands.push(
-      { kind: "build", command: "npm run build", confidence: 0.7, classification: "derived_signal" },
-      { kind: "test", command: "npm test", confidence: 0.8, classification: "derived_signal" },
+      {
+        kind: 'build',
+        command: 'npm run build',
+        confidence: 0.7,
+        classification: 'derived_signal',
+      },
+      { kind: 'test', command: 'npm test', confidence: 0.8, classification: 'derived_signal' },
     );
   }
-  if (buildToolIds.has("maven")) {
+  if (buildToolIds.has('maven')) {
     commands.push(
-      { kind: "build", command: "mvn compile", confidence: 0.8, classification: "derived_signal" },
-      { kind: "test", command: "mvn test", confidence: 0.8, classification: "derived_signal" },
+      { kind: 'build', command: 'mvn compile', confidence: 0.8, classification: 'derived_signal' },
+      { kind: 'test', command: 'mvn test', confidence: 0.8, classification: 'derived_signal' },
     );
   }
-  if (buildToolIds.has("gradle") || buildToolIds.has("gradle-kotlin")) {
+  if (buildToolIds.has('gradle') || buildToolIds.has('gradle-kotlin')) {
     commands.push(
-      { kind: "build", command: "gradle build", confidence: 0.8, classification: "derived_signal" },
-      { kind: "test", command: "gradle test", confidence: 0.8, classification: "derived_signal" },
+      { kind: 'build', command: 'gradle build', confidence: 0.8, classification: 'derived_signal' },
+      { kind: 'test', command: 'gradle test', confidence: 0.8, classification: 'derived_signal' },
     );
   }
-  if (buildToolIds.has("cargo")) {
+  if (buildToolIds.has('cargo')) {
     commands.push(
-      { kind: "build", command: "cargo build", confidence: 0.9, classification: "derived_signal" },
-      { kind: "test", command: "cargo test", confidence: 0.9, classification: "derived_signal" },
+      { kind: 'build', command: 'cargo build', confidence: 0.9, classification: 'derived_signal' },
+      { kind: 'test', command: 'cargo test', confidence: 0.9, classification: 'derived_signal' },
     );
   }
-  if (buildToolIds.has("go-modules")) {
+  if (buildToolIds.has('go-modules')) {
     commands.push(
-      { kind: "build", command: "go build ./...", confidence: 0.9, classification: "derived_signal" },
-      { kind: "test", command: "go test ./...", confidence: 0.9, classification: "derived_signal" },
+      {
+        kind: 'build',
+        command: 'go build ./...',
+        confidence: 0.9,
+        classification: 'derived_signal',
+      },
+      { kind: 'test', command: 'go test ./...', confidence: 0.9, classification: 'derived_signal' },
     );
   }
 
   // Detect typecheck commands
   const configSet = new Set(input.configFiles);
-  if (configSet.has("tsconfig.json")) {
+  if (configSet.has('tsconfig.json')) {
     commands.push({
-      kind: "typecheck",
-      command: "npx tsc --noEmit",
+      kind: 'typecheck',
+      command: 'npx tsc --noEmit',
       confidence: 0.85,
-      classification: "derived_signal",
+      classification: 'derived_signal',
     });
   }
 
   // Detect test frameworks as lint/check tools
   for (const tf of stack.testFrameworks) {
-    if (tf.id === "vitest") {
+    if (tf.id === 'vitest') {
       commands.push({
-        kind: "test",
-        command: "npx vitest run",
+        kind: 'test',
+        command: 'npx vitest run',
         confidence: 0.9,
-        classification: "derived_signal",
+        classification: 'derived_signal',
       });
     }
-    if (tf.id === "jest") {
+    if (tf.id === 'jest') {
       commands.push({
-        kind: "test",
-        command: "npx jest",
+        kind: 'test',
+        command: 'npx jest',
         confidence: 0.85,
-        classification: "derived_signal",
+        classification: 'derived_signal',
       });
     }
   }
 
   // Detect lint tools from config files
   const eslintConfigs = [
-    ".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml",
-    "eslint.config.js", "eslint.config.mjs",
+    '.eslintrc',
+    '.eslintrc.js',
+    '.eslintrc.json',
+    '.eslintrc.yml',
+    'eslint.config.js',
+    'eslint.config.mjs',
   ];
   if (eslintConfigs.some((c) => configSet.has(c))) {
     lintTools.push({
-      id: "eslint",
+      id: 'eslint',
       confidence: 0.9,
-      classification: "fact",
+      classification: 'fact',
       evidence: eslintConfigs.filter((c) => configSet.has(c)),
     });
     commands.push({
-      kind: "lint",
-      command: "npx eslint .",
+      kind: 'lint',
+      command: 'npx eslint .',
       confidence: 0.7,
-      classification: "derived_signal",
+      classification: 'derived_signal',
     });
   }
 
-  const prettierConfigs = [".prettierrc", ".prettierrc.json"];
+  const prettierConfigs = ['.prettierrc', '.prettierrc.json'];
   if (prettierConfigs.some((c) => configSet.has(c))) {
     lintTools.push({
-      id: "prettier",
+      id: 'prettier',
       confidence: 0.9,
-      classification: "fact",
+      classification: 'fact',
       evidence: prettierConfigs.filter((c) => configSet.has(c)),
     });
     commands.push({
-      kind: "format",
-      command: "npx prettier --check .",
+      kind: 'format',
+      command: 'npx prettier --check .',
       confidence: 0.7,
-      classification: "derived_signal",
+      classification: 'derived_signal',
     });
   }
 

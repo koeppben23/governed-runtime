@@ -2,9 +2,10 @@
  * @module config/policy
  * @description FlowGuard policy — operating mode configuration.
  *
- * Three presets:
+ * Four presets:
  * - SOLO:      Single developer, no human gates, minimal ceremony
  * - TEAM:      Collaborative workflow, human gates, self-approval allowed
+ * - TEAM-CI:   Team workflow with CI-only auto-approval
  * - REGULATED: Full FlowGuard, four-eyes principle, complete audit trail
  *
  * Policy lifecycle:
@@ -28,7 +29,7 @@
  * @version v1
  */
 
-import type { PolicySnapshot } from "../state/evidence";
+import type { PolicySnapshot } from '../state/evidence';
 
 // ─── Audit Policy ─────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export interface AuditPolicy {
  */
 export interface FlowGuardPolicy {
   /** Policy mode identifier. */
-  readonly mode: "solo" | "team" | "regulated";
+  readonly mode: PolicyMode;
 
   /**
    * Whether User Gate phases require explicit human decisions.
@@ -84,10 +85,28 @@ export interface FlowGuardPolicy {
 
   /**
    * Actor classification per tool name.
-    * Maps FlowGuard tool names to actor labels for the audit trail.
+   * Maps FlowGuard tool names to actor labels for the audit trail.
    * Tools not listed default to "system".
    */
   readonly actorClassification: Readonly<Record<string, string>>;
+}
+
+/** Supported policy modes. */
+export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
+
+/** Effective gate behavior after policy resolution. */
+export type EffectiveGateBehavior = 'auto_approve' | 'human_gated';
+
+/** Why policy mode was degraded. */
+export type PolicyDegradedReason = 'ci_context_missing';
+
+/** Detailed policy resolution result (requested vs effective). */
+export interface PolicyResolution {
+  readonly requestedMode: PolicyMode;
+  readonly effectiveMode: PolicyMode;
+  readonly effectiveGateBehavior: EffectiveGateBehavior;
+  readonly degradedReason?: PolicyDegradedReason;
+  readonly policy: FlowGuardPolicy;
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
@@ -102,7 +121,7 @@ export interface FlowGuardPolicy {
  * - Audit events still emitted (traceability even in solo)
  */
 export const SOLO_POLICY: FlowGuardPolicy = {
-  mode: "solo",
+  mode: 'solo',
   requireHumanGates: false,
   maxSelfReviewIterations: 1,
   maxImplReviewIterations: 1,
@@ -113,7 +132,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
     enableChainHash: false,
   },
   actorClassification: {
-    flowguard_decision: "system",
+    flowguard_decision: 'system',
   },
 };
 
@@ -126,7 +145,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
  * - Full audit with hash chain
  */
 export const TEAM_POLICY: FlowGuardPolicy = {
-  mode: "team",
+  mode: 'team',
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -137,7 +156,31 @@ export const TEAM_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: "human",
+    flowguard_decision: 'human',
+  },
+};
+
+/**
+ * TEAM-CI mode — CI pipeline workflow.
+ *
+ * - Auto-approve at user gates (only when CI context is present)
+ * - 3 review iterations (same as TEAM)
+ * - Self-approval allowed (CI actor)
+ * - Full audit with hash chain
+ */
+export const TEAM_CI_POLICY: FlowGuardPolicy = {
+  mode: 'team-ci',
+  requireHumanGates: false,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true,
+  audit: {
+    emitTransitions: true,
+    emitToolCalls: true,
+    enableChainHash: true,
+  },
+  actorClassification: {
+    flowguard_decision: 'system',
   },
 };
 
@@ -159,7 +202,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
  * - DORA Art. 9: ICT change management with audit trail
  */
 export const REGULATED_POLICY: FlowGuardPolicy = {
-  mode: "regulated",
+  mode: 'regulated',
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
@@ -170,8 +213,8 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: "human",
-    flowguard_abort_session: "human",
+    flowguard_decision: 'human',
+    flowguard_abort_session: 'human',
   },
 };
 
@@ -181,19 +224,120 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
 const POLICIES: Readonly<Record<string, FlowGuardPolicy>> = {
   solo: SOLO_POLICY,
   team: TEAM_POLICY,
+  'team-ci': TEAM_CI_POLICY,
   regulated: REGULATED_POLICY,
 };
 
+function isTruthyEnv(value: string | undefined): boolean {
+  if (!value) return false;
+  return !['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+}
+
 /**
- * Resolve a FlowGuard policy by mode name.
+ * Detect whether this process runs in a CI context.
  *
- * Returns TEAM_POLICY if mode is unknown or undefined.
- * TEAM is the safe default: human gates on, audit on, self-approval on.
- * If you need regulated, you must explicitly say so.
+ * Conservative default: false when context is missing or unclear.
+ */
+export function detectCiContext(env: Record<string, string | undefined> = process.env): boolean {
+  const ciSignals = [
+    env.CI,
+    env.GITHUB_ACTIONS,
+    env.GITLAB_CI,
+    env.BUILDKITE,
+    env.JENKINS_URL,
+    env.TF_BUILD,
+    env.TEAMCITY_VERSION,
+    env.CIRCLECI,
+    env.DRONE,
+    env.BITBUCKET_BUILD_NUMBER,
+    env.BUILDKITE_BUILD_ID,
+  ];
+  return ciSignals.some(isTruthyEnv);
+}
+
+function normalizePolicyMode(mode?: string): PolicyMode {
+  if (!mode) return 'team';
+  if (mode === 'solo' || mode === 'team' || mode === 'team-ci' || mode === 'regulated') {
+    return mode;
+  }
+  return 'team';
+}
+
+/**
+ * Resolve policy with runtime context awareness.
+ *
+ * THIS IS THE RUNTIME AUTHORITY. Use this for session creation and any
+ * user-facing resolution where the effective mode matters.
+ *
+ * Degradation rules:
+ * - team-ci + no CI detected → effectiveMode="team", effectiveGateBehavior="human_gated"
+ * - All other modes → effectiveMode = requestedMode
+ *
+ * The returned policy object reflects the effective (possibly degraded) policy.
+ * Compare: resolvePolicy() returns the raw preset without context.
+ */
+export function resolvePolicyWithContext(
+  mode?: string,
+  ciContext = detectCiContext(),
+): PolicyResolution {
+  const requestedMode = normalizePolicyMode(mode);
+  if (requestedMode === 'team-ci' && !ciContext) {
+    return {
+      requestedMode,
+      effectiveMode: 'team',
+      effectiveGateBehavior: 'human_gated',
+      degradedReason: 'ci_context_missing',
+      policy: TEAM_POLICY,
+    };
+  }
+
+  const policy = POLICIES[requestedMode] ?? TEAM_POLICY;
+  return {
+    requestedMode,
+    effectiveMode: policy.mode,
+    effectiveGateBehavior: policy.requireHumanGates ? 'human_gated' : 'auto_approve',
+    policy,
+  };
+}
+
+/**
+ * Resolve a FlowGuard policy PRESET by mode name.
+ *
+ * ⚠ Authority scope: PRESET LOOKUP ONLY.
+ * Returns the raw policy object for a given mode string without applying
+ * runtime context (CI detection, degradation, etc.).
+ *
+ * Use for:
+ *   - Config lookups (map mode strings to policy objects)
+ *   - PolicySnapshot factory input (pass the already-resolved effective mode)
+ *   - Preset comparison (e.g., policyTests)
+ *
+ * Do NOT use for:
+ *   - Session creation → resolvePolicyWithContext()
+ *   - Runtime gate evaluation → resolvePolicyWithContext()
+ *
+ * Runtime authority is resolvePolicyWithContext():
+ *   - Applies CI context detection
+ *   - Degrades team-ci to team when CI is not detected
+ *   - Returns effective mode, effective gate behavior, and degradedReason
+ *
+ * team-ci returns TEAM_CI_POLICY (the preset, not the degraded result).
+ * Degradation to TEAM_POLICY only happens inside resolvePolicyWithContext.
+ *
+ * @param mode - Policy mode string (solo | team | team-ci | regulated).
+ *               Falls back to "team" for unknown or undefined values.
+ */
+export function getPolicyPreset(mode?: string): FlowGuardPolicy {
+  const m = normalizePolicyMode(mode);
+  return POLICIES[m] ?? TEAM_POLICY;
+}
+
+/**
+ * @deprecated Use getPolicyPreset() for preset lookup, or
+ * resolvePolicyWithContext() for runtime authority.
  */
 export function resolvePolicy(mode?: string): FlowGuardPolicy {
-  if (!mode) return TEAM_POLICY;
-  return POLICIES[mode] ?? TEAM_POLICY;
+  return getPolicyPreset(mode);
 }
 
 /** All known policy mode names. */
@@ -218,6 +362,11 @@ export function createPolicySnapshot(
   policy: FlowGuardPolicy,
   resolvedAt: string,
   digestFn: (text: string) => string,
+  resolution?: {
+    requestedMode: PolicyMode;
+    effectiveGateBehavior: EffectiveGateBehavior;
+    degradedReason?: PolicyDegradedReason;
+  },
 ): PolicySnapshot {
   // Canonical JSON: sorted keys for deterministic hashing.
   // This ensures the same policy always produces the same hash,
@@ -228,6 +377,11 @@ export function createPolicySnapshot(
     mode: policy.mode,
     hash: digestFn(canonical),
     resolvedAt,
+    requestedMode: resolution?.requestedMode ?? policy.mode,
+    effectiveGateBehavior:
+      resolution?.effectiveGateBehavior ??
+      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
@@ -237,5 +391,29 @@ export function createPolicySnapshot(
       emitToolCalls: policy.audit.emitToolCalls,
       enableChainHash: policy.audit.enableChainHash,
     },
+    actorClassification: { ...policy.actorClassification },
+  };
+}
+
+/**
+ * Reconstruct an executable policy from a frozen policy snapshot.
+ *
+ * Snapshot fields are the sole authority. No preset fallback.
+ * All governance-critical fields including actorClassification
+ * are read exclusively from the snapshot.
+ */
+export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
+  return {
+    mode: snapshot.mode as PolicyMode,
+    requireHumanGates: snapshot.requireHumanGates,
+    maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
+    maxImplReviewIterations: snapshot.maxImplReviewIterations,
+    allowSelfApproval: snapshot.allowSelfApproval,
+    audit: {
+      emitTransitions: snapshot.audit.emitTransitions,
+      emitToolCalls: snapshot.audit.emitToolCalls,
+      enableChainHash: snapshot.audit.enableChainHash,
+    },
+    actorClassification: { ...snapshot.actorClassification },
   };
 }

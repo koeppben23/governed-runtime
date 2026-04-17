@@ -11,10 +11,10 @@
  * @version v1
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
-import * as os from "node:os";
-import { isEnoent } from "../persistence";
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { isEnoent } from '../persistence';
 
 import {
   WORKSPACE_FILE,
@@ -27,8 +27,8 @@ import {
   type FingerprintResult,
   type WorkspaceInfo,
   type SessionPointer,
-} from "./types";
-import { computeFingerprint } from "./fingerprint";
+} from './types';
+import { computeFingerprint } from './fingerprint';
 
 // -- Path Resolution (SSOT) ---------------------------------------------------
 
@@ -41,8 +41,8 @@ import { computeFingerprint } from "./fingerprint";
  */
 export function workspacesHome(): string {
   const configRoot =
-    process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), ".config", "opencode");
-  return path.join(configRoot, "workspaces");
+    process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+  return path.join(configRoot, 'workspaces');
 }
 
 /**
@@ -50,7 +50,7 @@ export function workspacesHome(): string {
  * Used for SESSION_POINTER.json location.
  */
 export function configRoot(): string {
-  return process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), ".config", "opencode");
+  return process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
 }
 
 /**
@@ -78,7 +78,7 @@ export function workspaceDir(fingerprint: string): string {
 export function sessionDir(fingerprint: string, sessionId: string): string {
   validateFingerprint(fingerprint);
   validateSessionId(sessionId);
-  return path.join(workspacesHome(), fingerprint, "sessions", sessionId);
+  return path.join(workspacesHome(), fingerprint, 'sessions', sessionId);
 }
 
 // -- Workspace Initialization -------------------------------------------------
@@ -118,13 +118,13 @@ export async function initWorkspace(
 
   try {
     // Create workspace directory structure (idempotent via recursive mkdir)
-    await fs.mkdir(path.join(wsDir, "sessions"), { recursive: true });
-    await fs.mkdir(path.join(wsDir, "logs"), { recursive: true });
-    await fs.mkdir(path.join(wsDir, "discovery"), { recursive: true });
+    await fs.mkdir(path.join(wsDir, 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(wsDir, 'logs'), { recursive: true });
+    await fs.mkdir(path.join(wsDir, 'discovery'), { recursive: true });
     await fs.mkdir(sessDir, { recursive: true });
   } catch (err) {
     throw new WorkspaceError(
-      "INIT_FAILED",
+      'INIT_FAILED',
       `Failed to create workspace directories: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -150,10 +150,10 @@ export async function initWorkspace(
   };
 
   try {
-    await fs.writeFile(wsFilePath, JSON.stringify(info, null, 2), "utf-8");
+    await fs.writeFile(wsFilePath, JSON.stringify(info, null, 2), 'utf-8');
   } catch (err) {
     throw new WorkspaceError(
-      "WRITE_FAILED",
+      'WRITE_FAILED',
       `Failed to write workspace.json: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -170,25 +170,22 @@ export async function initWorkspace(
  */
 async function readWorkspaceFile(filePath: string): Promise<WorkspaceInfo | null> {
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
+    const raw = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
     // Basic shape validation (not full Zod — workspace.json is ours, not user-facing)
     if (
-      typeof parsed.fingerprint !== "string" ||
-      typeof parsed.materialClass !== "string" ||
-      typeof parsed.createdAt !== "string"
+      typeof parsed.fingerprint !== 'string' ||
+      typeof parsed.materialClass !== 'string' ||
+      typeof parsed.createdAt !== 'string'
     ) {
-      throw new WorkspaceError(
-        "READ_FAILED",
-        "workspace.json has invalid shape",
-      );
+      throw new WorkspaceError('READ_FAILED', 'workspace.json has invalid shape');
     }
     return parsed as WorkspaceInfo;
   } catch (err) {
     if (isEnoent(err)) return null;
     if (err instanceof WorkspaceError) throw err;
     throw new WorkspaceError(
-      "READ_FAILED",
+      'READ_FAILED',
       `Failed to read workspace.json: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -198,9 +195,7 @@ async function readWorkspaceFile(filePath: string): Promise<WorkspaceInfo | null
  * Read workspace info for a given fingerprint.
  * Returns null if workspace doesn't exist.
  */
-export async function readWorkspaceInfo(
-  fingerprint: string,
-): Promise<WorkspaceInfo | null> {
+export async function readWorkspaceInfo(fingerprint: string): Promise<WorkspaceInfo | null> {
   validateFingerprint(fingerprint);
   const wsDir = workspaceDir(fingerprint);
   return readWorkspaceFile(path.join(wsDir, WORKSPACE_FILE));
@@ -219,10 +214,7 @@ export async function readWorkspaceInfo(
  *
  * @throws WorkspaceError with code WORKSPACE_MISMATCH on hard conflict.
  */
-function assertMetadataConsistency(
-  existing: WorkspaceInfo,
-  current: FingerprintResult,
-): void {
+function assertMetadataConsistency(existing: WorkspaceInfo, current: FingerprintResult): void {
   // Hard conflict: same fingerprint but different canonical remote
   // This means either hash collision (astronomically unlikely) or tampering
   if (
@@ -231,7 +223,7 @@ function assertMetadataConsistency(
     existing.canonicalRemote !== current.canonicalRemote
   ) {
     throw new WorkspaceError(
-      "WORKSPACE_MISMATCH",
+      'WORKSPACE_MISMATCH',
       `Workspace fingerprint collision: existing canonicalRemote "${existing.canonicalRemote}" ` +
         `differs from current "${current.canonicalRemote}" for fingerprint "${current.fingerprint}". ` +
         `This indicates a hash collision or workspace tampering.`,
@@ -266,7 +258,7 @@ export async function writeSessionPointer(
     };
     const pointerPath = path.join(configRoot(), POINTER_FILE);
     await fs.mkdir(path.dirname(pointerPath), { recursive: true });
-    await fs.writeFile(pointerPath, JSON.stringify(pointer, null, 2), "utf-8");
+    await fs.writeFile(pointerPath, JSON.stringify(pointer, null, 2), 'utf-8');
   } catch {
     // Swallow — pointer is non-authoritative convenience
   }
@@ -280,7 +272,7 @@ export async function writeSessionPointer(
 export async function readSessionPointer(): Promise<SessionPointer | null> {
   try {
     const pointerPath = path.join(configRoot(), POINTER_FILE);
-    const raw = await fs.readFile(pointerPath, "utf-8");
+    const raw = await fs.readFile(pointerPath, 'utf-8');
     const parsed = JSON.parse(raw);
     if (parsed.schema !== POINTER_SCHEMA) return null;
     return parsed as SessionPointer;

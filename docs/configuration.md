@@ -19,9 +19,12 @@ FlowGuard supports per-repository configuration via `config.json`.
   "policy": {
     "defaultMode": "solo"
   },
-  "discovery": {
-    "enabled": true,
-    "collectors": ["repo-metadata", "stack-detection"]
+  "profile": {},
+  "archive": {
+    "redaction": {
+      "mode": "basic",
+      "includeRaw": false
+    }
   }
 }
 ```
@@ -44,10 +47,12 @@ Controls verbosity of FlowGuard logging.
 ### policy.defaultMode
 
 **Type:** `enum`
-**Values:** `solo`, `team`, `regulated`
+**Values:** `solo`, `team`, `team-ci`, `regulated`
 **Default:** `solo`
 
 Sets the default policy mode for new sessions.
+
+`team-ci` degrades to `team` when no CI context is detected (`ci_context_missing`).
 
 ### policy.modes
 
@@ -71,22 +76,42 @@ Override or extend policy configurations:
 }
 ```
 
-### discovery.enabled
+### archive.redaction.mode
+
+**Type:** `enum`
+**Values:** `none`, `basic`, `strict`
+**Default:** `basic`
+
+Controls export-time redaction for archive artifacts.
+
+FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+
+### archive.redaction.includeRaw
 
 **Type:** `boolean`
-**Default:** `true`
+**Default:** `false`
 
-Enable or disable repository discovery.
+When `false` (default), only redacted export artifacts are included in archives.
+When `true`, raw artifacts are included alongside redacted artifacts and the archive manifest is marked with a risk flag.
 
-### discovery.collectors
+**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are redacted. `session-state.json` and `audit.jsonl` are always included as raw.
 
-**Type:** `array`
-**Values:** `repo-metadata`, `stack-detection`, `topology`, `surface-detection`, `domain-signals`
-**Default:** All collectors
+### Discovery
 
-Select which discovery collectors to run.
+Discovery runs automatically on `/hydrate` and requires no user configuration. It collects repository signals through six built-in collectors:
 
-### profile.default
+| Collector               | Purpose                                                     |
+| ----------------------- | ----------------------------------------------------------- |
+| `repo-metadata`         | Git metadata (branch, commits, authors)                     |
+| `stack-detection`       | Detected tech stack from files                              |
+| `topology`              | Directory/file layout analysis                              |
+| `surface-detection`     | Language/framework surface signals                          |
+| `code-surface-analysis` | Endpoint, auth, data, integration hints (bounded heuristic) |
+| `domain-signals`        | Domain-specific indicators                                  |
+
+Results are included in `discovery-snapshot.json` archives and used for profile resolution. Code surface signals are intentionally bounded and may be partial.
+
+### profile.defaultId
 
 **Type:** `string`
 **Default:** Auto-detected
@@ -96,14 +121,14 @@ Override automatic profile detection:
 ```json
 {
   "profile": {
-    "default": "typescript"
+    "defaultId": "typescript"
   }
 }
 ```
 
 ### profile.overrides
 
-**Type:** `object`
+**Type:** `object` (map of profile ID → override config)
 Custom profile configurations:
 
 ```json
@@ -120,10 +145,10 @@ Custom profile configurations:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
+| Variable              | Description | Default              |
+| --------------------- | ----------- | -------------------- |
 | `OPENCODE_CONFIG_DIR` | Config root | `~/.config/opencode` |
-| `FLOWGUARD_LOG_LEVEL` | Log level | `info` |
+| `FLOWGUARD_LOG_LEVEL` | Log level   | `info`               |
 
 ## Examples
 
@@ -144,14 +169,23 @@ Custom profile configurations:
     "level": "debug"
   },
   "policy": {
-    "defaultMode": "regulated"
-  },
-  "discovery": {
-    "enabled": true,
-    "collectors": ["repo-metadata", "stack-detection"]
+    "defaultMode": "regulated",
+    "modes": {
+      "regulated": {
+        "requireHumanGates": true,
+        "maxSelfReviewIterations": 5,
+        "maxImplReviewIterations": 3
+      }
+    }
   },
   "profile": {
-    "default": "typescript"
+    "defaultId": "typescript"
+  },
+  "archive": {
+    "redaction": {
+      "mode": "strict",
+      "includeRaw": false
+    }
   }
 }
 ```

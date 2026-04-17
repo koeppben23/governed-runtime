@@ -4,19 +4,18 @@
  *              For each guard-based phase: an ordered list of (event, guard) pairs.
  *              First match wins. Deterministic — guards are evaluated top-to-bottom.
  *
- *              ~90 lines replace 432 lines of guards.yaml.
- *
  * Design:
  * - Guards are pure functions: (state) → boolean. No side effects.
  * - ERROR guard is always first (fail-closed: if error is present, it fires first).
- * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW) are NOT in this table —
+ * - User-gate phases (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW) are NOT in this table —
  *   they wait for explicit human commands.
- * - COMPLETE is NOT in this table — it's terminal.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) are NOT in this table.
+ * - READY is NOT in this table — it is command-driven (no auto-advance).
  *
- * @version v1
+ * @version v2
  */
 
-import type { SessionState, Phase, Event } from "../state/schema";
+import type { SessionState, Phase, Event } from '../state/schema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,31 +31,44 @@ export interface GuardEntry {
 // ─── Guard Predicates ─────────────────────────────────────────────────────────
 
 /** Error is present — triggers ERROR event (always checked first). */
-export const hasError: GuardFn = (s) =>
-  s.error !== null;
+export const hasError: GuardFn = (s) => s.error !== null;
 
 /** Ticket present AND plan has a current version → ready to advance. */
-export const hasPlanReady: GuardFn = (s) =>
-  s.ticket !== null && s.plan !== null;
+export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null;
+
+/**
+ * Convergence predicate for review loops (digest-stop).
+ *
+ * Converged when:
+ *   iteration >= maxIterations (force-convergence)
+ *   OR (revisionDelta === "none" AND verdict === "approve") (stable approval)
+ *
+ * Structural interface — works with SelfReviewLoop, ImplReviewResult,
+ * or any object with the required shape. No type imports needed.
+ */
+export function isConverged(review: {
+  readonly iteration: number;
+  readonly maxIterations: number;
+  readonly revisionDelta: string;
+  readonly verdict: string;
+}): boolean {
+  return (
+    review.iteration >= review.maxIterations ||
+    (review.revisionDelta === 'none' && review.verdict === 'approve')
+  );
+}
 
 /**
  * Self-review loop converged.
- * Convergence condition (digest-stop):
- *   iteration >= maxIterations
- *   OR (revisionDelta === "none" AND verdict === "approve")
+ * Used by both PLAN and ARCHITECTURE phases.
  */
 export const selfReviewMet: GuardFn = (s) => {
   if (s.selfReview === null) return false;
-  const { iteration, maxIterations, revisionDelta, verdict } = s.selfReview;
-  return (
-    iteration >= maxIterations ||
-    (revisionDelta === "none" && verdict === "approve")
-  );
+  return isConverged(s.selfReview);
 };
 
-/** Self-review loop still iterating. */
-export const selfReviewPending: GuardFn = (s) =>
-  s.selfReview !== null && !selfReviewMet(s);
+/** Self-review loop still iterating. Used by both PLAN and ARCHITECTURE phases. */
+export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfReviewMet(s);
 
 /**
  * All active validation checks passed.
@@ -74,12 +86,10 @@ export const allValidationsPassed: GuardFn = (s) => {
 };
 
 /** At least one validation check was executed and not all passed. */
-export const checkFailed: GuardFn = (s) =>
-  s.validation.length > 0 && !allValidationsPassed(s);
+export const checkFailed: GuardFn = (s) => s.validation.length > 0 && !allValidationsPassed(s);
 
 /** Implementation evidence is present. */
-export const implComplete: GuardFn = (s) =>
-  s.implementation !== null;
+export const implComplete: GuardFn = (s) => s.implementation !== null;
 
 /**
  * Implementation review loop converged.
@@ -87,16 +97,14 @@ export const implComplete: GuardFn = (s) =>
  */
 export const implReviewMet: GuardFn = (s) => {
   if (s.implReview === null) return false;
-  const { iteration, maxIterations, revisionDelta, verdict } = s.implReview;
-  return (
-    iteration >= maxIterations ||
-    (revisionDelta === "none" && verdict === "approve")
-  );
+  return isConverged(s.implReview);
 };
 
 /** Implementation review loop still iterating. */
-export const implReviewPending: GuardFn = (s) =>
-  s.implReview !== null && !implReviewMet(s);
+export const implReviewPending: GuardFn = (s) => s.implReview !== null && !implReviewMet(s);
+
+/** Review report has been generated (review flow completion). */
+export const reviewDone: GuardFn = (s) => s.phase === 'REVIEW';
 
 // ─── Guard Table ──────────────────────────────────────────────────────────────
 
@@ -111,34 +119,77 @@ export const implReviewPending: GuardFn = (s) =>
  * ERROR is always first — fail-closed by design.
  * The last guard in each list is the "true fallback" (always-true condition)
  * to ensure deterministic resolution.
+ *
+ * Phases NOT in this table:
+ * - READY: command-driven (no guards)
+ * - PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW: user gates
+ * - COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE: terminal
  */
-export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<Phase, readonly GuardEntry[]>([
+export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
+  Phase,
+  readonly GuardEntry[]
+>([
+  [
+    'TICKET',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'PLAN_READY', guard: hasPlanReady },
+    ],
+  ],
 
-  ["TICKET", [
-    { event: "ERROR",      guard: hasError },
-    { event: "PLAN_READY", guard: hasPlanReady },
-  ]],
+  [
+    'PLAN',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'SELF_REVIEW_MET', guard: selfReviewMet },
+      { event: 'SELF_REVIEW_PENDING', guard: selfReviewPending },
+    ],
+  ],
 
-  ["PLAN", [
-    { event: "ERROR",               guard: hasError },
-    { event: "SELF_REVIEW_MET",     guard: selfReviewMet },
-    { event: "SELF_REVIEW_PENDING", guard: selfReviewPending },
-  ]],
+  [
+    'VALIDATION',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'ALL_PASSED', guard: allValidationsPassed },
+      { event: 'CHECK_FAILED', guard: checkFailed },
+    ],
+  ],
 
-  ["VALIDATION", [
-    { event: "ERROR",        guard: hasError },
-    { event: "ALL_PASSED",   guard: allValidationsPassed },
-    { event: "CHECK_FAILED", guard: checkFailed },
-  ]],
+  [
+    'IMPLEMENTATION',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'IMPL_COMPLETE', guard: implComplete },
+    ],
+  ],
 
-  ["IMPLEMENTATION", [
-    { event: "ERROR",         guard: hasError },
-    { event: "IMPL_COMPLETE", guard: implComplete },
-  ]],
+  [
+    'IMPL_REVIEW',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'REVIEW_MET', guard: implReviewMet },
+      { event: 'REVIEW_PENDING', guard: implReviewPending },
+    ],
+  ],
 
-  ["IMPL_REVIEW", [
-    { event: "ERROR",          guard: hasError },
-    { event: "REVIEW_MET",     guard: implReviewMet },
-    { event: "REVIEW_PENDING", guard: implReviewPending },
-  ]],
+  // ARCHITECTURE reuses the same self-review convergence guards as PLAN.
+  [
+    'ARCHITECTURE',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'SELF_REVIEW_MET', guard: selfReviewMet },
+      { event: 'SELF_REVIEW_PENDING', guard: selfReviewPending },
+    ],
+  ],
+
+  // REVIEW: auto-advances to REVIEW_COMPLETE after report generation.
+  // The reviewDone guard fires immediately (the rail sets phase to REVIEW
+  // after generating the report, then autoAdvance fires this guard).
+  [
+    'REVIEW',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'REVIEW_DONE', guard: reviewDone },
+    ],
+  ],
 ]);

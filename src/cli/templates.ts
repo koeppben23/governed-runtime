@@ -69,12 +69,12 @@ export { FlowGuardAuditPlugin } from "@flowguard/core/integration";
 // ---------------------------------------------------------------------------
 
 /**
- * All ten FlowGuard slash-command definitions, keyed by filename
+ * All eleven FlowGuard slash-command definitions, keyed by filename
  * (e.g. `"hydrate.md"`). Each value is the full markdown content
  * that the installer writes into `.opencode/commands/`.
  */
 export const COMMANDS: Record<string, string> = {
-  "hydrate.md": `\
+  'hydrate.md': `\
 ---
 description: Bootstrap or reload the FlowGuard session. Run this FIRST before any other FlowGuard command.
 ---
@@ -90,7 +90,7 @@ Bootstrap the FlowGuard session for this project.
 1. Call the \`flowguard_hydrate\` tool with no arguments.
 2. Read the returned JSON. It contains the current \`phase\` and \`next\` action.
 3. Report the result to the user:
-   - If a new session was created: confirm the session ID and that the workflow starts at TICKET phase.
+   - If a new session was created: confirm the session ID and that the workflow starts at READY phase.
    - If an existing session was loaded: report the current phase and next action.
    - If an error occurred: report the error message.
 
@@ -106,10 +106,10 @@ Bootstrap the FlowGuard session for this project.
 - DO NOT infer or assume session state beyond what the tool returns.
 - Natural-language prompts like "go", "weiter", "proceed", "start", or "initialize" are NOT command invocations. Only an explicit \`/hydrate\` triggers this command. If the user sends free-text implying session setup, respond conversationally without calling FlowGuard tools.
 - If the tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
-- Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to record a task, or /review for a compliance check.\`
+- Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to start a task, /architecture to create an ADR, or /review for a compliance report.\`
 `,
 
-  "ticket.md": `\
+  'ticket.md': `\
 ---
 description: Record a task or ticket for the FlowGuard session.
 ---
@@ -126,7 +126,7 @@ $ARGUMENTS
 
 1. Call \`flowguard_status\` to check the current phase.
    - If no session exists, call \`flowguard_hydrate\` first.
-   - If the phase is not TICKET, report that /ticket is only allowed in TICKET phase.
+   - If the phase is not READY or TICKET, report that /ticket is only allowed in READY or TICKET phase.
 2. Call \`flowguard_ticket\` with:
    - \`text\`: The full task description provided above. If \`$ARGUMENTS\` is empty, ask the user to provide a task description.
    - \`source\`: "user"
@@ -147,7 +147,7 @@ $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line. After successful ticket: \`Next action: run /plan to generate an implementation plan.\`
 `,
 
-  "plan.md": `\
+  'plan.md': `\
 ---
 description: Generate a plan with self-review loop for the current ticket.
 ---
@@ -219,7 +219,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
-  "continue.md": `\
+  'continue.md': `\
 ---
 description: Continue the FlowGuard workflow — do the next thing based on the current phase.
 ---
@@ -236,6 +236,9 @@ Determine what the FlowGuard workflow needs next and do it.
    - If no session exists, call \`flowguard_hydrate\` first.
 
 2. Based on the current phase, take the appropriate action:
+
+   ### READY (choose flow)
+   - Tell the user to choose a flow: /ticket, /architecture, or /review.
 
    ### TICKET (needs ticket)
    - Tell the user to provide a task description using /ticket.
@@ -275,12 +278,31 @@ Determine what the FlowGuard workflow needs next and do it.
    - Report that the workflow is complete. No further actions needed.
    - If there is an error with code "ABORTED", note the session was aborted.
 
+   ### ARCHITECTURE (self-review pending)
+   - The ADR needs self-review. Review it critically.
+   - Call \`flowguard_architecture\` with the appropriate selfReviewVerdict.
+   - Follow the self-review loop as described in /architecture.
+
+   ### ARCH_REVIEW (User Gate)
+   - Tell the user this is a human decision point.
+   - Present the ADR summary and ask for a verdict: approve, changes_requested, or reject.
+   - Tell the user to use \`/review-decision <verdict>\`.
+
+   ### ARCH_COMPLETE (terminal)
+   - Report that the architecture flow is complete. ADR accepted.
+
+   ### REVIEW (report generated)
+   - Call \`flowguard_continue\` to advance to REVIEW_COMPLETE.
+
+   ### REVIEW_COMPLETE (terminal)
+   - Report that the review flow is complete. Report delivered.
+
 3. Report the action taken and the current state to the user.
 
 ## Rules
 
 - DO NOT take destructive actions. /continue is a routing command — it determines what to do, not blindly executes.
-- At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
+- At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
 - Always check status first before taking any action.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
@@ -289,7 +311,7 @@ Determine what the FlowGuard workflow needs next and do it.
 - Always end your response with exactly one \`Next action:\` line stating the next step for the user.
 `,
 
-  "implement.md": `\
+  'implement.md': `\
 ---
 description: Implement the approved plan and review the implementation.
 ---
@@ -360,7 +382,7 @@ Implement the approved plan and review the implementation.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
-  "validate.md": `\
+  'validate.md': `\
 ---
 description: Run validation checks on the approved plan.
 ---
@@ -464,7 +486,7 @@ Execute validation checks for the FlowGuard session.
 - Always end your response with exactly one \`Next action:\` line. If all checks passed: \`Next action: run /implement to start implementation.\` If any check failed: \`Next action: run /plan to revise the plan and address the failed checks.\`
 `,
 
-  "review-decision.md": `\
+  'review-decision.md': `\
 ---
 description: Submit a human review decision (approve, changes_requested, reject) at a User Gate.
 ---
@@ -481,7 +503,7 @@ Decision: $ARGUMENTS
 
 1. Call \`flowguard_status\` to verify:
    - A session exists.
-   - The current phase is PLAN_REVIEW or EVIDENCE_REVIEW (a User Gate).
+   - The current phase is PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW (a User Gate).
    - If the phase is NOT a User Gate, report this to the user and stop.
 
 2. Parse the decision from \`$ARGUMENTS\`:
@@ -497,13 +519,13 @@ Decision: $ARGUMENTS
 4. Read the returned JSON and report:
    - **approve**: Confirm advancement and show the new phase.
    - **changes_requested**: Explain that the workflow returns to the revision phase. State what needs to happen next.
-   - **reject**: Explain that the workflow returns to TICKET. All plan/implementation evidence has been cleared.
+    - **reject**: Explain that the workflow returns to the revision start. At PLAN_REVIEW or EVIDENCE_REVIEW, reject returns to TICKET and clears plan/implementation evidence. At ARCH_REVIEW, reject returns to READY and clears ADR evidence.
 
 ## Rules
 
 - DO NOT fabricate a verdict. Use exactly what the user provided.
 - If the arguments are ambiguous (e.g., "maybe" or "not sure"), ask the user to clarify.
-- DO NOT call this tool if the current phase is not PLAN_REVIEW or EVIDENCE_REVIEW.
+- DO NOT call this tool if the current phase is not PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW.
 - Valid verdicts are ONLY: approve, changes_requested, reject. Nothing else.
 - DO NOT use the \`question\` tool or present selectable choices.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
@@ -514,37 +536,38 @@ Decision: $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line stating the next workflow step based on the verdict and phase.
 `,
 
-  "review.md": `\
+  'review.md': `\
 ---
-description: Generate a standalone compliance review report for the current session.
+description: Start the standalone compliance review flow (READY → REVIEW → REVIEW_COMPLETE).
 ---
 
 You are managing a FlowGuard-controlled development workflow.
 
 ## Task
 
-Generate a compliance review report for the current FlowGuard session.
+Start the compliance review flow for the current FlowGuard session.
 
 ## Steps
 
-1. Call \`flowguard_status\` to verify a session exists.
+1. Call \`flowguard_status\` to verify a session exists and is in the READY phase.
    - If no session exists, report this and stop.
+   - If the session is not in READY phase, report the current phase and stop.
 
 2. Call \`flowguard_review\` with no arguments.
-   - The tool generates a review report and writes it to the workspace session directory.
+   - The tool transitions the session from READY → REVIEW → REVIEW_COMPLETE and generates a compliance report.
 
 3. Read the response and present the report to the user:
    - **Overall status**: clean, warnings, or issues.
    - **Findings**: List each finding with severity (info/warning/error), category, and message.
    - **Validation summary**: Show which checks passed or failed.
-   - **Current phase**: Where the workflow currently stands.
+   - **Current phase**: Should be REVIEW_COMPLETE.
 
 4. If there are warnings or issues, explain what actions could address them.
 
 ## Rules
 
-- This command is read-only. It does NOT advance or modify the workflow.
-- This command works in every phase — it is always available.
+- This command starts a standalone flow. It transitions the session through READY → REVIEW → REVIEW_COMPLETE.
+- This command is only available in the READY phase.
 - DO NOT modify any FlowGuard state or files other than the report.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - DO NOT auto-chain to any other FlowGuard command after generating the report.
@@ -554,7 +577,55 @@ Generate a compliance review report for the current FlowGuard session.
 - Always end your response with a \`Next action:\` line based on the current phase and report findings.
 `,
 
-  "abort.md": `\
+  'architecture.md': `\
+---
+description: Create or revise an Architecture Decision Record (ADR) in MADR format.
+---
+
+You are managing a FlowGuard-controlled development workflow.
+
+## Task
+
+Create or revise an Architecture Decision Record (ADR) for the current FlowGuard session.
+
+## Steps
+
+1. Call \`flowguard_status\` to verify a session exists and is in READY or ARCHITECTURE phase.
+   - If no session exists, report this and stop.
+   - If the session is not in READY or ARCHITECTURE phase, report the current phase and stop.
+
+2. If in READY phase (new ADR):
+   - Gather the architecture decision context from the user's request.
+   - Generate an ADR in MADR format with these mandatory sections: \`## Context\`, \`## Decision\`, \`## Consequences\`.
+   - Call \`flowguard_architecture\` with \`id\` (format: ADR-<number>), \`title\`, and \`adrText\`.
+
+3. If in ARCHITECTURE phase (revision after changes_requested):
+   - Read the review feedback from the session state.
+   - Revise the ADR based on the feedback.
+   - Call \`flowguard_architecture\` with the updated \`id\`, \`title\`, and \`adrText\`.
+
+4. The tool will run a self-review loop automatically. If it returns in ARCH_REVIEW phase, the ADR is ready for human review.
+
+5. Report the result to the user:
+   - Show the ADR title and ID.
+   - Show the current phase.
+   - Indicate whether human review is needed.
+
+## Rules
+
+- The ADR MUST include \`## Context\`, \`## Decision\`, and \`## Consequences\` sections.
+- The ADR ID MUST match the format \`ADR-<number>\` (e.g., ADR-1, ADR-42).
+- DO NOT skip the flowguard_architecture tool call.
+- DO NOT ask the user anything. Do not use the \`question\` tool or present selectable choices.
+- DO NOT explain what you are about to do. Just call the tool.
+- DO NOT auto-chain to /review-decision or any other FlowGuard command after the architecture tool completes.
+- DO NOT infer or assume session state beyond what the FlowGuard tools return.
+- Natural-language prompts like "write an ADR", "architecture decision", or "design doc" are NOT command invocations. Only an explicit \`/architecture\` triggers this command.
+- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- Always end your response with a \`Next action:\` line based on the current phase.
+`,
+
+  'abort.md': `\\
 ---
 description: Emergency termination of the FlowGuard session.
 ---
@@ -587,7 +658,7 @@ Reason: $ARGUMENTS
 
 - DO NOT abort without informing the user of the consequences.
 - If no reason is provided in $ARGUMENTS, use "Session aborted by user" as the default reason.
-- After aborting, DO NOT attempt any further FlowGuard workflow actions except /review (which remains available).
+- After aborting, DO NOT attempt any further FlowGuard workflow actions. The session is terminal.
 - DO NOT auto-chain to /hydrate or any other FlowGuard command after abort completes.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
@@ -595,7 +666,7 @@ Reason: $ARGUMENTS
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
 `,
 
-  "archive.md": `\
+  'archive.md': `\
 ---
 description: Archive a completed FlowGuard session as a compressed tar.gz file.
 ---
@@ -612,7 +683,7 @@ Archive the current (or a specified) completed FlowGuard session.
    - If no session exists, report "No session to archive" and stop.
 
 2. Call \`flowguard_archive\` with no arguments.
-   - The tool archives the current session if it is in COMPLETE phase.
+   - The tool archives the current session if it is in a terminal phase (COMPLETE, ARCH_COMPLETE, or REVIEW_COMPLETE).
    - The archive is stored in the workspace sessions/archive/ directory.
 
 3. Read the response and report:
@@ -621,8 +692,8 @@ Archive the current (or a specified) completed FlowGuard session.
 
 ## Rules
 
-- Only COMPLETE sessions can be archived.
-- If the session is not COMPLETE, report the current phase and tell the user to complete or abort the session first.
+- Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
+- If the session is not in a terminal phase, report the current phase and tell the user to complete or abort the session first.
 - DO NOT modify any FlowGuard state.
 - DO NOT auto-chain to other FlowGuard commands after archiving.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
@@ -637,7 +708,7 @@ Archive the current (or a specified) completed FlowGuard session.
 // ---------------------------------------------------------------------------
 
 /** Filename for the FlowGuard mandates artifact. */
-export const MANDATES_FILENAME = "flowguard-mandates.md";
+export const MANDATES_FILENAME = 'flowguard-mandates.md';
 
 /**
  * Returns the instruction entry path for opencode.json based on install scope.
@@ -645,12 +716,12 @@ export const MANDATES_FILENAME = "flowguard-mandates.md";
  * - global: bare filename (resolved relative to ~/.config/opencode/)
  * - repo:   .opencode/ prefixed path (resolved relative to project root where opencode.json lives)
  */
-export function mandatesInstructionEntry(scope: "global" | "repo"): string {
-  return scope === "global" ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
+export function mandatesInstructionEntry(scope: 'global' | 'repo'): string {
+  return scope === 'global' ? MANDATES_FILENAME : `.opencode/${MANDATES_FILENAME}`;
 }
 
 /** Legacy instruction entry that must be removed during migration. */
-export const LEGACY_INSTRUCTION_ENTRY = "AGENTS.md";
+export const LEGACY_INSTRUCTION_ENTRY = 'AGENTS.md';
 
 /**
  * Body of the FlowGuard mandates (without managed-artifact header).
@@ -1192,7 +1263,9 @@ export function isManagedArtifact(content: string): boolean {
 export function extractManagedBody(content: string): string | null {
   if (!isManagedArtifact(content)) return null;
   // Find the body after the header (two comment lines + blank line)
-  const match = content.match(/^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/);
+  const match = content.match(
+    /^<!-- @flowguard\/core[^\n]*\n<!-- content-digest:[^\n]*\n\n([\s\S]*)$/,
+  );
   return match?.[1] ?? null;
 }
 // ---------------------------------------------------------------------------

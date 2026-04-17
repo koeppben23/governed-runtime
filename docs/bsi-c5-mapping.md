@@ -23,6 +23,7 @@ Each section below covers one C5:2020 control domain. For each domain:
 - **Organization Must Provide** lists responsibilities that FlowGuard cannot address.
 
 Relevance levels:
+
 - **Direct** — FlowGuard provides technical controls that directly support the domain's intent.
 - **Partial** — FlowGuard contributes to some aspects but does not address the domain comprehensively.
 - **Not Applicable** — The domain covers concerns outside FlowGuard's scope (physical security, HR, etc.).
@@ -31,25 +32,25 @@ Relevance levels:
 
 ## Domain Mapping Summary
 
-| C5 Domain | Name | Relevance | FlowGuard Contribution |
-|-----------|------|-----------|----------------------|
-| OIS | Organisation of Information Security | Partial | Policy-bound execution model |
-| SP | Security Policies | Partial | Enforceable policy modes with fail-closed semantics |
-| HR | Human Resources | Not Applicable | — |
-| AM | Asset Management | Partial | Release artifact checksums, minimal supply chain |
-| PS | Physical Security | Not Applicable | — |
-| RB | Operational Procedures | **Direct** | 8-phase change workflow, evidence gates, audit trail |
-| IDM | Identity and Access Management | **Direct** | Four-eyes principle, role separation (initiator vs. reviewer) |
-| CRY | Cryptography and Key Management | Partial | SHA-256 hash chain, checksums on release artifacts |
-| KOS | Communications Security | Not Applicable | No network communication (self-hosted) |
-| PI | Portability and Interoperability | Partial | Structured session archives with integrity verification |
-| DEV | Procurement and Development | **Direct** | Structured development workflow with validation gates |
-| DLL | Supplier Management | Partial | Minimal supply chain (1 runtime dependency: zod), offline-resolvable dependencies |
-| SIM | Security Incident Management | Not Applicable | — |
-| BCM | Business Continuity Management | Not Applicable | — |
-| COM | Compliance | **Direct** | Evidence completeness matrix, compliance reports, session archives |
-| INQ | Handling of Investigation Requests | Not Applicable | — |
-| PSS | Product Security | Partial | Fail-closed enforcement, reason-coded blocking |
+| C5 Domain | Name                                 | Relevance      | FlowGuard Contribution                                                            |
+| --------- | ------------------------------------ | -------------- | --------------------------------------------------------------------------------- |
+| OIS       | Organisation of Information Security | Partial        | Policy-bound execution model                                                      |
+| SP        | Security Policies                    | Partial        | Enforceable policy modes with fail-closed semantics                               |
+| HR        | Human Resources                      | Not Applicable | —                                                                                 |
+| AM        | Asset Management                     | Partial        | Release artifact checksums, minimal supply chain                                  |
+| PS        | Physical Security                    | Not Applicable | —                                                                                 |
+| RB        | Operational Procedures               | **Direct**     | 8-phase change workflow, evidence gates, audit trail                              |
+| IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                     |
+| CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                |
+| KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                            |
+| PI        | Portability and Interoperability     | Partial        | Structured session archives with integrity verification                           |
+| DEV       | Procurement and Development          | **Direct**     | Structured development workflow with validation gates                             |
+| DLL       | Supplier Management                  | Partial        | Minimal supply chain (1 runtime dependency: zod), offline-resolvable dependencies |
+| SIM       | Security Incident Management         | Not Applicable | —                                                                                 |
+| BCM       | Business Continuity Management       | Not Applicable | —                                                                                 |
+| COM       | Compliance                           | **Direct**     | Evidence completeness matrix, compliance reports, session archives                |
+| INQ       | Handling of Investigation Requests   | Not Applicable | —                                                                                 |
+| PSS       | Product Security                     | Partial        | Fail-closed enforcement, reason-coded blocking                                    |
 
 ---
 
@@ -64,14 +65,16 @@ The RB domain covers change management, operational documentation, logging, and 
 #### FlowGuard Provides
 
 **Change Management:**
-- 8 explicit workflow phases: TICKET, PLAN, PLAN_REVIEW, VALIDATION, IMPLEMENTATION, IMPL_REVIEW, EVIDENCE_REVIEW, COMPLETE
+
+- 14 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
 - Phase gates that require evidence before progression — no phase can be skipped
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
-- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET
+- Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET (ticket flow) or READY (architecture flow)
 - Validation checks defined by active profile must all pass before implementation begins
 - Every phase transition is governed by a pure, deterministic state machine with an immutable transition table
 
 **Logging and Monitoring:**
+
 - Hash-chained audit trail: SHA-256 linked events in JSONL append-only format
 - Tamper-evident design: each event's hash includes the previous event's hash
 - 4 structured event kinds: `transition`, `tool_call`, `error`, `lifecycle`
@@ -79,6 +82,7 @@ The RB domain covers change management, operational documentation, logging, and 
 - Policy snapshot: immutable, SHA-256 hashed copy of the active policy frozen at session creation
 
 **Operational Documentation:**
+
 - Canonical state model: single JSON document, Zod-validated on every write
 - State answers: current phase, active profile, evidence chain, policy snapshot, gate status, blockers
 - Reason-coded blocking: 30+ specific error codes with recovery guidance
@@ -102,14 +106,16 @@ The IDM domain covers identity management, access control, and separation of dut
 #### FlowGuard Provides
 
 **Separation of Duties:**
+
 - Three policy modes with escalating enforcement: Solo, Team, Regulated
 - **Regulated mode** enforces the four-eyes principle: the reviewer must differ from the session initiator
 - Self-approval is blocked in Regulated mode (`allowSelfApproval: false`)
 - Initiator and reviewer identities are tracked in session state and audit trail
 - 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in Team and Regulated modes
-- `FOUR_EYES_VIOLATION` reason code blocks progress when the principle is violated
+- `SELF_APPROVAL_FORBIDDEN` reason code blocks progress when the principle is violated
 
 **Policy Enforcement:**
+
 - Policy mode is set at session creation and governs all subsequent transitions
 - Policy configuration is immutable for the session lifetime (policy snapshot with SHA-256 hash)
 
@@ -132,6 +138,7 @@ The DEV domain covers secure development practices, development guidelines, and 
 #### FlowGuard Provides
 
 **Structured Development Workflow:**
+
 - Mandatory planning phase before implementation (PLAN with self-review loop)
 - Human plan approval gate (PLAN_REVIEW) before any code changes
 - Automated validation checks between plan approval and implementation
@@ -139,11 +146,13 @@ The DEV domain covers secure development practices, development guidelines, and 
 - Final human evidence review (EVIDENCE_REVIEW) before completion
 
 **Development Guidelines:**
+
 - Tech-stack-aware profiles: built-in profiles for Java/Spring Boot, Angular/Nx, TypeScript/Node.js
 - Profile rules delivered as tool returns, providing stack-specific guidance during implementation
 - Profile auto-detection from repository signals (file-path-based, no content reading)
 
 **Testing Integration:**
+
 - VALIDATION phase runs automated checks defined by the active profile
 - All validation checks must pass before implementation begins
 - Failed validation returns the workflow to PLAN (plan must be revised and re-approved)
@@ -167,6 +176,7 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 #### FlowGuard Provides
 
 **Evidence Management:**
+
 - Evidence completeness matrix: deterministic per-slot evaluation of all evidence requirements
 - 17 Zod-validated evidence schemas ensuring structural correctness
 - Compliance summary generation: automated 7-check compliance assessment from session audit trail
@@ -174,6 +184,7 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 - 10-check archive verification (`verifyArchive()`) validates manifest presence, file completeness, digest integrity
 
 **Audit Support:**
+
 - Complete session history: ticket, plan versions, validation results, implementation evidence, review decisions
 - Hash-chained audit trail provides non-repudiation (each event cryptographically linked to predecessor)
 - Policy snapshot proves which rules governed each session
@@ -260,14 +271,14 @@ FlowGuard applies defensive design principles to its own operation.
 
 The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGuard neither provides nor claims to provide capabilities in these areas.
 
-| Domain | Reason |
-|--------|--------|
-| HR — Human Resources | FlowGuard is a software tool, not an HR process. |
-| PS — Physical Security | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern. |
-| KOS — Communications Security | FlowGuard makes no outbound network calls. All data stays on the local filesystem. |
-| SIM — Security Incident Management | FlowGuard does not include incident detection or response capabilities. |
-| BCM — Business Continuity Management | FlowGuard is a development tool, not a business continuity system. |
-| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability. |
+| Domain                                   | Reason                                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                              |
+| PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern. |
+| KOS — Communications Security            | FlowGuard makes no outbound network calls. All data stays on the local filesystem.            |
+| SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                       |
+| BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                            |
+| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                           |
 
 ---
 
@@ -275,16 +286,16 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 
 The following FlowGuard artifacts provide verifiable evidence for the mappings above.
 
-| Artifact | Location | Supports |
-|----------|----------|----------|
-| State machine topology | `src/machine/topology.ts` | RB (change management), DEV (structured workflow) |
-| Evidence completeness matrix | `src/audit/completeness.ts` | COM (evidence management) |
-| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts` | RB (logging), CRY (hash chain) |
-| Policy configuration | `src/config/policy.ts` | IDM (separation of duties), OIS (policy enforcement) |
-| Review decision logic | `src/rails/review-decision.ts` | IDM (four-eyes principle) |
-| Archive verification | `src/archive/types.ts` | COM (audit support), PI (portability) |
-| Release workflow | `.github/workflows/release.yml` | AM (checksums), DLL (supply chain) |
-| Security policy | `SECURITY.md` | PSS (vulnerability management) |
+| Artifact                        | Location                                       | Supports                                             |
+| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| State machine topology          | `src/machine/topology.ts`                      | RB (change management), DEV (structured workflow)    |
+| Evidence completeness matrix    | `src/audit/completeness.ts`                    | COM (evidence management)                            |
+| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts` | RB (logging), CRY (hash chain)                       |
+| Policy configuration            | `src/config/policy.ts`                         | IDM (separation of duties), OIS (policy enforcement) |
+| Review decision logic           | `src/rails/review-decision.ts`                 | IDM (four-eyes principle)                            |
+| Archive verification            | `src/archive/types.ts`                         | COM (audit support), PI (portability)                |
+| Release workflow                | `.github/workflows/release.yml`                | AM (checksums), DLL (supply chain)                   |
+| Security policy                 | `SECURITY.md`                                  | PSS (vulnerability management)                       |
 
 ---
 
@@ -298,6 +309,6 @@ The following FlowGuard artifacts provide verifiable evidence for the mappings a
 
 ---
 
-*Reference: BSI C5:2020 — Cloud Computing Compliance Criteria Catalogue*
-*FlowGuard Version: 1.3.0*
-*Last Updated: 2026-04-15*
+_Reference: BSI C5:2020 — Cloud Computing Compliance Criteria Catalogue_
+_FlowGuard Version: 1.0.0_
+_Last Updated: 2026-04-15_
