@@ -101,6 +101,36 @@ export function byDetail(key: string, value: unknown): AuditFilter {
   return (event) => event.detail[key] === value;
 }
 
+/** Filter decision events by reason code (v2). */
+export function byReasonCode(code: string): AuditFilter {
+  return byDetail('reasonCode', code);
+}
+
+/** Filter decision events by actor role (v2). */
+export function byActorRole(role: string): AuditFilter {
+  return byDetail('actorRole', role);
+}
+
+/** Filter decision events by identity source (v2). */
+export function byIdentitySource(source: string): AuditFilter {
+  return byDetail('identitySource', source);
+}
+
+/** Filter decision events by matched rule ID (v2). */
+export function byMatchedRule(ruleId: string | null): AuditFilter {
+  return byDetail('matchedRuleId', ruleId);
+}
+
+/** Filter decision events by outcome (approved/blocked). */
+export function byOutcome(outcome: 'approved' | 'blocked'): AuditFilter {
+  return byDetail('outcome', outcome);
+}
+
+/** Filter decision events by verdict. */
+export function byVerdict(verdict: 'approve' | 'changes_requested' | 'reject'): AuditFilter {
+  return byDetail('verdict', verdict);
+}
+
 // ─── Combinator Helpers ───────────────────────────────────────────────────────
 
 /** Combine multiple filters with AND logic (all must match). */

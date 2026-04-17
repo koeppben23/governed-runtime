@@ -248,8 +248,10 @@ export const decision: ToolDefinition = {
           verdict: args.verdict,
           rationale: args.rationale,
           decidedBy: identityResult.value.assertion.subjectId,
+          identityAssertion: identityResult.value.assertion,
         },
         ctx,
+        { config },
       );
 
       // Write MADR artifact when architecture flow completes
