@@ -158,6 +158,9 @@ npm install
 # Type check
 npm run check
 
+# Lint
+npm run lint
+
 # Run tests
 npm test
 

@@ -41,6 +41,9 @@ npm install
 # Type check
 npm run check
 
+# Lint
+npm run lint
+
 # Run tests
 npm test
 
@@ -214,8 +217,10 @@ The following checks must pass for a PR to be merged:
 |-------|---------|-------------|
 | Tests | `npm test` | All tests must pass |
 | Coverage | `npm run test:coverage` | Global threshold gate (branches/lines/functions/statements >= 80%) |
+| Lint | `npm run lint` | ESLint TypeScript ruleset |
 | Type Check | `npm run check` | TypeScript compilation |
 | Build | `npm run build` | Successful compilation to dist/ |
+| Audit | `npm audit --audit-level=high` | High+ vulnerabilities block CI |
 
 ## Pull Request Process
 

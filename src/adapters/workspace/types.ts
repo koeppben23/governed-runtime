@@ -14,7 +14,7 @@ export const FINGERPRINT_LENGTH = 24;
 export const FINGERPRINT_RE = /^[0-9a-f]{24}$/;
 
 /** Unsafe characters for path segments. */
-export const UNSAFE_PATH_CHARS_RE = /[\/\\:\0]/;
+export const UNSAFE_PATH_CHARS_RE = /[/\\:\0]/;
 
 /** Workspace metadata filename. */
 export const WORKSPACE_FILE = "workspace.json";

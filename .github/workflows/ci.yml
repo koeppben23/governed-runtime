@@ -54,6 +54,24 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+        env:
+          FORCE_COLOR: 0
+
   build:
     name: build
     runs-on: ubuntu-latest
@@ -75,9 +93,6 @@ jobs:
   audit:
     name: audit
     runs-on: ubuntu-latest
-    # Non-blocking: signal-only, not a required status check.
-    # Observe results before promoting to merge-blocker.
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,8 +103,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: npm audit (moderate+)
-        run: npm audit --audit-level=moderate
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
 
   actionlint:
     name: actionlint

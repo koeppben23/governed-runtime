@@ -95,7 +95,7 @@ export const hydrate: ToolDefinition = {
       const ctx = createPolicyContext(policy);
 
       // ── Discovery (only for new sessions) ──────────────────────
-      let repoSignals = existing ? undefined : await listRepoSignals(worktree);
+      const repoSignals = existing ? undefined : await listRepoSignals(worktree);
       let discoveryResult: DiscoveryResult | undefined;
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;

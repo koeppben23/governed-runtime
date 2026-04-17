@@ -20,9 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage gate enforcement in Vitest: global thresholds set to branches/lines/functions/statements >= 80%
 - Additional failure-path and edge coverage for archive redaction/read failures, discovery timeout degradation, and stack-derived validation hints (gradle/maven/cargo/go/jest)
 - `isConverged()` — shared convergence predicate for review loops, eliminating logic duplication between guards and next-action
+- CycloneDX SBOM generation (`release/sbom.cdx.json`) in release pipeline
+- GitHub build provenance attestation for release package tarballs
+- ESLint TypeScript lint gate (`npm run lint`) in CI
 
 ### Changed
 
+- CI `npm audit` job is now blocking with `--audit-level=high` (no continue-on-error)
 - **BREAKING:** `PolicySnapshotSchema` now requires `actorClassification`, `requestedMode`, and `effectiveGateBehavior` fields. Sessions with policy snapshots missing these fields are invalid and will fail on re-hydration. This is a deliberate hard break to restore single-authority snapshot semantics — no backward-compat fallback, no re-derivation from presets.
 - `policyFromSnapshot()` now reconstructs policies exclusively from snapshot fields. No preset fallback. The snapshot is the sole authority.
 - Terminal phase set (`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`) is now defined once in `topology.ts` and imported by `commands.ts` and `simple-tools.ts`. Eliminates triple-definition drift risk.
