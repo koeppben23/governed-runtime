@@ -58,7 +58,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Enterprise Integration
 
-- **OpenCode-native** — zero-bridge TypeScript architecture, runs in the same Bun runtime
+- **OpenCode-native** — TypeScript architecture, runs within the OpenCode host runtime
 - **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
@@ -205,7 +205,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | Property | Value |
 |----------|-------|
 | **Language** | TypeScript (100%, zero-bridge) |
-| **Runtime** | OpenCode / Bun (same process, no subprocess bridge) |
+| **Runtime** | OpenCode host runtime (process-injected) |
 | **State Validation** | Zod schemas, validated on every write |
 | **Audit Integrity** | SHA-256 hash chain, JSONL append-only |
 | **Module System** | ES2022 modules, Bundler resolution |
