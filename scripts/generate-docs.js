@@ -36,11 +36,20 @@ const filesToUpdate = [
   "docs/trust-boundaries.md",
   "docs/security-hardening.md",
   "docs/deployment-model.md",
+  "docs/distribution-model.md",
 ];
 
 function replaceVersion(content) {
-  // Replace patterns like "v1.3.0" or "1.3.0" in version contexts
-  return content.replace(/\bv?1\.3\.\d+\b/g, version);
+  const escaped = version.replace(/\./g, "\\.");
+  content = content.replace(
+    new RegExp(`FlowGuard Version: ${escaped}`, "g"),
+    `FlowGuard Version: ${version}`,
+  );
+  content = content.replace(
+    new RegExp(`flowguard-core-${escaped}\\.tgz`, "g"),
+    `flowguard-core-${version}.tgz`,
+  );
+  return content;
 }
 
 for (const file of filesToUpdate) {
