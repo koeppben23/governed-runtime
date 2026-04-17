@@ -159,7 +159,7 @@ The `--force` flag ensures all thin wrappers and managed artifacts are overwritt
 
 ```
 ERROR: --core-tarball is required.
-Usage: flowguard install --core-tarball /path/to/flowguard-core-1.0.0.tgz
+Usage: flowguard install --core-tarball /path/to/flowguard-core-1.1.0.tgz
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 
@@ -195,5 +195,5 @@ chmod 755 ~/.config/opencode/
 
 ---
 
-_FlowGuard Version: 1.0.0_
+_FlowGuard Version: 1.1.0_
 _Last Updated: 2026-04-15_

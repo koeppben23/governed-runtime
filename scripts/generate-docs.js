@@ -42,11 +42,15 @@ const filesToUpdate = [
 function replaceVersion(content) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   content = content.replace(
-    new RegExp(`FlowGuard Version: ${escaped}`, 'g'),
+    new RegExp(`FlowGuard Version: [\\d.]+`, 'g'),
     `FlowGuard Version: ${version}`,
   );
   content = content.replace(
-    new RegExp(`flowguard-core-${escaped}\\.tgz`, 'g'),
+    /\*\*Version:\*\* [\d.]+(\s*\|\s*TypeScript)/g,
+    `**Version:** ${version}$1`,
+  );
+  content = content.replace(
+    new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,
   );
   return content;
