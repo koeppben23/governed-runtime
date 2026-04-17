@@ -57,6 +57,7 @@ npm run build
 ## Testing
 
 FlowGuard uses Vitest for testing. All tests must pass before submitting a PR.
+Linting is enforced on `src/**/*.ts` with an additional type-aware safety profile on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`).
 Coverage thresholds are enforced globally and must remain green:
 - Branches: 80%
 - Lines: 80%
@@ -217,7 +218,7 @@ The following checks must pass for a PR to be merged:
 |-------|---------|-------------|
 | Tests | `npm test` | All tests must pass |
 | Coverage | `npm run test:coverage` | Global threshold gate (branches/lines/functions/statements >= 80%) |
-| Lint | `npm run lint` | ESLint TypeScript ruleset |
+| Lint | `npm run lint` | ESLint gate (`src/**/*.ts`) + type-aware safety rules for critical governance surfaces |
 | Type Check | `npm run check` | TypeScript compilation |
 | Build | `npm run build` | Successful compilation to dist/ |
 | Audit | `npm audit --audit-level=high` | High+ vulnerabilities block CI |

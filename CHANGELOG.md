@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CycloneDX SBOM generation (`release/sbom.cdx.json`) in release pipeline
 - GitHub build provenance attestation for release package tarballs
 - ESLint TypeScript lint gate (`npm run lint`) in CI
+- ESLint hardening: source-only lint scope (`src/**/*.ts`) plus type-aware safety rules on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`)
 
 ### Changed
 

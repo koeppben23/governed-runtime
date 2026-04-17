@@ -36,7 +36,7 @@ export function redactReviewReport(
   if (mode === "none") return payload;
 
   const out = structuredClone(payload);
-  const report = out as Record<string, unknown>;
+  const report = out;
 
   const findings = Array.isArray(report.findings)
     ? (report.findings as Array<Record<string, unknown>>)
@@ -100,7 +100,7 @@ export function redactDecisionReceipts(
 ): Record<string, unknown> {
   if (mode === "none") return payload;
   const out = structuredClone(payload);
-  const root = out as Record<string, unknown>;
+  const root = out;
   const receipts = Array.isArray(root.receipts)
     ? (root.receipts as Array<Record<string, unknown>>)
     : [];

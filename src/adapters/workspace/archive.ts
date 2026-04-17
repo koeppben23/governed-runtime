@@ -360,7 +360,7 @@ export async function verifyArchive(
   // 6. Verify content digest
   if (manifest.includedFiles.length > 0) {
     const digestValues = manifest.includedFiles
-      .map((f) => manifest!.fileDigests[f])
+      .map((f) => manifest.fileDigests[f])
       .filter(Boolean)
       .sort();
     const computedContentDigest = crypto

@@ -167,7 +167,7 @@ export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
 export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
   const receipts: DecisionReceipt[] = [];
   for (const event of decisionEvents(events)) {
-    const detail = event.detail as Record<string, unknown>;
+    const detail = event.detail;
     const verdict = detail.verdict;
     const validVerdict = verdict === "approve" || verdict === "changes_requested" || verdict === "reject";
     if (!validVerdict) continue;

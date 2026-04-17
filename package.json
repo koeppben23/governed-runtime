@@ -22,7 +22,7 @@
     "build": "npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
     "fix-esm": "node scripts/fix-esm-imports.js",
     "check": "tsc --noEmit",
-    "lint": "eslint \"**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
