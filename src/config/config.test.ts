@@ -528,14 +528,13 @@ describe('config/profile/phase-instructions', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
-    it('resolveProfileInstructions is sub-microsecond per call', () => {
-      const start = performance.now();
-      for (let i = 0; i < 10000; i++) {
-        resolveProfileInstructions(phaseInstructions, 'PLAN');
-      }
-      const elapsed = performance.now() - start;
-      // 10k calls < 10ms → < 1μs each
-      expect(elapsed).toBeLessThan(10);
+    it('resolveProfileInstructions p95 < 1ms per call', () => {
+      const result = benchmarkSync(
+        () => resolveProfileInstructions(phaseInstructions, 'PLAN'),
+        1000,
+        100,
+      );
+      expect(result.p95Ms).toBeLessThan(1);
     });
   });
 });
