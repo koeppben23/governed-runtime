@@ -1069,11 +1069,29 @@ describe("EDGE", () => {
   });
 
   describe("EDGE", () => {
-    it("resolves to pending for unknown phase without crashing", () => {
-      // This tests the boundary between known and unknown phases
-      // Note: This is tested in evaluate.test.ts, but workspace should be resilient
-      // to any state it encounters
-      expect(true).toBe(true); // Placeholder for integration-level git conflict tests
+    it("succeeds with corrupted session-state.json (graceful degradation)", async () => {
+      const worktree = path.resolve(".");
+      const sessionId = "edge-corrupt-state";
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(path.join(sessDir, "session-state.json"), "{invalid-json{{{", "utf-8");
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain(".tar.gz");
+
+      const stats = await fs.stat(archivePath);
+      expect(stats.size).toBeGreaterThan(0);
+    });
+
+    it("succeeds with schema-invalid session-state.json (Zod validation failure)", async () => {
+      const worktree = path.resolve(".");
+      const sessionId = "edge-invalid-schema";
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(path.join(sessDir, "session-state.json"), '{"phase": 999, "not": "a valid phase"}', "utf-8");
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain(".tar.gz");
     });
   });
 });

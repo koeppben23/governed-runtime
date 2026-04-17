@@ -9,7 +9,7 @@
  * Scope: Multi-step workflows, cross-tool state consistency, full lifecycle integrity.
  * NOT in scope: Individual tool edge cases (see tools-execute.test.ts).
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE — four categories. No PERF (integration level).
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -878,6 +878,51 @@ describe("e2e-workflow", () => {
       const state = await readState(sessDir);
       expect(state!.ticket!.text).toBe("Second attempt — better approach");
       expect(state!.plan!.current.body).toContain("Better Plan");
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+
+  describe("PERF", () => {
+    it("complete solo workflow through COMPLETE < 5s", async () => {
+      const start = Date.now();
+      await callOk(hydrate, { policyMode: "solo", profileId: "baseline" });
+      await callOk(ticket, { text: "Perf test", source: "user" });
+      await callOk(plan, { planText: "## Plan\nSimple implementation" });
+      await callOk(plan, { selfReviewVerdict: "approve" });
+      await callOk(validate, {
+        results: [
+          { checkId: "test_quality", passed: true, detail: "OK" },
+          { checkId: "rollback_safety", passed: true, detail: "OK" },
+        ],
+      });
+      await callOk(implement, {});
+      await callOk(implement, { reviewVerdict: "approve" });
+      expect(await getPhase()).toBe("COMPLETE");
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(5000);
+    });
+
+    it("5x complete solo workflows < 8s (no O(n^2) leaks)", async () => {
+      const start = Date.now();
+      for (let i = 0; i < 5; i++) {
+        const ic = createToolContext({ worktree: ws.tmpDir, directory: ws.tmpDir });
+        await callOk(hydrate, { policyMode: "solo", profileId: "baseline" }, ic);
+        await callOk(ticket, { text: `Task ${i}`, source: "user" }, ic);
+        await callOk(plan, { planText: "## Plan" }, ic);
+        await callOk(plan, { selfReviewVerdict: "approve" }, ic);
+        await callOk(validate, {
+          results: [
+            { checkId: "test_quality", passed: true, detail: "OK" },
+            { checkId: "rollback_safety", passed: true, detail: "OK" },
+          ],
+        }, ic);
+        await callOk(implement, {}, ic);
+        await callOk(implement, { reviewVerdict: "approve" }, ic);
+        expect(await getPhase(ic)).toBe("COMPLETE");
+      }
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(8000);
     });
   });
 });
