@@ -196,4 +196,59 @@ describe('install-verify', () => {
       expect(installResult.code).not.toBe(0);
     });
   });
+
+  describe('CLI', () => {
+    it('flowguard install creates expected files', async () => {
+      const projectDir = path.join(tmpDir, 'project-cli');
+      await fs.mkdir(projectDir, { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+
+      const installResult = run(`npm install "${tarballPath}"`, projectDir);
+      expect(installResult.code).toBe(0);
+
+      const vendorDir = path.join(projectDir, 'vendor');
+      await fs.mkdir(vendorDir, { recursive: true });
+      await fs.copyFile(tarballPath, path.join(vendorDir, path.basename(tarballPath)));
+
+      const installCliResult = run(
+        `npx flowguard install --install-scope repo --core-tarball "${path.join(vendorDir, path.basename(tarballPath))}"`,
+        projectDir,
+      );
+      expect(installCliResult.code).toBe(0);
+
+      const configExists = await fs
+        .access(path.join(projectDir, 'opencode.json'))
+        .then(() => true)
+        .catch(() => false);
+      expect(configExists).toBe(true);
+    });
+
+    it('flowguard doctor reports healthy after successful install', async () => {
+      const projectDir = path.join(tmpDir, 'project-doctor-ok');
+      await fs.mkdir(projectDir, { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+
+      const installResult = run(`npm install "${tarballPath}"`, projectDir);
+      expect(installResult.code).toBe(0);
+
+      const vendorDir = path.join(projectDir, 'vendor');
+      await fs.mkdir(vendorDir, { recursive: true });
+      await fs.copyFile(tarballPath, path.join(vendorDir, path.basename(tarballPath)));
+
+      run(
+        `npx flowguard install --install-scope repo --core-tarball "${path.join(vendorDir, path.basename(tarballPath))}"`,
+        projectDir,
+      );
+
+      const doctorResult = run('npx flowguard doctor --install-scope repo', projectDir);
+      expect(doctorResult.code).toBe(0);
+      expect(doctorResult.stdout).toMatch(/healthy|OK|ready|OK|good/i);
+    });
+  });
 });
