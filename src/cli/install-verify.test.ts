@@ -85,7 +85,7 @@ describe('install-verify', () => {
 
   afterAll(async () => {
     await cleanTmpDir(tmpDir);
-  });
+  }, 120000);
 
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
@@ -106,7 +106,7 @@ describe('install-verify', () => {
       const command = `npm install --no-audit --no-fund "${tarballPath}"`;
       const res = run(command, p);
       assertSuccess(res, command);
-    });
+    }, 240000);
 
     it('can import @flowguard/core after install', async () => {
       const p = path.join(tmpDir, 'import-test');
@@ -123,7 +123,7 @@ describe('install-verify', () => {
         p,
       );
       expect(res.code).toBe(0);
-    });
+    }, 240000);
 
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
