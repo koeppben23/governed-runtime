@@ -20,6 +20,8 @@ const VERSION = (await fs.readFile(path.join(REPO_ROOT, 'VERSION'), 'utf-8')).tr
 let tmpDir: string;
 let tarballPath: string;
 
+const providedTarball = process.env.FLOWGUARD_TARBALL;
+
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-smoke-'));
 }
@@ -37,7 +39,7 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
     const stdout = execSync(cmd, {
       cwd,
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: 420000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return { stdout: stdout || '', stderr: '', code: 0 };
@@ -50,17 +52,40 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
   }
 }
 
+function assertSuccess(
+  result: { stdout: string; stderr: string; code: number },
+  command: string,
+): void {
+  if (result.code === 0) {
+    return;
+  }
+
+  const stdout = result.stdout.slice(0, 4000);
+  const stderr = result.stderr.slice(0, 4000);
+  throw new Error(
+    `Command failed: ${command}\nExit code: ${result.code}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+  );
+}
+
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
-    tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-    execSync('npm pack', { cwd: REPO_ROOT, encoding: 'utf-8' });
-    await fs.copyFile(path.join(REPO_ROOT, `flowguard-core-${VERSION}.tgz`), tarballPath);
+    if (providedTarball) {
+      // Use existing tarball (for Release workflow smoke test)
+      tarballPath = path.resolve(providedTarball);
+    } else {
+      // Pack new tarball (default behavior)
+      tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
+      execSync(`npm pack --pack-destination "${tmpDir}"`, {
+        cwd: REPO_ROOT,
+        encoding: 'utf-8',
+      });
+    }
   });
 
   afterAll(async () => {
     await cleanTmpDir(tmpDir);
-  });
+  }, 120000);
 
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
@@ -78,9 +103,10 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const res = run(`npm install "${tarballPath}"`, p);
-      expect(res.code).toBe(0);
-    });
+      const command = `npm install --no-audit --no-fund "${tarballPath}"`;
+      const res = run(command, p);
+      assertSuccess(res, command);
+    }, 240000);
 
     it('can import @flowguard/core after install', async () => {
       const p = path.join(tmpDir, 'import-test');
@@ -89,13 +115,15 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      run(`npm install "${tarballPath}"`, p);
+      const installCommand = `npm install --no-audit --no-fund "${tarballPath}"`;
+      const install = run(installCommand, p);
+      assertSuccess(install, installCommand);
       const res = run(
         `node -e "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
         p,
       );
       expect(res.code).toBe(0);
-    });
+    }, 240000);
 
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
