@@ -102,7 +102,7 @@ jobs:
 
       - name: Verify release tarball
         run: |
-          FLOWGUARD_TARBALL=release/flowguard-core-1.1.0.tgz npm run test:install-verify
+          FLOWGUARD_TARBALL=$(ls release/flowguard-core-*.tgz) npm run test:install-verify
         env:
           FORCE_COLOR: 0
 
