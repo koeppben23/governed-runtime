@@ -101,7 +101,8 @@ jobs:
           echo "Asset naming validated successfully."
 
       - name: Verify release tarball
-        run: npm run test:install-verify
+        run: |
+          FLOWGUARD_TARBALL=release/flowguard-core-1.1.0.tgz npm run test:install-verify
         env:
           FORCE_COLOR: 0
 
