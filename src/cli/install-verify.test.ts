@@ -55,16 +55,16 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
-    tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-
     if (EXTERNAL_TARBALL) {
       // Use existing tarball (for Release workflow smoke test)
-      await fs.copyFile(EXTERNAL_TARBALL, tarballPath);
+      tarballPath = path.resolve(EXTERNAL_TARBALL);
     } else {
       // Pack new tarball (default behavior)
-      const tmpPackDir = path.join(tmpDir, 'pack');
-      execSync(`mkdir -p "${tmpPackDir}" && npm pack --pack-destination "${tmpPackDir}"`, { cwd: REPO_ROOT, encoding: 'utf-8' });
-      await fs.copyFile(path.join(tmpPackDir, `flowguard-core-${VERSION}.tgz`), tarballPath);
+      tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
+      execSync(`npm pack --pack-destination "${tmpDir}"`, {
+        cwd: REPO_ROOT,
+        encoding: 'utf-8',
+      });
     }
   });
 
