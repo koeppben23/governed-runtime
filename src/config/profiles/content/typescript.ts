@@ -101,7 +101,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 |------|-----------|
 | Module barrel | Named exports from \`index.ts\` |
 | Default exports | Avoid unless framework requires (e.g., Next.js pages) |
-| Re-exports | Explicit: \`export { X } from './x'\`, not \`export *\` |
+| Re-exports | Prefer explicit named re-exports, not \`export *\` |
 
 ---
 

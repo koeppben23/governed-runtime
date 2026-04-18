@@ -20,27 +20,29 @@ const checkOnly = process.argv.includes('--check');
 let pendingIssues = 0;
 
 function fixImports(filePath) {
-  let content = fs.readFileSync(filePath, 'utf-8');
-  const original = content;
+  const original = fs.readFileSync(filePath, 'utf-8');
   const fileDir = path.dirname(filePath);
 
-  content = content.replace(/from ["'](\.\.?\/[^"']+)["']/g, (match, p1) => {
-    if (p1.endsWith('.js')) return match;
+  const lines = original.split('\n');
+  const fixed = lines.map((line) => {
+    const match = line.match(/^(\s*(?:import|export)\b.*\sfrom\s+)(["'])(\.\.?\/[^"']+)(["'])/);
+    if (!match) return line;
 
-    // Resolve the import relative to the importing file's directory
-    const resolved = path.resolve(fileDir, p1);
+    const [, prefix, openQuote, specifier, closeQuote] = match;
+    if (openQuote !== closeQuote || specifier.endsWith('.js')) return line;
 
-    // If the target is a directory with an index.js, use /index.js
-    if (
+    const resolved = path.resolve(fileDir, specifier);
+    const normalizedSpecifier =
       fs.existsSync(resolved) &&
       fs.statSync(resolved).isDirectory() &&
       fs.existsSync(path.join(resolved, 'index.js'))
-    ) {
-      return `from "${p1}/index.js"`;
-    }
+        ? `${specifier}/index.js`
+        : `${specifier}.js`;
 
-    return `from "${p1}.js"`;
+    return line.replace(`${openQuote}${specifier}${closeQuote}`, `${openQuote}${normalizedSpecifier}${closeQuote}`);
   });
+
+  const content = fixed.join('\n');
 
   if (content !== original && !checkOnly) {
     fs.writeFileSync(filePath, content);
