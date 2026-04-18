@@ -53,9 +53,10 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
+    const tmpPackDir = path.join(tmpDir, 'pack');
     tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-    execSync('mkdir -p release && npm pack --pack-destination release/', { cwd: REPO_ROOT, encoding: 'utf-8' });
-    await fs.copyFile(path.join(REPO_ROOT, 'release', `flowguard-core-${VERSION}.tgz`), tarballPath);
+    execSync(`mkdir -p "${tmpPackDir}" && npm pack --pack-destination "${tmpPackDir}"`, { cwd: REPO_ROOT, encoding: 'utf-8' });
+    await fs.copyFile(path.join(tmpPackDir, `flowguard-core-${VERSION}.tgz`), tarballPath);
   });
 
   afterAll(async () => {
@@ -89,7 +90,8 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      run(`npm install "${tarballPath}"`, p);
+      const install = run(`npm install "${tarballPath}"`, p);
+      expect(install.code).toBe(0);
       const res = run(
         `node -e "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
         p,
