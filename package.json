@@ -13,13 +13,26 @@
     "./integration": {
       "import": "./dist/integration/index.js",
       "types": "./dist/integration/index.d.ts"
+    },
+    "./integration/tools": {
+      "import": "./dist/integration/tools/index.js",
+      "types": "./dist/integration/tools/index.d.ts"
+    },
+    "./integration/plugin": {
+      "import": "./dist/integration/plugin.js",
+      "types": "./dist/integration/plugin.d.ts"
+    },
+    "./integration/tools/index": {
+      "import": "./dist/integration/tools/index.js",
+      "types": "./dist/integration/tools/index.d.ts"
     }
   },
   "bin": {
     "flowguard": "./dist/cli/install.js"
   },
   "scripts": {
-    "build": "npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
+    "clean": "node scripts/clean-dist.js",
+    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
     "fix-esm": "node scripts/fix-esm-imports.js",
     "check:esm": "node scripts/fix-esm-imports.js --check",
     "check": "tsc --noEmit",
