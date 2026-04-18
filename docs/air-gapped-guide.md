@@ -103,7 +103,7 @@ Expected `doctor` output:
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
-  [ok] config.json — no config file — using defaults
+  [ok] config.json — config valid (defaults only)
 
   N/N checks passed
 ```

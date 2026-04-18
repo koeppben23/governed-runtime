@@ -520,6 +520,20 @@ export async function install(args: CliArgs): Promise<CliResult> {
         ? join(target, 'opencode.json')
         : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
+
+    // 8. Workspace config.json (required artifact)
+    const fpResult = await computeFingerprint(resolve('.'));
+    const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
+    const cfgPath = configPath(wsDir);
+    if (!existsSync(cfgPath)) {
+      await writeDefaultConfig(wsDir);
+      if (!existsSync(cfgPath)) {
+        throw new Error(
+          `WORKSPACE_CONFIG_WRITE_FAILED: workspace config is required but missing at ${cfgPath}`,
+        );
+      }
+      ops.push({ path: cfgPath, action: 'written' });
+    }
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
   }
@@ -812,8 +826,8 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
 
   // 7. Check workspace config.json
-  //    Config is optional — missing is ok (defaults apply).
-  //    But if present, it must be valid JSON and pass schema validation.
+  //    Config is required: install/hydrate must materialize it.
+  //    Missing config is an error because users must be able to edit it explicitly.
   //    Config lives at ~/.config/opencode/workspaces/{fingerprint}/config.json
   try {
     const fpResult = await computeFingerprint(resolve('.'));
@@ -823,7 +837,11 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
       const config = await readConfig(wsDir);
       const fileExists = existsSync(cfgPath);
       if (!fileExists) {
-        checks.push({ file: cfgPath, status: 'ok', detail: 'no config file — using defaults' });
+        checks.push({
+          file: cfgPath,
+          status: 'error',
+          detail: 'WORKSPACE_CONFIG_MISSING: workspace config is required; run /hydrate or reinstall',
+        });
       } else {
         // File exists and parsed successfully — check if any fields differ from defaults
         const hasCustom =

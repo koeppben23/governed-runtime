@@ -694,6 +694,10 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(true);
       // vendor directory with tarball
       expect(existsSync(path.join(oc, 'vendor', `flowguard-core-${VERSION}.tgz`))).toBe(true);
+      // workspace config materialized for current workspace
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(process.cwd());
+      expect(existsSync(path.join(workspaceDir(fp.fingerprint), 'config.json'))).toBe(true);
     });
 
     it('copies tarball to vendor directory', async () => {
@@ -1010,8 +1014,8 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json
-      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1;
+      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config.json
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 
@@ -1352,6 +1356,20 @@ describe('cli/doctor', () => {
       );
       expect(staleCheck).toBeDefined();
       expect(staleCheck?.detail).toContain('AGENTS.md');
+    });
+
+    it('reports missing workspace config as error', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(process.cwd());
+      await fs.unlink(path.join(workspaceDir(fp.fingerprint), 'config.json'));
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const configCheck = checks.find((c) => c.file.endsWith('/config.json'));
+      expect(configCheck?.status).toBe('error');
+      expect(configCheck?.detail).toContain('WORKSPACE_CONFIG_MISSING');
     });
   });
 

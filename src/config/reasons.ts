@@ -222,6 +222,69 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'DISCOVERY_RESULT_MISSING',
+    category: 'adapter',
+    messageTemplate: 'Discovery did not produce a valid result: {message}',
+    recoverySteps: [
+      'Fix repository/discovery adapter errors and run /hydrate again',
+      'Verify repository is readable and collectors can complete',
+    ],
+  },
+  {
+    code: 'DISCOVERY_PERSIST_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Failed to persist discovery artifacts: {message}',
+    recoverySteps: [
+      'Ensure workspace directory is writable',
+      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+    ],
+  },
+  {
+    code: 'PROFILE_RESOLUTION_PERSIST_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Failed to persist profile-resolution artifacts: {message}',
+    recoverySteps: [
+      'Ensure workspace/session directories are writable',
+      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+    ],
+  },
+  {
+    code: 'WORKSPACE_CONFIG_MISSING',
+    category: 'precondition',
+    messageTemplate: 'Workspace config.json is missing: {message}',
+    recoverySteps: [
+      'Run /hydrate to materialize workspace config defaults',
+      'If it still fails, run flowguard install --force and retry',
+    ],
+  },
+  {
+    code: 'WORKSPACE_CONFIG_WRITE_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Workspace config.json could not be written: {message}',
+    recoverySteps: [
+      'Ensure workspace directory is writable',
+      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+    ],
+  },
+  {
+    code: 'WORKSPACE_CONFIG_INVALID',
+    category: 'input',
+    messageTemplate: 'Workspace config.json is invalid: {message}',
+    recoverySteps: [
+      'Fix config.json to match FlowGuard schema',
+      'If unsure, remove config.json and re-run /hydrate to re-materialize defaults',
+    ],
+  },
+  {
+    code: 'HYDRATE_DISCOVERY_CONTRACT_FAILED',
+    category: 'state',
+    messageTemplate: 'Hydrate discovery contract failed: {message}',
+    recoverySteps: [
+      'Re-run /hydrate and verify discovery artifacts are created',
+      'Do not proceed until discoveryDigest and discoverySummary are present',
+    ],
+  },
+  {
     code: 'REVISED_PLAN_REQUIRED',
     category: 'input',
     messageTemplate:

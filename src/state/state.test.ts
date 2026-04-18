@@ -97,6 +97,16 @@ describe('state schemas', () => {
       expect(ValidationResult.parse(result)).toEqual(result);
     });
 
+    it('BindingInfo accepts OpenCode-style session IDs', () => {
+      const binding = {
+        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        worktree: '/tmp/test',
+        fingerprint: 'abcdef0123456789abcdef01',
+        resolvedAt: FIXED_TIME,
+      };
+      expect(BindingInfo.parse(binding)).toEqual(binding);
+    });
+
     it('ReviewVerdict parses all 3 verdicts', () => {
       expect(ReviewVerdict.parse('approve')).toBe('approve');
       expect(ReviewVerdict.parse('changes_requested')).toBe('changes_requested');
@@ -122,6 +132,19 @@ describe('state schemas', () => {
       };
       expect(() => AuditEvent.parse(event)).not.toThrow();
     });
+
+    it('AuditEvent accepts OpenCode-style non-UUID session IDs', () => {
+      const event = {
+        id: FIXED_UUID,
+        sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        phase: 'READY',
+        event: 'tool_call:flowguard_hydrate',
+        timestamp: FIXED_TIME,
+        actor: 'system',
+        detail: {},
+      };
+      expect(() => AuditEvent.parse(event)).not.toThrow();
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -141,6 +164,31 @@ describe('state schemas', () => {
           digest: 'abc',
           source: 'user',
           createdAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('BindingInfo rejects unsafe session IDs', () => {
+      expect(() =>
+        BindingInfo.parse({
+          sessionId: '../etc/passwd',
+          worktree: '/tmp/test',
+          fingerprint: 'abcdef0123456789abcdef01',
+          resolvedAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('AuditEvent rejects unsafe session IDs', () => {
+      expect(() =>
+        AuditEvent.parse({
+          id: FIXED_UUID,
+          sessionId: 'bad/session',
+          phase: 'READY',
+          event: 'tool_call:flowguard_hydrate',
+          timestamp: FIXED_TIME,
+          actor: 'system',
+          detail: {},
         }),
       ).toThrow();
     });

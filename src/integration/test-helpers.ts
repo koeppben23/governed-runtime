@@ -58,7 +58,7 @@ export interface TestToolContext {
  */
 export function createToolContext(overrides: Partial<TestToolContext> = {}): TestToolContext {
   return {
-    sessionID: crypto.randomUUID(),
+    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
     messageID: 'msg-test-1',
     agent: 'test-agent',
     directory: overrides.worktree ?? '/tmp/test-dir',

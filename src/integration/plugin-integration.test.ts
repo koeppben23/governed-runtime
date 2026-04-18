@@ -81,7 +81,7 @@ let logEntries: Array<{ level: string; message: string }>;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
-  sessionId = crypto.randomUUID();
+  sessionId = `ses_${crypto.randomUUID().replace(/-/g, '')}`;
 
   // Initialize workspace + resolve paths
   const fp = await computeFingerprint(ws.tmpDir);
