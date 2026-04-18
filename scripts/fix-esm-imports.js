@@ -20,39 +20,32 @@ const checkOnly = process.argv.includes('--check');
 let pendingIssues = 0;
 
 function fixImports(filePath) {
-  const original = fs.readFileSync(filePath, 'utf-8');
-  const fileDir = path.dirname(filePath);
+  let original = fs.readFileSync(filePath, 'utf-8');
+  let changed = false;
 
-  const lines = original.split('\n');
-  const fixed = lines.map((line) => {
-    const match = line.match(/^(\s*(?:import|export)\b.*\sfrom\s+)(["'])(\.\.?\/[^"']+)(["'])/);
-    if (!match) return line;
+  original = original.replace(/from\s+['"](\.\.?\/[^"']+)['"](?=\s*[;,}])/g, (match, specifier) => {
+    if (specifier.endsWith('.js')) return match;
 
-    const [, prefix, openQuote, specifier, closeQuote] = match;
-    if (openQuote !== closeQuote || specifier.endsWith('.js')) return line;
+    const dir = path.dirname(filePath);
+    const resolved = path.resolve(dir, specifier);
+    const hasDir = fs.existsSync(resolved) && fs.statSync(resolved).isDirectory();
+    const hasIndex = hasDir && fs.existsSync(path.join(resolved, 'index.js'));
 
-    const resolved = path.resolve(fileDir, specifier);
-    const normalizedSpecifier =
-      fs.existsSync(resolved) &&
-      fs.statSync(resolved).isDirectory() &&
-      fs.existsSync(path.join(resolved, 'index.js'))
-        ? `${specifier}/index.js`
-        : `${specifier}.js`;
+    let suffix = '.js';
+    if (hasDir && hasIndex) suffix = '/index.js';
 
-    return line.replace(
-      `${openQuote}${specifier}${closeQuote}`,
-      `${openQuote}${normalizedSpecifier}${closeQuote}`,
-    );
+    const newSpecifier = specifier + suffix;
+    const newMatch = match.replace(specifier, newSpecifier);
+    changed = true;
+    return newMatch;
   });
 
-  const content = fixed.join('\n');
-
-  if (content !== original && !checkOnly) {
-    fs.writeFileSync(filePath, content);
+  if (changed && !checkOnly) {
+    fs.writeFileSync(filePath, original);
     console.log('Fixed:', filePath);
   }
 
-  if (content !== original && checkOnly) {
+  if (changed && checkOnly) {
     pendingIssues++;
     console.log('Needs fix:', filePath);
   }
