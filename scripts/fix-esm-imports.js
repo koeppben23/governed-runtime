@@ -25,15 +25,15 @@ function fixImports(filePath) {
 
   original = original.replace(/from\s+['"](\.\.?\/[^"']+)['"](?=\s*[;,}])/g, (match, specifier) => {
     if (specifier.endsWith('.js')) return match;
-    
+
     const dir = path.dirname(filePath);
     const resolved = path.resolve(dir, specifier);
     const hasDir = fs.existsSync(resolved) && fs.statSync(resolved).isDirectory();
     const hasIndex = hasDir && fs.existsSync(path.join(resolved, 'index.js'));
-    
+
     let suffix = '.js';
     if (hasDir && hasIndex) suffix = '/index.js';
-    
+
     const newSpecifier = specifier + suffix;
     const newMatch = match.replace(specifier, newSpecifier);
     changed = true;

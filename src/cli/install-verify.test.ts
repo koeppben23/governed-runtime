@@ -44,7 +44,12 @@ async function cleanTmpDir(dir: string): Promise<void> {
 
 function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: number } {
   try {
-    const stdout = execSync(cmd, { cwd, encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'] });
+    const stdout = execSync(cmd, {
+      cwd,
+      encoding: 'utf8',
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     return { stdout: stdout || '', stderr: '', code: 0 };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; status?: number; message?: string };
@@ -71,7 +76,10 @@ describe('install-verify', () => {
     it('fresh project can install tarball and import core', async () => {
       const projectDir = path.join(tmpDir, 'project');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const installResult = run(`npm install "${tarballPath}"`, projectDir);
       expect(installResult.code).toBe(0);
@@ -87,7 +95,10 @@ describe('install-verify', () => {
     it('core module exports are available', async () => {
       const projectDir = path.join(tmpDir, 'project2');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const installResult = run(`npm install "${tarballPath}"`, projectDir);
       expect(installResult.code).toBe(0);
@@ -114,7 +125,10 @@ describe('install-verify', () => {
     it('import does not crash when telemetry is unavailable', async () => {
       const projectDir = path.join(tmpDir, 'project3');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const installResult = run(`npm install "${tarballPath}"`, projectDir);
       expect(installResult.code).toBe(0);
@@ -131,7 +145,10 @@ describe('install-verify', () => {
     it('works without node_modules from previous install', async () => {
       const projectDir = path.join(tmpDir, 'project-corner');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const firstInstall = run(`npm install "${tarballPath}"`, projectDir);
       expect(firstInstall.code).toBe(0);
@@ -151,7 +168,10 @@ describe('install-verify', () => {
     it('handles missing vendor directory gracefully', async () => {
       const projectDir = path.join(tmpDir, 'project-no-vendor');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const installResult = run(`npm install "${tarballPath}"`, projectDir);
       expect(installResult.code).toBe(0);
@@ -164,7 +184,10 @@ describe('install-verify', () => {
     it('handles corrupted tarball gracefully', async () => {
       const projectDir = path.join(tmpDir, 'project-corrupt');
       await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify({ name: 'test', type: 'module' }));
+      await fs.writeFile(
+        path.join(projectDir, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
 
       const corruptTarball = path.join(tmpDir, 'flowguard-corrupt.tgz');
       await fs.writeFile(corruptTarball, 'not a real tarball');
