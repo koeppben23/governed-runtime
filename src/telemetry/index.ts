@@ -136,7 +136,9 @@ export function withSpanSync<T>(
 
   try {
     const t = getTracerSync();
-    span = t.startSpan(operation, { attributes: buildAttributes(operation, attrs) });
+    if (t) {
+      span = t.startSpan(operation, { attributes: buildAttributes(operation, attrs) });
+    }
   } catch {
     // Noop tracer — no SDK loaded
   }
@@ -159,10 +161,14 @@ export function withSpanSync<T>(
   }
 }
 
-function getTracerSync(): Tracer {
+function getTracerSync(): Tracer | undefined {
   if (tracer) return tracer;
-  const { trace } = _require('@opentelemetry/api');
-  return trace.getTracer('flowguard', '1.0.0');
+  try {
+    const { trace } = _require('@opentelemetry/api');
+    return trace.getTracer('flowguard', '1.0.0');
+  } catch {
+    return undefined;
+  }
 }
 
 function buildAttributes(
