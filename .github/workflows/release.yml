@@ -87,11 +87,11 @@ jobs:
           mkdir -p release
           npm pack --pack-destination release/
 
-      - name: Validate asset naming
+- name: Validate asset naming
         run: |
           PKG_VERSION="$(node -p 'require("./package.json").version')"
           EXPECTED_FILENAME="flowguard-core-${PKG_VERSION}.tgz"
-          CREATED_FILENAME=$(find release -maxdepth 1 -name "*.tgz" -type f -printf "%f\n" 2>/dev/null | head -1)
+          CREATED_FILENAME=$(find release -maxdepth 1 -name "*.tgz" -type f -printf "%f\n" 2>/dev/null | head 1)
           echo "Expected: $EXPECTED_FILENAME"
           echo "Created: $CREATED_FILENAME"
           if [ "$CREATED_FILENAME" != "$EXPECTED_FILENAME" ]; then
@@ -99,6 +99,11 @@ jobs:
             exit 1
           fi
           echo "Asset naming validated successfully."
+
+      - name: Verify release tarball
+        run: npm run test:install-verify
+        env:
+          FORCE_COLOR: 0
 
       - name: Generate checksums
         working-directory: release

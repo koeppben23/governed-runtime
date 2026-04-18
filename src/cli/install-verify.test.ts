@@ -54,8 +54,8 @@ describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
     tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-    execSync('npm pack', { cwd: REPO_ROOT, encoding: 'utf-8' });
-    await fs.copyFile(path.join(REPO_ROOT, `flowguard-core-${VERSION}.tgz`), tarballPath);
+    execSync('mkdir -p release && npm pack --pack-destination release/', { cwd: REPO_ROOT, encoding: 'utf-8' });
+    await fs.copyFile(path.join(REPO_ROOT, 'release', `flowguard-core-${VERSION}.tgz`), tarballPath);
   });
 
   afterAll(async () => {
