@@ -39,7 +39,7 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
     const stdout = execSync(cmd, {
       cwd,
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: 180000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return { stdout: stdout || '', stderr: '', code: 0 };
