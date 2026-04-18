@@ -39,7 +39,10 @@ function fixImports(filePath) {
         ? `${specifier}/index.js`
         : `${specifier}.js`;
 
-    return line.replace(`${openQuote}${specifier}${closeQuote}`, `${openQuote}${normalizedSpecifier}${closeQuote}`);
+    return line.replace(
+      `${openQuote}${specifier}${closeQuote}`,
+      `${openQuote}${normalizedSpecifier}${closeQuote}`,
+    );
   });
 
   const content = fixed.join('\n');

@@ -840,7 +840,8 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
         checks.push({
           file: cfgPath,
           status: 'error',
-          detail: 'WORKSPACE_CONFIG_MISSING: workspace config is required; run /hydrate or reinstall',
+          detail:
+            'WORKSPACE_CONFIG_MISSING: workspace config is required; run /hydrate or reinstall',
         });
       } else {
         // File exists and parsed successfully — check if any fields differ from defaults

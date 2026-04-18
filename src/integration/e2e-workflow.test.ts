@@ -131,8 +131,12 @@ describe('e2e-workflow', () => {
       const wsDir = resolveWorkspaceDir(fp.fingerprint);
       await expect(fs.access(`${wsDir}/config.json`)).resolves.toBeUndefined();
       await expect(fs.access(`${wsDir}/discovery/discovery.json`)).resolves.toBeUndefined();
-      await expect(fs.access(`${wsDir}/discovery/profile-resolution.json`)).resolves.toBeUndefined();
-      await expect(fs.access(`${sessDirAfterHydrate}/discovery-snapshot.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${wsDir}/discovery/profile-resolution.json`),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDirAfterHydrate}/discovery-snapshot.json`),
+      ).resolves.toBeUndefined();
       await expect(
         fs.access(`${sessDirAfterHydrate}/profile-resolution-snapshot.json`),
       ).resolves.toBeUndefined();

@@ -259,9 +259,13 @@ describe('hydrate', () => {
       await expect(fs.access(sessDir)).resolves.toBeUndefined();
       await expect(fs.access(`${wsDir}/config.json`)).resolves.toBeUndefined();
       await expect(fs.access(`${wsDir}/discovery/discovery.json`)).resolves.toBeUndefined();
-      await expect(fs.access(`${wsDir}/discovery/profile-resolution.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${wsDir}/discovery/profile-resolution.json`),
+      ).resolves.toBeUndefined();
       await expect(fs.access(`${sessDir}/discovery-snapshot.json`)).resolves.toBeUndefined();
-      await expect(fs.access(`${sessDir}/profile-resolution-snapshot.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDir}/profile-resolution-snapshot.json`),
+      ).resolves.toBeUndefined();
     });
   });
 
