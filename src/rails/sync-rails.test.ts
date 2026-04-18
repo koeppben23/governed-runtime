@@ -53,6 +53,21 @@ describe('hydrate rail', () => {
       }
     });
 
+    it('accepts OpenCode-style non-UUID session IDs', () => {
+      const result = executeHydrate(
+        null,
+        {
+          ...HYDRATE_INPUT,
+          sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+        },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.binding.sessionId).toBe('ses_260740c65ffe77OjxRP7z40yH8');
+      }
+    });
+
     it('resolves policy mode', () => {
       const result = executeHydrate(
         null,

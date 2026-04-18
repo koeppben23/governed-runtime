@@ -71,7 +71,7 @@ beforeEach(async () => {
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
-    sessionID: crypto.randomUUID(),
+    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
 });
 
@@ -167,6 +167,8 @@ describe('hydrate', () => {
       expect(result.phase).toBe('READY');
       expect(result.status).toBe('ok');
       expect(result.profileDetected).toBe(true);
+      expect(result.discoveryComplete).toBe(true);
+      expect(result.discoverySummary).not.toBeNull();
     });
 
     it('creates a new session with team policy', async () => {
@@ -255,6 +257,15 @@ describe('hydrate', () => {
 
       await expect(fs.access(wsDir)).resolves.toBeUndefined();
       await expect(fs.access(sessDir)).resolves.toBeUndefined();
+      await expect(fs.access(`${wsDir}/config.json`)).resolves.toBeUndefined();
+      await expect(fs.access(`${wsDir}/discovery/discovery.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${wsDir}/discovery/profile-resolution.json`),
+      ).resolves.toBeUndefined();
+      await expect(fs.access(`${sessDir}/discovery-snapshot.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDir}/profile-resolution-snapshot.json`),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -268,6 +279,20 @@ describe('hydrate', () => {
       const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, badCtx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
+    });
+
+    it('fails closed when existing workspace config is invalid', async () => {
+      await hydrateSession();
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
+      await fs.writeFile(cfgPath, '{invalid{{{', 'utf-8');
+
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('WORKSPACE_CONFIG_INVALID');
+      expect(result.message).toContain('invalid');
     });
 
     /**
@@ -319,6 +344,13 @@ describe('hydrate', () => {
       expect(result.error).toBe(true);
       expect(result.message).toMatch(/requestedMode/);
     });
+
+    it('fails closed when repo signals are unavailable on fresh hydrate', async () => {
+      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce(undefined as never);
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
+    });
   });
 
   describe('CORNER', () => {
@@ -358,7 +390,7 @@ describe('hydrate', () => {
       const ctx2 = createToolContext({
         worktree: ws.tmpDir,
         directory: ws.tmpDir,
-        sessionID: crypto.randomUUID(),
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
       });
       const raw2 = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx2);
       const result2 = parseToolResult(raw2);
@@ -372,7 +404,7 @@ describe('hydrate', () => {
       expect(s2.hasTicket).toBe(false);
     });
 
-    it('degrades gracefully when discovery persistence fails', async () => {
+    it('fails closed when discovery persistence fails', async () => {
       // Force writeDiscovery to throw — simulates disk full, permissions, etc.
       const spy = vi
         .spyOn(persistence, 'writeDiscovery')
@@ -380,17 +412,54 @@ describe('hydrate', () => {
 
       const result = await hydrateSession();
 
-      // Session must still be created successfully
+      // Hydrate must fail-closed.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('DISCOVERY_PERSIST_FAILED');
+      expect(result.message).toContain('disk write failure');
+
+      spy.mockRestore();
+    });
+
+    it('fails closed when profile resolution persistence fails', async () => {
+      const spy = vi
+        .spyOn(persistence, 'writeProfileResolution')
+        .mockRejectedValueOnce(new Error('Simulated profile write failure'));
+
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PROFILE_RESOLUTION_PERSIST_FAILED');
+      expect(result.message).toContain('profile write failure');
+
+      spy.mockRestore();
+    });
+
+    it('re-materializes missing workspace config on hydrate', async () => {
+      await hydrateSession();
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
+      await fs.unlink(cfgPath);
+
+      const result = await hydrateSession();
       expect(result.phase).toBe('READY');
-      expect(result.error).toBeUndefined();
+      await expect(fs.access(cfgPath)).resolves.toBeUndefined();
+    });
 
-      // Discovery fields should be absent/empty (degraded)
-      expect(result.discoveryComplete).toBe(false);
-      expect(result.discoverySummary).toBeNull();
+    it('fails closed when workspace config cannot be written', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
+      // Ensure config is missing so hydrate must write it.
+      await fs.rm(cfgPath, { force: true });
 
-      // discoveryError should report the failure
-      expect(result.discoveryError).toBeDefined();
-      expect(result.discoveryError).toContain('disk write failure');
+      const spy = vi
+        .spyOn(persistence, 'writeDefaultConfig')
+        .mockRejectedValueOnce(new Error('config write denied'));
+
+      const result = await hydrateSession();
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('WORKSPACE_CONFIG_WRITE_FAILED');
+      expect(result.message).toContain('config write denied');
 
       spy.mockRestore();
     });

@@ -42,6 +42,9 @@ export type RevisionDelta = z.infer<typeof RevisionDelta>;
 export const LoopVerdict = z.enum(['approve', 'changes_requested']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
+/** Safe opaque OpenCode session ID segment (e.g. `ses_...`). */
+const OpenCodeSessionId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+
 // ─── Binding ──────────────────────────────────────────────────────────────────
 
 /**
@@ -55,7 +58,8 @@ export type LoopVerdict = z.infer<typeof LoopVerdict>;
  * across clones of the same remote.
  */
 export const BindingInfo = z.object({
-  sessionId: z.string().uuid(),
+  // OpenCode session IDs are opaque non-UUID identifiers (e.g. "ses_260740c65ffe77...").
+  sessionId: OpenCodeSessionId,
   worktree: z.string().min(1),
   fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
   resolvedAt: z.string().datetime(),
@@ -286,7 +290,8 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
  */
 export const AuditEvent = z.object({
   id: z.string().uuid(),
-  sessionId: z.string().uuid(),
+  // OpenCode session IDs are opaque non-UUID identifiers (e.g. "ses_260740c65ffe77...").
+  sessionId: OpenCodeSessionId,
   phase: z.string(),
   event: z.string(),
   timestamp: z.string().datetime(),

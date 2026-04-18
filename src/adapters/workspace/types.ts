@@ -104,7 +104,7 @@ export function validateFingerprint(fingerprint: string): string {
 /**
  * Validate sessionId as a safe filesystem path segment.
  * Rejects empty strings, path traversal, and unsafe characters.
- * OpenCode typically provides UUIDs, but we trust no input blindly.
+ * OpenCode provides opaque session IDs (for example "ses_...").
  *
  * @throws WorkspaceError with code INVALID_SESSION_ID
  */

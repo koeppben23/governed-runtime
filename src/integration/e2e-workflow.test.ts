@@ -40,7 +40,11 @@ import {
 import { readState } from '../adapters/persistence';
 import { readAuditTrail } from '../adapters/persistence';
 import { verifyChain } from '../audit/integrity';
-import { computeFingerprint, sessionDir as resolveSessionDir } from '../adapters/workspace';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+  workspaceDir as resolveWorkspaceDir,
+} from '../adapters/workspace';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -70,7 +74,7 @@ beforeEach(async () => {
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
-    sessionID: crypto.randomUUID(),
+    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
 });
 
@@ -119,6 +123,23 @@ describe('e2e-workflow', () => {
       // 1. Hydrate
       const h = await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       expect(h.phase).toBe('READY');
+      expect(h.discoveryComplete).toBe(true);
+      expect(h.discoverySummary).not.toBeNull();
+
+      const sessDirAfterHydrate = await getSessDir();
+      const fp = await computeFingerprint(ctx.worktree);
+      const wsDir = resolveWorkspaceDir(fp.fingerprint);
+      await expect(fs.access(`${wsDir}/config.json`)).resolves.toBeUndefined();
+      await expect(fs.access(`${wsDir}/discovery/discovery.json`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${wsDir}/discovery/profile-resolution.json`),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDirAfterHydrate}/discovery-snapshot.json`),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDirAfterHydrate}/profile-resolution-snapshot.json`),
+      ).resolves.toBeUndefined();
 
       // 2. Ticket
       await callOk(ticket, { text: 'Fix the auth bug', source: 'user' });
@@ -529,7 +550,7 @@ describe('e2e-workflow', () => {
       const ctx2 = createToolContext({
         worktree: ws.tmpDir,
         directory: ws.tmpDir,
-        sessionID: crypto.randomUUID(),
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
       });
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' }, ctx2);
       await callOk(ticket, { text: 'Session 2 task', source: 'user' }, ctx2);

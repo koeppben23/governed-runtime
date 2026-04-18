@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import { existsSync } from 'node:fs';
 
 import type { ToolDefinition } from './helpers';
 import {
@@ -31,6 +32,10 @@ import { executeHydrate } from '../../rails/hydrate';
 import { readState } from '../../adapters/persistence';
 import { listRepoSignals } from '../../adapters/git';
 import {
+  configPath,
+  readConfig,
+  PersistenceError,
+  writeDefaultConfig,
   writeDiscovery,
   writeProfileResolution,
   writeDiscoverySnapshot,
@@ -52,6 +57,77 @@ import { defaultProfileRegistry as profileRegistryForResolution } from '../../co
 
 // Config
 import { detectCiContext, resolvePolicyWithContext } from '../../config/policy';
+
+function throwHydrateError(code: string, message: string): never {
+  throw Object.assign(new Error(message), { code });
+}
+
+async function ensureWorkspaceConfig(wsDir: string): Promise<void> {
+  const filePath = configPath(wsDir);
+  if (existsSync(filePath)) {
+    try {
+      await readConfig(wsDir);
+    } catch (err) {
+      if (err instanceof PersistenceError) {
+        throwHydrateError(
+          'WORKSPACE_CONFIG_INVALID',
+          `Workspace config is invalid at ${filePath}: ${err.message}`,
+        );
+      }
+      throwHydrateError(
+        'WORKSPACE_CONFIG_INVALID',
+        `Workspace config is invalid at ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return;
+  }
+
+  try {
+    await writeDefaultConfig(wsDir);
+  } catch (err) {
+    throwHydrateError(
+      'WORKSPACE_CONFIG_WRITE_FAILED',
+      `Failed to write workspace config at ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (!existsSync(filePath)) {
+    throwHydrateError(
+      'WORKSPACE_CONFIG_MISSING',
+      `Workspace config is required but missing at ${filePath}`,
+    );
+  }
+}
+
+function requireDiscoveryContract(
+  discoveryDigest: string | undefined,
+  discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined,
+): void {
+  if (!discoveryDigest || !discoverySummary) {
+    throwHydrateError(
+      'HYDRATE_DISCOVERY_CONTRACT_FAILED',
+      'Hydrate cannot enter READY without persisted discoveryDigest and discoverySummary',
+    );
+  }
+}
+
+function requireDiscoveryArtifacts(wsDir: string, sessDir: string): void {
+  const required = [
+    `${wsDir}/discovery/discovery.json`,
+    `${wsDir}/discovery/profile-resolution.json`,
+    `${sessDir}/discovery-snapshot.json`,
+    `${sessDir}/profile-resolution-snapshot.json`,
+  ];
+
+  for (const filePath of required) {
+    if (!existsSync(filePath)) {
+      throwHydrateError(
+        'HYDRATE_DISCOVERY_CONTRACT_FAILED',
+        `Hydrate discovery contract failed: missing artifact ${filePath}`,
+      );
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_hydrate — Bootstrap Session
@@ -85,6 +161,9 @@ export const hydrate: ToolDefinition = {
       const wsResult = await initWorkspace(worktree, context.sessionID);
       const { fingerprint, sessionDir: sessDir, workspaceDir: wsDir } = wsResult;
 
+      // Workspace config must be materialized and editable.
+      await ensureWorkspaceConfig(wsDir);
+
       const existing = await readState(sessDir);
 
       // Resolve policy for context
@@ -99,11 +178,16 @@ export const hydrate: ToolDefinition = {
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
       let profileResolution: ProfileResolution | undefined;
-      let discoveryError: string | undefined;
+      if (!existing && !repoSignals) {
+        throwHydrateError(
+          'DISCOVERY_RESULT_MISSING',
+          'Discovery requires repository signals on first hydrate, but none were available',
+        );
+      }
 
       if (!existing && repoSignals) {
+        // 1. Run discovery orchestrator
         try {
-          // 1. Run discovery orchestrator
           discoveryResult = await runDiscovery({
             worktreePath: worktree,
             fingerprint,
@@ -111,75 +195,105 @@ export const hydrate: ToolDefinition = {
             packageFiles: repoSignals.packageFiles,
             configFiles: repoSignals.configFiles,
           });
-
-          // 2. Write workspace-level discovery
-          await writeDiscovery(wsDir, discoveryResult);
-
-          // 3. Detect profile with discovery context
-          const detectionInput = { repoSignals, discovery: discoveryResult };
-          const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-          const selectedProfile = detectedProfile ?? profileRegistryForResolution.get('baseline');
-
-          // 4. Build profile resolution (including rejected candidates)
-          const allCandidates: ProfileResolution['secondary'] = [];
-          const rejectedCandidates: ProfileResolution['rejected'] = [];
-
-          for (const pid of profileRegistryForResolution.ids()) {
-            const p = profileRegistryForResolution.get(pid);
-            if (!p?.detect) continue;
-            const score = p.detect(detectionInput);
-            if (p.id === selectedProfile?.id) continue;
-            if (score > 0) {
-              allCandidates.push({
-                id: p.id,
-                name: p.name,
-                confidence: score,
-                evidence: [],
-              });
-            } else {
-              rejectedCandidates.push({
-                id: p.id,
-                score: 0,
-                reason: 'No matching signals',
-              });
-            }
-          }
-
-          profileResolution = {
-            schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
-            resolvedAt: ctx.now(),
-            primary: {
-              id: selectedProfile?.id ?? 'baseline',
-              name: selectedProfile?.name ?? 'Baseline FlowGuard',
-              confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
-              evidence: [],
-            },
-            secondary: allCandidates,
-            rejected: rejectedCandidates,
-            activeChecks: [
-              ...(selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
-            ],
-          };
-
-          // 5. Write workspace-level profile resolution
-          await writeProfileResolution(wsDir, profileResolution);
-
-          // 6. Write immutable snapshots to session dir (BEFORE state)
-          await writeDiscoverySnapshot(sessDir, discoveryResult);
-          await writeProfileResolutionSnapshot(sessDir, profileResolution);
-
-          // 7. Compute digest and summary
-          discoveryDigest = computeDiscoveryDigest(discoveryResult);
-          discoverySummary = extractDiscoverySummary(discoveryResult);
         } catch (err) {
-          // Discovery failed — degrade gracefully.
-          // Session will be created without discovery data.
-          discoveryResult = undefined;
-          discoveryDigest = undefined;
-          discoverySummary = undefined;
-          profileResolution = undefined;
-          discoveryError = err instanceof Error ? err.message : String(err);
+          throwHydrateError(
+            'DISCOVERY_RESULT_MISSING',
+            `Discovery failed before producing a result: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
+
+        if (!discoveryResult) {
+          throwHydrateError('DISCOVERY_RESULT_MISSING', 'Discovery did not return a result');
+        }
+
+        // 2. Write workspace-level discovery
+        try {
+          await writeDiscovery(wsDir, discoveryResult);
+        } catch (err) {
+          throwHydrateError(
+            'DISCOVERY_PERSIST_FAILED',
+            `Failed to persist discovery.json: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        // 3. Detect profile with discovery context
+        const detectionInput = { repoSignals, discovery: discoveryResult };
+        const detectedProfile = profileRegistryForResolution.detect(detectionInput);
+        const selectedProfile = detectedProfile ?? profileRegistryForResolution.get('baseline');
+
+        // 4. Build profile resolution (including rejected candidates)
+        const allCandidates: ProfileResolution['secondary'] = [];
+        const rejectedCandidates: ProfileResolution['rejected'] = [];
+
+        for (const pid of profileRegistryForResolution.ids()) {
+          const p = profileRegistryForResolution.get(pid);
+          if (!p?.detect) continue;
+          const score = p.detect(detectionInput);
+          if (p.id === selectedProfile?.id) continue;
+          if (score > 0) {
+            allCandidates.push({
+              id: p.id,
+              name: p.name,
+              confidence: score,
+              evidence: [],
+            });
+          } else {
+            rejectedCandidates.push({
+              id: p.id,
+              score: 0,
+              reason: 'No matching signals',
+            });
+          }
+        }
+
+        profileResolution = {
+          schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
+          resolvedAt: ctx.now(),
+          primary: {
+            id: selectedProfile?.id ?? 'baseline',
+            name: selectedProfile?.name ?? 'Baseline FlowGuard',
+            confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
+            evidence: [],
+          },
+          secondary: allCandidates,
+          rejected: rejectedCandidates,
+          activeChecks: [...(selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety'])],
+        };
+
+        // 5. Write workspace-level profile resolution
+        try {
+          await writeProfileResolution(wsDir, profileResolution);
+        } catch (err) {
+          throwHydrateError(
+            'PROFILE_RESOLUTION_PERSIST_FAILED',
+            `Failed to persist profile-resolution.json: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        // 6. Write immutable snapshots to session dir (BEFORE state)
+        try {
+          await writeDiscoverySnapshot(sessDir, discoveryResult);
+        } catch (err) {
+          throwHydrateError(
+            'DISCOVERY_PERSIST_FAILED',
+            `Failed to persist discovery snapshot: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        try {
+          await writeProfileResolutionSnapshot(sessDir, profileResolution);
+        } catch (err) {
+          throwHydrateError(
+            'PROFILE_RESOLUTION_PERSIST_FAILED',
+            `Failed to persist profile-resolution snapshot: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+
+        // 7. Compute digest and summary
+        discoveryDigest = computeDiscoveryDigest(discoveryResult);
+        discoverySummary = extractDiscoverySummary(discoveryResult);
+        requireDiscoveryContract(discoveryDigest, discoverySummary);
+        requireDiscoveryArtifacts(wsDir, sessDir);
       }
 
       const result = executeHydrate(
@@ -232,9 +346,6 @@ export const hydrate: ToolDefinition = {
             reason: policyResolution.degradedReason ?? null,
           },
         };
-        if (discoveryError) {
-          response.discoveryError = discoveryError;
-        }
         return appendNextAction(JSON.stringify(response), state);
       }
 
