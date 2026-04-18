@@ -60,7 +60,8 @@
     "vitest": "^4.1.4"
   },
   "files": [
-    "dist"
+    "dist",
+    "VERSION"
   ],
   "license": "SEE LICENSE IN LICENSE",
   "private": true

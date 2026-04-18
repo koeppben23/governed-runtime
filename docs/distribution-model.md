@@ -57,16 +57,13 @@ The `flowguard-core-{version}.tgz` contains:
 sha256sum flowguard-core-{version}.tgz
 ```
 
-### 2. Install CLI
+### 2. Initialize OpenCode Integration (Standard)
+
+The approved local tarball is the authoritative package source. No global installation is required.
 
 ```bash
-npm install -g ./flowguard-core-{version}.tgz
-```
-
-### 3. Initialize OpenCode Integration
-
-```bash
-flowguard install --core-tarball ./flowguard-core-{version}.tgz
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz
 ```
 
 The installer:
@@ -110,14 +107,16 @@ After installation, FlowGuard requires **no outbound network connections**. All 
 # Verify the SHA-256 checksum against the published release record before installation.
 
 # Reinstall with new tarball
-flowguard install --core-tarball ./flowguard-core-{version}.tgz --force
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz --force
 ```
 
 ### Rollback
 
 ```bash
 # Reinstall with previous tarball
-flowguard install --core-tarball ./flowguard-core-{old}.tgz --force
+npx --package ./flowguard-core-{old}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{old}.tgz --force
 ```
 
 **Customer Responsibility:** Maintain archives of previous `flowguard-core-{version}.tgz` artifacts for rollback capability.
@@ -130,10 +129,7 @@ To remove FlowGuard from an environment:
 
 ```bash
 # Remove OpenCode integration
-flowguard uninstall
-
-# Remove CLI
-npm uninstall -g @flowguard/core
+npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 ```
 
 The uninstall command removes all FlowGuard-owned files from `~/.config/opencode/` (or `./.opencode/` for repo scope) and cleans up the `opencode.json` instruction entries. `flowguard-mandates.md` is also removed. Your `AGENTS.md` is never touched.
@@ -146,8 +142,7 @@ FlowGuard is designed for air-gapped deployment:
 
 1. Download `flowguard-core-{version}.tgz` on a connected machine
 2. Transfer to air-gapped environment (USB, internal artifact store)
-3. Install via `npm install -g ./flowguard-core-{version}.tgz`
-4. Initialize with `flowguard install --core-tarball ./flowguard-core-{version}.tgz`
+3. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
 
 No network access required during installation or runtime.
 

@@ -21,28 +21,23 @@ Verify the checksum:
 sha256sum flowguard-core-{version}.tgz
 ```
 
-### 2. Install the CLI
+### 2. Initialize OpenCode Integration (Standard)
+
+The approved local tarball is the authoritative package source. npm/npx may use an internal cache, but no global installation is required.
 
 ```bash
-npm install -g ./flowguard-core-{version}.tgz
-
-# Verify installation
-flowguard --version
-```
-
-### 3. Initialize OpenCode Integration
-
-```bash
-flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz
 cd ~/.config/opencode && npm install
+
+# Verify
+npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
-**Note:** The `--core-tarball` path must point to the downloaded release artifact. This is required for the installer to set up local vendored dependencies.
-
-### 4. Verify Installation
+### 3. Verify Installation
 
 ```bash
-flowguard doctor
+npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
 Expected output:
@@ -59,6 +54,26 @@ Expected output:
   [ok] config.json — no config file — using defaults
 
   N/N checks passed
+```
+
+## Project-Bound Installation (Recommended for Teams)
+
+For teams that want FlowGuard integrated into their project workflow:
+
+```json
+{
+  "scripts": {
+    "flowguard:install": "npx --package ./vendor/flowguard-core-1.1.0.tgz flowguard install --core-tarball ./vendor/flowguard-core-1.1.0.tgz",
+    "flowguard:doctor": "npx --package ./vendor/flowguard-core-1.1.0.tgz flowguard doctor"
+  }
+}
+```
+
+Then run:
+
+```bash
+npm run flowguard:install
+npm run flowguard:doctor
 ```
 
 ## Installation Options
@@ -111,7 +126,7 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 ## Uninstall
 
 ```bash
-flowguard uninstall
+npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 ```
 
 ## Local Development
@@ -142,7 +157,7 @@ npm run check
 
 ```
 ERROR: --core-tarball is required.
-Usage: flowguard install --core-tarball /path/to/flowguard-core-1.1.0.tgz
+Usage: npx --package ./flowguard-core-1.1.0.tgz flowguard install --core-tarball ./flowguard-core-1.1.0.tgz
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 
@@ -152,7 +167,7 @@ Ensure you have downloaded `flowguard-core-{version}.tgz` from the releases page
 
 ```bash
 # Reinstall tools (requires --core-tarball again)
-flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz --force
+npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz --force
 
 # Check OpenCode config
 opencode doctor
