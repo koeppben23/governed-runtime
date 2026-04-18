@@ -87,7 +87,7 @@ jobs:
           mkdir -p release
           npm pack --pack-destination release/
 
-- name: Validate asset naming
+      - name: Validate asset naming
         run: |
           PKG_VERSION="$(node -p 'require("./package.json").version')"
           EXPECTED_FILENAME="flowguard-core-${PKG_VERSION}.tgz"
