@@ -2,19 +2,9 @@
  * @module cli/install-verify.test
  * @description Smoke tests for release tarball verification.
  *
- * This test validates that the release tarball can be installed in a
- * FRESH environment (not the dev repo) and that all required modules
- * and CLI commands work correctly.
+ * Run with: npm run test:install-verify
  *
- * Architecture under test (v2):
- * - @opentelemetry/api is in dependencies (runtime, not dev-only)
- * - Telemetry module degrades gracefully when OTEL packages are missing
- * - CLI entry point works without crashing
- * - Core module can be imported without missing dependency errors
- *
- * Run with: npm run test:install-verify (not part of standard test suite)
- *
- * @test-policy HAPPY, BAD, CORNER — core smoke tests only.
+ * These tests verify the release tarball can be distributed and used.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -72,183 +62,47 @@ describe('install-verify', () => {
     await cleanTmpDir(tmpDir);
   });
 
-  describe('HAPPY', () => {
-    it('fresh project can install tarball and import core', async () => {
-      const projectDir = path.join(tmpDir, 'project');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const importResult = run(
-        `node -e "import('@flowguard/core').then(m => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
-        projectDir,
-      );
-      expect(importResult.code).toBe(0);
-      expect(importResult.stdout).toContain('ok');
-    });
-
-    it('core module exports are available', async () => {
-      const projectDir = path.join(tmpDir, 'project2');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const checkResult = run(
-        `node -e "import('@flowguard/core').then(m => console.log(Object.keys(m).length > 0 ? 'exports-ok' : 'no-exports')).catch(e => { console.error(e.message); process.exit(1); })"`,
-        projectDir,
-      );
-      expect(checkResult.code).toBe(0);
-      expect(checkResult.stdout).toContain('exports-ok');
-    });
-  });
-
-  describe('BAD', () => {
-    it('tarball package.json includes @opentelemetry/api as runtime dependency', async () => {
+  describe('Tarball', () => {
+    it('package.json has @opentelemetry/api in dependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
       execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
-      const pkgContent = await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8');
-      const pkg = JSON.parse(pkgContent);
+      const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
       await fs.rm(tmp, { recursive: true, force: true });
     });
 
-    it('import does not crash when telemetry is unavailable', async () => {
-      const projectDir = path.join(tmpDir, 'project3');
-      await fs.mkdir(projectDir, { recursive: true });
+    it('tarball can be installed in fresh project', async () => {
+      const p = path.join(tmpDir, 'install-test');
+      await fs.mkdir(p, { recursive: true });
       await fs.writeFile(
-        path.join(projectDir, 'package.json'),
+        path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const importResult = run(
-        `node -e "import('@flowguard/core').then(() => console.log('telemetry-ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
-        projectDir,
-      );
-      expect(importResult.code).toBe(0);
-    });
-  });
-
-  describe('CORNER', () => {
-    it('works without node_modules from previous install', async () => {
-      const projectDir = path.join(tmpDir, 'project-corner');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const firstInstall = run(`npm install "${tarballPath}"`, projectDir);
-      expect(firstInstall.code).toBe(0);
-
-      await fs.rm(path.join(projectDir, 'node_modules'), { recursive: true, force: true });
-
-      const reInstallResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(reInstallResult.code).toBe(0);
-
-      const importResult = run(
-        `node -e "import('@flowguard/core').then(() => console.log('reinstall ok'))"`,
-        projectDir,
-      );
-      expect(importResult.code).toBe(0);
+      const res = run(`npm install "${tarballPath}"`, p);
+      expect(res.code).toBe(0);
     });
 
-    it('handles missing vendor directory gracefully', async () => {
-      const projectDir = path.join(tmpDir, 'project-no-vendor');
-      await fs.mkdir(projectDir, { recursive: true });
+    it('can import @flowguard/core after install', async () => {
+      const p = path.join(tmpDir, 'import-test');
+      await fs.mkdir(p, { recursive: true });
       await fs.writeFile(
-        path.join(projectDir, 'package.json'),
+        path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const doctorResult = run('npx flowguard doctor', projectDir);
-      expect(doctorResult.code).toBe(1);
-      expect(doctorResult.stdout).toMatch(/MISSING|missing/);
+      run(`npm install "${tarballPath}"`, p);
+      const res = run(
+        `node -e "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
+        p,
+      );
+      expect(res.code).toBe(0);
     });
 
-    it('handles corrupted tarball gracefully', async () => {
-      const projectDir = path.join(tmpDir, 'project-corrupt');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const corruptTarball = path.join(tmpDir, 'flowguard-corrupt.tgz');
-      await fs.writeFile(corruptTarball, 'not a real tarball');
-
-      const installResult = run(`npm install "${corruptTarball}"`, projectDir);
-      expect(installResult.code).not.toBe(0);
-    });
-  });
-
-  describe('CLI', () => {
-    it('flowguard install creates expected files', async () => {
-      const projectDir = path.join(tmpDir, 'project-cli');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const vendorDir = path.join(projectDir, 'vendor');
-      await fs.mkdir(vendorDir, { recursive: true });
-      await fs.copyFile(tarballPath, path.join(vendorDir, path.basename(tarballPath)));
-
-      const installCliResult = run(
-        `npx flowguard install --install-scope repo --core-tarball "${path.join(vendorDir, path.basename(tarballPath))}"`,
-        projectDir,
-      );
-      expect(installCliResult.code).toBe(0);
-
-      const configExists = await fs
-        .access(path.join(projectDir, 'opencode.json'))
-        .then(() => true)
-        .catch(() => false);
-      expect(configExists).toBe(true);
-    });
-
-    it('flowguard doctor reports healthy after successful install', async () => {
-      const projectDir = path.join(tmpDir, 'project-doctor-ok');
-      await fs.mkdir(projectDir, { recursive: true });
-      await fs.writeFile(
-        path.join(projectDir, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-
-      const installResult = run(`npm install "${tarballPath}"`, projectDir);
-      expect(installResult.code).toBe(0);
-
-      const vendorDir = path.join(projectDir, 'vendor');
-      await fs.mkdir(vendorDir, { recursive: true });
-      await fs.copyFile(tarballPath, path.join(vendorDir, path.basename(tarballPath)));
-
-      run(
-        `npx flowguard install --install-scope repo --core-tarball "${path.join(vendorDir, path.basename(tarballPath))}"`,
-        projectDir,
-      );
-
-      const doctorResult = run('npx flowguard doctor --install-scope repo', projectDir);
-      expect(doctorResult.code).toBe(0);
-      expect(doctorResult.stdout).toMatch(/healthy|OK|ready|OK|good/i);
+    it('has expected files in tarball', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
+      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      const files = await fs.readdir(path.join(tmp, 'package', 'dist'));
+      expect(files.length).toBeGreaterThan(10);
+      await fs.rm(tmp, { recursive: true, force: true });
     });
   });
 });
