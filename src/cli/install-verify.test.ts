@@ -52,6 +52,21 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
   }
 }
 
+function assertSuccess(
+  result: { stdout: string; stderr: string; code: number },
+  command: string,
+): void {
+  if (result.code === 0) {
+    return;
+  }
+
+  const stdout = result.stdout.slice(0, 4000);
+  const stderr = result.stderr.slice(0, 4000);
+  throw new Error(
+    `Command failed: ${command}\nExit code: ${result.code}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+  );
+}
+
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
@@ -88,8 +103,9 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const res = run(`npm install "${tarballPath}"`, p);
-      expect(res.code).toBe(0);
+      const command = `npm install --no-audit --no-fund "${tarballPath}"`;
+      const res = run(command, p);
+      assertSuccess(res, command);
     });
 
     it('can import @flowguard/core after install', async () => {
@@ -99,8 +115,9 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const install = run(`npm install "${tarballPath}"`, p);
-      expect(install.code).toBe(0);
+      const installCommand = `npm install --no-audit --no-fund "${tarballPath}"`;
+      const install = run(installCommand, p);
+      assertSuccess(install, installCommand);
       const res = run(
         `node -e "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
         p,
