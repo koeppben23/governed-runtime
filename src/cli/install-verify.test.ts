@@ -20,7 +20,7 @@ const VERSION = (await fs.readFile(path.join(REPO_ROOT, 'VERSION'), 'utf-8')).tr
 let tmpDir: string;
 let tarballPath: string;
 
-const EXTERNAL_TARBALL = process.env.FLOWGUARD_TARBALL;
+const providedTarball = process.env.FLOWGUARD_TARBALL;
 
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-smoke-'));
@@ -55,9 +55,9 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
-    if (EXTERNAL_TARBALL) {
+    if (providedTarball) {
       // Use existing tarball (for Release workflow smoke test)
-      tarballPath = path.resolve(EXTERNAL_TARBALL);
+      tarballPath = path.resolve(providedTarball);
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
