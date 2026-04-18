@@ -12,9 +12,9 @@ FlowGuard is distributed as a pre-built proprietary release artifact via GitHub 
 Release publication is tag-driven (`v*`): if no release tag has been published yet, the Releases page can be empty for that snapshot.
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
-2. Install: `npm install -g ./flowguard-core-{version}.tgz`
-3. Initialize: `flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz`
-4. Install dependencies: `cd ~/.config/opencode && npm install`
+2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
+3. Install dependencies: `cd ~/.config/opencode && npm install`
+4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 

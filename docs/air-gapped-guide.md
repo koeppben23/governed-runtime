@@ -76,26 +76,18 @@ sha256sum -c checksums.sha256
 
 ---
 
-## Step 5: Install the CLI (Air-Gapped Machine)
+## Step 5: Initialize OpenCode Integration (Air-Gapped Machine)
 
-```bash
-npm install -g ./flowguard-core-{version}.tgz
-
-# Verify the CLI is available
-flowguard --version
-```
-
----
-
-## Step 6: Initialize OpenCode Integration
+The approved local tarball is the authoritative package source. No global installation is required.
 
 ```bash
 # Install FlowGuard tools into your OpenCode environment
 # Use the local path to the transferred tarball
-flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz
 
 # Verify the installation
-flowguard doctor
+npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
 **Important:** The `--core-tarball` argument is required and must point to the locally available release artifact.
@@ -122,20 +114,21 @@ To install FlowGuard into a specific repository instead of globally:
 
 ```bash
 cd /path/to/your/repo
-flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz --install-scope repo --policy-mode regulated
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz --install-scope repo --policy-mode regulated
 ```
 
 This writes FlowGuard artifacts to `.opencode/` within the repository.
 
 ---
 
-## Step 7: Verify No Network Dependencies
+## Step 6: Verify No Network Dependencies
 
 FlowGuard itself makes no outbound network calls. All data stays on the local filesystem. The installer uses only locally provided artifacts.
 
 ```bash
-# Verify the CLI has no network dependencies
-flowguard doctor
+# Verify no network dependencies
+npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
 All checks should pass without network access.
@@ -145,9 +138,9 @@ All checks should pass without network access.
 ## Upgrading in Air-Gapped Environments
 
 1. Download the new release tarball and checksums on the internet-connected machine.
-2. Transfer, verify, and install following Steps 2-6 above.
-3. Re-run `flowguard install --core-tarball /path/to/new/flowguard-core-{version}.tgz --force` to update all managed artifacts.
-4. Re-run `flowguard doctor` to verify the upgrade.
+2. Transfer, verify, and install following Steps 2-5 above.
+3. Re-run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz --force` to update all managed artifacts.
+4. Re-run `npx --package ./flowguard-core-{version}.tgz flowguard doctor` to verify the upgrade.
 
 The `--force` flag ensures all thin wrappers and managed artifacts are overwritten with the new version.
 
@@ -159,7 +152,7 @@ The `--force` flag ensures all thin wrappers and managed artifacts are overwritt
 
 ```
 ERROR: --core-tarball is required.
-Usage: flowguard install --core-tarball /path/to/flowguard-core-1.1.0.tgz
+Usage: npx --package ./flowguard-core-1.1.0.tgz flowguard install --core-tarball ./flowguard-core-1.1.0.tgz
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 
@@ -167,11 +160,11 @@ Ensure you have downloaded `flowguard-core-{version}.tgz` and provide the correc
 
 ### `flowguard doctor` reports `MISSING` files
 
-Run `flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz` (or with `--force` if upgrading). Doctor only checks — it does not create files.
+Run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz` (or with `--force` if upgrading). Doctor only checks — it does not create files.
 
 ### `flowguard doctor` reports `VERSION` mismatch
 
-The installed `flowguard-mandates.md` was written by a different FlowGuard version. Run `flowguard install --core-tarball /path/to/flowguard-core-{version}.tgz` to update it.
+The installed `flowguard-mandates.md` was written by a different FlowGuard version. Run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz` to update it.
 
 ### Permission errors on `~/.config/opencode/`
 

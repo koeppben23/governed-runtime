@@ -434,7 +434,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     if (!args.coreTarball) {
       errors.push(
         `ERROR: --core-tarball is required.\n` +
-          `Usage: flowguard install --core-tarball /path/to/flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
+          `Usage: npx --package ./flowguard-core-${PACKAGE_VERSION()}.tgz flowguard install --core-tarball ./flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
           `Download from: https://github.com/koeppben23/governed-runtime/releases`,
       );
       return { target, ops, errors, warnings };
@@ -1056,10 +1056,10 @@ Deprecated (still work):
   --mode X    → --policy-mode X
 
 Examples:
-  flowguard install --core-tarball /path/to/flowguard-core-${v}.tgz
-  flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
-  flowguard uninstall --install-scope global
-  flowguard doctor
+  npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz
+  npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
+  npx --package ./flowguard-core-${v}.tgz flowguard doctor
+  npx --package ./flowguard-core-${v}.tgz flowguard uninstall
 `;
 }
 
