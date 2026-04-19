@@ -132,7 +132,6 @@ export const plan: ToolDefinition = {
         const evalFn = (s: SessionState) => evaluate(s, policy);
         const {
           state: finalState,
-          evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
         await writeStateWithArtifacts(sessDir, finalState);

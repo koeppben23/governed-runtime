@@ -23,11 +23,8 @@ import type {
   CollectorStatus,
   DiscoveryResult,
   DiscoverySummary,
-  RepoMetadata,
   StackInfo,
   TopologyInfo,
-  SurfacesInfo,
-  DomainSignals,
   ValidationHints,
 } from './types';
 import { DISCOVERY_SCHEMA_VERSION } from './types';

@@ -791,6 +791,11 @@ Use the smallest process that is safe for the class. If uncertain, classify one 
 - Do not weaken fail-closed behavior.
 - Do not claim verification that was not run.
 
+Examples:
+- Do not recover invalid policy by falling back to team mode.
+- Do not treat derived artifacts as SSOT.
+- Do not claim install verification without testing the generated tarball.
+
 ## Before Acting Rule
 
 Do not start editing immediately. First classify the task, identify authority and SSOT,
@@ -805,6 +810,10 @@ Use explicit markers:
 - \`BLOCKED\`: safe continuation is not possible with current evidence.
 
 Never present assumptions as runtime truth. Never claim tests passed unless they were run.
+
+After marking ASSUMPTION, either: (a) verify it before proceeding if verification is cheap,
+or (b) complete the task with the ASSUMPTION clearly marked in output and flag it
+in the Risks section. Never silently resolve an ASSUMPTION into a runtime claim.
 
 ## 6. Tool and Verification Policy
 

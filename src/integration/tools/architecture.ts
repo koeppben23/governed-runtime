@@ -45,7 +45,7 @@ import { executeArchitecture } from '../../rails/architecture';
 import { autoAdvance } from '../../rails/types';
 
 // Evidence types
-import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../../state/evidence';
+import type { LoopVerdict, RevisionDelta } from '../../state/evidence';
 import { validateAdrSections } from '../../state/evidence';
 
 // ═══════════════════════════════════════════════════════════════════════════════

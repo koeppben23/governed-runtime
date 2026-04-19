@@ -19,7 +19,6 @@ import { z } from 'zod';
 import type { SessionState } from '../../state/schema';
 import type { EvalResult } from '../../machine/evaluate';
 import { resolveNextAction } from '../../machine/next-action';
-import type { NextAction } from '../../machine/next-action';
 
 // Rail helpers
 import type { RailResult, RailContext } from '../../rails/types';

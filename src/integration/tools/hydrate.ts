@@ -22,9 +22,6 @@ import {
   appendNextAction,
 } from './helpers';
 
-// State
-import type { SessionState } from '../../state/schema';
-
 // Rails
 import { executeHydrate } from '../../rails/hydrate';
 

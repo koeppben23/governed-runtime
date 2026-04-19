@@ -115,7 +115,7 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
  * Policy-aware: reads session state to resolve audit emission controls and
  * actor classification per tool invocation.
  */
-export const FlowGuardAuditPlugin: Plugin = async ({ project, client, $, directory, worktree }) => {
+export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
   // Capture worktree from plugin context (project-level, stable)
   const auditWorktree = worktree || directory;
 
