@@ -95,11 +95,13 @@ ls ~/.config/opencode/workspaces/*/sessions/
 
 ### Command Errors
 
-| Code                  | Description                          | Solution                   |
-| --------------------- | ------------------------------------ | -------------------------- |
-| `COMMAND_NOT_ALLOWED` | Command not allowed in current phase | Check command requirements |
-| `INVALID_INPUT`       | Input validation failed              | Check arguments            |
-| `POLICY_VIOLATION`    | Action violates policy               | Review policy settings     |
+| Code                         | Description                                                                              | Solution                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `COMMAND_NOT_ALLOWED`        | Command not allowed in current phase                                                     | Check command requirements                                              |
+| `INVALID_INPUT`              | Input validation failed                                                                  | Check arguments                                                         |
+| `POLICY_VIOLATION`           | Action violates policy                                                                   | Review policy settings                                                  |
+| `EVIDENCE_ARTIFACT_MISSING`  | Required derived ticket/plan artifact missing                                            | Restore session directory from trusted archive/backup before continuing |
+| `EVIDENCE_ARTIFACT_MISMATCH` | Derived artifact metadata/content hash is inconsistent with current ticket/plan evidence | Restore artifacts from trusted archive or regenerate from trusted state |
 
 ### Archive Errors
 

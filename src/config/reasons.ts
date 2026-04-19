@@ -344,6 +344,34 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/hydrate',
   },
   {
+    code: 'EVIDENCE_ARTIFACT_MISSING',
+    category: 'precondition',
+    messageTemplate:
+      'Derived evidence artifacts are missing for the current session state: {message}',
+    recoverySteps: [
+      'Restore the session artifacts from a trusted archive or recover the full session directory backup',
+      'Do not continue governance commands until artifact integrity is restored',
+    ],
+  },
+  {
+    code: 'EVIDENCE_ARTIFACT_MISMATCH',
+    category: 'state',
+    messageTemplate: 'Derived evidence artifacts do not match session-state.json: {message}',
+    recoverySteps: [
+      'Do not proceed with governance commands while artifacts are inconsistent',
+      'Restore session artifacts from a trusted archive or regenerate from trusted state',
+    ],
+  },
+  {
+    code: 'EVIDENCE_ARTIFACT_IMMUTABLE',
+    category: 'state',
+    messageTemplate: 'Evidence artifacts are append-only and cannot be overwritten: {message}',
+    recoverySteps: [
+      'Create a new artifact version instead of modifying an existing artifact file',
+      'Restore immutable artifact files from a trusted archive if they were modified',
+    ],
+  },
+  {
     code: 'NO_SELF_REVIEW',
     category: 'precondition',
     messageTemplate: 'No self-review loop is active. Submit a plan first.',

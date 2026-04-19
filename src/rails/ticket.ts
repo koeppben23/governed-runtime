@@ -20,7 +20,7 @@ import type { TicketEvidence } from '../state/evidence';
 import { Command, isCommandAllowed } from '../machine/commands';
 import { evaluate } from '../machine/evaluate';
 import type { RailResult, RailContext, TransitionRecord } from './types';
-import { autoAdvance, applyTransition } from './types';
+import { autoAdvance } from './types';
 import { blocked } from '../config/reasons';
 
 // ─── Input ────────────────────────────────────────────────────────────────────

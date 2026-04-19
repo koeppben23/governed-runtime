@@ -23,6 +23,7 @@ const version = readFileSync(versionFile, 'utf-8').trim();
 const filesToUpdate = [
   'README.md',
   'PRODUCT_IDENTITY.md',
+  'CHANGELOG.md',
   'docs/installation.md',
   'docs/air-gapped-guide.md',
   'docs/delivery-scope.md',
@@ -32,11 +33,22 @@ const filesToUpdate = [
   'docs/support-model.md',
   'docs/data-classification.md',
   'docs/bsi-c5-mapping.md',
+  'docs/marisk-mapping.md',
+  'docs/ba-it-mapping.md',
+  'docs/dora-mapping.md',
+  'docs/gobd-mapping.md',
   'docs/retention-recovery.md',
   'docs/trust-boundaries.md',
   'docs/security-hardening.md',
   'docs/deployment-model.md',
   'docs/distribution-model.md',
+  'docs/phases.md',
+  'docs/profiles.md',
+  'docs/commands.md',
+  'docs/quick-start.md',
+  'docs/configuration.md',
+  'docs/policies.md',
+  'docs/index.md',
 ];
 
 function replaceVersion(content) {
@@ -49,6 +61,7 @@ function replaceVersion(content) {
     /\*\*Version:\*\* [\d.]+(\s*\|\s*TypeScript)/g,
     `**Version:** ${version}$1`,
   );
+  content = content.replace(/^\*Version: [\d.]+\*$/gm, `**Version:** ${version}`);
   content = content.replace(
     new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,

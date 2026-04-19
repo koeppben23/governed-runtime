@@ -144,9 +144,32 @@ describe('e2e-workflow', () => {
       // 2. Ticket
       await callOk(ticket, { text: 'Fix the auth bug', source: 'user' });
       expect(await getPhase()).toBe('TICKET');
+      const sessDirAfterTicket = await getSessDir();
+      await expect(
+        fs.access(`${sessDirAfterTicket}/artifacts/ticket.v1.md`),
+      ).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDirAfterTicket}/artifacts/ticket.v1.json`),
+      ).resolves.toBeUndefined();
 
       // 3. Plan (Mode A: submit)
       await callOk(plan, { planText: '## Plan\n1. Fix auth\n2. Add tests' });
+      const sessDirAfterPlan = await getSessDir();
+      await expect(fs.access(`${sessDirAfterPlan}/artifacts/plan.v1.md`)).resolves.toBeUndefined();
+      await expect(
+        fs.access(`${sessDirAfterPlan}/artifacts/plan.v1.json`),
+      ).resolves.toBeUndefined();
+      const planMetaRaw = await fs.readFile(`${sessDirAfterPlan}/artifacts/plan.v1.json`, 'utf-8');
+      const planMeta = JSON.parse(planMetaRaw) as {
+        sessionId: string;
+        sourceStateHash: string;
+        contentHash: string;
+      };
+      expect(planMeta.sessionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+      expect(planMeta.sourceStateHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(planMeta.contentHash).toMatch(/^[0-9a-f]{64}$/);
 
       // 4. Plan (Mode B: approve self-review)
       // Solo: maxSelfReviewIterations=1, so first approve should converge

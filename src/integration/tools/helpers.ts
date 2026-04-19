@@ -19,13 +19,16 @@ import { z } from 'zod';
 import type { SessionState } from '../../state/schema';
 import type { EvalResult } from '../../machine/evaluate';
 import { resolveNextAction } from '../../machine/next-action';
-import type { NextAction } from '../../machine/next-action';
 
 // Rail helpers
 import type { RailResult, RailContext } from '../../rails/types';
 
 // Adapters
 import { readState, writeState } from '../../adapters/persistence';
+import {
+  materializeEvidenceArtifacts,
+  verifyEvidenceArtifacts,
+} from '../artifacts/evidence-artifacts';
 
 // Workspace
 import {
@@ -199,6 +202,39 @@ export async function requireState(sessDir: string): Promise<SessionState> {
 }
 
 /**
+ * Read state and enforce derived evidence integrity for mutating governance paths.
+ * Use this for commands that can advance workflow state.
+ */
+export async function requireStateForMutation(sessDir: string): Promise<SessionState> {
+  const state = await requireState(sessDir);
+  await verifyEvidenceArtifacts(sessDir, state);
+  return state;
+}
+
+/**
+ * Persist state and materialize derived evidence artifacts.
+ *
+ * Failure semantics:
+ * - If state write fails: no change persisted.
+ * - If artifact materialization fails after state write: best-effort rollback to previous state.
+ */
+export async function writeStateWithArtifacts(
+  sessDir: string,
+  nextState: SessionState,
+): Promise<void> {
+  const previous = await readState(sessDir);
+  await writeState(sessDir, nextState);
+  try {
+    await materializeEvidenceArtifacts(sessDir, nextState);
+  } catch (err) {
+    if (previous) {
+      await writeState(sessDir, previous);
+    }
+    throw err;
+  }
+}
+
+/**
  * Resolve policy from session state (existing session)
  * or default to SOLO_POLICY (no session yet).
  */
@@ -223,7 +259,7 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  */
 export async function persistAndFormat(sessDir: string, result: RailResult): Promise<string> {
   if (result.kind === 'ok') {
-    await writeState(sessDir, result.state);
+    await writeStateWithArtifacts(sessDir, result.state);
   }
   return formatRailResult(result);
 }

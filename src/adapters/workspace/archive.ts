@@ -32,6 +32,7 @@ import {
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types';
 import { workspacesHome, sessionDir, workspaceDir } from './init';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry';
+import { verifyEvidenceArtifacts } from '../../integration/artifacts/evidence-artifacts';
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -86,6 +87,12 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
 
   // ── Soft-check: warn if discovery snapshots are missing ────────
   const state = await readState(sessDir).catch(() => null);
+
+  // Fail-closed: if ticket/plan evidence exists in state, derived artifacts must be present.
+  if (state) {
+    await verifyEvidenceArtifacts(sessDir, state);
+  }
+
   if (state?.discoveryDigest) {
     const snapshotPath = path.join(sessDir, 'discovery-snapshot.json');
     try {

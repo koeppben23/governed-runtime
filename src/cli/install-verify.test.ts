@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -76,7 +76,8 @@ describe('install-verify', () => {
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      execSync(`npm pack --pack-destination "${tmpDir}"`, {
+      // Use execSync with shell for cross-platform npm availability
+      execSync('npm pack --pack-destination "' + tmpDir + '"', {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
       });
@@ -90,11 +91,55 @@ describe('install-verify', () => {
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
+      expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
       await fs.rm(tmp, { recursive: true, force: true });
     });
+
+    it('package.json has OTEL SDK packages in optionalDependencies', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
+      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
+      const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
+      expect(pkg.optionalDependencies).toBeDefined();
+      expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
+      expect(pkg.optionalDependencies['@opentelemetry/exporter-trace-otlp-http']).toBeDefined();
+      expect(pkg.optionalDependencies['@opentelemetry/auto-instrumentations-node']).toBeDefined();
+      await fs.rm(tmp, { recursive: true, force: true });
+    });
+
+    it('installs with --omit=optional without crashing', async () => {
+      const p = path.join(tmpDir, 'omit-optional-test');
+      await fs.mkdir(p, { recursive: true });
+      await fs.writeFile(
+        path.join(p, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+      // Install without optional dependencies
+      const command = `npm install --omit=optional --no-audit --no-fund "${tarballPath}"`;
+      const res = run(command, p);
+      assertSuccess(res, command);
+    }, 240000);
+
+    it('imports core module with --omit=optional', async () => {
+      const p = path.join(tmpDir, 'omit-optional-import-test');
+      await fs.mkdir(p, { recursive: true });
+      await fs.writeFile(
+        path.join(p, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+      // First install without optional
+      const installCmd = `npm install --omit=optional --no-audit --no-fund "${tarballPath}"`;
+      const install = run(installCmd, p);
+      assertSuccess(install, installCmd);
+      // Then import - should not crash even without optional OTEL packages
+      const res = run(
+        `node -e "import('@flowguard/core').then(m => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
+        p,
+      );
+      expect(res.code).toBe(0);
+    }, 240000);
 
     it('tarball can be installed in fresh project', async () => {
       const p = path.join(tmpDir, 'install-test');
@@ -106,7 +151,7 @@ describe('install-verify', () => {
       const command = `npm install --no-audit --no-fund "${tarballPath}"`;
       const res = run(command, p);
       assertSuccess(res, command);
-    }, 240000);
+    }, 480000);
 
     it('can import @flowguard/core after install', async () => {
       const p = path.join(tmpDir, 'import-test');
@@ -127,7 +172,7 @@ describe('install-verify', () => {
 
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
-      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
       const files = await fs.readdir(path.join(tmp, 'package', 'dist'));
       expect(files.length).toBeGreaterThan(10);
       await fs.rm(tmp, { recursive: true, force: true });

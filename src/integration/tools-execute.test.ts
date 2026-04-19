@@ -673,6 +673,22 @@ describe('decision', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
     });
+
+    it('fail-closes when derived plan artifacts are missing', async () => {
+      await reachPlanReview();
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EVIDENCE_ARTIFACT_MISSING');
+    });
   });
 
   describe('CORNER', () => {
@@ -986,6 +1002,39 @@ describe('archive', () => {
       // Verify tar.gz file exists on disk
       await expect(fs.access(result.archivePath as string)).resolves.toBeUndefined();
     });
+
+    it.skipIf(!tarOk)(
+      'archive manifest includes derived ticket/plan artifacts with digests',
+      async () => {
+        await hydrateSession();
+        await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
+
+        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+          '../adapters/workspace'
+        );
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+        const raw = await archive.execute({}, ctx);
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+
+        const manifestRaw = await fs.readFile(`${sessDir}/archive-manifest.json`, 'utf-8');
+        const manifest = JSON.parse(manifestRaw) as {
+          includedFiles: string[];
+          fileDigests: Record<string, string>;
+        };
+        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.json');
+        expect(manifest.includedFiles).toContain('artifacts/plan.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/plan.v1.json');
+        expect(manifest.fileDigests['artifacts/ticket.v1.json']).toBeTruthy();
+        expect(manifest.fileDigests['artifacts/plan.v1.json']).toBeTruthy();
+      },
+    );
   });
 
   describe('BAD', () => {
@@ -1002,6 +1051,31 @@ describe('archive', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+    });
+
+    it('fail-closes archive when state references plan but derived artifacts are missing', async () => {
+      await hydrateSession();
+      await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+      await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
+
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect([
+        'ARCHIVE_FAILED',
+        'EVIDENCE_ARTIFACT_MISSING',
+        'EVIDENCE_ARTIFACT_MISMATCH',
+      ]).toContain(result.code);
     });
   });
 

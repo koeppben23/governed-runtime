@@ -385,6 +385,29 @@ describe('DEV_REPO_INVARIANTS', () => {
       const gitignore = readFileSync(gitignorePath, 'utf-8');
       expect(gitignore).toContain('.opencode/');
     });
+
+    it('AGENTS.md has no dead links to docs/agent-guidance/', async () => {
+      const content = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Should not reference docs/agent-guidance/ (these files don't exist)
+      expect(content).not.toContain('docs/agent-guidance/');
+    });
+
+    it('AGENTS.md contains v3 core sections matching FLOWGUARD_MANDATES_BODY', async () => {
+      const agentsContent = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Core sections must match between root AGENTS.md and FLOWGUARD_MANDATES_BODY
+      expect(agentsContent).toContain('## 1. Mission');
+      expect(agentsContent).toContain('## 2. Priority Ladder');
+      expect(agentsContent).toContain('## 3. Task Class Router');
+      expect(agentsContent).toContain('## Red Lines');
+      expect(agentsContent).toContain('## 8. Output Contract');
+      expect(agentsContent).toContain('## 12. Extended Guidance');
+    });
+
+    it('AGENTS.md is self-contained (no dead links)', async () => {
+      const content = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Must be self-contained: generic docs/ reference is OK, but no specific file references
+      expect(content).toContain('This document is self-contained');
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -555,9 +578,10 @@ describe('cli/templates', () => {
 
     it('buildMandatesContent includes version and digest in header', () => {
       const content = buildMandatesContent('2.0.0', 'abcd1234'.repeat(8));
+
       expect(content).toContain('@flowguard/core v2.0.0');
       expect(content).toContain('content-digest: sha256:');
-      expect(content).toContain('# FlowGuard Mandates');
+      expect(content).toContain('# FlowGuard Agent Rules');
     });
 
     it('isManagedArtifact returns true for valid managed content', () => {
@@ -613,36 +637,85 @@ describe('cli/templates', () => {
   });
 
   describe('EDGE', () => {
-    it('buildMandatesContent body starts with # FlowGuard Mandates', () => {
+    it('buildMandatesContent body starts with # FlowGuard Agent Rules', () => {
       const content = buildMandatesContent('1.0.0', 'a'.repeat(64));
-      // After the two header lines and a blank line, body starts
       const lines = content.split('\n');
-      // Line 0: <!-- @flowguard/core ... -->
-      // Line 1: <!-- content-digest: sha256:... -->
-      // Line 2: (blank)
-      // Line 3: # FlowGuard Mandates
-      expect(lines[3]).toBe('# FlowGuard Mandates');
+
+      // Line 3: # FlowGuard Agent Rules
+      expect(lines[3]).toBe('# FlowGuard Agent Rules');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains Hard Rules section with all 5 operative parts', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 0. Hard Rules');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Top Priorities');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Stop Conditions');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Evidence Requirements');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Approval Blockers');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Ambiguity Protocol');
+    it('FLOWGUARD_MANDATES_BODY contains v3 structure with all core sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Language Conventions');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 4. Hard Invariants');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 5. Evidence Rules');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 6. Tool and Verification Policy');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 7. Ambiguity Policy');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 9. Implementation Checklist');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 10. Review Checklist');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 11. High-Risk Extension');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
     });
 
-    it('Hard Rules section appears before Developer Mandate', () => {
-      const hardRulesIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 0. Hard Rules');
-      const devMandateIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 1. Developer Mandate');
-      expect(hardRulesIdx).toBeGreaterThan(-1);
-      expect(devMandateIdx).toBeGreaterThan(-1);
-      expect(hardRulesIdx).toBeLessThan(devMandateIdx);
+    it('v3 sections are followed by end marker (no legacy sections)', () => {
+      const v3EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 12. Extended Guidance');
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
+
+      expect(v3EndIdx).toBeGreaterThan(-1);
+      expect(endMarkerIdx).toBeGreaterThan(v3EndIdx);
     });
 
     it('FLOWGUARD_MANDATES_BODY does not reference AGENTS.md', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('AGENTS.md');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY contains v3 output contract with task-class scaling', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Use one output contract, scaled by task class:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('TRIVIAL:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('STANDARD:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('HIGH-RISK:');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY is self-contained (no dead links)', () => {
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/agent-guidance/');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v3 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY contains all v3 core sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY contains no legacy mandate sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 1. Developer Mandate');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 2. Review Mandate');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 3. Output Quality Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 4. Risk Tiering');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 5. Cross-Cutting Principles');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Developer Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Review Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Quality Index');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Canonical Tiers');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Cross-Cutting');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY ends cleanly after v3 rules', () => {
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
+      const afterEnd = FLOWGUARD_MANDATES_BODY.substring(endMarkerIdx + 30);
+
+      expect(afterEnd.trim()).toBe('');
     });
   });
 
@@ -834,16 +907,18 @@ describe('cli/install', () => {
 
     it('flowguard-mandates.md is ALWAYS replaced even without --force', async () => {
       const tarball = await createMockTarball();
-      await install(repoArgs({ coreTarball: tarball }));
-      const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
-      // Tamper with the file
-      await fs.writeFile(mandatesPath, '# Tampered', 'utf-8');
+      const mandatesPath = path.join(tmpDir, '.opencode', 'flowguard-mandates.md');
 
-      // Re-install without --force
+      // Pre-write old content
+      await fs.mkdir(path.dirname(mandatesPath), { recursive: true });
+      await fs.writeFile(mandatesPath, 'old content', 'utf-8');
+
+      // Install (creates fresh mandates)
       await install(repoArgs({ coreTarball: tarball }));
+
+      // Verify replaced
       const content = await fs.readFile(mandatesPath, 'utf-8');
-      expect(isManagedArtifact(content)).toBe(true);
-      expect(content).toContain('# FlowGuard Mandates');
+      expect(content).toContain('# FlowGuard Agent Rules');
     });
 
     it('--force overwrites existing tool wrapper', async () => {

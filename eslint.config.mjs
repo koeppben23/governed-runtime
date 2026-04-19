@@ -12,7 +12,14 @@ export default tseslint.config(
     rules: {
       "no-undef": "off",
       "no-unused-vars": "off",
-      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   {
@@ -30,6 +37,10 @@ export default tseslint.config(
       "src/config/**/*.ts",
       "src/redaction/**/*.ts",
       "src/adapters/workspace/**/*.ts",
+      "src/rails/**/*.ts",
+      "src/machine/**/*.ts",
+      "src/integration/**/*.ts",
+      "src/cli/**/*.ts",
     ],
     ignores: ["src/**/*.test.ts", "src/**/__tests__/**/*.ts"],
     languageOptions: {

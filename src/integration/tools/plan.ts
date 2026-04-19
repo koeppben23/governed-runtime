@@ -23,7 +23,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
-  requireState,
+  requireStateForMutation,
   resolvePolicyFromState,
   createPolicyContext,
   formatEval,
@@ -31,6 +31,7 @@ import {
   formatError,
   extractSections,
   appendNextAction,
+  writeStateWithArtifacts,
 } from './helpers';
 
 // State & Machine
@@ -40,9 +41,6 @@ import { isCommandAllowed, Command } from '../../machine/commands';
 
 // Rail helpers
 import { autoAdvance } from '../../rails/types';
-
-// Adapters
-import { writeState } from '../../adapters/persistence';
 
 // Evidence types
 import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence';
@@ -79,7 +77,7 @@ export const plan: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxSelfReviewIterations = policy.maxSelfReviewIterations;
@@ -132,12 +130,8 @@ export const plan: ToolDefinition = {
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const {
-          state: finalState,
-          evalResult: ev,
-          transitions,
-        } = autoAdvance(nextState, evalFn, ctx);
-        await writeState(sessDir, finalState);
+        const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
+        await writeStateWithArtifacts(sessDir, finalState);
 
         return appendNextAction(
           JSON.stringify({
@@ -211,7 +205,7 @@ export const plan: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeState(sessDir, finalState);
+        await writeStateWithArtifacts(sessDir, finalState);
 
         // Check convergence for messaging
         const converged =

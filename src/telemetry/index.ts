@@ -17,26 +17,43 @@
  */
 
 import { createRequire } from 'node:module';
-import type { Tracer, Span, SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, type Tracer, type Span } from '@opentelemetry/api';
 
 const _require = createRequire(import.meta.url);
 
-export type { Span, SpanStatusCode };
+export type { Span };
+export { SpanStatusCode };
 
 let tracer: Tracer | null = null;
 let sdkInitialized = false;
+let _initPromise: Promise<void> | null = null;
 
 /**
  * Initialize the OpenTelemetry SDK.
  *
  * Called automatically on first access if OTEL_EXPORTER_OTLP_ENDPOINT is set.
- * Safe to call multiple times (idempotent).
+ * Safe to call multiple times (idempotent). Uses Promise-lock to prevent
+ * race condition when multiple withSpan() calls race on init.
+ *
+ * Degrades gracefully: if OTEL endpoint not set, or SDK init fails,
+ * telemetry is silently disabled (no crash, no metric export).
  */
 async function ensureInitialized(): Promise<void> {
   if (sdkInitialized) return;
+  if (_initPromise) return _initPromise;
 
+  _initPromise = doInitialize().finally(() => {
+    _initPromise = null;
+  });
+  return _initPromise;
+}
+
+async function doInitialize(): Promise<void> {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  if (!endpoint) return;
+  if (!endpoint) {
+    sdkInitialized = true;
+    return;
+  }
 
   try {
     const [{ trace }, { OTLPTraceExporter }, { getNodeAutoInstrumentations }, { NodeSDK }] =
@@ -104,11 +121,11 @@ export async function withSpan<T>(
     async (span: Span) => {
       try {
         const result = await fn();
-        span.setStatus({ code: 1 satisfies SpanStatusCode });
+        span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
         span.setStatus({
-          code: 2 satisfies SpanStatusCode,
+          code: SpanStatusCode.ERROR,
           message: err instanceof Error ? err.message : String(err),
         });
         span.recordException(err instanceof Error ? err : new Error(String(err)));
@@ -145,12 +162,12 @@ export function withSpanSync<T>(
 
   try {
     const result = fn();
-    if (span) span.setStatus({ code: 1 satisfies SpanStatusCode });
+    if (span) span.setStatus({ code: SpanStatusCode.OK });
     return result;
   } catch (err) {
     if (span) {
       span.setStatus({
-        code: 2 satisfies SpanStatusCode,
+        code: SpanStatusCode.ERROR,
         message: err instanceof Error ? err.message : String(err),
       });
       span.recordException(err instanceof Error ? err : new Error(String(err)));

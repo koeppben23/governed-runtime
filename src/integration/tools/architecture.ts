@@ -23,13 +23,14 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
-  requireState,
+  requireStateForMutation,
   resolvePolicyFromState,
   createPolicyContext,
   formatEval,
   formatBlocked,
   formatError,
   appendNextAction,
+  writeStateWithArtifacts,
 } from './helpers';
 
 // State & Machine
@@ -43,11 +44,8 @@ import { executeArchitecture } from '../../rails/architecture';
 // Rail helpers
 import { autoAdvance } from '../../rails/types';
 
-// Adapters
-import { writeState } from '../../adapters/persistence';
-
 // Evidence types
-import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../../state/evidence';
+import type { LoopVerdict, RevisionDelta } from '../../state/evidence';
 import { validateAdrSections } from '../../state/evidence';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -88,7 +86,7 @@ export const architecture: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxSelfReviewIterations = policy.maxSelfReviewIterations;
@@ -123,7 +121,7 @@ export const architecture: ToolDefinition = {
           });
         }
 
-        await writeState(sessDir, result.state);
+        await writeStateWithArtifacts(sessDir, result.state);
 
         return appendNextAction(
           JSON.stringify({
@@ -221,7 +219,7 @@ export const architecture: ToolDefinition = {
                 architecture: { ...advancedState.architecture, status: 'accepted' as const },
               }
             : advancedState;
-        await writeState(sessDir, finalState);
+        await writeStateWithArtifacts(sessDir, finalState);
 
         // Check convergence for messaging
         const converged =

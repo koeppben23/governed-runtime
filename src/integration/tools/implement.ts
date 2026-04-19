@@ -26,13 +26,14 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
-  requireState,
+  requireStateForMutation,
   resolvePolicyFromState,
   createPolicyContext,
   formatEval,
   formatBlocked,
   formatError,
   appendNextAction,
+  writeStateWithArtifacts,
 } from './helpers';
 
 // State & Machine
@@ -44,7 +45,6 @@ import { isCommandAllowed, Command } from '../../machine/commands';
 import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { writeState } from '../../adapters/persistence';
 import { changedFiles } from '../../adapters/git';
 
 // Evidence types
@@ -76,7 +76,7 @@ export const implement: ToolDefinition = {
   async execute(args, context) {
     try {
       const { worktree, sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxImplReviewIterations = policy.maxImplReviewIterations;
@@ -122,12 +122,8 @@ export const implement: ToolDefinition = {
 
         // Auto-advance to IMPL_REVIEW (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
-        const {
-          state: finalState,
-          evalResult: ev,
-          transitions,
-        } = autoAdvance(nextState, evalFn, ctx);
-        await writeState(sessDir, finalState);
+        const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
+        await writeStateWithArtifacts(sessDir, finalState);
 
         return appendNextAction(
           JSON.stringify({
@@ -182,7 +178,7 @@ export const implement: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeState(sessDir, finalState);
+        await writeStateWithArtifacts(sessDir, finalState);
 
         const converged =
           iteration >= maxImplReviewIterations ||
