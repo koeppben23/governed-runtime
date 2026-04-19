@@ -84,12 +84,7 @@ import {
 import type { FlowGuardPolicy } from '../config/policy';
 import type { FlowGuardConfig } from '../config/flowguard-config';
 import { DEFAULT_CONFIG } from '../config/flowguard-config';
-import {
-  createLogger,
-  createNoopLogger,
-  type LogEntry,
-  type LogSink,
-} from '../logging/logger';
+import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger';
 import { createFileSink, getLogDir } from '../logging/file-sink';
 import type { Phase, Event } from '../state/schema';
 import type { SessionState } from '../state/schema';
@@ -212,9 +207,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   // Non-blocking: logging errors never block the plugin
   const sinks = buildLogSinks(config, client, cachedWsDir);
 
-  const log = sinks.length > 0
-    ? createLogger(config.logging.level, sinks)
-    : createNoopLogger();
+  const log = sinks.length > 0 ? createLogger(config.logging.level, sinks) : createNoopLogger();
 
   log.info('plugin', 'initialized', {
     worktree: auditWorktree ?? 'none',

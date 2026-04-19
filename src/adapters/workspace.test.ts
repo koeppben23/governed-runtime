@@ -1509,7 +1509,9 @@ describe('EDGE', () => {
       );
       await fs.writeFile(path.join(wsDir, 'config.json'), '{invalid{{{', 'utf-8');
 
-      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('Config file is not valid JSON');
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(
+        'Config file is not valid JSON',
+      );
     });
   });
 });
