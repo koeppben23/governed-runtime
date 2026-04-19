@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -76,7 +76,7 @@ describe('install-verify', () => {
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      execSync(`npm pack --pack-destination "${tmpDir}"`, {
+      execFileSync('npm', ['pack', '--pack-destination', tmpDir], {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
       });
@@ -90,7 +90,7 @@ describe('install-verify', () => {
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
       expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
@@ -99,7 +99,7 @@ describe('install-verify', () => {
 
     it('package.json has OTEL SDK packages in optionalDependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.optionalDependencies).toBeDefined();
       expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
@@ -171,7 +171,7 @@ describe('install-verify', () => {
 
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
-      execSync(`tar -xzf "${tarballPath}" -C ${tmp}`);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const files = await fs.readdir(path.join(tmp, 'package', 'dist'));
       expect(files.length).toBeGreaterThan(10);
       await fs.rm(tmp, { recursive: true, force: true });
