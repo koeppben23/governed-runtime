@@ -70,8 +70,8 @@ describe('executeArchitecture', () => {
       const result = executeArchitecture(state, VALID_INPUT, soloCtx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // SOLO: maxSelfReviewIterations = 1
-        expect(result.state.selfReview!.maxIterations).toBe(1);
+        // SOLO: maxSelfReviewIterations = 2
+        expect(result.state.selfReview!.maxIterations).toBe(2);
       }
     });
 

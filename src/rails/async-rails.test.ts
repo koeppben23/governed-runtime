@@ -125,7 +125,7 @@ describe('plan rail', () => {
       const result = await executePlan(state, {}, soloCtx, neverApprove);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        expect(result.state.selfReview!.iteration).toBe(1);
+        expect(result.state.selfReview!.iteration).toBe(2);
       }
     });
   });
