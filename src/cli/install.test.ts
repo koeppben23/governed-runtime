@@ -385,6 +385,29 @@ describe('DEV_REPO_INVARIANTS', () => {
       const gitignore = readFileSync(gitignorePath, 'utf-8');
       expect(gitignore).toContain('.opencode/');
     });
+
+    it('AGENTS.md has no dead links to docs/agent-guidance/', async () => {
+      const content = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Should not reference docs/agent-guidance/ (these files don't exist)
+      expect(content).not.toContain('docs/agent-guidance/');
+    });
+
+    it('AGENTS.md contains v3 core sections matching FLOWGUARD_MANDATES_BODY', async () => {
+      const agentsContent = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Core sections must match between root AGENTS.md and FLOWGUARD_MANDATES_BODY
+      expect(agentsContent).toContain('## 1. Mission');
+      expect(agentsContent).toContain('## 2. Priority Ladder');
+      expect(agentsContent).toContain('## 3. Task Class Router');
+      expect(agentsContent).toContain('## Red Lines');
+      expect(agentsContent).toContain('## 8. Output Contract');
+      expect(agentsContent).toContain('## 12. Extended Guidance');
+    });
+
+    it('AGENTS.md is self-contained (no dead links)', async () => {
+      const content = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+      // Must be self-contained: generic docs/ reference is OK, but no specific file references
+      expect(content).toContain('This document is self-contained');
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────

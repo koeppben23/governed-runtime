@@ -146,9 +146,6 @@ High-risk work MUST include:
 
 ## 12. Extended Guidance
 
-For deeper guidance, see:
+This document is self-contained. All mandatory rules are above.
 
-- `docs/agent-guidance/implementation.md`
-- `docs/agent-guidance/review.md`
-- `docs/agent-guidance/high-risk.md`
-- `docs/agent-guidance/eval-suite.md`
+For deeper guidance, see the FlowGuard repository docs/ directory.
