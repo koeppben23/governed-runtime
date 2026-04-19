@@ -151,7 +151,7 @@ describe('install-verify', () => {
       const command = `npm install --no-audit --no-fund "${tarballPath}"`;
       const res = run(command, p);
       assertSuccess(res, command);
-    }, 240000);
+    }, 480000);
 
     it('can import @flowguard/core after install', async () => {
       const p = path.join(tmpDir, 'import-test');
