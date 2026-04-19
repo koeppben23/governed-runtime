@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Derived, append-only ticket/plan evidence artifacts under session scope: `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}`.
+- Artifact metadata now records hash linkage to `session-state.json` (`sourceStateHash`) plus content digests for machine verification.
+- Derived evidence artifacts now store `sourceStateHash` as provenance (hash of `session-state.json` at materialization time), while runtime verification uses ticket/plan content digests plus `markdownHash` checks to detect drift/tampering.
+
 ### Changed
 
 - `/hydrate` now enforces a fail-closed discovery contract for new sessions: READY is emitted only when discovery and profile-resolution artifacts are successfully persisted and `discoveryDigest`/`discoverySummary` are non-null.
 - Workspace `config.json` is now materialized as a required artifact (install + hydrate self-heal) and doctor reports missing config as an error instead of silently accepting defaults.
 - `/hydrate` now fail-closes on invalid existing workspace `config.json` (`WORKSPACE_CONFIG_INVALID`) instead of proceeding with implicit defaults.
+- Governance commands now fail-closed when required derived ticket/plan artifacts are missing, malformed, or content/hash-inconsistent with ticket/plan evidence digests (`EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`).
+- State + artifact persistence now performs best-effort rollback semantics (state rollback + cleanup of newly created artifact files) on materialization failures.
 
 ### Fixed
 

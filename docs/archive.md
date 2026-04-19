@@ -20,8 +20,12 @@ An archive includes:
 - `review-report.redacted.json` — Redacted review report export artifact (when review report exists)
 - `discovery-snapshot.json` — Repository discovery snapshot
 - `profile-resolution-snapshot.json` — Profile resolution snapshot
+- `artifacts/ticket.v*.md` + `artifacts/ticket.v*.json` — Append-only ticket evidence artifacts
+- `artifacts/plan.v*.md` + `artifacts/plan.v*.json` — Append-only plan evidence artifacts
 
 By default (`archive.redaction.mode=basic`, `includeRaw=false`), raw decision receipts and raw review report are excluded from archives.
+
+FlowGuard fail-closes archive creation when `session-state.json` contains ticket/plan evidence but required derived artifacts under `artifacts/` are missing, malformed, or digest/hash-inconsistent with current ticket/plan evidence.
 
 **Redaction scope:** Redaction is applied only to export artifacts (`decision-receipts.*.json`, `review-report.*.json`). The following artifacts are **always included as raw** and are **never redacted**:
 

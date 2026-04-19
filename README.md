@@ -121,6 +121,7 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Audit Trail** | Hash-chained, tamper-evident |
 | **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
+| **Derived Evidence Artifacts** | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance |
 | **Archive** | Session archival with integrity verification + redacted export artifacts by default |
 | **Code Surface Analysis** | Bounded heuristic detection of endpoints/auth/data/integration surfaces |
 

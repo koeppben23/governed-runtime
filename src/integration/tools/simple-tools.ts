@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers';
 import {
   resolveWorkspacePaths,
-  requireState,
+  requireStateForMutation,
   resolvePolicyFromState,
   createPolicyContext,
   formatEval,
@@ -22,6 +22,7 @@ import {
   formatRailResult,
   persistAndFormat,
   appendNextAction,
+  writeStateWithArtifacts,
 } from './helpers';
 
 // State & Machine
@@ -40,7 +41,7 @@ import { executeAbort } from '../../rails/abort';
 import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { readState, writeState, writeReport } from '../../adapters/persistence';
+import { readState, writeReport } from '../../adapters/persistence';
 
 // Workspace
 import { archiveSession } from '../../adapters/workspace';
@@ -150,7 +151,7 @@ export const ticket: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -193,7 +194,7 @@ export const decision: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -250,7 +251,7 @@ export const validate: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -301,7 +302,7 @@ export const validate: ToolDefinition = {
         evalResult: ev,
         transitions,
       } = autoAdvance(nextState, evalFn, ctx);
-      await writeState(sessDir, finalState);
+      await writeStateWithArtifacts(sessDir, finalState);
 
       const allPassed = validationResults.every((r: ValidationResult) => r.passed);
       const failedChecks = validationResults
@@ -343,7 +344,7 @@ export const review: ToolDefinition = {
   async execute(_args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 
@@ -359,7 +360,7 @@ export const review: ToolDefinition = {
       const report = await executeReview(result.state, now);
 
       // 3. Persist state + write report artifact
-      await writeState(sessDir, result.state);
+      await writeStateWithArtifacts(sessDir, result.state);
       await writeReport(sessDir, report);
 
       return appendNextAction(
@@ -410,7 +411,7 @@ export const abort_session: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireState(sessDir);
+      const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
 

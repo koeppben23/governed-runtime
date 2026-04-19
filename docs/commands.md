@@ -52,6 +52,11 @@ Record the task description. Starts the ticket flow from READY or updates ticket
 **Allowed in:** READY, TICKET
 **Arguments:** Task description text (required)
 
+**Derived artifacts:** On successful state persistence, FlowGuard materializes append-only evidence artifacts:
+
+- `artifacts/ticket.v{n}.md` (human-readable)
+- `artifacts/ticket.v{n}.json` (machine-verifiable metadata)
+
 ### /plan
 
 Generate an implementation plan with self-review loop.
@@ -62,6 +67,13 @@ Generate an implementation plan with self-review loop.
 4. Advances to PLAN_REVIEW
 
 **Allowed in:** READY, TICKET, PLAN
+
+**Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
+
+- `artifacts/plan.v{n}.md` (human-readable)
+- `artifacts/plan.v{n}.json` (machine-verifiable metadata)
+
+FlowGuard fail-closes governance commands when required ticket/plan artifacts are missing, malformed, or digest/hash-inconsistent with current ticket/plan evidence.
 
 ### /review-decision
 
