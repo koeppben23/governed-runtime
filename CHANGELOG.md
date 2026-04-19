@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derived, append-only ticket/plan evidence artifacts under session scope: `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}`.
 - Artifact metadata now records hash linkage to `session-state.json` (`sourceStateHash`) plus content digests for machine verification.
 - Derived evidence artifacts now store `sourceStateHash` as provenance (hash of `session-state.json` at materialization time), while runtime verification uses ticket/plan content digests plus `markdownHash` checks to detect drift/tampering.
+- **Compliance mapping documentation**: New detailed compliance mappings for MaRisk, BAIT, DORA, and GoBD alongside existing BSI C5 mapping. These documents map FlowGuard capabilities to specific regulatory requirements, demonstrating the building blocks FlowGuard provides for regulated industries (banking, financial services, insurance).
+- **Enterprise credibility enhancements**: PRODUCT_IDENTITY.md now includes Self-Review iterations count in Product Facts (SOLO: 2, TEAM/REGULATED: 3), comprehensive compliance mappings list (BSI C5, MaRisk, BAIT, DORA, GoBD), and updated limitations section with clearer language on multi-user coordination and explicit configuration options.
 
 ### Changed
 

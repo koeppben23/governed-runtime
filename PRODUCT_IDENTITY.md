@@ -42,10 +42,11 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### FlowGuard & Compliance
 
-- **Four policy modes:** Solo (no human gates), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (human gates, four-eyes principle enforced)
+- **Four policy modes:** Solo (no human gates, fast feedback), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (four-eyes principle enforced)
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
+- **Compliance mappings:** BSI C5, MaRisk (AT 7.2-7.4, BT 1-5), BAIT (§ 8-14), DORA (Art. 5-8), GoBD (§ 2-8, § 145/146)
 
 ### Audit & Evidence
 
@@ -307,35 +308,38 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Limitations and Caveats
 
-- **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements.
+- **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (MaRisk, BAIT, DORA, GoBD, BSI C5, SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements. FlowGuard supports compliance programs — it does not replace them.
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
-- **No built-in multi-user coordination.** Sessions are bound to a filesystem workspace. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Multi-user access requires customer-managed controls (OS permissions, host account separation).
+- **Single-user by design.** Sessions are bound to a filesystem workspace and individual OpenCode session. There is no built-in multi-user collaboration, distributed session sharing, or server-based deployment model. Enterprise multi-user coordination requires customer-managed infrastructure (shared filesystems, LDAP/AD integration, CI pipeline orchestration).
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
-- **No full CI orchestrator.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services.
-- **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally against the archive file. Release package provenance is separately attested in GitHub Releases, but session archive verification remains local.
-- **Profile auto-detection is heuristic.** Tech-stack detection primarily uses repository signals and may misclassify non-standard layouts. Code-surface analysis adds bounded file-content heuristics but is confidence-based, not semantic truth. Monorepo and mixed-language repository detection is limited to signal-based heuristics with no deep package-graph traversal.
+- **No pipeline orchestration.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services. Integration with external CI systems is via headless mode.
+- **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally. Release package provenance is separately attested via GitHub Release signatures, but session verification remains local.
+- **Profile auto-detection is heuristic.** Tech-stack detection uses repository signals (pom.xml, package.json, etc.) and may misclassify non-standard layouts. Code-surface analysis adds bounded heuristics with confidence scores, not semantic truth. For deterministic behavior, explicit profile configuration is available.
 
 ---
 
 ## Product Facts
 
-- **Version:** 1.0.0
+- **Version:** 1.1.0
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
-- **Release Integrity Artifacts:** SHA-256 checksums + CycloneDX SBOM + GitHub build provenance attestation for release tarballs
+- **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
 - **Phase Count:** 14 explicit workflow phases across 3 flows
 - **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
-- **Custom Tools:** 11 OpenCode tool exports (via `@flowguard/core/integration`)
+- **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
+- **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
+- **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
 - **Archive Verification Checks:** 10 finding codes
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
-- **Test Coverage:** Comprehensive test suite (unit, integration, architecture, CLI, performance) with 5 mandatory categories and an enforced global coverage gate (branches/lines/functions/statements >= 80%)
-- **Self-Hosted:** Runs locally — no outbound network calls from FlowGuard itself. All data stays on the user's filesystem.
+- **Compliance Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
+- **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
+- **Self-Hosted:** Runs locally — zero network calls from FlowGuard itself
 
 ---
 
@@ -345,7 +349,7 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-*Version: 1.0.0*
+**Version:** 1.1.0
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Distribution: Pre-built proprietary artifact (GitHub Releases)*
 *Last Updated: 2026-04-17*
