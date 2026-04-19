@@ -34,10 +34,17 @@ let _initPromise: Promise<void> | null = null;
  * Called automatically on first access if OTEL_EXPORTER_OTLP_ENDPOINT is set.
  * Safe to call multiple times (idempotent). Uses Promise-lock to prevent
  * race condition when multiple withSpan() calls race on init.
+ *
+ * Degrades gracefully: if OTEL endpoint not set, or SDK init fails,
+ * telemetry is silently disabled (no crash, no metric export).
  */
 async function ensureInitialized(): Promise<void> {
   if (sdkInitialized) return;
-  _initPromise ??= doInitialize();
+  if (_initPromise) return _initPromise;
+
+  _initPromise = doInitialize().finally(() => {
+    _initPromise = null;
+  });
   return _initPromise;
 }
 

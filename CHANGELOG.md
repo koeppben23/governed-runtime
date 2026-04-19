@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **SpanStatusCode enum**: Replaced magic numbers (1, 2) with explicit `SpanStatusCode.OK` / `SpanStatusCode.ERROR` from @opentelemetry/api for OTEL tracer correctness.
 - **OTEL optional dependencies**: Split package.json - `@opentelemetry/api` remains in dependencies, SDK/exporter/instrumentations move to optionalDependencies for minimal footprint.
+- **Telemetry race-condition fix**: Added `_initPromise` lock to prevent parallel SDK initialization when multiple `withSpan()` calls race on init. Graceful degradation when OTEL deps missing.
+- **Type-aware ESLint**: Extended to `src/integration/` and `src/cli/` for floating promise detection.
 - **ESLint no-unused-vars pattern**: Enabled pattern-based unused variable detection (`^_` prefix) across src/ instead of global off.
 - **Type-aware ESLint extended**: Added rails/, machine/ to type-aware ESLint coverage.
 - **AGENTS v3 enhancements**: Added ASSUMPTION resolution guidance and RED LINES examples.
