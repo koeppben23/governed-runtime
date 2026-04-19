@@ -119,22 +119,11 @@ describe('AGENTS v3 guidance', () => {
   });
 
   describe('E2E path', () => {
-    it('links all extended guidance documents and those files exist', async () => {
+    it('is self-contained without dead links', async () => {
       const content = await readAgents();
-      const links = [
-        'docs/agent-guidance/implementation.md',
-        'docs/agent-guidance/review.md',
-        'docs/agent-guidance/high-risk.md',
-        'docs/agent-guidance/eval-suite.md',
-      ];
-      for (const link of links) {
-        expect(content).toContain(link);
-      }
-
-      await expect(fs.access(IMPLEMENTATION_GUIDE)).resolves.not.toThrow();
-      await expect(fs.access(REVIEW_GUIDE)).resolves.not.toThrow();
-      await expect(fs.access(HIGH_RISK_GUIDE)).resolves.not.toThrow();
-      await expect(fs.access(EVAL_SUITE_GUIDE)).resolves.not.toThrow();
+      expect(content).toContain('This document is self-contained');
+      expect(content).toContain('docs/ directory');
+      expect(content).not.toContain('docs/agent-guidance/');
     });
 
     it('keeps guidance docs free of second mandatory output semantics', async () => {
