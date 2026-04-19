@@ -135,5 +135,5 @@ jobs:
             release/sbom.cdx.json \
             LICENSE \
             --title "FlowGuard v${GITHUB_REF_NAME#v}" \
-            --notes-file CHANGELOG.md \
+            --generate-notes \
             --verify-tag

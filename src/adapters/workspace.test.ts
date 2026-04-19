@@ -1496,7 +1496,7 @@ describe('EDGE', () => {
       expect(receipts.receipts).toHaveLength(0);
     });
 
-    it('succeeds with corrupt config.json in workspace (falls back to defaults)', async () => {
+    it('fails with corrupt config.json in workspace (fail-closed)', async () => {
       const worktree = path.resolve('.');
       const sessionId = 'edge-corrupt-config';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
@@ -1509,13 +1509,7 @@ describe('EDGE', () => {
       );
       await fs.writeFile(path.join(wsDir, 'config.json'), '{invalid{{{', 'utf-8');
 
-      const archivePath = await archiveSession(fingerprint, sessionId);
-      expect(archivePath).toContain('.tar.gz');
-
-      const manifest = JSON.parse(
-        await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-      );
-      expect(manifest.redactionMode).toBe('basic');
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('Config file is not valid JSON');
     });
   });
 });

@@ -139,6 +139,108 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  describe('logging.mode', () => {
+    it('defaults to file mode', () => {
+      const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.mode).toBe('file');
+      }
+    });
+
+    it('accepts file mode', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { mode: 'file' },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.mode).toBe('file');
+      }
+    });
+
+    it('accepts ui mode', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { mode: 'ui' },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.mode).toBe('ui');
+      }
+    });
+
+    it('accepts both mode', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { mode: 'both' },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.mode).toBe('both');
+      }
+    });
+
+    it('rejects invalid mode', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { mode: 'console' },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('logging.retentionDays', () => {
+    it('defaults to 7 days', () => {
+      const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.retentionDays).toBe(7);
+      }
+    });
+
+    it('accepts custom retention days', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { retentionDays: 30 },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.logging.retentionDays).toBe(30);
+      }
+    });
+
+    it('rejects retentionDays below minimum (1)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { retentionDays: 0 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects retentionDays above maximum (90)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { retentionDays: 91 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts boundary values 1 and 90', () => {
+      const min = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { retentionDays: 1 },
+      });
+      expect(min.success).toBe(true);
+
+      const max = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { retentionDays: 90 },
+      });
+      expect(max.success).toBe(true);
+    });
+  });
+
   it('rejects invalid policy mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',

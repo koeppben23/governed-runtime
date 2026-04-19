@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dual-mode logging**: Added file-based logging with mode configuration (`logging.mode: file | ui | both`) defaulting to file. Logs written to `{workspace}/.opencode/logs/flowguard-{YYYY-MM-DD}.log` in JSONL format. Includes configurable retention (`logging.retentionDays: 1-90`, default 7). Logging errors never block governance flow.
 - **SpanStatusCode enum**: Replaced magic numbers (1, 2) with explicit `SpanStatusCode.OK` / `SpanStatusCode.ERROR` from @opentelemetry/api for OTEL tracer correctness.
 - **OTEL optional dependencies**: Split package.json - `@opentelemetry/api` remains in dependencies, SDK/exporter/instrumentations move to optionalDependencies for minimal footprint.
 - **Telemetry race-condition fix**: Added `_initPromise` lock to prevent parallel SDK initialization when multiple `withSpan()` calls race on init. Graceful degradation when OTEL deps missing.

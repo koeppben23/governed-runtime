@@ -27,8 +27,12 @@ export const FlowGuardConfigSchema = z.object({
   /** Logging configuration. */
   logging: z
     .object({
+      /** Logging output mode. */
+      mode: z.enum(['file', 'ui', 'both']).default('file'),
       /** Minimum log level. Messages below this level are suppressed. */
       level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+      /** Number of days to retain log files. */
+      retentionDays: z.number().int().min(1).max(90).default(7),
     })
     .default({}),
 
@@ -83,6 +87,9 @@ export type FlowGuardConfig = z.infer<typeof FlowGuardConfigSchema>;
 
 /** Log level union type. */
 export type LogLevel = FlowGuardConfig['logging']['level'];
+
+/** Logging mode union type. */
+export type LogMode = FlowGuardConfig['logging']['mode'];
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
