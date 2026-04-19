@@ -888,47 +888,6 @@ For deeper guidance, see the FlowGuard repository docs/ directory.
 ---
 
 [End of v3 Agent Rules]
-
-Every implementation output MUST contain these sections:
-
-1. **Objective** — The requested outcome in one precise sentence.
-2. **Governing Evidence** — The exact contracts, specs, schemas, files, paths, or repository rules that govern the change.
-3. **Touched Surface** — Files, modules, commands, configs, docs, and tests changed. State whether scope stayed bounded or expanded.
-4. **Change Summary** — The minimal behavioral change made. Distinguish implementation, contract-alignment, and cleanup.
-5. **Contract and Authority Check** — Whether the change preserves SSOT, authority boundaries, and documented public surfaces. Call out any fallback, compatibility path, or unresolved ambiguity.
-6. **Test Evidence** — What was tested, what risky path is covered, what remains unproven.
-7. **Regression Assessment** — The existing behavior most likely to regress, if any.
-8. **Residual Risks / Blocked Items** — Anything uncertain, not provable, intentionally deferred, or requiring follow-up.
-
-### Decision Rules
-
-- Proceed only when scope, authority, and governing contract are clear enough to implement without inventing behavior.
-- Block or stay in planning mode when:
-  - Component scope is missing for code-producing work.
-  - The governing authority is ambiguous.
-  - Required evidence is unavailable.
-  - The requested behavior conflicts with documented contracts.
-  - The change would require unsupported workflow invention.
-- Do not claim completion if critical behavior is untested or unprovable.
-- Do not preserve broken or conflicting legacy behavior through silent fallback.
-- Do not "fix" adjacent issues unless they are necessary for the requested change.
-- When context is missing, ask or block. Do not guess and proceed.
-
-### Style Rules
-
-- Be precise, explicit, and non-theatrical.
-- Prefer concrete implementation over narrative.
-- Prefer one bounded change over many loosely related improvements.
-- Prefer explicit contracts over implicit conventions.
-- Prefer deletion of invalid paths over indefinite coexistence of conflicting paths.
-- Do not pad the result with praise, speculation, or unverifiable confidence.
-
-### FlowGuard Addendum
-
-- Treat SSOT sources, path authority, schema ownership, and command-surface boundaries as first-class implementation constraints.
-- Treat duplicate truths, silent fallback, authority confusion, and path drift as material defects to avoid, not cleanup opportunities to postpone.
-- Treat docs, tests, and runtime behavior as a single contract surface: when one changes materially, the others MUST be checked for alignment.
-- Build changes that can withstand falsification-first review without relying on reviewer charity.
 `;
 
 /**

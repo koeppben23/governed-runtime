@@ -665,6 +665,35 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
     });
+
+    it('FLOWGUARD_MANDATES_BODY contains all v3 core sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY contains no legacy mandate sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 1. Developer Mandate');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 2. Review Mandate');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 3. Output Quality Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 4. Risk Tiering');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('## 5. Cross-Cutting Principles');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Developer Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Review Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Quality Index');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Canonical Tiers');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Cross-Cutting');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY ends cleanly after v3 rules', () => {
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
+      const afterEnd = FLOWGUARD_MANDATES_BODY.substring(endMarkerIdx + 30);
+
+      expect(afterEnd.trim()).toBe('');
+    });
   });
 
   describe('PERF', () => {
