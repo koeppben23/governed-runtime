@@ -123,7 +123,7 @@ export interface PolicyResolution {
 export const SOLO_POLICY: FlowGuardPolicy = {
   mode: 'solo',
   requireHumanGates: false,
-  maxSelfReviewIterations: 1,
+  maxSelfReviewIterations: 2,
   maxImplReviewIterations: 1,
   allowSelfApproval: true,
   audit: {

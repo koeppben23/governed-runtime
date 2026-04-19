@@ -75,7 +75,7 @@ describe('config/policy', () => {
 
     it('SOLO has no human gates and 1 iteration', () => {
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
-      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(1);
+      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
       expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
     });
