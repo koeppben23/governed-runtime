@@ -553,11 +553,12 @@ describe('cli/templates', () => {
       expect(mandatesInstructionEntry('repo')).toBe(`.opencode/${MANDATES_FILENAME}`);
     });
 
-    it('buildMandatesContent includes version and digest in header', () => {
+it('buildMandatesContent includes version and digest in header', () => {
       const content = buildMandatesContent('2.0.0', 'abcd1234'.repeat(8));
+
       expect(content).toContain('@flowguard/core v2.0.0');
       expect(content).toContain('content-digest: sha256:');
-      expect(content).toContain('# FlowGuard Mandates');
+      expect(content).toContain('# FlowGuard Agent Rules');
     });
 
     it('isManagedArtifact returns true for valid managed content', () => {
@@ -613,36 +614,49 @@ describe('cli/templates', () => {
   });
 
   describe('EDGE', () => {
-    it('buildMandatesContent body starts with # FlowGuard Mandates', () => {
+    it('buildMandatesContent body starts with # FlowGuard Agent Rules', () => {
       const content = buildMandatesContent('1.0.0', 'a'.repeat(64));
-      // After the two header lines and a blank line, body starts
       const lines = content.split('\n');
-      // Line 0: <!-- @flowguard/core ... -->
-      // Line 1: <!-- content-digest: sha256:... -->
-      // Line 2: (blank)
-      // Line 3: # FlowGuard Mandates
-      expect(lines[3]).toBe('# FlowGuard Mandates');
+
+      // Line 3: # FlowGuard Agent Rules
+      expect(lines[3]).toBe('# FlowGuard Agent Rules');
     });
 
-    it('FLOWGUARD_MANDATES_BODY contains Hard Rules section with all 5 operative parts', () => {
-      expect(FLOWGUARD_MANDATES_BODY).toContain('## 0. Hard Rules');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Top Priorities');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Stop Conditions');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Evidence Requirements');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Approval Blockers');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('### Ambiguity Protocol');
+    it('FLOWGUARD_MANDATES_BODY contains v3 structure with all core sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Language Conventions');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 4. Hard Invariants');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 5. Evidence Rules');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 6. Tool and Verification Policy');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 7. Ambiguity Policy');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 9. Implementation Checklist');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 10. Review Checklist');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 11. High-Risk Extension');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
     });
 
-    it('Hard Rules section appears before Developer Mandate', () => {
-      const hardRulesIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 0. Hard Rules');
-      const devMandateIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 1. Developer Mandate');
-      expect(hardRulesIdx).toBeGreaterThan(-1);
-      expect(devMandateIdx).toBeGreaterThan(-1);
-      expect(hardRulesIdx).toBeLessThan(devMandateIdx);
+    it('v3 sections appear before deprecated legacy sections', () => {
+      const v3EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 12. Extended Guidance');
+      const legacyIdx = FLOWGUARD_MANDATES_BODY.indexOf('## Legacy Summary (Deprecated)');
+
+      expect(v3EndIdx).toBeGreaterThan(-1);
+      expect(legacyIdx).toBeGreaterThan(v3EndIdx);
     });
 
     it('FLOWGUARD_MANDATES_BODY does not reference AGENTS.md', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('AGENTS.md');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY contains v3 output contract with task-class scaling', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Use one output contract, scaled by task class:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('TRIVIAL:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('STANDARD:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('HIGH-RISK:');
     });
   });
 
@@ -834,16 +848,18 @@ describe('cli/install', () => {
 
     it('flowguard-mandates.md is ALWAYS replaced even without --force', async () => {
       const tarball = await createMockTarball();
-      await install(repoArgs({ coreTarball: tarball }));
-      const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
-      // Tamper with the file
-      await fs.writeFile(mandatesPath, '# Tampered', 'utf-8');
+      const mandatesPath = path.join(tmpDir, '.opencode', 'flowguard-mandates.md');
 
-      // Re-install without --force
+      // Pre-write old content
+      await fs.mkdir(path.dirname(mandatesPath), { recursive: true });
+      await fs.writeFile(mandatesPath, 'old content', 'utf-8');
+
+      // Install (creates fresh mandates)
       await install(repoArgs({ coreTarball: tarball }));
+
+      // Verify replaced
       const content = await fs.readFile(mandatesPath, 'utf-8');
-      expect(isManagedArtifact(content)).toBe(true);
-      expect(content).toContain('# FlowGuard Mandates');
+      expect(content).toContain('# FlowGuard Agent Rules');
     });
 
     it('--force overwrites existing tool wrapper', async () => {
