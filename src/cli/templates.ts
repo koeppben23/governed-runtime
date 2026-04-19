@@ -888,35 +888,6 @@ For deeper guidance, see the FlowGuard repository docs/ directory.
 ---
 
 [End of v3 Agent Rules]
-- Check ordering assumptions, shared mutable state, races, stale reads, retries, reentrancy, and async boundaries.
-
-**9. Performance** *(when relevant)*
-- Avoid unnecessary full scans, repeated I/O, hot-path slowdowns, memory growth, and accidental quadratic behavior.
-
-**10. Portability** *(when relevant)*
-- Check path semantics, case sensitivity, shell assumptions, environment handling, filesystem behavior, and cross-OS/toolchain compatibility.
-
-**11. Migration and Compatibility** *(when relevant)*
-- If replacing legacy behavior, ensure the transition is explicit, bounded, and non-ambiguous.
-- Remove or constrain compatibility paths that can silently preserve invalid behavior.
-
-### Authoring Method
-
-1. Identify the governing contract, authority, and bounded scope.
-2. Read the existing implementation and adjacent patterns before changing code.
-3. Prefer extending proven paths over inventing parallel ones.
-4. When a fallback is required, justify it explicitly, constrain it narrowly, and test it.
-5. Before finishing, self-verify against the authoring lenses and try to falsify your own change:
-   - What if the input is missing?
-   - What if the path, env var, or config is wrong?
-   - What if the old path still exists?
-   - What if another OS or shell executes this?
-   - What if the tests pass for the wrong reason?
-   - What if this creates a second authority or silent drift?
-   - What if the fallback hides a real defect?
-   - What previously working path is now most at risk?
-
-### Developer Output Contract
 
 Every implementation output MUST contain these sections:
 
