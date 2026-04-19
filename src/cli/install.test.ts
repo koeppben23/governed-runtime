@@ -553,7 +553,7 @@ describe('cli/templates', () => {
       expect(mandatesInstructionEntry('repo')).toBe(`.opencode/${MANDATES_FILENAME}`);
     });
 
-it('buildMandatesContent includes version and digest in header', () => {
+    it('buildMandatesContent includes version and digest in header', () => {
       const content = buildMandatesContent('2.0.0', 'abcd1234'.repeat(8));
 
       expect(content).toContain('@flowguard/core v2.0.0');
@@ -640,12 +640,12 @@ it('buildMandatesContent includes version and digest in header', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
     });
 
-    it('v3 sections appear before deprecated legacy sections', () => {
+    it('v3 sections are followed by end marker (no legacy sections)', () => {
       const v3EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 12. Extended Guidance');
-      const legacyIdx = FLOWGUARD_MANDATES_BODY.indexOf('## Legacy Summary (Deprecated)');
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
 
       expect(v3EndIdx).toBeGreaterThan(-1);
-      expect(legacyIdx).toBeGreaterThan(v3EndIdx);
+      expect(endMarkerIdx).toBeGreaterThan(v3EndIdx);
     });
 
     it('FLOWGUARD_MANDATES_BODY does not reference AGENTS.md', () => {
@@ -657,6 +657,13 @@ it('buildMandatesContent includes version and digest in header', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('TRIVIAL:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('STANDARD:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('HIGH-RISK:');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY is self-contained (no dead links)', () => {
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/agent-guidance/');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v3 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
+      expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
     });
   });
 
