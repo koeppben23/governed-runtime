@@ -54,6 +54,22 @@ How to install FlowGuard in environments without internet access.
 
 How FlowGuard capabilities map to BSI C5:2020 control domains.
 
+### [MaRisk Mapping](./marisk-mapping.md)
+
+How FlowGuard capabilities map to MaRisk controls for regulated financial environments.
+
+### [BAIT Mapping](./ba-it-mapping.md)
+
+How FlowGuard capabilities map to BAIT IT governance and development controls.
+
+### [DORA Mapping](./dora-mapping.md)
+
+How FlowGuard capabilities map to DORA ICT risk management requirements.
+
+### [GoBD Mapping](./gobd-mapping.md)
+
+How FlowGuard capabilities map to GoBD traceability and unalterability principles.
+
 ## Support
 
 ### [Support Model](./support-model.md)
@@ -65,6 +81,10 @@ Responsibilities, contact channels, and expectations.
 - [Contributing](../CONTRIBUTING.md) — How to contribute to FlowGuard
 - [Product Identity](../PRODUCT_IDENTITY.md) — Product overview and architecture details
 - [AGENTS.md](../AGENTS.md) — FlowGuard mandates for AI-assisted development (used by the development repo; end users receive `flowguard-mandates.md` via the installer)
+- [Agent Implementation Guidance](./agent-guidance/implementation.md) — Extended implementation rules
+- [Agent Review Guidance](./agent-guidance/review.md) — Extended review rules
+- [Agent High-Risk Guidance](./agent-guidance/high-risk.md) — High-risk safeguards
+- [Agent Eval Suite](./agent-guidance/eval-suite.md) — Scenario-based quality evaluation
 
 ## Quick Reference
 

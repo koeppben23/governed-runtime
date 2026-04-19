@@ -6,7 +6,7 @@ How FlowGuard capabilities map to MaRisk (Mindestanforderungen an das Risikomana
 
 ## Scope and Disclaimer
 
-**MaRisk** (BAFIN Mindestanforderungen an das Risikomanager) defines requirements for risk management in banks and financial institutions in Germany. It covers risk identification, measurement, controlling, monitoring, and reporting.
+**MaRisk** (Mindestanforderungen an das Risikomanagement) defines requirements for risk management in banks and financial institutions in Germany. It covers risk identification, measurement, controlling, monitoring, and reporting.
 
 **FlowGuard is not a compliance certification product.** It is a locally installed, self-hosted development workflow tool that provides building blocks for governance, audit trails, and approval workflows. FlowGuard alone does not satisfy any MaRisk requirement in full. Organizations must assess whether FlowGuard's capabilities, combined with their own policies, processes, and infrastructure, meet their specific compliance requirements.
 

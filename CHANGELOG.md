@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Derived evidence artifacts now store `sourceStateHash` as provenance (hash of `session-state.json` at materialization time), while runtime verification uses ticket/plan content digests plus `markdownHash` checks to detect drift/tampering.
 - **Compliance mapping documentation**: New detailed compliance mappings for MaRisk, BAIT, DORA, and GoBD alongside existing BSI C5 mapping. These documents map FlowGuard capabilities to specific regulatory requirements, demonstrating the building blocks FlowGuard provides for regulated industries (banking, financial services, insurance).
 - **Enterprise credibility enhancements**: PRODUCT_IDENTITY.md now includes Self-Review iterations count in Product Facts (SOLO: 2, TEAM/REGULATED: 3), comprehensive compliance mappings list (BSI C5, MaRisk, BAIT, DORA, GoBD), and updated limitations section with clearer language on multi-user coordination and explicit configuration options.
+- **Agent mandate v3 guidance set**: Replaced legacy AGENTS mandate layout with a compact cross-LLM v3 structure (priority ladder, task router, single output contract, high-risk extension) and added dedicated guidance docs under `docs/agent-guidance/`.
+- **Agent eval scenarios**: Added scenario-based eval suite with pass/fail rubric to validate mandate behavior across trivial, standard, high-risk, release/installer, review, and ambiguity workflows.
 
 ### Changed
 
@@ -23,11 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/hydrate` now fail-closes on invalid existing workspace `config.json` (`WORKSPACE_CONFIG_INVALID`) instead of proceeding with implicit defaults.
 - Governance commands now fail-closed when required derived ticket/plan artifacts are missing, malformed, or content/hash-inconsistent with ticket/plan evidence digests (`EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`).
 - State + artifact persistence now performs best-effort rollback semantics (state rollback + cleanup of newly created artifact files) on materialization failures.
+- Compliance mapping filename corrected to `docs/marisk-mapping.md` and documentation index now links all compliance mappings and agent-guidance docs.
+- AGENTS v3 hard invariants were refined to action-oriented wording with explicit `Red Lines`, while preserving fail-closed and single-authority constraints.
+- Review guidance verdict wording is now exactly aligned with root AGENTS contract (`approve` / `changes_requested`) to prevent enum drift.
 
 ### Fixed
 
 - OpenCode-style non-UUID session IDs (`ses_...`) are now accepted across binding and audit event schemas, preventing hydration/runtime schema validation failures.
 - Integration and E2E tests now run with OpenCode-style session IDs and include regression assertions for hydrate discovery/config contracts.
+- Added `src/documentation/__tests__/agents-v3.test.ts` to enforce AGENTS v3 structure, marker rules, high-risk verification policy, guidance link integrity, and rubric presence.
+- Eval-suite reference links to OpenAI and Anthropic docs were revalidated and documented for traceability.
 
 ## [1.1.0] - 2026-04-17
 

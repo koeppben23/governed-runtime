@@ -255,7 +255,7 @@ Change Request → Ticket (Document Intent)
              → Plan (Risk Assessment)
              → Validation (Testing Evidence)
              → Implementation (Code Changes)
-             �� Review (Approval)
+             -> Review (Approval)
              → Archive (Retention-Ready)
 ```
 

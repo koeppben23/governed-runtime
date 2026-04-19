@@ -352,4 +352,4 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 **Version:** 1.1.0
 *Architecture: TypeScript, OpenCode-native, Zero-Bridge*
 *Distribution: Pre-built proprietary artifact (GitHub Releases)*
-*Last Updated: 2026-04-17*
+*Last Updated: 2026-04-19*

@@ -33,7 +33,7 @@ const filesToUpdate = [
   'docs/support-model.md',
   'docs/data-classification.md',
   'docs/bsi-c5-mapping.md',
-  'docs/maresg-mapping.md',
+  'docs/marisk-mapping.md',
   'docs/ba-it-mapping.md',
   'docs/dora-mapping.md',
   'docs/gobd-mapping.md',
