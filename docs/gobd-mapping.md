@@ -18,16 +18,16 @@ GoBD primarily applies to **accounting-relevant systems**. FlowGuard contributes
 
 ## Mapping Summary
 
-| GoBD Section | Requirement Area | Relevance | FlowGuard Contribution |
-| ------------ | --------------- | -------- | --------------------- |
-| § 2 | Completeness | Partial | Evidence workflow forces complete documentation |
-| § 3 | Accuracy | Not Applicable | — |
-| § 4 | Traceability | **Direct** | Hash-chained audit trail |
-| § 5 | Original Form | Partial | Audit trail in original format (JSONL) |
-| § 6 | Unalterability | **Direct** | SHA-256 hash chain, append-only |
-| § 7 | Clarity | Partial | Structured phase workflow |
-| § 8 | Availability | Partial | Session archives with integrity |
-| § 145/146 | Retention | Partial | Archive with retention metadata |
+| GoBD Section | Requirement Area | Relevance      | FlowGuard Contribution                          |
+| ------------ | ---------------- | -------------- | ----------------------------------------------- |
+| § 2          | Completeness     | Partial        | Evidence workflow forces complete documentation |
+| § 3          | Accuracy         | Not Applicable | —                                               |
+| § 4          | Traceability     | **Direct**     | Hash-chained audit trail                        |
+| § 5          | Original Form    | Partial        | Audit trail in original format (JSONL)          |
+| § 6          | Unalterability   | **Direct**     | SHA-256 hash chain, append-only                 |
+| § 7          | Clarity          | Partial        | Structured phase workflow                       |
+| § 8          | Availability     | Partial        | Session archives with integrity                 |
+| § 145/146    | Retention        | Partial        | Archive with retention metadata                 |
 
 ---
 
@@ -153,10 +153,10 @@ GoBD § 6 requires that recorded data cannot be altered unnoticed.
 - File digests in manifest
 - SHA-256 checksums
 
-| GoBD § 6 Requirement | FlowGuard Capability |
-| -------------------- | ---------------------- |
-| No silent changes | Hash chain |
-| No deletion | Append-only |
+| GoBD § 6 Requirement      | FlowGuard Capability |
+| ------------------------- | -------------------- |
+| No silent changes         | Hash chain           |
+| No deletion               | Append-only          |
 | Detection of manipulation | SHA-256 verification |
 
 ---
@@ -213,7 +213,7 @@ GoBD § 145 (AO) and § 146 (HGB) define retention periods.
 
 - Archive includes complete session state
 - Retention can be based on session metadata
--sha-256 hashes for integrity verification
+  -sha-256 hashes for integrity verification
 - 10-year retention alignment through archives
 
 #### Organization Must Provide
@@ -226,15 +226,15 @@ GoBD § 145 (AO) and § 146 (HGB) define retention periods.
 
 ## GoBD-Specific Capabilities
 
-| GoBD Requirement | FlowGuard Capability |
-| ---------------- | --------------------- |
-| § 2: Completeness | Evidence phases force documentation |
-| § 4: Traceability | Hash-chained audit trail |
-| § 5: Original Form | JSONL append-only format |
-| § 6: Unalterability | SHA-256 hash chain |
-| § 7: Clarity | Structured phases, evidence |
-| § 8: Availability | Session archives |
-| § 145/146: Retention | Archive with metadata |
+| GoBD Requirement     | FlowGuard Capability                |
+| -------------------- | ----------------------------------- |
+| § 2: Completeness    | Evidence phases force documentation |
+| § 4: Traceability    | Hash-chained audit trail            |
+| § 5: Original Form   | JSONL append-only format            |
+| § 6: Unalterability  | SHA-256 hash chain                  |
+| § 7: Clarity         | Structured phases, evidence         |
+| § 8: Availability    | Session archives                    |
+| § 145/146: Retention | Archive with metadata               |
 
 ---
 

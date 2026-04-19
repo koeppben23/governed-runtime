@@ -61,10 +61,7 @@ function replaceVersion(content) {
     /\*\*Version:\*\* [\d.]+(\s*\|\s*TypeScript)/g,
     `**Version:** ${version}$1`,
   );
-  content = content.replace(
-    /^\*Version: [\d.]+\*$/gm,
-    `**Version:** ${version}`,
-  );
+  content = content.replace(/^\*Version: [\d.]+\*$/gm, `**Version:** ${version}`);
   content = content.replace(
     new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,

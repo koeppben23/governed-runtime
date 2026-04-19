@@ -16,18 +16,18 @@ How FlowGuard capabilities map to BAIT (Bankenaufsichtliche Anforderungen an die
 
 ## Mapping Summary
 
-| BAIT Section | Requirement Area | Relevance | FlowGuard Contribution |
-| ---------- | ------------ | -------- | --------------------- |
-| § 8 | IT Governance | Partial | Policy-bound execution, explicit workflow phases |
-| § 9 | IT Strategic Planning | Partial | Evidence-based workflow forces documentation |
-| § 10 | IT Risk Management | **Direct** | Structured change workflow, risk documentation |
-| § 11 | Information Security | **Direct** | Four-eyes principle, audit trail, approval workflow |
-| § 12 | ABS | Not Applicable | — |
-| § 13 | IT Operations | Partial | Local execution, no external communication |
-| § 14 | System Development | **Direct** | Structured dev workflow, validation gates |
-| § 15 | Outsourcing | Not Applicable | — |
-| § 16 | IT Incident Management | Not Applicable | — |
-| § 17 | Contingency Planning | Not Applicable | — |
+| BAIT Section | Requirement Area       | Relevance      | FlowGuard Contribution                              |
+| ------------ | ---------------------- | -------------- | --------------------------------------------------- |
+| § 8          | IT Governance          | Partial        | Policy-bound execution, explicit workflow phases    |
+| § 9          | IT Strategic Planning  | Partial        | Evidence-based workflow forces documentation        |
+| § 10         | IT Risk Management     | **Direct**     | Structured change workflow, risk documentation      |
+| § 11         | Information Security   | **Direct**     | Four-eyes principle, audit trail, approval workflow |
+| § 12         | ABS                    | Not Applicable | —                                                   |
+| § 13         | IT Operations          | Partial        | Local execution, no external communication          |
+| § 14         | System Development     | **Direct**     | Structured dev workflow, validation gates           |
+| § 15         | Outsourcing            | Not Applicable | —                                                   |
+| § 16         | IT Incident Management | Not Applicable | —                                                   |
+| § 17         | Contingency Planning   | Not Applicable | —                                                   |
 
 ---
 
@@ -230,15 +230,15 @@ FlowGuard integrates with BAIT compliance programs through:
 
 ## BAIT-Specific Capabilities
 
-| BAIT Requirement | FlowGuard Capability |
-| ---------------- | --------------------- |
-| § 10(3) Risk documentation | Ticket + Plan evidence |
-| § 11(2) Authorization | Four-eyes principle (regulated mode) |
-| § 11(5) Dual control | Review decisions with human gates |
-| § 14(2) Development process | Structured 8-phase workflow |
-| § 14(3) Testing | Validation phase (test quality) |
-| § 14(4) Changes | Versioned plan history, backward transitions |
-| § 14(5) Approval | Decision receipts |
+| BAIT Requirement            | FlowGuard Capability                         |
+| --------------------------- | -------------------------------------------- |
+| § 10(3) Risk documentation  | Ticket + Plan evidence                       |
+| § 11(2) Authorization       | Four-eyes principle (regulated mode)         |
+| § 11(5) Dual control        | Review decisions with human gates            |
+| § 14(2) Development process | Structured 8-phase workflow                  |
+| § 14(3) Testing             | Validation phase (test quality)              |
+| § 14(4) Changes             | Versioned plan history, backward transitions |
+| § 14(5) Approval            | Decision receipts                            |
 
 ---
 

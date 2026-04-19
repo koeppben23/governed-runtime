@@ -16,15 +16,15 @@ How FlowGuard capabilities map to DORA (Digital Operational Resilience Act) by t
 
 ## Mapping Summary
 
-| DORA Chapter | Requirement Area | Relevance | FlowGuard Contribution |
-| ----------- | --------------- | -------- | --------------------- |
-| Chapter I | General Provisions | Partial | Policy modes, governance framing |
-| Chapter II | ICT Risk Management | **Direct** | Structured change workflow, risk documentation |
-| Chapter III | ICT Incident Management | Not Applicable | — |
-| Chapter IV | Digital Operational Resilience Testing | Not Applicable | — |
-| Chapter V | Third-Party ICT Risk | Partial | Evidence of change intent and approval |
-| Chapter VI | Information Sharing | Not Applicable | — |
-| Chapter VII | Supervisory Powers | Not Applicable | — |
+| DORA Chapter | Requirement Area                       | Relevance      | FlowGuard Contribution                         |
+| ------------ | -------------------------------------- | -------------- | ---------------------------------------------- |
+| Chapter I    | General Provisions                     | Partial        | Policy modes, governance framing               |
+| Chapter II   | ICT Risk Management                    | **Direct**     | Structured change workflow, risk documentation |
+| Chapter III  | ICT Incident Management                | Not Applicable | —                                              |
+| Chapter IV   | Digital Operational Resilience Testing | Not Applicable | —                                              |
+| Chapter V    | Third-Party ICT Risk                   | Partial        | Evidence of change intent and approval         |
+| Chapter VI   | Information Sharing                    | Not Applicable | —                                              |
+| Chapter VII  | Supervisory Powers                     | Not Applicable | —                                              |
 
 ---
 
@@ -84,14 +84,14 @@ DORA Article 5-8 requires comprehensive ICT risk management frameworks.
 
 **Key Capabilities:**
 
-| DORA Article | FlowGuard Capability |
-| ----------- | ---------------------- |
-| Art. 5(1) Risk identification | Ticket evidence (change intent) |
-| Art. 5(2) Risk analysis | Plan evidence (risk considerations) |
-| Art. 6(1) Assessment | Validation phase (risk checks) |
-| Art. 7(1) Mitigation | Rollback safety validation |
-| Art. 7(2) Controls | Phase gates, human approval |
-| Art. 8(1) Monitoring | Audit trail, phase status |
+| DORA Article                  | FlowGuard Capability                |
+| ----------------------------- | ----------------------------------- |
+| Art. 5(1) Risk identification | Ticket evidence (change intent)     |
+| Art. 5(2) Risk analysis       | Plan evidence (risk considerations) |
+| Art. 6(1) Assessment          | Validation phase (risk checks)      |
+| Art. 7(1) Mitigation          | Rollback safety validation          |
+| Art. 7(2) Controls            | Phase gates, human approval         |
+| Art. 8(1) Monitoring          | Audit trail, phase status           |
 
 ---
 
@@ -188,13 +188,13 @@ READY → TICKET (Art. 5: Risk Identification)
        → COMPLETE (Audit Trail Ready)
 ```
 
-| DORA Requirement | FlowGuard Phase |
-| ---------------- | ---------------|
-| Art. 5(1) Identification | TICKET |
-| Art. 6(1) Assessment | PLAN |
-| Art. 7(1) Mitigation | VALIDATION |
-| Art. 7(2) Controls | IMPL_REVIEW |
-| Art. 8(1) Monitoring | EVIDENCE_REVIEW |
+| DORA Requirement         | FlowGuard Phase |
+| ------------------------ | --------------- |
+| Art. 5(1) Identification | TICKET          |
+| Art. 6(1) Assessment     | PLAN            |
+| Art. 7(1) Mitigation     | VALIDATION      |
+| Art. 7(2) Controls       | IMPL_REVIEW     |
+| Art. 8(1) Monitoring     | EVIDENCE_REVIEW |
 
 ---
 
@@ -212,15 +212,15 @@ FlowGuard integrates with DORA compliance programs through:
 
 ## DORA Key Capabilities Summary
 
-| DORA Requirement | FlowGuard Capability |
-| ----------------- | --------------------- |
-| Art. 5: ICT risk identification | Ticket evidence (documented intent) |
-| Art. 6: ICT risk assessment | Plan evidence (risk analysis) |
-| Art. 7: Risk treatment | Validation (rollback safety), Phase gates |
-| Art. 7: Control measures | Human approval at gates |
-| Art. 8: Monitoring | Hash-chained audit trail |
-| Art. 25: Third-party risk | Change documentation for vendor changes |
-| Art. 27: Oversight | Decision receipts, evidence archives |
+| DORA Requirement                | FlowGuard Capability                      |
+| ------------------------------- | ----------------------------------------- |
+| Art. 5: ICT risk identification | Ticket evidence (documented intent)       |
+| Art. 6: ICT risk assessment     | Plan evidence (risk analysis)             |
+| Art. 7: Risk treatment          | Validation (rollback safety), Phase gates |
+| Art. 7: Control measures        | Human approval at gates                   |
+| Art. 8: Monitoring              | Hash-chained audit trail                  |
+| Art. 25: Third-party risk       | Change documentation for vendor changes   |
+| Art. 27: Oversight              | Decision receipts, evidence archives      |
 
 ---
 

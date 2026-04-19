@@ -16,17 +16,17 @@ How FlowGuard capabilities map to MaRisk (Mindestanforderungen an das Risikomana
 
 ## Mapping Summary
 
-| MaRisk Module | Requirement Area | Relevance | FlowGuard Contribution |
-| ----------- | --------------- | -------- | --------------------- |
-| AT 7.2 | IT Security — Change Management | **Direct** | Structured change workflow, evidence gates, audit trail |
-| AT 7.3 | IT Security — Authorization Management | Partial | Four-eyes principle (regulated mode), role separation |
-| AT 7.4 | IT Security — Access Control | Partial | Session binding to filesystem, local execution |
-| BT 1 | Risk Identification | Partial | Evidence-based workflow forces documentation of change intent |
-| BT 2 | Risk Measurement | Not Applicable | — |
-| BT 3 | Risk Controlling | Partial | Audit trail provides traceable decision history |
-| BT 4 | Risk Monitoring | Partial | Hash-chained audit trail for monitoring |
-| BT 5 | Risk Reporting | Partial | Compliance summary generation, session archives |
-| BT 6 | Business Continuity | Not Applicable | — |
+| MaRisk Module | Requirement Area                       | Relevance      | FlowGuard Contribution                                        |
+| ------------- | -------------------------------------- | -------------- | ------------------------------------------------------------- |
+| AT 7.2        | IT Security — Change Management        | **Direct**     | Structured change workflow, evidence gates, audit trail       |
+| AT 7.3        | IT Security — Authorization Management | Partial        | Four-eyes principle (regulated mode), role separation         |
+| AT 7.4        | IT Security — Access Control           | Partial        | Session binding to filesystem, local execution                |
+| BT 1          | Risk Identification                    | Partial        | Evidence-based workflow forces documentation of change intent |
+| BT 2          | Risk Measurement                       | Not Applicable | —                                                             |
+| BT 3          | Risk Controlling                       | Partial        | Audit trail provides traceable decision history               |
+| BT 4          | Risk Monitoring                        | Partial        | Hash-chained audit trail for monitoring                       |
+| BT 5          | Risk Reporting                         | Partial        | Compliance summary generation, session archives               |
+| BT 6          | Business Continuity                    | Not Applicable | —                                                             |
 
 ---
 
