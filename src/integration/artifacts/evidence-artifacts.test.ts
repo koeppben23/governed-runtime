@@ -384,4 +384,104 @@ describe('evidence-artifacts', () => {
       expect(entries).toEqual(['plan.v1.json', 'plan.v1.md', 'ticket.v1.json', 'ticket.v1.md']);
     });
   });
+
+  describe('COVERAGE', () => {
+    it('fails verification when plan history artifact is missing', async () => {
+      const v1 = { ...PLAN_EVIDENCE, body: '## Plan\n1. v1', digest: 'digest-v1' };
+      const v2 = { ...PLAN_EVIDENCE, body: '## Plan\n1. v2', digest: 'digest-v2' };
+      const v3 = { ...PLAN_EVIDENCE, body: '## Plan\n1. v3', digest: 'digest-v3' };
+      const state = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { current: v3, history: [v2, v1] },
+      });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      await fs.rm(path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR, 'plan.v1.json'));
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISSING',
+      });
+    });
+
+    it('fails verification when plan history artifact has wrong digest', async () => {
+      const v1 = { ...PLAN_EVIDENCE, body: '## Plan\n1. v1', digest: 'digest-v1' };
+      const v2 = { ...PLAN_EVIDENCE, body: '## Plan\n1. v2', digest: 'digest-v2' };
+      const state = makeState('PLAN_REVIEW', {
+        ticket: TICKET,
+        plan: { current: v2, history: [v1] },
+      });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const v1MetaPath = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR, 'plan.v1.json');
+      const meta = JSON.parse(await fs.readFile(v1MetaPath, 'utf-8')) as { contentHash: string };
+      meta.contentHash = 'wrong-digest';
+      await fs.writeFile(v1MetaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISSING',
+      });
+    });
+
+    it('fails verification when plan missing sourceStateHash', async () => {
+      const state = makeState('PLAN', {
+        ticket: TICKET,
+        plan: { current: PLAN_EVIDENCE, history: [] },
+      });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const planMetaPath = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR, 'plan.v1.json');
+      const meta = JSON.parse(await fs.readFile(planMetaPath, 'utf-8')) as {
+        sourceStateHash?: string;
+      };
+      delete meta.sourceStateHash;
+      await fs.writeFile(planMetaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISMATCH',
+      });
+    });
+
+    it('fails verification when ticket has mismatched contentHash', async () => {
+      const state = makeState('TICKET', { ticket: TICKET, plan: null });
+      await writeState(sessionDir, state);
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const ticketMetaPath = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR, 'ticket.v1.json');
+      const meta = JSON.parse(await fs.readFile(ticketMetaPath, 'utf-8')) as {
+        contentHash: string;
+      };
+      meta.contentHash = 'wrong-digest';
+      await fs.writeFile(ticketMetaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+
+      await expect(verifyEvidenceArtifacts(sessionDir, state)).rejects.toMatchObject({
+        code: 'EVIDENCE_ARTIFACT_MISMATCH',
+      });
+    });
+
+    it('materializes plan even when ticket is null', async () => {
+      const state = makeState('PLAN', {
+        ticket: null,
+        plan: { current: PLAN_EVIDENCE, history: [] },
+      });
+      await writeState(sessionDir, state);
+
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const entries = (await fs.readdir(path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR))).sort();
+      expect(entries).toEqual(['plan.v1.json', 'plan.v1.md']);
+    });
+
+    it('materializes ticket even when plan is null', async () => {
+      const state = makeState('TICKET', { ticket: TICKET, plan: null });
+      await writeState(sessionDir, state);
+
+      await materializeEvidenceArtifacts(sessionDir, state);
+
+      const entries = (await fs.readdir(path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR))).sort();
+      expect(entries).toEqual(['ticket.v1.json', 'ticket.v1.md']);
+    });
+  });
 });
