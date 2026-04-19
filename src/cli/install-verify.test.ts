@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -36,7 +36,7 @@ async function cleanTmpDir(dir: string): Promise<void> {
 
 function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: number } {
   try {
-    const stdout = execFileSync(process.platform === 'win32' ? 'cmd.exe' : 'sh', process.platform === 'win32' ? ['/d', '/s', '/c', cmd] : ['-c', cmd], {
+    const stdout = execSync(cmd, {
       cwd,
       encoding: 'utf8',
       timeout: 420000,
@@ -76,8 +76,8 @@ describe('install-verify', () => {
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      // Use execFileSync with argument array to avoid shell interpolation
-      execFileSync('npm', ['pack', '--pack-destination', tmpDir], {
+      // Use execSync with shell for cross-platform npm availability
+      execSync('npm pack --pack-destination "' + tmpDir + '"', {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
       });
@@ -91,7 +91,7 @@ describe('install-verify', () => {
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp], { encoding: 'utf-8' });
+      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
       expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
