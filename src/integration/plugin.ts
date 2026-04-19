@@ -84,17 +84,55 @@ import {
 import type { FlowGuardPolicy } from '../config/policy';
 import type { FlowGuardConfig } from '../config/flowguard-config';
 import { DEFAULT_CONFIG } from '../config/flowguard-config';
-import {
-  createLogger,
-  createNoopLogger,
-  type FlowGuardLogger,
-  type LogEntry,
-} from '../logging/logger';
+import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger';
+import { createFileSink, getLogDir } from '../logging/file-sink';
 import type { Phase, Event } from '../state/schema';
 import type { SessionState } from '../state/schema';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
+
+/**
+ * Build logging sinks based on config mode, client, and workspace.
+ *
+ * @param config - FlowGuard config with logging.mode, logging.level, logging.retentionDays
+ * @param client - OpenCode client (optional, for UI logging)
+ * @param workspaceDir - Absolute workspace directory (optional, for file logging)
+ * @returns Array of LogSink functions
+ */
+export function buildLogSinks(
+  config: { logging: { mode: 'file' | 'ui' | 'both'; level: string; retentionDays: number } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: { app?: { log: (msg: any) => Promise<unknown> } } | undefined,
+  workspaceDir: string | null,
+): LogSink[] {
+  const sinks: LogSink[] = [];
+  const mode = config.logging.mode;
+
+  if (mode === 'file' || mode === 'both') {
+    if (workspaceDir) {
+      sinks.push(createFileSink(workspaceDir, config.logging.retentionDays));
+    }
+  }
+
+  if (mode === 'ui' || mode === 'both') {
+    if (client?.app?.log) {
+      const clientLog = client.app.log.bind(client.app);
+      sinks.push((entry: LogEntry) => {
+        clientLog({
+          body: {
+            service: entry.service,
+            level: entry.level,
+            message: entry.message,
+            ...(entry.extra ? { extra: entry.extra } : {}),
+          },
+        }).catch(() => {});
+      });
+    }
+  }
+
+  return sinks;
+}
 
 /**
  * Map tool names to lifecycle actions.
@@ -159,34 +197,24 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       config = DEFAULT_CONFIG;
     }
   } catch {
+    // Config fallback for logging only - runtime behavior uses validated config
     config = DEFAULT_CONFIG;
   }
 
-  // Create logger: delegates to client.app.log if available, filtered by config level.
-  // The sink maps LogEntry fields 1:1 to the OpenCode SDK's client.app.log() body shape:
-  //   { body: { service, level, message, extra? } }
-  // This ensures the correct log level reaches OpenCode (not always "info").
-  let log: FlowGuardLogger;
-  if (client?.app?.log) {
-    const clientLog = client.app.log.bind(client.app);
-    log = createLogger(config.logging.level, (entry: LogEntry) => {
-      // Fire-and-forget — logger errors must never block the plugin
-      clientLog({
-        body: {
-          service: entry.service,
-          level: entry.level,
-          message: entry.message,
-          ...(entry.extra ? { extra: entry.extra } : {}),
-        },
-      }).catch(() => {});
-    });
-  } else {
-    log = createNoopLogger();
-  }
+  // Create logger: supports file, ui, or both modes, filtered by config level.
+  // File sink: {workspace}/.opencode/logs/flowguard-{date}.log (JSONL)
+  // UI sink: delegates to client.app.log() (OpenCode UI)
+  // Non-blocking: logging errors never block the plugin
+  const sinks = buildLogSinks(config, client, cachedWsDir);
+
+  const log = sinks.length > 0 ? createLogger(config.logging.level, sinks) : createNoopLogger();
 
   log.info('plugin', 'initialized', {
     worktree: auditWorktree ?? 'none',
+    logMode: config.logging.mode,
     logLevel: config.logging.level,
+    logRetentionDays: config.logging.retentionDays,
+    logDir: cachedWsDir ? getLogDir(cachedWsDir) : null,
     hasConfigFile: config !== DEFAULT_CONFIG,
     fingerprint: cachedFingerprint ?? 'unknown',
   });

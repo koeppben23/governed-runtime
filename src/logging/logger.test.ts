@@ -198,6 +198,44 @@ describe('createLogger', () => {
 // createNoopLogger
 // =============================================================================
 
+describe('createLogger with multiple sinks', () => {
+  it('writes to all sinks when array provided', () => {
+    const entries: LogEntry[] = [];
+    const sink = (e: LogEntry) => entries.push(e);
+    const sink1 = sink;
+    const sink2 = sink;
+
+    const log = createLogger('info', [sink1, sink2]);
+
+    log.info('test', 'hello');
+
+    expect(entries).toHaveLength(2);
+  });
+
+  it('handles sync sink errors gracefully', () => {
+    const entries: LogEntry[] = [];
+    const goodSink = (e: LogEntry) => entries.push(e);
+    const badSink = () => {
+      throw new Error('sink error');
+    };
+
+    const log = createLogger('info', [badSink, goodSink]);
+
+    expect(() => log.info('test', 'error recovery')).not.toThrow();
+    expect(entries).toHaveLength(1);
+  });
+
+  it('works with single sink passed as non-array', () => {
+    const entries: LogEntry[] = [];
+    const sink = (e: LogEntry) => entries.push(e);
+    const log = createLogger('info', sink);
+
+    log.info('test', 'single sink');
+
+    expect(entries).toHaveLength(1);
+  });
+});
+
 describe('createNoopLogger', () => {
   // ── HAPPY ──────────────────────────────────────────────────────────────
 

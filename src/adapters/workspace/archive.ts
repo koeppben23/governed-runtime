@@ -14,7 +14,6 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { readAuditTrail, readConfig, readState } from '../persistence';
-import { DEFAULT_CONFIG } from '../../config/flowguard-config';
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -103,7 +102,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     }
   }
 
-  const config = await readConfig(wsDir).catch(() => DEFAULT_CONFIG);
+  const config = await readConfig(wsDir);
   const redactionMode = config.archive.redaction.mode;
   const includeRaw = config.archive.redaction.includeRaw;
 

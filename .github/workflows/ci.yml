@@ -34,7 +34,7 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
-          retention-days: 14
+          retention-days: 3
 
   typecheck:
     name: typecheck

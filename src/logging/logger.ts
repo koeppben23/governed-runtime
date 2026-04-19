@@ -4,7 +4,7 @@
  *
  * Design:
  * - FlowGuardLogger interface: debug, info, warn, error — each takes (service, message, extra?)
- * - createLogger(level, sink?): Level-filtered logger that delegates to an optional structured sink
+ * - createLogger(level, sinks?): Level-filtered logger that delegates to optional structured sinks
  * - createNoopLogger(): Silent logger for tests and contexts without a client
  *
  * Architecture:
@@ -13,13 +13,16 @@
  * - Rails are pure — no logger, no side effects
  *
  * The logger is injected into the plugin closure at init time.
- * Level filtering happens here; the sink receives structured log entries
+ * Level filtering happens here; the sinks receive structured log entries
  * so it can delegate to OpenCode's client.app.log() with the correct
  * level, service, message, and extra fields.
  *
  * OpenCode SDK contract (from docs):
  *   client.app.log({ body: { service, level, message, extra? } })
  *   Levels: "debug" | "info" | "warn" | "error"
+ *
+ * FlowGuard operational logs are diagnostic only. They are not audit evidence
+ * and are not part of the governance SSOT. Audit/Archive remain separate.
  *
  * @version v2
  */
@@ -79,32 +82,36 @@ export interface LogEntry {
   extra?: Record<string, unknown>;
 }
 
-// ─── Client Sink ─────────────────────────────────────────────────────────────
+// ─── LogSink Interface ────────────────────────────────────────────────────────
 
 /**
  * Structured output sink.
  *
- * In production, this wraps client.app.log() and forwards
- * the LogEntry fields directly to the OpenCode SDK.
+ * All sinks are async to support file I/O and network calls.
+ * Errors must be handled internally — the logger never throws.
  *
- * Abstracted so the logger itself has no OpenCode dependency.
+ * In production:
+ * - file-sink: writes to {workspace}/.opencode/logs/flowguard-{date}.log
+ * - ui-sink: delegates to client.app.log()
  */
-export type LogSink = (entry: LogEntry) => void;
+export type LogSink = (entry: LogEntry) => Promise<void> | void;
 
-// ─── Factories ───────────────────────────────────────────────────────────────
+// ─── Factories ────────────────────────────────────────────────────────────────
 
 /**
  * Create a level-filtered logger.
  *
  * Messages below `minLevel` are suppressed. Messages at or above are
- * forwarded to the sink as structured LogEntry objects. If no sink is
+ * forwarded to all sinks as structured LogEntry objects. If no sinks are
  * provided, the logger is effectively a noop (but still does level
  * filtering — useful for testing).
  *
  * @param minLevel - Minimum severity to emit.
- * @param sink - Optional structured output function (e.g. wrapping client.app.log).
+ * @param sinks - Optional array of structured output functions.
  */
-export function createLogger(minLevel: LogLevel, sink?: LogSink): FlowGuardLogger {
+export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): FlowGuardLogger {
+  const sinkArray = Array.isArray(sinks) ? sinks : sinks ? [sinks] : [];
+
   function emit(
     level: 'debug' | 'info' | 'warn' | 'error',
     service: string,
@@ -112,9 +119,18 @@ export function createLogger(minLevel: LogLevel, sink?: LogSink): FlowGuardLogge
     extra?: Record<string, unknown>,
   ): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
-    if (!sink) return;
+    if (sinkArray.length === 0) return;
 
-    sink({ level, service, message, extra });
+    const entry: LogEntry = { level, service, message, extra };
+
+    for (const sink of sinkArray) {
+      try {
+        const result = sink(entry);
+        void Promise.resolve(result).catch(() => {});
+      } catch {
+        // Sink errors are non-blocking — logging never fails the flow
+      }
+    }
   }
 
   return {

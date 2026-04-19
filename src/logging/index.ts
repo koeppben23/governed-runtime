@@ -12,3 +12,5 @@ export {
   createLogger,
   createNoopLogger,
 } from './logger';
+
+export { createFileSink, getLogDir } from './file-sink';
