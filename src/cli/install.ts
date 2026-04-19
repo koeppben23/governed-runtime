@@ -1145,5 +1145,5 @@ const isDirectExecution =
   realpathSync(process.argv[1]).endsWith('install.js');
 
 if (isDirectExecution) {
-  main(process.argv.slice(2)).then((code) => process.exit(code));
+  void main(process.argv.slice(2)).then((code) => process.exit(code));
 }

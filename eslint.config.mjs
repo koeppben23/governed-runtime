@@ -39,6 +39,8 @@ export default tseslint.config(
       "src/adapters/workspace/**/*.ts",
       "src/rails/**/*.ts",
       "src/machine/**/*.ts",
+      "src/integration/**/*.ts",
+      "src/cli/**/*.ts",
     ],
     ignores: ["src/**/*.test.ts", "src/**/__tests__/**/*.ts"],
     languageOptions: {

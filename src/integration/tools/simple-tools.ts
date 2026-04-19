@@ -50,7 +50,7 @@ import { archiveSession } from '../../adapters/workspace';
 import { writeMadrArtifact } from '../artifacts/madr-writer';
 
 // Evidence types
-import type { CheckId, ValidationResult } from '../../state/evidence';
+import type { ValidationResult } from '../../state/evidence';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness';
@@ -282,7 +282,7 @@ export const validate: ToolDefinition = {
       const now = ctx.now();
       const validationResults = args.results.map(
         (r: { checkId: string; passed: boolean; detail: string }) => ({
-          checkId: r.checkId as CheckId,
+          checkId: r.checkId,
           passed: r.passed,
           detail: r.detail,
           executedAt: now,

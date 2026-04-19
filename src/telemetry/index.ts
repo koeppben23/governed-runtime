@@ -26,18 +26,27 @@ export { SpanStatusCode };
 
 let tracer: Tracer | null = null;
 let sdkInitialized = false;
+let _initPromise: Promise<void> | null = null;
 
 /**
  * Initialize the OpenTelemetry SDK.
  *
  * Called automatically on first access if OTEL_EXPORTER_OTLP_ENDPOINT is set.
- * Safe to call multiple times (idempotent).
+ * Safe to call multiple times (idempotent). Uses Promise-lock to prevent
+ * race condition when multiple withSpan() calls race on init.
  */
 async function ensureInitialized(): Promise<void> {
   if (sdkInitialized) return;
+  _initPromise ??= doInitialize();
+  return _initPromise;
+}
 
+async function doInitialize(): Promise<void> {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  if (!endpoint) return;
+  if (!endpoint) {
+    sdkInitialized = true;
+    return;
+  }
 
   try {
     const [{ trace }, { OTLPTraceExporter }, { getNodeAutoInstrumentations }, { NodeSDK }] =
