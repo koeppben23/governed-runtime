@@ -134,6 +134,21 @@ describe('createFileSink', () => {
   });
 
   describe('EDGE', () => {
+    it('handles many concurrent log calls without race condition', async () => {
+      const sink = createFileSink(testDir, 7);
+      const entry: LogEntry = { level: 'info', service: 'test', message: 'race test' };
+      
+      await Promise.all(
+        Array.from({ length: 20 }, () => sink(entry))
+      );
+
+      const files = await readdir(join(testDir, '.opencode/logs'));
+      expect(files.length).toBe(1);
+      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      expect(lines).toHaveLength(20);
+    });
+
     it('handles concurrent writes from multiple sinks', async () => {
       const sink1 = createFileSink(testDir, 7);
       const sink2 = createFileSink(testDir, 7);
