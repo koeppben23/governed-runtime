@@ -41,6 +41,7 @@ export function createFileSink(workspaceDir: string, retentionDays: number | und
   const effectiveRetention = retentionDays ?? 7;
 
   let initialized = false;
+  let _initPromise: Promise<boolean> | null = null;
   let logDir: string;
 
   async function ensureDir(): Promise<boolean> {
@@ -92,9 +93,18 @@ export function createFileSink(workspaceDir: string, retentionDays: number | und
   return async (entry: LogEntry): Promise<void> => {
     try {
       if (!initialized) {
-        const dirOk = await ensureDir();
+        if (!_initPromise) {
+          _initPromise = ensureDir()
+            .then(async (dirOk) => {
+              if (dirOk) await cleanupOldLogs();
+              return dirOk;
+            })
+            .finally(() => {
+              _initPromise = null;
+            });
+        }
+        const dirOk = await _initPromise;
         if (!dirOk) return;
-        await cleanupOldLogs();
         initialized = true;
       }
 
