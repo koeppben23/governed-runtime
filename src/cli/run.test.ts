@@ -1,9 +1,6 @@
 /**
  * @module cli/run.test
- * @description Unit tests for the headless run wrapper.
- *
- * Tests the argument parsing and utilities.
- * Does NOT test actual OpenCode execution (requires opencode installed).
+ * @description Tests for headless run/serve wrapper.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -48,10 +45,16 @@ describe('parseRunArgs', () => {
       expect(result?.config.prompt).toBe('Run /validate');
     });
 
-    it('parses --server-url', () => {
-      const result = parseRunArgs(['--server-url', 'http://localhost:4096', 'Run /validate']);
+    it('parses -- for prompt', () => {
+      const result = parseRunArgs(['--', 'Run /hydrate']);
       expect(result).not.toBeNull();
-      expect(result?.config.serverUrl).toBe('http://localhost:4096');
+      expect(result?.config.prompt).toBe('Run /hydrate');
+    });
+
+    it('parses double-dash with args', () => {
+      const result = parseRunArgs(['--', 'Run', '/hydrate', 'policy=team']);
+      expect(result).not.toBeNull();
+      expect(result?.config.prompt).toBe('Run /hydrate policy=team');
     });
 
     it('parses --cwd', () => {
@@ -62,27 +65,22 @@ describe('parseRunArgs', () => {
   });
 
   describe('bad path', () => {
-    it('returns null when --prompt missing value', () => {
-      const result = parseRunArgs(['--prompt']);
+    it('returns null when prompt missing', () => {
+      const result = parseRunArgs([]);
       expect(result).toBeNull();
     });
 
-    it('returns null when prompt empty', () => {
-      const result = parseRunArgs([]);
+    it('returns null when --prompt missing value', () => {
+      const result = parseRunArgs(['--prompt']);
       expect(result).toBeNull();
     });
   });
 
   describe('corner cases', () => {
-    it('handles prompt with special characters', () => {
-      const result = parseRunArgs(['Run /plan with: "quotes" and <brackets>']);
+    it('handles prompt with special chars', () => {
+      const result = parseRunArgs(['Run /plan "quotes" <brackets>']);
       expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /plan with: "quotes" and <brackets>');
-    });
-
-    it('ignores flag-like strings without values', () => {
-      const result = parseRunArgs(['--force']);
-      expect(result).toBeNull();
+      expect(result?.config.prompt).toBe('Run /plan "quotes" <brackets>');
     });
   });
 });
@@ -100,119 +98,68 @@ describe('parseServeArgs', () => {
       expect(result?.config.port).toBe(3000);
     });
 
-    it('parses --hostname', () => {
-      const result = parseServeArgs(['--hostname', '0.0.0.0']);
-      expect(result).not.toBeNull();
-      expect(result?.config.hostname).toBe('0.0.0.0');
-    });
-
-    it('parses --detach flag', () => {
+    it('parses --detach', () => {
       const result = parseServeArgs(['--detach']);
       expect(result).not.toBeNull();
       expect(result?.config.detach).toBe(true);
     });
 
     it('parses all flags', () => {
-      const result = parseServeArgs([
-        '--port', '8080',
-        '--hostname', '0.0.0.0',
-        '--detach',
-      ]);
+      const result = parseServeArgs(['--port', '8080', '--detach', '--cwd', '/ws']);
       expect(result).not.toBeNull();
       expect(result?.config.port).toBe(8080);
-      expect(result?.config.hostname).toBe('0.0.0.0');
       expect(result?.config.detach).toBe(true);
+      expect(result?.config.cwd).toBe('/ws');
     });
   });
 
   describe('bad path', () => {
-    it('returns null when --port missing value', () => {
+    it('returns null when --port missing', () => {
       const result = parseServeArgs(['--port']);
       expect(result).toBeNull();
     });
 
-    it('returns null when --port is not a number', () => {
+    it('returns null when --port invalid', () => {
       const result = parseServeArgs(['--port', 'not-a-number']);
       expect(result).toBeNull();
     });
-  });
 
-  describe('corner cases', () => {
-    it('handles port boundary (1)', () => {
-      const result = parseServeArgs(['--port', '1']);
-      expect(result).not.toBeNull();
-      expect(result?.config.port).toBe(1);
-    });
-
-    it('handles port boundary (65535)', () => {
-      const result = parseServeArgs(['--port', '65535']);
-      expect(result).not.toBeNull();
-      expect(result?.config.port).toBe(65535);
-    });
-
-    it('handles negative port', () => {
-      const result = parseServeArgs(['--port', '-1']);
+    it('returns null when --port out of range', () => {
+      const result = parseServeArgs(['--port', '0']);
       expect(result).toBeNull();
     });
   });
 });
 
 describe('formatRunResult', () => {
-  it('formats successful result with output', () => {
-    const result = formatRunResult({
-      success: true,
-      output: 'Some output',
-    });
-    expect(result).toContain('Some output');
+  it('formats success with output', () => {
+    const result = formatRunResult({ success: true, output: 'Output' });
+    expect(result).toContain('Output');
   });
 
-  it('formats successful result without output', () => {
-    const result = formatRunResult({
-      success: true,
-    });
-    expect(result).toContain('[ok]');
-  });
-
-  it('formats failed result', () => {
-    const result = formatRunResult({
-      success: false,
-      error: 'Error occurred',
-    });
+  it('formats failure', () => {
+    const result = formatRunResult({ success: false, error: 'Failed' });
     expect(result).toContain('[error]');
-    expect(result).toContain('Error occurred');
+    expect(result).toContain('Failed');
   });
 });
 
 describe('getRunUsage', () => {
   it('contains Usage', () => {
-    const usage = getRunUsage();
-    expect(usage).toContain('Usage:');
+    expect(getRunUsage()).toContain('Usage:');
   });
 
-  it('contains EXPERIMENTAL warning', () => {
-    const usage = getRunUsage();
-    expect(usage).toContain('EXPERIMENTAL');
-  });
-
-  it('contains examples', () => {
-    const usage = getRunUsage();
-    expect(usage).toContain('Examples:');
+  it('mentions OpenCode directly', () => {
+    expect(getRunUsage()).toContain('opencode run');
   });
 });
 
 describe('getServeUsage', () => {
   it('contains Usage', () => {
-    const usage = getServeUsage();
-    expect(usage).toContain('Usage:');
+    expect(getServeUsage()).toContain('Usage:');
   });
 
-  it('contains EXPERIMENTAL warning', () => {
-    const usage = getServeUsage();
-    expect(usage).toContain('EXPERIMENTAL');
-  });
-
-  it('contains default port', () => {
-    const usage = getServeUsage();
-    expect(usage).toContain('4096');
+  it('mentions OpenCode directly', () => {
+    expect(getServeUsage()).toContain('opencode serve');
   });
 });

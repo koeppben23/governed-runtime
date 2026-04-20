@@ -193,7 +193,7 @@ curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
 # Send message
 curl -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
-  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}}'
+  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}}'
 ```
 
 See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for the full API reference.

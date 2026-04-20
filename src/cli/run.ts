@@ -2,19 +2,10 @@
  * @module cli/run
  * @description Headless wrapper for FlowGuard via OpenCode modes.
  *
- * THIS IS EXPERIMENTAL: The implementation is being refined for correctness.
- *
- * Usage:
- *   flowguard run --prompt "..." [--server-url <url>]
- *   flowguard serve [--port <port>] [--detach]
- *
- * Architecture:
- * - run(): Executes commands via opencode run (non-interactive)
- * - serve(): Starts OpenCode server for headless operation
- *
- * Known limitations:
- * - Server lifecycle needs explicit management
- * - --attach semantics not fully verified with OpenCode
+ * EXPERIMENTAL: This module is a convenience wrapper.
+ * For production, use OpenCode directly:
+ *   opencode run "prompt"
+ *   opencode serve --port 4096
  */
 
 import { spawn } from 'node:child_process';
@@ -29,7 +20,6 @@ export interface RunResult {
 }
 
 export interface HeadlessConfig {
-  serverUrl?: string;
   prompt: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -112,31 +102,20 @@ function executeOpenCode(
 // ─── Run Implementation ────────────────────────────────────────────────────────────
 
 /**
- * Execute a FlowGuard command in headless mode.
+ * Execute a FlowGuard command via opencode run.
  *
- * Uses `opencode run` for non-interactive execution.
- * Does NOT start its own server — uses OpenCode's built-in mode.
- *
- * @param config - Headless configuration
- * @returns Execution result
+ * This is a thin wrapper around `opencode run`.
+ * For production, use OpenCode directly.
  */
 export async function run(config: HeadlessConfig): Promise<RunResult> {
-  const { serverUrl, prompt, cwd = process.cwd(), env } = config;
+  const { prompt, cwd = process.cwd(), env } = config;
 
   if (!prompt) {
-    return {
-      success: false,
-      error: 'Prompt is required',
-    };
+    return { success: false, error: 'Prompt is required' };
   }
 
-  // EXPERIMENTAL: Use serverUrl if provided
-  // Note: opencode run --attach semantics need verification with OpenCode docs
-  const args = serverUrl
-    ? ['run', '--attach', serverUrl, prompt]
-    : ['run', prompt];
-
-  const result = await executeOpenCode(args, { cwd, env });
+  // Simple wrapper: just call opencode run
+  const result = await executeOpenCode(['run', prompt], { cwd, env });
 
   if (result.exitCode !== 0) {
     return {
@@ -145,30 +124,21 @@ export async function run(config: HeadlessConfig): Promise<RunResult> {
     };
   }
 
-  return {
-    success: true,
-    output: result.stdout,
-  };
+  return { success: true, output: result.stdout };
 }
 
 // ─── Serve Implementation ─────────────────────────────────────────────────
 
-/**
- * Check if a port is in use.
- */
 export async function checkServer(port: number): Promise<boolean> {
   const available = await isPortAvailable(port);
   return !available;
 }
 
 /**
- * Start an OpenCode server for headless operation.
+ * Start an OpenCode server.
  *
- * Note: Without --detach, this keeps the server in foreground.
- * With --detach, the server runs in background.
- *
- * @param config - Server configuration
- * @returns Server process info
+ * Foreground: blocks until killed.
+ * Detached: runs in background with proper cleanup.
  */
 export async function serve(
   config: ServeConfig,
@@ -181,54 +151,34 @@ export async function serve(
     env,
   } = config;
 
-  // Check if port is already in use
   const inUse = await checkServer(port);
   if (inUse) {
-    return {
-      success: false,
-      port,
-      error: `Port ${port} is already in use. Is a server already running?`,
-    };
+    return { success: false, port, error: `Port ${port} is already in use` };
   }
 
-  const args = [
-    'serve',
-    '--port',
-    String(port),
-    '--hostname',
-    host,
-  ];
-
+  const args = ['serve', '--port', String(port), '--hostname', host];
   const childEnv = { ...process.env, ...env };
 
   if (detach) {
-    // Spawn in background
+    // Detached: proper cleanup with unref()
     const serverProcess = spawn('opencode', args, {
       cwd,
       env: childEnv,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: 'ignore',
       detached: true,
     });
 
+    serverProcess.unref();
+
     const ready = await waitForServer(port, SERVER_STARTUP_TIMEOUT_MS);
     if (!ready) {
-      serverProcess.kill();
-      return {
-        success: false,
-        port,
-        error: `Server failed to start within ${SERVER_STARTUP_TIMEOUT_MS}ms`,
-      };
+      return { success: false, port, error: 'Server failed to start' };
     }
 
-    return {
-      success: true,
-      port,
-      pid: serverProcess.pid,
-    };
+    return { success: true, port, pid: serverProcess.pid };
   }
 
-  // Foreground mode (default) - keep process running
-  // This will block until the server is stopped
+  // Foreground mode
   const proc = spawn('opencode', args, {
     cwd,
     env: childEnv,
@@ -237,50 +187,52 @@ export async function serve(
 
   const pid = proc.pid;
 
-  proc.stdout?.on('data', (d) => {
-    process.stdout.write(d);
+  // Handle errors BEFORE waitForServer
+  let startError: string | null = null;
+  proc.on('error', (err) => {
+    startError = err.message;
   });
 
-  proc.stderr?.on('data', (d) => {
-    process.stderr.write(d);
+  proc.on('close', (code) => {
+    if (code !== 0 && startError) {
+      // Error already handled
+    }
   });
 
   const ready = await waitForServer(port, SERVER_STARTUP_TIMEOUT_MS);
   if (!ready) {
     proc.kill();
-    return {
-      success: false,
-      port,
-      error: `Server failed to start within ${SERVER_STARTUP_TIMEOUT_MS}ms`,
-    };
+    return { success: false, port, error: startError || 'Server failed to start' };
   }
 
-  // Wait for process to exit (blocks until killed)
+  // Wait until killed
   return new Promise((resolve) => {
     proc.on('close', () => {
-      resolve({
-        success: true,
-        port,
-        pid,
-      });
+      resolve({ success: true, port, pid });
     });
   });
 }
 
 // ─── Argument Parsing ─────────────────────────────────────────────────
 
-export function parseRunArgs(argv: string[]): {
-  config: HeadlessConfig;
-  errors: string[];
-} | null {
-  const config: HeadlessConfig = {
-    prompt: '',
-  };
-
+export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: string[] } | null {
+  const config: HeadlessConfig = { prompt: '' };
   const errors: string[] = [];
 
+  let doubleDash = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+
+    // Everything after -- is the prompt
+    if (arg === '--') {
+      doubleDash = true;
+      continue;
+    }
+
+    if (doubleDash && arg) {
+      config.prompt = config.prompt ? `${config.prompt} ${arg}` : arg;
+      continue;
+    }
 
     if (arg === '--prompt') {
       const next = argv[i + 1];
@@ -289,14 +241,6 @@ export function parseRunArgs(argv: string[]): {
         i++;
       } else {
         errors.push('--prompt requires a value');
-      }
-    } else if (arg === '--server-url') {
-      const next = argv[i + 1];
-      if (next) {
-        config.serverUrl = next;
-        i++;
-      } else {
-        errors.push('--server-url requires a value');
       }
     } else if (arg === '--cwd') {
       const next = argv[i + 1];
@@ -312,16 +256,13 @@ export function parseRunArgs(argv: string[]): {
   }
 
   if (!config.prompt) {
-    errors.push('Prompt is required. Use --prompt or provide a command.');
+    errors.push('Prompt is required. Use -- <prompt> or --prompt');
   }
 
   return errors.length > 0 ? null : { config, errors };
 }
 
-export function parseServeArgs(argv: string[]): {
-  config: ServeConfig;
-  errors: string[];
-} | null {
+export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
   const config: ServeConfig = {};
   const errors: string[] = [];
 
@@ -333,7 +274,7 @@ export function parseServeArgs(argv: string[]): {
       if (next) {
         const port = parseInt(next, 10);
         if (Number.isNaN(port) || port < 1 || port > 65535) {
-          errors.push('--port must be between 1 and 65535');
+          errors.push('--port must be 1-65535');
         } else {
           config.port = port;
           i++;
@@ -369,7 +310,7 @@ export function parseServeArgs(argv: string[]): {
 
 export function formatRunResult(result: RunResult): string {
   if (result.success) {
-    return result.output ?? '[ok] Command executed';
+    return result.output ?? '[ok] Executed';
   }
   return `[error] ${result.error ?? 'Unknown error'}`;
 }
@@ -377,32 +318,37 @@ export function formatRunResult(result: RunResult): string {
 export function getRunUsage(): string {
   return `Usage: flowguard run [options] -- <prompt>
 
-Execute FlowGuard commands in headless mode (EXPERIMENTAL).
+Headless execution wrapper (EXPERIMENTAL).
+
+For production, use OpenCode directly:
+  opencode run "prompt"
 
 Options:
-  --prompt <text>     FlowGuard command to execute
-  --server-url <url>  Attach to existing server
-  --cwd <dir>        Working directory
+  -- <prompt>         Command to execute (required)
+  --cwd <dir>         Working directory
 
 Examples:
   flowguard run -- "Run /hydrate"
-  flowguard run --server-url http://localhost:4096 -- "Run /validate"`;
+  opencode run "Run /hydrate"`;
 }
 
 export function getServeUsage(): string {
   return `Usage: flowguard serve [options]
 
-Start an OpenCode server (EXPERIMENTAL).
+Server wrapper (EXPERIMENTAL).
+
+For production, use OpenCode directly:
+  opencode serve --port 4096
 
 Options:
-  --port <num>       Port to listen on (default: ${DEFAULT_PORT})
-  --hostname <host>  Hostname to bind to (default: ${DEFAULT_HOSTNAME})
-  --detach          Run in background (don't block)
+  --port <num>       Port (default: ${DEFAULT_PORT})
+  --hostname <host> Hostname (default: ${DEFAULT_HOSTNAME})
+  --detach          Run in background
   --cwd <dir>       Working directory
 
 Examples:
-  flowguard serve
-  flowguard serve --port 4096 --detach`;
+  flowguard serve --detach --port 4096
+  opencode serve --port 4096`;
 }
 
 export async function runMain(argv: string[]): Promise<number> {
@@ -413,8 +359,11 @@ export async function runMain(argv: string[]): Promise<number> {
     return 1;
   }
 
-  console.log(formatRunResult(await run(parsed.config)));
-  return parsed.config.prompt ? 0 : 1;
+  const result = await run(parsed.config);
+  console.log(formatRunResult(result));
+
+  // FIXED: Return success from actual execution
+  return result.success ? 0 : 1;
 }
 
 export async function serveMain(argv: string[]): Promise<number> {
