@@ -25,12 +25,20 @@ FlowGuard system detects a Java/Spring Boot stack in the repository.
 
 ---
 
-## 1. Technology Stack Defaults
+## 1. Technology Stack Detection
 
-Unless repository evidence says otherwise, assume:
-- Java 21, Spring Boot 3.x, Maven (Gradle only if repo uses it)
-- JPA/Hibernate, Liquibase/Flyway, OpenAPI Generator (if present)
-- MapStruct / Lombok, Actuator + Micrometer, Spring Security (if present)
+Do not assume Java, Spring Boot, or build tool versions.
+Detect stack facts from repository evidence first:
+- Java version from \`.java-version\`, \`pom.xml\`, \`build.gradle\`, or CI config
+- Spring Boot version from \`pom.xml\`/\`build.gradle\` dependency declarations
+- Build tool from \`mvnw\`/\`gradlew\` wrapper presence or manifest files
+
+Version-specific guidance requires repository evidence.
+If the version cannot be verified, mark version-specific claims as \`NOT_VERIFIED\`.
+
+Detect-if-present (no version assumption needed):
+- JPA/Hibernate, Liquibase/Flyway, OpenAPI Generator
+- MapStruct / Lombok, Actuator + Micrometer, Spring Security
 
 **Repo-first rule:** If a tool exists in the repo and is runnable, it is not optional — execute it and capture evidence. If not runnable, mark claims as \`NOT_VERIFIED\` and emit recovery commands.
 
@@ -191,7 +199,19 @@ A change fails if any of these apply:
 
 ---
 
-## 9. Anti-Patterns (detect and avoid)
+## 9. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (mvnw/gradlew targets, Maven/Gradle wrapper)
+3. Framework defaults (\`mvn verify\`, \`gradle check\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 10. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|

@@ -155,7 +155,19 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (package.json scripts, nx targets)
+3. Framework defaults (\`tsc --noEmit\`, \`eslint\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|

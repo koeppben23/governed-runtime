@@ -895,7 +895,7 @@ describe('config/profile/decision-trees', () => {
 
 describe('config/profile/token-budget', () => {
   it.each([
-    { name: 'baseline', profile: baselineProfile, maxBaseChars: 4000 },
+    { name: 'baseline', profile: baselineProfile, maxBaseChars: 4500 },
     { name: 'typescript', profile: typescriptProfile, maxBaseChars: 8000 },
     { name: 'java', profile: javaProfile, maxBaseChars: 10000 },
     { name: 'angular', profile: angularProfile, maxBaseChars: 8000 },
@@ -915,6 +915,195 @@ describe('config/profile/token-budget', () => {
       const implContent = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
       expect(readyContent.length).toBeLessThan(implContent.length);
     }
+  });
+});
+
+// ─── Version Neutrality & Verification Hardening ─────────────────────────────
+
+describe('config/profile/version-neutrality', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it('java profile base uses detection-first language', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).toContain('Technology Stack Detection');
+      expect(base).toContain('Detect stack facts from repository evidence first');
+    });
+
+    it('java profile base requires NOT_VERIFIED for unverified versions', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).toContain('NOT_VERIFIED');
+      expect(base).toContain('version cannot be verified');
+    });
+
+    it('angular AP-NG09 references version-conditional guidance', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      expect(base).toContain('repo version or convention requires them');
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it('java profile base must NOT contain hard-coded Java version', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toContain('Java 21');
+      expect(base).not.toContain('Java 17');
+      expect(base).not.toContain('Java 11');
+    });
+
+    it('java profile base must NOT contain hard-coded Spring Boot version', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toContain('Spring Boot 3.x');
+      expect(base).not.toContain('Spring Boot 2.x');
+    });
+
+    it('java profile base must NOT use assume-first wording', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toMatch(/[Uu]nless repository evidence.*assume/);
+    });
+
+    it('angular AP-NG09 must NOT contain bare "Deprecated" claim', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      // Match the table cell: "| Deprecated," without version context
+      expect(base).not.toMatch(/\|\s*Deprecated,\s/);
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it('java profile still detects conditional tooling (no version assumption)', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      // These are detect-if-present, not version-specific
+      expect(base).toContain('JPA/Hibernate');
+      expect(base).toContain('MapStruct');
+      expect(base).toContain('Actuator');
+    });
+
+    it('typescript profile remains version-neutral (no change needed)', () => {
+      const base = extractBaseInstructions(typescriptProfile.instructions);
+      // Should not contain any hard-coded version numbers
+      expect(base).not.toMatch(/TypeScript \d+/);
+      expect(base).not.toMatch(/Node\.?js? \d+/);
+    });
+
+    it('baseline profile remains version-agnostic (no change needed)', () => {
+      const base = extractBaseInstructions(baselineProfile.instructions);
+      // Baseline should never mention specific language versions
+      expect(base).not.toMatch(/Java \d+/);
+      expect(base).not.toMatch(/Python \d+/);
+      expect(base).not.toMatch(/Node\.?js? \d+/);
+    });
+  });
+});
+
+describe('config/profile/verification-hardening', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name profile base contains Verification Commands section', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      expect(base).toContain('Verification Commands');
+    });
+
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name verification section requires NOT_VERIFIED on failure', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      // Find the verification section and check it mentions NOT_VERIFIED
+      const verIdx = base.indexOf('Verification Commands');
+      expect(verIdx).toBeGreaterThan(-1);
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toContain('NOT_VERIFIED');
+      expect(verSection).toContain('recovery');
+    });
+
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name verification section prioritizes repo-native commands', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      // CI commands should be listed first (position 1)
+      expect(verSection).toMatch(/1\.\s*Documented CI commands/);
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)(
+      '$name verification section must NOT prescribe unconditional framework commands',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        const verIdx = base.indexOf('Verification Commands');
+        const verSection = base.slice(verIdx, verIdx + 500);
+        // Framework defaults should be conditional ("only if repo-native absent")
+        expect(verSection).toMatch(/[Oo]nly if repo-native.*(absent|commands are absent)/);
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('java verification mentions mvnw/gradlew', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toMatch(/mvnw|gradlew|Maven|Gradle/);
+    });
+
+    it('typescript verification mentions package.json scripts', () => {
+      const base = extractBaseInstructions(typescriptProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toContain('package.json');
+    });
+
+    it('angular verification mentions ng or nx commands', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toMatch(/ng |nx /);
+    });
+
+    it('verification section comes after quality gates in all profiles', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const base = extractBaseInstructions(profile.instructions);
+        const qgIdx = base.indexOf('Quality Gates');
+        const verIdx = base.indexOf('Verification Commands');
+        const apIdx = base.indexOf('Anti-Patterns');
+        expect(qgIdx).toBeLessThan(verIdx);
+        expect(verIdx).toBeLessThan(apIdx);
+      }
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+  describe('PERF', () => {
+    it('verification section adds < 500 chars per profile', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const base = extractBaseInstructions(profile.instructions);
+        const verIdx = base.indexOf('Verification Commands');
+        const apIdx = base.indexOf('Anti-Patterns');
+        // Section between verification heading and anti-patterns
+        const verLen = apIdx - verIdx;
+        expect(verLen).toBeLessThan(500);
+        expect(verLen).toBeGreaterThan(50); // not empty
+      }
+    });
   });
 });
 

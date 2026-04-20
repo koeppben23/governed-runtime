@@ -101,7 +101,19 @@ unless the change explicitly requires it.
 
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project build/test/lint scripts as declared in the repo
+3. Framework defaults only if repo-native commands are absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|

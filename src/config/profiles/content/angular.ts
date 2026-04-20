@@ -143,7 +143,19 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (package.json scripts, nx affected, ng commands)
+3. Framework defaults (\`ng build\`, \`ng test\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -155,7 +167,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-NG06 | Fixed Waits in Tests | Flaky on slow CI, slow execution, masks timing bugs |
 | AP-NG07 | Untyped Reactive Forms | No compile-time field checks, all values \`any\` |
 | AP-NG08 | Component Without OnPush | Performance degradation, hides reactivity bugs |
-| AP-NG09 | Class-Based Guards/Interceptors | Deprecated, unnecessary boilerplate |
+| AP-NG09 | Class-Based Guards/Interceptors | Prefer functional guards/interceptors in Angular 15.2+; keep class-based APIs when repo version or convention requires them |
 | AP-NG10 | Cross-App Imports in Nx | Violates boundaries, circular deps, blocks independent deployment |`;
 
 // ─── Phase-Specific Sections ─────────────────────────────────────────────────
