@@ -28,7 +28,6 @@ export interface HeadlessConfig {
 export interface ServeConfig {
   port?: number;
   hostname?: string;
-  detach?: boolean;
   cwd?: string;
   env?: Record<string, string>;
 }
@@ -128,16 +127,15 @@ export async function checkServer(port: number): Promise<boolean> {
 }
 
 /**
- * Start an OpenCode server.
+ * Start an OpenCode server in detached mode.
  *
- * Foreground: blocks until server process exits (Ctrl+C or kill).
- * Detached: runs in background, returns immediately.
+ * This is the only supported mode. The server runs in background
+ * and the CLI returns immediately.
  */
 export async function serve(config: ServeConfig): Promise<ServeResult> {
   const {
     port = DEFAULT_PORT,
     hostname: host = DEFAULT_HOSTNAME,
-    detach = false,
     cwd = process.cwd(),
     env,
   } = config;
@@ -150,85 +148,30 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
   const args = ['serve', '--port', String(port), '--hostname', host];
   const mergedEnv = { ...process.env, ...env };
 
-  if (detach) {
-    // Detached: background process
-    const serverProcess = spawn('opencode', args, {
-      cwd,
-      env: mergedEnv,
-      stdio: 'ignore',
-      detached: true,
-    });
-
-    serverProcess.unref();
-
-    // Race: error vs ready vs timeout
-    let startupError: string | null = null;
-
-    serverProcess.on('error', (err) => {
-      startupError = err.message;
-    });
-
-    const ready = await waitForServer(port, STARTUP_TIMEOUT_MS);
-
-    if (!ready || startupError) {
-      return { success: false, port, error: startupError || 'Server failed to start' };
-    }
-
-    return { success: true, port, pid: serverProcess.pid };
-  }
-
-  // Foreground: spawn and truly block until the process exits
-  const proc = spawn('opencode', args, {
+  // Detached mode only - server runs in background
+  const serverProcess = spawn('opencode', args, {
     cwd,
     env: mergedEnv,
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: 'ignore',
+    detached: true,
   });
 
-  // Track startup state
-  let startupError: string | null = null;
-  let earlyExit = false;
-  let exitCode = 0;
+  serverProcess.unref();
 
-  // Race: error, early exit, or ready
-  proc.on('error', (err) => {
+  // Race: error vs ready vs timeout
+  let startupError: string | null = null;
+
+  serverProcess.on('error', (err) => {
     startupError = err.message;
   });
 
-  proc.on('close', (code) => {
-    earlyExit = true;
-    exitCode = code ?? 0;
-  });
-
-  // Wait for server to be ready
   const ready = await waitForServer(port, STARTUP_TIMEOUT_MS);
 
   if (!ready || startupError) {
-    proc.kill();
     return { success: false, port, error: startupError || 'Server failed to start' };
   }
 
-  // If process already exited early
-  if (earlyExit) {
-    return { success: false, port, error: `Server exited early with code ${exitCode}` };
-  }
-
-  // Block until the server process exits (this is the foreground behavior)
-  return new Promise<ServeResult>((resolve) => {
-    const cleanup = () => {
-      proc.kill('SIGTERM');
-    };
-
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-
-    // Wait for the server process to exit
-    proc.on('close', (_code) => {
-      process.removeListener('SIGINT', cleanup);
-      process.removeListener('SIGTERM', cleanup);
-      // Return success after clean shutdown
-      resolve({ success: true, port, pid: proc.pid });
-    });
-  });
+  return { success: true, port, pid: serverProcess.pid };
 }
 
 // ─── Argument Parsing ─────────────────────────────────────────────────
@@ -238,23 +181,15 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
   const errors: string[] = [];
   const knownFlags = ['--', '--prompt', '--cwd'];
 
-  let doubleDash = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    // Check for unknown flags
     if (arg.startsWith('-') && !knownFlags.includes(arg)) {
       errors.push(`Unknown flag: ${arg}`);
       continue;
     }
 
     if (arg === '--') {
-      doubleDash = true;
-      continue;
-    }
-
-    if (doubleDash && arg) {
-      config.prompt = config.prompt ? `${config.prompt} ${arg}` : arg;
       continue;
     }
 
@@ -289,12 +224,11 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
 export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
   const config: ServeConfig = {};
   const errors: string[] = [];
-  const knownFlags = ['--port', '--hostname', '--detach', '--cwd'];
+  const knownFlags = ['--port', '--hostname', '--cwd'];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    // Check for unknown flags
     if (arg.startsWith('-') && !knownFlags.includes(arg)) {
       errors.push(`Unknown flag: ${arg}`);
       continue;
@@ -321,8 +255,6 @@ export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: s
       } else {
         errors.push('--hostname requires a value');
       }
-    } else if (arg === '--detach') {
-      config.detach = true;
     } else if (arg === '--cwd') {
       const next = argv[i + 1];
       if (next) {
@@ -362,7 +294,7 @@ Options:
 export function getServeUsage(): string {
   return `Usage: flowguard serve [options]
 
-Server wrapper (EXPERIMENTAL).
+Server wrapper (EXPERIMENTAL, detached mode only).
 
 For production, use OpenCode directly:
   opencode serve --port 4096 --detach
@@ -370,7 +302,6 @@ For production, use OpenCode directly:
 Options:
   --port <num>    Port (default: ${DEFAULT_PORT})
   --hostname <host>  Hostname (default: ${DEFAULT_HOSTNAME})
-  --detach        Run in background
   --cwd <dir>    Working directory`;
 }
 
@@ -403,19 +334,8 @@ export async function serveMain(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // For detached: print and return immediately
-  if (parsed.config.detach) {
-    console.log(`[ok] Server started on port ${result.port}`);
-    if (result.pid) console.log(`    PID: ${result.pid}`);
-    return 0;
-  }
-
-  // For foreground: print and block (process stays alive)
-  console.log(`[ok] Server running on port ${result.port} (press Ctrl+C to stop)`);
-
-  // This promise never resolves until the server exits
-  // The process will keep running
-  await new Promise(() => { /* block forever */ });
+  console.log(`[ok] Server started on port ${result.port}`);
+  if (result.pid) console.log(`    PID: ${result.pid}`);
 
   return 0;
 }

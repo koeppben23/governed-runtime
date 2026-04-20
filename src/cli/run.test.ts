@@ -51,12 +51,6 @@ describe('parseRunArgs', () => {
       expect(result?.config.prompt).toBe('Run /hydrate');
     });
 
-    it('parses double-dash with args', () => {
-      const result = parseRunArgs(['--', 'Run', '/hydrate', 'policy=team']);
-      expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /hydrate policy=team');
-    });
-
     it('parses --cwd', () => {
       const result = parseRunArgs(['--cwd', '/some/path', 'Run /validate']);
       expect(result).not.toBeNull();
@@ -72,6 +66,11 @@ describe('parseRunArgs', () => {
 
     it('returns null when --prompt missing value', () => {
       const result = parseRunArgs(['--prompt']);
+      expect(result).toBeNull();
+    });
+
+    it('returns error for unknown flag', () => {
+      const result = parseRunArgs(['--unknown', 'value']);
       expect(result).toBeNull();
     });
   });
@@ -98,17 +97,17 @@ describe('parseServeArgs', () => {
       expect(result?.config.port).toBe(3000);
     });
 
-    it('parses --detach', () => {
-      const result = parseServeArgs(['--detach']);
+    it('parses --hostname', () => {
+      const result = parseServeArgs(['--hostname', '0.0.0.0']);
       expect(result).not.toBeNull();
-      expect(result?.config.detach).toBe(true);
+      expect(result?.config.hostname).toBe('0.0.0.0');
     });
 
     it('parses all flags', () => {
-      const result = parseServeArgs(['--port', '8080', '--detach', '--cwd', '/ws']);
+      const result = parseServeArgs(['--port', '8080', '--hostname', '0.0.0.0', '--cwd', '/ws']);
       expect(result).not.toBeNull();
       expect(result?.config.port).toBe(8080);
-      expect(result?.config.detach).toBe(true);
+      expect(result?.config.hostname).toBe('0.0.0.0');
       expect(result?.config.cwd).toBe('/ws');
     });
   });
@@ -126,6 +125,11 @@ describe('parseServeArgs', () => {
 
     it('returns null when --port out of range', () => {
       const result = parseServeArgs(['--port', '0']);
+      expect(result).toBeNull();
+    });
+
+    it('returns error for unknown flag', () => {
+      const result = parseServeArgs(['--detach']);
       expect(result).toBeNull();
     });
   });
@@ -159,7 +163,7 @@ describe('getServeUsage', () => {
     expect(getServeUsage()).toContain('Usage:');
   });
 
-  it('mentions OpenCode directly', () => {
-    expect(getServeUsage()).toContain('opencode serve');
+  it('mentions detached mode only', () => {
+    expect(getServeUsage()).toContain('detached mode only');
   });
 });
