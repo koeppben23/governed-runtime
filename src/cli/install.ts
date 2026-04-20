@@ -70,7 +70,7 @@ export type InstallScope = 'global' | 'repo';
 export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
 
 /** CLI action. */
-export type CliAction = 'install' | 'uninstall' | 'doctor';
+export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve';
 
 /** Parsed CLI arguments. */
 export interface CliArgs {
@@ -893,7 +893,13 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 
 const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
 const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
-const VALID_ACTIONS: readonly CliAction[] = ['install', 'uninstall', 'doctor'] as const;
+const VALID_ACTIONS: readonly CliAction[] = [
+  'install',
+  'uninstall',
+  'doctor',
+  'run',
+  'serve',
+] as const;
 
 /**
  * Parse CLI arguments from process.argv.
@@ -1062,6 +1068,8 @@ Commands:
   install     Install FlowGuard tools, plugins, and commands
   uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
+  run         Execute FlowGuard commands in headless mode
+  serve       Start an OpenCode server for headless operation
 
 Options:
   --install-scope  Where to install: global (default) or repo
@@ -1079,6 +1087,8 @@ Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
   npx --package ./flowguard-core-${v}.tgz flowguard doctor
   npx --package ./flowguard-core-${v}.tgz flowguard uninstall
+  flowguard run -- "Run /hydrate policyMode=team-ci"
+  flowguard serve --port 4096 --detach
 `;
 }
 
@@ -1101,15 +1111,14 @@ export async function main(argv: string[]): Promise<number> {
     console.error(`  [deprecated] ${d}`);
   }
 
-  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-
   switch (args.action) {
     case 'install': {
+      const result = await install(args);
+      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
       console.log(`Installing FlowGuard to ${targetLabel}...`);
       console.log(`  Install scope: ${args.installScope}`);
       console.log(`  Policy mode: ${args.policyMode}`);
       console.log('');
-      const result = await install(args);
       console.log(formatResult(result));
       if (result.errors.length > 0) return 1;
       console.log('');
@@ -1118,20 +1127,32 @@ export async function main(argv: string[]): Promise<number> {
     }
 
     case 'uninstall': {
+      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+      const result = await uninstall(args);
       console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
       console.log('');
-      const result = await uninstall(args);
       console.log(formatResult(result));
       return result.errors.length > 0 ? 1 : 0;
     }
 
     case 'doctor': {
+      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+      const checks = await doctor(args);
       console.log(`Checking FlowGuard installation at ${targetLabel}...`);
       console.log('');
-      const checks = await doctor(args);
       console.log(formatDoctor(checks));
       const allOk = checks.every((c) => c.status === 'ok');
       return allOk ? 0 : 1;
+    }
+
+    case 'run': {
+      const { runMain } = await import('./run.js');
+      return runMain(argv.slice(1));
+    }
+
+    case 'serve': {
+      const { serveMain } = await import('./run.js');
+      return serveMain(argv.slice(1));
     }
   }
 }

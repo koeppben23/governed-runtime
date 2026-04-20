@@ -36,12 +36,66 @@ Release publication is tag-driven (`v*`). If no release tag has been published y
 
 The `flowguard-core-{version}.tgz` contains:
 
-| Component       | Description                                      |
-| --------------- | ------------------------------------------------ |
-| **CLI**         | `flowguard` command (install, uninstall, doctor) |
-| **Core**        | State machine, rails, adapters, audit, config    |
-| **Integration** | OpenCode tools, plugin, command prompts          |
-| **Templates**   | Package.json, opencode.json, mandates            |
+| Component       | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
+| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve) |
+| **Core**        | State machine, rails, adapters, audit, config                |
+| **Integration** | OpenCode tools, plugin, command prompts                      |
+| **Templates**   | Package.json, opencode.json, mandates                        |
+
+---
+
+## Headless Operation
+
+FlowGuard operates within the OpenCode host runtime. Headless modes are achieved via OpenCode's native CLI interfaces:
+
+### OpenCode Headless Modes
+
+| Mode                   | Command                 | Description                         |
+| ---------------------- | ----------------------- | ----------------------------------- |
+| **Non-interactive**    | `opencode run "prompt"` | Execute single commands without TUI |
+| **HTTP API**           | `opencode serve`        | REST API server on port 4096        |
+| **ACP (Experimental)** | `opencode acp`          | STDIN/STDOUT nd-JSON protocol       |
+
+### FlowGuard Headless Wrapper (EXPERIMENTAL)
+
+FlowGuard provides a CLI wrapper for headless operation:
+
+```bash
+# Execute FlowGuard commands non-interactively (EXPERIMENTAL)
+flowguard run -- "Run /hydrate policyMode=team-ci"
+
+# Start an OpenCode server (EXPERIMENTAL)
+flowguard serve --port 4096 --detach
+```
+
+**Status:** This feature is being refined. For production CI, use the official OpenCode commands directly:
+
+```bash
+# Direct OpenCode usage (recommended)
+opencode run "Run /hydrate"
+opencode serve --port 4096
+```
+
+**Note:** FlowGuard requires OpenCode as its host runtime. See the [OpenCode CLI Documentation](https://opencode.ai/docs/cli/) for official commands.
+
+### ACP Mode (Experimental)
+
+The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:
+
+```bash
+opencode acp
+```
+
+**Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration.
+
+For CI/headless automation, use OpenCode directly:
+opencode run "prompt"
+opencode serve --port 4096 --detach
+
+FlowGuard wrappers are experimental convenience commands.
+
+See [docs/experimental-acp.md](./experimental-acp.md) for research findings.
 
 ---
 

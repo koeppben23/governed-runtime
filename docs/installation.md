@@ -151,6 +151,65 @@ npm test
 npm run check
 ```
 
+## Headless Operation
+
+FlowGuard runs within the OpenCode host runtime. Headless operation is achieved by using OpenCode's headless modes.
+
+### Non-Interactive Mode (opencode run)
+
+For scripting and automation without the TUI:
+
+```bash
+# Start a headless server (avoids MCP cold boot on each run)
+opencode serve &
+SERVER_PID=$!
+
+# Run FlowGuard commands via the API
+opencode run "Run /hydrate with policyMode=team-ci"
+
+# Or use the HTTP API directly
+curl -X POST http://localhost:4096/session/{sessionId}/message \
+  -H "Content-Type: application/json" \
+  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/validate"}]}}'
+
+# Stop the server
+kill $SERVER_PID
+```
+
+### HTTP API Mode (opencode serve)
+
+Start the OpenCode HTTP server for API access:
+
+```bash
+# With optional basic auth
+OPENCODE_SERVER_PASSWORD=secret opencode serve --port 4096
+```
+
+Then use the REST API directly:
+
+```bash
+# Create session
+curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
+  -d '{"title": "flowguard-session"}'
+
+# Send message
+curl -X POST http://localhost:4096/session/{sessionId}/message \
+  -H "Content-Type: application/json" \
+  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}}'
+```
+
+See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for the full API reference.
+
+### ACP Mode (Experimental)
+
+For STDIN/STDOUT-based integration:
+
+```bash
+opencode acp
+```
+
+This uses nd-JSON for communication via stdin/stdout.
+
 ## Troubleshooting
 
 ### --core-tarball required

@@ -113,7 +113,7 @@ ls ~/.config/opencode/workspaces/*/sessions/
 
 ## Debug Mode
 
-Enable verbose logging:
+Enable verbose logging via workspace config:
 
 ```json
 {
@@ -123,11 +123,7 @@ Enable verbose logging:
 }
 ```
 
-Or via environment:
-
-```bash
-export FLOWGUARD_LOG_LEVEL=debug
-```
+Config file location: `~/.config/opencode/workspaces/{fingerprint}/config.json` or `.opencode/config.json` in the project.
 
 ## Getting Help
 

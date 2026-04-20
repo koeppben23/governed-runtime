@@ -117,6 +117,26 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
 | **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
+
+---
+
+## CLI Commands
+
+FlowGuard provides these CLI commands:
+
+```bash
+# Installation (stable)
+npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz
+npx --package ./flowguard-core-{version}.tgz flowguard uninstall
+npx --package ./flowguard-core-{version}.tgz flowguard doctor
+
+# Headless operation (EXPERIMENTAL)
+flowguard run -- "Run /hydrate"
+flowguard serve --detach --port 4096
+```
+
+**Note:** Headless features are experimental. For production, use OpenCode directly:
+`opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
 | **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Audit Trail** | Hash-chained, tamper-evident |
