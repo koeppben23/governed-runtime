@@ -6,13 +6,18 @@
  * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * Java-specific naming, architecture, testing, and anti-pattern rules.
  *
- * Ported from: flowguard_content/profiles/rules.backend-java.md (v2.2)
- * Adapted for: TypeScript FlowGuard system, LLM-agnostic delivery
+ * Structure: PhaseInstructions with base (always-injected) and byPhase
+ * (phase-specific additions). Phase-specific content is appended to base
+ * when the session is in that phase.
  *
- * @version v1
+ * @version v2
  */
 
-export const profileRuleContent = `
+import type { PhaseInstructions } from '../../profile';
+
+// ─── Base Content (always injected regardless of phase) ──────────────────────
+
+const BASE_CONTENT = `\
 # Java (Spring Boot) Profile Rules
 
 These rules supplement the universal FlowGuard mandates. They apply when the
@@ -134,7 +139,79 @@ Detect and lock the repo architecture pattern:
 
 Once detected, do not mix patterns within a change.
 
-### 5.2 Architecture Pattern Selection
+### 5.2 Controllers
+Controllers MUST: validate input, map DTOs, delegate, handle HTTP concerns.
+Controllers MUST NOT: contain business branching, persistence logic, or transaction management.
+
+### 5.3 Services
+Services MUST represent use cases, not entities. No god services. Domain invariants MUST be enforced in business logic, not scattered across layers.
+
+### 5.4 Transactions
+One transaction per use case. MUST NOT make external calls inside DB transactions unless compensated. Idempotency MUST be ensured for external triggers.
+
+### 5.5 Persistence Hygiene (if JPA present)
+- Prevent lazy-loading leaks across boundaries.
+- Avoid N+1 queries (use fetch joins/entity graphs).
+- \`@Transactional(readOnly = true)\` for read use cases.
+- Optimistic locking (\`@Version\`) for concurrent aggregate updates.
+- Map persistence models to boundary DTOs (no entity exposure).
+
+---
+
+## 6. Contracts & Code Generation
+
+If OpenAPI/Pact exists, contract MUST be treated as authoritative. Code MUST adapt
+to the contract, never the reverse. Generated code MUST NOT be edited. Business logic
+MUST NOT be placed in generated packages. Treat generated code as boundary. Map DTOs
+explicitly.
+
+Contract drift -> hard failure. No bypass without documented exception.
+
+---
+
+## 7. Error Handling
+
+- Centralized error mapping (\`@ControllerAdvice\`). Stable error codes. No internal leakage.
+- Use RFC7807 if repo uses it.
+- For changed endpoints: assert HTTP status + stable error code in tests.
+
+---
+
+## 8. Quality Gates (Hard Fail)
+
+A change fails if any of these apply:
+
+| Gate | Fail Condition |
+|------|---------------|
+| QG-1 Build | Build not green, static analysis regressions |
+| QG-2 Contract | Contract drift, edited generated code, missing regeneration |
+| QG-3 Architecture | Layer/module violations, fat controllers |
+| QG-4 Test Quality | Missing behavioral coverage, flaky tests, missing determinism seams, missing concurrency evidence |
+| QG-5 Operational | Logging/metrics/tracing/security regression |
+
+---
+
+## 9. Anti-Patterns (detect and avoid)
+
+| ID | Pattern | Why Harmful |
+|----|---------|-------------|
+| AP-J01 | Fat Controller | Business logic in controller -> untestable without HTTP context, logic duplication |
+| AP-J02 | Anemic Domain | Entities are pure data holders -> invariants scattered, inconsistent enforcement |
+| AP-J03 | Nondeterministic Tests | \`Instant.now()\`, \`Thread.sleep()\`, random UUIDs -> flaky, unreproducible |
+| AP-J04 | Entity Exposure | JPA entities returned from controllers -> persistence schema leaks to API |
+| AP-J05 | Swallowed Exceptions | catch-log-ignore -> silent corruption, undefined state |
+| AP-J06 | God Service | 10+ methods spanning unrelated use cases -> SRP violation, untestable |
+| AP-J07 | Field Injection | \`@Autowired\` on fields -> hidden deps, harder testing, masked coupling |
+| AP-J08 | Test Overspecification | verify(mock, times(1)) without behavioral assertion -> breaks on refactor |
+| AP-J09 | Transaction Boundary Leak | External calls inside @Transactional -> connection pool exhaustion, inconsistency |
+| AP-J10 | Mutable DTO | Public setters on domain objects -> impossible invariant enforcement |`;
+
+// ─── Phase-Specific Sections ─────────────────────────────────────────────────
+
+const DECISION_TREES = `\
+## Architecture Decision Trees
+
+### Architecture Pattern Selection
 
 When creating a new module from scratch:
 \`\`\`
@@ -147,7 +224,7 @@ Does the repo have an established pattern?
            Multi-feature service? -> Feature-modular layered
 \`\`\`
 
-### 5.3 Test Type Selection
+### Test Type Selection
 
 For each changed component:
 \`\`\`
@@ -161,49 +238,10 @@ Domain entity   -> Unit test: invariants, business methods, equality
                    Include: valid + invalid construction + state transitions
 Config/Infra    -> Integration test: verify wiring. Startup smoke test if new beans.
 Security        -> Slice test: @WithMockUser + @WebMvcTest
-\`\`\`
+\`\`\``;
 
-### 5.4 Controllers
-Controllers MUST: validate input, map DTOs, delegate, handle HTTP concerns.
-Controllers MUST NOT: contain business branching, persistence logic, or transaction management.
-
-### 5.5 Services
-Services MUST represent use cases, not entities. No god services. Domain invariants MUST be enforced in business logic, not scattered across layers.
-
-### 5.6 Transactions
-One transaction per use case. MUST NOT make external calls inside DB transactions unless compensated. Idempotency MUST be ensured for external triggers.
-
-### 5.7 Persistence Hygiene (if JPA present)
-- Prevent lazy-loading leaks across boundaries.
-- Avoid N+1 queries (use fetch joins/entity graphs).
-- \`@Transactional(readOnly = true)\` for read use cases.
-- Optimistic locking (\`@Version\`) for concurrent aggregate updates.
-- Map persistence models to boundary DTOs (no entity exposure).
-
----
-
-## 6. Contracts & Code Generation
-
-If OpenAPI/Pact exists:
-- Contract is authoritative. Code adapts to contract, never the reverse.
-- NEVER edit generated code. NEVER place business logic in generated packages.
-- Treat generated code as boundary. Map DTOs explicitly.
-
-Contract drift -> hard failure. No bypass without documented exception.
-
-If OpenAPI/Pact exists, contract MUST be treated as authoritative. Code MUST adapt to the contract, never the reverse. Generated code MUST NOT be edited. Business logic MUST NOT be placed in generated packages.
-
----
-
-## 7. Error Handling
-
-- Centralized error mapping (\`@ControllerAdvice\`). Stable error codes. No internal leakage.
-- Use RFC7807 if repo uses it.
-- For changed endpoints: assert HTTP status + stable error code in tests.
-
----
-
-## 8. Testing Rules
+const TESTING_RULES = `\
+## Testing Rules
 
 ### Test Pyramid
 1. Unit (business logic, no Spring) 2. Slice (web/persistence) 3. Integration (if risk requires) 4. E2E/BDD (only if established)
@@ -218,57 +256,14 @@ HAPPY_PATH, VALIDATION, NOT_FOUND/EMPTY, STATE_INVALID, AUTHORIZATION, BOUNDARIE
 - IDs: no random identifiers in assertions.
 - Order: no order-dependent assertions unless order is contractual.
 - Use Given/When/Then consistently. Assert outcomes over interactions.
-- Parameterized tests for boundary sets. Test data builders for readability.
+- Parameterized tests for boundary sets. Test data builders for readability.`;
 
----
-
-## 9. Quality Gates (Hard Fail)
-
-A change fails if any of these apply:
-
-| Gate | Fail Condition |
-|------|---------------|
-| QG-1 Build | Build not green, static analysis regressions |
-| QG-2 Contract | Contract drift, edited generated code, missing regeneration |
-| QG-3 Architecture | Layer/module violations, fat controllers |
-| QG-4 Test Quality | Missing behavioral coverage, flaky tests, missing determinism seams, missing concurrency evidence |
-| QG-5 Operational | Logging/metrics/tracing/security regression |
-
----
-
-## 10. Anti-Patterns (detect and avoid)
-
-| ID | Pattern | Why Harmful |
-|----|---------|-------------|
-| AP-J01 | Fat Controller | Business logic in controller -> untestable without HTTP context, logic duplication |
-| AP-J02 | Anemic Domain | Entities are pure data holders -> invariants scattered, inconsistent enforcement |
-| AP-J03 | Nondeterministic Tests | \`Instant.now()\`, \`Thread.sleep()\`, random UUIDs -> flaky, unreproducible |
-| AP-J04 | Entity Exposure | JPA entities returned from controllers -> persistence schema leaks to API |
-| AP-J05 | Swallowed Exceptions | catch-log-ignore -> silent corruption, undefined state |
-| AP-J06 | God Service | 10+ methods spanning unrelated use cases -> SRP violation, untestable |
-| AP-J07 | Field Injection | \`@Autowired\` on fields -> hidden deps, harder testing, masked coupling |
-| AP-J08 | Test Overspecification | verify(mock, times(1)) without behavioral assertion -> breaks on refactor |
-| AP-J09 | Transaction Boundary Leak | External calls inside @Transactional -> connection pool exhaustion, inconsistency |
-| AP-J10 | Mutable DTO | Public setters on domain objects -> impossible invariant enforcement |
-
----
-
-## 11. Evidence by Change Type
-
-| Change Type | Required Evidence |
-|-------------|-------------------|
-| API/Controller | tests covering HTTP contract + error contract + security (if present) |
-| Persistence/Migration | migration validation + happy + violation tests for constraints |
-| Messaging | consumer idempotency/retry tests + schema validation (if exists) |
-| Pure Service | unit tests proving rules + slice/integration if boundary changed |
-
----
-
-## 12. Few-Shot Examples (Anti-Pattern Corrections)
+const FEW_SHOT_EXAMPLES = `\
+## Few-Shot Examples (Anti-Pattern Corrections)
 
 <examples>
 <example id="AP-J01" type="anti-pattern">
-<bad_code>
+<incorrect>
 // FAT CONTROLLER — business logic in controller
 @PostMapping("/orders")
 public ResponseEntity<Order> createOrder(@RequestBody OrderRequest req) {
@@ -290,40 +285,64 @@ public ResponseEntity<Order> createOrder(@RequestBody OrderRequest req) {
     order.setItems(req.getItems());
     return ResponseEntity.status(201).body(orderRepo.save(order));
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Controller delegates to service, maps DTOs at boundary
 @PostMapping("/orders")
 public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderCreateRequest req) {
     Order order = orderService.create(orderMapper.toDomain(req));
     return ResponseEntity.status(HttpStatus.CREATED).body(orderMapper.toResponse(order));
 }
-</good_code>
+</correct>
 <why>Business rules in controllers are untestable without HTTP context, violate SRP, and scatter domain logic across layers.</why>
 </example>
 
+<example id="AP-J03" type="anti-pattern">
+<incorrect>
+// NONDETERMINISTIC TEST — Instant.now() produces different values on each run
+@Test
+void create_setsCreatedTimestamp() {
+    var user = userService.create(new UserCreateRequest("Alice"));
+    assertThat(user.getCreatedAt()).isBeforeOrEqualTo(Instant.now());
+}
+</incorrect>
+<correct>
+// Deterministic via injected Clock
+@Test
+void create_setsCreatedTimestamp() {
+    var fixedInstant = Instant.parse("2024-01-15T10:00:00Z");
+    var clock = Clock.fixed(fixedInstant, ZoneOffset.UTC);
+    var service = new UserService(userRepository, clock);
+
+    var user = service.create(new UserCreateRequest("Alice"));
+    assertThat(user.getCreatedAt()).isEqualTo(fixedInstant);
+}
+</correct>
+<why>Tests using Instant.now() or UUID.randomUUID() in assertions are non-reproducible. Failures depend on execution speed and cannot be debugged from the test report alone.</why>
+</example>
+
 <example id="AP-J04" type="anti-pattern">
-<bad_code>
+<incorrect>
 // ENTITY EXPOSURE — JPA entity returned from controller
 @GetMapping("/users/{id}")
 public User getUser(@PathVariable Long id) {
     return userRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Boundary DTO separates persistence schema from API contract
 @GetMapping("/users/{id}")
 public UserResponse getUser(@PathVariable Long id) {
     User user = userService.findById(id);
     return userMapper.toResponse(user);
 }
-</good_code>
+</correct>
 <why>Exposing JPA entities couples API consumers to the persistence schema. Any column rename, lazy-loading change, or @JsonIgnore slip leaks internal structure.</why>
 </example>
 
 <example id="AP-J05" type="anti-pattern">
-<bad_code>
+<incorrect>
 // SWALLOWED EXCEPTION — catch-log-ignore
 public Optional<User> findUser(Long id) {
     try {
@@ -333,21 +352,87 @@ public Optional<User> findUser(Long id) {
         return Optional.empty();
     }
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Explicit error handling — let expected failures propagate with domain meaning
 public User findById(Long id) {
     return userRepository.findById(id)
         .orElseThrow(() -> new UserNotFoundException(id));
 }
-</good_code>
+</correct>
 <why>Catching Exception and returning empty hides failures, masks bugs, and produces silent data corruption. Callers cannot distinguish "not found" from "database down".</why>
 </example>
-</examples>
 
----
+<example id="AP-J07" type="anti-pattern">
+<incorrect>
+// FIELD INJECTION — hidden dependencies, untestable without Spring context
+@Service
+public class OrderService {
+    @Autowired
+    private OrderRepository orderRepository;
+    @Autowired
+    private PaymentGateway paymentGateway;
 
-## 13. Minimum Negative Tests per Change Type
+    public Order create(OrderCreateRequest request) { /* ... */ }
+}
+</incorrect>
+<correct>
+// Constructor injection — explicit, testable, immutable
+@Service
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final PaymentGateway paymentGateway;
+
+    OrderService(OrderRepository orderRepository, PaymentGateway paymentGateway) {
+        this.orderRepository = orderRepository;
+        this.paymentGateway = paymentGateway;
+    }
+
+    public Order create(OrderCreateRequest request) { /* ... */ }
+}
+</correct>
+<why>Field injection hides dependencies, prevents compile-time verification of required dependencies, and requires a full Spring context for unit testing instead of simple constructor calls.</why>
+</example>
+
+<example id="AP-J08" type="anti-pattern">
+<incorrect>
+// TEST OVERSPECIFICATION — verifying interactions instead of outcomes
+@Test
+void create_persistsUser() {
+    var request = new UserCreateRequest("Alice");
+    userService.create(request);
+    verify(userRepository, times(1)).save(any(User.class));
+    verify(eventPublisher, times(1)).publish(any(UserCreatedEvent.class));
+    verifyNoMoreInteractions(userRepository, eventPublisher);
+}
+</incorrect>
+<correct>
+// Assert behavioral outcome, not interaction sequence
+@Test
+void create_withValidInput_persistsAndReturnsUser() {
+    var request = new UserCreateRequest("Alice");
+    var result = userService.create(request);
+    assertThat(result.getName()).isEqualTo("Alice");
+    assertThat(result.getId()).isNotNull();
+    assertThat(userRepository.findById(result.getId())).isPresent();
+}
+</correct>
+<why>Verifying exact mock interactions couples tests to implementation sequence. Any change to how persistence works (batching, caching, method rename) breaks tests even when behavior is correct.</why>
+</example>
+</examples>`;
+
+const EVIDENCE_BY_CHANGE_TYPE = `\
+## Evidence by Change Type
+
+| Change Type | Required Evidence |
+|-------------|-------------------|
+| API/Controller | tests covering HTTP contract + error contract + security (if present) |
+| Persistence/Migration | migration validation + happy + violation tests for constraints |
+| Messaging | consumer idempotency/retry tests + schema validation (if exists) |
+| Pure Service | unit tests proving rules + slice/integration if boundary changed |`;
+
+const NEGATIVE_TEST_MATRIX = `\
+## Minimum Negative Tests per Change Type
 
 For every change, the following negative-path tests MUST exist:
 
@@ -357,11 +442,10 @@ For every change, the following negative-path tests MUST exist:
 | Service | null/empty input, business rule violation, concurrent modification (if applicable) |
 | Repository | unique constraint violation, empty result set, orphan reference (FK violation) |
 | Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |
-| Migration | rollback script executes without error, data integrity preserved after up+down |
+| Migration | rollback script executes without error, data integrity preserved after up+down |`;
 
----
-
-## 14. Stack-Specific Review Checklist
+const REVIEW_CHECKLIST = `\
+## Stack-Specific Review Checklist
 
 When reviewing Java changes, MUST verify:
 
@@ -374,5 +458,50 @@ When reviewing Java changes, MUST verify:
 | Constructor Injection | Field injection (\`@Autowired\` on fields) instead of constructor injection |
 | Exception Handling | Empty catch blocks, catching \`Exception\` instead of specific types, log-only handling |
 | Concurrency | Missing \`@Version\` on aggregates with concurrent writes, shared mutable state in singletons |
-| Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |
-`;
+| Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |`;
+
+// ─── Exported PhaseInstructions ──────────────────────────────────────────────
+
+/**
+ * Java profile rule content as PhaseInstructions.
+ *
+ * - `base`: Always-injected content (stack defaults, conventions, style,
+ *   naming, architecture, contracts, error handling, quality gates,
+ *   anti-pattern reference table).
+ * - `byPhase`: Phase-specific additions:
+ *   - PLAN: decision trees + testing rules + evidence matrix + negative tests
+ *   - PLAN_REVIEW: review checklist
+ *   - IMPLEMENTATION: testing rules + examples + evidence matrix + negative tests
+ *   - IMPL_REVIEW: examples + review checklist
+ *   - EVIDENCE_REVIEW: review checklist
+ *   - REVIEW: examples + review checklist
+ *   - ARCHITECTURE: decision trees
+ *   - ARCH_REVIEW: decision trees + review checklist
+ */
+export const profileRuleContent: PhaseInstructions = {
+  base: BASE_CONTENT,
+  byPhase: {
+    PLAN:
+      DECISION_TREES +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      EVIDENCE_BY_CHANGE_TYPE +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    PLAN_REVIEW: REVIEW_CHECKLIST,
+    IMPLEMENTATION:
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      EVIDENCE_BY_CHANGE_TYPE +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    EVIDENCE_REVIEW: REVIEW_CHECKLIST,
+    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    ARCHITECTURE: DECISION_TREES,
+    ARCH_REVIEW: DECISION_TREES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+  },
+};

@@ -81,7 +81,7 @@ description: Bootstrap or reload the FlowGuard session. Run this FIRST before an
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Bootstrap the FlowGuard session for this project.
 
@@ -94,7 +94,7 @@ Bootstrap the FlowGuard session for this project.
    - If an existing session was loaded: report the current phase and next action.
    - If an error occurred: report the error message.
 
-## Rules
+## Constraints
 
 - DO NOT call any other FlowGuard tool before flowguard_hydrate.
 - DO NOT modify any files.
@@ -107,6 +107,12 @@ Bootstrap the FlowGuard session for this project.
 - Natural-language prompts like "go", "weiter", "proceed", "start", or "initialize" are NOT command invocations. Only an explicit \`/hydrate\` triggers this command. If the user sends free-text implying session setup, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to start a task, /architecture to create an ADR, or /review for a compliance report.\`
+
+## Done-when
+
+- FlowGuard session is active (new or existing loaded).
+- Session ID, phase, and next action are reported to the user.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'ticket.md': `\
@@ -116,7 +122,7 @@ description: Record a task or ticket for the FlowGuard session.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Record the following task/ticket in the FlowGuard session:
 
@@ -133,7 +139,7 @@ $ARGUMENTS
 3. Read the returned JSON.
 4. Report the result to the user: confirm the ticket was recorded, show the current phase, and the next action.
 
-## Rules
+## Constraints
 
 - DO NOT invent or modify the ticket text. Use exactly what the user provided.
 - If no arguments were provided, ask the user for the task description. DO NOT proceed without it.
@@ -145,6 +151,12 @@ $ARGUMENTS
 - Natural-language prompts like "go", "weiter", "proceed", "start working", or task descriptions sent without the /ticket prefix are NOT command invocations. Only an explicit \`/ticket\` triggers this command. If the user sends free-text describing a task, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful ticket: \`Next action: run /plan to generate an implementation plan.\`
+
+## Done-when
+
+- Ticket text is recorded in FlowGuard session via flowguard_ticket.
+- Current phase and next action are reported to the user.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'plan.md': `\
@@ -154,7 +166,7 @@ description: Generate a plan with self-review loop for the current ticket.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Generate a comprehensive implementation plan for the current ticket, then self-review it.
 
@@ -200,7 +212,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
    - If self-review converged (the response says "converged" or the phase changed to PLAN_REVIEW): Report the final status to the user.
    - If another iteration is needed: Go back to step 6.
 
-## Rules
+## Constraints
 
 - DO NOT generate a plan with vague steps like "implement the feature" or "add error handling". Every step must be specific.
 - DO NOT skip the self-review. You MUST run the checklist at least once.
@@ -217,6 +229,13 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit \`/plan\` triggers this command. If the user sends free-text implying planning, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+
+## Done-when
+
+- Plan contains all 6 required sections (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria).
+- Self-review loop has converged (approved or max 3 iterations reached).
+- Phase has advanced to PLAN_REVIEW.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'continue.md': `\
@@ -226,7 +245,7 @@ description: Continue the FlowGuard workflow — do the next thing based on the 
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Determine what the FlowGuard workflow needs next and do it.
 
@@ -299,7 +318,7 @@ Determine what the FlowGuard workflow needs next and do it.
 
 3. Report the action taken and the current state to the user.
 
-## Rules
+## Constraints
 
 - DO NOT take destructive actions. /continue is a routing command — it determines what to do, not blindly executes.
 - At User Gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW), DO NOT make the decision for the user. Present the information and ask for their verdict.
@@ -309,6 +328,12 @@ Determine what the FlowGuard workflow needs next and do it.
 - Natural-language prompts like "go", "weiter", "proceed", "mach weiter", "next", or "what's next" are NOT command invocations. Only an explicit \`/continue\` triggers this command. If the user sends free-text implying continuation, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line stating the next step for the user.
+
+## Done-when
+
+- Current phase is identified and appropriate action is taken or reported.
+- User is informed of the current state and next step.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'implement.md': `\
@@ -318,7 +343,7 @@ description: Implement the approved plan and review the implementation.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Implement the approved plan and review the implementation.
 
@@ -364,7 +389,7 @@ Implement the approved plan and review the implementation.
    - If another review iteration is needed: Go back to step 6.
 9. Report the final status to the user.
 
-## Rules
+## Constraints
 
 - Follow the plan exactly. Do not deviate from the approved plan.
 - DO NOT skip the implementation review. You MUST run the checklist at least once.
@@ -380,6 +405,14 @@ Implement the approved plan and review the implementation.
 - Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit \`/implement\` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+
+## Done-when
+
+- All plan steps are implemented as code changes.
+- Implementation evidence is recorded via flowguard_implement.
+- Implementation review loop has converged (approved or max iterations).
+- Phase has advanced to EVIDENCE_REVIEW.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'validate.md': `\
@@ -389,7 +422,7 @@ description: Run validation checks on the approved plan.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Execute validation checks for the FlowGuard session.
 
@@ -471,7 +504,7 @@ Execute validation checks for the FlowGuard session.
    - If all passed: The workflow advances to IMPLEMENTATION. Report this.
    - If any failed: The workflow returns to PLAN for revision. Report which checks failed, why, and what the plan needs to address.
 
-## Rules
+## Constraints
 
 - DO NOT skip any active check. Results must be provided for ALL active checks.
 - DO NOT always pass checks. Apply the criteria honestly — falsification-first.
@@ -484,6 +517,13 @@ Execute validation checks for the FlowGuard session.
 - Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit \`/validate\` triggers this command. If the user sends free-text implying validation, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. If all checks passed: \`Next action: run /implement to start implementation.\` If any check failed: \`Next action: run /plan to revise the plan and address the failed checks.\`
+
+## Done-when
+
+- All active checks have results with specific detail referencing plan content.
+- Results are recorded in FlowGuard via flowguard_validate.
+- Phase has advanced to IMPLEMENTATION (all passed) or returned to PLAN (any failed).
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'review-decision.md': `\
@@ -493,7 +533,7 @@ description: Submit a human review decision (approve, changes_requested, reject)
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Record a human review decision for the current User Gate.
 
@@ -521,7 +561,7 @@ Decision: $ARGUMENTS
    - **changes_requested**: Explain that the workflow returns to the revision phase. State what needs to happen next.
     - **reject**: Explain that the workflow returns to the revision start. At PLAN_REVIEW or EVIDENCE_REVIEW, reject returns to TICKET and clears plan/implementation evidence. At ARCH_REVIEW, reject returns to READY and clears ADR evidence.
 
-## Rules
+## Constraints
 
 - DO NOT fabricate a verdict. Use exactly what the user provided.
 - If the arguments are ambiguous (e.g., "maybe" or "not sure"), ask the user to clarify.
@@ -534,6 +574,12 @@ Decision: $ARGUMENTS
 - Natural-language prompts like "approve", "go", "weiter", "looks good", "ship it", or "reject" sent WITHOUT the /review-decision prefix are NOT command invocations. Only an explicit \`/review-decision\` triggers this command. If the user sends free-text implying a decision, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line stating the next workflow step based on the verdict and phase.
+
+## Done-when
+
+- User verdict (approve, changes_requested, or reject) is recorded via flowguard_decision.
+- Phase transition is reported to the user.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'review.md': `\
@@ -543,7 +589,7 @@ description: Start the standalone compliance review flow (READY → REVIEW → R
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Start the compliance review flow for the current FlowGuard session.
 
@@ -564,7 +610,7 @@ Start the compliance review flow for the current FlowGuard session.
 
 4. If there are warnings or issues, explain what actions could address them.
 
-## Rules
+## Constraints
 
 - This command starts a standalone flow. It transitions the session through READY → REVIEW → REVIEW_COMPLETE.
 - This command is only available in the READY phase.
@@ -575,6 +621,13 @@ Start the compliance review flow for the current FlowGuard session.
 - Natural-language prompts like "review it", "check the status", "how does it look", or "is it ready" are NOT command invocations. Only an explicit \`/review\` triggers this command. If the user sends free-text implying a review, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with a \`Next action:\` line based on the current phase and report findings.
+
+## Done-when
+
+- Compliance report is generated and presented to the user.
+- Phase has reached REVIEW_COMPLETE.
+- Findings and actionable recommendations are shown.
+- Response ends with a \`Next action:\` line.
 `,
 
   'architecture.md': `\
@@ -584,7 +637,7 @@ description: Create or revise an Architecture Decision Record (ADR) in MADR form
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Create or revise an Architecture Decision Record (ADR) for the current FlowGuard session.
 
@@ -611,7 +664,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
    - Show the current phase.
    - Indicate whether human review is needed.
 
-## Rules
+## Constraints
 
 - The ADR MUST include \`## Context\`, \`## Decision\`, and \`## Consequences\` sections.
 - The ADR ID MUST match the format \`ADR-<number>\` (e.g., ADR-1, ADR-42).
@@ -623,6 +676,13 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 - Natural-language prompts like "write an ADR", "architecture decision", or "design doc" are NOT command invocations. Only an explicit \`/architecture\` triggers this command.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with a \`Next action:\` line based on the current phase.
+
+## Done-when
+
+- ADR is created or revised with Context, Decision, and Consequences sections.
+- Self-review loop has converged.
+- Phase has reached ARCH_REVIEW (ready for human review).
+- Response ends with a \`Next action:\` line.
 `,
 
   'abort.md': `\\
@@ -632,7 +692,7 @@ description: Emergency termination of the FlowGuard session.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Abort the FlowGuard session.
 
@@ -654,7 +714,7 @@ Reason: $ARGUMENTS
 
 4. Report the result: confirm the session has been terminated and that /hydrate can start a new one.
 
-## Rules
+## Constraints
 
 - DO NOT abort without informing the user of the consequences.
 - If no reason is provided in $ARGUMENTS, use "Session aborted by user" as the default reason.
@@ -664,6 +724,13 @@ Reason: $ARGUMENTS
 - Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
+
+## Done-when
+
+- User is informed of consequences before abort.
+- Session is terminated via flowguard_abort_session.
+- Session is marked COMPLETE with ABORTED error.
+- Response ends with exactly one \`Next action:\` line.
 `,
 
   'archive.md': `\
@@ -673,7 +740,7 @@ description: Archive a completed FlowGuard session as a compressed tar.gz file.
 
 You are managing a FlowGuard-controlled development workflow.
 
-## Task
+## Goal
 
 Archive the current (or a specified) completed FlowGuard session.
 
@@ -690,7 +757,7 @@ Archive the current (or a specified) completed FlowGuard session.
    - The archive file path.
    - Confirmation that the session data was archived successfully.
 
-## Rules
+## Constraints
 
 - Only terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) can be archived.
 - If the session is not in a terminal phase, report the current phase and tell the user to complete or abort the session first.
@@ -700,6 +767,12 @@ Archive the current (or a specified) completed FlowGuard session.
 - Natural-language prompts like "archive", "save", "compress", or "backup" are NOT command invocations. Only an explicit \`/archive\` triggers this command. If the user sends free-text implying archiving, respond conversationally without calling FlowGuard tools.
 - If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful archive: \`Next action: run /hydrate to start a new session.\`
+
+## Done-when
+
+- Session archive is created as tar.gz file.
+- Archive file path is reported to the user.
+- Response ends with exactly one \`Next action:\` line.
 `,
 };
 
@@ -776,6 +849,8 @@ Use the smallest process that is safe for the class. If uncertain, classify one 
 
 ## 4. Hard Invariants
 
+These apply across all task classes:
+
 - Use the smallest safe change.
 - Preserve one canonical authority and SSOT ownership.
 - Make failures explicit and fail closed.
@@ -786,10 +861,16 @@ Use the smallest process that is safe for the class. If uncertain, classify one 
 
 ## Red Lines
 
-- Do not hide failures with silent fallbacks.
-- Do not create duplicate runtime authority.
-- Do not weaken fail-closed behavior.
-- Do not claim verification that was not run.
+These are prohibited across all task classes:
+
+- Do not hide failures with silent fallbacks — because hidden failures corrupt downstream state.
+  Instead: surface errors explicitly, return BLOCKED or an explicit failure, and stop.
+- Do not create duplicate runtime authority — because conflicting authorities cause non-deterministic decisions.
+  Instead: extend the existing canonical authority.
+- Do not weaken fail-closed behavior — because open-fail modes allow untested behavior to pass.
+  Instead: keep default deny and require an explicit validated allow-path.
+- Do not claim verification that was not run — because unverified claims break the evidence chain.
+  Instead: mark unverified claims as \`NOT_VERIFIED\`.
 
 Examples:
 - Do not recover invalid policy by falling back to team mode.
@@ -801,9 +882,15 @@ Examples:
 Do not start editing immediately. First classify the task, identify authority and SSOT,
 read relevant artifacts, choose the smallest safe change, and determine verification level.
 
+## Before Completing Rule
+
+Before returning a final result, verify: output contract for the task class is satisfied,
+all evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED) are set where needed, required
+verification for the task class has been run, and no SSOT drift was introduced.
+
 ## 5. Evidence Rules
 
-Use explicit markers:
+Use explicit markers across all task classes:
 
 - \`ASSUMPTION\`: necessary and plausible, but not verified from artifacts.
 - \`NOT_VERIFIED\`: not executed, not tested, or not proven with evidence.
