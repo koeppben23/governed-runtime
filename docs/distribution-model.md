@@ -79,7 +79,11 @@ The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:
 opencode acp
 ```
 
-This uses nd-JSON for message framing. ACP is experimental and subject to change.
+**Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration (Zed, JetBrains, Avante.nvim, CodeCompanion.nvim), not the primary CI/headless execution path.
+
+For CI/Headless automation, use `flowguard run` / `flowguard serve` instead.
+
+See [docs/experimental-acp.md](./experimental-acp.md) for detailed research findings.
 
 ---
 

@@ -52,6 +52,7 @@
     "test:coverage": "vitest run --coverage --exclude 'src/cli/install-verify.test.ts'",
     "test:watch": "vitest",
     "test:install-verify": "vitest run src/cli/install-verify.test.ts",
+    "test:acp": "RUN_OPENCODE_ACP_TESTS=1 vitest run src/cli/run-acp-smoke.test.ts",
     "sync-version": "node scripts/sync-version.js",
     "generate-docs": "node scripts/generate-docs.js",
     "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
