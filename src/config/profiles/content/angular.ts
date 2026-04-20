@@ -6,13 +6,18 @@
  * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * Angular-specific naming, architecture, testing, and anti-pattern rules.
  *
- * Ported from: flowguard_content/profiles/rules.frontend-angular-nx.md (v2.0)
- * Adapted for: TypeScript FlowGuard system, LLM-agnostic delivery
+ * Structure: PhaseInstructions with base (always-injected) and byPhase
+ * (phase-specific additions). Phase-specific content is appended to base
+ * when the session is in that phase.
  *
- * @version v1
+ * @version v2
  */
 
-export const profileRuleContent = `
+import type { PhaseInstructions } from '../../profile';
+
+// ─── Base Content (always injected regardless of phase) ──────────────────────
+
+const BASE_CONTENT = `\
 # Angular + Nx Profile Rules
 
 These rules supplement the universal FlowGuard mandates. They apply when the
@@ -39,65 +44,7 @@ Once detected, these become constraints. If unknown, mark unknown and avoid intr
 
 ---
 
-## 2. Decision Trees
-
-### State Management Selection
-
-\`\`\`
-Does the repo already use a state management pattern?
-  YES -> Follow detected pattern (signals/NgRx/component-store). STOP.
-  NO  -> Is the state local to a single component?
-    YES -> Simple UI state? -> Component-local signals/properties
-           Complex local state? -> Component Store
-    NO  -> Shared across features?
-      YES -> Complex async flows? -> NgRx Store
-             Simple shared state? -> Signals-based facade service
-      NO  -> Clarify scope before proceeding.
-\`\`\`
-
-### Test Type Selection
-
-\`\`\`
-Container/Smart component -> Unit test (TestBed): delegation to facade/store
-                             Test template bindings. Mock all injected services.
-Presentational component  -> Unit test (TestBed): input/output behavior
-                             Default rendering, input variations, event emission.
-Facade/Store/State        -> Unit test: state transitions, selectors, effects
-                             NgRx: reducer + selectors + effects separately.
-API boundary service      -> Unit test: request construction, response mapping, errors
-                             Mock HttpClient.
-Guard/Interceptor         -> Unit test: routing decisions, request transformation
-                             Allowed, denied, redirect scenarios.
-Pipe/Directive            -> Unit test: transform logic, host component test
-E2E (if established)      -> Critical user journeys only. Stable selectors.
-\`\`\`
-
-### Library Type Selection (Nx)
-
-\`\`\`
-UI components (shared) -> libs/shared/ui/{name}  tags: type:ui, scope:shared
-                          Presentational only. Must NOT import feature/data-access.
-Data access            -> libs/{domain}/data-access  tags: type:data-access, scope:{domain}
-                          Services, facades, stores, models, API clients.
-Feature (routed page)  -> libs/{domain}/feature-{name}  tags: type:feature, scope:{domain}
-                          Container components, routing. May import data-access + ui.
-Pure utility           -> libs/shared/util/{name}  tags: type:util, scope:shared
-                          Pure functions. No Angular deps if possible.
-Existing library?      -> Add to it. Do NOT create a new one.
-\`\`\`
-
-### Component Type Decision
-
-\`\`\`
-Manages state/orchestrates? -> Container (smart): inject facade, delegate logic.
-Renders based on inputs?    -> Presentational (dumb): @Input/@Output, OnPush.
-Is a form?                  -> Form component: typed reactive forms, validators separate.
-Layout/structural?          -> Layout component: minimal logic, ng-content projection.
-\`\`\`
-
----
-
-## 3. Naming Conventions
+## 2. Naming Conventions
 
 Follow repo conventions when they exist. Otherwise use these defaults:
 
@@ -151,7 +98,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 4. Architecture and Boundaries
+## 3. Architecture and Boundaries
 
 - Respect \`apps/*\` vs \`libs/*\` layering and tag constraints.
 - Shared code belongs in \`libs/*\`; avoid app-to-app leakage.
@@ -160,7 +107,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 5. Implementation Standards
+## 4. Implementation Standards
 
 ### Components
 - MUST keep focused: presentational vs container responsibilities.
@@ -184,23 +131,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 6. Testing Rules
-
-### Unit/Component Tests
-- Deterministic and behavior-focused.
-- Test user-visible outcomes over implementation internals.
-- No low-signal assertions (\`truthy\`/snapshot spam).
-
-### Integration Tests
-- Cover state transitions, async boundaries, form/validation behavior.
-- Mock only external edges.
-
-### E2E (if established)
-- Critical user journeys. Stable selectors (\`data-testid\`). No fixed sleeps.
-
----
-
-## 7. Quality Gates (Hard Fail)
+## 5. Quality Gates (Hard Fail)
 
 | Gate | Fail Condition |
 |------|---------------|
@@ -212,7 +143,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 8. Anti-Patterns (detect and avoid)
+## 6. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -225,15 +156,88 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-NG07 | Untyped Reactive Forms | No compile-time field checks, all values \`any\` |
 | AP-NG08 | Component Without OnPush | Performance degradation, hides reactivity bugs |
 | AP-NG09 | Class-Based Guards/Interceptors | Deprecated, unnecessary boilerplate |
-| AP-NG10 | Cross-App Imports in Nx | Violates boundaries, circular deps, blocks independent deployment |
+| AP-NG10 | Cross-App Imports in Nx | Violates boundaries, circular deps, blocks independent deployment |`;
 
----
+// ─── Phase-Specific Sections ─────────────────────────────────────────────────
 
-## 9. Few-Shot Examples (Anti-Pattern Corrections)
+const DECISION_TREES = `\
+## Decision Trees
+
+### State Management Selection
+
+\`\`\`
+Does the repo already use a state management pattern?
+  YES -> Follow detected pattern (signals/NgRx/component-store). STOP.
+  NO  -> Is the state local to a single component?
+    YES -> Simple UI state? -> Component-local signals/properties
+           Complex local state? -> Component Store
+    NO  -> Shared across features?
+      YES -> Complex async flows? -> NgRx Store
+             Simple shared state? -> Signals-based facade service
+      NO  -> Clarify scope before proceeding.
+\`\`\`
+
+### Test Type Selection
+
+\`\`\`
+Container/Smart component -> Unit test (TestBed): delegation to facade/store
+                             Test template bindings. Mock all injected services.
+Presentational component  -> Unit test (TestBed): input/output behavior
+                             Default rendering, input variations, event emission.
+Facade/Store/State        -> Unit test: state transitions, selectors, effects
+                             NgRx: reducer + selectors + effects separately.
+API boundary service      -> Unit test: request construction, response mapping, errors
+                             Mock HttpClient.
+Guard/Interceptor         -> Unit test: routing decisions, request transformation
+                             Allowed, denied, redirect scenarios.
+Pipe/Directive            -> Unit test: transform logic, host component test
+E2E (if established)      -> Critical user journeys only. Stable selectors.
+\`\`\`
+
+### Library Type Selection (Nx)
+
+\`\`\`
+UI components (shared) -> libs/shared/ui/{name}  tags: type:ui, scope:shared
+                          Presentational only. Must NOT import feature/data-access.
+Data access            -> libs/{domain}/data-access  tags: type:data-access, scope:{domain}
+                          Services, facades, stores, models, API clients.
+Feature (routed page)  -> libs/{domain}/feature-{name}  tags: type:feature, scope:{domain}
+                          Container components, routing. May import data-access + ui.
+Pure utility           -> libs/shared/util/{name}  tags: type:util, scope:shared
+                          Pure functions. No Angular deps if possible.
+Existing library?      -> Add to it. Do NOT create a new one.
+\`\`\`
+
+### Component Type Decision
+
+\`\`\`
+Manages state/orchestrates? -> Container (smart): inject facade, delegate logic.
+Renders based on inputs?    -> Presentational (dumb): @Input/@Output, OnPush.
+Is a form?                  -> Form component: typed reactive forms, validators separate.
+Layout/structural?          -> Layout component: minimal logic, ng-content projection.
+\`\`\``;
+
+const TESTING_RULES = `\
+## Testing Rules
+
+### Unit/Component Tests
+- Deterministic and behavior-focused.
+- Test user-visible outcomes over implementation internals.
+- No low-signal assertions (\`truthy\`/snapshot spam).
+
+### Integration Tests
+- Cover state transitions, async boundaries, form/validation behavior.
+- Mock only external edges.
+
+### E2E (if established)
+- Critical user journeys. Stable selectors (\`data-testid\`). No fixed sleeps.`;
+
+const FEW_SHOT_EXAMPLES = `\
+## Few-Shot Examples (Anti-Pattern Corrections)
 
 <examples>
 <example id="AP-NG01" type="anti-pattern">
-<bad_code>
+<incorrect>
 // BUSINESS LOGIC IN COMPONENT — orchestration, HTTP, and domain rules mixed into UI
 @Component({ selector: 'app-user-page', template: '...' })
 export class UserPageComponent {
@@ -250,8 +254,8 @@ export class UserPageComponent {
     }
   }
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Container delegates to facade, presentational via input/output
 @Component({
   selector: 'app-user-page',
@@ -263,12 +267,76 @@ export class UserPageComponent {
   readonly vm = this.facade.activeAdmins;
   onDeactivate(user: User) { this.facade.deactivate(user.id); }
 }
-</good_code>
+</correct>
 <why>Business logic in components is untestable without TestBed, not reusable, and tightly couples UI to API shape.</why>
 </example>
 
+<example id="AP-NG03" type="anti-pattern">
+<incorrect>
+// DIRECT HTTPCLIENT IN COMPONENT — scattered API knowledge
+@Component({ selector: 'app-user-list', template: '...' })
+export class UserListComponent implements OnInit {
+  users: User[] = [];
+  constructor(private http: HttpClient) {}
+  ngOnInit() {
+    this.http.get<User[]>('/api/v2/users?active=true').subscribe(data => {
+      this.users = data;
+    });
+  }
+  delete(id: number) {
+    this.http.delete(\`/api/v2/users/\${id}\`).subscribe(() => {
+      this.users = this.users.filter(u => u.id !== id);
+    });
+  }
+}
+</incorrect>
+<correct>
+// API boundary isolated in service — component delegates
+@Component({
+  selector: 'app-user-list',
+  template: '...',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class UserListComponent {
+  private readonly facade = inject(UserFacade);
+  readonly users = this.facade.activeUsers;
+  onDelete(id: number) { this.facade.delete(id); }
+}
+</correct>
+<why>HTTP calls in components scatter API knowledge across the UI layer, require HttpClientTestingModule for every component test, and break multiple components when API paths change.</why>
+</example>
+
+<example id="AP-NG04" type="anti-pattern">
+<incorrect>
+// LEAKED BACKEND DTO — backend response shape used directly in template
+@Component({
+  template: \`<span>{{ user._embedded.profile.display_name }}</span>
+             <span>{{ user.metadata.created_at | date }}</span>\`,
+})
+export class UserCardComponent {
+  @Input() user!: UserApiResponse; // raw backend shape
+}
+</incorrect>
+<correct>
+// View model decouples UI from backend structure
+interface UserCardViewModel {
+  readonly displayName: string;
+  readonly createdAt: Date;
+}
+@Component({
+  template: \`<span>{{ vm.displayName }}</span>
+             <span>{{ vm.createdAt | date }}</span>\`,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class UserCardComponent {
+  @Input({ required: true }) vm!: UserCardViewModel;
+}
+</correct>
+<why>Using backend DTOs in templates couples the UI to the API schema. Any backend field rename, nesting change, or API version migration breaks multiple components simultaneously.</why>
+</example>
+
 <example id="AP-NG05" type="anti-pattern">
-<bad_code>
+<incorrect>
 // NESTED SUBSCRIPTIONS — memory leaks, race conditions
 ngOnInit() {
   this.route.params.subscribe(params => {
@@ -279,20 +347,43 @@ ngOnInit() {
     });
   });
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Flat reactive chain with proper teardown
 private readonly route = inject(ActivatedRoute);
 readonly orders$ = this.route.params.pipe(
   switchMap(params => this.userService.getUser(params['id'])),
   switchMap(user => this.orderService.getOrders(user.id)),
 );
-</good_code>
+</correct>
 <why>Nested subscriptions leak memory, race on rapid navigation, produce unpredictable error states, and are untestable.</why>
 </example>
 
+<example id="AP-NG06" type="anti-pattern">
+<incorrect>
+// FIXED WAITS IN TESTS — flaky, slow, masks timing bugs
+it('should load users after delay', fakeAsync(() => {
+  component.ngOnInit();
+  tick(2000); // magic number, why 2000?
+  fixture.detectChanges();
+  expect(component.users.length).toBeGreaterThan(0);
+}));
+</incorrect>
+<correct>
+// Deterministic trigger — no arbitrary delay
+it('should display users after API response', () => {
+  const mockUsers = [{ id: 1, name: 'Alice' }];
+  httpMock.expectOne('/api/users').flush(mockUsers);
+  fixture.detectChanges();
+  const rows = fixture.nativeElement.querySelectorAll('[data-testid="user-row"]');
+  expect(rows.length).toBe(1);
+});
+</correct>
+<why>Fixed waits make tests flaky on slow CI, slow to execute, and mask real timing bugs. Deterministic triggers (flush, resolve, emit) produce reliable tests that fail for the right reasons.</why>
+</example>
+
 <example id="AP-NG07" type="anti-pattern">
-<bad_code>
+<incorrect>
 // UNTYPED REACTIVE FORM — all values are 'any', no compile-time checks
 this.form = this.fb.group({
   name: [''],
@@ -300,8 +391,8 @@ this.form = this.fb.group({
   age: [0],
 });
 const name = this.form.get('naem')?.value; // typo not caught at compile time
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Typed reactive form — compile-time field and type checking
 this.form = this.fb.nonNullable.group({
   name: ['', Validators.required],
@@ -309,14 +400,13 @@ this.form = this.fb.nonNullable.group({
   age: [0, [Validators.min(0), Validators.max(150)]],
 });
 const name: string = this.form.controls.name.value; // type-safe, typo = compile error
-</good_code>
+</correct>
 <why>Untyped forms bypass the type checker entirely. Field name typos, wrong value types, and missing validations become runtime bugs instead of compile errors.</why>
 </example>
-</examples>
+</examples>`;
 
----
-
-## 10. Minimum Negative Tests per Change Type
+const NEGATIVE_TEST_MATRIX = `\
+## Minimum Negative Tests per Change Type
 
 For every change, the following negative-path tests MUST exist:
 
@@ -326,11 +416,10 @@ For every change, the following negative-path tests MUST exist:
 | Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |
 | Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |
 | Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |
-| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |
+| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |`;
 
----
-
-## 11. Stack-Specific Review Checklist
+const REVIEW_CHECKLIST = `\
+## Stack-Specific Review Checklist
 
 When reviewing Angular changes, MUST verify:
 
@@ -343,5 +432,36 @@ When reviewing Angular changes, MUST verify:
 | Missing Teardown | Manual \`.subscribe()\` without \`takeUntilDestroyed()\`, \`async\` pipe, or explicit unsubscribe |
 | Leaked DTOs | Backend response interfaces used directly in component templates |
 | Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
-| A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |
-`;
+| A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |`;
+
+// ─── Exported PhaseInstructions ──────────────────────────────────────────────
+
+/**
+ * Angular profile rule content as PhaseInstructions.
+ *
+ * - `base`: Always-injected content (conventions, naming, architecture,
+ *   implementation standards, quality gates, anti-pattern reference table).
+ * - `byPhase`: Phase-specific additions:
+ *   - PLAN: decision trees + testing rules + negative tests
+ *   - PLAN_REVIEW: review checklist
+ *   - IMPLEMENTATION: testing rules + examples + negative tests
+ *   - IMPL_REVIEW: examples + review checklist
+ *   - EVIDENCE_REVIEW: review checklist
+ *   - REVIEW: examples + review checklist
+ *   - ARCHITECTURE: decision trees
+ *   - ARCH_REVIEW: decision trees + review checklist
+ */
+export const profileRuleContent: PhaseInstructions = {
+  base: BASE_CONTENT,
+  byPhase: {
+    PLAN: DECISION_TREES + '\n\n---\n\n' + TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN_REVIEW: REVIEW_CHECKLIST,
+    IMPLEMENTATION:
+      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    EVIDENCE_REVIEW: REVIEW_CHECKLIST,
+    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    ARCHITECTURE: DECISION_TREES,
+    ARCH_REVIEW: DECISION_TREES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+  },
+};

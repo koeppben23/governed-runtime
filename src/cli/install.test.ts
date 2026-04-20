@@ -438,6 +438,31 @@ describe('DEV_REPO_INVARIANTS', () => {
         expect(commandNames).toContain(expected);
       }
     });
+
+    it('all slash commands use Goal/Constraints/Done-when structure', () => {
+      for (const [name, content] of Object.entries(COMMANDS)) {
+        expect(content, `${name} missing ## Goal`).toContain('## Goal');
+        expect(content, `${name} missing ## Constraints`).toContain('## Constraints');
+        expect(content, `${name} missing ## Done-when`).toContain('## Done-when');
+        // Must NOT contain legacy headings
+        expect(content, `${name} has legacy ## Task`).not.toMatch(/^## Task$/m);
+        expect(content, `${name} has legacy ## Rules`).not.toMatch(/^## Rules$/m);
+      }
+    });
+
+    it('all slash commands have Done-when with verifiable completion criteria', () => {
+      for (const [name, content] of Object.entries(COMMANDS)) {
+        const doneIdx = content.indexOf('## Done-when');
+        expect(doneIdx, `${name} missing ## Done-when`).toBeGreaterThan(-1);
+        const doneSection = content.substring(doneIdx);
+        // Each Done-when should have at least 2 bullet points
+        const bullets = doneSection.match(/^- /gm);
+        expect(
+          bullets && bullets.length >= 2,
+          `${name} Done-when should have >= 2 criteria, found ${bullets?.length ?? 0}`,
+        ).toBe(true);
+      }
+    });
   });
 
   // ─── EDGE ─────────────────────────────────────────────────

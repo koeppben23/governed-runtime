@@ -6,13 +6,19 @@
  * profile is active. It supplements the universal FlowGuard mandates (flowguard-mandates.md) with
  * TypeScript-specific naming, architecture, testing, and anti-pattern rules.
  *
- * NEW: This profile did not exist in the old system. Created for the
- * TypeScript FlowGuard system itself and general TypeScript/Node.js projects.
+ * Structure: PhaseInstructions with base (always-injected) and byPhase
+ * (phase-specific additions). Phase-specific content is appended to base
+ * when the session is in that phase, reducing token overhead for phases
+ * that do not need implementation or review guidance.
  *
- * @version v1
+ * @version v2
  */
 
-export const profileRuleContent = `
+import type { PhaseInstructions } from '../../profile';
+
+// ─── Base Content (always injected regardless of phase) ──────────────────────
+
+const BASE_CONTENT = `\
 # TypeScript Profile Rules
 
 These rules supplement the universal FlowGuard mandates. They apply when the
@@ -137,33 +143,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 5. Testing Rules
-
-### 5.1 Test Structure
-- One test file per source module.
-- Use \`describe\` blocks grouped by function/method.
-- Test names describe behavior: \`it('returns null when input is empty')\`.
-- Arrange/Act/Assert structure in every test.
-
-### 5.2 Test Quality
-- Deterministic: no real timers, no real I/O, no random values in assertions.
-- Behavior-focused: test observable outputs, not implementation details.
-- Meaningful assertions: no \`expect(result).toBeTruthy()\` for complex objects.
-- Edge cases: empty inputs, null/undefined, boundary values, error paths.
-
-### 5.3 Mocking
-- Mock at boundaries (I/O, network, file system), not internal modules.
-- Prefer dependency injection over module mocking.
-- If using vi.mock/jest.mock: mock the minimal surface needed.
-- Reset mocks between tests to prevent state leakage.
-
-### 5.4 Type Testing
-- If the project exports public types, test type compatibility.
-- Use \`expectTypeOf\` (vitest) or \`tsd\` for type-level assertions.
-
----
-
-## 6. Quality Gates (Hard Fail)
+## 5. Quality Gates (Hard Fail)
 
 | Gate | Fail Condition |
 |------|---------------|
@@ -175,7 +155,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 
 ---
 
-## 7. Anti-Patterns (detect and avoid)
+## 6. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -188,15 +168,41 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-TS07 | Console.log in Production | No structured logging, no levels, no correlation, hard to filter |
 | AP-TS08 | Empty Catch Blocks | Silent error swallowing, undefined state, impossible debugging |
 | AP-TS09 | Synchronous I/O | Blocks event loop, degrades throughput, masks under low load |
-| AP-TS10 | Test Implementation Coupling | Tests break on refactor even when behavior unchanged |
+| AP-TS10 | Test Implementation Coupling | Tests break on refactor even when behavior unchanged |`;
 
----
+// ─── Phase-Specific Sections ─────────────────────────────────────────────────
 
-## 8. Few-Shot Examples (Anti-Pattern Corrections)
+const TESTING_RULES = `\
+## Testing Rules
+
+### Test Structure
+- One test file per source module.
+- Use \`describe\` blocks grouped by function/method.
+- Test names describe behavior: \`it('returns null when input is empty')\`.
+- Arrange/Act/Assert structure in every test.
+
+### Test Quality
+- Deterministic: no real timers, no real I/O, no random values in assertions.
+- Behavior-focused: test observable outputs, not implementation details.
+- Meaningful assertions: no \`expect(result).toBeTruthy()\` for complex objects.
+- Edge cases: empty inputs, null/undefined, boundary values, error paths.
+
+### Mocking
+- Mock at boundaries (I/O, network, file system), not internal modules.
+- Prefer dependency injection over module mocking.
+- If using vi.mock/jest.mock: mock the minimal surface needed.
+- Reset mocks between tests to prevent state leakage.
+
+### Type Testing
+- If the project exports public types, test type compatibility.
+- Use \`expectTypeOf\` (vitest) or \`tsd\` for type-level assertions.`;
+
+const FEW_SHOT_EXAMPLES = `\
+## Few-Shot Examples (Anti-Pattern Corrections)
 
 <examples>
 <example id="AP-TS01" type="anti-pattern">
-<bad_code>
+<incorrect>
 // PERVASIVE ANY — type checker disabled, bugs invisible
 function processData(data: any): any {
   const result = data.items.map((item: any) => ({
@@ -205,8 +211,8 @@ function processData(data: any): any {
   }));
   return { processed: result, total: data.items.length };
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Explicit types with runtime validation at boundary
 interface DataItem {
   readonly name: string;
@@ -226,12 +232,12 @@ function processData(data: DataInput): DataOutput {
   }));
   return { processed, total: data.items.length };
 }
-</good_code>
+</correct>
 <why>\`any\` disables the type checker entirely. Property typos, wrong argument types, and structural mismatches become runtime errors instead of compile errors. Refactoring becomes unsafe because the compiler cannot track usage.</why>
 </example>
 
 <example id="AP-TS04" type="anti-pattern">
-<bad_code>
+<incorrect>
 // FLOATING PROMISE — unhandled async error, silent failure
 function saveUser(user: User): void {
   db.insert(user).then(() => {
@@ -239,19 +245,89 @@ function saveUser(user: User): void {
   });
   // no await, no catch — if insert fails, nobody knows
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Awaited with explicit error handling
 async function saveUser(user: User): Promise<void> {
   await db.insert(user);
   await cache.invalidate(user.id);
 }
-</good_code>
+</correct>
 <why>Floating promises swallow errors silently. The caller believes the operation succeeded while data may be lost. Unhandled rejections crash Node.js processes in production.</why>
 </example>
 
+<example id="AP-TS05" type="anti-pattern">
+<incorrect>
+// MUTABLE SHARED STATE — module-level let mutated from multiple call sites
+let connectionPool: Connection[] = [];
+
+export function getConnection(): Connection {
+  if (connectionPool.length === 0) {
+    connectionPool.push(createConnection());
+  }
+  return connectionPool.pop()!;
+}
+
+export function releaseConnection(conn: Connection): void {
+  connectionPool.push(conn);
+}
+
+export function resetPool(): void {
+  connectionPool = [];
+}
+</incorrect>
+<correct>
+// Encapsulated state with controlled access
+export class ConnectionPool {
+  private readonly connections: Connection[] = [];
+
+  getConnection(): Connection {
+    if (this.connections.length === 0) {
+      return createConnection();
+    }
+    return this.connections.pop()!;
+  }
+
+  releaseConnection(conn: Connection): void {
+    this.connections.push(conn);
+  }
+
+  reset(): void {
+    this.connections.length = 0;
+  }
+}
+</correct>
+<why>Module-level mutable state creates race conditions in concurrent code, leaks between tests, and makes behavior non-deterministic. Encapsulation controls access and enables isolated testing.</why>
+</example>
+
+<example id="AP-TS06" type="anti-pattern">
+<incorrect>
+// GOD MODULE — mixed responsibilities: validation, persistence, formatting, notification
+export function processOrder(order: RawOrder): string {
+  if (!order.items?.length) throw new Error('empty');
+  if (order.items.some(i => i.qty < 1)) throw new Error('invalid qty');
+  const id = db.insert({ ...order, status: 'pending' });
+  const summary = order.items.map(i => \`\${i.name} x\${i.qty}\`).join(', ');
+  mailer.send(order.email, \`Order \${id}: \${summary}\`);
+  return id;
+}
+</incorrect>
+<correct>
+// Single responsibility per module
+// order-validator.ts
+export function validateOrder(order: RawOrder): ValidatedOrder { /* ... */ }
+// order-repository.ts
+export function persistOrder(order: ValidatedOrder): string { /* ... */ }
+// order-formatter.ts
+export function formatOrderSummary(order: ValidatedOrder): string { /* ... */ }
+// order-notification.ts
+export function notifyOrderCreated(email: string, orderId: string, summary: string): void { /* ... */ }
+</correct>
+<why>Mixed responsibilities in one module make it untestable without mocking everything, create coupling between unrelated concerns, and force changes to unrelated code when one concern evolves.</why>
+</example>
+
 <example id="AP-TS08" type="anti-pattern">
-<bad_code>
+<incorrect>
 // EMPTY CATCH — error swallowed, state undefined
 async function loadConfig(): Promise<Config> {
   try {
@@ -262,8 +338,8 @@ async function loadConfig(): Promise<Config> {
     return {} as Config;
   }
 }
-</bad_code>
-<good_code>
+</incorrect>
+<correct>
 // Explicit error with meaningful context
 async function loadConfig(path: string): Promise<Config> {
   let raw: string;
@@ -278,14 +354,33 @@ async function loadConfig(path: string): Promise<Config> {
     throw new ConfigError(\`Invalid JSON in config file \${path}\`, { cause });
   }
 }
-</good_code>
+</correct>
 <why>Empty catch blocks produce undefined state that propagates silently. Callers cannot distinguish "no config" from "disk failure" from "malformed JSON". Debugging becomes impossible.</why>
 </example>
-</examples>
 
----
+<example id="AP-TS10" type="anti-pattern">
+<incorrect>
+// TEST IMPLEMENTATION COUPLING — testing internals, breaks on refactor
+it('calls repository.save with correct args', () => {
+  const saveSpy = vi.spyOn(repo, 'save');
+  service.createUser({ name: 'Alice' });
+  expect(saveSpy).toHaveBeenCalledWith({ name: 'Alice', role: 'user' });
+});
+</incorrect>
+<correct>
+// Test observable behavior — survives refactoring
+it('creates user with default role', async () => {
+  const result = await service.createUser({ name: 'Alice' });
+  expect(result.name).toBe('Alice');
+  expect(result.role).toBe('user');
+});
+</correct>
+<why>Testing internal method calls couples tests to implementation. Any refactor (e.g., changing save to upsert, batching writes) breaks tests even when behavior is unchanged.</why>
+</example>
+</examples>`;
 
-## 9. Minimum Negative Tests per Change Type
+const NEGATIVE_TEST_MATRIX = `\
+## Minimum Negative Tests per Change Type
 
 For every change, the following negative-path tests MUST exist:
 
@@ -295,11 +390,10 @@ For every change, the following negative-path tests MUST exist:
 | Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |
 | API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |
 | Config/Environment | missing env var, malformed config file, invalid values |
-| State Management | initial state correctness, invalid state transition, concurrent mutation |
+| State Management | initial state correctness, invalid state transition, concurrent mutation |`;
 
----
-
-## 10. Stack-Specific Review Checklist
+const REVIEW_CHECKLIST = `\
+## Stack-Specific Review Checklist
 
 When reviewing TypeScript changes, MUST verify:
 
@@ -312,5 +406,32 @@ When reviewing TypeScript changes, MUST verify:
 | Synchronous I/O | \`fs.readFileSync\`, \`execSync\` in non-startup code paths |
 | Type Assertions | \`as T\` without prior narrowing, especially \`as any\` chains |
 | Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
-| Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |
-`;
+| Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |`;
+
+// ─── Exported PhaseInstructions ──────────────────────────────────────────────
+
+/**
+ * TypeScript profile rule content as PhaseInstructions.
+ *
+ * - `base`: Always-injected content (conventions, types, naming, architecture,
+ *   quality gates, anti-pattern reference table).
+ * - `byPhase`: Phase-specific additions:
+ *   - PLAN: testing rules + negative test matrix (plan test strategy)
+ *   - PLAN_REVIEW: review checklist (evaluate the plan)
+ *   - IMPLEMENTATION: testing rules + examples + negative test matrix (full guidance)
+ *   - IMPL_REVIEW: examples + review checklist (spot anti-patterns, review quality)
+ *   - EVIDENCE_REVIEW: review checklist (final evidence check)
+ *   - REVIEW: examples + review checklist (standalone review flow)
+ */
+export const profileRuleContent: PhaseInstructions = {
+  base: BASE_CONTENT,
+  byPhase: {
+    PLAN: TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN_REVIEW: REVIEW_CHECKLIST,
+    IMPLEMENTATION:
+      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    EVIDENCE_REVIEW: REVIEW_CHECKLIST,
+    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+  },
+};

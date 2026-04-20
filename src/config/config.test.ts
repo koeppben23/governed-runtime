@@ -336,7 +336,8 @@ describe('config/profile', () => {
       ['angular', angularProfile],
       ['typescript', typescriptProfile],
     ] as const)('%s profile contains NOT_VERIFIED marker guidance', (_name, profile) => {
-      expect(profile.instructions).toContain('NOT_VERIFIED');
+      const base = extractBaseInstructions(profile.instructions);
+      expect(base).toContain('NOT_VERIFIED');
     });
 
     it.each([
@@ -345,18 +346,20 @@ describe('config/profile', () => {
       ['angular', angularProfile],
       ['typescript', typescriptProfile],
     ] as const)('%s profile contains ASSUMPTION marker guidance', (_name, profile) => {
-      expect(profile.instructions).toContain('ASSUMPTION');
+      const base = extractBaseInstructions(profile.instructions);
+      expect(base).toContain('ASSUMPTION');
     });
 
     it('no built-in profile references AGENTS.md', () => {
-      const allInstructions = [
-        baselineProfile.instructions,
-        javaProfile.instructions,
-        angularProfile.instructions,
-        typescriptProfile.instructions,
-      ];
-      for (const instr of allInstructions) {
-        expect(instr).not.toContain('AGENTS.md');
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).not.toContain('AGENTS.md');
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        if (byPhase) {
+          for (const content of Object.values(byPhase)) {
+            expect(content).not.toContain('AGENTS.md');
+          }
+        }
       }
     });
 
@@ -499,8 +502,7 @@ describe('config/profile/phase-instructions', () => {
 
   // ─── EDGE ─────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('existing built-in profiles work with resolveProfileInstructions (backward compat)', () => {
-      // All built-in profiles use plain strings — resolveProfileInstructions should pass them through
+    it('all built-in profiles work with resolveProfileInstructions', () => {
       for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
         const result = resolveProfileInstructions(profile.instructions, 'PLAN');
         expect(typeof result).toBe('string');
@@ -539,7 +541,384 @@ describe('config/profile/phase-instructions', () => {
   });
 });
 
-describe('config/profile/check-executors', () => {
+// ─── P0/P1/P2/P6: Profile byPhase, Examples, Baseline Hardening, Tag Alignment ──
+
+describe('config/profile/byPhase-content', () => {
+  const ALL_PROFILES = [
+    { name: 'baseline', profile: baselineProfile },
+    { name: 'java', profile: javaProfile },
+    { name: 'angular', profile: angularProfile },
+    { name: 'typescript', profile: typescriptProfile },
+  ] as const;
+
+  // ─── HAPPY: All profiles export PhaseInstructions ─────────
+  describe('HAPPY', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile exports PhaseInstructions with base and byPhase',
+      ({ profile }) => {
+        const instructions = profile.instructions;
+        expect(instructions).toBeDefined();
+        expect(typeof instructions).toBe('object');
+        const base = extractBaseInstructions(instructions);
+        expect(base.length).toBeGreaterThan(100);
+        const byPhase = extractByPhaseInstructions(instructions);
+        expect(byPhase).toBeDefined();
+        expect(Object.keys(byPhase!).length).toBeGreaterThanOrEqual(4);
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile has PLAN phase content with testing rules',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'PLAN');
+        expect(resolved).toContain('Test');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile has IMPLEMENTATION phase with few-shot examples',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+        expect(resolved).toContain('<examples>');
+        expect(resolved).toContain('<example');
+        expect(resolved).toContain('</examples>');
+      },
+    );
+
+    it.each(ALL_PROFILES)('$name profile has REVIEW phase with review checklist', ({ profile }) => {
+      const resolved = resolveProfileInstructions(profile.instructions, 'REVIEW');
+      expect(resolved).toContain('Review Checklist');
+    });
+
+    it.each(ALL_PROFILES)(
+      '$name profile IMPLEMENTATION phase includes negative test matrix',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+        expect(resolved).toContain('Negative Tests');
+      },
+    );
+  });
+
+  // ─── BAD: Phases without byPhase content return only base ──
+  describe('BAD', () => {
+    it.each(ALL_PROFILES)('$name profile READY phase returns only base content', ({ profile }) => {
+      const resolved = resolveProfileInstructions(profile.instructions, 'READY');
+      const base = extractBaseInstructions(profile.instructions);
+      expect(resolved).toBe(base);
+    });
+
+    it.each(ALL_PROFILES)('$name profile TICKET phase returns only base content', ({ profile }) => {
+      const resolved = resolveProfileInstructions(profile.instructions, 'TICKET');
+      const base = extractBaseInstructions(profile.instructions);
+      expect(resolved).toBe(base);
+    });
+
+    it.each(ALL_PROFILES)(
+      '$name profile COMPLETE phase returns only base content',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'COMPLETE');
+        const base = extractBaseInstructions(profile.instructions);
+        expect(resolved).toBe(base);
+      },
+    );
+  });
+
+  // ─── CORNER: Phase-specific content is additive, not replacing ──
+  describe('CORNER', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile IMPLEMENTATION content includes base + phase additions',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        const resolved = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+        expect(resolved).toContain(base);
+        expect(resolved.length).toBeGreaterThan(base.length);
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile base content does NOT contain few-shot examples',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).not.toContain('<examples>');
+        expect(base).not.toContain('<incorrect>');
+        expect(base).not.toContain('<correct>');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile base content contains anti-pattern TABLE (IDs only)',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('Anti-Patterns');
+        expect(base).toContain('| ID |');
+      },
+    );
+  });
+
+  // ─── EDGE: Cross-phase consistency ────────────────────────
+  describe('EDGE', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile IMPL_REVIEW has examples AND review checklist',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'IMPL_REVIEW');
+        expect(resolved).toContain('<examples>');
+        expect(resolved).toContain('Review Checklist');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile EVIDENCE_REVIEW has review checklist but NOT examples',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'EVIDENCE_REVIEW');
+        expect(resolved).toContain('Review Checklist');
+        expect(resolved).not.toContain('<examples>');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile PLAN_REVIEW has review checklist but NOT examples',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'PLAN_REVIEW');
+        expect(resolved).toContain('Review Checklist');
+        expect(resolved).not.toContain('<examples>');
+      },
+    );
+  });
+});
+
+describe('config/profile/few-shot-examples', () => {
+  // ─── P1: Example Coverage ─────────────────────────────────
+  describe('HAPPY', () => {
+    it('TypeScript profile has 6 examples (3 original + 3 new)', () => {
+      const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
+      const matches = impl.match(/<example id="/g);
+      expect(matches).toHaveLength(6);
+    });
+
+    it('Java profile has 6 examples (3 original + 3 new)', () => {
+      const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
+      const matches = impl.match(/<example id="/g);
+      expect(matches).toHaveLength(6);
+    });
+
+    it('Angular profile has 6 examples (3 original + 3 new)', () => {
+      const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
+      const matches = impl.match(/<example id="/g);
+      expect(matches).toHaveLength(6);
+    });
+
+    it('Baseline profile has 3 examples (all new)', () => {
+      const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
+      const matches = impl.match(/<example id="/g);
+      expect(matches).toHaveLength(3);
+    });
+  });
+
+  // ─── P6a: Tag Alignment ────────────────────────────────────
+  describe('P6a tag alignment', () => {
+    const ALL_PROFILES = [
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+      { name: 'typescript', profile: typescriptProfile },
+    ] as const;
+
+    it.each(ALL_PROFILES)(
+      '$name profile uses <incorrect>/<correct> tags (not <bad_code>/<good_code>)',
+      ({ profile }) => {
+        const impl = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+        expect(impl).toContain('<incorrect>');
+        expect(impl).toContain('</incorrect>');
+        expect(impl).toContain('<correct>');
+        expect(impl).toContain('</correct>');
+        expect(impl).not.toContain('<bad_code>');
+        expect(impl).not.toContain('</bad_code>');
+        expect(impl).not.toContain('<good_code>');
+        expect(impl).not.toContain('</good_code>');
+      },
+    );
+
+    it.each(ALL_PROFILES)('$name profile examples have <why> explanations', ({ profile }) => {
+      const impl = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+      const whyCount = (impl.match(/<why>/g) || []).length;
+      const exampleCount = (impl.match(/<example /g) || []).length;
+      expect(whyCount).toBe(exampleCount);
+    });
+  });
+
+  // ─── CORNER: Specific example IDs ─────────────────────────
+  describe('CORNER', () => {
+    it('TypeScript examples cover TS01, TS04, TS05, TS06, TS08, TS10', () => {
+      const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
+      for (const id of ['AP-TS01', 'AP-TS04', 'AP-TS05', 'AP-TS06', 'AP-TS08', 'AP-TS10']) {
+        expect(impl).toContain(`id="${id}"`);
+      }
+    });
+
+    it('Java examples cover J01, J03, J04, J05, J07, J08', () => {
+      const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
+      for (const id of ['AP-J01', 'AP-J03', 'AP-J04', 'AP-J05', 'AP-J07', 'AP-J08']) {
+        expect(impl).toContain(`id="${id}"`);
+      }
+    });
+
+    it('Angular examples cover NG01, NG03, NG04, NG05, NG06, NG07', () => {
+      const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
+      for (const id of ['AP-NG01', 'AP-NG03', 'AP-NG04', 'AP-NG05', 'AP-NG06', 'AP-NG07']) {
+        expect(impl).toContain(`id="${id}"`);
+      }
+    });
+
+    it('Baseline examples cover B01, B02, B03', () => {
+      const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
+      for (const id of ['AP-B01', 'AP-B02', 'AP-B03']) {
+        expect(impl).toContain(`id="${id}"`);
+      }
+    });
+  });
+});
+
+describe('config/profile/baseline-hardening', () => {
+  // ─── P2: Baseline parity with specialized profiles ─────────
+  describe('HAPPY', () => {
+    it('baseline profile has negative test matrix', () => {
+      const plan = resolveProfileInstructions(baselineProfile.instructions, 'PLAN');
+      expect(plan).toContain('Minimum Negative Tests');
+      expect(plan).toContain('Function/Module');
+      expect(plan).toContain('API Boundary');
+    });
+
+    it('baseline profile has review checklist', () => {
+      const review = resolveProfileInstructions(baselineProfile.instructions, 'REVIEW');
+      expect(review).toContain('Review Checklist');
+      expect(review).toContain('Error Handling');
+      expect(review).toContain('Input Validation');
+      expect(review).toContain('Security');
+    });
+
+    it('baseline profile has few-shot examples', () => {
+      const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
+      expect(impl).toContain('<examples>');
+      expect(impl).toContain('AP-B01');
+    });
+
+    it('baseline profile has testing fundamentals', () => {
+      const plan = resolveProfileInstructions(baselineProfile.instructions, 'PLAN');
+      expect(plan).toContain('Testing Fundamentals');
+      expect(plan).toContain('Test Structure');
+      expect(plan).toContain('Test Quality');
+    });
+  });
+
+  // ─── EDGE: Baseline content is language-agnostic ───────────
+  describe('EDGE', () => {
+    it('baseline examples use language-agnostic code (not TypeScript-specific)', () => {
+      const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
+      // Baseline examples should NOT contain TypeScript-specific syntax
+      expect(impl).not.toContain('interface ');
+      expect(impl).not.toContain(': string');
+      expect(impl).not.toContain('async function');
+    });
+
+    it('baseline base content does not contain stack-specific references', () => {
+      const base = extractBaseInstructions(baselineProfile.instructions);
+      expect(base).not.toContain('TypeScript');
+      expect(base).not.toContain('Java');
+      expect(base).not.toContain('Angular');
+      expect(base).not.toContain('Spring');
+    });
+  });
+});
+
+describe('config/profile/java-dedup', () => {
+  // ─── P6b: Java Section 6 redundancy removal ────────────────
+  it('Java profile Section 6 has no redundant content', () => {
+    const base = extractBaseInstructions(javaProfile.instructions);
+    // The section should contain the MUST/MUST NOT version only
+    expect(base).toContain('contract MUST be treated as authoritative');
+    // The informal "NEVER edit" version should be gone
+    expect(base).not.toContain('NEVER edit generated code');
+    expect(base).not.toContain('NEVER place business logic');
+  });
+
+  it('Java profile Section 6 preserves contract drift rule', () => {
+    const base = extractBaseInstructions(javaProfile.instructions);
+    expect(base).toContain('Contract drift -> hard failure');
+  });
+});
+
+describe('config/profile/decision-trees', () => {
+  // ─── Java and Angular have decision trees in PLAN/ARCHITECTURE ──
+  describe('HAPPY', () => {
+    it('Java profile has decision trees in PLAN phase', () => {
+      const plan = resolveProfileInstructions(javaProfile.instructions, 'PLAN');
+      expect(plan).toContain('Architecture Pattern Selection');
+      expect(plan).toContain('Test Type Selection');
+    });
+
+    it('Angular profile has decision trees in PLAN phase', () => {
+      const plan = resolveProfileInstructions(angularProfile.instructions, 'PLAN');
+      expect(plan).toContain('State Management Selection');
+      expect(plan).toContain('Test Type Selection');
+      expect(plan).toContain('Library Type Selection');
+      expect(plan).toContain('Component Type Decision');
+    });
+
+    it('Java profile has decision trees in ARCHITECTURE phase', () => {
+      const arch = resolveProfileInstructions(javaProfile.instructions, 'ARCHITECTURE');
+      expect(arch).toContain('Architecture Pattern Selection');
+    });
+
+    it('Angular profile has decision trees in ARCHITECTURE phase', () => {
+      const arch = resolveProfileInstructions(angularProfile.instructions, 'ARCHITECTURE');
+      expect(arch).toContain('State Management Selection');
+    });
+  });
+
+  // ─── BAD: Decision trees NOT in non-planning phases ────────
+  describe('BAD', () => {
+    it('Java base content does NOT contain decision trees', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toContain('Architecture Pattern Selection');
+      expect(base).not.toContain('Test Type Selection');
+    });
+
+    it('Angular base content does NOT contain decision trees', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      expect(base).not.toContain('State Management Selection');
+      expect(base).not.toContain('Component Type Decision');
+    });
+  });
+});
+
+// ─── PERF: Token budget verification ─────────────────────────────────────────
+
+describe('config/profile/token-budget', () => {
+  it.each([
+    { name: 'baseline', profile: baselineProfile, maxBaseChars: 4000 },
+    { name: 'typescript', profile: typescriptProfile, maxBaseChars: 8000 },
+    { name: 'java', profile: javaProfile, maxBaseChars: 10000 },
+    { name: 'angular', profile: angularProfile, maxBaseChars: 8000 },
+  ] as const)(
+    '$name base content stays within $maxBaseChars character budget',
+    ({ profile, maxBaseChars }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      expect(base.length).toBeLessThan(maxBaseChars);
+    },
+  );
+
+  it('byPhase content reduces per-phase token count vs monolithic', () => {
+    // For each profile, base-only (READY phase) should be shorter than
+    // the heaviest phase (IMPLEMENTATION)
+    for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+      const readyContent = resolveProfileInstructions(profile.instructions, 'READY');
+      const implContent = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
+      expect(readyContent.length).toBeLessThan(implContent.length);
+    }
+  });
+});
+
+describe('config/check-executors', () => {
   const testQuality = baselineProfile.checks.get('test_quality')!;
   const rollbackSafety = baselineProfile.checks.get('rollback_safety')!;
 
