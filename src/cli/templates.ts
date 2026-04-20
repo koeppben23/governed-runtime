@@ -776,6 +776,8 @@ Use the smallest process that is safe for the class. If uncertain, classify one 
 
 ## 4. Hard Invariants
 
+These apply across all task classes:
+
 - Use the smallest safe change.
 - Preserve one canonical authority and SSOT ownership.
 - Make failures explicit and fail closed.
@@ -786,10 +788,16 @@ Use the smallest process that is safe for the class. If uncertain, classify one 
 
 ## Red Lines
 
-- Do not hide failures with silent fallbacks.
-- Do not create duplicate runtime authority.
-- Do not weaken fail-closed behavior.
-- Do not claim verification that was not run.
+These are prohibited across all task classes:
+
+- Do not hide failures with silent fallbacks — because hidden failures corrupt downstream state.
+  Instead: surface errors explicitly, return BLOCKED or an explicit failure, and stop.
+- Do not create duplicate runtime authority — because conflicting authorities cause non-deterministic decisions.
+  Instead: extend the existing canonical authority.
+- Do not weaken fail-closed behavior — because open-fail modes allow untested behavior to pass.
+  Instead: keep default deny and require an explicit validated allow-path.
+- Do not claim verification that was not run — because unverified claims break the evidence chain.
+  Instead: mark unverified claims as \`NOT_VERIFIED\`.
 
 Examples:
 - Do not recover invalid policy by falling back to team mode.
@@ -801,9 +809,15 @@ Examples:
 Do not start editing immediately. First classify the task, identify authority and SSOT,
 read relevant artifacts, choose the smallest safe change, and determine verification level.
 
+## Before Completing Rule
+
+Before returning a final result, verify: output contract for the task class is satisfied,
+all evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED) are set where needed, required
+verification for the task class has been run, and no SSOT drift was introduced.
+
 ## 5. Evidence Rules
 
-Use explicit markers:
+Use explicit markers across all task classes:
 
 - \`ASSUMPTION\`: necessary and plausible, but not verified from artifacts.
 - \`NOT_VERIFIED\`: not executed, not tested, or not proven with evidence.

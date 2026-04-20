@@ -694,8 +694,31 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Acting Rule');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Before Completing Rule');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+    });
+
+    it('FLOWGUARD_MANDATES_BODY red lines include WHY-context and fail-closed alternatives', () => {
+      // WHY-context enables correct generalization to novel situations
+      expect(FLOWGUARD_MANDATES_BODY).toContain('because hidden failures corrupt downstream state');
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'because conflicting authorities cause non-deterministic decisions',
+      );
+      // Positive alternatives must be fail-closed, not open-recovery
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'Instead: surface errors explicitly, return BLOCKED or an explicit failure, and stop.',
+      );
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'Instead: extend the existing canonical authority.',
+      );
+    });
+
+    it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
+      // Scope must be explicit to avoid ambiguity across task classes
+      expect(FLOWGUARD_MANDATES_BODY).toContain('These apply across all task classes:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('These are prohibited across all task classes:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Use explicit markers across all task classes:');
     });
 
     it('FLOWGUARD_MANDATES_BODY contains no legacy mandate sections', () => {
