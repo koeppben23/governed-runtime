@@ -13,8 +13,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,12 +23,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate PR title with commitlint
+      - name: Validate PR title with commitlint (PR)
         if: github.event_name == 'pull_request'
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: echo "$PR_TITLE" | npx commitlint
 
-      - name: Validate commits with commitlint
+      - name: Validate squash-merge commit message (push)
         if: github.event_name == 'push'
-        run: npx commitlint --from HEAD~1 --to HEAD --verbose
+        run: echo "${{ github.event.head_commit.message }}" | npx commitlint
