@@ -328,10 +328,17 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  *
  * Mutates items in place by adding version and versionEvidence fields.
  *
- * Execution order matters for deterministic priority:
+ * Execution order is fully sequential for deterministic first-write-wins priority:
  * 1. .nvmrc / .node-version (highest Node version authority)
  * 2. package.json (engines.node, TS dep version, framework deps)
- * 3. All other extractors in parallel (no shared write targets)
+ * 3. tsconfig.json (TypeScript compilerTarget — no shared targets)
+ * 4. pom.xml (Java version, Spring Boot version — Maven authority)
+ * 5. build.gradle(.kts) (Java version, Spring Boot version — Gradle fallback)
+ * 6. go.mod (Go version — no shared targets)
+ *
+ * Maven runs before Gradle: in projects with both pom.xml and build.gradle,
+ * Maven is the canonical build system and Gradle values are ignored via
+ * first-write-wins on languages.java.version and frameworks.spring-boot.version.
  */
 async function extractVersions(
   readFile: ReadFileFn,
@@ -339,18 +346,15 @@ async function extractVersions(
   frameworks: DetectedItem[],
   runtimes: DetectedItem[],
 ): Promise<void> {
-  // Serial: runtime version precedence must be deterministic.
+  // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
   await extractFromNodeVersionFiles(readFile, runtimes);
   await extractFromPackageJson(readFile, languages, frameworks, runtimes);
-
-  // Parallel: remaining extractors have no shared write targets.
-  await Promise.all([
-    extractFromTsConfig(readFile, languages),
-    extractFromPomXml(readFile, languages, frameworks),
-    extractFromGradleBuild(readFile, languages, frameworks),
-    extractFromGoMod(readFile, languages),
-  ]);
+  await extractFromTsConfig(readFile, languages);
+  // Maven before Gradle: shared write targets (languages.java, frameworks.spring-boot)
+  await extractFromPomXml(readFile, languages, frameworks);
+  await extractFromGradleBuild(readFile, languages, frameworks);
+  await extractFromGoMod(readFile, languages);
 }
 
 /**

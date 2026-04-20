@@ -748,6 +748,53 @@ java {
       expect(nodeRuntime?.versionEvidence).toBe('.nvmrc');
     });
 
+    it('uses deterministic precedence when pom.xml and build.gradle both define Java version', async () => {
+      const input = inputWithFiles(
+        {
+          'pom.xml': `<project>
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+</project>`,
+          'build.gradle': "sourceCompatibility = '17'",
+        },
+        {
+          allFiles: ['src/main/java/App.java', 'pom.xml', 'build.gradle'],
+          packageFiles: ['pom.xml', 'build.gradle'],
+        },
+      );
+      const result = await collectStack(input);
+      const javaItem = result.data.languages.find((l) => l.id === 'java');
+      // Maven runs before Gradle — pom.xml value wins via first-write-wins
+      expect(javaItem?.version).toBe('21');
+      expect(javaItem?.versionEvidence).toBe('pom.xml:<java.version>');
+    });
+
+    it('uses deterministic precedence when pom.xml and build.gradle both define Spring Boot version', async () => {
+      const input = inputWithFiles(
+        {
+          'pom.xml': `<project>
+  <properties>
+    <spring-boot.version>4.0.1</spring-boot.version>
+  </properties>
+</project>`,
+          'build.gradle.kts': `
+plugins {
+  id("org.springframework.boot") version "3.4.1"
+}`,
+        },
+        {
+          allFiles: ['src/main/java/App.java', 'pom.xml', 'build.gradle.kts'],
+          packageFiles: ['pom.xml', 'build.gradle.kts'],
+        },
+      );
+      const result = await collectStack(input);
+      const sbItem = result.data.frameworks.find((f) => f.id === 'spring-boot');
+      // Maven runs before Gradle — pom.xml value wins via first-write-wins
+      expect(sbItem?.version).toBe('4.0.1');
+      expect(sbItem?.versionEvidence).toBe('pom.xml:<spring-boot.version>');
+    });
+
     it('pom.xml <java.version> takes precedence over <maven.compiler.source>', async () => {
       const input = inputWithFiles(
         {
