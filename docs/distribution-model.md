@@ -38,10 +38,48 @@ The `flowguard-core-{version}.tgz` contains:
 
 | Component       | Description                                      |
 | --------------- | ------------------------------------------------ |
-| **CLI**         | `flowguard` command (install, uninstall, doctor) |
+| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve) |
 | **Core**        | State machine, rails, adapters, audit, config    |
 | **Integration** | OpenCode tools, plugin, command prompts          |
 | **Templates**   | Package.json, opencode.json, mandates            |
+
+---
+
+## Headless Operation
+
+FlowGuard operates within the OpenCode host runtime. Headless modes are achieved via OpenCode's native CLI interfaces:
+
+### OpenCode Headless Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Non-interactive** | `opencode run "prompt"` | Execute single commands without TUI |
+| **HTTP API** | `opencode serve` | REST API server on port 4096 |
+| **ACP (Experimental)** | `opencode acp` | STDIN/STDOUT nd-JSON protocol |
+
+### FlowGuard Headless Wrapper
+
+FlowGuard provides a CLI wrapper for convenient headless operation:
+
+```bash
+# Execute FlowGuard commands non-interactively
+flowguard run --prompt "Run /hydrate policyMode=team-ci"
+
+# Start an OpenCode server for continuous headless operation
+flowguard serve --port 4096 --password secret
+```
+
+**Note:** FlowGuard requires OpenCode as its host runtime. The headless wrapper manages OpenCode server lifecycle and command execution. For direct OpenCode integration, see the [OpenCode Server Documentation](https://opencode.ai/docs/server/).
+
+### ACP Mode (Experimental)
+
+The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:
+
+```bash
+opencode acp
+```
+
+This uses nd-JSON for message framing. ACP is experimental and subject to change.
 
 ---
 
