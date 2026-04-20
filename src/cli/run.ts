@@ -224,7 +224,7 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
 export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
   const config: ServeConfig = {};
   const errors: string[] = [];
-  const knownFlags = ['--port', '--hostname', '--cwd'];
+  const knownFlags = ['--port', '--hostname', '--cwd', '--detach'];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -255,6 +255,8 @@ export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: s
       } else {
         errors.push('--hostname requires a value');
       }
+    } else if (arg === '--detach') {
+      // Accepted as explicit detached-mode marker (now always detached anyway)
     } else if (arg === '--cwd') {
       const next = argv[i + 1];
       if (next) {
