@@ -84,8 +84,12 @@ function executeOpenCode(
     let stdout = '';
     let stderr = '';
 
-    proc.stdout?.on('data', (d) => { stdout += d.toString(); });
-    proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+    proc.stdout?.on('data', (d) => {
+      stdout += d.toString();
+    });
+    proc.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
 
     proc.on('close', (code) => {
       resolve({ exitCode: code ?? 0, stdout, stderr });
@@ -183,6 +187,7 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (!arg) continue;
 
     if (arg.startsWith('-') && !knownFlags.includes(arg)) {
       errors.push(`Unknown flag: ${arg}`);
@@ -228,6 +233,7 @@ export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: s
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (!arg) continue;
 
     if (arg.startsWith('-') && !knownFlags.includes(arg)) {
       errors.push(`Unknown flag: ${arg}`);

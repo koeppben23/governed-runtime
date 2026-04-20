@@ -22,8 +22,12 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
     let stdout = '';
     let stderr = '';
 
-    proc.stdout?.on('data', (d) => { stdout += d.toString(); });
-    proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+    proc.stdout?.on('data', (d) => {
+      stdout += d.toString();
+    });
+    proc.stderr?.on('data', (d) => {
+      stderr += d.toString();
+    });
 
     return new Promise<void>((resolve) => {
       proc.on('close', (code) => {
@@ -35,7 +39,10 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
         expect(true).toBe(false);
         resolve();
       });
-      setTimeout(() => { proc.kill(); resolve(); }, TIMEOUT);
+      setTimeout(() => {
+        proc.kill();
+        resolve();
+      }, TIMEOUT);
     });
   });
 
@@ -52,7 +59,9 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
         resolve();
       }, TIMEOUT);
 
-      proc.on('error', () => { resolve(); });
+      proc.on('error', () => {
+        resolve();
+      });
     });
   });
 
@@ -68,7 +77,9 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
         resolve();
       }, 500);
 
-      proc.on('error', () => { resolve(); });
+      proc.on('error', () => {
+        resolve();
+      });
     });
   });
 });

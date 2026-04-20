@@ -893,7 +893,13 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 
 const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
 const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
-const VALID_ACTIONS: readonly CliAction[] = ['install', 'uninstall', 'doctor', 'run', 'serve'] as const;
+const VALID_ACTIONS: readonly CliAction[] = [
+  'install',
+  'uninstall',
+  'doctor',
+  'run',
+  'serve',
+] as const;
 
 /**
  * Parse CLI arguments from process.argv.

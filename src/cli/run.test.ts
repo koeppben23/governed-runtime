@@ -4,13 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import {
-  parseRunArgs,
-  parseServeArgs,
-  formatRunResult,
-  getRunUsage,
-  getServeUsage,
-} from './run';
+import { parseRunArgs, parseServeArgs, formatRunResult, getRunUsage, getServeUsage } from './run';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(() => ({

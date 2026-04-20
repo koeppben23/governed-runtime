@@ -14,10 +14,10 @@ This document captures research findings. ACP is NOT a supported FlowGuard CI pa
 
 ## Official Documentation
 
-| Source | Command | Protocol |
-|--------|---------|----------|
-| CLI | `opencode acp` | stdin/stdout via JSON-RPC |
-| Docs | [opencode.ai/docs/acp](https://opencode.ai/docs/acp/) | ACP specification |
+| Source | Command                                               | Protocol                  |
+| ------ | ----------------------------------------------------- | ------------------------- |
+| CLI    | `opencode acp`                                        | stdin/stdout via JSON-RPC |
+| Docs   | [opencode.ai/docs/acp](https://opencode.ai/docs/acp/) | ACP specification         |
 
 ---
 

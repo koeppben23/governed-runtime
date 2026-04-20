@@ -36,12 +36,12 @@ Release publication is tag-driven (`v*`). If no release tag has been published y
 
 The `flowguard-core-{version}.tgz` contains:
 
-| Component       | Description                                      |
-| --------------- | ------------------------------------------------ |
+| Component       | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
 | **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve) |
-| **Core**        | State machine, rails, adapters, audit, config    |
-| **Integration** | OpenCode tools, plugin, command prompts          |
-| **Templates**   | Package.json, opencode.json, mandates            |
+| **Core**        | State machine, rails, adapters, audit, config                |
+| **Integration** | OpenCode tools, plugin, command prompts                      |
+| **Templates**   | Package.json, opencode.json, mandates                        |
 
 ---
 
@@ -51,11 +51,11 @@ FlowGuard operates within the OpenCode host runtime. Headless modes are achieved
 
 ### OpenCode Headless Modes
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| **Non-interactive** | `opencode run "prompt"` | Execute single commands without TUI |
-| **HTTP API** | `opencode serve` | REST API server on port 4096 |
-| **ACP (Experimental)** | `opencode acp` | STDIN/STDOUT nd-JSON protocol |
+| Mode                   | Command                 | Description                         |
+| ---------------------- | ----------------------- | ----------------------------------- |
+| **Non-interactive**    | `opencode run "prompt"` | Execute single commands without TUI |
+| **HTTP API**           | `opencode serve`        | REST API server on port 4096        |
+| **ACP (Experimental)** | `opencode acp`          | STDIN/STDOUT nd-JSON protocol       |
 
 ### FlowGuard Headless Wrapper (EXPERIMENTAL)
 
@@ -90,8 +90,8 @@ opencode acp
 **Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration.
 
 For CI/headless automation, use OpenCode directly:
-  opencode run "prompt"
-  opencode serve --port 4096 --detach
+opencode run "prompt"
+opencode serve --port 4096 --detach
 
 FlowGuard wrappers are experimental convenience commands.
 
