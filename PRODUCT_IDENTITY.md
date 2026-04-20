@@ -226,7 +226,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **8. Discovery** | Repo discovery (6 collectors + orchestrator + Zod types) | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts` |
 | **9. Archive** | Archive manifest types, verification | `archive/types.ts` |
 | **10. Integration** | OpenCode custom tools + plugin (thin wrappers) | `integration/tools.ts`, `plugin.ts`, `index.ts` |
-| **11. CLI** | Installer (install/uninstall/doctor) | `cli/install.ts`, `cli/templates.ts` |
+| **11. CLI** | Installer (install/uninstall/doctor) + Headless (run/serve) | `cli/install.ts`, `cli/templates.ts`, `cli/run.ts` |
 
 Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
@@ -238,6 +238,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
 3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
 4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.
+5. **Headless operation** — `flowguard run` and `flowguard serve` wrap OpenCode headless modes for CI/CD integration.
 
 ### OpenCode Integration
 
@@ -326,6 +327,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
 - **Phase Count:** 14 explicit workflow phases across 3 flows
 - **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
+- **CLI Commands:** 5 (install, uninstall, doctor, run, serve)
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
