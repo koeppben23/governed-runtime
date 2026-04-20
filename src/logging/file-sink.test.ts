@@ -137,10 +137,8 @@ describe('createFileSink', () => {
     it('handles many concurrent log calls without race condition', async () => {
       const sink = createFileSink(testDir, 7);
       const entry: LogEntry = { level: 'info', service: 'test', message: 'race test' };
-      
-      await Promise.all(
-        Array.from({ length: 20 }, () => sink(entry))
-      );
+
+      await Promise.all(Array.from({ length: 20 }, () => sink(entry)));
 
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.length).toBe(1);

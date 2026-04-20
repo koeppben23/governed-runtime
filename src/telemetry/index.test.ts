@@ -45,11 +45,7 @@ describe('telemetry', () => {
 
     it('withSpan passes through attributes to span', async () => {
       const { withSpan } = await import('./index');
-      const result = await withSpan(
-        'test.operation',
-        async () => 'done',
-        { customAttr: 'value' },
-      );
+      const result = await withSpan('test.operation', async () => 'done', { customAttr: 'value' });
       expect(result).toBe('done');
     });
   });
