@@ -87,11 +87,15 @@ The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:
 opencode acp
 ```
 
-**Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration (Zed, JetBrains, Avante.nvim, CodeCompanion.nvim), not the primary CI/headless execution path.
+**Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration.
 
-For CI/Headless automation, use `flowguard run` / `flowguard serve` instead.
+For CI/headless automation, use OpenCode directly:
+  opencode run "prompt"
+  opencode serve --port 4096 --detach
 
-See [docs/experimental-acp.md](./experimental-acp.md) for detailed research findings.
+FlowGuard wrappers are experimental convenience commands.
+
+See [docs/experimental-acp.md](./experimental-acp.md) for research findings.
 
 ---
 

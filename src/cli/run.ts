@@ -37,6 +37,7 @@ export interface ServeResult {
   success: boolean;
   port: number;
   pid?: number;
+  ready?: boolean;
   error?: string;
 }
 
@@ -101,12 +102,6 @@ function executeOpenCode(
 
 // ─── Run Implementation ────────────────────────────────────────────────────────────
 
-/**
- * Execute a command via opencode run.
- *
- * This is a thin wrapper. No server management.
- * For production: opencode run "prompt"
- */
 export async function run(config: HeadlessConfig): Promise<RunResult> {
   const { prompt, cwd = process.cwd(), env } = config;
 
@@ -114,7 +109,6 @@ export async function run(config: HeadlessConfig): Promise<RunResult> {
     return { success: false, error: 'Prompt is required' };
   }
 
-  // Simply wrap opencode run - no server management
   const result = await executeOpenCode(['run', prompt], { cwd, env });
 
   if (result.exitCode !== 0) {
@@ -137,8 +131,8 @@ export async function checkServer(port: number): Promise<boolean> {
 /**
  * Start an OpenCode server.
  *
- * Foreground: blocks until SIGINT/SIGTERM
- * Detached: runs in background, returns immediately
+ * Foreground: blocks until killed, reports ready before blocking.
+ * Detached: runs in background, returns immediately with PID.
  */
 export async function serve(config: ServeConfig): Promise<ServeResult> {
   const {
@@ -158,7 +152,7 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
   const mergedEnv = { ...process.env, ...env };
 
   if (detach) {
-    // Detached mode: proper background process
+    // Detached: proper background process
     const serverProcess = spawn('opencode', args, {
       cwd,
       env: mergedEnv,
@@ -168,41 +162,61 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
 
     serverProcess.unref();
 
+    // Race: error vs ready vs timeout
+    let startupError: string | null = null;
+
+    serverProcess.on('error', (err) => {
+      startupError = err.message;
+    });
+
     const ready = await waitForServer(port, STARTUP_TIMEOUT_MS);
-    if (!ready) {
-      return { success: false, port, error: 'Server failed to start' };
+
+    if (!ready || startupError) {
+      return { success: false, port, error: startupError || 'Server failed to start' };
     }
 
-    return { success: true, port, pid: serverProcess.pid };
+    return { success: true, port, pid: serverProcess.pid, ready: true };
   }
 
-  // Foreground mode: block until killed
+  // Foreground: block until killed
   const proc = spawn('opencode', args, {
     cwd,
     env: mergedEnv,
     stdio: ['inherit', 'pipe', 'pipe'],
   });
 
+  // Handle errors early
+  let startupError: string | null = null;
+
+  proc.on('error', (err) => {
+    startupError = err.message;
+  });
+
+  // Wait for ready - report immediately when ready
   const ready = await waitForServer(port, STARTUP_TIMEOUT_MS);
+
   if (!ready) {
     proc.kill();
-    return { success: false, port, error: 'Server failed to start' };
+    return { success: false, port, error: startupError || 'Server failed to start' };
   }
 
-  // Forward signals
-  const cleanup = () => {
-    proc.kill('SIGTERM');
-  };
+  // Report ready NOW, then block
+  return new Promise<ServeResult>((resolve) => {
+    // Forward signals
+    const cleanup = () => {
+      proc.kill('SIGTERM');
+    };
 
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
+    process.once('SIGINT', cleanup);
+    process.once('SIGTERM', cleanup);
 
-  // Wait for process to exit
-  return new Promise((resolve) => {
+    // Resolve with ready=true immediately after startup
+    resolve({ success: true, port, pid: proc.pid, ready: true });
+
+    // Then wait for exit
     proc.on('close', () => {
       process.removeListener('SIGINT', cleanup);
       process.removeListener('SIGTERM', cleanup);
-      resolve({ success: true, port, pid: proc.pid });
     });
   });
 }
@@ -360,16 +374,19 @@ export async function serveMain(argv: string[]): Promise<number> {
 
   const result = await serve(parsed.config);
 
-  if (result.success) {
-    if (parsed.config.detach) {
-      console.log(`[ok] Server started on port ${result.port}`);
-      if (result.pid) console.log(`    PID: ${result.pid}`);
-    } else {
-      console.log(`[ok] Server running on port ${result.port} (press Ctrl+C to stop)`);
-    }
-  } else {
+  if (!result.success) {
     console.log(`[error] ${result.error}`);
+    return 1;
   }
 
-  return result.success ? 0 : 1;
+  // Print ready status NOW
+  if (parsed.config.detach) {
+    console.log(`[ok] Server started on port ${result.port}`);
+    if (result.pid) console.log(`    PID: ${result.pid}`);
+  } else {
+    console.log(`[ok] Server running on port ${result.port} (press Ctrl+C to stop)`);
+  }
+
+  // For foreground, we already logged and returned - process continues blocking
+  return 0;
 }
