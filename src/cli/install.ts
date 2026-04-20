@@ -1081,8 +1081,8 @@ Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
   npx --package ./flowguard-core-${v}.tgz flowguard doctor
   npx --package ./flowguard-core-${v}.tgz flowguard uninstall
-  flowguard run --prompt "Run /hydrate policyMode=team-ci"
-  flowguard serve --port 4096 --password secret
+  flowguard run -- "Run /hydrate policyMode=team-ci"
+  flowguard serve --port 4096 --detach
 `;
 }
 

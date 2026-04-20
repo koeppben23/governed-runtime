@@ -167,8 +167,10 @@ SERVER_PID=$!
 # Run FlowGuard commands via the API
 opencode run "Run /hydrate with policyMode=team-ci"
 
-# Or attach to the server
-opencode run --attach http://localhost:4096 "Run /validate"
+# Or use the HTTP API directly
+curl -X POST http://localhost:4096/session/{sessionId}/message \
+  -H "Content-Type: application/json" \
+  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/validate"}]}}'
 
 # Stop the server
 kill $SERVER_PID
