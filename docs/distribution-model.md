@@ -57,19 +57,27 @@ FlowGuard operates within the OpenCode host runtime. Headless modes are achieved
 | **HTTP API** | `opencode serve` | REST API server on port 4096 |
 | **ACP (Experimental)** | `opencode acp` | STDIN/STDOUT nd-JSON protocol |
 
-### FlowGuard Headless Wrapper
+### FlowGuard Headless Wrapper (EXPERIMENTAL)
 
-FlowGuard provides a CLI wrapper for convenient headless operation:
+FlowGuard provides a CLI wrapper for headless operation:
 
 ```bash
-# Execute FlowGuard commands non-interactively
-flowguard run --prompt "Run /hydrate policyMode=team-ci"
+# Execute FlowGuard commands non-interactively (EXPERIMENTAL)
+flowguard run -- "Run /hydrate policyMode=team-ci"
 
-# Start an OpenCode server for continuous headless operation
-flowguard serve --port 4096 --password secret
+# Start an OpenCode server (EXPERIMENTAL)
+flowguard serve --port 4096 --detach
 ```
 
-**Note:** FlowGuard requires OpenCode as its host runtime. The headless wrapper manages OpenCode server lifecycle and command execution. For direct OpenCode integration, see the [OpenCode Server Documentation](https://opencode.ai/docs/server/).
+**Status:** This feature is being refined. For production CI, use the official OpenCode commands directly:
+
+```bash
+# Direct OpenCode usage (recommended)
+opencode run "Run /hydrate"
+opencode serve --port 4096
+```
+
+**Note:** FlowGuard requires OpenCode as its host runtime. See the [OpenCode CLI Documentation](https://opencode.ai/docs/cli/) for official commands.
 
 ### ACP Mode (Experimental)
 
