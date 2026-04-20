@@ -17,6 +17,8 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readFile as fsReadFile } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry';
 import type {
   CollectorInput,
@@ -39,6 +41,24 @@ import { collectDomainSignals } from './collectors/domain-signals';
 
 /** Default per-collector timeout (ms). */
 const COLLECTOR_TIMEOUT_MS = 10_000;
+
+// ─── File Reading ─────────────────────────────────────────────────────────────
+
+/**
+ * Create a default readFile function for a given worktree root.
+ * Returns file content as UTF-8 string or undefined on any error.
+ */
+function createDefaultReadFile(
+  worktreePath: string,
+): (relativePath: string) => Promise<string | undefined> {
+  return async (relativePath: string): Promise<string | undefined> => {
+    try {
+      return await fsReadFile(nodePath.join(worktreePath, relativePath), 'utf8');
+    } catch {
+      return undefined;
+    }
+  };
+}
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
@@ -71,15 +91,20 @@ async function runDiscoveryImpl(
   input: CollectorInput,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
+  // Enrich input with default readFile if not provided by caller
+  const enrichedInput: CollectorInput = input.readFile
+    ? input
+    : { ...input, readFile: createDefaultReadFile(input.worktreePath) };
+
   // Run all collectors in parallel with timeout budget
   const [metaResult, stackResult, topoResult, surfaceResult, codeSurfaceResult, domainResult] =
     await Promise.allSettled([
-      withTimeout(collectRepoMetadata(input), timeoutMs),
-      withTimeout(collectStack(input), timeoutMs),
-      withTimeout(collectTopology(input), timeoutMs),
-      withTimeout(collectSurfaces(input), timeoutMs),
-      withTimeout(collectCodeSurfaces(input), timeoutMs),
-      withTimeout(collectDomainSignals(input), timeoutMs),
+      withTimeout(collectRepoMetadata(enrichedInput), timeoutMs),
+      withTimeout(collectStack(enrichedInput), timeoutMs),
+      withTimeout(collectTopology(enrichedInput), timeoutMs),
+      withTimeout(collectSurfaces(enrichedInput), timeoutMs),
+      withTimeout(collectCodeSurfaces(enrichedInput), timeoutMs),
+      withTimeout(collectDomainSignals(enrichedInput), timeoutMs),
     ]);
 
   // Extract results with safe defaults for failures

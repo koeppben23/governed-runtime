@@ -149,7 +149,7 @@ The DEV domain covers secure development practices, development guidelines, and 
 
 - Tech-stack-aware profiles: built-in profiles for Java/Spring Boot, Angular/Nx, TypeScript/Node.js
 - Profile rules delivered as tool returns, providing stack-specific guidance during implementation
-- Profile auto-detection from repository signals (file-path-based, no content reading)
+- Profile auto-detection from repository signals (file-path and manifest-content-based)
 
 **Testing Integration:**
 

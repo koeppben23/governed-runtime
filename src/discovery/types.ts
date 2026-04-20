@@ -63,6 +63,14 @@ export const DetectedItemSchema = z.object({
   classification: EvidenceClassSchema,
   /** Concrete evidence supporting this detection (file paths, config keys, etc.). */
   evidence: z.array(z.string()),
+  /** Detected version string (e.g., "21", "3.4.1"). Absent if not extractable. */
+  version: z.string().optional(),
+  /** Provenance of the version detection (e.g., "pom.xml:<java.version>"). */
+  versionEvidence: z.string().optional(),
+  /** Compiler target (e.g., "ES2022" from tsconfig.json). Not a tool/language version. */
+  compilerTarget: z.string().optional(),
+  /** Provenance of the compiler target detection. */
+  compilerTargetEvidence: z.string().optional(),
 });
 export type DetectedItem = z.infer<typeof DetectedItemSchema>;
 
@@ -363,6 +371,12 @@ export interface CollectorInput {
   readonly packageFiles: readonly string[];
   /** Configuration files (basenames). */
   readonly configFiles: readonly string[];
+  /**
+   * Optional file reader for manifest content extraction.
+   * Accepts a relative path from worktree root, returns file content or undefined.
+   * When absent, collectors skip content-based extraction (e.g., version detection).
+   */
+  readonly readFile?: (relativePath: string) => Promise<string | undefined>;
 }
 
 /**
