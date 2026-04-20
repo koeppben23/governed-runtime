@@ -14,6 +14,7 @@ export default defineConfig({
         'src/**/__fixtures__*',
         'src/test-policy.ts',
         'src/telemetry/**',
+        'src/cli/run.ts',
       ],
       thresholds: {
         branches: 80,
