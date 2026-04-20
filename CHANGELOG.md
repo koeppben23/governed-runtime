@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tool Error Classification in mandates**: Added explicit error classification (blocked, unexpected exception, malformed response, network/process failure) with differentiated handling. Commands reference central classification instead of duplicating error rules.
+- **Rule Conflict Resolution in mandates**: Added explicit priority (Universal Mandates > Slash Command > Profile Rules > Local Style). Profile rules may narrow, never override universal mandates.
 - **[EXPERIMENTAL] Headless CLI wrappers**: Added `flowguard run` and `flowguard serve` commands for non-interactive CI/CD integration. These wrap OpenCode's headless modes (`opencode run`, `opencode serve`). **Status**: Experimental — not for production use. Use OpenCode directly for production headless workflows. See [docs/distribution-model.md](./docs/distribution-model.md).
 - **[EXPERIMENTAL] ACP compatibility**: Added ACP (Agent Collaboration Protocol) smoke tests for editor/IDE integration. **Status**: Experimental compatibility surface only. Not for production use.
 - **Dual-mode logging**: Added file-based logging with mode configuration (`logging.mode: file | ui | both`) defaulting to file. Logs written to `{workspace}/.opencode/logs/flowguard-{YYYY-MM-DD}.log` in JSONL format. Includes configurable retention (`logging.retentionDays: 1-90`, default 7). Logging errors never block governance flow.

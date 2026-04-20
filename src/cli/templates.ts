@@ -105,7 +105,7 @@ Bootstrap the FlowGuard session for this project.
 - DO NOT auto-chain to /ticket, /plan, /continue, or any other FlowGuard command after hydration completes.
 - DO NOT infer or assume session state beyond what the tool returns.
 - Natural-language prompts like "go", "weiter", "proceed", "start", or "initialize" are NOT command invocations. Only an explicit \`/hydrate\` triggers this command. If the user sends free-text implying session setup, respond conversationally without calling FlowGuard tools.
-- If the tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful hydrate: \`Next action: run /ticket to start a task, /architecture to create an ADR, or /review for a compliance report.\`
 `,
 
@@ -143,7 +143,7 @@ $ARGUMENTS
 - DO NOT auto-chain into /plan, /continue, /review, or /review-decision after the ticket is recorded.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "go", "weiter", "proceed", "start working", or task descriptions sent without the /ticket prefix are NOT command invocations. Only an explicit \`/ticket\` triggers this command. If the user sends free-text describing a task, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful ticket: \`Next action: run /plan to generate an implementation plan.\`
 `,
 
@@ -215,7 +215,7 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - If the \`flowguard_status\` response contains profile rules (stack-specific guidance), follow them when writing the plan. Profile rules supplement the universal FlowGuard mandates.
 - Natural-language prompts like "go", "weiter", "proceed", "make a plan", or "start planning" are NOT command invocations. Only an explicit \`/plan\` triggers this command. If the user sends free-text implying planning, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After plan converges to PLAN_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
@@ -307,7 +307,7 @@ Determine what the FlowGuard workflow needs next and do it.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
 - Natural-language prompts like "go", "weiter", "proceed", "mach weiter", "next", or "what's next" are NOT command invocations. Only an explicit \`/continue\` triggers this command. If the user sends free-text implying continuation, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line stating the next step for the user.
 `,
 
@@ -378,7 +378,7 @@ Implement the approved plan and review the implementation.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - If the \`flowguard_status\` response contains profile rules (stack-specific guidance), follow them when implementing. Profile rules supplement the universal FlowGuard mandates.
 - Natural-language prompts like "go", "weiter", "start implementing", "build it", or "code it" are NOT command invocations. Only an explicit \`/implement\` triggers this command. If the user sends free-text implying implementation, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After implementation review converges to EVIDENCE_REVIEW: \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `,
 
@@ -482,7 +482,7 @@ Execute validation checks for the FlowGuard session.
 - DO NOT auto-chain into /implement, /plan, or any other FlowGuard command after validation completes.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "go", "weiter", "validate", "check it", or "run checks" are NOT command invocations. Only an explicit \`/validate\` triggers this command. If the user sends free-text implying validation, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. If all checks passed: \`Next action: run /implement to start implementation.\` If any check failed: \`Next action: run /plan to revise the plan and address the failed checks.\`
 `,
 
@@ -532,7 +532,7 @@ Decision: $ARGUMENTS
 - DO NOT auto-chain to other FlowGuard commands after the decision is recorded.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "approve", "go", "weiter", "looks good", "ship it", or "reject" sent WITHOUT the /review-decision prefix are NOT command invocations. Only an explicit \`/review-decision\` triggers this command. If the user sends free-text implying a decision, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line stating the next workflow step based on the verdict and phase.
 `,
 
@@ -573,7 +573,7 @@ Start the compliance review flow for the current FlowGuard session.
 - DO NOT auto-chain to any other FlowGuard command after generating the report.
 - Present the report clearly and concisely.
 - Natural-language prompts like "review it", "check the status", "how does it look", or "is it ready" are NOT command invocations. Only an explicit \`/review\` triggers this command. If the user sends free-text implying a review, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with a \`Next action:\` line based on the current phase and report findings.
 `,
 
@@ -621,7 +621,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 - DO NOT auto-chain to /review-decision or any other FlowGuard command after the architecture tool completes.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "write an ADR", "architecture decision", or "design doc" are NOT command invocations. Only an explicit \`/architecture\` triggers this command.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with a \`Next action:\` line based on the current phase.
 `,
 
@@ -662,7 +662,7 @@ Reason: $ARGUMENTS
 - DO NOT auto-chain to /hydrate or any other FlowGuard command after abort completes.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "stop", "cancel", "nevermind", or "forget it" are NOT command invocations. Only an explicit \`/abort\` triggers this command. If the user sends free-text implying cancellation, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful abort: \`Next action: run /hydrate to start a new session, or /review to inspect the aborted session.\`
 `,
 
@@ -698,7 +698,7 @@ Archive the current (or a specified) completed FlowGuard session.
 - DO NOT auto-chain to other FlowGuard commands after archiving.
 - DO NOT infer or assume session state beyond what the FlowGuard tools return.
 - Natural-language prompts like "archive", "save", "compress", or "backup" are NOT command invocations. Only an explicit \`/archive\` triggers this command. If the user sends free-text implying archiving, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns an error or blocked state, report: (1) the specific reason, and (2) exactly one recovery action.
+- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
 - Always end your response with exactly one \`Next action:\` line. After successful archive: \`Next action: run /hydrate to start a new session.\`
 `,
 };
@@ -887,6 +887,35 @@ High-risk work MUST include:
 - Fail-closed behavior preservation.
 - Rollback or recovery path.
 - Explicit \`NOT_VERIFIED\` items.
+
+## 11a. Tool Error Classification
+
+When a FlowGuard tool returns a failed result, blocked result, malformed response,
+nonconforming response, or does not return a successful result:
+
+- \`blocked\` governance result: treat as an expected governance block.
+  Report the blocker reason, exactly one recovery action, and stop.
+- Unexpected exception, crash, or runtime error: do not retry automatically.
+  Report the exact error and stop.
+- Malformed or nonconforming tool response: treat as validation failure.
+  Report that the tool response could not be trusted and stop.
+- Network, process, or subprocess failure: report the exact failure and stop.
+
+Never continue to the next workflow step after a failed, blocked, malformed,
+or nonconforming FlowGuard tool response.
+
+## 11b. Rule Conflict Resolution
+
+Instruction priority is:
+
+1. Universal FlowGuard mandates
+2. Slash-command rules
+3. Stack/profile rules
+4. Local style preferences
+
+Profile rules may narrow the solution space inside universal mandates.
+They must never override universal mandates, repository contracts, SSOT,
+schemas, runtime invariants, or fail-closed behavior.
 
 ## 12. Extended Guidance
 
