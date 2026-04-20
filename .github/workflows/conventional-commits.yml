@@ -31,4 +31,6 @@ jobs:
 
       - name: Validate squash-merge commit message (push)
         if: github.event_name == 'push'
-        run: echo "${{ github.event.head_commit.message }}" | npx commitlint
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: echo "$COMMIT_MESSAGE" | npx commitlint
