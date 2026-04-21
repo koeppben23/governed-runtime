@@ -831,12 +831,12 @@ describe('plan', () => {
       expect(result.code).toBe('EMPTY_PLAN');
     });
 
-    it('blocks without ticket', async () => {
+    it('blocks in READY phase (command not allowed without ticket phase)', async () => {
       await hydrateSession();
       const raw = await plan.execute({ planText: '## Plan' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('TICKET_REQUIRED');
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
     });
 
     it('blocks without session', async () => {

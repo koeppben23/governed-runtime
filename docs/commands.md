@@ -67,7 +67,7 @@ Generate an implementation plan with self-review loop.
 3. Plan refined until convergence
 4. Advances to PLAN_REVIEW
 
-**Allowed in:** READY, TICKET, PLAN
+**Allowed in:** TICKET, PLAN
 
 **Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
 

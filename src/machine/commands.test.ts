@@ -11,8 +11,7 @@ describe('commands', () => {
       expect(isCommandAllowed('TICKET', Command.TICKET)).toBe(true);
     });
 
-    it('/plan is allowed in READY, TICKET, and PLAN', () => {
-      expect(isCommandAllowed('READY', Command.PLAN)).toBe(true);
+    it('/plan is allowed in TICKET and PLAN', () => {
       expect(isCommandAllowed('TICKET', Command.PLAN)).toBe(true);
       expect(isCommandAllowed('PLAN', Command.PLAN)).toBe(true);
     });
@@ -143,6 +142,30 @@ describe('commands', () => {
       expect(isCommandAllowed('PLAN', Command.VALIDATE)).toBe(false);
       expect(isCommandAllowed('READY', Command.VALIDATE)).toBe(false);
     });
+
+    it('/plan blocked in READY (requires ticket phase first)', () => {
+      expect(isCommandAllowed('READY', Command.PLAN)).toBe(false);
+    });
+
+    it('/plan blocked outside TICKET and PLAN', () => {
+      const blockedPhases: Phase[] = [
+        'READY',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'COMPLETE',
+        'ARCHITECTURE',
+        'ARCH_REVIEW',
+        'ARCH_COMPLETE',
+        'REVIEW',
+        'REVIEW_COMPLETE',
+      ];
+      for (const phase of blockedPhases) {
+        expect(isCommandAllowed(phase, Command.PLAN)).toBe(false);
+      }
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -186,23 +209,23 @@ describe('commands', () => {
       expect(Object.keys(Command).length).toBe(10);
     });
 
-    it('/plan is allowed in READY, TICKET, and PLAN (direct plan from any start)', () => {
-      expect(isCommandAllowed('READY', Command.PLAN)).toBe(true);
+    it('/plan is allowed in TICKET and PLAN only (not READY)', () => {
+      expect(isCommandAllowed('READY', Command.PLAN)).toBe(false);
       expect(isCommandAllowed('TICKET', Command.PLAN)).toBe(true);
       expect(isCommandAllowed('PLAN', Command.PLAN)).toBe(true);
     });
 
     it('READY allows exactly the 3 flow commands + wildcards', () => {
-      // Flow commands
+      // Flow commands: ticket, architecture, review (NOT plan)
       expect(isCommandAllowed('READY', Command.TICKET)).toBe(true);
       expect(isCommandAllowed('READY', Command.ARCHITECTURE)).toBe(true);
       expect(isCommandAllowed('READY', Command.REVIEW)).toBe(true);
-      expect(isCommandAllowed('READY', Command.PLAN)).toBe(true);
       // Wildcards
       expect(isCommandAllowed('READY', Command.HYDRATE)).toBe(true);
       expect(isCommandAllowed('READY', Command.CONTINUE)).toBe(true);
       expect(isCommandAllowed('READY', Command.ABORT)).toBe(true);
-      // Blocked
+      // Blocked (including /plan — requires ticket phase first)
+      expect(isCommandAllowed('READY', Command.PLAN)).toBe(false);
       expect(isCommandAllowed('READY', Command.IMPLEMENT)).toBe(false);
       expect(isCommandAllowed('READY', Command.REVIEW_DECISION)).toBe(false);
       expect(isCommandAllowed('READY', Command.VALIDATE)).toBe(false);
