@@ -77,6 +77,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Verification command planner** — session state surfaces `verificationCandidates`: repo-native, evidence-backed verification command candidates derived from detected stack + manifests (advisory only, never auto-executed)
 - **Verification output contract** — `/plan` requires `## Verification Plan` with Source citation; `/implement` requires `## Verification Evidence` distinguishing Planned from Executed checks; `/review` checks for verificationCandidates vs generic command mismatches
 - **Module-scoped stack facts** — nested manifests (`apps/*/`, `packages/*/`, `services/*/`, `crates/*/`) surface as `detectedStack.scopes` without affecting root facts. Ignores `examples/`, `fixtures/`, `docs/`, `scripts/`. Max 20 scopes, 25 items per scope.
+- **External docs governance boundary** — version-specific external documentation is defined by ADR as advisory Knowledge Packs only (provenance-stamped, non-SSOT, no mandate/schema override, no live-network dependency in mutating flows)
 
 ### Archive Hardening
 

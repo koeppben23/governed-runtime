@@ -120,6 +120,7 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
 | **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect |
 | **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
+| **Knowledge Pack Policy (ADR)** | External documentation authority is defined in `docs/adr/ADR-0001-knowledge-packs-and-external-docs.md` as advisory-only, provenance-stamped, and non-SSOT |
 
 ---
 
