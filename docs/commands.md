@@ -152,6 +152,17 @@ Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irrev
 
 These tools operate on session artifacts but don't drive workflow.
 
+### flowguard_status (internal)
+
+Read-only status tool used by slash commands to inspect session state.
+
+In addition to phase and evidence summary, status now surfaces:
+
+- `detectedStack` — compact stack evidence derived from discovery
+- `verificationCandidates` — advisory, evidence-backed verification command candidates
+
+`verificationCandidates` are planner outputs only (never auto-executed by FlowGuard).
+
 ### /archive
 
 Archive a completed session as a `.tar.gz` file with integrity verification.

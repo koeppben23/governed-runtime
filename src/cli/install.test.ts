@@ -1490,7 +1490,7 @@ describe('cli/doctor', () => {
       await fs.unlink(path.join(workspaceDir(fp.fingerprint), 'config.json'));
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const configCheck = checks.find((c) => c.file.endsWith('/config.json'));
+      const configCheck = checks.find((c) => c.file.replace(/\\/g, '/').endsWith('/config.json'));
       expect(configCheck?.status).toBe('error');
       expect(configCheck?.detail).toContain('WORKSPACE_CONFIG_MISSING');
     });

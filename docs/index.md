@@ -85,6 +85,7 @@ Responsibilities, contact channels, and expectations.
 - [Agent Review Guidance](./agent-guidance/review.md) — Extended review rules
 - [Agent High-Risk Guidance](./agent-guidance/high-risk.md) — High-risk safeguards
 - [Agent Eval Suite](./agent-guidance/eval-suite.md) — Scenario-based quality evaluation
+- [ADR-0001 Knowledge Packs](./adr/ADR-0001-knowledge-packs-and-external-docs.md) — External documentation authority contract
 
 ## Quick Reference
 

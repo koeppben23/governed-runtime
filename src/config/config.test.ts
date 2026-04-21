@@ -12,6 +12,7 @@ import {
   createPolicySnapshot,
   policyFromSnapshot,
 } from '../config/policy';
+import { COMMANDS } from '../cli/templates';
 import {
   ProfileRegistry,
   baselineProfile,
@@ -689,28 +690,28 @@ describe('config/profile/byPhase-content', () => {
 describe('config/profile/few-shot-examples', () => {
   // ─── P1: Example Coverage ─────────────────────────────────
   describe('HAPPY', () => {
-    it('TypeScript profile has 6 examples (3 original + 3 new)', () => {
+    it('TypeScript profile has 7 examples', () => {
       const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Java profile has 6 examples (3 original + 3 new)', () => {
+    it('Java profile has 7 examples', () => {
       const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Angular profile has 6 examples (3 original + 3 new)', () => {
+    it('Angular profile has 7 examples', () => {
       const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Baseline profile has 3 examples (all new)', () => {
+    it('Baseline profile has 8 examples', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(3);
+      expect(matches).toHaveLength(8);
     });
   });
 
@@ -748,30 +749,55 @@ describe('config/profile/few-shot-examples', () => {
 
   // ─── CORNER: Specific example IDs ─────────────────────────
   describe('CORNER', () => {
-    it('TypeScript examples cover TS01, TS04, TS05, TS06, TS08, TS10', () => {
+    it('TypeScript examples cover TS01, TS02, TS04, TS05, TS06, TS08, TS10', () => {
       const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-TS01', 'AP-TS04', 'AP-TS05', 'AP-TS06', 'AP-TS08', 'AP-TS10']) {
+      for (const id of [
+        'AP-TS01',
+        'AP-TS02',
+        'AP-TS04',
+        'AP-TS05',
+        'AP-TS06',
+        'AP-TS08',
+        'AP-TS10',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Java examples cover J01, J03, J04, J05, J07, J08', () => {
+    it('Java examples cover J01, J03, J04, J05, J07, J08, J09', () => {
       const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-J01', 'AP-J03', 'AP-J04', 'AP-J05', 'AP-J07', 'AP-J08']) {
+      for (const id of ['AP-J01', 'AP-J03', 'AP-J04', 'AP-J05', 'AP-J07', 'AP-J08', 'AP-J09']) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Angular examples cover NG01, NG03, NG04, NG05, NG06, NG07', () => {
+    it('Angular examples cover NG01, NG02, NG03, NG04, NG05, NG06, NG07', () => {
       const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-NG01', 'AP-NG03', 'AP-NG04', 'AP-NG05', 'AP-NG06', 'AP-NG07']) {
+      for (const id of [
+        'AP-NG01',
+        'AP-NG02',
+        'AP-NG03',
+        'AP-NG04',
+        'AP-NG05',
+        'AP-NG06',
+        'AP-NG07',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Baseline examples cover B01, B02, B03', () => {
+    it('Baseline examples cover B01-B08', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-B01', 'AP-B02', 'AP-B03']) {
+      for (const id of [
+        'AP-B01',
+        'AP-B02',
+        'AP-B03',
+        'AP-B04',
+        'AP-B05',
+        'AP-B06',
+        'AP-B07',
+        'AP-B08',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
@@ -895,7 +921,7 @@ describe('config/profile/decision-trees', () => {
 
 describe('config/profile/token-budget', () => {
   it.each([
-    { name: 'baseline', profile: baselineProfile, maxBaseChars: 4000 },
+    { name: 'baseline', profile: baselineProfile, maxBaseChars: 5000 },
     { name: 'typescript', profile: typescriptProfile, maxBaseChars: 8000 },
     { name: 'java', profile: javaProfile, maxBaseChars: 10000 },
     { name: 'angular', profile: angularProfile, maxBaseChars: 8000 },
@@ -915,6 +941,336 @@ describe('config/profile/token-budget', () => {
       const implContent = resolveProfileInstructions(profile.instructions, 'IMPLEMENTATION');
       expect(readyContent.length).toBeLessThan(implContent.length);
     }
+  });
+});
+
+// ─── Version Neutrality & Verification Hardening ─────────────────────────────
+
+describe('config/profile/version-neutrality', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it('java profile base uses detection-first language', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).toContain('Technology Stack Detection');
+      expect(base).toContain('Detect stack facts from repository evidence first');
+    });
+
+    it('java profile base requires NOT_VERIFIED for unverified versions', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).toContain('NOT_VERIFIED');
+      expect(base).toContain('version cannot be verified');
+    });
+
+    it('angular AP-NG09 references version-conditional guidance', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      expect(base).toContain('repo version or convention requires them');
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it('java profile base must NOT contain hard-coded Java version', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toContain('Java 21');
+      expect(base).not.toContain('Java 17');
+      expect(base).not.toContain('Java 11');
+    });
+
+    it('java profile base must NOT contain hard-coded Spring Boot version', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toContain('Spring Boot 3.x');
+      expect(base).not.toContain('Spring Boot 2.x');
+    });
+
+    it('java profile base must NOT use assume-first wording', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      expect(base).not.toMatch(/[Uu]nless repository evidence.*assume/);
+    });
+
+    it('angular AP-NG09 must NOT contain bare "Deprecated" claim', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      // Match the table cell: "| Deprecated," without version context
+      expect(base).not.toMatch(/\|\s*Deprecated,\s/);
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it('java profile still detects conditional tooling (no version assumption)', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      // These are detect-if-present, not version-specific
+      expect(base).toContain('JPA/Hibernate');
+      expect(base).toContain('MapStruct');
+      expect(base).toContain('Actuator');
+    });
+
+    it('typescript profile remains version-neutral (no change needed)', () => {
+      const base = extractBaseInstructions(typescriptProfile.instructions);
+      // Should not contain any hard-coded version numbers
+      expect(base).not.toMatch(/TypeScript \d+/);
+      expect(base).not.toMatch(/Node\.?js? \d+/);
+    });
+
+    it('baseline profile remains version-agnostic (no change needed)', () => {
+      const base = extractBaseInstructions(baselineProfile.instructions);
+      // Baseline should never mention specific language versions
+      expect(base).not.toMatch(/Java \d+/);
+      expect(base).not.toMatch(/Python \d+/);
+      expect(base).not.toMatch(/Node\.?js? \d+/);
+    });
+  });
+});
+
+describe('config/profile/verification-hardening', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name profile base contains Verification Commands section', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      expect(base).toContain('Verification Commands');
+    });
+
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name verification section requires NOT_VERIFIED on failure', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      // Find the verification section and check it mentions NOT_VERIFIED
+      const verIdx = base.indexOf('Verification Commands');
+      expect(verIdx).toBeGreaterThan(-1);
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toContain('NOT_VERIFIED');
+      expect(verSection).toContain('recovery');
+    });
+
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)('$name verification section prioritizes repo-native commands', ({ profile }) => {
+      const base = extractBaseInstructions(profile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      // CI commands should be listed first (position 1)
+      expect(verSection).toMatch(/1\.\s*Documented CI commands/);
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it.each([
+      { name: 'baseline', profile: baselineProfile },
+      { name: 'typescript', profile: typescriptProfile },
+      { name: 'java', profile: javaProfile },
+      { name: 'angular', profile: angularProfile },
+    ] as const)(
+      '$name verification section must NOT prescribe unconditional framework commands',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        const verIdx = base.indexOf('Verification Commands');
+        const verSection = base.slice(verIdx, verIdx + 500);
+        // Framework defaults should be conditional ("only if repo-native absent")
+        expect(verSection).toMatch(/[Oo]nly if repo-native.*(absent|commands are absent)/);
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('java verification mentions mvnw/gradlew', () => {
+      const base = extractBaseInstructions(javaProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toMatch(/mvnw|gradlew|Maven|Gradle/);
+    });
+
+    it('typescript verification mentions package.json scripts', () => {
+      const base = extractBaseInstructions(typescriptProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toContain('package.json');
+    });
+
+    it('angular verification mentions ng or nx commands', () => {
+      const base = extractBaseInstructions(angularProfile.instructions);
+      const verIdx = base.indexOf('Verification Commands');
+      const verSection = base.slice(verIdx, verIdx + 500);
+      expect(verSection).toMatch(/ng |nx /);
+    });
+
+    it('verification section comes after quality gates in all profiles', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const base = extractBaseInstructions(profile.instructions);
+        const qgIdx = base.indexOf('Quality Gates');
+        const verIdx = base.indexOf('Verification Commands');
+        const apIdx = base.indexOf('Anti-Patterns');
+        expect(qgIdx).toBeLessThan(verIdx);
+        expect(verIdx).toBeLessThan(apIdx);
+      }
+    });
+  });
+
+  // ─── PERF ──────────────────────────────────────────────────
+  describe('PERF', () => {
+    it('verification section adds < 500 chars per profile', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const base = extractBaseInstructions(profile.instructions);
+        const verIdx = base.indexOf('Verification Commands');
+        const apIdx = base.indexOf('Anti-Patterns');
+        // Section between verification heading and anti-patterns
+        const verLen = apIdx - verIdx;
+        expect(verLen).toBeLessThan(500);
+        expect(verLen).toBeGreaterThan(50); // not empty
+      }
+    });
+  });
+});
+
+describe('config/profile/convention-override-clause', () => {
+  const ALL_PROFILES = [
+    { name: 'baseline', profile: baselineProfile },
+    { name: 'java', profile: javaProfile },
+    { name: 'angular', profile: angularProfile },
+    { name: 'typescript', profile: typescriptProfile },
+  ] as const;
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile base contains "Quality gates are unconditional"',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('Quality gates are unconditional');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile base contains convention-override clause',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('They must never');
+        expect(base).toContain('override hard-fail gates');
+        expect(base).toContain('fail-closed behavior');
+        expect(base).toContain('mandates.');
+      },
+    );
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it.each(ALL_PROFILES)(
+      '$name clause appears after Quality Gates table and before Verification Commands',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        const qgIdx = base.indexOf('Quality Gates');
+        const clauseIdx = base.indexOf('Quality gates are unconditional');
+        const verIdx = base.indexOf('Verification Commands');
+        expect(qgIdx).toBeLessThan(clauseIdx);
+        expect(clauseIdx).toBeLessThan(verIdx);
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name clause mentions conventions may narrow choices inside passing gates',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('narrow implementation choices only inside passing gates');
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('convention-override clause does NOT appear in phase-specific content', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        if (byPhase) {
+          for (const content of Object.values(byPhase)) {
+            expect(content).not.toContain('Quality gates are unconditional');
+          }
+        }
+      }
+    });
+  });
+});
+
+describe('config/profile/detected-stack-instruction', () => {
+  const ALL_PROFILES = [
+    { name: 'baseline', profile: baselineProfile },
+    { name: 'java', profile: javaProfile },
+    { name: 'angular', profile: angularProfile },
+    { name: 'typescript', profile: typescriptProfile },
+  ] as const;
+
+  const STACK_PHASES = ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const;
+  const NON_STACK_PHASES = ['PLAN_REVIEW', 'EVIDENCE_REVIEW'] as const;
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile includes detected stack instruction in PLAN/IMPL/IMPL_REVIEW/REVIEW',
+      ({ profile }) => {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        expect(byPhase).toBeDefined();
+        for (const phase of STACK_PHASES) {
+          const content = byPhase![phase as keyof typeof byPhase];
+          expect(content).toBeDefined();
+          expect(content).toContain('flowguard_status.detectedStack');
+          expect(content).toContain('flowguard_status.verificationCandidates');
+          expect(content).toContain('NOT_VERIFIED');
+        }
+      },
+    );
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile does NOT include detected stack instruction in PLAN_REVIEW/EVIDENCE_REVIEW',
+      ({ profile }) => {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        expect(byPhase).toBeDefined();
+        for (const phase of NON_STACK_PHASES) {
+          const content = byPhase![phase as keyof typeof byPhase];
+          if (content) {
+            expect(content).not.toContain('flowguard_status.detectedStack');
+            expect(content).not.toContain('flowguard_status.verificationCandidates');
+          }
+        }
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name detected stack instruction is NOT in base content',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).not.toContain('flowguard_status.detectedStack');
+        expect(base).not.toContain('flowguard_status.verificationCandidates');
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('detected stack instruction text matches across all profiles', () => {
+      const expected = 'Use flowguard_status.detectedStack when present';
+      for (const { profile } of ALL_PROFILES) {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        if (!byPhase) continue;
+        for (const phase of STACK_PHASES) {
+          const content = byPhase[phase as keyof typeof byPhase];
+          expect(content).toContain(expected);
+          expect(content).toContain('flowguard_status.verificationCandidates');
+        }
+      }
+    });
   });
 });
 
@@ -1230,6 +1586,106 @@ describe('config/reasons', () => {
         });
       });
       expect(result.p99Ms).toBeLessThan(REASON_LOOKUP_MS);
+    });
+  });
+});
+
+describe('cli/templates/verification-output-contract', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it('/plan template contains ## Verification Plan section', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('## Verification Plan');
+    });
+
+    it('/plan template requires Source citation for verification checks', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/Source:/i);
+    });
+
+    it('/plan template requires NOT_VERIFIED fallback when no candidate available', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/NOT_VERIFIED/i);
+      expect(planTemplate).toMatch(/recovery/i);
+    });
+
+    it('/plan template requires seven sections', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('## Objective');
+      expect(planTemplate).toContain('## Approach');
+      expect(planTemplate).toContain('## Steps');
+      expect(planTemplate).toContain('## Files to Modify');
+      expect(planTemplate).toContain('## Edge Cases');
+      expect(planTemplate).toContain('## Validation Criteria');
+      expect(planTemplate).toContain('## Verification Plan');
+    });
+
+    it('/implement template contains ## Verification Evidence section', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toContain('## Verification Evidence');
+    });
+
+    it('/implement template distinguishes Planned checks from Executed checks', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/Planned checks/i);
+      expect(implementTemplate).toMatch(/Executed checks/i);
+    });
+
+    it('/implement template requires NOT_VERIFIED for unexecuted checks', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/NOT_VERIFIED/i);
+    });
+
+    it('/review template checks verificationCandidates vs generic command mismatch', () => {
+      const reviewTemplate = COMMANDS['review.md'];
+      expect(reviewTemplate).toMatch(/verificationCandidates/i);
+      expect(reviewTemplate).toMatch(/generic commands/i);
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it('/plan must NOT allow inventing verification commands', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/DO NOT invent verification commands/i);
+    });
+
+    it('/plan must NOT use generic commands when candidates exist', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/verificationCandidates/i);
+    });
+
+    it('/implement must NOT list checks as executed if not run', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(
+        /only list checks.*Executed checks.*if they were actually run/i,
+      );
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it('/plan self-review checklist includes Verification Plan', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/Verification Plan cites Source/i);
+    });
+
+    it('/implement review checklist includes Verification Evidence', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/Verification Evidence clearly distinguishes/i);
+    });
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('/plan has verification review step in self-review loop', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/verificationCandidates/i);
+    });
+
+    it('/review flags generic command usage as defect', () => {
+      const reviewTemplate = COMMANDS['review.md'];
+      expect(reviewTemplate).toMatch(/flag this as a defect/i);
     });
   });
 });

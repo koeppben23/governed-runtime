@@ -130,6 +130,126 @@ describe('status', () => {
       expect(typeof comp.overallComplete).toBe('boolean');
       expect(typeof comp.summary).toBe('object');
     });
+
+    it('returns detectedStack with unversioned items when no versions detected', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      // Temp workspace has no manifest files on disk — but default mock signals
+      // include .ts files and package.json, so stack detection finds unversioned
+      // items (typescript, npm). P10: unversioned items are surfaced.
+      expect(result.detectedStack).not.toBeNull();
+      const ds = result.detectedStack as Record<string, unknown>;
+      expect(Array.isArray(ds.items)).toBe(true);
+      expect((ds.items as unknown[]).length).toBeGreaterThan(0);
+      // No versions detected — versions[] should be empty
+      expect(Array.isArray(ds.versions)).toBe(true);
+      expect((ds.versions as unknown[]).length).toBe(0);
+    });
+
+    it('returns full detectedStack object with summary and versions', async () => {
+      await hydrateSession();
+      // Resolve session dir and inject detectedStack into persisted state
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        detectedStack: {
+          summary: 'java=21, spring-boot=3.4.1',
+          items: [
+            { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
+            { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
+          ],
+          versions: [
+            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
+            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
+          ],
+        },
+      });
+      const result = parseToolResult(await status.execute({}, ctx));
+
+      // Full object — not just the summary string
+      expect(result.detectedStack).not.toBeNull();
+      expect(typeof result.detectedStack).toBe('object');
+      const ds = result.detectedStack as Record<string, unknown>;
+      expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
+      expect(Array.isArray(ds.items)).toBe(true);
+      expect(Array.isArray(ds.versions)).toBe(true);
+
+      const items = ds.items as Array<Record<string, unknown>>;
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({
+        kind: 'language',
+        id: 'java',
+        version: '21',
+        evidence: 'pom.xml:<java.version>',
+      });
+      expect(items[1]).toMatchObject({
+        kind: 'framework',
+        id: 'spring-boot',
+        version: '3.4.1',
+      });
+
+      const versions = ds.versions as Array<Record<string, unknown>>;
+      expect(versions).toHaveLength(2);
+      expect(versions[0]).toMatchObject({
+        id: 'java',
+        version: '21',
+        target: 'language',
+        evidence: 'pom.xml:<java.version>',
+      });
+      expect(versions[1]).toMatchObject({
+        id: 'spring-boot',
+        version: '3.4.1',
+        target: 'framework',
+      });
+      // evidence absent on second entry — must not be fabricated
+      expect(versions[1].evidence).toBeUndefined();
+    });
+
+    it('returns verificationCandidates array (empty by default)', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
+    });
+
+    it('returns persisted verificationCandidates in status', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        verificationCandidates: [
+          {
+            kind: 'test',
+            command: 'pnpm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'Repo-native test script detected and pnpm package manager detected',
+          },
+        ],
+      });
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
+      const candidates = result.verificationCandidates as Array<Record<string, unknown>>;
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0]).toMatchObject({
+        kind: 'test',
+        command: 'pnpm test',
+        source: 'package.json:scripts.test',
+        confidence: 'high',
+      });
+    });
   });
 
   describe('BAD', () => {

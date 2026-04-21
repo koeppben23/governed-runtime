@@ -117,6 +117,10 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
 | **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
+| **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
+| **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect |
+| **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
+| **Knowledge Pack Policy (ADR)** | External documentation authority is defined in `docs/adr/ADR-0001-knowledge-packs-and-external-docs.md` as advisory-only, provenance-stamped, and non-SSOT |
 
 ---
 
@@ -139,6 +143,8 @@ flowguard serve --detach --port 4096
 `opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
 | **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
+| **Python/Rust/Go Detection** | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files |
+| **Database Detection** | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence |
 | **Audit Trail** | Hash-chained, tamper-evident |
 | **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
 | **Derived Evidence Artifacts** | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance |

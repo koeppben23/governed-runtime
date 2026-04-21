@@ -69,9 +69,15 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 - **6-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals — all run in parallel with budget guards
 - **Evidence-classified** — every detected item carries `fact`, `derived_signal`, or `hypothesis` classification
+- **Database stack facts** — stack detection derives concrete database engines from repo evidence (dependencies, compose images, testcontainers) and surfaces them to session status as compact detected stack items
+- **Root-level Python/Rust/Go ecosystem facts** — stack detection derives Python/Rust/Go language/tooling signals from root-level manifest and toolchain evidence (`pyproject.toml`, `.python-version`, `Cargo.toml`, `rust-toolchain*`, `go.mod`, `.golangci.*`) and surfaces them to session status as compact detected stack items
 - **Bounded heuristic semantics** — code-surface collector reads a capped subset of source files (hard file/byte/time budgets) to derive endpoint/auth/data/integration hints with confidence and evidence
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
+- **Verification command planner** — session state surfaces `verificationCandidates`: repo-native, evidence-backed verification command candidates derived from detected stack + manifests (advisory only, never auto-executed)
+- **Verification output contract** — `/plan` requires `## Verification Plan` with Source citation; `/implement` requires `## Verification Evidence` distinguishing Planned from Executed checks; `/review` checks for verificationCandidates vs generic command mismatches
+- **Module-scoped stack facts** — nested manifests (`apps/*/`, `packages/*/`, `services/*/`, `crates/*/`) surface as `detectedStack.scopes` without affecting root facts. Ignores `examples/`, `fixtures/`, `docs/`, `scripts/`. Max 20 scopes, 25 items per scope.
+- **External docs governance boundary** — version-specific external documentation is defined by ADR as advisory Knowledge Packs only (provenance-stamped, non-SSOT, no mandate/schema override, no live-network dependency in mutating flows)
 
 ### Archive Hardening
 

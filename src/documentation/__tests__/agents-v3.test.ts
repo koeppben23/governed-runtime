@@ -11,7 +11,9 @@ const EVAL_SUITE_GUIDE = path.join(PROJECT_ROOT, 'docs/agent-guidance/eval-suite
 const MARISK_MAPPING_PATH = path.join(PROJECT_ROOT, 'docs/marisk-mapping.md');
 
 async function readAgents(): Promise<string> {
-  return fs.readFile(AGENTS_PATH, 'utf-8');
+  const content = await fs.readFile(AGENTS_PATH, 'utf-8');
+  // Normalize line endings for cross-platform regex matching
+  return content.replace(/\r\n/g, '\n');
 }
 
 describe('AGENTS v3 guidance', () => {

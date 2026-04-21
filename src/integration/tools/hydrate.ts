@@ -11,6 +11,8 @@
 
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
+import { readFile as fsReadFile } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 
 import type { ToolDefinition } from './helpers';
 import {
@@ -46,10 +48,12 @@ import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 import {
   runDiscovery,
   extractDiscoverySummary,
+  extractDetectedStack,
   computeDiscoveryDigest,
 } from '../../discovery/orchestrator';
-import type { DiscoveryResult, ProfileResolution } from '../../discovery/types';
+import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types';
 import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types';
+import { planVerificationCandidates } from '../../discovery/verification-planner';
 import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
 
 // Config
@@ -174,6 +178,10 @@ export const hydrate: ToolDefinition = {
       let discoveryResult: DiscoveryResult | undefined;
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
+      let detectedStack: DetectedStack | null | undefined;
+      let verificationCandidates:
+        | Awaited<ReturnType<typeof planVerificationCandidates>>
+        | undefined;
       let profileResolution: ProfileResolution | undefined;
       if (!existing && !repoSignals) {
         throwHydrateError(
@@ -286,9 +294,34 @@ export const hydrate: ToolDefinition = {
           );
         }
 
-        // 7. Compute digest and summary
+        // 7. Compute digest, summary, and detected stack
+        const resolvedWorktree = nodePath.resolve(worktree);
+        const readRepoFile = async (relativePath: string): Promise<string | undefined> => {
+          try {
+            const targetPath = nodePath.resolve(resolvedWorktree, relativePath);
+            if (
+              !targetPath.startsWith(resolvedWorktree + nodePath.sep) &&
+              targetPath !== resolvedWorktree
+            ) {
+              return undefined;
+            }
+            return await fsReadFile(targetPath, 'utf8');
+          } catch {
+            return undefined;
+          }
+        };
         discoveryDigest = computeDiscoveryDigest(discoveryResult);
         discoverySummary = extractDiscoverySummary(discoveryResult);
+        detectedStack = await extractDetectedStack(
+          discoveryResult,
+          repoSignals.files,
+          readRepoFile,
+        );
+        verificationCandidates = await planVerificationCandidates({
+          detectedStack,
+          allFiles: repoSignals.files,
+          readFile: readRepoFile,
+        });
         requireDiscoveryContract(discoveryDigest, discoverySummary);
         requireDiscoveryArtifacts(wsDir, sessDir);
       }
@@ -315,6 +348,8 @@ export const hydrate: ToolDefinition = {
           discoveryResult,
           discoveryDigest,
           discoverySummary,
+          detectedStack,
+          verificationCandidates,
         },
         ctx,
       );

@@ -25,12 +25,20 @@ FlowGuard system detects a Java/Spring Boot stack in the repository.
 
 ---
 
-## 1. Technology Stack Defaults
+## 1. Technology Stack Detection
 
-Unless repository evidence says otherwise, assume:
-- Java 21, Spring Boot 3.x, Maven (Gradle only if repo uses it)
-- JPA/Hibernate, Liquibase/Flyway, OpenAPI Generator (if present)
-- MapStruct / Lombok, Actuator + Micrometer, Spring Security (if present)
+Do not assume Java, Spring Boot, or build tool versions.
+Detect stack facts from repository evidence first:
+- Java version from \`.java-version\`, \`pom.xml\`, \`build.gradle\`, or CI config
+- Spring Boot version from \`pom.xml\`/\`build.gradle\` dependency declarations
+- Build tool from \`mvnw\`/\`gradlew\` wrapper presence or manifest files
+
+Version-specific guidance requires repository evidence.
+If the version cannot be verified, mark version-specific claims as \`NOT_VERIFIED\`.
+
+Detect-if-present (no version assumption needed):
+- JPA/Hibernate, Liquibase/Flyway, OpenAPI Generator
+- MapStruct / Lombok, Actuator + Micrometer, Spring Security
 
 **Repo-first rule:** If a tool exists in the repo and is runnable, it is not optional — execute it and capture evidence. If not runnable, mark claims as \`NOT_VERIFIED\` and emit recovery commands.
 
@@ -189,9 +197,26 @@ A change fails if any of these apply:
 | QG-4 Test Quality | Missing behavioral coverage, flaky tests, missing determinism seams, missing concurrency evidence |
 | QG-5 Operational | Logging/metrics/tracing/security regression |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
-## 9. Anti-Patterns (detect and avoid)
+## 9. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (mvnw/gradlew targets, Maven/Gradle wrapper)
+3. Framework defaults (\`mvn verify\`, \`gradle check\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 10. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -419,6 +444,33 @@ void create_withValidInput_persistsAndReturnsUser() {
 </correct>
 <why>Verifying exact mock interactions couples tests to implementation sequence. Any change to how persistence works (batching, caching, method rename) breaks tests even when behavior is correct.</why>
 </example>
+
+<example id="AP-J09" type="anti-pattern">
+<incorrect>
+// TRANSACTION BOUNDARY LEAK — business logic spans implicit transaction
+public void transferFunds(Long fromId, Long toId, BigDecimal amount) {
+    Account from = accountRepo.findById(fromId).orElseThrow();
+    Account to = accountRepo.findById(toId).orElseThrow();
+    from.debit(amount);
+    accountRepo.save(from);   // committed
+    // crash here leaves 'to' uncredited
+    to.credit(amount);
+    accountRepo.save(to);     // separate implicit transaction
+}
+</incorrect>
+<correct>
+// Explicit transaction boundary wraps the full unit of work
+@Transactional
+public void transferFunds(Long fromId, Long toId, BigDecimal amount) {
+    Account from = accountRepo.findById(fromId).orElseThrow();
+    Account to = accountRepo.findById(toId).orElseThrow();
+    from.debit(amount);
+    to.credit(amount);
+    // both saves in same transaction — atomic commit or full rollback
+}
+</correct>
+<why>Without an explicit transaction boundary, partial writes corrupt data on failure. The debit succeeds but the credit may not, leaving the system in an inconsistent state that is difficult to detect and recover from.</why>
+</example>
 </examples>`;
 
 const EVIDENCE_BY_CHANGE_TYPE = `\
@@ -460,6 +512,19 @@ When reviewing Java changes, MUST verify:
 | Concurrency | Missing \`@Version\` on aggregates with concurrent writes, shared mutable state in singletons |
 | Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Prefer detected tools,
+frameworks, runtimes, and versions over generic defaults.
+When choosing verification commands, prefer
+flowguard_status.verificationCandidates when present. They are advisory
+planning hints, not executed checks.
+Do not make version-specific claims without repository evidence; mark
+unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -469,12 +534,12 @@ When reviewing Java changes, MUST verify:
  *   naming, architecture, contracts, error handling, quality gates,
  *   anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: decision trees + testing rules + evidence matrix + negative tests
+ *   - PLAN: detected stack + decision trees + testing rules + evidence matrix + negative tests
  *   - PLAN_REVIEW: review checklist
- *   - IMPLEMENTATION: testing rules + examples + evidence matrix + negative tests
- *   - IMPL_REVIEW: examples + review checklist
+ *   - IMPLEMENTATION: detected stack + testing rules + examples + evidence matrix + negative tests
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: examples + review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  *   - ARCHITECTURE: decision trees
  *   - ARCH_REVIEW: decision trees + review checklist
  */
@@ -482,6 +547,8 @@ export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
     PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
       DECISION_TREES +
       '\n\n---\n\n' +
       TESTING_RULES +
@@ -491,6 +558,8 @@ export const profileRuleContent: PhaseInstructions = {
       NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
       TESTING_RULES +
       '\n\n---\n\n' +
       FEW_SHOT_EXAMPLES +
@@ -498,9 +567,19 @@ export const profileRuleContent: PhaseInstructions = {
       EVIDENCE_BY_CHANGE_TYPE +
       '\n\n---\n\n' +
       NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     ARCHITECTURE: DECISION_TREES,
     ARCH_REVIEW: DECISION_TREES + '\n\n---\n\n' + REVIEW_CHECKLIST,
   },

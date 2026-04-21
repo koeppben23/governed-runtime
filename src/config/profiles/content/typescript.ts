@@ -153,9 +153,26 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | QG-4 Architecture | Circular dependencies, boundary violations, deep imports |
 | QG-5 Security | Unsanitized inputs, secret exposure, unsafe eval/exec |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (package.json scripts, nx targets)
+3. Framework defaults (\`tsc --noEmit\`, \`eslint\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -377,6 +394,29 @@ it('creates user with default role', async () => {
 </correct>
 <why>Testing internal method calls couples tests to implementation. Any refactor (e.g., changing save to upsert, batching writes) breaks tests even when behavior is unchanged.</why>
 </example>
+
+<example id="AP-TS02" type="anti-pattern">
+<incorrect>
+// TYPE ASSERTION ABUSE — bypassing the type system without narrowing
+function getUser(data: unknown): User {
+  return data as User;  // no validation, trusts caller blindly
+}
+
+const config = JSON.parse(raw) as AppConfig;  // parse result unvalidated
+</incorrect>
+<correct>
+// Validate at boundary, narrow with type guards
+function getUser(data: unknown): User {
+  if (!isUser(data)) {
+    throw new TypeError('Invalid user data: missing required fields');
+  }
+  return data;  // type narrowed by guard
+}
+
+const config = AppConfigSchema.parse(JSON.parse(raw));  // schema-validated
+</correct>
+<why>Type assertions (\`as T\`) silence the compiler without runtime validation. Invalid data flows through unchecked, causing failures far from the source. Boundary validation catches issues early.</why>
+</example>
 </examples>`;
 
 const NEGATIVE_TEST_MATRIX = `\
@@ -408,6 +448,19 @@ When reviewing TypeScript changes, MUST verify:
 | Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
 | Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Prefer detected tools,
+frameworks, runtimes, and versions over generic defaults.
+When choosing verification commands, prefer
+flowguard_status.verificationCandidates when present. They are advisory
+planning hints, not executed checks.
+Do not make version-specific claims without repository evidence; mark
+unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -416,22 +469,43 @@ When reviewing TypeScript changes, MUST verify:
  * - `base`: Always-injected content (conventions, types, naming, architecture,
  *   quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: testing rules + negative test matrix (plan test strategy)
- *   - PLAN_REVIEW: review checklist (evaluate the plan)
- *   - IMPLEMENTATION: testing rules + examples + negative test matrix (full guidance)
- *   - IMPL_REVIEW: examples + review checklist (spot anti-patterns, review quality)
- *   - EVIDENCE_REVIEW: review checklist (final evidence check)
- *   - REVIEW: examples + review checklist (standalone review flow)
+ *   - PLAN: detected stack + testing rules + negative test matrix
+ *   - PLAN_REVIEW: review checklist
+ *   - IMPLEMENTATION: detected stack + testing rules + examples + negative test matrix
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
+ *   - EVIDENCE_REVIEW: review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
-      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
   },
 };

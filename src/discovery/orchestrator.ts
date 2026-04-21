@@ -17,10 +17,17 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readFile as fsReadFile } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry';
 import type {
   CollectorInput,
   CollectorStatus,
+  DetectedStack,
+  DetectedStackItem,
+  DetectedStackTarget,
+  DetectedStackTargetEntry,
+  DetectedStackVersion,
   DiscoveryResult,
   DiscoverySummary,
   StackInfo,
@@ -34,11 +41,35 @@ import { collectTopology } from './collectors/topology';
 import { collectSurfaces } from './collectors/surface-detection';
 import { collectCodeSurfaces } from './collectors/code-surface-analysis';
 import { collectDomainSignals } from './collectors/domain-signals';
+import { extractScopedStack } from './scoped-stack';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Default per-collector timeout (ms). */
 const COLLECTOR_TIMEOUT_MS = 10_000;
+
+// ─── File Reading ─────────────────────────────────────────────────────────────
+
+/**
+ * Create a default readFile function for a given worktree root.
+ * Returns file content as UTF-8 string or undefined on any error.
+ */
+function createDefaultReadFile(
+  worktreePath: string,
+): (relativePath: string) => Promise<string | undefined> {
+  const resolvedRoot = nodePath.resolve(worktreePath);
+  return async (relativePath: string): Promise<string | undefined> => {
+    try {
+      const targetPath = nodePath.resolve(resolvedRoot, relativePath);
+      if (!targetPath.startsWith(resolvedRoot + nodePath.sep) && targetPath !== resolvedRoot) {
+        return undefined;
+      }
+      return await fsReadFile(targetPath, 'utf8');
+    } catch {
+      return undefined;
+    }
+  };
+}
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
@@ -71,15 +102,20 @@ async function runDiscoveryImpl(
   input: CollectorInput,
   timeoutMs: number = COLLECTOR_TIMEOUT_MS,
 ): Promise<DiscoveryResult> {
+  // Enrich input with default readFile if not provided by caller
+  const enrichedInput: CollectorInput = input.readFile
+    ? input
+    : { ...input, readFile: createDefaultReadFile(input.worktreePath) };
+
   // Run all collectors in parallel with timeout budget
   const [metaResult, stackResult, topoResult, surfaceResult, codeSurfaceResult, domainResult] =
     await Promise.allSettled([
-      withTimeout(collectRepoMetadata(input), timeoutMs),
-      withTimeout(collectStack(input), timeoutMs),
-      withTimeout(collectTopology(input), timeoutMs),
-      withTimeout(collectSurfaces(input), timeoutMs),
-      withTimeout(collectCodeSurfaces(input), timeoutMs),
-      withTimeout(collectDomainSignals(input), timeoutMs),
+      withTimeout(collectRepoMetadata(enrichedInput), timeoutMs),
+      withTimeout(collectStack(enrichedInput), timeoutMs),
+      withTimeout(collectTopology(enrichedInput), timeoutMs),
+      withTimeout(collectSurfaces(enrichedInput), timeoutMs),
+      withTimeout(collectCodeSurfaces(enrichedInput), timeoutMs),
+      withTimeout(collectDomainSignals(enrichedInput), timeoutMs),
     ]);
 
   // Extract results with safe defaults for failures
@@ -100,6 +136,9 @@ async function runDiscoveryImpl(
     buildTools: [],
     testFrameworks: [],
     runtimes: [],
+    tools: [],
+    qualityTools: [],
+    databases: [],
   });
 
   const topology = extractResult(topoResult, 'topology', collectors, {
@@ -176,6 +215,125 @@ export function extractDiscoverySummary(result: DiscoveryResult): DiscoverySumma
     codeSurfaceStatus: result.codeSurfaces?.status,
     apiEndpointCount: result.codeSurfaces?.endpoints.length,
     hasAuthBoundary: (result.codeSurfaces?.authBoundaries.length ?? 0) > 0,
+  };
+}
+
+/** Sort priority: language=0, framework=1, runtime=2, buildTool=3, tool=4, testFramework=5, qualityTool=6, database=7. */
+const TARGET_ORDER: Record<DetectedStackTarget, number> = {
+  language: 0,
+  framework: 1,
+  runtime: 2,
+  buildTool: 3,
+  tool: 4,
+  testFramework: 5,
+  qualityTool: 6,
+  database: 7,
+};
+
+/**
+ * Extract a compact DetectedStack from DiscoveryResult.
+ *
+ * Produces a deterministic, sorted projection:
+ * - items[] sorted by category order (language → framework → ...)
+ * - versions[] sorted by category order
+ * - `summary` uses `id=version` for versioned items, `id` for unversioned.
+ *
+ * If allFiles is provided, also extracts module-scoped stack items for monorepos.
+ *
+ * Derived evidence — NOT SSOT. The authoritative stack data lives in
+ * `DiscoveryResult.stack`. This is a compact projection for
+ * `flowguard_status.detectedStack`.
+ *
+ * Returns null when no items are detected at all (empty input).
+ */
+export async function extractDetectedStack(
+  result: DiscoveryResult,
+  allFiles?: readonly string[],
+  readFile?: (path: string) => Promise<string | undefined>,
+): Promise<DetectedStack | null> {
+  const items: DetectedStackItem[] = [];
+  const versionEntries: DetectedStackVersion[] = [];
+  const targets: DetectedStackTargetEntry[] = [];
+
+  const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
+    { items: result.stack.languages, target: 'language' },
+    { items: result.stack.frameworks, target: 'framework' },
+    { items: result.stack.runtimes, target: 'runtime' },
+    { items: result.stack.buildTools, target: 'buildTool' },
+    { items: result.stack.tools ?? [], target: 'tool' },
+    { items: result.stack.testFrameworks, target: 'testFramework' },
+    { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
+    { items: result.stack.databases ?? [], target: 'database' },
+  ];
+
+  for (const { items: categoryItems, target } of categories) {
+    for (const item of categoryItems) {
+      // Pick one evidence string: versionEvidence > evidence[0]
+      const ev = item.versionEvidence ?? item.evidence[0];
+
+      // All items go into items[] — version optional
+      items.push({
+        kind: target,
+        id: item.id,
+        ...(item.version ? { version: item.version } : {}),
+        ...(ev ? { evidence: ev } : {}),
+      });
+
+      // Only versioned items go into versions[] (backward compat)
+      if (item.version) {
+        versionEntries.push({
+          id: item.id,
+          version: item.version,
+          target,
+          ...(item.versionEvidence ? { evidence: item.versionEvidence } : {}),
+        });
+      }
+
+      // Compiler targets go into targets[]
+      if (item.compilerTarget) {
+        targets.push({
+          kind: 'compilerTarget',
+          id: item.id,
+          value: item.compilerTarget,
+          ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
+        });
+      }
+    }
+  }
+
+  if (items.length === 0) return null;
+
+  // Deterministic sort helper
+  const sortByTargetThenId = <T extends { id: string }>(
+    arr: T[],
+    getTarget: (item: T) => DetectedStackTarget,
+  ): void => {
+    arr.sort((a, b) => {
+      const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
+      if (orderDiff !== 0) return orderDiff;
+      return a.id.localeCompare(b.id);
+    });
+  };
+
+  sortByTargetThenId(items, (i) => i.kind);
+  sortByTargetThenId(versionEntries, (v) => v.target);
+
+  // Summary: versioned "id=version", unversioned "id"
+  const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
+
+  // allFiles is passed as second parameter, readFile as third (optional)
+  // When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
+  const scopes =
+    allFiles && allFiles.length > 0
+      ? await extractScopedStack(allFiles, result.stack, readFile)
+      : undefined;
+
+  return {
+    summary,
+    items,
+    versions: versionEntries,
+    ...(targets.length > 0 ? { targets } : {}),
+    ...(scopes && scopes.length > 0 ? { scopes } : {}),
   };
 }
 

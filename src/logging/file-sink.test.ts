@@ -181,10 +181,10 @@ describe('createFileSink', () => {
 
 describe('getLogDir', () => {
   it('returns correct log directory path', () => {
-    expect(getLogDir('/workspace')).toBe('/workspace/.opencode/logs');
+    expect(getLogDir('/workspace')).toBe(join('/workspace', '.opencode', 'logs'));
   });
 
   it('handles paths with trailing slash', () => {
-    expect(getLogDir('/workspace/')).toBe('/workspace/.opencode/logs');
+    expect(getLogDir('/workspace/')).toBe(join('/workspace', '.opencode', 'logs'));
   });
 });

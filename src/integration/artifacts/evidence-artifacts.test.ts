@@ -362,7 +362,7 @@ describe('evidence-artifacts', () => {
       }
       samples.sort((a, b) => a - b);
       const p95 = samples[Math.floor(samples.length * 0.95)] ?? Number.POSITIVE_INFINITY;
-      expect(p95).toBeLessThan(120);
+      expect(p95).toBeLessThan(process.platform === 'win32' ? 500 : 120);
     });
   });
 

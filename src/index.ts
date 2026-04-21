@@ -306,20 +306,39 @@ export {
   type DomainSignals,
   type CommandHint,
   type ValidationHints,
+  type VerificationCandidateKind,
+  type VerificationCandidateConfidence,
+  type VerificationCandidate,
+  type VerificationCandidates,
   type DiscoveryResult,
   type ProfileCandidate,
   type RejectedCandidate,
   type ProfileResolution,
   type DiscoverySummary,
+  type DetectedStack,
+  type DetectedStackVersion,
+  type DetectedStackTarget,
+  type DetectedStackItem,
+  type DetectedStackTargetEntry,
   type CollectorInput,
   type CollectorOutput,
   // Schemas
   EvidenceClassSchema,
   CollectorStatusSchema,
   DetectedItemSchema,
+  StackInfoSchema,
   DiscoveryResultSchema,
   ProfileResolutionSchema,
   DiscoverySummarySchema,
+  DetectedStackSchema,
+  DetectedStackVersionSchema,
+  DetectedStackTargetSchema,
+  DetectedStackItemSchema,
+  DetectedStackTargetEntrySchema,
+  VerificationCandidateKindSchema,
+  VerificationCandidateConfidenceSchema,
+  VerificationCandidateSchema,
+  VerificationCandidatesSchema,
   // Constants
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
@@ -328,8 +347,11 @@ export {
 export {
   runDiscovery,
   extractDiscoverySummary,
+  extractDetectedStack,
   computeDiscoveryDigest,
 } from './discovery/orchestrator';
+
+export { planVerificationCandidates } from './discovery/verification-planner';
 
 export { collectRepoMetadata } from './discovery/collectors/repo-metadata';
 export { collectStack } from './discovery/collectors/stack-detection';

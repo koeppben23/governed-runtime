@@ -19,6 +19,24 @@ FlowGuard auto-detects the best profile based on:
 - Package manager
 - Framework indicators
 - Language files
+- Database engine indicators from manifest evidence (dependencies and docker-compose images)
+
+## Detected Stack and Verification Candidates
+
+Profiles consume runtime stack evidence from `flowguard_status`:
+
+- `detectedStack`: detected languages, frameworks, runtimes, build tools, tools, test frameworks, quality tools, databases, compiler targets, and module scopes with scoped versions
+- `verificationCandidates`: advisory, evidence-backed verification commands (planner output)
+
+Verification candidates are **planning hints only**. They are not auto-executed and do not represent completed checks.
+
+Priority for candidate generation is repo-native and deterministic:
+
+1. `package.json` scripts (for example `pnpm test` from `scripts.test`)
+2. Java wrappers (`./mvnw`, `./gradlew`) when present
+3. Tool defaults from detected stack as fallback (for example `pnpm vitest run`)
+
+If no evidence exists, `verificationCandidates` is an empty array.
 
 ## Baseline Profile
 

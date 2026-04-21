@@ -141,9 +141,26 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | FQG-4 Contract | contract/client drift, edited generated code |
 | FQG-5 A11y/UX | obvious a11y regressions (roles/labels/focus/keyboard) |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project scripts (package.json scripts, nx affected, ng commands)
+3. Framework defaults (\`ng build\`, \`ng test\`) only if repo-native absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -155,7 +172,7 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | AP-NG06 | Fixed Waits in Tests | Flaky on slow CI, slow execution, masks timing bugs |
 | AP-NG07 | Untyped Reactive Forms | No compile-time field checks, all values \`any\` |
 | AP-NG08 | Component Without OnPush | Performance degradation, hides reactivity bugs |
-| AP-NG09 | Class-Based Guards/Interceptors | Deprecated, unnecessary boilerplate |
+| AP-NG09 | Class-Based Guards/Interceptors | Prefer functional guards/interceptors in Angular 15.2+; keep class-based APIs when repo version or convention requires them |
 | AP-NG10 | Cross-App Imports in Nx | Violates boundaries, circular deps, blocks independent deployment |`;
 
 // ─── Phase-Specific Sections ─────────────────────────────────────────────────
@@ -403,6 +420,39 @@ const name: string = this.form.controls.name.value; // type-safe, typo = compile
 </correct>
 <why>Untyped forms bypass the type checker entirely. Field name typos, wrong value types, and missing validations become runtime bugs instead of compile errors.</why>
 </example>
+
+<example id="AP-NG02" type="anti-pattern">
+<incorrect>
+// MIXED STATE ARCHITECTURES — NgRx store and local BehaviorSubject for same data
+@Component({ /* ... */ })
+export class DashboardComponent {
+  private localUsers$ = new BehaviorSubject<User[]>([]);
+
+  constructor(private store: Store) {}
+
+  loadUsers() {
+    this.store.dispatch(loadUsers());        // dispatches to NgRx
+    this.api.getUsers().subscribe(users =>
+      this.localUsers$.next(users)           // also caches in local subject
+    );
+  }
+}
+</incorrect>
+<correct>
+// Single state authority — NgRx store is the only source
+@Component({ /* ... */ })
+export class DashboardComponent {
+  users$ = this.store.select(selectAllUsers);
+
+  constructor(private store: Store) {}
+
+  loadUsers() {
+    this.store.dispatch(loadUsers());  // store is the single authority
+  }
+}
+</correct>
+<why>Mixing NgRx store with local BehaviorSubjects creates competing state authorities. Data drifts between the two, components show stale or contradictory values, and debugging requires tracing multiple update paths.</why>
+</example>
 </examples>`;
 
 const NEGATIVE_TEST_MATRIX = `\
@@ -434,6 +484,19 @@ When reviewing Angular changes, MUST verify:
 | Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
 | A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Prefer detected tools,
+frameworks, runtimes, and versions over generic defaults.
+When choosing verification commands, prefer
+flowguard_status.verificationCandidates when present. They are advisory
+planning hints, not executed checks.
+Do not make version-specific claims without repository evidence; mark
+unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -442,25 +505,48 @@ When reviewing Angular changes, MUST verify:
  * - `base`: Always-injected content (conventions, naming, architecture,
  *   implementation standards, quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: decision trees + testing rules + negative tests
+ *   - PLAN: detected stack + decision trees + testing rules + negative tests
  *   - PLAN_REVIEW: review checklist
- *   - IMPLEMENTATION: testing rules + examples + negative tests
- *   - IMPL_REVIEW: examples + review checklist
+ *   - IMPLEMENTATION: detected stack + testing rules + examples + negative tests
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: examples + review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  *   - ARCHITECTURE: decision trees
  *   - ARCH_REVIEW: decision trees + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: DECISION_TREES + '\n\n---\n\n' + TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      DECISION_TREES +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
-      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     ARCHITECTURE: DECISION_TREES,
     ARCH_REVIEW: DECISION_TREES + '\n\n---\n\n' + REVIEW_CHECKLIST,
   },

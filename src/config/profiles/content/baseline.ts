@@ -99,9 +99,26 @@ unless the change explicitly requires it.
 | QG-4 Security | Secrets committed, unsanitized inputs, unsafe operations |
 | QG-5 Architecture | Circular dependencies, boundary violations, responsibility bleed |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
-## 6. Anti-Patterns (detect and avoid)
+## 6. Verification Commands
+
+Use repo-native verification commands first:
+1. Documented CI commands (from CI config, README, or CONTRIBUTING)
+2. Project build/test/lint scripts as declared in the repo
+3. Framework defaults only if repo-native commands are absent
+
+If no verification command is runnable, mark result as \`NOT_VERIFIED\`
+and emit recovery steps.
+
+---
+
+## 7. Anti-Patterns (detect and avoid)
 
 | ID | Pattern | Why Harmful |
 |----|---------|-------------|
@@ -221,6 +238,104 @@ class HandlerRegistry:
 </correct>
 <why>Module-level mutable state creates race conditions, leaks between tests, and makes behavior non-deterministic. Encapsulation controls access and enables isolated testing.</why>
 </example>
+
+<example id="AP-B04" type="anti-pattern">
+<incorrect>
+# HARD-CODED CONFIGURATION — values baked into source
+def connect_db():
+    return create_engine("postgresql://admin:secret@prod-db:5432/myapp")
+</incorrect>
+<correct>
+# Configuration from environment with explicit failure
+def connect_db():
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise ConfigError("DATABASE_URL is required but not set")
+    return create_engine(url)
+</correct>
+<why>Hard-coded config cannot change between environments without a code change, leaks credentials into source control, and defeats deployment automation.</why>
+</example>
+
+<example id="AP-B05" type="anti-pattern">
+<incorrect>
+# TEST IMPLEMENTATION COUPLING — tests mirror internal structure
+def test_process_order():
+    order = Order(items=[Item("A", 1)])
+    order._validate()          # testing private method
+    assert order._status == "validated"  # asserting private field
+    order._persist(mock_db)
+    assert mock_db.insert.call_args[0][0]["status"] == "validated"
+</incorrect>
+<correct>
+# Test observable behavior, not implementation
+def test_process_order_succeeds():
+    result = process_order({"items": [{"name": "A", "qty": 1}]})
+    assert result.order_id is not None
+    assert result.status == "confirmed"
+</correct>
+<why>Tests coupled to private internals break on every refactor even when behavior is unchanged. They test structure instead of correctness, creating maintenance burden without confidence.</why>
+</example>
+
+<example id="AP-B06" type="anti-pattern">
+<incorrect>
+# MISSING INPUT VALIDATION — external data trusted blindly
+def create_user(data):
+    username = data["username"]
+    db.execute(f"INSERT INTO users (name) VALUES ('{username}')")
+    return {"id": db.last_id(), "name": username}
+</incorrect>
+<correct>
+# Validate and sanitize external inputs
+def create_user(data):
+    username = data.get("username", "").strip()
+    if not username or len(username) > 255:
+        raise ValidationError("username must be 1-255 non-empty characters")
+    db.execute("INSERT INTO users (name) VALUES (%s)", (username,))
+    return {"id": db.last_id(), "name": username}
+</correct>
+<why>Unvalidated inputs cause injection attacks, undefined behavior on malformed data, and corrupt downstream state. Parameterized queries prevent SQL injection.</why>
+</example>
+
+<example id="AP-B07" type="anti-pattern">
+<incorrect>
+# LOGGING SECRETS — credentials written to log output
+def authenticate(api_key):
+    logger.info(f"Authenticating with key: {api_key}")
+    response = requests.post(AUTH_URL, headers={"Authorization": api_key})
+    logger.debug(f"Auth response: {response.json()}")
+    return response.json()["token"]
+</incorrect>
+<correct>
+# Never log any part of a secret — use opaque identifiers
+def authenticate(api_key):
+    logger.info("Authenticating with configured API key")
+    response = requests.post(AUTH_URL, headers={"Authorization": api_key})
+    logger.debug("Auth response status: %d", response.status_code)
+    return response.json()["token"]
+</correct>
+<why>Full credentials in logs create security exposure in log aggregation, compliance violations, and credential leakage to anyone with log access.</why>
+</example>
+
+<example id="AP-B08" type="anti-pattern">
+<incorrect>
+# SYNCHRONOUS BLOCKING IN ASYNC CONTEXT — blocks the event loop
+async def fetch_all(urls):
+    results = []
+    for url in urls:
+        resp = requests.get(url)  # sync call inside async coroutine
+        results.append(resp.json())
+    return results
+</incorrect>
+<correct>
+# Use async I/O consistently
+async def fetch_all(urls):
+    async with aiohttp.ClientSession() as session:
+        tasks = [session.get(url) for url in urls]
+        responses = await asyncio.gather(*tasks)
+        return [await r.json() for r in responses]
+</correct>
+<why>Synchronous I/O in async context blocks the event loop, causing deadlocks, throughput degradation, and resource exhaustion under concurrent load.</why>
+</example>
 </examples>`;
 
 const NEGATIVE_TEST_MATRIX = `\
@@ -249,6 +364,19 @@ When reviewing changes, MUST verify:
 | Security | Secrets in code/logs, unsanitized inputs, widened trust boundaries |
 | Architecture | Circular dependencies, boundary violations, responsibility bleed |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Prefer detected tools,
+frameworks, runtimes, and versions over generic defaults.
+When choosing verification commands, prefer
+flowguard_status.verificationCandidates when present. They are advisory
+planning hints, not executed checks.
+Do not make version-specific claims without repository evidence; mark
+unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -257,26 +385,43 @@ When reviewing changes, MUST verify:
  * - `base`: Always-injected content (conventions, code organization, error
  *   handling, security, quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: testing fundamentals + negative test matrix
+ *   - PLAN: detected stack + testing fundamentals + negative test matrix
  *   - PLAN_REVIEW: review checklist
- *   - IMPLEMENTATION: testing fundamentals + examples + negative test matrix
- *   - IMPL_REVIEW: examples + review checklist
+ *   - IMPLEMENTATION: detected stack + testing fundamentals + examples + negative test matrix
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: examples + review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: TESTING_FUNDAMENTALS + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_FUNDAMENTALS +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
       TESTING_FUNDAMENTALS +
       '\n\n---\n\n' +
       FEW_SHOT_EXAMPLES +
       '\n\n---\n\n' +
       NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
   },
 };

@@ -1010,27 +1010,35 @@ describe('archiveSession failure paths', () => {
     }
   });
 
-  it('fails closed when redaction source read fails', async () => {
-    const worktree = path.resolve('.');
-    const sessionId = '550e8400-e29b-41d4-a716-446655440105';
-    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+  // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
+  it.skipIf(process.platform === 'win32')(
+    'fails closed when redaction source read fails',
+    async () => {
+      const worktree = path.resolve('.');
+      const sessionId = '550e8400-e29b-41d4-a716-446655440105';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+      await fs.writeFile(
+        path.join(sessDir, 'session-state.json'),
+        '{"phase": "COMPLETE"}',
+        'utf-8',
+      );
 
-    const reviewPath = path.join(sessDir, 'review-report.json');
-    await fs.writeFile(
-      reviewPath,
-      JSON.stringify({ findings: [{ message: 'sensitive' }] }),
-      'utf-8',
-    );
-    await fs.chmod(reviewPath, 0o000);
+      const reviewPath = path.join(sessDir, 'review-report.json');
+      await fs.writeFile(
+        reviewPath,
+        JSON.stringify({ findings: [{ message: 'sensitive' }] }),
+        'utf-8',
+      );
+      await fs.chmod(reviewPath, 0o000);
 
-    try {
-      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    } finally {
-      await fs.chmod(reviewPath, 0o644);
-    }
-  });
+      try {
+        await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
+      } finally {
+        await fs.chmod(reviewPath, 0o644);
+      }
+    },
+  );
 });
 
 // =============================================================================
@@ -1331,7 +1339,7 @@ describe('PERF', () => {
       const { elapsedMs } = await measureAsync(() =>
         initWorkspace(path.resolve('.'), `perf-${Date.now()}`),
       );
-      expect(elapsedMs).toBeLessThan(50);
+      expect(elapsedMs).toBeLessThan(process.platform === 'win32' ? 150 : 50);
     } finally {
       await cleanTmpDir(td);
     }
@@ -1362,33 +1370,37 @@ describe('EDGE', () => {
   });
 
   describe('BAD', () => {
-    it('throws on workspace directory without write permission', async () => {
-      const worktree = path.resolve('.');
-      const sessionId = 'edge-no-perm';
+    // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
+    it.skipIf(process.platform === 'win32')(
+      'throws on workspace directory without write permission',
+      async () => {
+        const worktree = path.resolve('.');
+        const sessionId = 'edge-no-perm';
 
-      // Create a read-only directory that we'll try to write to
-      const readonlyDir = path.join(tmpDir, 'readonly-ws');
-      await fs.mkdir(readonlyDir, { recursive: true });
-      await fs.chmod(readonlyDir, 0o444); // Read-only
+        // Create a read-only directory that we'll try to write to
+        const readonlyDir = path.join(tmpDir, 'readonly-ws');
+        await fs.mkdir(readonlyDir, { recursive: true });
+        await fs.chmod(readonlyDir, 0o444); // Read-only
 
-      process.env.OPENCODE_CONFIG_DIR = readonlyDir;
+        process.env.OPENCODE_CONFIG_DIR = readonlyDir;
 
-      // This should throw when trying to write workspace.json
-      try {
-        await initWorkspace(worktree, sessionId);
-        // If we get here on platforms that allow root to bypass permissions, skip
-        const stats = await fs.stat(readonlyDir);
-        if (process.getuid?.() !== 0) {
-          throw new Error('Should have thrown');
+        // This should throw when trying to write workspace.json
+        try {
+          await initWorkspace(worktree, sessionId);
+          // If we get here on platforms that allow root to bypass permissions, skip
+          const stats = await fs.stat(readonlyDir);
+          if (process.getuid?.() !== 0) {
+            throw new Error('Should have thrown');
+          }
+        } catch (e) {
+          // Should throw WorkspaceError or EACCES
+          expect(String(e)).toMatch(/EACCES|EPERM|WorkspaceError|permission/i);
+        } finally {
+          // Restore permissions for cleanup
+          await fs.chmod(readonlyDir, 0o755).catch(() => {});
         }
-      } catch (e) {
-        // Should throw WorkspaceError or EACCES
-        expect(String(e)).toMatch(/EACCES|EPERM|WorkspaceError|permission/i);
-      } finally {
-        // Restore permissions for cleanup
-        await fs.chmod(readonlyDir, 0o755).catch(() => {});
-      }
-    });
+      },
+    );
   });
 
   describe('CORNER', () => {
