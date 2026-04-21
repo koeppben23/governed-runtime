@@ -135,7 +135,7 @@ function addScriptCandidates(
 
   for (const mapping of mappings) {
     if (!(mapping.script in scripts)) continue;
-    if (mapping.script === 'test' && isLikelyPlaceholderTestScript(scripts[mapping.script]!)) {
+    if (isLikelyPlaceholderScript(scripts[mapping.script]!)) {
       continue;
     }
     addCandidate(byKind, {
@@ -258,7 +258,21 @@ function fallbackCommand(packageManager: PackageManager, command: string): strin
   return `npx ${command}`;
 }
 
-function isLikelyPlaceholderTestScript(command: string): boolean {
+function isLikelyPlaceholderScript(command: string): boolean {
   const normalized = command.toLowerCase().replace(/\s+/g, ' ').trim();
-  return normalized.includes('no test specified') && normalized.includes('exit 1');
+
+  if (normalized === 'exit 1' || normalized === 'todo' || normalized === 'not implemented') {
+    return true;
+  }
+
+  const noTestSpecifiedEcho =
+    /^echo\s+['"`]?(?:error:\s*)?no test specified['"`]?(?:\s*&&\s*exit\s+1)?\s*;?$/;
+  const todoEcho = /^echo\s+['"`]?todo['"`]?(?:\s*&&\s*exit\s+1)?\s*;?$/;
+  const notImplementedEcho = /^echo\s+['"`]?not implemented['"`]?(?:\s*&&\s*exit\s+1)?\s*;?$/;
+
+  return (
+    noTestSpecifiedEcho.test(normalized) ||
+    todoEcho.test(normalized) ||
+    notImplementedEcho.test(normalized)
+  );
 }

@@ -228,6 +228,69 @@ describe('verification planner', () => {
       expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx vitest run');
       expect(candidates.map((c) => c.command)).not.toContain('npm run test');
     });
+
+    it('ignores single-quote placeholder test script and continues with fallback', async () => {
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
+        { kind: 'testFramework', id: 'jest', evidence: 'jest.config.js' },
+      ]);
+
+      const candidates = await planVerificationCandidates({
+        detectedStack,
+        allFiles: ['package.json', 'jest.config.js'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: {
+              test: "echo 'Error: no test specified' && exit 1",
+            },
+          }),
+        }),
+      });
+
+      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx jest');
+      expect(candidates.map((c) => c.command)).not.toContain('npm run test');
+    });
+
+    it('ignores placeholder lint and build scripts', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: {
+              lint: 'echo TODO && exit 1',
+              build: 'echo "not implemented"',
+            },
+          }),
+        }),
+      });
+
+      expect(candidates.map((c) => c.kind)).not.toContain('lint');
+      expect(candidates.map((c) => c.kind)).not.toContain('build');
+      expect(candidates).toEqual([]);
+    });
+
+    it('does not treat real commands with TODO comments as placeholders', async () => {
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
+        { kind: 'qualityTool', id: 'eslint', evidence: 'eslint.config.js' },
+      ]);
+
+      const candidates = await planVerificationCandidates({
+        detectedStack,
+        allFiles: ['package.json', 'pnpm-lock.yaml', 'eslint.config.js'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: {
+              lint: 'eslint . # TODO remove legacy ignores',
+            },
+          }),
+        }),
+      });
+
+      expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm lint');
+      expect(candidates.map((c) => c.command)).not.toContain('pnpm eslint .');
+    });
   });
 
   describe('SMOKE/PERF', () => {
