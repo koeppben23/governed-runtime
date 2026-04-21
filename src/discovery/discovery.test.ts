@@ -2478,6 +2478,121 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       expect(item?.classification).toBe('fact');
       expect(item?.evidence).toContain('.prettierrc');
     });
+
+    it('detects Python ecosystem facts from root pyproject.toml and .python-version', async () => {
+      const input = inputWithFiles(
+        {
+          '.python-version': '3.12.4\n',
+          'pyproject.toml': `[project]
+name = "demo"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+
+[tool.ruff]
+line-length = 100
+
+[tool.black]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+`,
+        },
+        {
+          allFiles: ['pyproject.toml', '.python-version'],
+          packageFiles: ['pyproject.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const python = result.data.languages.find((l) => l.id === 'python');
+      expect(python).toBeDefined();
+      expect(python?.version).toBe('3.12.4');
+      expect(python?.versionEvidence).toBe('.python-version');
+
+      expect(result.data.testFrameworks.find((t) => t.id === 'pytest')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'ruff')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'black')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'mypy')).toBeDefined();
+    });
+
+    it('detects uv and poetry from root lockfiles and pip from requirements.txt', async () => {
+      const input = inputWithFiles(
+        {
+          'requirements.txt': 'pytest==8.1.1\nruff==0.5.5\n',
+          'requirements-dev.txt': 'black==24.4.2\nmypy==1.10.0\n',
+        },
+        {
+          allFiles: ['uv.lock', 'poetry.lock', 'requirements.txt', 'requirements-dev.txt'],
+          packageFiles: ['requirements.txt'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.buildTools.find((b) => b.id === 'uv')).toBeDefined();
+      expect(result.data.buildTools.find((b) => b.id === 'poetry')).toBeDefined();
+      expect(result.data.buildTools.find((b) => b.id === 'pip')).toBeDefined();
+      expect(result.data.testFrameworks.find((t) => t.id === 'pytest')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'ruff')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'black')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'mypy')).toBeDefined();
+    });
+
+    it('detects Rust language, cargo build tool, edition, and toolchain version', async () => {
+      const input = inputWithFiles(
+        {
+          'Cargo.toml': `[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+`,
+          'rust-toolchain.toml': `[toolchain]
+channel = "1.78.0"
+components = ["clippy", "rustfmt"]
+`,
+        },
+        {
+          allFiles: ['Cargo.toml', 'rust-toolchain.toml'],
+          packageFiles: ['Cargo.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const rust = result.data.languages.find((l) => l.id === 'rust');
+      expect(rust).toBeDefined();
+      expect(rust?.compilerTarget).toBe('2021');
+      expect(rust?.compilerTargetEvidence).toBe('Cargo.toml:edition');
+      expect(rust?.version).toBe('1.78.0');
+      expect(rust?.versionEvidence).toBe('rust-toolchain.toml:channel');
+
+      expect(result.data.buildTools.find((b) => b.id === 'cargo')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'clippy')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'rustfmt')).toBeDefined();
+    });
+
+    it('detects Go language version from go.mod and golangci-lint from root config', async () => {
+      const input = inputWithFiles(
+        {
+          'go.mod': 'module example.com/myapp\n\ngo 1.22\n',
+        },
+        {
+          allFiles: ['go.mod', '.golangci.yml'],
+          packageFiles: ['go.mod'],
+          configFiles: ['.golangci.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const go = result.data.languages.find((l) => l.id === 'go');
+      expect(go).toBeDefined();
+      expect(go?.version).toBe('1.22');
+      expect(go?.versionEvidence).toBe('go.mod:go');
+
+      expect(result.data.buildTools.find((b) => b.id === 'go-modules')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'golangci-lint')).toBeDefined();
+    });
   });
 
   // ─── HAPPY: lockfile-based package manager detection ──────
@@ -2805,6 +2920,36 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       expect(result.data.buildTools.find((b) => b.id === 'npm')).toBeDefined();
     });
 
+    it('ignores nested Python/Rust/Go manifests for root-first ecosystem facts', async () => {
+      const input = inputWithFiles(
+        {
+          'packages/app/pyproject.toml': '[project]\nname = "nested"\nrequires-python = ">=3.12"\n',
+          'packages/lib/Cargo.toml': '[package]\nname = "nested"\nedition = "2021"\n',
+          'packages/svc/go.mod': 'module example.com/nested\n\ngo 1.22\n',
+        },
+        {
+          allFiles: [
+            'packages/app/pyproject.toml',
+            'packages/lib/Cargo.toml',
+            'packages/svc/go.mod',
+            'packages/svc/.golangci.yml',
+          ],
+          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFiles: ['.golangci.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.languages.find((l) => l.id === 'python')).toBeUndefined();
+      expect(result.data.languages.find((l) => l.id === 'rust')).toBeUndefined();
+      expect(result.data.languages.find((l) => l.id === 'go')).toBeUndefined();
+
+      expect(result.data.buildTools.find((b) => b.id === 'poetry')).toBeUndefined();
+      expect(result.data.buildTools.find((b) => b.id === 'cargo')).toBeUndefined();
+      expect(result.data.buildTools.find((b) => b.id === 'go-modules')).toBeUndefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'golangci-lint')).toBeUndefined();
+    });
+
     it('packageManager field takes priority over lockfile', async () => {
       const input = inputWithFiles(
         {
@@ -2975,6 +3120,171 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       const yarn = result.data.buildTools.find((b) => b.id === 'yarn');
       expect(yarn).toBeDefined();
     });
+
+    it('does not infer clippy or rustfmt from Cargo.toml without explicit toolchain components', async () => {
+      const input = inputWithFiles(
+        {
+          'Cargo.toml': `[package]
+name = "demo"
+edition = "2021"
+`,
+        },
+        {
+          allFiles: ['Cargo.toml'],
+          packageFiles: ['Cargo.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.languages.find((l) => l.id === 'rust')).toBeDefined();
+      expect(result.data.buildTools.find((b) => b.id === 'cargo')).toBeDefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'clippy')).toBeUndefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'rustfmt')).toBeUndefined();
+    });
+
+    it('detects Rust language version from root rust-toolchain.toml without Cargo.toml', async () => {
+      const input = inputWithFiles(
+        {
+          'rust-toolchain.toml': `[toolchain]
+channel = "1.78.0"
+`,
+        },
+        {
+          allFiles: ['rust-toolchain.toml'],
+          packageFiles: [],
+        },
+      );
+
+      const result = await collectStack(input);
+      const rust = result.data.languages.find((l) => l.id === 'rust');
+      expect(rust).toBeDefined();
+      expect(rust?.version).toBe('1.78.0');
+      expect(rust?.versionEvidence).toBe('rust-toolchain.toml:channel');
+      expect(rust?.evidence).toContain('rust-toolchain.toml');
+      expect(result.data.buildTools.find((b) => b.id === 'cargo')).toBeUndefined();
+    });
+
+    it('detects Rust language from plain rust-toolchain file without Cargo.toml', async () => {
+      const input = inputWithFiles(
+        {
+          'rust-toolchain': '1.78.0\n',
+        },
+        {
+          allFiles: ['rust-toolchain'],
+          packageFiles: [],
+        },
+      );
+
+      const result = await collectStack(input);
+      const rust = result.data.languages.find((l) => l.id === 'rust');
+      expect(rust).toBeDefined();
+      expect(rust?.version).toBe('1.78.0');
+      expect(rust?.versionEvidence).toBe('rust-toolchain');
+      expect(rust?.evidence).toContain('rust-toolchain');
+      expect(result.data.buildTools.find((b) => b.id === 'cargo')).toBeUndefined();
+    });
+
+    it('tolerates malformed pyproject.toml and does not set python version', async () => {
+      const input = inputWithFiles(
+        {
+          'pyproject.toml': '[project\nrequires-python = ">=foo"\n',
+        },
+        {
+          allFiles: ['pyproject.toml'],
+          packageFiles: ['pyproject.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const python = result.data.languages.find((l) => l.id === 'python');
+      expect(python).toBeDefined();
+      expect(python?.version).toBeUndefined();
+    });
+
+    it('does not infer Python tools from incidental pyproject text', async () => {
+      const input = inputWithFiles(
+        {
+          'pyproject.toml': `[project]
+name = "demo"
+description = "black box pytest migration notes"
+requires-python = ">=3.12"
+`,
+        },
+        {
+          allFiles: ['pyproject.toml'],
+          packageFiles: ['pyproject.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.testFrameworks.find((t) => t.id === 'pytest')).toBeUndefined();
+      expect(result.data.qualityTools.find((t) => t.id === 'black')).toBeUndefined();
+    });
+
+    it('does not infer poetry from generic pyproject.toml without [tool.poetry] or poetry.lock', async () => {
+      const input = inputWithFiles(
+        {
+          'pyproject.toml': `[project]
+name = "demo"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+
+[tool.ruff]
+line-length = 100
+`,
+        },
+        {
+          allFiles: ['pyproject.toml'],
+          packageFiles: ['pyproject.toml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.buildTools.find((b) => b.id === 'poetry')).toBeUndefined();
+      expect(result.data.languages.find((l) => l.id === 'python')).toBeDefined();
+      expect(result.data.testFrameworks.find((t) => t.id === 'pytest')).toBeDefined();
+    });
+
+    it('detects Python language version from root .python-version without pyproject.toml', async () => {
+      const input = inputWithFiles(
+        {
+          '.python-version': '3.12.4\n',
+        },
+        {
+          allFiles: ['.python-version'],
+          packageFiles: [],
+        },
+      );
+
+      const result = await collectStack(input);
+      const python = result.data.languages.find((l) => l.id === 'python');
+      expect(python).toBeDefined();
+      expect(python?.version).toBe('3.12.4');
+      expect(python?.versionEvidence).toBe('.python-version');
+      expect(python?.evidence).toContain('.python-version');
+      expect(python?.evidence).not.toContain('pyproject.toml');
+    });
+
+    it('creates Python language and pip build tool from requirements.txt alone', async () => {
+      const input = inputWithFiles(
+        {
+          'requirements.txt': 'requests==2.32.3\nurllib3==2.2.0\n',
+        },
+        {
+          allFiles: ['requirements.txt'],
+          packageFiles: ['requirements.txt'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const python = result.data.languages.find((l) => l.id === 'python');
+      expect(python).toBeDefined();
+      expect(python?.evidence).toContain('requirements.txt');
+      expect(python?.evidence).not.toContain('pyproject.toml');
+      expect(result.data.buildTools.find((b) => b.id === 'pip')).toBeDefined();
+    });
   });
 
   // ─── EDGE: extractDetectedStack integration ──────────────
@@ -3109,6 +3419,67 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       expect(dbVersion).toBeDefined();
       expect(dbVersion?.version).toBe('16');
     });
+
+    it('detectedStack.items includes Python/Rust/Go ecosystem facts from root manifests', async () => {
+      const input = inputWithFiles(
+        {
+          '.python-version': '3.12.2\n',
+          'pyproject.toml': `[project]
+name = "demo"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+`,
+          'Cargo.toml': `[package]
+name = "demo"
+edition = "2021"
+`,
+          'rust-toolchain.toml': `[toolchain]
+channel = "1.78.0"
+components = ["clippy", "rustfmt"]
+`,
+          'go.mod': 'module example.com/demo\n\ngo 1.23\n',
+        },
+        {
+          allFiles: [
+            '.python-version',
+            'pyproject.toml',
+            'poetry.lock',
+            'Cargo.toml',
+            'rust-toolchain.toml',
+            'go.mod',
+            '.golangci.yml',
+          ],
+          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFiles: ['.golangci.yml'],
+        },
+      );
+
+      const result = await runDiscovery(input);
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+
+      const itemIds = ds!.items.map((item) => `${item.kind}:${item.id}`);
+      expect(itemIds).toContain('language:python');
+      expect(itemIds).toContain('buildTool:poetry');
+      expect(itemIds).toContain('testFramework:pytest');
+      expect(itemIds).toContain('language:rust');
+      expect(itemIds).toContain('buildTool:cargo');
+      expect(itemIds).toContain('qualityTool:clippy');
+      expect(itemIds).toContain('qualityTool:rustfmt');
+      expect(itemIds).toContain('language:go');
+      expect(itemIds).toContain('buildTool:go-modules');
+      expect(itemIds).toContain('qualityTool:golangci-lint');
+
+      expect(ds!.versions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'python', version: '3.12.2', target: 'language' }),
+          expect.objectContaining({ id: 'rust', version: '1.78.0', target: 'language' }),
+          expect.objectContaining({ id: 'go', version: '1.23', target: 'language' }),
+        ]),
+      );
+    });
   });
 
   // ─── PERF ─────────────────────────────────────────────────
@@ -3169,6 +3540,58 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       expect(result.data.frameworks.length).toBeGreaterThanOrEqual(4);
       expect(result.data.testFrameworks.length).toBeGreaterThanOrEqual(1);
       expect(result.data.qualityTools.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('root-first Python/Rust/Go ecosystem detection completes in < 70ms', async () => {
+      const input = inputWithFiles(
+        {
+          '.python-version': '3.12.2\n',
+          'pyproject.toml': `[project]
+name = "demo"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+
+[tool.ruff]
+line-length = 100
+`,
+          'Cargo.toml': `[package]
+name = "demo"
+edition = "2021"
+`,
+          'rust-toolchain.toml': `[toolchain]
+channel = "1.78.0"
+components = ["clippy", "rustfmt"]
+`,
+          'go.mod': 'module example.com/demo\n\ngo 1.23\n',
+          'requirements-dev.txt': 'black==24.4.2\nmypy==1.10.0\n',
+        },
+        {
+          allFiles: [
+            '.python-version',
+            'pyproject.toml',
+            'requirements-dev.txt',
+            'uv.lock',
+            'Cargo.toml',
+            'rust-toolchain.toml',
+            'go.mod',
+            '.golangci.yaml',
+          ],
+          packageFiles: ['pyproject.toml', 'Cargo.toml', 'go.mod'],
+          configFiles: ['.golangci.yaml'],
+        },
+      );
+
+      const start = performance.now();
+      const result = await collectStack(input);
+      const elapsed = performance.now() - start;
+
+      expect(result.status).toBe('complete');
+      expect(elapsed).toBeLessThan(70);
+      expect(result.data.languages.find((l) => l.id === 'python')).toBeDefined();
+      expect(result.data.languages.find((l) => l.id === 'rust')).toBeDefined();
+      expect(result.data.languages.find((l) => l.id === 'go')).toBeDefined();
     });
   });
 });
@@ -3863,7 +4286,7 @@ describe('discovery/orchestrator', () => {
       const input: CollectorInput = {
         worktreePath: '/test/multi',
         fingerprint: 'abcdef0123456789abcdef01',
-        allFiles: ['src/lib.rs', 'main.go'],
+        allFiles: ['src/lib.rs', 'main.go', 'Cargo.toml', 'go.mod'],
         packageFiles: ['Cargo.toml', 'go.mod'],
         configFiles: [],
       };

@@ -70,6 +70,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **6-collector pipeline** — repo metadata, stack detection, topology analysis, surface detection, bounded code-surface analysis, domain signals — all run in parallel with budget guards
 - **Evidence-classified** — every detected item carries `fact`, `derived_signal`, or `hypothesis` classification
 - **Database stack facts** — stack detection derives concrete database engines from repo evidence (dependencies, compose images, testcontainers) and surfaces them to session status as compact detected stack items
+- **Root-level Python/Rust/Go ecosystem facts** — stack detection derives Python/Rust/Go language/tooling signals from root-level manifest and toolchain evidence (`pyproject.toml`, `.python-version`, `Cargo.toml`, `rust-toolchain*`, `go.mod`, `.golangci.*`) and surfaces them to session status as compact detected stack items
 - **Bounded heuristic semantics** — code-surface collector reads a capped subset of source files (hard file/byte/time budgets) to derive endpoint/auth/data/integration hints with confidence and evidence
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it

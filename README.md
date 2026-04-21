@@ -140,6 +140,7 @@ flowguard serve --detach --port 4096
 `opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
 | **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
+| **Python/Rust/Go Detection** | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files |
 | **Database Detection** | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence |
 | **Audit Trail** | Hash-chained, tamper-evident |
 | **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |

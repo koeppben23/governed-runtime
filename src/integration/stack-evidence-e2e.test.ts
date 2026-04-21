@@ -367,6 +367,85 @@ describe('stack-evidence E2E', () => {
       expect(statusDb).toBeDefined();
       expect(statusDb?.version).toBe('16');
     });
+
+    it('Python/Rust/Go root manifests: ecosystem facts flow through pipeline to status', async () => {
+      await writeManifest('.python-version', '3.12.2\n');
+      await writeManifest(
+        'pyproject.toml',
+        `[project]
+name = "demo"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+`,
+      );
+      await writeManifest(
+        'Cargo.toml',
+        `[package]
+name = "demo"
+edition = "2021"
+`,
+      );
+      await writeManifest(
+        'rust-toolchain.toml',
+        `[toolchain]
+channel = "1.78.0"
+components = ["clippy", "rustfmt"]
+`,
+      );
+      await writeManifest('go.mod', 'module example.com/demo\n\ngo 1.23\n');
+      await writeManifest('requirements.txt', 'pytest==8.1.1\nruff==0.5.5\n');
+
+      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
+        files: [
+          '.python-version',
+          'pyproject.toml',
+          'poetry.lock',
+          'requirements.txt',
+          'Cargo.toml',
+          'rust-toolchain.toml',
+          'go.mod',
+          '.golangci.yml',
+        ],
+        packageFiles: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
+        configFiles: ['.golangci.yml'],
+      });
+
+      await hydrateSession();
+
+      const sessDir = await resolveSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.detectedStack).not.toBeNull();
+
+      const ds = state!.detectedStack!;
+      expect(ds.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'language', id: 'python', version: '3.12.2' }),
+          expect.objectContaining({ kind: 'buildTool', id: 'poetry' }),
+          expect.objectContaining({ kind: 'testFramework', id: 'pytest' }),
+          expect.objectContaining({ kind: 'language', id: 'rust', version: '1.78.0' }),
+          expect.objectContaining({ kind: 'buildTool', id: 'cargo' }),
+          expect.objectContaining({ kind: 'qualityTool', id: 'clippy' }),
+          expect.objectContaining({ kind: 'qualityTool', id: 'rustfmt' }),
+          expect.objectContaining({ kind: 'language', id: 'go', version: '1.23' }),
+          expect.objectContaining({ kind: 'buildTool', id: 'go-modules' }),
+          expect.objectContaining({ kind: 'qualityTool', id: 'golangci-lint' }),
+        ]),
+      );
+
+      const statusResult = await callStatus();
+      const statusDs = statusResult.detectedStack as Record<string, unknown>;
+      const statusItems = statusDs.items as Array<Record<string, unknown>>;
+      expect(statusItems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'language', id: 'python', version: '3.12.2' }),
+          expect.objectContaining({ kind: 'language', id: 'rust', version: '1.78.0' }),
+          expect.objectContaining({ kind: 'language', id: 'go', version: '1.23' }),
+        ]),
+      );
+    });
   });
 
   // ─── BAD ─────────────────────────────────────────────────────────────────

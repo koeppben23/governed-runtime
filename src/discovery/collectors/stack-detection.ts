@@ -13,6 +13,7 @@
  * - Root-level lockfiles → package manager refinement: npm/pnpm/yarn/bun (fact, skipped when packageManager found)
  * - Config files → frameworks, test frameworks, quality tools (fact or derived_signal)
  * - package.json deps/devDeps → JS/TS ecosystem detection with versions (derived_signal)
+ * - Root-level Python/Rust/Go manifests → ecosystem facts (derived_signal)
  * - Manifest content → version extraction (fact, requires readFile on input)
  * - pom.xml artifacts → tools, test frameworks, quality tools, databases (derived_signal)
  * - build.gradle(.kts) artifacts → tools, test frameworks, quality tools, databases (derived_signal)
@@ -61,10 +62,33 @@ const BUILD_TOOL_RULES: ReadonlyArray<{
   { id: 'cargo', packageFile: 'Cargo.toml' },
   { id: 'go-modules', packageFile: 'go.mod' },
   { id: 'pip', packageFile: 'requirements.txt' },
-  { id: 'poetry', packageFile: 'pyproject.toml' },
   { id: 'setuptools', packageFile: 'setup.py' },
   { id: 'bundler', packageFile: 'Gemfile' },
   { id: 'composer', packageFile: 'composer.json' },
+];
+
+/** Build tools that must be backed by root-level evidence (P16 root-first). */
+const ROOT_FIRST_BUILD_TOOLS: ReadonlyArray<{ id: string; evidence: readonly string[] }> = [
+  { id: 'pip', evidence: ['requirements.txt'] },
+  { id: 'poetry', evidence: ['poetry.lock'] },
+  { id: 'cargo', evidence: ['Cargo.toml'] },
+  { id: 'go-modules', evidence: ['go.mod'] },
+  { id: 'uv', evidence: ['uv.lock'] },
+];
+
+/** Root-level Python requirements files used for ecosystem signal extraction. */
+const PYTHON_REQUIREMENTS_FILES: readonly string[] = ['requirements.txt', 'requirements-dev.txt'];
+
+/** Python package hints mapped to test/quality categories. */
+const PYTHON_ECOSYSTEM_PACKAGES: ReadonlyArray<{
+  pkg: string;
+  id: string;
+  category: 'testFramework' | 'qualityTool';
+}> = [
+  { pkg: 'pytest', id: 'pytest', category: 'testFramework' },
+  { pkg: 'ruff', id: 'ruff', category: 'qualityTool' },
+  { pkg: 'black', id: 'black', category: 'qualityTool' },
+  { pkg: 'mypy', id: 'mypy', category: 'qualityTool' },
 ];
 
 // ─── Artifact Detection Rules ─────────────────────────────────────────────────
@@ -551,6 +575,127 @@ function refineBuildToolFromLockfiles(
   }
 }
 
+/** Collect root-level basenames from repo signal paths. */
+function collectRootBasenames(allFiles: readonly string[]): Set<string> {
+  const rootFiles = new Set<string>();
+  for (const filePath of allFiles) {
+    const base = getRootBasename(filePath);
+    if (base) rootFiles.add(base);
+  }
+  return rootFiles;
+}
+
+/**
+ * Enforce root-first authority for selected build tools.
+ *
+ * `listRepoSignals()` currently reports package files by basename, which can include
+ * nested manifests. For Python/Rust/Go ecosystem facts we require explicit root-level
+ * evidence and remove unsupported tool detections.
+ */
+function enforceRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
+  const hasRootEvidence = (rule: { evidence: readonly string[] }): boolean =>
+    rule.evidence.some((file) => rootFiles.has(file));
+
+  for (const rule of ROOT_FIRST_BUILD_TOOLS) {
+    const index = buildTools.findIndex((item) => item.id === rule.id);
+    if (index === -1) continue;
+    if (hasRootEvidence(rule)) continue;
+    buildTools.splice(index, 1);
+  }
+}
+
+/** Add root-level build tools derived from lock/manifests not covered by packageFiles. */
+function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
+  if (rootFiles.has('uv.lock') && !findItem(buildTools, 'uv')) {
+    buildTools.push({
+      id: 'uv',
+      confidence: 0.9,
+      classification: 'fact',
+      evidence: ['uv.lock'],
+    });
+  }
+
+  if (rootFiles.has('poetry.lock') && !findItem(buildTools, 'poetry')) {
+    buildTools.push({
+      id: 'poetry',
+      confidence: 0.9,
+      classification: 'fact',
+      evidence: ['poetry.lock'],
+    });
+  }
+}
+
+/** Return the first root-level file that exists from a list of candidates, or null. */
+function firstRootEvidence(rootFiles: ReadonlySet<string>, candidates: readonly string[]): string | null {
+  for (const file of candidates) {
+    if (rootFiles.has(file)) return file;
+  }
+  return null;
+}
+
+/** Ensure root-level manifest facts for Python/Rust/Go languages and quality tools. */
+function addRootFirstLanguageAndLintFacts(
+  rootFiles: ReadonlySet<string>,
+  languages: DetectedItem[],
+  qualityTools: DetectedItem[],
+): void {
+  const PYTHON_EVIDENCE_FILES: readonly string[] = [
+    'pyproject.toml',
+    '.python-version',
+    'requirements.txt',
+    'requirements-dev.txt',
+    'uv.lock',
+    'poetry.lock',
+  ];
+  const pythonEvidence = firstRootEvidence(rootFiles, PYTHON_EVIDENCE_FILES);
+  if (pythonEvidence && !findItem(languages, 'python')) {
+    languages.push({
+      id: 'python',
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: [pythonEvidence],
+    });
+  }
+
+  const RUST_EVIDENCE_FILES: readonly string[] = ['Cargo.toml', 'rust-toolchain.toml', 'rust-toolchain'];
+  const rustEvidence = firstRootEvidence(rootFiles, RUST_EVIDENCE_FILES);
+  if (rustEvidence && !findItem(languages, 'rust')) {
+    languages.push({
+      id: 'rust',
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: [rustEvidence],
+    });
+  }
+
+  if (rootFiles.has('go.mod') && !findItem(languages, 'go')) {
+    languages.push({
+      id: 'go',
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: ['go.mod'],
+    });
+  }
+
+  if (rootFiles.has('.golangci.yml') && !findItem(qualityTools, 'golangci-lint')) {
+    qualityTools.push({
+      id: 'golangci-lint',
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: ['.golangci.yml'],
+    });
+  }
+
+  if (rootFiles.has('.golangci.yaml') && !findItem(qualityTools, 'golangci-lint')) {
+    qualityTools.push({
+      id: 'golangci-lint',
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: ['.golangci.yaml'],
+    });
+  }
+}
+
 // ─── Collector ────────────────────────────────────────────────────────────────
 
 /**
@@ -596,6 +741,12 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
       refineBuildToolFromLockfiles(input.allFiles, buildTools);
     }
 
+    // Root-first manifest authority for Python/Rust/Go ecosystem facts.
+    const rootFiles = collectRootBasenames(input.allFiles);
+    enforceRootFirstBuildTools(buildTools, rootFiles);
+    addRootFirstBuildTools(buildTools, rootFiles);
+    addRootFirstLanguageAndLintFacts(rootFiles, languages, qualityTools);
+
     // Version extraction post-pass (requires readFile capability)
     if (input.readFile) {
       await extractVersions(
@@ -608,6 +759,7 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
         qualityTools,
         databases,
         input.allFiles,
+        buildTools,
       );
     }
 
@@ -816,7 +968,9 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  * 6. build.gradle(.kts) (Java version, Spring Boot version — Gradle fallback)
  * 7. build.gradle(.kts) artifacts (tools, test frameworks, quality tools, databases — Gradle fallback)
  * 8. docker-compose files (database engines + optional image tag version)
- * 9. go.mod (Go version — no shared targets)
+ * 9. Python manifests/tooling (python version, pytest, ruff, black, mypy)
+ * 10. Cargo.toml / rust-toolchain* (rust edition/version, clippy, rustfmt)
+ * 11. go.mod (Go version — no shared targets)
  *
  * Maven runs before Gradle: in projects with both pom.xml and build.gradle,
  * Maven is the canonical build system and Gradle values are ignored via
@@ -833,6 +987,7 @@ async function extractVersions(
   qualityTools: DetectedItem[],
   databases: DetectedItem[],
   allFiles: readonly string[],
+  buildTools: DetectedItem[],
 ): Promise<void> {
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
@@ -853,7 +1008,9 @@ async function extractVersions(
   await extractFromGradleBuild(readFile, languages, frameworks);
   await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools, databases);
   await extractDatabasesFromDockerCompose(readFile, allFiles, databases);
-  await extractFromGoMod(readFile, languages);
+  await extractFromPythonRootFiles(readFile, allFiles, languages, testFrameworks, qualityTools, buildTools);
+  await extractFromRustRootFiles(readFile, allFiles, languages, qualityTools, buildTools);
+  await extractFromGoMod(readFile, languages, allFiles);
 }
 
 /**
@@ -1157,7 +1314,14 @@ async function extractFromGradleBuild(
  * Extract Go version from go.mod directive.
  * Format: `go 1.22` or `go 1.22.1`.
  */
-async function extractFromGoMod(readFile: ReadFileFn, languages: DetectedItem[]): Promise<void> {
+async function extractFromGoMod(
+  readFile: ReadFileFn,
+  languages: DetectedItem[],
+  allFiles: readonly string[],
+): Promise<void> {
+  const rootFiles = collectRootBasenames(allFiles);
+  if (!rootFiles.has('go.mod')) return;
+
   const content = await safeRead(readFile, 'go.mod');
   if (!content) return;
 
@@ -1168,6 +1332,154 @@ async function extractFromGoMod(readFile: ReadFileFn, languages: DetectedItem[])
   if (goItem && !goItem.version) {
     setVersion(goItem, goVer, 'go.mod:go');
   }
+}
+
+/** Extract Python ecosystem facts from root-level manifests and requirements files. */
+async function extractFromPythonRootFiles(
+  readFile: ReadFileFn,
+  allFiles: readonly string[],
+  languages: DetectedItem[],
+  testFrameworks: DetectedItem[],
+  qualityTools: DetectedItem[],
+  buildTools: DetectedItem[],
+): Promise<void> {
+  const rootFiles = collectRootBasenames(allFiles);
+
+  if (rootFiles.has('.python-version')) {
+    const content = await safeRead(readFile, '.python-version');
+    const line = content?.trim().split('\n')[0]?.trim() ?? '';
+    const version = captureGroup(line.match(/^(?:python-)?(\d+(?:\.\d+){0,2})/));
+    if (version) {
+      const python = findItem(languages, 'python');
+      if (python && !python.version) {
+        setVersion(python, version, '.python-version');
+      }
+    }
+  }
+
+  if (rootFiles.has('pyproject.toml')) {
+    const content = await safeRead(readFile, 'pyproject.toml');
+    if (content) {
+      const requiresPython = captureGroup(
+        content.match(/requires-python\s*=\s*['"]([^'"]+)['"]/i),
+      );
+      const pyVersion = captureGroup(requiresPython?.match(/(\d+(?:\.\d+){0,2})/) ?? null);
+      if (pyVersion) {
+        const python = findItem(languages, 'python');
+        if (python && !python.version) {
+          setVersion(python, pyVersion, 'pyproject.toml:requires-python');
+        }
+      }
+
+for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
+        const toolTable = new RegExp(`\\[tool\\.${rule.pkg}(?:\\.|\\]|$)`, 'i').test(content);
+        const dependencyEntry = new RegExp(
+          `["']${rule.pkg}[>=<~!:]+[^"']*["']`,
+          'i',
+        ).test(content);
+        if (!toolTable && !dependencyEntry) continue;
+
+        const targetArray = rule.category === 'testFramework' ? testFrameworks : qualityTools;
+        enrichOrCreateItem(targetArray, rule.id, `pyproject.toml:${rule.pkg}`);
+      }
+    }
+  }
+
+  for (const file of PYTHON_REQUIREMENTS_FILES) {
+    if (!rootFiles.has(file)) continue;
+    const content = await safeRead(readFile, file);
+    if (!content) continue;
+
+    for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
+      if (!hasRequirementEntry(content, rule.pkg)) continue;
+      const targetArray = rule.category === 'testFramework' ? testFrameworks : qualityTools;
+      enrichOrCreateItem(targetArray, rule.id, `${file}:${rule.pkg}`);
+    }
+  }
+
+  if (rootFiles.has('pyproject.toml')) {
+    const pyprojectContent = await safeRead(readFile, 'pyproject.toml');
+    if (pyprojectContent?.includes('[tool.poetry]')) {
+      enrichOrCreateItem(buildTools, 'poetry', 'pyproject.toml:[tool.poetry]');
+    }
+  }
+}
+
+/** Extract Rust ecosystem facts from root-level Cargo/toolchain manifests. */
+async function extractFromRustRootFiles(
+  readFile: ReadFileFn,
+  allFiles: readonly string[],
+  languages: DetectedItem[],
+  qualityTools: DetectedItem[],
+  buildTools: DetectedItem[],
+): Promise<void> {
+  const rootFiles = collectRootBasenames(allFiles);
+
+  if (rootFiles.has('Cargo.toml')) {
+    const content = await safeRead(readFile, 'Cargo.toml');
+    if (content) {
+      const edition = captureGroup(content.match(/edition\s*=\s*['"](\d{4})['"]/));
+      if (edition) {
+        const rust = findItem(languages, 'rust');
+        if (rust && !rust.compilerTarget) {
+          setCompilerTarget(rust, edition, 'Cargo.toml:edition');
+        }
+      }
+    }
+  }
+
+  if (rootFiles.has('rust-toolchain.toml')) {
+    const content = await safeRead(readFile, 'rust-toolchain.toml');
+    if (content) {
+      const rustVersion = captureGroup(
+        content.match(/channel\s*=\s*['"](\d+(?:\.\d+){1,2})['"]/),
+      );
+      if (rustVersion) {
+        const rust = findItem(languages, 'rust');
+        if (rust && !rust.version) {
+          setVersion(rust, rustVersion, 'rust-toolchain.toml:channel');
+        }
+      }
+
+      const components = captureGroup(content.match(/components\s*=\s*\[([^\]]+)\]/s));
+      if (components?.match(/['"]clippy['"]/)) {
+        enrichOrCreateItem(qualityTools, 'clippy', 'rust-toolchain.toml:components.clippy');
+      }
+      if (components?.match(/['"]rustfmt['"]/)) {
+        enrichOrCreateItem(qualityTools, 'rustfmt', 'rust-toolchain.toml:components.rustfmt');
+      }
+    }
+  }
+
+  if (rootFiles.has('rust-toolchain')) {
+    const content = await safeRead(readFile, 'rust-toolchain');
+    if (content) {
+      const firstLine = content
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => line.length > 0 && !line.startsWith('#'));
+      const rustVersion = captureGroup(firstLine?.match(/^(\d+(?:\.\d+){1,2})/) ?? null);
+      if (rustVersion) {
+        const rust = findItem(languages, 'rust');
+        if (rust && !rust.version) {
+          setVersion(rust, rustVersion, 'rust-toolchain');
+        }
+      }
+    }
+  }
+
+  // Keep cargo root-first: if Cargo.toml does not exist at root, cargo must be absent.
+  if (!rootFiles.has('Cargo.toml')) {
+    const cargoIndex = buildTools.findIndex((item) => item.id === 'cargo');
+    if (cargoIndex !== -1) buildTools.splice(cargoIndex, 1);
+  }
+}
+
+/** Check if a requirements file declares a package at line start (ignore comments/options). */
+function hasRequirementEntry(requirementsContent: string, packageName: string): boolean {
+  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^\\s*${escaped}(?:\\[[^\\]]+\\])?(?:\\s*(?:[=~!<>].*)?)?$`, 'im');
+  return re.test(requirementsContent);
 }
 
 // ─── Artifact Detection (pom.xml / build.gradle) ─────────────────────────────
