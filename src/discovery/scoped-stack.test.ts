@@ -284,7 +284,9 @@ tokio = "1"
       const result = await extractScopedStack(allFiles, stackInfo, readFile);
       expect(result).toHaveLength(1);
       expect(result[0]!.path).toBe('apps/web');
-      expect(result[0]!.items.find((i) => i.id === 'node' && i.version === undefined)).toBeDefined();
+      expect(
+        result[0]!.items.find((i) => i.id === 'node' && i.version === undefined),
+      ).toBeDefined();
       expect(result[0]!.items.find((i) => i.id === 'custompm')).toBeUndefined();
     });
 
