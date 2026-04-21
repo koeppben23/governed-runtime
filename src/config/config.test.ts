@@ -12,6 +12,7 @@ import {
   createPolicySnapshot,
   policyFromSnapshot,
 } from '../config/policy';
+import { COMMANDS } from '../cli/templates';
 import {
   ProfileRegistry,
   baselineProfile,
@@ -1585,6 +1586,106 @@ describe('config/reasons', () => {
         });
       });
       expect(result.p99Ms).toBeLessThan(REASON_LOOKUP_MS);
+    });
+  });
+});
+
+describe('cli/templates/verification-output-contract', () => {
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it('/plan template contains ## Verification Plan section', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('## Verification Plan');
+    });
+
+    it('/plan template requires Source citation for verification checks', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/Source:/i);
+    });
+
+    it('/plan template requires NOT_VERIFIED fallback when no candidate available', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/NOT_VERIFIED/i);
+      expect(planTemplate).toMatch(/recovery/i);
+    });
+
+    it('/plan template requires seven sections', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toContain('## Objective');
+      expect(planTemplate).toContain('## Approach');
+      expect(planTemplate).toContain('## Steps');
+      expect(planTemplate).toContain('## Files to Modify');
+      expect(planTemplate).toContain('## Edge Cases');
+      expect(planTemplate).toContain('## Validation Criteria');
+      expect(planTemplate).toContain('## Verification Plan');
+    });
+
+    it('/implement template contains ## Verification Evidence section', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toContain('## Verification Evidence');
+    });
+
+    it('/implement template distinguishes Planned checks from Executed checks', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/Planned checks/i);
+      expect(implementTemplate).toMatch(/Executed checks/i);
+    });
+
+    it('/implement template requires NOT_VERIFIED for unexecuted checks', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/NOT_VERIFIED/i);
+    });
+
+    it('/review template checks verificationCandidates vs generic command mismatch', () => {
+      const reviewTemplate = COMMANDS['review.md'];
+      expect(reviewTemplate).toMatch(/verificationCandidates/i);
+      expect(reviewTemplate).toMatch(/generic commands/i);
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    it('/plan must NOT allow inventing verification commands', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/DO NOT invent verification commands/i);
+    });
+
+    it('/plan must NOT use generic commands when candidates exist', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/verificationCandidates/i);
+    });
+
+    it('/implement must NOT list checks as executed if not run', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(
+        /only list checks.*Executed checks.*if they were actually run/i,
+      );
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it('/plan self-review checklist includes Verification Plan', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/Verification Plan cites Source/i);
+    });
+
+    it('/implement review checklist includes Verification Evidence', () => {
+      const implementTemplate = COMMANDS['implement.md'];
+      expect(implementTemplate).toMatch(/Verification Evidence clearly distinguishes/i);
+    });
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('/plan has verification review step in self-review loop', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/verificationCandidates/i);
+    });
+
+    it('/review flags generic command usage as defect', () => {
+      const reviewTemplate = COMMANDS['review.md'];
+      expect(reviewTemplate).toMatch(/flag this as a defect/i);
     });
   });
 });

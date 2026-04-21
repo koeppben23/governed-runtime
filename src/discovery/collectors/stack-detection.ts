@@ -592,7 +592,10 @@ function collectRootBasenames(allFiles: readonly string[]): Set<string> {
  * nested manifests. For Python/Rust/Go ecosystem facts we require explicit root-level
  * evidence and remove unsupported tool detections.
  */
-function enforceRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
+function enforceRootFirstBuildTools(
+  buildTools: DetectedItem[],
+  rootFiles: ReadonlySet<string>,
+): void {
   const hasRootEvidence = (rule: { evidence: readonly string[] }): boolean =>
     rule.evidence.some((file) => rootFiles.has(file));
 
@@ -626,7 +629,10 @@ function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlyS
 }
 
 /** Return the first root-level file that exists from a list of candidates, or null. */
-function firstRootEvidence(rootFiles: ReadonlySet<string>, candidates: readonly string[]): string | null {
+function firstRootEvidence(
+  rootFiles: ReadonlySet<string>,
+  candidates: readonly string[],
+): string | null {
   for (const file of candidates) {
     if (rootFiles.has(file)) return file;
   }
@@ -657,7 +663,11 @@ function addRootFirstLanguageAndLintFacts(
     });
   }
 
-  const RUST_EVIDENCE_FILES: readonly string[] = ['Cargo.toml', 'rust-toolchain.toml', 'rust-toolchain'];
+  const RUST_EVIDENCE_FILES: readonly string[] = [
+    'Cargo.toml',
+    'rust-toolchain.toml',
+    'rust-toolchain',
+  ];
   const rustEvidence = firstRootEvidence(rootFiles, RUST_EVIDENCE_FILES);
   if (rustEvidence && !findItem(languages, 'rust')) {
     languages.push({
@@ -1008,7 +1018,14 @@ async function extractVersions(
   await extractFromGradleBuild(readFile, languages, frameworks);
   await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools, databases);
   await extractDatabasesFromDockerCompose(readFile, allFiles, databases);
-  await extractFromPythonRootFiles(readFile, allFiles, languages, testFrameworks, qualityTools, buildTools);
+  await extractFromPythonRootFiles(
+    readFile,
+    allFiles,
+    languages,
+    testFrameworks,
+    qualityTools,
+    buildTools,
+  );
   await extractFromRustRootFiles(readFile, allFiles, languages, qualityTools, buildTools);
   await extractFromGoMod(readFile, languages, allFiles);
 }
@@ -1360,9 +1377,7 @@ async function extractFromPythonRootFiles(
   if (rootFiles.has('pyproject.toml')) {
     const content = await safeRead(readFile, 'pyproject.toml');
     if (content) {
-      const requiresPython = captureGroup(
-        content.match(/requires-python\s*=\s*['"]([^'"]+)['"]/i),
-      );
+      const requiresPython = captureGroup(content.match(/requires-python\s*=\s*['"]([^'"]+)['"]/i));
       const pyVersion = captureGroup(requiresPython?.match(/(\d+(?:\.\d+){0,2})/) ?? null);
       if (pyVersion) {
         const python = findItem(languages, 'python');
@@ -1371,12 +1386,9 @@ async function extractFromPythonRootFiles(
         }
       }
 
-for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
+      for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
         const toolTable = new RegExp(`\\[tool\\.${rule.pkg}(?:\\.|\\]|$)`, 'i').test(content);
-        const dependencyEntry = new RegExp(
-          `["']${rule.pkg}[>=<~!:]+[^"']*["']`,
-          'i',
-        ).test(content);
+        const dependencyEntry = new RegExp(`["']${rule.pkg}[>=<~!:]+[^"']*["']`, 'i').test(content);
         if (!toolTable && !dependencyEntry) continue;
 
         const targetArray = rule.category === 'testFramework' ? testFrameworks : qualityTools;
@@ -1431,9 +1443,7 @@ async function extractFromRustRootFiles(
   if (rootFiles.has('rust-toolchain.toml')) {
     const content = await safeRead(readFile, 'rust-toolchain.toml');
     if (content) {
-      const rustVersion = captureGroup(
-        content.match(/channel\s*=\s*['"](\d+(?:\.\d+){1,2})['"]/),
-      );
+      const rustVersion = captureGroup(content.match(/channel\s*=\s*['"](\d+(?:\.\d+){1,2})['"]/));
       if (rustVersion) {
         const rust = findItem(languages, 'rust');
         if (rust && !rust.version) {

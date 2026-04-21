@@ -183,28 +183,31 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 
 2. Read the ticket text from the status response.
 3. Write a detailed implementation plan in markdown. The plan MUST contain ALL of the following sections with these exact headings:
-   - \`## Objective\` — One to three sentences: what is being built and why.
-   - \`## Approach\` — Technical strategy. Name specific patterns, libraries, or architecture decisions.
-   - \`## Steps\` — Numbered list. Each step MUST name at least one specific file path AND describe the concrete change (not "implement the feature" but "add function X to file Y that does Z").
-   - \`## Files to Modify\` — Complete list of file paths that will be created, modified, or deleted.
-   - \`## Edge Cases\` — Numbered list of edge cases. Each entry names the scenario and the handling strategy.
-   - \`## Validation Criteria\` — Numbered list of verifiable conditions. Each entry is a concrete check (e.g., "running \`npm test\` passes", "function X returns Y when given Z").
+    - \`## Objective\` — One to three sentences: what is being built and why.
+    - \`## Approach\` — Technical strategy. Name specific patterns, libraries, or architecture decisions.
+    - \`## Steps\` — Numbered list. Each step MUST name at least one specific file path AND describe the concrete change (not "implement the feature" but "add function X to file Y that does Z").
+    - \`## Files to Modify\` — Complete list of file paths that will be created, modified, or deleted.
+    - \`## Edge Cases\` — Numbered list of edge cases. Each entry names the scenario and the handling strategy.
+    - \`## Validation Criteria\` — Numbered list of verifiable conditions. Each entry is a concrete check (e.g., "running \`npm test\` passes", "function X returns Y when given Z").
+    - \`## Verification Plan\` — Numbered list of planned verification checks. For each check, cite the command AND its Source (e.g., "Source: package.json:scripts.test").
 4. Call \`flowguard_plan\` with the argument \`planText\` set to the full plan markdown. Do NOT set \`selfReviewVerdict\`.
 5. Read the response. It will say self-review is needed.
 
 ### Phase 3: Self-Review Loop
 
 6. Review the plan against this checklist. For EACH item, determine pass or fail:
-   - [ ] Every section heading listed in Phase 2 step 3 is present.
-   - [ ] The Objective section matches the ticket requirements (no scope creep, no missing requirements).
-   - [ ] Every step in the Steps section names at least one file path.
-   - [ ] Every step describes a concrete, specific change (not vague or generic).
-   - [ ] The Steps are in a logical dependency order (no step depends on a later step).
-   - [ ] The Files to Modify list is consistent with the Steps section (no files mentioned in Steps but missing from the list, and vice versa).
-   - [ ] At least 2 edge cases are identified.
-   - [ ] Each edge case has a concrete handling strategy (not "handle gracefully" but specific behavior).
-   - [ ] At least 2 validation criteria are listed.
-   - [ ] Each validation criterion is mechanically verifiable (could be checked by running a command or inspecting output).
+    - [ ] Every section heading listed in Phase 2 step 3 is present (including Verification Plan).
+    - [ ] The Objective section matches the ticket requirements (no scope creep, no missing requirements).
+    - [ ] Every step in the Steps section names at least one file path.
+    - [ ] Every step describes a concrete, specific change (not vague or generic).
+    - [ ] The Steps are in a logical dependency order (no step depends on a later step).
+    - [ ] The Files to Modify list is consistent with the Steps section (no files mentioned in Steps but missing from the list, and vice versa).
+    - [ ] At least 2 edge cases are identified.
+    - [ ] Each edge case has a concrete handling strategy (not "handle gracefully" but specific behavior).
+    - [ ] At least 2 validation criteria are listed.
+    - [ ] Each validation criterion is mechanically verifiable (could be checked by running a command or inspecting output).
+    - [ ] Verification Plan cites Source for each check OR states NOT_VERIFIED with recovery steps.
+    - [ ] Verification Plan does not use generic commands when more specific candidates exist in flowguard_status.verificationCandidates.
 7. Based on your review:
    - If ALL checklist items pass: Call \`flowguard_plan\` with the argument \`selfReviewVerdict\` set to \`"approve"\`. Do NOT set \`planText\`.
    - If ANY checklist item fails: Revise the plan to fix all failing items. Call \`flowguard_plan\` with \`selfReviewVerdict\` set to \`"changes_requested"\` AND \`planText\` set to the complete revised plan.
@@ -218,7 +221,10 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 - DO NOT skip the self-review. You MUST run the checklist at least once.
 - DO NOT approve a plan that fails any checklist item.
 - When providing a revised plan, you MUST include the COMPLETE plan text, not a diff or partial update.
-- The plan MUST include all six sections listed above.
+- The plan MUST include all seven sections listed above (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria, Verification Plan).
+- In Verification Plan, use flowguard_status.verificationCandidates when available. Cite the specific command AND its Source (e.g., "Source: package.json:scripts.test").
+- If no repo-native verification candidate is available, state "NOT_VERIFIED" and provide recovery steps (e.g., "inspect package scripts / build wrapper / CI config").
+- DO NOT invent verification commands. Always cite the Source when using verificationCandidates.
 - DO NOT call any implementation tools (write, edit, bash for code changes). Planning only.
 - The self-review loop runs up to 3 iterations maximum.
 - DO NOT use the \`question\` tool or present selectable choices.
@@ -232,7 +238,8 @@ Generate a comprehensive implementation plan for the current ticket, then self-r
 
 ## Done-when
 
-- Plan contains all 6 required sections (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria).
+- Plan contains all 7 required sections (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria, Verification Plan).
+- Verification Plan cites Source for each check OR states NOT_VERIFIED with recovery steps.
 - Self-review loop has converged (approved or max 3 iterations reached).
 - Phase has advanced to PLAN_REVIEW.
 - Response ends with exactly one \`Next action:\` line.
@@ -371,27 +378,37 @@ Implement the approved plan and review the implementation.
    - It will advance the phase to IMPL_REVIEW.
 5. Read the response. It will list the changed files and say a review is needed.
 
-### Phase 3: Implementation Review Loop
+### Phase 3: Record Verification Evidence
 
-6. Review the implementation against this checklist. For EACH item, determine pass or fail:
-   - [ ] Every step from the plan has a corresponding code change (no steps were skipped).
-   - [ ] Every file listed in the plan's "Files to Modify" section was actually modified (or the omission is justified).
-   - [ ] No files were modified that are NOT in the plan (unless they are direct dependencies like imports or config).
-   - [ ] Each edge case from the plan has corresponding handling code.
-   - [ ] No obvious bugs: null checks present where needed, error handling in place, no typos in identifiers.
-   - [ ] Code follows the project's existing conventions (naming, formatting, file organization).
-   - [ ] Each validation criterion from the plan is testable against the current code.
-7. Based on your review:
-   - If ALL checklist items pass: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"approve"\`.
-   - If ANY checklist item fails: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"changes_requested"\`. Then make the necessary code changes using read/write/bash tools to fix the failing items. After making changes, call \`flowguard_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
-8. Read the response:
-   - If review converged (the response says "converged" or the phase changed to EVIDENCE_REVIEW): Report the final status to the user.
-   - If another review iteration is needed: Go back to step 6.
-9. Report the final status to the user.
+6. After implementation, write a \`## Verification Evidence\` section in your response that clearly distinguishes:
+    - **Planned checks**: List each check from the plan's Verification Plan section.
+    - **Executed checks**: List ONLY the checks you actually ran. If you did not run a check, do NOT list it — mark it as NOT_VERIFIED.
+    - If no checks were executed, state "NOT_VERIFIED: No verification was run."
+
+### Phase 4: Implementation Review Loop
+
+7. Review the implementation against this checklist. For EACH item, determine pass or fail:
+    - [ ] Every step from the plan has a corresponding code change (no steps were skipped).
+    - [ ] Every file listed in the plan's "Files to Modify" section was actually modified (or the omission is justified).
+    - [ ] No files were modified that are NOT in the plan (unless they are direct dependencies like imports or config).
+    - [ ] Each edge case from the plan has corresponding handling code.
+    - [ ] No obvious bugs: null checks present where needed, error handling in place, no typos in identifiers.
+    - [ ] Code follows the project's existing conventions (naming, formatting, file organization).
+    - [ ] Each validation criterion from the plan is testable against the current code.
+    - [ ] Verification Evidence clearly distinguishes Planned checks from Executed checks.
+    - [ ] Unexecuted checks are marked as NOT_VERIFIED.
+8. Based on your review:
+    - If ALL checklist items pass: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"approve"\`.
+    - If ANY checklist item fails: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"changes_requested"\`. Then make the necessary code changes using read/write/bash tools to fix the failing items. After making changes, call \`flowguard_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
+9. Read the response:
+    - If review converged (the response says "converged" or the phase changed to EVIDENCE_REVIEW): Report the final status to the user.
+    - If another review iteration is needed: Go back to step 7.
+10. Report the final status to the user.
 
 ## Constraints
 
 - Follow the plan exactly. Do not deviate from the approved plan.
+- In Verification Evidence, only list checks in "Executed checks" if they were actually run. Otherwise mark as NOT_VERIFIED.
 - DO NOT skip the implementation review. You MUST run the checklist at least once.
 - When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
 - Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
@@ -409,6 +426,8 @@ Implement the approved plan and review the implementation.
 ## Done-when
 
 - All plan steps are implemented as code changes.
+- Verification Evidence section clearly distinguishes Planned checks from Executed checks.
+- Unexecuted checks are marked as NOT_VERIFIED.
 - Implementation evidence is recorded via flowguard_implement.
 - Implementation review loop has converged (approved or max iterations).
 - Phase has advanced to EVIDENCE_REVIEW.
@@ -610,6 +629,17 @@ Start the compliance review flow for the current FlowGuard session.
 
 4. If there are warnings or issues, explain what actions could address them.
 
+## Verification Review Check
+
+When reviewing implementation evidence or plan verification, check:
+
+- Were verificationCandidates from flowguard_status used when available?
+- Were generic commands (e.g., "npm test") suggested despite more specific repo-native candidates existing?
+- Were executed checks clearly distinguished from planned checks?
+- Are unexecuted checks marked as NOT_VERIFIED?
+
+If generic commands are used when specific candidates exist, flag this as a defect in the report.
+
 ## Constraints
 
 - This command starts a standalone flow. It transitions the session through READY → REVIEW → REVIEW_COMPLETE.
@@ -625,8 +655,9 @@ Start the compliance review flow for the current FlowGuard session.
 ## Done-when
 
 - Compliance report is generated and presented to the user.
-- Phase has reached REVIEW_COMPLETE.
+- Verification review checked for repo-native candidates vs generic command mismatches.
 - Findings and actionable recommendations are shown.
+- Phase has reached REVIEW_COMPLETE.
 - Response ends with a \`Next action:\` line.
 `,
 

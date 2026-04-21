@@ -75,6 +75,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
 - **Verification command planner** — session state surfaces `verificationCandidates`: repo-native, evidence-backed verification command candidates derived from detected stack + manifests (advisory only, never auto-executed)
+- **Verification output contract** — `/plan` requires `## Verification Plan` with Source citation; `/implement` requires `## Verification Evidence` distinguishing Planned from Executed checks; `/review` checks for verificationCandidates vs generic command mismatches
 
 ### Archive Hardening
 
