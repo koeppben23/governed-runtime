@@ -26,6 +26,7 @@
 
 import * as path from 'node:path';
 import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types';
+import { getRootBasename } from '../repo-paths';
 
 // ─── Detection Rules ──────────────────────────────────────────────────────────
 
@@ -502,8 +503,9 @@ const LOCKFILE_RULES: ReadonlyArray<{
 /**
  * Refine the npm build tool to the actual package manager based on root-level lockfiles.
  *
- * Only considers root-level files (no `/` or `\` in path) to avoid false positives
- * from nested lockfiles in monorepo subdirectories (e.g. packages/app/pnpm-lock.yaml).
+ * Only considers root-level files using shared repo-path normalization helpers
+ * to avoid false positives from nested lockfiles in monorepo subdirectories
+ * (e.g. packages/app/pnpm-lock.yaml).
  *
  * Scans allFiles for known lockfile basenames at root level. If a non-npm lockfile
  * is found, replaces the 'npm' build tool with the actual package manager.
@@ -519,8 +521,12 @@ function refineBuildToolFromLockfiles(
   const npmIndex = buildTools.findIndex((t) => t.id === 'npm');
   if (npmIndex === -1) return; // No npm build tool to refine
 
-  // Only root-level files: no path separator means it's at project root
-  const rootFiles = new Set(allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
+  // Root-level files only (normalized, cross-platform)
+  const rootFiles = new Set<string>();
+  for (const filePath of allFiles) {
+    const rootBase = getRootBasename(filePath);
+    if (rootBase) rootFiles.add(rootBase);
+  }
 
   // Check for non-npm lockfiles at root (first match wins)
   for (const rule of LOCKFILE_RULES) {
@@ -1445,10 +1451,8 @@ async function extractDatabasesFromDockerCompose(
   databases: DetectedItem[],
 ): Promise<void> {
   const composeFiles = allFiles.filter((filePath) => {
-    const normalized = filePath.replaceAll('\\', '/');
-    // Root-first: ignore nested compose files from subprojects/examples/fixtures.
-    if (normalized.includes('/')) return false;
-    const base = path.basename(normalized).toLowerCase();
+    const base = getRootBasename(filePath)?.toLowerCase();
+    if (!base) return false;
     return /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(base);
   });
 
