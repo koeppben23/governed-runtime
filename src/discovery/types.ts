@@ -356,7 +356,7 @@ export const DiscoverySummarySchema = z.object({
 });
 export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
 
-// ─── Detected Stack (compact version summary for status) ──────────────────────
+// ─── Detected Stack (compact stack evidence for status) ───────────────────────
 
 /**
  * Detected stack category.
@@ -396,20 +396,67 @@ export const DetectedStackVersionSchema = z.object({
 export type DetectedStackVersion = z.infer<typeof DetectedStackVersionSchema>;
 
 /**
- * Compact detected stack summary embedded in SessionState.
+ * A single detected stack item — version optional.
+ *
+ * Surfaces ALL items recognized by stack detection, regardless of whether
+ * a version could be extracted. Versioned items carry `version`; unversioned
+ * items (e.g., vitest, maven, eslint) appear with `version` omitted.
+ *
+ * Derived evidence — NOT SSOT.
+ */
+export const DetectedStackItemSchema = z.object({
+  /** Category of this item (determines sort order). */
+  kind: DetectedStackTargetSchema,
+  /** Stack item identifier (e.g., "java", "vitest", "maven"). */
+  id: z.string().min(1),
+  /** Detected version string, if available. */
+  version: z.string().min(1).optional(),
+  /** Single provenance string (e.g., "pom.xml:<java.version>"). */
+  evidence: z.string().optional(),
+});
+export type DetectedStackItem = z.infer<typeof DetectedStackItemSchema>;
+
+/**
+ * A compiler/runtime target entry (e.g., ES2022 from tsconfig).
+ *
+ * Derived evidence — NOT SSOT.
+ */
+export const DetectedStackTargetEntrySchema = z.object({
+  /** Always 'compilerTarget' for now; extensible for future target kinds. */
+  kind: z.literal('compilerTarget'),
+  /** Identifier (e.g., "typescript", "java"). */
+  id: z.string().min(1),
+  /** Target value (e.g., "ES2022", "21"). */
+  value: z.string().min(1),
+  /** Optional provenance string. */
+  evidence: z.string().optional(),
+});
+export type DetectedStackTargetEntry = z.infer<typeof DetectedStackTargetEntrySchema>;
+
+/**
+ * Compact detected stack evidence embedded in SessionState.
  *
  * Derived evidence — NOT SSOT. The authoritative stack data lives in
  * DiscoveryResult.stack. This structure provides a compact, deterministic
- * projection of versioned items for surfacing in flowguard_status.
+ * projection of detected stack items for surfacing in flowguard_status.
  *
- * `summary` is a pre-formatted string: "java=21, spring-boot=3.4.1, node=20.11.0"
- * sorted by category (language → framework → runtime → buildTool), then by id.
+ * `summary` is a pre-formatted string: "java=21, spring-boot=3.4.1, maven, vitest"
+ * sorted by category (language → framework → runtime → buildTool → tool →
+ * testFramework → qualityTool), then by id. Versioned: `id=version`, unversioned: `id`.
+ *
+ * `items` contains ALL detected items (version optional).
+ * `versions` contains only versioned items (backward compatible).
+ * `targets` contains compiler/runtime targets when detected.
  */
 export const DetectedStackSchema = z.object({
   /** Pre-formatted summary string for quick injection into status. */
   summary: z.string(),
-  /** Individual version entries for structured access. */
+  /** ALL detected items — version optional. */
+  items: z.array(DetectedStackItemSchema),
+  /** Versioned items only (backward compatible). */
   versions: z.array(DetectedStackVersionSchema),
+  /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
+  targets: z.array(DetectedStackTargetEntrySchema).optional(),
 });
 export type DetectedStack = z.infer<typeof DetectedStackSchema>;
 

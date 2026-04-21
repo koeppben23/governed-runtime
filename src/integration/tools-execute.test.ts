@@ -131,11 +131,19 @@ describe('status', () => {
       expect(typeof comp.summary).toBe('object');
     });
 
-    it('returns detectedStack as null when no versions detected', async () => {
+    it('returns detectedStack with unversioned items when no versions detected', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({}, ctx));
-      // Temp workspace has no manifest files — detectedStack should be null
-      expect(result.detectedStack).toBeNull();
+      // Temp workspace has no manifest files on disk — but default mock signals
+      // include .ts files and package.json, so stack detection finds unversioned
+      // items (typescript, npm). P10: unversioned items are surfaced.
+      expect(result.detectedStack).not.toBeNull();
+      const ds = result.detectedStack as Record<string, unknown>;
+      expect(Array.isArray(ds.items)).toBe(true);
+      expect((ds.items as unknown[]).length).toBeGreaterThan(0);
+      // No versions detected — versions[] should be empty
+      expect(Array.isArray(ds.versions)).toBe(true);
+      expect((ds.versions as unknown[]).length).toBe(0);
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
@@ -151,6 +159,10 @@ describe('status', () => {
         ...state!,
         detectedStack: {
           summary: 'java=21, spring-boot=3.4.1',
+          items: [
+            { kind: 'language', id: 'java', version: '21', evidence: 'pom.xml:<java.version>' },
+            { kind: 'framework', id: 'spring-boot', version: '3.4.1' },
+          ],
           versions: [
             { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
             { id: 'spring-boot', version: '3.4.1', target: 'framework' },
@@ -164,7 +176,22 @@ describe('status', () => {
       expect(typeof result.detectedStack).toBe('object');
       const ds = result.detectedStack as Record<string, unknown>;
       expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
+      expect(Array.isArray(ds.items)).toBe(true);
       expect(Array.isArray(ds.versions)).toBe(true);
+
+      const items = ds.items as Array<Record<string, unknown>>;
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({
+        kind: 'language',
+        id: 'java',
+        version: '21',
+        evidence: 'pom.xml:<java.version>',
+      });
+      expect(items[1]).toMatchObject({
+        kind: 'framework',
+        id: 'spring-boot',
+        version: '3.4.1',
+      });
 
       const versions = ds.versions as Array<Record<string, unknown>>;
       expect(versions).toHaveLength(2);

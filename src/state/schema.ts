@@ -250,13 +250,14 @@ export const SessionState = z.object({
   discoverySummary: DiscoverySummarySchema.nullable().optional(),
 
   /**
-   * Compact detected stack versions for surfacing in flowguard_status.
+   * Compact detected stack evidence for surfacing in flowguard_status.
    *
-   * Derived evidence — NOT SSOT. The authoritative version data lives in
-   * DiscoveryResult.stack. This is a compact projection of items that have
-   * a detected version string, sorted deterministically by category then id.
+   * Derived evidence — NOT SSOT. The authoritative stack data lives in
+   * DiscoveryResult.stack. This is a compact projection of all detected
+   * stack items (versioned and unversioned), sorted deterministically
+   * by category then id.
    *
-   * Null when no versioned items were found or for pre-discovery sessions.
+   * Null when no items were detected or for pre-discovery sessions.
    */
   detectedStack: DetectedStackSchema.nullable().optional(),
 

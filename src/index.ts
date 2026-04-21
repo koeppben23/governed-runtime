@@ -314,6 +314,8 @@ export {
   type DetectedStack,
   type DetectedStackVersion,
   type DetectedStackTarget,
+  type DetectedStackItem,
+  type DetectedStackTargetEntry,
   type CollectorInput,
   type CollectorOutput,
   // Schemas
@@ -327,6 +329,8 @@ export {
   DetectedStackSchema,
   DetectedStackVersionSchema,
   DetectedStackTargetSchema,
+  DetectedStackItemSchema,
+  DetectedStackTargetEntrySchema,
   // Constants
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,

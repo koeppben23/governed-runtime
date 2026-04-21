@@ -24,7 +24,9 @@ import type {
   CollectorInput,
   CollectorStatus,
   DetectedStack,
+  DetectedStackItem,
   DetectedStackTarget,
+  DetectedStackTargetEntry,
   DetectedStackVersion,
   DiscoveryResult,
   DiscoverySummary,
@@ -223,18 +225,25 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
 /**
  * Extract a compact detected stack from a full DiscoveryResult.
  *
- * Returns only items that have a `.version` string. Items are sorted
+ * Collects ALL detected items from all 7 stack categories. Items are sorted
  * deterministically: by category (language → framework → runtime → buildTool
  * → tool → testFramework → qualityTool), then by id within each category.
  *
- * Derived evidence — NOT SSOT. The authoritative version data lives in
+ * - `items[]` contains every detected item (version optional).
+ * - `versions[]` contains only items with a `.version` (backward compatible).
+ * - `targets[]` contains compiler/runtime target entries when present.
+ * - `summary` uses `id=version` for versioned items, `id` for unversioned.
+ *
+ * Derived evidence — NOT SSOT. The authoritative stack data lives in
  * `DiscoveryResult.stack`. This is a compact projection for
  * `flowguard_status.detectedStack`.
  *
- * Returns null when no versioned items are found.
+ * Returns null when no items are detected at all (empty input).
  */
 export function extractDetectedStack(result: DiscoveryResult): DetectedStack | null {
-  const entries: DetectedStackVersion[] = [];
+  const items: DetectedStackItem[] = [];
+  const versionEntries: DetectedStackVersion[] = [];
+  const targets: DetectedStackTargetEntry[] = [];
 
   const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
     { items: result.stack.languages, target: 'language' },
@@ -246,31 +255,67 @@ export function extractDetectedStack(result: DiscoveryResult): DetectedStack | n
     { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
   ];
 
-  for (const { items, target } of categories) {
-    for (const item of items) {
+  for (const { items: categoryItems, target } of categories) {
+    for (const item of categoryItems) {
+      // Pick one evidence string: versionEvidence > evidence[0]
+      const ev = item.versionEvidence ?? item.evidence[0];
+
+      // All items go into items[] — version optional
+      items.push({
+        kind: target,
+        id: item.id,
+        ...(item.version ? { version: item.version } : {}),
+        ...(ev ? { evidence: ev } : {}),
+      });
+
+      // Only versioned items go into versions[] (backward compat)
       if (item.version) {
-        entries.push({
+        versionEntries.push({
           id: item.id,
           version: item.version,
           target,
           ...(item.versionEvidence ? { evidence: item.versionEvidence } : {}),
         });
       }
+
+      // Compiler targets go into targets[]
+      if (item.compilerTarget) {
+        targets.push({
+          kind: 'compilerTarget',
+          id: item.id,
+          value: item.compilerTarget,
+          ...(item.compilerTargetEvidence ? { evidence: item.compilerTargetEvidence } : {}),
+        });
+      }
     }
   }
 
-  if (entries.length === 0) return null;
+  if (items.length === 0) return null;
 
-  // Deterministic sort: category order, then alphabetical by id
-  entries.sort((a, b) => {
-    const orderDiff = TARGET_ORDER[a.target] - TARGET_ORDER[b.target];
-    if (orderDiff !== 0) return orderDiff;
-    return a.id.localeCompare(b.id);
-  });
+  // Deterministic sort helper
+  const sortByTargetThenId = <T extends { id: string }>(
+    arr: T[],
+    getTarget: (item: T) => DetectedStackTarget,
+  ): void => {
+    arr.sort((a, b) => {
+      const orderDiff = TARGET_ORDER[getTarget(a)] - TARGET_ORDER[getTarget(b)];
+      if (orderDiff !== 0) return orderDiff;
+      return a.id.localeCompare(b.id);
+    });
+  };
 
-  const summary = entries.map((e) => `${e.id}=${e.version}`).join(', ');
+  sortByTargetThenId(items, (i) => i.kind);
+  sortByTargetThenId(versionEntries, (v) => v.target);
 
-  return { summary, versions: entries };
+  // Summary: versioned "id=version", unversioned "id"
+  const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
+
+  return {
+    summary,
+    items,
+    versions: versionEntries,
+    ...(targets.length > 0 ? { targets } : {}),
+  };
 }
 
 /**

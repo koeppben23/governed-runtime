@@ -183,6 +183,10 @@ describe('discovery/types', () => {
     it('DetectedStack validates correct data', () => {
       const result = DetectedStackSchema.safeParse({
         summary: 'java=21, spring-boot=3.4.1',
+        items: [
+          { kind: 'language', id: 'java', version: '21' },
+          { kind: 'framework', id: 'spring-boot', version: '3.4.1', evidence: 'pom.xml' },
+        ],
         versions: [
           { id: 'java', version: '21', target: 'language' },
           { id: 'spring-boot', version: '3.4.1', target: 'framework', evidence: 'pom.xml' },
@@ -2258,15 +2262,16 @@ describe('discovery/orchestrator', () => {
 
       // TS project should have at least typescript with a version
       if (ds === null) {
-        // If no versions detected, that's valid — but verify null contract
+        // If no items detected, that's valid — but verify null contract
         expect(ds).toBeNull();
         return;
       }
 
       expect(ds.summary).toBeTruthy();
-      expect(ds.versions.length).toBeGreaterThan(0);
+      expect(ds.items.length).toBeGreaterThan(0);
+      expect(ds.versions.length).toBeGreaterThanOrEqual(0);
 
-      // Every entry must have id, version, and target
+      // Every versioned entry must have id, version, and target
       for (const v of ds.versions) {
         expect(v.id.length).toBeGreaterThan(0);
         expect(v.version.length).toBeGreaterThan(0);
@@ -2281,16 +2286,32 @@ describe('discovery/orchestrator', () => {
         ]).toContain(v.target);
       }
 
-      // Summary format: "id=version, id=version"
-      expect(ds.summary).toMatch(/^\w[\w-]*=\S+/);
+      // Every item must have id and kind
+      for (const item of ds.items) {
+        expect(item.id.length).toBeGreaterThan(0);
+        expect([
+          'language',
+          'framework',
+          'runtime',
+          'buildTool',
+          'tool',
+          'testFramework',
+          'qualityTool',
+        ]).toContain(item.kind);
+      }
+
+      // Summary format: each segment is "id=version" or "id" (comma-separated)
+      for (const segment of ds.summary.split(', ')) {
+        expect(segment).toMatch(/^[\w][\w-]*(=\S+)?$/);
+      }
     });
 
-    it('extractDetectedStack summary matches versions array', async () => {
+    it('extractDetectedStack summary matches items array', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
       const ds = extractDetectedStack(result);
       if (!ds) return;
 
-      const rebuilt = ds.versions.map((v) => `${v.id}=${v.version}`).join(', ');
+      const rebuilt = ds.items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
       expect(ds.summary).toBe(rebuilt);
     });
   });
@@ -2345,10 +2366,20 @@ describe('discovery/orchestrator', () => {
       result.stack.buildTools = [
         { id: 'npm', confidence: 0.9, classification: 'fact', evidence: [], version: '10.2.4' },
       ];
+      // Clear remaining categories to isolate the test
+      result.stack.testFrameworks = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
 
       const ds = extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions.map((v) => v.target)).toEqual([
+        'language',
+        'framework',
+        'runtime',
+        'buildTool',
+      ]);
+      expect(ds!.items.map((i) => i.kind)).toEqual([
         'language',
         'framework',
         'runtime',
@@ -2372,10 +2403,14 @@ describe('discovery/orchestrator', () => {
       result.stack.frameworks = [];
       result.stack.runtimes = [];
       result.stack.buildTools = [];
+      result.stack.testFrameworks = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
 
       const ds = extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions[0]!.evidence).toBe('pom.xml:<java.version>');
+      expect(ds!.items[0]!.evidence).toBe('pom.xml:<java.version>');
     });
 
     it('extractDetectedStack omits evidence when versionEvidence is absent', async () => {
@@ -2386,10 +2421,141 @@ describe('discovery/orchestrator', () => {
       result.stack.frameworks = [];
       result.stack.runtimes = [];
       result.stack.buildTools = [];
+      result.stack.testFrameworks = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
 
       const ds = extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions[0]!.evidence).toBeUndefined();
+    });
+
+    it('extractDetectedStack surfaces unversioned items in items[] but not versions[]', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      // Inject a versioned language + unversioned test framework
+      result.stack.languages = [
+        {
+          id: 'java',
+          confidence: 0.9,
+          classification: 'fact',
+          evidence: ['pom.xml'],
+          version: '21',
+        },
+      ];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+      result.stack.testFrameworks = [
+        {
+          id: 'vitest',
+          confidence: 0.7,
+          classification: 'derived_signal',
+          evidence: ['vitest.config.ts'],
+        },
+      ];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+
+      // items[] has both
+      expect(ds!.items).toHaveLength(2);
+      expect(ds!.items[0]).toMatchObject({ kind: 'language', id: 'java', version: '21' });
+      expect(ds!.items[1]).toMatchObject({ kind: 'testFramework', id: 'vitest' });
+      expect(ds!.items[1]!.version).toBeUndefined();
+
+      // versions[] has only versioned item
+      expect(ds!.versions).toHaveLength(1);
+      expect(ds!.versions[0]).toMatchObject({ id: 'java', version: '21', target: 'language' });
+
+      // summary: "java=21, vitest"
+      expect(ds!.summary).toBe('java=21, vitest');
+    });
+
+    it('extractDetectedStack populates targets[] from compilerTarget', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      result.stack.languages = [
+        {
+          id: 'typescript',
+          confidence: 0.95,
+          classification: 'fact',
+          evidence: ['tsconfig.json'],
+          version: '5.3.3',
+          compilerTarget: 'ES2022',
+          compilerTargetEvidence: 'tsconfig.json:compilerOptions.target',
+        },
+      ];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+      result.stack.testFrameworks = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.targets).toBeDefined();
+      expect(ds!.targets).toHaveLength(1);
+      expect(ds!.targets![0]).toMatchObject({
+        kind: 'compilerTarget',
+        id: 'typescript',
+        value: 'ES2022',
+        evidence: 'tsconfig.json:compilerOptions.target',
+      });
+    });
+
+    it('extractDetectedStack omits targets[] when no compilerTarget exists', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      result.stack.languages = [
+        { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
+      ];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+      result.stack.testFrameworks = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.targets).toBeUndefined();
+    });
+
+    it('extractDetectedStack uses evidence[0] when versionEvidence is absent', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      result.stack.testFrameworks = [
+        {
+          id: 'vitest',
+          confidence: 0.7,
+          classification: 'derived_signal',
+          evidence: ['vitest.config.ts'],
+        },
+      ];
+      result.stack.languages = [];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+      result.stack.tools = [];
+      result.stack.qualityTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.items[0]!.evidence).toBe('vitest.config.ts');
+    });
+
+    it('extractDetectedStack returns null for completely empty stack', async () => {
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+
+      const result = await runDiscovery(EMPTY_INPUT);
+      // Double-check: all categories are empty
+      expect(result.stack.languages).toHaveLength(0);
+      expect(result.stack.frameworks).toHaveLength(0);
+      expect(result.stack.testFrameworks).toHaveLength(0);
+
+      const ds = extractDetectedStack(result);
+      expect(ds).toBeNull();
     });
 
     it('validation hints derive typecheck command from tsconfig', async () => {

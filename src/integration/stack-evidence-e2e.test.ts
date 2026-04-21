@@ -129,10 +129,10 @@ const TS_TSCONFIG = JSON.stringify({ compilerOptions: { target: 'ES2022', strict
  * version-evidence rule reached profileRules. Must NOT span a line break
  * (template literals preserve \n — the "line-break gotcha").
  *
- * "claims without repository evidence" is unique to DETECTED_STACK_INSTRUCTION
- * and does not appear in any profile's base content.
+ * "version-specific claims without repository evidence" is unique to
+ * DETECTED_STACK_INSTRUCTION and does not appear in any profile's base content.
  */
-const VERSION_EVIDENCE_RULE = 'claims without repository evidence';
+const VERSION_EVIDENCE_RULE = 'version-specific claims without repository evidence';
 
 // =============================================================================
 // Tests
@@ -169,6 +169,18 @@ describe('stack-evidence E2E', () => {
       const ds = state!.detectedStack!;
       expect(ds.summary).toContain('java=21');
       expect(ds.summary).toContain('spring-boot=3.4.1');
+
+      // items[] contains ALL detected items (versioned + unversioned)
+      expect(Array.isArray(ds.items)).toBe(true);
+      expect(ds.items.length).toBeGreaterThanOrEqual(2);
+      expect(ds.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'language', id: 'java', version: '21' }),
+          expect.objectContaining({ kind: 'framework', id: 'spring-boot', version: '3.4.1' }),
+        ]),
+      );
+
+      // versions[] backward compat — only versioned items
       expect(ds.versions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -192,6 +204,8 @@ describe('stack-evidence E2E', () => {
 
       const statusDs = statusResult.detectedStack as Record<string, unknown>;
       expect(statusDs.summary).toContain('java=21');
+      expect(Array.isArray(statusDs.items)).toBe(true);
+      expect((statusDs.items as unknown[]).length).toBeGreaterThanOrEqual(2);
       expect(Array.isArray(statusDs.versions)).toBe(true);
       expect((statusDs.versions as unknown[]).length).toBeGreaterThanOrEqual(2);
 
@@ -254,6 +268,15 @@ describe('stack-evidence E2E', () => {
 
       const ds = state!.detectedStack!;
       expect(ds.summary).toContain('node=20.11.0');
+      expect(ds.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'runtime',
+            id: 'node',
+            version: '20.11.0',
+          }),
+        ]),
+      );
       expect(ds.versions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -270,6 +293,7 @@ describe('stack-evidence E2E', () => {
       expect(statusResult.detectedStack).not.toBeNull();
       const statusDs = statusResult.detectedStack as Record<string, unknown>;
       expect(statusDs.summary).toContain('node=20.11.0');
+      expect(Array.isArray(statusDs.items)).toBe(true);
       expect(Array.isArray(statusDs.versions)).toBe(true);
 
       // 7. PLAN phase profileRules contains version-evidence rule
@@ -282,20 +306,29 @@ describe('stack-evidence E2E', () => {
   // ─── BAD ─────────────────────────────────────────────────────────────────
 
   describe('BAD', () => {
-    it('no manifest files: detectedStack is null', async () => {
-      // Default mock signals list tsconfig.json + package.json but they
-      // do not exist on disk — readFile returns undefined for each.
+    it('no manifest files: detectedStack has unversioned items only', async () => {
+      // Default mock signals list tsconfig.json + package.json + src/index.ts
+      // but manifests do not exist on disk — readFile returns undefined for
+      // version-bearing content. Stack detection still recognizes unversioned
+      // items (typescript from .ts files, npm from package.json presence).
       await hydrateSession();
 
-      // Verify state
+      // Verify state — P10: unversioned items are surfaced
       const sessDir = await resolveSessionDir();
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
-      expect(state!.detectedStack).toBeNull();
+      expect(state!.detectedStack).not.toBeNull();
 
-      // Verify status surfaces null (not empty object, not undefined)
+      const ds = state!.detectedStack!;
+      expect(ds.items.length).toBeGreaterThan(0);
+      expect(ds.versions).toHaveLength(0); // no versioned items
+
+      // Verify status surfaces full object (not null)
       const result = await callStatus();
-      expect(result.detectedStack).toBeNull();
+      expect(result.detectedStack).not.toBeNull();
+      const statusDs = result.detectedStack as Record<string, unknown>;
+      expect(Array.isArray(statusDs.items)).toBe(true);
+      expect((statusDs.items as unknown[]).length).toBeGreaterThan(0);
     });
   });
 
@@ -323,15 +356,47 @@ describe('stack-evidence E2E', () => {
       // Structural shape assertions
       const obj = ds as Record<string, unknown>;
       expect(typeof obj.summary).toBe('string');
+      expect(Array.isArray(obj.items)).toBe(true);
       expect(Array.isArray(obj.versions)).toBe(true);
 
-      // Each version entry has required fields
+      // Each item has required fields
+      const items = obj.items as Array<Record<string, unknown>>;
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) {
+        expect(typeof item.id).toBe('string');
+        expect([
+          'language',
+          'framework',
+          'runtime',
+          'buildTool',
+          'tool',
+          'testFramework',
+          'qualityTool',
+        ]).toContain(item.kind);
+        // version is optional — string or undefined
+        if (item.version !== undefined) {
+          expect(typeof item.version).toBe('string');
+        }
+        // evidence is optional — string or undefined
+        if (item.evidence !== undefined) {
+          expect(typeof item.evidence).toBe('string');
+        }
+      }
+
+      // Each version entry has required fields (backward compat)
       const versions = obj.versions as Array<Record<string, unknown>>;
-      expect(versions.length).toBeGreaterThan(0);
       for (const v of versions) {
         expect(typeof v.id).toBe('string');
         expect(typeof v.version).toBe('string');
-        expect(['language', 'framework', 'runtime', 'buildTool']).toContain(v.target);
+        expect([
+          'language',
+          'framework',
+          'runtime',
+          'buildTool',
+          'tool',
+          'testFramework',
+          'qualityTool',
+        ]).toContain(v.target);
         // evidence is optional — string or undefined, never fabricated
         if (v.evidence !== undefined) {
           expect(typeof v.evidence).toBe('string');
