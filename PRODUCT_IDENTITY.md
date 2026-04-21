@@ -342,7 +342,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
-- **Archive Verification Checks:** 10 finding codes
+- **Archive Verification Checks:** 11 finding codes (including audit chain integrity)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
 - **Compliance Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)

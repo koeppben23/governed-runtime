@@ -113,8 +113,9 @@ The `verifyChain` function accepts an optional `{ strict: boolean }` parameter:
 - **Strict (`strict: true`):** Legacy events without chain fields are treated as integrity
   failures. Regulated verification paths must use strict mode.
 
-This is a verifier capability. Call-site wiring (archive, status, doctor) to pass
-`strict: true` for regulated sessions is handled in separate patches.
+Archive verification (`verifyArchive`) selects strict mode automatically when
+`manifest.policyMode === 'regulated'`. Unknown or non-regulated policy modes remain
+legacy-tolerant for backward compatibility.
 
 ### archive.redaction.mode
 

@@ -165,6 +165,23 @@ A tampered chain is a harder failure than unchained events.
 Legacy audit tolerance exists only for migration/diagnostic workflows and is reported
 explicitly via `skippedCount` in the verification result.
 
+### Archive Verification Call-Site
+
+Archive verification (`verifyArchive`) is the first production call-site for strict chain
+verification. When the archive manifest declares `policyMode: "regulated"`, the verifier
+passes `{ strict: true }` to `verifyChain`. Unknown or non-regulated policy modes remain
+legacy-tolerant for backward compatibility.
+
+On failure, the verifier emits an `audit_chain_invalid` finding with error severity. The
+finding message includes the chain verification reason (`CHAIN_BREAK` or
+`LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and event counts for diagnosis.
+
+| Manifest policyMode | Strict? | Legacy events tolerated? |
+| ------------------- | ------- | ------------------------ |
+| `regulated`         | Yes     | No — error finding       |
+| `team`, `solo`, etc | No      | Yes — backward-compat    |
+| `unknown`           | No      | Yes — backward-compat    |
+
 ---
 
 ## Compliance Mapping
@@ -179,4 +196,4 @@ explicitly via `skippedCount` in the verification result.
 ---
 
 _FlowGuard Version: 1.1.0_
-_Last Updated: 2026-04-15_
+_Last Updated: 2026-04-21_

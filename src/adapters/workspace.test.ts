@@ -40,7 +40,7 @@ import {
 } from './workspace';
 import * as crypto from 'node:crypto';
 import { benchmarkSync, measureAsync } from '../test-policy';
-import { createDecisionEvent, GENESIS_HASH } from '../audit/types';
+import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -1303,6 +1303,283 @@ describe('verifyArchive', () => {
     expect(result.findings).toContainEqual(
       expect.objectContaining({ code: 'archive_checksum_missing', severity: 'warning' }),
     );
+  });
+
+  // ── AUDIT CHAIN ────────────────────────────────────────────────
+
+  /**
+   * Helper: create an archived session with custom audit trail and manifest policyMode.
+   *
+   * 1. Archives a minimal session (via createArchivedSession).
+   * 2. Writes audit.jsonl with the given events (if any).
+   * 3. Patches the manifest to include audit.jsonl in inventory and set policyMode.
+   * 4. Recomputes contentDigest for consistency.
+   */
+  async function createArchivedSessionWithAudit(opts: {
+    sessionId?: string;
+    policyMode?: string;
+    auditEvents?: Array<Record<string, unknown>>;
+  }) {
+    const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession(
+      opts.sessionId,
+    );
+
+    // Write audit.jsonl if events provided
+    if (opts.auditEvents && opts.auditEvents.length > 0) {
+      const auditContent = opts.auditEvents.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
+    }
+
+    // Patch manifest: add audit.jsonl to inventory, set policyMode, recompute contentDigest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+
+    if (opts.policyMode) {
+      manifest.policyMode = opts.policyMode;
+    }
+
+    if (opts.auditEvents && opts.auditEvents.length > 0) {
+      const auditFilePath = path.join(sessDir, 'audit.jsonl');
+      const auditBuffer = await fs.readFile(auditFilePath);
+      const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+
+      if (!manifest.includedFiles.includes('audit.jsonl')) {
+        manifest.includedFiles.push('audit.jsonl');
+        manifest.includedFiles.sort();
+      }
+      manifest.fileDigests['audit.jsonl'] = auditDigest;
+    }
+
+    // Recompute contentDigest from patched file digests
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    return { fingerprint, sessionId, sessDir, archivePath };
+  }
+
+  /** Build a legacy audit event (no chain fields). */
+  function buildLegacyEvent(sessionId: string): Record<string, unknown> {
+    return {
+      id: crypto.randomUUID(),
+      sessionId,
+      phase: 'READY',
+      event: 'lifecycle:session_created',
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
+      detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'READY' },
+    };
+  }
+
+  /** Build a properly chained lifecycle event. */
+  function buildChainedEvent(sessionId: string, prevHash: string) {
+    return createLifecycleEvent(
+      sessionId,
+      { action: 'session_created', finalPhase: 'READY' },
+      new Date().toISOString(),
+      'machine',
+      prevHash,
+    );
+  }
+
+  it('reports audit_chain_invalid when regulated state has legacy unchained events', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440101';
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [buildLegacyEvent(sid), buildLegacyEvent(sid)],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+    expect(chainFinding!.file).toBe('audit.jsonl');
+  });
+
+  it('passes audit chain check when regulated state has all chained events', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440102';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    const evt2 = buildChainedEvent(sid, evt1.chainHash);
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [evt1, evt2],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('tolerates legacy events in non-regulated mode (team)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440103';
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'team',
+      auditEvents: [buildLegacyEvent(sid), buildLegacyEvent(sid)],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // No audit_chain_invalid AND verification passes overall
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('reports audit_chain_invalid with CHAIN_BREAK when chain hash is tampered', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440104';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    // Create a second event with correct prevHash but tampered chainHash
+    const evt2Raw = buildChainedEvent(sid, evt1.chainHash);
+    const evt2Tampered = { ...evt2Raw, chainHash: 'deadbeef'.repeat(8) };
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'team', // non-regulated — proves CHAIN_BREAK wins regardless of mode
+      auditEvents: [evt1, evt2Tampered],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('CHAIN_BREAK');
+  });
+
+  it('skips audit chain check when audit trail has no events', async () => {
+    const { fingerprint, sessionId } = await createArchivedSession();
+
+    // No audit.jsonl at all — readAuditTrail returns empty events
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('regulated mode rejects mixed trail (chained + legacy events)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440106';
+    const chainedEvt = buildChainedEvent(sid, GENESIS_HASH);
+    const legacyEvt = buildLegacyEvent(sid);
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [chainedEvt, legacyEvt], // mixed: one chained, one legacy
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+  });
+
+  it('regulated + malformed audit.jsonl → audit_chain_invalid error (fail-closed)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440107';
+    // Write garbage that readAuditTrail will skip (not throw)
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [], // empty — we write raw garbage below
+    });
+    const sessDir = sessionDir(fingerprint, sessionId);
+    // Overwrite with raw malformed content (not valid JSONL)
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
+
+    // Patch manifest to include the malformed audit.jsonl with correct digest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
+    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+    if (!manifest.includedFiles.includes('audit.jsonl')) {
+      manifest.includedFiles.push('audit.jsonl');
+      manifest.includedFiles.sort();
+    }
+    manifest.fileDigests['audit.jsonl'] = auditDigest;
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('unparseable');
+    expect(chainFinding!.file).toBe('audit.jsonl');
+  });
+
+  it('regulated + chained events + malformed line → audit_chain_invalid (partial corruption)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440108';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    const evt2 = buildChainedEvent(sid, evt1.chainHash);
+
+    // Write valid chained events interleaved with a malformed line
+    const auditContent =
+      JSON.stringify(evt1) + '\n' + 'CORRUPT LINE{{{' + '\n' + JSON.stringify(evt2) + '\n';
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [], // empty — we write raw content below
+    });
+    const sessDir = sessionDir(fingerprint, sessionId);
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
+
+    // Patch manifest to include audit.jsonl with correct digest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
+    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+    if (!manifest.includedFiles.includes('audit.jsonl')) {
+      manifest.includedFiles.push('audit.jsonl');
+      manifest.includedFiles.sort();
+    }
+    manifest.fileDigests['audit.jsonl'] = auditDigest;
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Must fail: regulated mode rejects any unparseable lines
+    expect(result.passed).toBe(false);
+    const chainFindings = result.findings.filter((f) => f.code === 'audit_chain_invalid');
+    expect(chainFindings.length).toBeGreaterThanOrEqual(1);
+    // The unparseable-lines finding must be present
+    const unparseableFinding = chainFindings.find((f) => f.message.includes('unparseable'));
+    expect(unparseableFinding).toBeDefined();
+    expect(unparseableFinding!.severity).toBe('error');
   });
 });
 

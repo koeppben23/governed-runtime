@@ -180,6 +180,6 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
 If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
 
-**Verification:** `verifyArchive()` validates integrity (10 finding codes).
+**Verification:** `verifyArchive()` validates integrity (11 finding codes, including audit chain verification).
 
 **Note:** This is an operational export action. The original session is preserved.

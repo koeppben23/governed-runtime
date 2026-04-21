@@ -80,18 +80,19 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 
 ### Finding Codes
 
-| Code                        | Description                      |
-| --------------------------- | -------------------------------- |
-| `missing_manifest`          | Archive manifest not found       |
-| `manifest_parse_error`      | Manifest is malformed            |
-| `missing_file`              | File listed in manifest missing  |
-| `unexpected_file`           | File not listed in manifest      |
-| `file_digest_mismatch`      | File hash doesn't match manifest |
-| `content_digest_mismatch`   | Content hash incorrect           |
-| `archive_checksum_missing`  | SHA256 sidecar not found         |
-| `archive_checksum_mismatch` | Archive hash doesn't match       |
-| `state_missing`             | Session state missing            |
-| `snapshot_missing`          | Discovery snapshot missing       |
+| Code                        | Description                           |
+| --------------------------- | ------------------------------------- |
+| `missing_manifest`          | Archive manifest not found            |
+| `manifest_parse_error`      | Manifest is malformed                 |
+| `missing_file`              | File listed in manifest missing       |
+| `unexpected_file`           | File not listed in manifest           |
+| `file_digest_mismatch`      | File hash doesn't match manifest      |
+| `content_digest_mismatch`   | Content hash incorrect                |
+| `archive_checksum_missing`  | SHA256 sidecar not found              |
+| `archive_checksum_mismatch` | Archive hash doesn't match            |
+| `audit_chain_invalid`       | Audit trail chain verification failed |
+| `state_missing`             | Session state missing                 |
+| `snapshot_missing`          | Discovery snapshot missing            |
 
 ### Verification Example
 
