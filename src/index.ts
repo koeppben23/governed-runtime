@@ -320,6 +320,7 @@ export {
   EvidenceClassSchema,
   CollectorStatusSchema,
   DetectedItemSchema,
+  StackInfoSchema,
   DiscoveryResultSchema,
   ProfileResolutionSchema,
   DiscoverySummarySchema,

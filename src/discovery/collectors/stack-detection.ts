@@ -2,14 +2,17 @@
  * @module discovery/collectors/stack-detection
  * @description Collector: technology stack detection.
  *
- * Detects languages, frameworks, build tools, test frameworks, and runtimes
- * by analyzing file patterns, package manifests, and config files.
+ * Detects languages, frameworks, build tools, test frameworks, runtimes,
+ * ecosystem tools, and quality tools by analyzing file patterns, package
+ * manifests, and config files.
  *
  * Detection strategy:
  * - File extensions → languages (fact)
  * - Package files → build tools (fact)
  * - Config files → frameworks, test frameworks (fact or derived_signal)
  * - Manifest content → version extraction (fact, requires readFile on input)
+ * - pom.xml artifacts → tools, test frameworks, quality tools (derived_signal)
+ * - build.gradle(.kts) artifacts → tools, test frameworks, quality tools (derived_signal)
  *
  * Each detected item carries confidence, classification, and evidence.
  * Version extraction is optional: when readFile is absent, items have no version.
@@ -57,6 +60,127 @@ const BUILD_TOOL_RULES: ReadonlyArray<{
   { id: 'setuptools', packageFile: 'setup.py' },
   { id: 'bundler', packageFile: 'Gemfile' },
   { id: 'composer', packageFile: 'composer.json' },
+];
+
+// ─── Artifact Detection Rules ─────────────────────────────────────────────────
+
+/** Artifact category for tool/quality/test detection. */
+type ArtifactCategory = 'tool' | 'testFramework' | 'qualityTool';
+
+/**
+ * pom.xml artifact detection rules.
+ *
+ * Scans <dependency> and <plugin> blocks for known artifactIds.
+ * Ordered by priority within each category. First match per id wins.
+ */
+const POM_ARTIFACT_RULES: ReadonlyArray<{
+  artifactId: string;
+  id: string;
+  category: ArtifactCategory;
+  evidenceType: 'dependency' | 'plugin';
+}> = [
+  // Tools (P9 priority 1 & 3)
+  {
+    artifactId: 'openapi-generator-maven-plugin',
+    id: 'openapi-generator',
+    category: 'tool',
+    evidenceType: 'plugin',
+  },
+  { artifactId: 'flyway-maven-plugin', id: 'flyway', category: 'tool', evidenceType: 'plugin' },
+  { artifactId: 'flyway-core', id: 'flyway', category: 'tool', evidenceType: 'dependency' },
+  { artifactId: 'liquibase-core', id: 'liquibase', category: 'tool', evidenceType: 'dependency' },
+  // Test frameworks (P9 priority 2)
+  {
+    artifactId: 'junit-jupiter',
+    id: 'junit',
+    category: 'testFramework',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'junit-jupiter-api',
+    id: 'junit',
+    category: 'testFramework',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'cucumber-java',
+    id: 'cucumber',
+    category: 'testFramework',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'testcontainers',
+    id: 'testcontainers',
+    category: 'testFramework',
+    evidenceType: 'dependency',
+  },
+  // Quality tools (P9 priority 5)
+  {
+    artifactId: 'spotless-maven-plugin',
+    id: 'spotless',
+    category: 'qualityTool',
+    evidenceType: 'plugin',
+  },
+  {
+    artifactId: 'maven-checkstyle-plugin',
+    id: 'checkstyle',
+    category: 'qualityTool',
+    evidenceType: 'plugin',
+  },
+  {
+    artifactId: 'archunit-junit5',
+    id: 'archunit',
+    category: 'qualityTool',
+    evidenceType: 'dependency',
+  },
+  { artifactId: 'archunit', id: 'archunit', category: 'qualityTool', evidenceType: 'dependency' },
+  {
+    artifactId: 'jacoco-maven-plugin',
+    id: 'jacoco',
+    category: 'qualityTool',
+    evidenceType: 'plugin',
+  },
+];
+
+/**
+ * Gradle plugin detection rules.
+ *
+ * Matches id("plugin.id") version "x.y.z" declarations.
+ * For built-in plugins (jacoco, checkstyle), also matches bare names and apply plugin.
+ */
+const GRADLE_PLUGIN_RULES: ReadonlyArray<{
+  pluginId: string;
+  id: string;
+  category: ArtifactCategory;
+  builtin: boolean;
+}> = [
+  { pluginId: 'org.openapi.generator', id: 'openapi-generator', category: 'tool', builtin: false },
+  { pluginId: 'org.flywaydb.flyway', id: 'flyway', category: 'tool', builtin: false },
+  { pluginId: 'org.liquibase.gradle', id: 'liquibase', category: 'tool', builtin: false },
+  { pluginId: 'com.diffplug.spotless', id: 'spotless', category: 'qualityTool', builtin: false },
+  { pluginId: 'checkstyle', id: 'checkstyle', category: 'qualityTool', builtin: true },
+  { pluginId: 'jacoco', id: 'jacoco', category: 'qualityTool', builtin: true },
+];
+
+/**
+ * Gradle dependency detection rules.
+ *
+ * Matches "group:artifact:version" in dependency configurations.
+ * Version part is optional (BOM-managed dependencies).
+ */
+const GRADLE_DEPENDENCY_RULES: ReadonlyArray<{
+  artifact: string;
+  id: string;
+  category: ArtifactCategory;
+}> = [
+  { artifact: 'junit-jupiter', id: 'junit', category: 'testFramework' },
+  { artifact: 'junit-jupiter-api', id: 'junit', category: 'testFramework' },
+  { artifact: 'cucumber-java', id: 'cucumber', category: 'testFramework' },
+  { artifact: 'testcontainers', id: 'testcontainers', category: 'testFramework' },
+  { artifact: 'flyway-core', id: 'flyway', category: 'tool' },
+  { artifact: 'liquibase-core', id: 'liquibase', category: 'tool' },
+  { artifact: 'archunit-junit5', id: 'archunit', category: 'qualityTool' },
+  { artifact: 'archunit', id: 'archunit', category: 'qualityTool' },
 ];
 
 /** Config file → framework/tool mapping. */
@@ -143,15 +267,25 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
     const languages = detectLanguages(input.allFiles);
     const buildTools = detectBuildTools(input.packageFiles);
     const { frameworks, testFrameworks, runtimes } = detectFromConfigs(input.configFiles);
+    const tools: DetectedItem[] = [];
+    const qualityTools: DetectedItem[] = [];
 
     // Version extraction post-pass (requires readFile capability)
     if (input.readFile) {
-      await extractVersions(input.readFile, languages, frameworks, runtimes);
+      await extractVersions(
+        input.readFile,
+        languages,
+        frameworks,
+        runtimes,
+        testFrameworks,
+        tools,
+        qualityTools,
+      );
     }
 
     return {
       status: 'complete',
-      data: { languages, frameworks, buildTools, testFrameworks, runtimes },
+      data: { languages, frameworks, buildTools, testFrameworks, runtimes, tools, qualityTools },
     };
   } catch {
     return {
@@ -162,6 +296,8 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
         buildTools: [],
         testFrameworks: [],
         runtimes: [],
+        tools: [],
+        qualityTools: [],
       },
     };
   }
@@ -333,18 +469,24 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  * 2. package.json (engines.node, TS dep version, framework deps)
  * 3. tsconfig.json (TypeScript compilerTarget — no shared targets)
  * 4. pom.xml (Java version, Spring Boot version — Maven authority)
- * 5. build.gradle(.kts) (Java version, Spring Boot version — Gradle fallback)
- * 6. go.mod (Go version — no shared targets)
+ * 5. pom.xml artifacts (tools, test frameworks, quality tools)
+ * 6. build.gradle(.kts) (Java version, Spring Boot version — Gradle fallback)
+ * 7. build.gradle(.kts) artifacts (tools, test frameworks, quality tools — Gradle fallback)
+ * 8. go.mod (Go version — no shared targets)
  *
  * Maven runs before Gradle: in projects with both pom.xml and build.gradle,
  * Maven is the canonical build system and Gradle values are ignored via
  * first-write-wins on languages.java.version and frameworks.spring-boot.version.
+ * Same applies to artifact detection: pom.xml artifacts are authoritative.
  */
 async function extractVersions(
   readFile: ReadFileFn,
   languages: DetectedItem[],
   frameworks: DetectedItem[],
   runtimes: DetectedItem[],
+  testFrameworks: DetectedItem[],
+  tools: DetectedItem[],
+  qualityTools: DetectedItem[],
 ): Promise<void> {
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
@@ -353,7 +495,9 @@ async function extractVersions(
   await extractFromTsConfig(readFile, languages);
   // Maven before Gradle: shared write targets (languages.java, frameworks.spring-boot)
   await extractFromPomXml(readFile, languages, frameworks);
+  await extractArtifactsFromPomXml(readFile, testFrameworks, tools, qualityTools);
   await extractFromGradleBuild(readFile, languages, frameworks);
+  await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools);
   await extractFromGoMod(readFile, languages);
 }
 
@@ -645,5 +789,165 @@ async function extractFromGoMod(readFile: ReadFileFn, languages: DetectedItem[])
   const goItem = findItem(languages, 'go');
   if (goItem && !goItem.version) {
     setVersion(goItem, goVer, 'go.mod:go');
+  }
+}
+
+// ─── Artifact Detection (pom.xml / build.gradle) ─────────────────────────────
+
+/**
+ * Add or create a detected item. First-match-wins per id.
+ * If the item already exists in the array, it is not modified.
+ */
+function enrichDetectedItem(
+  items: DetectedItem[],
+  id: string,
+  evidence: string,
+  version?: string,
+): void {
+  if (findItem(items, id)) return; // Already detected — first-match-wins
+  const item: DetectedItem = {
+    id,
+    confidence: 0.85,
+    classification: 'derived_signal',
+    evidence: [evidence],
+  };
+  if (version) {
+    item.version = version;
+    item.versionEvidence = evidence;
+  }
+  items.push(item);
+}
+
+/** Resolve the target array for an artifact category. */
+function resolveTargetArray(
+  category: ArtifactCategory,
+  testFrameworks: DetectedItem[],
+  tools: DetectedItem[],
+  qualityTools: DetectedItem[],
+): DetectedItem[] {
+  switch (category) {
+    case 'tool':
+      return tools;
+    case 'testFramework':
+      return testFrameworks;
+    case 'qualityTool':
+      return qualityTools;
+  }
+}
+
+/**
+ * Extract tool/testFramework/qualityTool artifacts from pom.xml.
+ *
+ * Scans <dependency> and <plugin> blocks for known artifact IDs.
+ * Version extraction is best-effort: when a <version> tag exists in the
+ * same block it is captured; BOM-managed dependencies without explicit
+ * versions are still detected (without version).
+ */
+async function extractArtifactsFromPomXml(
+  readFile: ReadFileFn,
+  testFrameworks: DetectedItem[],
+  tools: DetectedItem[],
+  qualityTools: DetectedItem[],
+): Promise<void> {
+  const content = await safeRead(readFile, 'pom.xml');
+  if (!content) return;
+
+  // Extract all <dependency>...</dependency> and <plugin>...</plugin> blocks
+  const blocks = [
+    ...content.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g),
+    ...content.matchAll(/<plugin>([\s\S]*?)<\/plugin>/g),
+  ];
+
+  const detected = new Set<string>();
+
+  for (const rule of POM_ARTIFACT_RULES) {
+    if (detected.has(rule.id)) continue;
+
+    for (const [, blockContent] of blocks) {
+      if (!blockContent) continue;
+      if (!new RegExp(`<artifactId>\\s*${rule.artifactId}\\s*</artifactId>`).test(blockContent)) {
+        continue;
+      }
+
+      // Found artifact — try to extract version from same block
+      const versionMatch = blockContent.match(
+        /<version>\s*(\d+(?:\.\d+)*(?:[.-][A-Za-z0-9+]*)*)\s*<\/version>/,
+      );
+      const version = versionMatch?.[1];
+      const evidence = `pom.xml:${rule.evidenceType}.${rule.artifactId}`;
+      const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+
+      enrichDetectedItem(targetArray, rule.id, evidence, version);
+      detected.add(rule.id);
+      break; // Found in a block, move to next rule
+    }
+  }
+}
+
+/**
+ * Extract tool/testFramework/qualityTool artifacts from build.gradle(.kts).
+ *
+ * Scans plugin declarations and dependency configurations for known artifacts.
+ * Runs AFTER pom.xml extraction — Maven is authoritative; Gradle values are
+ * only added for IDs not already detected (first-write-wins across files).
+ */
+async function extractArtifactsFromGradle(
+  readFile: ReadFileFn,
+  testFrameworks: DetectedItem[],
+  tools: DetectedItem[],
+  qualityTools: DetectedItem[],
+): Promise<void> {
+  let content: string | undefined;
+  let file: string | undefined;
+
+  for (const candidate of ['build.gradle.kts', 'build.gradle']) {
+    content = await safeRead(readFile, candidate);
+    if (content) {
+      file = candidate;
+      break;
+    }
+  }
+  if (!content || !file) return;
+
+  // ── Plugin declarations with explicit version ──────────────────────────
+  for (const rule of GRADLE_PLUGIN_RULES) {
+    const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+    if (findItem(targetArray, rule.id)) continue; // first-match-wins
+
+    const escapedId = rule.pluginId.replace(/\./g, '\\.');
+
+    // id("plugin.id") version "1.2.3" or id 'plugin.id' version '1.2.3'
+    const pluginMatch = content.match(
+      new RegExp(
+        `id\\s*\\(?['"]${escapedId}['"]\\)?\\s+version\\s+['"](\\d+(?:\\.\\d+)*(?:[.-][A-Za-z0-9+]*)*)['"]`,
+      ),
+    );
+    if (pluginMatch) {
+      enrichDetectedItem(targetArray, rule.id, `${file}:plugin.${rule.id}`, pluginMatch[1]);
+      continue;
+    }
+
+    // Built-in plugins: bare name on own line or apply plugin: 'name'
+    if (rule.builtin) {
+      const applied =
+        new RegExp(`apply\\s+plugin:\\s*['"]${escapedId}['"]`).test(content) ||
+        new RegExp(`^\\s*${escapedId}\\s*$`, 'm').test(content);
+      if (applied) {
+        enrichDetectedItem(targetArray, rule.id, `${file}:plugin.${rule.id}`);
+      }
+    }
+  }
+
+  // ── Dependency declarations: "group:artifact:version" or "group:artifact" ──
+  for (const rule of GRADLE_DEPENDENCY_RULES) {
+    const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+    if (findItem(targetArray, rule.id)) continue; // first-match-wins
+
+    const depMatch = content.match(
+      new RegExp(`['"][\\w.-]+:${rule.artifact}(?::(\\d+(?:\\.\\d+)*(?:[.-][A-Za-z0-9+]*)*))?['"]`),
+    );
+    if (!depMatch) continue;
+
+    enrichDetectedItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`, depMatch[1]);
   }
 }

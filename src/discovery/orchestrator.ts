@@ -128,6 +128,8 @@ async function runDiscoveryImpl(
     buildTools: [],
     testFrameworks: [],
     runtimes: [],
+    tools: [],
+    qualityTools: [],
   });
 
   const topology = extractResult(topoResult, 'topology', collectors, {
@@ -207,20 +209,23 @@ export function extractDiscoverySummary(result: DiscoveryResult): DiscoverySumma
   };
 }
 
-/** Sort priority: language=0, framework=1, runtime=2, buildTool=3. */
+/** Sort priority: language=0, framework=1, runtime=2, buildTool=3, tool=4, testFramework=5, qualityTool=6. */
 const TARGET_ORDER: Record<DetectedStackTarget, number> = {
   language: 0,
   framework: 1,
   runtime: 2,
   buildTool: 3,
+  tool: 4,
+  testFramework: 5,
+  qualityTool: 6,
 };
 
 /**
  * Extract a compact detected stack from a full DiscoveryResult.
  *
  * Returns only items that have a `.version` string. Items are sorted
- * deterministically: by category (language → framework → runtime → buildTool),
- * then by id within each category.
+ * deterministically: by category (language → framework → runtime → buildTool
+ * → tool → testFramework → qualityTool), then by id within each category.
  *
  * Derived evidence — NOT SSOT. The authoritative version data lives in
  * `DiscoveryResult.stack`. This is a compact projection for
@@ -236,6 +241,9 @@ export function extractDetectedStack(result: DiscoveryResult): DetectedStack | n
     { items: result.stack.frameworks, target: 'framework' },
     { items: result.stack.runtimes, target: 'runtime' },
     { items: result.stack.buildTools, target: 'buildTool' },
+    { items: result.stack.tools ?? [], target: 'tool' },
+    { items: result.stack.testFrameworks, target: 'testFramework' },
+    { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
   ];
 
   for (const { items, target } of categories) {
