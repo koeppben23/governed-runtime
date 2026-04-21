@@ -9,7 +9,10 @@
  * Detection strategy:
  * - File extensions → languages (fact)
  * - Package files → build tools (fact)
- * - Config files → frameworks, test frameworks (fact or derived_signal)
+ * - packageManager field in package.json → package manager identity + version (fact, highest priority)
+ * - Root-level lockfiles → package manager refinement: npm/pnpm/yarn/bun (fact, skipped when packageManager found)
+ * - Config files → frameworks, test frameworks, quality tools (fact or derived_signal)
+ * - package.json deps/devDeps → JS/TS ecosystem detection with versions (derived_signal)
  * - Manifest content → version extraction (fact, requires readFile on input)
  * - pom.xml artifacts → tools, test frameworks, quality tools (derived_signal)
  * - build.gradle(.kts) artifacts → tools, test frameworks, quality tools (derived_signal)
@@ -17,7 +20,7 @@
  * Each detected item carries confidence, classification, and evidence.
  * Version extraction is optional: when readFile is absent, items have no version.
  *
- * @version v2
+ * @version v3
  */
 
 import * as path from 'node:path';
@@ -187,7 +190,7 @@ const GRADLE_DEPENDENCY_RULES: ReadonlyArray<{
 const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
   id: string;
   configFiles: readonly string[];
-  category: 'framework' | 'testFramework' | 'runtime';
+  category: 'framework' | 'testFramework' | 'runtime' | 'qualityTool';
 }> = [
   {
     id: 'angular',
@@ -244,7 +247,211 @@ const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
     configFiles: ['tailwind.config.js', 'tailwind.config.ts'],
     category: 'framework',
   },
+  {
+    id: 'eslint',
+    configFiles: [
+      '.eslintrc',
+      '.eslintrc.js',
+      '.eslintrc.json',
+      '.eslintrc.yml',
+      'eslint.config.js',
+      'eslint.config.mjs',
+    ],
+    category: 'qualityTool',
+  },
+  {
+    id: 'prettier',
+    configFiles: ['.prettierrc', '.prettierrc.json'],
+    category: 'qualityTool',
+  },
 ];
+
+// ─── JS/TS Ecosystem Detection ────────────────────────────────────────────────
+
+/**
+ * Category target for JS/TS ecosystem dependency mapping.
+ *
+ * Maps npm package names to detected item IDs and their stack categories.
+ * Used by extractFromPackageJson() to scan dependencies and devDependencies.
+ * Categories MUST match those used by FRAMEWORK_CONFIG_RULES for dedup to work.
+ */
+type JsEcosystemCategory = 'framework' | 'testFramework' | 'qualityTool';
+
+const JS_ECOSYSTEM_DEPS: ReadonlyArray<{
+  pkg: string;
+  id: string;
+  category: JsEcosystemCategory;
+}> = [
+  // ── Frameworks (Priority 1) ─────────────────────────────────────────────
+  { pkg: 'react', id: 'react', category: 'framework' },
+  { pkg: 'vue', id: 'vue', category: 'framework' },
+  { pkg: 'next', id: 'next', category: 'framework' },
+  { pkg: 'svelte', id: 'svelte', category: 'framework' },
+  { pkg: '@sveltejs/kit', id: 'sveltekit', category: 'framework' },
+  { pkg: 'astro', id: 'astro', category: 'framework' },
+  { pkg: '@remix-run/node', id: 'remix', category: 'framework' },
+  { pkg: '@remix-run/react', id: 'remix', category: 'framework' },
+  { pkg: '@angular/core', id: 'angular', category: 'framework' },
+  { pkg: 'nuxt', id: 'nuxt', category: 'framework' },
+  // ── Test Frameworks (Priority 2) ────────────────────────────────────────
+  { pkg: 'vitest', id: 'vitest', category: 'testFramework' },
+  { pkg: 'jest', id: 'jest', category: 'testFramework' },
+  { pkg: '@playwright/test', id: 'playwright', category: 'testFramework' },
+  { pkg: 'cypress', id: 'cypress', category: 'testFramework' },
+  // ── Quality Tools (Priority 3) ──────────────────────────────────────────
+  { pkg: 'eslint', id: 'eslint', category: 'qualityTool' },
+  { pkg: 'prettier', id: 'prettier', category: 'qualityTool' },
+  { pkg: '@biomejs/biome', id: 'biome', category: 'qualityTool' },
+  // ── Build Tools / Frameworks (Priority 4) ───────────────────────────────
+  // vite/webpack/tailwind/nx are categorized as 'framework' in FRAMEWORK_CONFIG_RULES.
+  // Using the same category here ensures config-detected + pkg-detected dedup works.
+  { pkg: 'vite', id: 'vite', category: 'framework' },
+  { pkg: 'webpack', id: 'webpack', category: 'framework' },
+  { pkg: 'tailwindcss', id: 'tailwind', category: 'framework' },
+  { pkg: 'nx', id: 'nx', category: 'framework' },
+];
+
+// ─── packageManager Field Detection ───────────────────────────────────────────
+
+/**
+ * Regex for the packageManager field in package.json (Corepack standard).
+ *
+ * Format: `"packageManager": "pnpm@9.12.0"` or `"yarn@4.1.0"` etc.
+ * Captures: [1] = manager name (npm|pnpm|yarn|bun), [2] = version digits.
+ */
+const PACKAGE_MANAGER_RE = /^(npm|pnpm|yarn|bun)@(\d+(?:\.\d+)*)/;
+
+/**
+ * Refine the npm build tool from the `packageManager` field in package.json.
+ *
+ * This is the highest-priority signal for package manager identity and version.
+ * The `packageManager` field is a Corepack standard that explicitly declares
+ * both the manager and its pinned version.
+ *
+ * Priority: packageManager field > root lockfile > default npm.
+ *
+ * Returns true if the field was found and applied (so lockfile refinement
+ * can be skipped), false otherwise.
+ *
+ * Mutates buildTools in place.
+ */
+async function refineFromPackageManagerField(
+  readFile: ReadFileFn,
+  buildTools: DetectedItem[],
+): Promise<boolean> {
+  const npmIndex = buildTools.findIndex((t) => t.id === 'npm');
+  if (npmIndex === -1) return false; // No npm build tool to refine
+
+  const content = await safeRead(readFile, 'package.json');
+  if (!content) return false;
+
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+
+  const pmField = pkg.packageManager;
+  if (typeof pmField !== 'string') return false;
+
+  const match = pmField.match(PACKAGE_MANAGER_RE);
+  if (!match) return false;
+
+  const managerId = match[1]!;
+  const version = match[2]!;
+  const evidence = 'package.json:packageManager';
+
+  if (managerId === 'npm') {
+    // npm is already the default — just add version
+    const npmItem = buildTools[npmIndex]!;
+    npmItem.version = version;
+    npmItem.versionEvidence = evidence;
+    if (!npmItem.evidence.includes(evidence)) {
+      npmItem.evidence.push(evidence);
+    }
+  } else {
+    // Replace npm with the declared manager
+    buildTools[npmIndex] = {
+      id: managerId,
+      confidence: 0.95,
+      classification: 'fact',
+      evidence: [evidence],
+      version,
+      versionEvidence: evidence,
+    };
+  }
+
+  return true;
+}
+
+// ─── Lockfile Detection ───────────────────────────────────────────────────────
+
+/**
+ * Lockfile-based package manager detection rules.
+ *
+ * Maps lockfile basenames to package manager IDs. When a lockfile is found in
+ * allFiles, the corresponding package manager REPLACES the default 'npm' build
+ * tool (since package.json → npm is the initial detection, but the lockfile is
+ * the authoritative signal for the actual package manager).
+ *
+ * package-lock.json confirms npm — no replacement needed.
+ */
+const LOCKFILE_RULES: ReadonlyArray<{
+  basename: string;
+  id: string;
+}> = [
+  { basename: 'pnpm-lock.yaml', id: 'pnpm' },
+  { basename: 'yarn.lock', id: 'yarn' },
+  { basename: 'bun.lockb', id: 'bun' },
+  { basename: 'bun.lock', id: 'bun' },
+];
+
+/**
+ * Refine the npm build tool to the actual package manager based on root-level lockfiles.
+ *
+ * Only considers root-level files (no `/` or `\` in path) to avoid false positives
+ * from nested lockfiles in monorepo subdirectories (e.g. packages/app/pnpm-lock.yaml).
+ *
+ * Scans allFiles for known lockfile basenames at root level. If a non-npm lockfile
+ * is found, replaces the 'npm' build tool with the actual package manager.
+ * If package-lock.json is found (or no lockfile at all), npm stays.
+ *
+ * Mutates buildTools in place. Only acts when 'npm' is already in buildTools
+ * (i.e., package.json was detected).
+ */
+function refineBuildToolFromLockfiles(
+  allFiles: readonly string[],
+  buildTools: DetectedItem[],
+): void {
+  const npmIndex = buildTools.findIndex((t) => t.id === 'npm');
+  if (npmIndex === -1) return; // No npm build tool to refine
+
+  // Only root-level files: no path separator means it's at project root
+  const rootFiles = new Set(allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
+
+  // Check for non-npm lockfiles at root (first match wins)
+  for (const rule of LOCKFILE_RULES) {
+    if (!rootFiles.has(rule.basename)) continue;
+
+    // Replace npm with the actual package manager
+    buildTools[npmIndex] = {
+      id: rule.id,
+      confidence: 0.9,
+      classification: 'fact',
+      evidence: [rule.basename],
+    };
+    return; // First lockfile match wins
+  }
+
+  // If package-lock.json is present at root, enrich npm evidence
+  if (rootFiles.has('package-lock.json')) {
+    const npmItem = buildTools[npmIndex]!;
+    if (!npmItem.evidence.includes('package-lock.json')) {
+      npmItem.evidence.push('package-lock.json');
+    }
+  }
+}
 
 // ─── Collector ────────────────────────────────────────────────────────────────
 
@@ -253,10 +460,17 @@ const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
  *
  * Scans file list, package files, and config files to detect:
  * - Languages (by file extension frequency)
- * - Build tools (by package manifest presence)
- * - Frameworks (by config file presence)
- * - Test frameworks (by config file presence)
+ * - Build tools (by package manifest presence, refined by lockfiles)
+ * - Frameworks (by config file presence + package.json dependencies)
+ * - Test frameworks (by config file presence + package.json devDependencies)
+ * - Quality tools (by config file presence + package.json devDependencies)
  * - Runtimes (by config file presence)
+ *
+ * Lockfile detection (pnpm-lock.yaml, yarn.lock, bun.lockb) refines the
+ * default npm build tool to the actual package manager. The `packageManager`
+ * field in package.json (Corepack standard) takes highest priority and
+ * includes the pinned version; when present, lockfile refinement is skipped.
+ * Only root-level lockfiles are considered (nested lockfiles are ignored).
  *
  * When `input.readFile` is provided, also extracts version information
  * from manifest file contents. Version extraction is fail-soft: unreadable
@@ -266,9 +480,22 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
   try {
     const languages = detectLanguages(input.allFiles);
     const buildTools = detectBuildTools(input.packageFiles);
-    const { frameworks, testFrameworks, runtimes } = detectFromConfigs(input.configFiles);
+    const { frameworks, testFrameworks, runtimes, qualityTools } = detectFromConfigs(
+      input.configFiles,
+    );
     const tools: DetectedItem[] = [];
-    const qualityTools: DetectedItem[] = [];
+
+    // Package manager refinement (highest to lowest priority):
+    // 1. packageManager field from package.json (Corepack standard, with version)
+    // 2. Root-level lockfile detection (pnpm-lock.yaml, yarn.lock, bun.lockb)
+    // If packageManager field is found, lockfile refinement is skipped.
+    let pmRefined = false;
+    if (input.readFile) {
+      pmRefined = await refineFromPackageManagerField(input.readFile, buildTools);
+    }
+    if (!pmRefined) {
+      refineBuildToolFromLockfiles(input.allFiles, buildTools);
+    }
 
     // Version extraction post-pass (requires readFile capability)
     if (input.readFile) {
@@ -376,18 +603,20 @@ function detectBuildTools(packageFiles: readonly string[]): DetectedItem[] {
 }
 
 /**
- * Detect frameworks, test frameworks, and runtimes from config files.
+ * Detect frameworks, test frameworks, runtimes, and quality tools from config files.
  * Confidence is 0.85 (config file presence is a strong signal).
  */
 function detectFromConfigs(configFiles: readonly string[]): {
   frameworks: DetectedItem[];
   testFrameworks: DetectedItem[];
   runtimes: DetectedItem[];
+  qualityTools: DetectedItem[];
 } {
   const configSet = new Set(configFiles);
   const frameworks: DetectedItem[] = [];
   const testFrameworks: DetectedItem[] = [];
   const runtimes: DetectedItem[] = [];
+  const qualityTools: DetectedItem[] = [];
 
   for (const rule of FRAMEWORK_CONFIG_RULES) {
     const matchedConfigs = rule.configFiles.filter((f) => configSet.has(f));
@@ -410,10 +639,13 @@ function detectFromConfigs(configFiles: readonly string[]): {
       case 'runtime':
         runtimes.push(item);
         break;
+      case 'qualityTool':
+        qualityTools.push(item);
+        break;
     }
   }
 
-  return { frameworks, testFrameworks, runtimes };
+  return { frameworks, testFrameworks, runtimes, qualityTools };
 }
 
 // ─── Version Extraction ───────────────────────────────────────────────────────
@@ -491,7 +723,14 @@ async function extractVersions(
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
   await extractFromNodeVersionFiles(readFile, runtimes);
-  await extractFromPackageJson(readFile, languages, frameworks, runtimes);
+  await extractFromPackageJson(
+    readFile,
+    languages,
+    frameworks,
+    runtimes,
+    testFrameworks,
+    qualityTools,
+  );
   await extractFromTsConfig(readFile, languages);
   // Maven before Gradle: shared write targets (languages.java, frameworks.spring-boot)
   await extractFromPomXml(readFile, languages, frameworks);
@@ -526,13 +765,19 @@ async function extractFromNodeVersionFiles(
 
 /**
  * Extract versions from package.json: engines.node, framework dependencies,
- * devDependencies.typescript.
+ * devDependencies.typescript, and full JS/TS ecosystem scanning.
+ *
+ * Scans both `dependencies` and `devDependencies` against JS_ECOSYSTEM_DEPS
+ * to detect and version-enrich frameworks, test frameworks, and quality tools.
+ * Config-detected items get version enrichment; new items are created.
  */
 async function extractFromPackageJson(
   readFile: ReadFileFn,
   languages: DetectedItem[],
   frameworks: DetectedItem[],
   runtimes: DetectedItem[],
+  testFrameworks: DetectedItem[],
+  qualityTools: DetectedItem[],
 ): Promise<void> {
   const content = await safeRead(readFile, 'package.json');
   if (!content) return;
@@ -553,33 +798,39 @@ async function extractFromPackageJson(
     }
   }
 
-  // Framework version extraction from dependencies
+  // Combined deps + devDeps for JS ecosystem scanning
   const deps = pkg.dependencies as Record<string, string> | undefined;
   const devDeps = pkg.devDependencies as Record<string, string> | undefined;
 
-  const FRAMEWORK_DEPS: ReadonlyArray<{
-    pkg: string;
-    id: string;
-    evidenceKey: string;
-  }> = [
-    { pkg: '@angular/core', id: 'angular', evidenceKey: 'dependencies.@angular/core' },
-    { pkg: 'react', id: 'react', evidenceKey: 'dependencies.react' },
-    { pkg: 'next', id: 'next', evidenceKey: 'dependencies.next' },
-    { pkg: 'vue', id: 'vue', evidenceKey: 'dependencies.vue' },
-    { pkg: 'nuxt', id: 'nuxt', evidenceKey: 'dependencies.nuxt' },
-  ];
+  // ── JS/TS ecosystem scanning ──────────────────────────────────────────
+  // Scan both deps and devDeps against JS_ECOSYSTEM_DEPS.
+  // For each matched package, resolve the target array from category,
+  // then enrich or create the item with its version.
+  const seenIds = new Set<string>();
+  for (const rule of JS_ECOSYSTEM_DEPS) {
+    if (seenIds.has(rule.id)) continue; // First matching package per id wins
 
-  for (const fw of FRAMEWORK_DEPS) {
-    const range = deps?.[fw.pkg];
+    const range = deps?.[rule.pkg] ?? devDeps?.[rule.pkg];
     if (!range) continue;
 
-    const fwItem = findItem(frameworks, fw.id);
-    if (fwItem && !fwItem.version) {
-      const ver = captureGroup(range.match(/(\d+(?:\.\d+)*)/));
-      if (ver) {
-        setVersion(fwItem, ver, `package.json:${fw.evidenceKey}`);
-      }
+    seenIds.add(rule.id);
+    const ver = captureGroup(range.match(/(\d+(?:\.\d+)*)/));
+    const evidenceKey = `package.json:${deps?.[rule.pkg] ? 'dependencies' : 'devDependencies'}.${rule.pkg}`;
+
+    let targetArray: DetectedItem[];
+    switch (rule.category) {
+      case 'framework':
+        targetArray = frameworks;
+        break;
+      case 'testFramework':
+        targetArray = testFrameworks;
+        break;
+      case 'qualityTool':
+        targetArray = qualityTools;
+        break;
     }
+
+    enrichOrCreateItem(targetArray, rule.id, evidenceKey, ver);
   }
 
   // devDependencies.typescript → typescript version
@@ -805,6 +1056,41 @@ function enrichDetectedItem(
   version?: string,
 ): void {
   if (findItem(items, id)) return; // Already detected — first-match-wins
+  const item: DetectedItem = {
+    id,
+    confidence: 0.85,
+    classification: 'derived_signal',
+    evidence: [evidence],
+  };
+  if (version) {
+    item.version = version;
+    item.versionEvidence = evidence;
+  }
+  items.push(item);
+}
+
+/**
+ * Enrich version on an existing item, or create a new item with version.
+ *
+ * Unlike enrichDetectedItem (first-match-wins, no version enrichment),
+ * this function ADDS a version to an existing versionless item when one
+ * is found — enabling config-detected items to be enriched from package.json.
+ * If the item already has a version, the existing version is preserved.
+ */
+function enrichOrCreateItem(
+  items: DetectedItem[],
+  id: string,
+  evidence: string,
+  version?: string,
+): void {
+  const existing = findItem(items, id);
+  if (existing) {
+    // Enrich version if the existing item lacks one
+    if (!existing.version && version) {
+      setVersion(existing, version, evidence);
+    }
+    return;
+  }
   const item: DetectedItem = {
     id,
     confidence: 0.85,
