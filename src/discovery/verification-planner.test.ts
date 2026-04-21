@@ -71,7 +71,9 @@ describe('verification planner', () => {
     });
 
     it('prefers Maven wrapper over global Maven', async () => {
-      const detectedStack = makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]);
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'maven', evidence: 'pom.xml' },
+      ]);
 
       const candidates = await planVerificationCandidates({
         detectedStack,
@@ -85,7 +87,9 @@ describe('verification planner', () => {
     });
 
     it('uses Windows Maven wrapper command when only mvnw.cmd exists', async () => {
-      const detectedStack = makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]);
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'maven', evidence: 'pom.xml' },
+      ]);
 
       const candidates = await planVerificationCandidates({
         detectedStack,
@@ -99,7 +103,9 @@ describe('verification planner', () => {
     });
 
     it('prefers Gradle wrapper over global Gradle', async () => {
-      const detectedStack = makeDetectedStack([{ kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' }]);
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+      ]);
 
       const candidates = await planVerificationCandidates({
         detectedStack,
@@ -113,7 +119,9 @@ describe('verification planner', () => {
     });
 
     it('uses Windows Gradle wrapper command when only gradlew.bat exists', async () => {
-      const detectedStack = makeDetectedStack([{ kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' }]);
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle' },
+      ]);
 
       const candidates = await planVerificationCandidates({
         detectedStack,
@@ -141,7 +149,9 @@ describe('verification planner', () => {
       });
 
       expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm eslint .');
-      expect(candidates.find((c) => c.kind === 'lint')?.source).toBe('detectedStack:qualityTool:eslint');
+      expect(candidates.find((c) => c.kind === 'lint')?.source).toBe(
+        'detectedStack:qualityTool:eslint',
+      );
     });
   });
 
@@ -232,7 +242,9 @@ describe('verification planner', () => {
       const candidates = await planVerificationCandidates({
         detectedStack,
         allFiles: [...allFiles, 'package.json', 'pnpm-lock.yaml'],
-        readFile: makeReadFile({ 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) }),
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+        }),
       });
       const elapsedMs = performance.now() - started;
 

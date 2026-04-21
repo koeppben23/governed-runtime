@@ -179,7 +179,9 @@ export const hydrate: ToolDefinition = {
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
       let detectedStack: ReturnType<typeof extractDetectedStack> | undefined;
-      let verificationCandidates: Awaited<ReturnType<typeof planVerificationCandidates>> | undefined;
+      let verificationCandidates:
+        | Awaited<ReturnType<typeof planVerificationCandidates>>
+        | undefined;
       let profileResolution: ProfileResolution | undefined;
       if (!existing && !repoSignals) {
         throwHydrateError(

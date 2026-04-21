@@ -86,9 +86,7 @@ function addCandidate(
   byKind.set(candidate.kind, candidate);
 }
 
-async function readPackageScripts(
-  readFile: ReadFileFn,
-): Promise<Record<string, string>> {
+async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, string>> {
   const content = await readFile('package.json');
   if (!content) return {};
 
