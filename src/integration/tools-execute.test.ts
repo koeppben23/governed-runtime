@@ -149,9 +149,8 @@ describe('status', () => {
     it('returns full detectedStack object with summary and versions', async () => {
       await hydrateSession();
       // Resolve session dir and inject detectedStack into persisted state
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -219,9 +218,8 @@ describe('status', () => {
 
     it('returns persisted verificationCandidates in status', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -346,9 +344,8 @@ describe('hydrate', () => {
     it('persists state to session directory on disk', async () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -429,9 +426,8 @@ describe('hydrate', () => {
       await hydrateSession();
 
       // 2. Locate session dir on disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -490,6 +486,110 @@ describe('hydrate', () => {
       const info = await readWorkspaceInfo(fp.fingerprint);
       expect(info).not.toBeNull();
       expect(info!.fingerprint).toBe(fp.fingerprint);
+    });
+
+    it('hydrate without explicit mode uses config.policy.defaultMode: regulated', async () => {
+      // Enterprise blocker test: install intent must flow through to policySnapshot.
+      // 1. Hydrate once to create workspace + session
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Write config with regulated as defaultMode
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'regulated';
+      await writeConfig(wsDir, config);
+
+      // 3. Create a NEW session (new sessionID) WITHOUT explicit policyMode
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      expect(result.phase).toBe('READY');
+      // policySnapshot must reflect config default
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('regulated');
+      expect(resolution.effectiveMode).toBe('regulated');
+
+      // Also verify persisted state
+      const { sessionDir: resolveSessionDir } = await import('../adapters/workspace');
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.mode).toBe('regulated');
+    });
+
+    it('hydrate with explicit mode overrides config default', async () => {
+      // 1. Create workspace
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Set config default to regulated
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'regulated';
+      await writeConfig(wsDir, config);
+
+      // 3. New session with explicit solo — explicit arg wins over config
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('solo');
+      expect(resolution.effectiveMode).toBe('solo');
+    });
+
+    it('hydrate falls back to solo when config has no defaultMode', async () => {
+      // Config has no defaultMode set (fresh workspace with DEFAULT_CONFIG)
+      // New session without explicit mode → should default to 'solo'
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.phase).toBe('READY');
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('solo');
+      expect(resolution.effectiveMode).toBe('solo');
+    });
+
+    it('config team default produces human-gated policy', async () => {
+      // 1. Create workspace
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Set config default to team
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'team';
+      await writeConfig(wsDir, config);
+
+      // 3. New session without explicit mode
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('team');
+      expect(resolution.effectiveMode).toBe('team');
+      expect(resolution.effectiveGateBehavior).toBe('human_gated');
     });
   });
 
@@ -604,9 +704,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'Fix login flow', source: 'user' }, ctx);
       // Read state directly from disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -637,9 +736,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'First ticket', source: 'user' }, ctx);
       await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -797,9 +895,8 @@ describe('decision', () => {
     it('fail-closes when derived plan artifacts are missing', async () => {
       await reachPlanReview();
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
@@ -1130,9 +1227,8 @@ describe('archive', () => {
         await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
         await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -1178,9 +1274,8 @@ describe('archive', () => {
       await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1202,9 +1297,8 @@ describe('archive', () => {
   describe('CORNER', () => {
     it.skipIf(!tarOk)('archives from ARCH_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1228,9 +1322,8 @@ describe('archive', () => {
 
     it.skipIf(!tarOk)('archives from REVIEW_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);

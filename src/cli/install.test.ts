@@ -821,6 +821,42 @@ describe('cli/install', () => {
       expect(existsSync(path.join(workspaceDir(fp.fingerprint), 'config.json'))).toBe(true);
     });
 
+    it('install --policy-mode regulated persists defaultMode to config', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
+      expect(result.errors).toEqual([]);
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const config = await readConfig(workspaceDir(fp.fingerprint));
+      expect(config.policy.defaultMode).toBe('regulated');
+    });
+
+    it('install --policy-mode solo persists defaultMode to config', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
+      expect(result.errors).toEqual([]);
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const config = await readConfig(workspaceDir(fp.fingerprint));
+      expect(config.policy.defaultMode).toBe('solo');
+    });
+
+    it('install --policy-mode team persists defaultMode to config', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'team' }));
+      expect(result.errors).toEqual([]);
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const config = await readConfig(workspaceDir(fp.fingerprint));
+      expect(config.policy.defaultMode).toBe('team');
+    });
+
     it('copies tarball to vendor directory', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
@@ -1116,6 +1152,60 @@ describe('cli/install', () => {
       expect(parsed.dependencies['@opencode-ai/plugin']).toBeUndefined();
       expect(parsed.dependencies.lodash).toBe('^4.0.0');
       expect(parsed.dependencies['@flowguard/core']).toBeDefined();
+    });
+
+    it('re-install without --force preserves existing config defaultMode', async () => {
+      const tarball = await createMockTarball();
+      // First install with regulated
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
+
+      // Re-install with solo (without --force) — config should NOT be overwritten
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const config = await readConfig(workspaceDir(fp.fingerprint));
+      // Still regulated — config.json already existed, no --force
+      expect(config.policy.defaultMode).toBe('regulated');
+    });
+
+    it('re-install with --force updates config defaultMode', async () => {
+      const tarball = await createMockTarball();
+      // First install with solo
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
+
+      // Re-install with --force and regulated
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const config = await readConfig(workspaceDir(fp.fingerprint));
+      // Updated to regulated — --force updates config
+      expect(config.policy.defaultMode).toBe('regulated');
+    });
+
+    it('re-install with --force preserves non-policy config fields', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
+
+      // Manually set a non-policy config field
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { readConfig, writeConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(process.cwd());
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.logging.level = 'debug';
+      await writeConfig(wsDir, config);
+
+      // Re-install with --force and different policy mode
+      await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
+
+      const updated = await readConfig(wsDir);
+      expect(updated.policy.defaultMode).toBe('regulated');
+      // Non-policy field preserved
+      expect(updated.logging.level).toBe('debug');
     });
   });
 

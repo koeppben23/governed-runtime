@@ -438,6 +438,32 @@ export async function writeDefaultConfig(workspaceDir: string): Promise<void> {
   await atomicWrite(configPath(workspaceDir), json);
 }
 
+/**
+ * Write a FlowGuard config to {workspaceDir}/config.json.
+ *
+ * Schema-validated before write (fail-closed — never persist invalid config).
+ * Uses atomic write for consistency with all other FlowGuard file operations.
+ *
+ * Used by the installer to persist user-specified policy mode into the config,
+ * and by any future config update paths that need to write arbitrary config.
+ *
+ * @param workspaceDir - Absolute path to the workspace directory.
+ * @param config - The FlowGuardConfig to persist.
+ * @throws PersistenceError if validation or write fails.
+ */
+export async function writeConfig(workspaceDir: string, config: FlowGuardConfig): Promise<void> {
+  const parsed = FlowGuardConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    throw new PersistenceError(
+      'SCHEMA_VALIDATION_FAILED',
+      `Config failed schema validation: ${parsed.error.message}`,
+    );
+  }
+  await ensureDir(workspaceDir);
+  const json = JSON.stringify(parsed.data, null, 2) + '\n';
+  await atomicWrite(configPath(workspaceDir), json);
+}
+
 // -- Discovery Operations -----------------------------------------------------
 
 /**

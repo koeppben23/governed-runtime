@@ -57,8 +57,9 @@ import {
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
 } from './templates';
-import { configPath, readConfig, writeDefaultConfig } from '../adapters/persistence';
+import { configPath, readConfig, writeConfig } from '../adapters/persistence';
 import { PersistenceError } from '../adapters/persistence';
+import { DEFAULT_CONFIG } from '../config/flowguard-config';
 import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from '../adapters/workspace';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -522,17 +523,29 @@ export async function install(args: CliArgs): Promise<CliResult> {
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
 
     // 8. Workspace config.json (required artifact)
+    // Persists args.policyMode as config.policy.defaultMode so that
+    // /hydrate without explicit mode uses the installer's intent.
+    // Priority: existing config preserved (unless --force), new config written with policyMode.
     const fpResult = await computeFingerprint(resolve('.'));
     const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
     const cfgPath = configPath(wsDir);
     if (!existsSync(cfgPath)) {
-      await writeDefaultConfig(wsDir);
+      const config = {
+        ...DEFAULT_CONFIG,
+        policy: { ...DEFAULT_CONFIG.policy, defaultMode: args.policyMode },
+      };
+      await writeConfig(wsDir, config);
       if (!existsSync(cfgPath)) {
         throw new Error(
           `WORKSPACE_CONFIG_WRITE_FAILED: workspace config is required but missing at ${cfgPath}`,
         );
       }
       ops.push({ path: cfgPath, action: 'written' });
+    } else if (args.force) {
+      const existing = await readConfig(wsDir);
+      existing.policy.defaultMode = args.policyMode;
+      await writeConfig(wsDir, existing);
+      ops.push({ path: cfgPath, action: 'merged', reason: 'policy mode updated via --force' });
     }
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));

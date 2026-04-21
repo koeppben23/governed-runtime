@@ -50,7 +50,16 @@ Controls verbosity of FlowGuard logging.
 **Values:** `solo`, `team`, `team-ci`, `regulated`
 **Default:** `solo`
 
-Sets the default policy mode for new sessions.
+Sets the default policy mode for new sessions when `/hydrate` is called without an explicit `policyMode` argument.
+
+**Resolution priority chain:**
+
+1. Explicit `/hydrate` tool argument (`policyMode`)
+2. `config.json` → `policy.defaultMode`
+3. Built-in default: `solo`
+
+The installer persists `--policy-mode` into this field during `flowguard install`.
+Re-install with `--force` updates the value; without `--force`, the existing config is preserved.
 
 `team-ci` degrades to `team` when no CI context is detected (`ci_context_missing`).
 

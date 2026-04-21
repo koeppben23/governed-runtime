@@ -37,7 +37,8 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 - Discovery results (repository metadata, stack, topology)
 - Profile resolution
 
-**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`
+**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`.
+When omitted, reads `config.json` → `policy.defaultMode`, then falls back to `solo`.
 
 `team-ci` semantics:
 

@@ -110,6 +110,7 @@ export {
   appendAuditEvent,
   readAuditTrail,
   readConfig,
+  writeConfig,
   writeDefaultConfig,
   writeDiscovery,
   readDiscovery,

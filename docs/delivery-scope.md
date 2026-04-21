@@ -93,13 +93,13 @@ These features are available in FlowGuard 1.0.0.
 
 These features exist but are not enabled by default. Customer must explicitly configure.
 
-| Feature                    | How to Enable                                 | Notes                            |
-| -------------------------- | --------------------------------------------- | -------------------------------- |
-| **Regulated mode**         | `--policy-mode regulated` or `flowguard.json` | Enforces four-eyes principle     |
-| **Custom profiles**        | Register via config                           | Extend with stack-specific rules |
-| **Custom reason codes**    | Register via config                           | Add domain-specific codes        |
-| **Custom check executors** | Register via config                           | Integrate domain validators      |
-| **Project-scoped install** | `--install-scope repo`                        | Commits `.opencode/` to repo     |
+| Feature                    | How to Enable                              | Notes                            |
+| -------------------------- | ------------------------------------------ | -------------------------------- |
+| **Regulated mode**         | `--policy-mode regulated` or `config.json` | Enforces four-eyes principle     |
+| **Custom profiles**        | Register via config                        | Extend with stack-specific rules |
+| **Custom reason codes**    | Register via config                        | Add domain-specific codes        |
+| **Custom check executors** | Register via config                        | Integrate domain validators      |
+| **Project-scoped install** | `--install-scope repo`                     | Commits `.opencode/` to repo     |
 
 ---
 

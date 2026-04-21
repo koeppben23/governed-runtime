@@ -82,7 +82,7 @@ npm run flowguard:doctor
 | ---------------------------------------------- | ---------------------------------------------------- |
 | `--install-scope global`                       | Install to `~/.config/opencode/` (default)           |
 | `--install-scope repo`                         | Install to `.opencode/` (committed to repo)          |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode                              |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `config.json`) |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz` |
 
 ## How It Works

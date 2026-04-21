@@ -155,12 +155,12 @@ describe('integration/tools', () => {
       });
     }
 
-    it("hydrate default policyMode is 'solo'", () => {
+    it("hydrate policyMode describes config fallback to 'solo'", () => {
       const h = TOOLS.hydrate as Record<string, unknown>;
       const args = h.args as Record<string, unknown>;
       const policyMode = args.policyMode as Record<string, unknown>;
-      // Zod v4 stores default in _zod.def.defaultValue
-      // We verify the description mentions 'solo' as default
+      // policyMode is optional — resolved via config fallback chain, not Zod default.
+      // The description should mention the fallback to 'solo'.
       expect(h.description).toContain('solo');
     });
   });

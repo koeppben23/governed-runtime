@@ -143,11 +143,11 @@ export const hydrate: ToolDefinition = {
   args: {
     policyMode: z
       .enum(['solo', 'team', 'team-ci', 'regulated'])
-      .default('solo')
+      .optional()
       .describe(
-        "FlowGuard policy mode. 'solo' = no human gates (default). " +
-          "'team' = human gates, self-approval allowed. " +
-          "'regulated' = human gates, four-eyes principle enforced.",
+        'FlowGuard policy mode. When omitted, reads from workspace config ' +
+          "(policy.defaultMode), then falls back to 'solo'. " +
+          "Priority: explicit arg > config > 'solo'.",
       ),
     profileId: z
       .string()
@@ -165,11 +165,18 @@ export const hydrate: ToolDefinition = {
       // Workspace config must be materialized and editable.
       await ensureWorkspaceConfig(wsDir);
 
+      // ── Policy mode resolution ─────────────────────────────────
+      // Priority chain: explicit tool arg > config.policy.defaultMode > 'solo'
+      // NOTE: hydrate resolves its own default before calling policy resolution.
+      // Do not rely on normalizePolicyMode(undefined) for hydrate fallback semantics.
+      const config = await readConfig(wsDir);
+      const resolvedMode = args.policyMode ?? config.policy.defaultMode ?? 'solo';
+
       const existing = await readState(sessDir);
 
       // Resolve policy for context
       const ciContext = detectCiContext();
-      const policyResolution = resolvePolicyWithContext(args.policyMode, ciContext);
+      const policyResolution = resolvePolicyWithContext(resolvedMode, ciContext);
       const policy = existing ? resolvePolicyFromState(existing) : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 
