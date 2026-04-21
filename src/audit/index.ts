@@ -31,6 +31,8 @@ export {
 
 // Hash chain integrity verification
 export {
+  type ChainVerifyOptions,
+  type ChainVerificationReason,
   type EventVerification,
   type ChainVerification,
   verifyEvent,

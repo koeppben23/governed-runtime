@@ -141,6 +141,32 @@ FlowGuard stores session data as plaintext JSON. If encryption is required:
 
 ---
 
+## Strict Audit Chain Verification
+
+The `verifyChain` function supports a strict verification mode via `{ strict: true }`.
+
+**Default (legacy-tolerant):** Events without hash chain fields (`prevHash`, `chainHash`) are
+skipped and counted in `skippedCount`. The chain remains valid. This mode supports migration
+and diagnostic workflows with mixed legacy/chained trails.
+
+**Strict mode:** Events without hash chain fields are treated as integrity failures.
+`skippedCount > 0` makes the chain invalid with reason `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
+Regulated verification paths must use strict mode to ensure no unchained events are silently
+tolerated in new sessions.
+
+| Mode    | Legacy events    | Chain break | Result                                         |
+| ------- | ---------------- | ----------- | ---------------------------------------------- |
+| Default | Skipped, counted | Detected    | `valid: true` (if no chain break)              |
+| Strict  | Rejected         | Detected    | `valid: false`, reason identifies failure type |
+
+Failure reason priority: `CHAIN_BREAK` > `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
+A tampered chain is a harder failure than unchained events.
+
+Legacy audit tolerance exists only for migration/diagnostic workflows and is reported
+explicitly via `skippedCount` in the verification result.
+
+---
+
 ## Compliance Mapping
 
 | Control               | Implementation                  |

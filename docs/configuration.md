@@ -104,6 +104,18 @@ Override or extend policy configurations:
 }
 ```
 
+### Audit Chain Verification Mode
+
+The `verifyChain` function accepts an optional `{ strict: boolean }` parameter:
+
+- **Default (`strict: false`):** Legacy events without chain fields are skipped and counted.
+  The chain remains valid. Suitable for migration and diagnostic workflows.
+- **Strict (`strict: true`):** Legacy events without chain fields are treated as integrity
+  failures. Regulated verification paths must use strict mode.
+
+This is a verifier capability. Call-site wiring (archive, status, doctor) to pass
+`strict: true` for regulated sessions is handled in separate patches.
+
 ### archive.redaction.mode
 
 **Type:** `enum`

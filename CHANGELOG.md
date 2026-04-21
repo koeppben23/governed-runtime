@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration and E2E tests now run with OpenCode-style session IDs and include regression assertions for hydrate discovery/config contracts.
 - Added `src/documentation/__tests__/agents-v3.test.ts` to enforce AGENTS v3 structure, marker rules, high-risk verification policy, guidance link integrity, and rubric presence.
 - Eval-suite reference links to OpenAI and Anthropic docs were revalidated and documented for traceability.
+- **Audit chain strict verification mode**: `verifyChain({ strict: true })` rejects legacy events without chain fields as integrity failures. Adds typed `ChainVerificationReason` (`CHAIN_BREAK` | `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and `reason` field to `ChainVerification`. Compliance summary now distinguishes strict failures from chain breaks in detail messages. Regulated verification paths must use strict mode; call-site wiring is handled in follow-up patches.
 
 ## [1.1.0] - 2026-04-17
 
