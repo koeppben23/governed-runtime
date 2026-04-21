@@ -552,4 +552,155 @@ components = ["clippy", "rustfmt"]
       }
     });
   });
+
+  describe('scoped-stack E2E', () => {
+    it('nested package.json creates scoped facts in detectedStack.scopes', async () => {
+      // 1. Write nested manifest on disk (apps/web/package.json)
+      const nestedPackageJson = JSON.stringify({
+        name: 'web',
+        private: true,
+        dependencies: {
+          react: '^18.2.0',
+          'react-dom': '^18.2.0',
+        },
+        devDependencies: {
+          vitest: '^1.0.0',
+          typescript: '^5.0.0',
+        },
+      });
+      await writeManifest('apps/web/package.json', nestedPackageJson);
+      await writeManifest('apps/web/src/index.tsx', '// placeholder');
+      await writeManifest('package.json', JSON.stringify({ name: 'root', private: true }));
+      await writeManifest('src/index.ts', '// placeholder');
+
+      // 2. Override repoSignals to include nested files
+      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
+        files: [
+          'package.json',
+          'src/index.ts',
+          'apps/web/package.json',
+          'apps/web/src/index.tsx',
+        ],
+        packageFiles: ['package.json', 'apps/web/package.json'],
+        configFiles: [],
+      });
+
+      // 3. Hydrate — runs real discovery with real file reads
+      await hydrateSession();
+
+      // 4. Verify state.detectedStack via persistence
+      const sessDir = await resolveSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.detectedStack).not.toBeNull();
+
+      const ds = state!.detectedStack!;
+
+      // 5. Root detectedStack should NOT contain react/vitest from nested package.json
+      const rootReact = ds.items.find((i) => i.id === 'react' && i.kind === 'framework');
+      expect(rootReact).toBeUndefined();
+
+      const rootVitest = ds.items.find((i) => i.id === 'vitest' && i.kind === 'testFramework');
+      expect(rootVitest).toBeUndefined();
+
+      // 6. Scoped stack should contain the nested facts
+      expect(ds.scopes).toBeDefined();
+      expect(ds.scopes).toHaveLength(1);
+      expect(ds.scopes![0]!.path).toBe('apps/web');
+
+      const scopeItems = ds.scopes![0]!.items;
+      const scopeIds = scopeItems.map((i) => i.id);
+
+      // Scoped facts from nested package.json
+      expect(scopeIds).toContain('react');
+      expect(scopeIds).toContain('vitest');
+
+      // Verify version extraction (react has version, vitest may not in scoped detector)
+      const reactItem = scopeItems.find((i) => i.id === 'react');
+      expect(reactItem?.version).toMatch(/^18\./);
+
+      const vitestItem = scopeItems.find((i) => i.id === 'vitest');
+      expect(vitestItem).toBeDefined();
+
+      // 7. Verify flowguard_status also surfaces scoped facts
+      const statusResult = await callStatus();
+      const statusDs = statusResult.detectedStack as Record<string, unknown>;
+      expect(statusDs).not.toBeNull();
+
+      const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
+      expect(statusScopes).toBeDefined();
+      expect(statusScopes).toHaveLength(1);
+      expect(statusScopes![0]!.path).toBe('apps/web');
+
+      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusItemIds = statusScopeItems.map((i) => i.id);
+      expect(statusItemIds).toContain('react');
+      expect(statusItemIds).toContain('vitest');
+    });
+
+    it('nested docker-compose with image: creates scoped database facts', async () => {
+      // 1. Write nested docker-compose on disk
+      const dockerCompose = `version: '3.8'
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: example
+  cache:
+    image: redis:7
+`;
+      await writeManifest('services/db/docker-compose.yml', dockerCompose);
+      await writeManifest('package.json', JSON.stringify({ name: 'root', private: true }));
+
+      // 2. Override repoSignals
+      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
+        files: [
+          'package.json',
+          'services/db/docker-compose.yml',
+        ],
+        packageFiles: ['package.json'],
+        configFiles: [],
+      });
+
+      // 3. Hydrate
+      await hydrateSession();
+
+      // 4. Verify state
+      const sessDir = await resolveSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.detectedStack).not.toBeNull();
+
+      const ds = state!.detectedStack!;
+
+      // 5. Scoped database facts from nested docker-compose
+      expect(ds.scopes).toBeDefined();
+      expect(ds.scopes).toHaveLength(1);
+      expect(ds.scopes![0]!.path).toBe('services/db');
+
+      const scopeItems = ds.scopes![0]!.items;
+      const scopeIds = scopeItems.map((i) => i.id);
+
+      expect(scopeIds).toContain('postgresql');
+      expect(scopeIds).toContain('redis');
+
+      const pgItem = scopeItems.find((i) => i.id === 'postgresql');
+      expect(pgItem?.version).toBe('16');
+
+      // 6. Verify flowguard_status also surfaces scoped facts
+      const statusResult = await callStatus();
+      const statusDs = statusResult.detectedStack as Record<string, unknown>;
+      expect(statusDs).not.toBeNull();
+
+      const statusScopes = statusDs.scopes as Array<Record<string, unknown>>;
+      expect(statusScopes).toBeDefined();
+      expect(statusScopes).toHaveLength(1);
+      expect(statusScopes![0]!.path).toBe('services/db');
+
+      const statusScopeItems = statusScopes![0]!.items as Array<Record<string, unknown>>;
+      const statusItemIds = statusScopeItems.map((i) => i.id);
+      expect(statusItemIds).toContain('postgresql');
+      expect(statusItemIds).toContain('redis');
+    });
+  });
 });

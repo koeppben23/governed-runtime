@@ -41,6 +41,7 @@ import { collectTopology } from './collectors/topology';
 import { collectSurfaces } from './collectors/surface-detection';
 import { collectCodeSurfaces } from './collectors/code-surface-analysis';
 import { collectDomainSignals } from './collectors/domain-signals';
+import { extractScopedStack } from './scoped-stack';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -225,16 +226,14 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
 };
 
 /**
- * Extract a compact detected stack from a full DiscoveryResult.
+ * Extract a compact DetectedStack from DiscoveryResult.
  *
- * Collects ALL detected items from all 8 stack categories. Items are sorted
- * deterministically: by category (language → framework → runtime → buildTool
- * → tool → testFramework → qualityTool → database), then by id within each category.
- *
- * - `items[]` contains every detected item (version optional).
- * - `versions[]` contains only items with a `.version` (backward compatible).
- * - `targets[]` contains compiler/runtime target entries when present.
+ * Produces a deterministic, sorted projection:
+ * - items[] sorted by category order (language → framework → ...)
+ * - versions[] sorted by category order
  * - `summary` uses `id=version` for versioned items, `id` for unversioned.
+ *
+ * If allFiles is provided, also extracts module-scoped stack items for monorepos.
  *
  * Derived evidence — NOT SSOT. The authoritative stack data lives in
  * `DiscoveryResult.stack`. This is a compact projection for
@@ -242,7 +241,11 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
  *
  * Returns null when no items are detected at all (empty input).
  */
-export function extractDetectedStack(result: DiscoveryResult): DetectedStack | null {
+export async function extractDetectedStack(
+  result: DiscoveryResult,
+  allFiles?: readonly string[],
+  readFile?: (path: string) => Promise<string | undefined>,
+): Promise<DetectedStack | null> {
   const items: DetectedStackItem[] = [];
   const versionEntries: DetectedStackVersion[] = [];
   const targets: DetectedStackTargetEntry[] = [];
@@ -313,11 +316,19 @@ export function extractDetectedStack(result: DiscoveryResult): DetectedStack | n
   // Summary: versioned "id=version", unversioned "id"
   const summary = items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
 
+  // allFiles is passed as second parameter, readFile as third (optional)
+  // When called from hydrate.ts: extractDetectedStack(result, repoSignals.files)
+  const scopes =
+    allFiles && allFiles.length > 0
+      ? await extractScopedStack(allFiles, result.stack, readFile)
+      : undefined;
+
   return {
     summary,
     items,
     versions: versionEntries,
     ...(targets.length > 0 ? { targets } : {}),
+    ...(scopes && scopes.length > 0 ? { scopes } : {}),
   };
 }
 

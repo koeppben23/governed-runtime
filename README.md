@@ -119,6 +119,7 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **Evidence Gates** | Every phase produces verifiable artifacts |
 | **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
 | **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect |
+| **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
 
 ---
 

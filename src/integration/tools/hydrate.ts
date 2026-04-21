@@ -51,7 +51,7 @@ import {
   extractDetectedStack,
   computeDiscoveryDigest,
 } from '../../discovery/orchestrator';
-import type { DiscoveryResult, ProfileResolution } from '../../discovery/types';
+import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types';
 import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types';
 import { planVerificationCandidates } from '../../discovery/verification-planner';
 import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
@@ -178,7 +178,7 @@ export const hydrate: ToolDefinition = {
       let discoveryResult: DiscoveryResult | undefined;
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
-      let detectedStack: ReturnType<typeof extractDetectedStack> | undefined;
+      let detectedStack: DetectedStack | null | undefined;
       let verificationCandidates:
         | Awaited<ReturnType<typeof planVerificationCandidates>>
         | undefined;
@@ -295,19 +295,20 @@ export const hydrate: ToolDefinition = {
         }
 
         // 7. Compute digest, summary, and detected stack
+        const readRepoFile = async (relativePath: string): Promise<string | undefined> => {
+          try {
+            return await fsReadFile(nodePath.join(worktree, relativePath), 'utf8');
+          } catch {
+            return undefined;
+          }
+        };
         discoveryDigest = computeDiscoveryDigest(discoveryResult);
         discoverySummary = extractDiscoverySummary(discoveryResult);
-        detectedStack = extractDetectedStack(discoveryResult);
+        detectedStack = await extractDetectedStack(discoveryResult, repoSignals.files, readRepoFile);
         verificationCandidates = await planVerificationCandidates({
           detectedStack,
           allFiles: repoSignals.files,
-          readFile: async (relativePath: string) => {
-            try {
-              return await fsReadFile(nodePath.join(worktree, relativePath), 'utf8');
-            } catch {
-              return undefined;
-            }
-          },
+          readFile: readRepoFile,
         });
         requireDiscoveryContract(discoveryDigest, discoverySummary);
         requireDiscoveryArtifacts(wsDir, sessDir);

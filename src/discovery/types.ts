@@ -497,6 +497,21 @@ export const DetectedStackSchema = z.object({
   versions: z.array(DetectedStackVersionSchema),
   /** Compiler/runtime targets (e.g., ES2022 from tsconfig). */
   targets: z.array(DetectedStackTargetEntrySchema).optional(),
+  /** Module-scoped stack items for monorepos (optional). */
+  scopes: z
+    .array(
+      z.object({
+        /** Relative path to the module root (e.g., "apps/web"). */
+        path: z.string().min(1),
+        /** Pre-formatted summary string for this scope. */
+        summary: z.string().optional(),
+        /** All detected items in this scope. */
+        items: z.array(DetectedStackItemSchema),
+        /** Versioned items in this scope. */
+        versions: z.array(DetectedStackVersionSchema).default([]),
+      }),
+    )
+    .optional(),
 });
 export type DetectedStack = z.infer<typeof DetectedStackSchema>;
 

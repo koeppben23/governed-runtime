@@ -2063,7 +2063,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       result.stack.runtimes = [];
       result.stack.buildTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions.map((v) => v.target)).toEqual([
         'language',
@@ -3298,7 +3298,7 @@ line-length = 100
         },
       );
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       const pnpmItem = ds!.items.find((i) => i.id === 'pnpm');
       expect(pnpmItem).toBeDefined();
@@ -3322,7 +3322,7 @@ line-length = 100
         },
       );
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       // versions[] should include react, vitest, eslint
@@ -3358,7 +3358,7 @@ line-length = 100
         },
       );
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       const itemIds = ds!.items.map((i) => i.id);
@@ -3383,7 +3383,7 @@ line-length = 100
         },
       );
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       // Summary should contain versioned and unversioned items
@@ -3408,7 +3408,7 @@ line-length = 100
       );
 
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       const dbItem = ds!.items.find((i) => i.kind === 'database' && i.id === 'postgresql');
@@ -3457,7 +3457,7 @@ components = ["clippy", "rustfmt"]
       );
 
       const result = await runDiscovery(input);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       const itemIds = ds!.items.map((item) => `${item.kind}:${item.id}`);
@@ -3943,7 +3943,7 @@ describe('discovery/orchestrator', () => {
 
     it('extractDetectedStack returns versioned items sorted by category then id', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
 
       // TS project should have at least typescript with a version
       if (ds === null) {
@@ -3995,7 +3995,7 @@ describe('discovery/orchestrator', () => {
 
     it('extractDetectedStack summary matches items array', async () => {
       const result = await runDiscovery(TS_PROJECT_INPUT);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       if (!ds) return;
 
       const rebuilt = ds.items.map((i) => (i.version ? `${i.id}=${i.version}` : i.id)).join(', ');
@@ -4021,7 +4021,7 @@ describe('discovery/orchestrator', () => {
       vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
 
       const result = await runDiscovery(EMPTY_INPUT);
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).toBeNull();
     });
 
@@ -4058,7 +4058,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions.map((v) => v.target)).toEqual([
         'language',
@@ -4094,7 +4094,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions[0]!.evidence).toBe('pom.xml:<java.version>');
       expect(ds!.items[0]!.evidence).toBe('pom.xml:<java.version>');
@@ -4112,7 +4112,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.versions[0]!.evidence).toBeUndefined();
     });
@@ -4143,7 +4143,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
 
       // items[] has both
@@ -4180,7 +4180,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.targets).toBeDefined();
       expect(ds!.targets).toHaveLength(1);
@@ -4204,7 +4204,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.targets).toBeUndefined();
     });
@@ -4226,7 +4226,7 @@ describe('discovery/orchestrator', () => {
       result.stack.tools = [];
       result.stack.qualityTools = [];
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).not.toBeNull();
       expect(ds!.items[0]!.evidence).toBe('vitest.config.ts');
     });
@@ -4241,7 +4241,7 @@ describe('discovery/orchestrator', () => {
       expect(result.stack.frameworks).toHaveLength(0);
       expect(result.stack.testFrameworks).toHaveLength(0);
 
-      const ds = extractDetectedStack(result);
+      const ds = await extractDetectedStack(result);
       expect(ds).toBeNull();
     });
 
