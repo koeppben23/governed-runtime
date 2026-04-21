@@ -451,6 +451,14 @@ When reviewing Angular changes, MUST verify:
 | Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
 | A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Do not make version-specific
+claims without repository evidence; mark unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -459,25 +467,48 @@ When reviewing Angular changes, MUST verify:
  * - `base`: Always-injected content (conventions, naming, architecture,
  *   implementation standards, quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: decision trees + testing rules + negative tests
+ *   - PLAN: detected stack + decision trees + testing rules + negative tests
  *   - PLAN_REVIEW: review checklist
- *   - IMPLEMENTATION: testing rules + examples + negative tests
- *   - IMPL_REVIEW: examples + review checklist
+ *   - IMPLEMENTATION: detected stack + testing rules + examples + negative tests
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: examples + review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  *   - ARCHITECTURE: decision trees
  *   - ARCH_REVIEW: decision trees + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: DECISION_TREES + '\n\n---\n\n' + TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      DECISION_TREES +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
-      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     ARCHITECTURE: DECISION_TREES,
     ARCH_REVIEW: DECISION_TREES + '\n\n---\n\n' + REVIEW_CHECKLIST,
   },

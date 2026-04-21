@@ -23,6 +23,9 @@ import { withSpan, addFingerprint } from '../telemetry';
 import type {
   CollectorInput,
   CollectorStatus,
+  DetectedStack,
+  DetectedStackTarget,
+  DetectedStackVersion,
   DiscoveryResult,
   DiscoverySummary,
   StackInfo,
@@ -202,6 +205,64 @@ export function extractDiscoverySummary(result: DiscoveryResult): DiscoverySumma
     apiEndpointCount: result.codeSurfaces?.endpoints.length,
     hasAuthBoundary: (result.codeSurfaces?.authBoundaries.length ?? 0) > 0,
   };
+}
+
+/** Sort priority: language=0, framework=1, runtime=2, buildTool=3. */
+const TARGET_ORDER: Record<DetectedStackTarget, number> = {
+  language: 0,
+  framework: 1,
+  runtime: 2,
+  buildTool: 3,
+};
+
+/**
+ * Extract a compact detected stack from a full DiscoveryResult.
+ *
+ * Returns only items that have a `.version` string. Items are sorted
+ * deterministically: by category (language → framework → runtime → buildTool),
+ * then by id within each category.
+ *
+ * Derived evidence — NOT SSOT. The authoritative version data lives in
+ * `DiscoveryResult.stack`. This is a compact projection for
+ * `flowguard_status.detectedStack`.
+ *
+ * Returns null when no versioned items are found.
+ */
+export function extractDetectedStack(result: DiscoveryResult): DetectedStack | null {
+  const entries: DetectedStackVersion[] = [];
+
+  const categories: Array<{ items: typeof result.stack.languages; target: DetectedStackTarget }> = [
+    { items: result.stack.languages, target: 'language' },
+    { items: result.stack.frameworks, target: 'framework' },
+    { items: result.stack.runtimes, target: 'runtime' },
+    { items: result.stack.buildTools, target: 'buildTool' },
+  ];
+
+  for (const { items, target } of categories) {
+    for (const item of items) {
+      if (item.version) {
+        entries.push({
+          id: item.id,
+          version: item.version,
+          target,
+          ...(item.versionEvidence ? { evidence: item.versionEvidence } : {}),
+        });
+      }
+    }
+  }
+
+  if (entries.length === 0) return null;
+
+  // Deterministic sort: category order, then alphabetical by id
+  entries.sort((a, b) => {
+    const orderDiff = TARGET_ORDER[a.target] - TARGET_ORDER[b.target];
+    if (orderDiff !== 0) return orderDiff;
+    return a.id.localeCompare(b.id);
+  });
+
+  const summary = entries.map((e) => `${e.id}=${e.version}`).join(', ');
+
+  return { summary, versions: entries };
 }
 
 /**

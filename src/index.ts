@@ -311,6 +311,9 @@ export {
   type RejectedCandidate,
   type ProfileResolution,
   type DiscoverySummary,
+  type DetectedStack,
+  type DetectedStackVersion,
+  type DetectedStackTarget,
   type CollectorInput,
   type CollectorOutput,
   // Schemas
@@ -320,6 +323,9 @@ export {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
   DiscoverySummarySchema,
+  DetectedStackSchema,
+  DetectedStackVersionSchema,
+  DetectedStackTargetSchema,
   // Constants
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
@@ -328,6 +334,7 @@ export {
 export {
   runDiscovery,
   extractDiscoverySummary,
+  extractDetectedStack,
   computeDiscoveryDigest,
 } from './discovery/orchestrator';
 

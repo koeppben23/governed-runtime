@@ -425,6 +425,14 @@ When reviewing TypeScript changes, MUST verify:
 | Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
 | Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Do not make version-specific
+claims without repository evidence; mark unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -433,22 +441,43 @@ When reviewing TypeScript changes, MUST verify:
  * - `base`: Always-injected content (conventions, types, naming, architecture,
  *   quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: testing rules + negative test matrix (plan test strategy)
- *   - PLAN_REVIEW: review checklist (evaluate the plan)
- *   - IMPLEMENTATION: testing rules + examples + negative test matrix (full guidance)
- *   - IMPL_REVIEW: examples + review checklist (spot anti-patterns, review quality)
- *   - EVIDENCE_REVIEW: review checklist (final evidence check)
- *   - REVIEW: examples + review checklist (standalone review flow)
+ *   - PLAN: detected stack + testing rules + negative test matrix
+ *   - PLAN_REVIEW: review checklist
+ *   - IMPLEMENTATION: detected stack + testing rules + examples + negative test matrix
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
+ *   - EVIDENCE_REVIEW: review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: TESTING_RULES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
-      TESTING_RULES + '\n\n---\n\n' + FEW_SHOT_EXAMPLES + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_RULES +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
   },
 };

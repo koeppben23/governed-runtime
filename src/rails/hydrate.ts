@@ -28,6 +28,7 @@
 import type { SessionState } from '../state/schema';
 import type { BindingInfo } from '../state/evidence';
 import type { DiscoverySummary } from '../discovery/types';
+import type { DetectedStack } from '../discovery/types';
 import { evaluate } from '../machine/evaluate';
 import type { RailResult, RailContext } from './types';
 import { blocked } from '../config/reasons';
@@ -100,6 +101,12 @@ export interface HydrateInput {
    * Extracted from DiscoveryResult by the tool layer.
    */
   readonly discoverySummary?: DiscoverySummary;
+  /**
+   * Compact detected stack versions for SessionState.
+   * Extracted from DiscoveryResult by the tool layer.
+   * Derived evidence — NOT SSOT.
+   */
+  readonly detectedStack?: DetectedStack | null;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -214,6 +221,7 @@ export function executeHydrate(
     // Discovery
     discoveryDigest: input.discoveryDigest ?? null,
     discoverySummary: input.discoverySummary ?? null,
+    detectedStack: input.detectedStack ?? null,
 
     // Metadata
     transition: null,

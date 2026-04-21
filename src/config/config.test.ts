@@ -1175,6 +1175,75 @@ describe('config/profile/convention-override-clause', () => {
   });
 });
 
+describe('config/profile/detected-stack-instruction', () => {
+  const ALL_PROFILES = [
+    { name: 'baseline', profile: baselineProfile },
+    { name: 'java', profile: javaProfile },
+    { name: 'angular', profile: angularProfile },
+    { name: 'typescript', profile: typescriptProfile },
+  ] as const;
+
+  const STACK_PHASES = ['PLAN', 'IMPLEMENTATION', 'IMPL_REVIEW', 'REVIEW'] as const;
+  const NON_STACK_PHASES = ['PLAN_REVIEW', 'EVIDENCE_REVIEW'] as const;
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile includes detected stack instruction in PLAN/IMPL/IMPL_REVIEW/REVIEW',
+      ({ profile }) => {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        expect(byPhase).toBeDefined();
+        for (const phase of STACK_PHASES) {
+          const content = byPhase![phase as keyof typeof byPhase];
+          expect(content).toBeDefined();
+          expect(content).toContain('flowguard_status.detectedStack');
+          expect(content).toContain('NOT_VERIFIED');
+        }
+      },
+    );
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile does NOT include detected stack instruction in PLAN_REVIEW/EVIDENCE_REVIEW',
+      ({ profile }) => {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        expect(byPhase).toBeDefined();
+        for (const phase of NON_STACK_PHASES) {
+          const content = byPhase![phase as keyof typeof byPhase];
+          if (content) {
+            expect(content).not.toContain('flowguard_status.detectedStack');
+          }
+        }
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name detected stack instruction is NOT in base content',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).not.toContain('flowguard_status.detectedStack');
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('detected stack instruction text matches across all profiles', () => {
+      const expected = 'Use flowguard_status.detectedStack when present';
+      for (const { profile } of ALL_PROFILES) {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        if (!byPhase) continue;
+        for (const phase of STACK_PHASES) {
+          const content = byPhase[phase as keyof typeof byPhase];
+          expect(content).toContain(expected);
+        }
+      }
+    });
+  });
+});
+
 describe('config/check-executors', () => {
   const testQuality = baselineProfile.checks.get('test_quality')!;
   const rollbackSafety = baselineProfile.checks.get('rollback_safety')!;

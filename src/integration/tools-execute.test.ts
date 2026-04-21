@@ -130,6 +130,58 @@ describe('status', () => {
       expect(typeof comp.overallComplete).toBe('boolean');
       expect(typeof comp.summary).toBe('object');
     });
+
+    it('returns detectedStack as null when no versions detected', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      // Temp workspace has no manifest files — detectedStack should be null
+      expect(result.detectedStack).toBeNull();
+    });
+
+    it('returns full detectedStack object with summary and versions', async () => {
+      await hydrateSession();
+      // Resolve session dir and inject detectedStack into persisted state
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        detectedStack: {
+          summary: 'java=21, spring-boot=3.4.1',
+          versions: [
+            { id: 'java', version: '21', target: 'language', evidence: 'pom.xml:<java.version>' },
+            { id: 'spring-boot', version: '3.4.1', target: 'framework' },
+          ],
+        },
+      });
+      const result = parseToolResult(await status.execute({}, ctx));
+
+      // Full object — not just the summary string
+      expect(result.detectedStack).not.toBeNull();
+      expect(typeof result.detectedStack).toBe('object');
+      const ds = result.detectedStack as Record<string, unknown>;
+      expect(ds.summary).toBe('java=21, spring-boot=3.4.1');
+      expect(Array.isArray(ds.versions)).toBe(true);
+
+      const versions = ds.versions as Array<Record<string, unknown>>;
+      expect(versions).toHaveLength(2);
+      expect(versions[0]).toMatchObject({
+        id: 'java',
+        version: '21',
+        target: 'language',
+        evidence: 'pom.xml:<java.version>',
+      });
+      expect(versions[1]).toMatchObject({
+        id: 'spring-boot',
+        version: '3.4.1',
+        target: 'framework',
+      });
+      // evidence absent on second entry — must not be fabricated
+      expect(versions[1].evidence).toBeUndefined();
+    });
   });
 
   describe('BAD', () => {
@@ -226,9 +278,8 @@ describe('hydrate', () => {
     it('persists state to session directory on disk', async () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -309,9 +360,8 @@ describe('hydrate', () => {
       await hydrateSession();
 
       // 2. Locate session dir on disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -484,9 +534,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'Fix login flow', source: 'user' }, ctx);
       // Read state directly from disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -517,9 +566,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'First ticket', source: 'user' }, ctx);
       await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -677,9 +725,8 @@ describe('decision', () => {
     it('fail-closes when derived plan artifacts are missing', async () => {
       await reachPlanReview();
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
@@ -1010,9 +1057,8 @@ describe('archive', () => {
         await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
         await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -1058,9 +1104,8 @@ describe('archive', () => {
       await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1082,9 +1127,8 @@ describe('archive', () => {
   describe('CORNER', () => {
     it.skipIf(!tarOk)('archives from ARCH_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1108,9 +1152,8 @@ describe('archive', () => {
 
     it.skipIf(!tarOk)('archives from REVIEW_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);

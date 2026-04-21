@@ -46,6 +46,7 @@ import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 import {
   runDiscovery,
   extractDiscoverySummary,
+  extractDetectedStack,
   computeDiscoveryDigest,
 } from '../../discovery/orchestrator';
 import type { DiscoveryResult, ProfileResolution } from '../../discovery/types';
@@ -174,6 +175,7 @@ export const hydrate: ToolDefinition = {
       let discoveryResult: DiscoveryResult | undefined;
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
+      let detectedStack: ReturnType<typeof extractDetectedStack> | undefined;
       let profileResolution: ProfileResolution | undefined;
       if (!existing && !repoSignals) {
         throwHydrateError(
@@ -286,9 +288,10 @@ export const hydrate: ToolDefinition = {
           );
         }
 
-        // 7. Compute digest and summary
+        // 7. Compute digest, summary, and detected stack
         discoveryDigest = computeDiscoveryDigest(discoveryResult);
         discoverySummary = extractDiscoverySummary(discoveryResult);
+        detectedStack = extractDetectedStack(discoveryResult);
         requireDiscoveryContract(discoveryDigest, discoverySummary);
         requireDiscoveryArtifacts(wsDir, sessDir);
       }
@@ -315,6 +318,7 @@ export const hydrate: ToolDefinition = {
           discoveryResult,
           discoveryDigest,
           discoverySummary,
+          detectedStack,
         },
         ctx,
       );

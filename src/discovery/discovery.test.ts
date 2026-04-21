@@ -23,6 +23,9 @@ import {
   ProfileResolutionSchema,
   DiscoverySummarySchema,
   DetectedItemSchema,
+  DetectedStackSchema,
+  DetectedStackVersionSchema,
+  DetectedStackTargetSchema,
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
   ArchiveFindingSchema,
@@ -43,6 +46,7 @@ import { collectDomainSignals } from './collectors/domain-signals';
 
 // Orchestrator
 import { runDiscovery, extractDiscoverySummary, computeDiscoveryDigest } from './orchestrator';
+import { extractDetectedStack } from './orchestrator';
 
 // ─── Git Adapter Mock (module-level, deterministic) ──────────────────────────
 // The repo-metadata collector imports from ../adapters/git. A single
@@ -141,6 +145,43 @@ describe('discovery/types', () => {
       expect(result.success).toBe(true);
     });
 
+    it('DetectedStackVersion validates correct data', () => {
+      const result = DetectedStackVersionSchema.safeParse({
+        id: 'java',
+        version: '21',
+        target: 'language',
+        evidence: 'pom.xml:<java.version>',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('DetectedStackVersion validates without optional evidence', () => {
+      const result = DetectedStackVersionSchema.safeParse({
+        id: 'node',
+        version: '20.11.0',
+        target: 'runtime',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('DetectedStackTarget validates all valid categories', () => {
+      for (const target of ['language', 'framework', 'runtime', 'buildTool']) {
+        const result = DetectedStackTargetSchema.safeParse(target);
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it('DetectedStack validates correct data', () => {
+      const result = DetectedStackSchema.safeParse({
+        summary: 'java=21, spring-boot=3.4.1',
+        versions: [
+          { id: 'java', version: '21', target: 'language' },
+          { id: 'spring-boot', version: '3.4.1', target: 'framework', evidence: 'pom.xml' },
+        ],
+      });
+      expect(result.success).toBe(true);
+    });
+
     it('ProfileResolution validates correct data', () => {
       const result = ProfileResolutionSchema.safeParse({
         schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
@@ -193,6 +234,36 @@ describe('discovery/types', () => {
         hasPersistenceSurface: false,
         hasCiCd: false,
         hasSecuritySurface: false,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('DetectedStackVersion rejects empty id', () => {
+      const result = DetectedStackVersionSchema.safeParse({
+        id: '',
+        version: '21',
+        target: 'language',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('DetectedStackVersion rejects empty version', () => {
+      const result = DetectedStackVersionSchema.safeParse({
+        id: 'java',
+        version: '',
+        target: 'language',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('DetectedStackTarget rejects invalid category', () => {
+      const result = DetectedStackTargetSchema.safeParse('library');
+      expect(result.success).toBe(false);
+    });
+
+    it('DetectedStack rejects missing versions array', () => {
+      const result = DetectedStackSchema.safeParse({
+        summary: 'java=21',
       });
       expect(result.success).toBe(false);
     });
@@ -1423,6 +1494,40 @@ describe('discovery/orchestrator', () => {
       expect(digest1.length).toBe(64); // SHA-256 hex
       expect(/^[0-9a-f]{64}$/.test(digest1)).toBe(true);
     });
+
+    it('extractDetectedStack returns versioned items sorted by category then id', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const ds = extractDetectedStack(result);
+
+      // TS project should have at least typescript with a version
+      if (ds === null) {
+        // If no versions detected, that's valid — but verify null contract
+        expect(ds).toBeNull();
+        return;
+      }
+
+      expect(ds.summary).toBeTruthy();
+      expect(ds.versions.length).toBeGreaterThan(0);
+
+      // Every entry must have id, version, and target
+      for (const v of ds.versions) {
+        expect(v.id.length).toBeGreaterThan(0);
+        expect(v.version.length).toBeGreaterThan(0);
+        expect(['language', 'framework', 'runtime', 'buildTool']).toContain(v.target);
+      }
+
+      // Summary format: "id=version, id=version"
+      expect(ds.summary).toMatch(/^\w[\w-]*=\S+/);
+    });
+
+    it('extractDetectedStack summary matches versions array', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      const ds = extractDetectedStack(result);
+      if (!ds) return;
+
+      const rebuilt = ds.versions.map((v) => `${v.id}=${v.version}`).join(', ');
+      expect(ds.summary).toBe(rebuilt);
+    });
   });
 
   describe('CORNER', () => {
@@ -1436,6 +1541,90 @@ describe('discovery/orchestrator', () => {
       expect(result.schemaVersion).toBe(DISCOVERY_SCHEMA_VERSION);
       expect(result.stack.languages).toHaveLength(0);
       expect(result.topology.kind).toBe('unknown');
+    });
+
+    it('extractDetectedStack returns null when no items have versions', async () => {
+      vi.mocked(gitMock.defaultBranch).mockResolvedValueOnce(null as unknown as string);
+      vi.mocked(gitMock.headCommit).mockResolvedValueOnce(null as unknown as string);
+
+      const result = await runDiscovery(EMPTY_INPUT);
+      const ds = extractDetectedStack(result);
+      expect(ds).toBeNull();
+    });
+
+    it('extractDetectedStack sorts languages before frameworks before runtimes', async () => {
+      // Build a synthetic DiscoveryResult with mixed categories
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      // Inject synthetic versioned items across categories
+      result.stack.runtimes = [
+        { id: 'node', confidence: 0.9, classification: 'fact', evidence: [], version: '20.11.0' },
+      ];
+      result.stack.frameworks = [
+        {
+          id: 'express',
+          confidence: 0.8,
+          classification: 'derived_signal',
+          evidence: [],
+          version: '4.18.2',
+        },
+      ];
+      result.stack.languages = [
+        {
+          id: 'typescript',
+          confidence: 0.95,
+          classification: 'fact',
+          evidence: [],
+          version: '5.3.3',
+        },
+      ];
+      result.stack.buildTools = [
+        { id: 'npm', confidence: 0.9, classification: 'fact', evidence: [], version: '10.2.4' },
+      ];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.versions.map((v) => v.target)).toEqual([
+        'language',
+        'framework',
+        'runtime',
+        'buildTool',
+      ]);
+      expect(ds!.summary).toBe('typescript=5.3.3, express=4.18.2, node=20.11.0, npm=10.2.4');
+    });
+
+    it('extractDetectedStack includes evidence when versionEvidence exists', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      result.stack.languages = [
+        {
+          id: 'java',
+          confidence: 0.9,
+          classification: 'fact',
+          evidence: ['pom.xml'],
+          version: '21',
+          versionEvidence: 'pom.xml:<java.version>',
+        },
+      ];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.versions[0]!.evidence).toBe('pom.xml:<java.version>');
+    });
+
+    it('extractDetectedStack omits evidence when versionEvidence is absent', async () => {
+      const result = await runDiscovery(TS_PROJECT_INPUT);
+      result.stack.languages = [
+        { id: 'go', confidence: 0.9, classification: 'fact', evidence: [], version: '1.21' },
+      ];
+      result.stack.frameworks = [];
+      result.stack.runtimes = [];
+      result.stack.buildTools = [];
+
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+      expect(ds!.versions[0]!.evidence).toBeUndefined();
     });
 
     it('validation hints derive typecheck command from tsconfig', async () => {

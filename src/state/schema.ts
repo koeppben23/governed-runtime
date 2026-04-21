@@ -28,7 +28,7 @@ import {
   TicketEvidence,
   ValidationResult,
 } from './evidence';
-import { DiscoverySummarySchema } from '../discovery/types';
+import { DiscoverySummarySchema, DetectedStackSchema } from '../discovery/types';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -248,6 +248,17 @@ export const SessionState = z.object({
    * Null for sessions created before Phase 5 (discovery system).
    */
   discoverySummary: DiscoverySummarySchema.nullable().optional(),
+
+  /**
+   * Compact detected stack versions for surfacing in flowguard_status.
+   *
+   * Derived evidence — NOT SSOT. The authoritative version data lives in
+   * DiscoveryResult.stack. This is a compact projection of items that have
+   * a detected version string, sorted deterministically by category then id.
+   *
+   * Null when no versioned items were found or for pre-discovery sessions.
+   */
+  detectedStack: DetectedStackSchema.nullable().optional(),
 
   // ── Metadata ────────────────────────────────────────────────
 

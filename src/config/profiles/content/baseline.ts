@@ -266,6 +266,14 @@ When reviewing changes, MUST verify:
 | Security | Secrets in code/logs, unsanitized inputs, widened trust boundaries |
 | Architecture | Circular dependencies, boundary violations, responsibility bleed |`;
 
+// ─── Detected Stack Instruction ──────────────────────────────────────────────
+
+const DETECTED_STACK_INSTRUCTION = `\
+## Detected Stack
+
+Use flowguard_status.detectedStack when present. Do not make version-specific
+claims without repository evidence; mark unsupported claims as NOT_VERIFIED.`;
+
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
 /**
@@ -274,26 +282,43 @@ When reviewing changes, MUST verify:
  * - `base`: Always-injected content (conventions, code organization, error
  *   handling, security, quality gates, anti-pattern reference table).
  * - `byPhase`: Phase-specific additions:
- *   - PLAN: testing fundamentals + negative test matrix
+ *   - PLAN: detected stack + testing fundamentals + negative test matrix
  *   - PLAN_REVIEW: review checklist
- *   - IMPLEMENTATION: testing fundamentals + examples + negative test matrix
- *   - IMPL_REVIEW: examples + review checklist
+ *   - IMPLEMENTATION: detected stack + testing fundamentals + examples + negative test matrix
+ *   - IMPL_REVIEW: detected stack + examples + review checklist
  *   - EVIDENCE_REVIEW: review checklist
- *   - REVIEW: examples + review checklist
+ *   - REVIEW: detected stack + examples + review checklist
  */
 export const profileRuleContent: PhaseInstructions = {
   base: BASE_CONTENT,
   byPhase: {
-    PLAN: TESTING_FUNDAMENTALS + '\n\n---\n\n' + NEGATIVE_TEST_MATRIX,
+    PLAN:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      TESTING_FUNDAMENTALS +
+      '\n\n---\n\n' +
+      NEGATIVE_TEST_MATRIX,
     PLAN_REVIEW: REVIEW_CHECKLIST,
     IMPLEMENTATION:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
       TESTING_FUNDAMENTALS +
       '\n\n---\n\n' +
       FEW_SHOT_EXAMPLES +
       '\n\n---\n\n' +
       NEGATIVE_TEST_MATRIX,
-    IMPL_REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    IMPL_REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
     EVIDENCE_REVIEW: REVIEW_CHECKLIST,
-    REVIEW: FEW_SHOT_EXAMPLES + '\n\n---\n\n' + REVIEW_CHECKLIST,
+    REVIEW:
+      DETECTED_STACK_INSTRUCTION +
+      '\n\n---\n\n' +
+      FEW_SHOT_EXAMPLES +
+      '\n\n---\n\n' +
+      REVIEW_CHECKLIST,
   },
 };

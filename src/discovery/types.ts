@@ -352,6 +352,55 @@ export const DiscoverySummarySchema = z.object({
 });
 export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
 
+// ─── Detected Stack (compact version summary for status) ──────────────────────
+
+/**
+ * Detected stack category: language, framework, runtime, or buildTool.
+ *
+ * Determines sort order in the summary string:
+ * language → framework → runtime → buildTool (deterministic).
+ */
+export const DetectedStackTargetSchema = z.enum(['language', 'framework', 'runtime', 'buildTool']);
+export type DetectedStackTarget = z.infer<typeof DetectedStackTargetSchema>;
+
+/**
+ * A single version-bearing item extracted from DiscoveryResult.stack.
+ *
+ * Derived evidence — NOT SSOT. The authoritative version data lives in
+ * the DiscoveryResult returned by the discovery orchestrator. This is a
+ * compact projection for quick consumption by LLM instructions via
+ * flowguard_status.
+ */
+export const DetectedStackVersionSchema = z.object({
+  /** Stack item identifier (e.g., "java", "spring-boot", "node"). */
+  id: z.string().min(1),
+  /** Detected version string (e.g., "21", "3.4.1", "20.11.0"). */
+  version: z.string().min(1),
+  /** Category of this item. */
+  target: DetectedStackTargetSchema,
+  /** Optional provenance string (e.g., "pom.xml:<java.version>"). */
+  evidence: z.string().optional(),
+});
+export type DetectedStackVersion = z.infer<typeof DetectedStackVersionSchema>;
+
+/**
+ * Compact detected stack summary embedded in SessionState.
+ *
+ * Derived evidence — NOT SSOT. The authoritative stack data lives in
+ * DiscoveryResult.stack. This structure provides a compact, deterministic
+ * projection of versioned items for surfacing in flowguard_status.
+ *
+ * `summary` is a pre-formatted string: "java=21, spring-boot=3.4.1, node=20.11.0"
+ * sorted by category (language → framework → runtime → buildTool), then by id.
+ */
+export const DetectedStackSchema = z.object({
+  /** Pre-formatted summary string for quick injection into status. */
+  summary: z.string(),
+  /** Individual version entries for structured access. */
+  versions: z.array(DetectedStackVersionSchema),
+});
+export type DetectedStack = z.infer<typeof DetectedStackSchema>;
+
 // ─── Collector Interface ──────────────────────────────────────────────────────
 
 /**
