@@ -420,6 +420,39 @@ const name: string = this.form.controls.name.value; // type-safe, typo = compile
 </correct>
 <why>Untyped forms bypass the type checker entirely. Field name typos, wrong value types, and missing validations become runtime bugs instead of compile errors.</why>
 </example>
+
+<example id="AP-NG02" type="anti-pattern">
+<incorrect>
+// MIXED STATE ARCHITECTURES — NgRx store and local BehaviorSubject for same data
+@Component({ /* ... */ })
+export class DashboardComponent {
+  private localUsers$ = new BehaviorSubject<User[]>([]);
+
+  constructor(private store: Store) {}
+
+  loadUsers() {
+    this.store.dispatch(loadUsers());        // dispatches to NgRx
+    this.api.getUsers().subscribe(users =>
+      this.localUsers$.next(users)           // also caches in local subject
+    );
+  }
+}
+</incorrect>
+<correct>
+// Single state authority — NgRx store is the only source
+@Component({ /* ... */ })
+export class DashboardComponent {
+  users$ = this.store.select(selectAllUsers);
+
+  constructor(private store: Store) {}
+
+  loadUsers() {
+    this.store.dispatch(loadUsers());  // store is the single authority
+  }
+}
+</correct>
+<why>Mixing NgRx store with local BehaviorSubjects creates competing state authorities. Data drifts between the two, components show stale or contradictory values, and debugging requires tracing multiple update paths.</why>
+</example>
 </examples>`;
 
 const NEGATIVE_TEST_MATRIX = `\

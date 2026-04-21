@@ -689,28 +689,28 @@ describe('config/profile/byPhase-content', () => {
 describe('config/profile/few-shot-examples', () => {
   // ─── P1: Example Coverage ─────────────────────────────────
   describe('HAPPY', () => {
-    it('TypeScript profile has 6 examples (3 original + 3 new)', () => {
+    it('TypeScript profile has 7 examples', () => {
       const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Java profile has 6 examples (3 original + 3 new)', () => {
+    it('Java profile has 7 examples', () => {
       const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Angular profile has 6 examples (3 original + 3 new)', () => {
+    it('Angular profile has 7 examples', () => {
       const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(6);
+      expect(matches).toHaveLength(7);
     });
 
-    it('Baseline profile has 3 examples (all new)', () => {
+    it('Baseline profile has 8 examples', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(3);
+      expect(matches).toHaveLength(8);
     });
   });
 
@@ -748,30 +748,55 @@ describe('config/profile/few-shot-examples', () => {
 
   // ─── CORNER: Specific example IDs ─────────────────────────
   describe('CORNER', () => {
-    it('TypeScript examples cover TS01, TS04, TS05, TS06, TS08, TS10', () => {
+    it('TypeScript examples cover TS01, TS02, TS04, TS05, TS06, TS08, TS10', () => {
       const impl = resolveProfileInstructions(typescriptProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-TS01', 'AP-TS04', 'AP-TS05', 'AP-TS06', 'AP-TS08', 'AP-TS10']) {
+      for (const id of [
+        'AP-TS01',
+        'AP-TS02',
+        'AP-TS04',
+        'AP-TS05',
+        'AP-TS06',
+        'AP-TS08',
+        'AP-TS10',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Java examples cover J01, J03, J04, J05, J07, J08', () => {
+    it('Java examples cover J01, J03, J04, J05, J07, J08, J09', () => {
       const impl = resolveProfileInstructions(javaProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-J01', 'AP-J03', 'AP-J04', 'AP-J05', 'AP-J07', 'AP-J08']) {
+      for (const id of ['AP-J01', 'AP-J03', 'AP-J04', 'AP-J05', 'AP-J07', 'AP-J08', 'AP-J09']) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Angular examples cover NG01, NG03, NG04, NG05, NG06, NG07', () => {
+    it('Angular examples cover NG01, NG02, NG03, NG04, NG05, NG06, NG07', () => {
       const impl = resolveProfileInstructions(angularProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-NG01', 'AP-NG03', 'AP-NG04', 'AP-NG05', 'AP-NG06', 'AP-NG07']) {
+      for (const id of [
+        'AP-NG01',
+        'AP-NG02',
+        'AP-NG03',
+        'AP-NG04',
+        'AP-NG05',
+        'AP-NG06',
+        'AP-NG07',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });
 
-    it('Baseline examples cover B01, B02, B03', () => {
+    it('Baseline examples cover B01-B08', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
-      for (const id of ['AP-B01', 'AP-B02', 'AP-B03']) {
+      for (const id of [
+        'AP-B01',
+        'AP-B02',
+        'AP-B03',
+        'AP-B04',
+        'AP-B05',
+        'AP-B06',
+        'AP-B07',
+        'AP-B08',
+      ]) {
         expect(impl).toContain(`id="${id}"`);
       }
     });

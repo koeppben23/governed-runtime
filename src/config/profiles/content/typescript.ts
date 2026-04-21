@@ -394,6 +394,29 @@ it('creates user with default role', async () => {
 </correct>
 <why>Testing internal method calls couples tests to implementation. Any refactor (e.g., changing save to upsert, batching writes) breaks tests even when behavior is unchanged.</why>
 </example>
+
+<example id="AP-TS02" type="anti-pattern">
+<incorrect>
+// TYPE ASSERTION ABUSE — bypassing the type system without narrowing
+function getUser(data: unknown): User {
+  return data as User;  // no validation, trusts caller blindly
+}
+
+const config = JSON.parse(raw) as AppConfig;  // parse result unvalidated
+</incorrect>
+<correct>
+// Validate at boundary, narrow with type guards
+function getUser(data: unknown): User {
+  if (!isUser(data)) {
+    throw new TypeError('Invalid user data: missing required fields');
+  }
+  return data;  // type narrowed by guard
+}
+
+const config = AppConfigSchema.parse(JSON.parse(raw));  // schema-validated
+</correct>
+<why>Type assertions (\`as T\`) silence the compiler without runtime validation. Invalid data flows through unchecked, causing failures far from the source. Boundary validation catches issues early.</why>
+</example>
 </examples>`;
 
 const NEGATIVE_TEST_MATRIX = `\

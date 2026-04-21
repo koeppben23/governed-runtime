@@ -444,6 +444,33 @@ void create_withValidInput_persistsAndReturnsUser() {
 </correct>
 <why>Verifying exact mock interactions couples tests to implementation sequence. Any change to how persistence works (batching, caching, method rename) breaks tests even when behavior is correct.</why>
 </example>
+
+<example id="AP-J09" type="anti-pattern">
+<incorrect>
+// TRANSACTION BOUNDARY LEAK — business logic spans implicit transaction
+public void transferFunds(Long fromId, Long toId, BigDecimal amount) {
+    Account from = accountRepo.findById(fromId).orElseThrow();
+    Account to = accountRepo.findById(toId).orElseThrow();
+    from.debit(amount);
+    accountRepo.save(from);   // committed
+    // crash here leaves 'to' uncredited
+    to.credit(amount);
+    accountRepo.save(to);     // separate implicit transaction
+}
+</incorrect>
+<correct>
+// Explicit transaction boundary wraps the full unit of work
+@Transactional
+public void transferFunds(Long fromId, Long toId, BigDecimal amount) {
+    Account from = accountRepo.findById(fromId).orElseThrow();
+    Account to = accountRepo.findById(toId).orElseThrow();
+    from.debit(amount);
+    to.credit(amount);
+    // both saves in same transaction — atomic commit or full rollback
+}
+</correct>
+<why>Without an explicit transaction boundary, partial writes corrupt data on failure. The debit succeeds but the credit may not, leaving the system in an inconsistent state that is difficult to detect and recover from.</why>
+</example>
 </examples>`;
 
 const EVIDENCE_BY_CHANGE_TYPE = `\
