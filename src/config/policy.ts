@@ -109,6 +109,23 @@ export interface PolicyResolution {
   readonly policy: FlowGuardPolicy;
 }
 
+// ─── Errors ──────────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when policy configuration is invalid or contains an unsupported mode.
+ *
+ * Fail-stop: invalid policy must surface immediately, never silently degrade.
+ */
+export class PolicyConfigurationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'PolicyConfigurationError';
+    this.code = code;
+  }
+}
+
 // ─── Presets ──────────────────────────────────────────────────────────────────
 
 /**
@@ -255,12 +272,25 @@ export function detectCiContext(env: Record<string, string | undefined> = proces
   return ciSignals.some(isTruthyEnv);
 }
 
-function normalizePolicyMode(mode?: string): PolicyMode {
-  if (!mode) return 'team';
+/**
+ * Validate and normalize a policy mode string.
+ *
+ * Fail-stop: unrecognized modes throw PolicyConfigurationError.
+ * No silent fallback — every caller must pass a validated mode string.
+ * Zod schema validation on config and CLI args prevents normal users from
+ * hitting this; it catches programmatic errors and config drift.
+ *
+ * @param mode - Policy mode string. Must be one of: solo, team, team-ci, regulated.
+ * @throws PolicyConfigurationError for unsupported mode values.
+ */
+function normalizePolicyMode(mode: string): PolicyMode {
   if (mode === 'solo' || mode === 'team' || mode === 'team-ci' || mode === 'regulated') {
     return mode;
   }
-  return 'team';
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_MODE',
+    `Unsupported policy mode: '${mode}'. Valid modes: solo, team, team-ci, regulated`,
+  );
 }
 
 /**
@@ -275,9 +305,13 @@ function normalizePolicyMode(mode?: string): PolicyMode {
  *
  * The returned policy object reflects the effective (possibly degraded) policy.
  * Compare: resolvePolicy() returns the raw preset without context.
+ *
+ * @param mode - Policy mode string (required). Callers must resolve their own fallback.
+ * @param ciContext - Whether CI environment is detected. Defaults to runtime detection.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
 export function resolvePolicyWithContext(
-  mode?: string,
+  mode: string,
   ciContext = detectCiContext(),
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
@@ -325,18 +359,21 @@ export function resolvePolicyWithContext(
  * Degradation to TEAM_POLICY only happens inside resolvePolicyWithContext.
  *
  * @param mode - Policy mode string (solo | team | team-ci | regulated).
- *               Falls back to "team" for unknown or undefined values.
+ *               Required. Callers must resolve their own fallback.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
-export function getPolicyPreset(mode?: string): FlowGuardPolicy {
+export function getPolicyPreset(mode: string): FlowGuardPolicy {
   const m = normalizePolicyMode(mode);
+  // defensive: POLICIES[m] is guaranteed after normalizePolicyMode validation
   return POLICIES[m] ?? TEAM_POLICY;
 }
 
 /**
  * @deprecated Use getPolicyPreset() for preset lookup, or
  * resolvePolicyWithContext() for runtime authority.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
-export function resolvePolicy(mode?: string): FlowGuardPolicy {
+export function resolvePolicy(mode: string): FlowGuardPolicy {
   return getPolicyPreset(mode);
 }
 

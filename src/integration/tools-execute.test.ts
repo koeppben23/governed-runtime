@@ -41,6 +41,8 @@ import {
 import { readState, writeState } from '../adapters/persistence';
 import * as persistence from '../adapters/persistence';
 import { makeState, makeProgressedState } from '../__fixtures__';
+import { resolvePolicyFromState } from './tools/helpers';
+import { TEAM_POLICY } from '../config/policy';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -590,6 +592,16 @@ describe('hydrate', () => {
       expect(resolution.requestedMode).toBe('team');
       expect(resolution.effectiveMode).toBe('team');
       expect(resolution.effectiveGateBehavior).toBe('human_gated');
+    });
+
+    it('resolvePolicyFromState(null) returns TEAM policy (plugin/helper fallback)', () => {
+      // Plugin and helper contexts fall back to team (conservative), not solo.
+      // Hydrate has its own developer-friendly solo fallback via the P21 config chain.
+      // This distinction is documented in the runtime truth table.
+      const policy = resolvePolicyFromState(null);
+      expect(policy).toBe(TEAM_POLICY);
+      expect(policy.mode).toBe('team');
+      expect(policy.requireHumanGates).toBe(true);
     });
   });
 

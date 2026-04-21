@@ -338,19 +338,24 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
    * Resolve the FlowGuard policy for the current session.
    *
    * Resolution chain:
-   * 1. Session state policySnapshot.mode (if session exists)
+   * 1. Session state policySnapshot.mode (if session exists — authoritative)
    * 2. Config policy.defaultMode (per-workspace config file)
-   * 3. resolvePolicy(undefined) -> TEAM_POLICY (built-in default)
+   * 3. Built-in fallback: 'team' (conservative — human gates on, full audit)
    *
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
+   *
+   * Normal paths use resolvePolicyWithContext() for CI context awareness.
+   * Error recovery path uses resolvePolicy() to minimize secondary failures.
    */
   async function resolveSessionPolicy(
     sessDir: string | null,
   ): Promise<{ policy: FlowGuardPolicy; state: SessionState | null }> {
     try {
       if (!sessDir) {
-        return { policy: resolvePolicy(config.policy.defaultMode), state: null };
+        const fallbackMode = config.policy.defaultMode ?? 'team';
+        const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
+        return { policy: resolution.policy, state: null };
       }
       const state = await readState(sessDir);
       if (state?.policySnapshot) {
@@ -362,15 +367,20 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         return { policy, state };
       }
 
-      const resolution = resolvePolicyWithContext(config.policy.defaultMode, detectCiContext());
+      const resolution = resolvePolicyWithContext(
+        config.policy.defaultMode ?? 'team',
+        detectCiContext(),
+      );
       log.debug('policy', 'resolved default policy', {
         requestedMode: resolution.requestedMode,
         effectiveMode: resolution.effectiveMode,
       });
       return { policy: resolution.policy, state };
     } catch {
+      // Error recovery: use simpler resolvePolicy to minimize secondary failures.
+      // Still passes explicit fallback — no implicit undefined path.
       log.warn('policy', 'failed to resolve session policy, using default');
-      return { policy: resolvePolicy(config.policy.defaultMode), state: null };
+      return { policy: resolvePolicy(config.policy.defaultMode ?? 'team'), state: null };
     }
   }
 

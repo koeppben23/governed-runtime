@@ -28,6 +28,7 @@ export {
 export {
   type AuditPolicy,
   type FlowGuardPolicy,
+  PolicyConfigurationError,
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,

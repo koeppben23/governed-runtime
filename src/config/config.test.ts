@@ -4,6 +4,7 @@ import {
   TEAM_POLICY,
   TEAM_CI_POLICY,
   REGULATED_POLICY,
+  PolicyConfigurationError,
   detectCiContext,
   getPolicyPreset,
   resolvePolicy,
@@ -125,20 +126,34 @@ describe('config/policy', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
-    it('resolvePolicy returns TEAM for unknown mode', () => {
-      expect(resolvePolicy('enterprise')).toBe(TEAM_POLICY);
+    it('resolvePolicy throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => resolvePolicy('enterprise')).toThrow(PolicyConfigurationError);
+      expect(() => resolvePolicy('enterprise')).toThrow(/Unsupported policy mode/);
     });
 
-    it('resolvePolicy returns TEAM for undefined', () => {
-      expect(resolvePolicy()).toBe(TEAM_POLICY);
+    it('getPolicyPreset throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => getPolicyPreset('invalid')).toThrow(PolicyConfigurationError);
+      expect(() => getPolicyPreset('invalid')).toThrow(/Unsupported policy mode/);
     });
 
-    it('resolvePolicyWithContext falls back to TEAM for unknown mode', () => {
-      const result = resolvePolicyWithContext('enterprise', false);
-      expect(result.requestedMode).toBe('team');
-      expect(result.effectiveMode).toBe('team');
-      expect(result.policy).toBe(TEAM_POLICY);
-      expect(result.degradedReason).toBeUndefined();
+    it('resolvePolicyWithContext throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(PolicyConfigurationError);
+      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(
+        /Unsupported policy mode/,
+      );
+    });
+
+    it('PolicyConfigurationError carries code and message', () => {
+      try {
+        resolvePolicy('typo');
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(PolicyConfigurationError);
+        const pce = err as PolicyConfigurationError;
+        expect(pce.code).toBe('INVALID_POLICY_MODE');
+        expect(pce.message).toContain('typo');
+        expect(pce.name).toBe('PolicyConfigurationError');
+      }
     });
   });
 

@@ -63,6 +63,25 @@ Re-install with `--force` updates the value; without `--force`, the existing con
 
 `team-ci` degrades to `team` when no CI context is detected (`ci_context_missing`).
 
+Invalid or unrecognized policy mode values are rejected with an explicit `PolicyConfigurationError` (fail-stop). No productive path silently maps unknown modes to a fallback.
+
+### Runtime Policy Resolution
+
+Different runtime contexts resolve policy defaults independently:
+
+| Context                 | Priority Chain                                        | Final Fallback |
+| ----------------------- | ----------------------------------------------------- | -------------- |
+| `/hydrate` tool         | explicit arg > `config.policy.defaultMode` > `solo`   | `solo`         |
+| Plugin / session policy | state snapshot > `config.policy.defaultMode` > `team` | `team`         |
+| Install CLI             | `--policy-mode` writes `config.policy.defaultMode`    | —              |
+
+**Why different fallbacks?**
+
+- `/hydrate` defaults to `solo` — developer-friendly for initial workspace bootstrap.
+- Plugin/session policy defaults to `team` — conservative (human gates on, full audit, hash chain enabled). A running plugin should not silently fall into the most permissive mode when config is missing.
+
+Both paths read `config.policy.defaultMode` as the primary configured default. The difference is only in the built-in fallback when no config exists.
+
 ### policy.modes
 
 **Type:** `object`
