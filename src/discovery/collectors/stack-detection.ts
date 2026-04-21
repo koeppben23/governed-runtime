@@ -1200,7 +1200,7 @@ async function extractArtifactsFromGradle(
     const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
     if (findItem(targetArray, rule.id)) continue; // first-match-wins
 
-    const escapedId = rule.pluginId.replace(/\./g, '\\.');
+    const escapedId = rule.pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // id("plugin.id") version "1.2.3" or id 'plugin.id' version '1.2.3'
     const pluginMatch = content.match(
