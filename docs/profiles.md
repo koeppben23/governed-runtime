@@ -25,7 +25,7 @@ FlowGuard auto-detects the best profile based on:
 
 Profiles consume runtime stack evidence from `flowguard_status`:
 
-- `detectedStack`: detected languages, frameworks, runtimes, build tools, and versions
+- `detectedStack`: detected languages, frameworks, runtimes, build tools, tools, test frameworks, quality tools, databases, compiler targets, and module scopes with scoped versions
 - `verificationCandidates`: advisory, evidence-backed verification commands (planner output)
 
 Verification candidates are **planning hints only**. They are not auto-executed and do not represent completed checks.

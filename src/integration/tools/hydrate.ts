@@ -295,16 +295,28 @@ export const hydrate: ToolDefinition = {
         }
 
         // 7. Compute digest, summary, and detected stack
+        const resolvedWorktree = nodePath.resolve(worktree);
         const readRepoFile = async (relativePath: string): Promise<string | undefined> => {
           try {
-            return await fsReadFile(nodePath.join(worktree, relativePath), 'utf8');
+            const targetPath = nodePath.resolve(resolvedWorktree, relativePath);
+            if (
+              !targetPath.startsWith(resolvedWorktree + nodePath.sep) &&
+              targetPath !== resolvedWorktree
+            ) {
+              return undefined;
+            }
+            return await fsReadFile(targetPath, 'utf8');
           } catch {
             return undefined;
           }
         };
         discoveryDigest = computeDiscoveryDigest(discoveryResult);
         discoverySummary = extractDiscoverySummary(discoveryResult);
-        detectedStack = await extractDetectedStack(discoveryResult, repoSignals.files, readRepoFile);
+        detectedStack = await extractDetectedStack(
+          discoveryResult,
+          repoSignals.files,
+          readRepoFile,
+        );
         verificationCandidates = await planVerificationCandidates({
           detectedStack,
           allFiles: repoSignals.files,

@@ -57,9 +57,14 @@ const COLLECTOR_TIMEOUT_MS = 10_000;
 function createDefaultReadFile(
   worktreePath: string,
 ): (relativePath: string) => Promise<string | undefined> {
+  const resolvedRoot = nodePath.resolve(worktreePath);
   return async (relativePath: string): Promise<string | undefined> => {
     try {
-      return await fsReadFile(nodePath.join(worktreePath, relativePath), 'utf8');
+      const targetPath = nodePath.resolve(resolvedRoot, relativePath);
+      if (!targetPath.startsWith(resolvedRoot + nodePath.sep) && targetPath !== resolvedRoot) {
+        return undefined;
+      }
+      return await fsReadFile(targetPath, 'utf8');
     } catch {
       return undefined;
     }

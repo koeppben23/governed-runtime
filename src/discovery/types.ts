@@ -482,7 +482,7 @@ export type DetectedStackTargetEntry = z.infer<typeof DetectedStackTargetEntrySc
  *
  * `summary` is a pre-formatted string: "java=21, spring-boot=3.4.1, maven, vitest"
  * sorted by category (language → framework → runtime → buildTool → tool →
- * testFramework → qualityTool), then by id. Versioned: `id=version`, unversioned: `id`.
+ * testFramework → qualityTool → database), then by id. Versioned: `id=version`, unversioned: `id`.
  *
  * `items` contains ALL detected items (version optional).
  * `versions` contains only versioned items (backward compatible).

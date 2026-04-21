@@ -116,8 +116,13 @@ type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 /**
  * Extract obvious facts from nested package.json content.
  */
-function extractFromNestedPackageJson(content: string): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
+function extractFromNestedPackageJson(
+  content: string,
+): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
   const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
+
+  const extractNumericVersion = (raw: string | undefined): string | undefined =>
+    raw?.match(/(\d+(?:\.\d+)*)/)?.[1];
 
   try {
     const pkg = JSON.parse(content);
@@ -125,7 +130,7 @@ function extractFromNestedPackageJson(content: string): Array<{ id: string; kind
     const packageManager = pkg.packageManager;
 
     if (pkg.engines?.node) {
-      const nodeVersion = pkg.engines.node.match(/(\d+(?:\.\d+)*)/)?.[1];
+      const nodeVersion = extractNumericVersion(pkg.engines.node);
       if (nodeVersion) {
         facts.push({ id: 'node', kind: 'runtime', version: nodeVersion });
       } else {
@@ -134,16 +139,20 @@ function extractFromNestedPackageJson(content: string): Array<{ id: string; kind
     }
 
     if (deps.react) {
-      facts.push({ id: 'react', kind: 'framework', version: deps.react.replace(/[\^~=]/, '') });
+      facts.push({ id: 'react', kind: 'framework', version: extractNumericVersion(deps.react) });
     }
     if (deps['react-dom']) {
-      facts.push({ id: 'react-dom', kind: 'framework', version: deps['react-dom'].replace(/[\^~=]/, '') });
+      facts.push({
+        id: 'react-dom',
+        kind: 'framework',
+        version: extractNumericVersion(deps['react-dom']),
+      });
     }
     if (deps.vue) {
-      facts.push({ id: 'vue', kind: 'framework', version: deps.vue.replace(/[\^~=]/, '') });
+      facts.push({ id: 'vue', kind: 'framework', version: extractNumericVersion(deps.vue) });
     }
     if (deps.next) {
-      facts.push({ id: 'next', kind: 'framework', version: deps.next.replace(/[\^~=]/, '') });
+      facts.push({ id: 'next', kind: 'framework', version: extractNumericVersion(deps.next) });
     }
     if (deps['@angular/core']) {
       facts.push({ id: 'angular', kind: 'framework' });
@@ -189,18 +198,27 @@ function extractFromNestedPackageJson(content: string): Array<{ id: string; kind
 /**
  * Extract obvious facts from nested pom.xml content.
  */
-function extractFromNestedPomXml(content: string): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
+function extractFromNestedPomXml(
+  content: string,
+): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
   const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
+
+  facts.push({ id: 'maven', kind: 'buildTool' });
 
   const javaVersionMatch = content.match(/<java\.version>([^<]+)<\/java\.version>/);
   if (javaVersionMatch) {
     facts.push({ id: 'java', kind: 'language', version: javaVersionMatch[1] });
   }
 
-  const parentBlockMatch = content.match(/<parent>[\s\S]*?<groupId>([^<]+)<\/groupId>[\s\S]*?<artifactId>([^<]+)<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>[\s\S]*?<\/parent>/);
+  const parentBlockMatch = content.match(
+    /<parent>[\s\S]*?<groupId>([^<]+)<\/groupId>[\s\S]*?<artifactId>([^<]+)<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>[\s\S]*?<\/parent>/,
+  );
   if (parentBlockMatch) {
     const [, parentGroupId, parentArtifactId, parentVersion] = parentBlockMatch;
-    if (parentGroupId === 'org.springframework.boot' || parentArtifactId === 'spring-boot-starter-parent') {
+    if (
+      parentGroupId === 'org.springframework.boot' ||
+      parentArtifactId === 'spring-boot-starter-parent'
+    ) {
       facts.push({ id: 'spring-boot', kind: 'framework', version: parentVersion });
     }
   }
@@ -209,15 +227,25 @@ function extractFromNestedPomXml(content: string): Array<{ id: string; kind: Det
     facts.push({ id: 'java', kind: 'language' });
   }
 
-  if (content.includes('<groupId>org.springframework.boot</groupId>') || content.includes('<artifactId>spring-boot</artifactId>')) {
+  if (
+    content.includes('<groupId>org.springframework.boot</groupId>') ||
+    content.includes('<artifactId>spring-boot</artifactId>')
+  ) {
     facts.push({ id: 'spring-boot', kind: 'framework' });
   }
 
-  if (content.includes('<artifactId>maven</artifactId>') || content.includes('<artifactId>maven-compiler-plugin</artifactId>')) {
+  if (
+    content.includes('<artifactId>maven</artifactId>') ||
+    content.includes('<artifactId>maven-compiler-plugin</artifactId>')
+  ) {
     facts.push({ id: 'maven', kind: 'buildTool' });
   }
 
-  if (content.includes('<artifactId>gradle</artifactId>') || content.includes('gradle.plugin') || content.includes('com.github.gradle')) {
+  if (
+    content.includes('<artifactId>gradle</artifactId>') ||
+    content.includes('gradle.plugin') ||
+    content.includes('com.github.gradle')
+  ) {
     facts.push({ id: 'gradle', kind: 'buildTool' });
   }
 
@@ -234,14 +262,10 @@ function extractFromNestedPomXml(content: string): Array<{ id: string; kind: Det
 /**
  * Extract obvious facts from nested Cargo.toml content.
  */
-function extractFromNestedCargoToml(content: string): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
+function extractFromNestedCargoToml(
+  content: string,
+): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
   const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
-
-  const editionMatch = content.match(/edition\s*=\s*"(\d{4})"/);
-  if (editionMatch) {
-    facts.push({ id: 'rust', kind: 'language', version: editionMatch[1] });
-  }
-
   if (content.includes('[package]')) {
     facts.push({ id: 'rust', kind: 'language' });
     facts.push({ id: 'cargo', kind: 'buildTool' });
@@ -259,7 +283,9 @@ function extractFromNestedCargoToml(content: string): Array<{ id: string; kind: 
 /**
  * Extract obvious facts from nested pyproject.toml content.
  */
-function extractFromNestedPyprojectToml(content: string): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
+function extractFromNestedPyprojectToml(
+  content: string,
+): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
   const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
 
   const requiresPython = content.match(/requires-python\s*=\s*"([^"]+)"/);
@@ -268,7 +294,11 @@ function extractFromNestedPyprojectToml(content: string): Array<{ id: string; ki
     facts.push({ id: 'python', kind: 'language', version: pythonVersion });
   }
 
-  if (content.includes('[project]') || content.includes('[tool.poetry]') || content.includes('[tool.hatch]')) {
+  if (
+    content.includes('[project]') ||
+    content.includes('[tool.poetry]') ||
+    content.includes('[tool.hatch]')
+  ) {
     facts.push({ id: 'python', kind: 'language' });
   }
 
@@ -292,23 +322,34 @@ function extractFromNestedPyprojectToml(content: string): Array<{ id: string; ki
  * Extract database facts from nested docker-compose content.
  * Only extracts from explicit image: lines, not from arbitrary text matches.
  */
-function extractFromNestedDockerCompose(content: string): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
+function extractFromNestedDockerCompose(
+  content: string,
+): Array<{ id: string; kind: DetectedStackTarget; version?: string }> {
   const facts: Array<{ id: string; kind: DetectedStackTarget; version?: string }> = [];
 
-  const imageMatches = content.matchAll(/^.+image:\s*['"]?([^:'"]+)(?::([^:'"]+))?['"]?\s*$/gm);
+  const imageMatches = content.matchAll(/^\s*image\s*:\s*['"]?([^'"\s]+)['"]?/gm);
   for (const match of imageMatches) {
-    const imageName = match[1]?.trim().toLowerCase();
-    const imageTag = match[2]?.trim().toLowerCase();
-    if (!imageName) continue;
+    const imageRef = match[1]?.trim();
+    if (!imageRef || imageRef.includes('${')) continue;
+
+    const withoutDigest = imageRef.split('@')[0] ?? imageRef;
+    const lastSegment = withoutDigest.split('/').pop()?.toLowerCase();
+    if (!lastSegment) continue;
+
+    const [imageName, rawTag] = lastSegment.split(':');
+    let version: string | undefined;
+    if (rawTag && rawTag !== 'latest' && !rawTag.includes('${')) {
+      version = rawTag.match(/^(\d+(?:\.\d+)*)/)?.[1];
+    }
 
     if (imageName === 'postgres' || imageName === 'postgresql') {
-      facts.push({ id: 'postgresql', kind: 'database', version: imageTag });
+      facts.push({ id: 'postgresql', kind: 'database', ...(version ? { version } : {}) });
     } else if (imageName === 'mysql') {
-      facts.push({ id: 'mysql', kind: 'database', version: imageTag });
+      facts.push({ id: 'mysql', kind: 'database', ...(version ? { version } : {}) });
     } else if (imageName === 'mongo' || imageName === 'mongodb') {
-      facts.push({ id: 'mongodb', kind: 'database', version: imageTag });
+      facts.push({ id: 'mongodb', kind: 'database', ...(version ? { version } : {}) });
     } else if (imageName === 'redis') {
-      facts.push({ id: 'redis', kind: 'database', version: imageTag });
+      facts.push({ id: 'redis', kind: 'database', ...(version ? { version } : {}) });
     }
   }
 
@@ -322,8 +363,13 @@ function extractFromNestedDockerCompose(content: string): Array<{ id: string; ki
 async function detectNestedStackFacts(
   allFiles: readonly string[],
   readFile: ReadFileFn,
-): Promise<Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>>> {
-  const scopeFacts = new Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>>();
+): Promise<
+  Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>>
+> {
+  const scopeFacts = new Map<
+    string,
+    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
+  >();
 
   for (const file of allFiles) {
     const normalizedPath = normalizeRepoSignalPath(file);
@@ -353,7 +399,11 @@ async function detectNestedStackFacts(
         if (content) {
           facts = extractFromNestedPyprojectToml(content);
         }
-      } else if (normalizedPath.match(/docker-compose.*\.ya?ml$/)) {
+      } else if (
+        /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(
+          normalizedPath.split('/').pop()?.toLowerCase() ?? '',
+        )
+      ) {
         const content = await readFile(normalizedPath);
         if (content) {
           facts = extractFromNestedDockerCompose(content);
@@ -430,7 +480,12 @@ export async function extractScopedStack(
     path: string;
     summary: string;
     items: Array<{ kind: DetectedStackTarget; id: string; version?: string; evidence?: string }>;
-    versions: Array<{ id: string; version: string; target: DetectedStackTarget; evidence?: string }>;
+    versions: Array<{
+      id: string;
+      version: string;
+      target: DetectedStackTarget;
+      evidence?: string;
+    }>;
   }>
 > {
   const scopeMap = new Map<string, Set<string>>();
@@ -447,7 +502,10 @@ export async function extractScopedStack(
   }
 
   // Detect nested manifest facts if readFile is available
-  let nestedFacts: Map<string, Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>> = new Map();
+  let nestedFacts: Map<
+    string,
+    Array<{ id: string; kind: DetectedStackTarget; version?: string; evidence: string }>
+  > = new Map();
   if (readFile) {
     nestedFacts = await detectNestedStackFacts(allFiles, readFile);
   }

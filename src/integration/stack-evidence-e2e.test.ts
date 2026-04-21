@@ -575,12 +575,7 @@ components = ["clippy", "rustfmt"]
 
       // 2. Override repoSignals to include nested files
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
-        files: [
-          'package.json',
-          'src/index.ts',
-          'apps/web/package.json',
-          'apps/web/src/index.tsx',
-        ],
+        files: ['package.json', 'src/index.ts', 'apps/web/package.json', 'apps/web/src/index.tsx'],
         packageFiles: ['package.json', 'apps/web/package.json'],
         configFiles: [],
       });
@@ -654,10 +649,7 @@ services:
 
       // 2. Override repoSignals
       vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
-        files: [
-          'package.json',
-          'services/db/docker-compose.yml',
-        ],
+        files: ['package.json', 'services/db/docker-compose.yml'],
         packageFiles: ['package.json'],
         configFiles: [],
       });

@@ -150,6 +150,181 @@ describe('discovery/scoped-stack', () => {
       expect(result[0]!.items.find((i) => i.id === 'spring-boot')).toBeDefined();
     });
 
+    it('extracts Rust and Cargo from nested Cargo.toml without edition as version', async () => {
+      const allFiles = ['crates/core/Cargo.toml'];
+      const stackInfo = {
+        languages: [] as DetectedItem[],
+        frameworks: [] as DetectedItem[],
+        buildTools: [] as DetectedItem[],
+        testFrameworks: [] as DetectedItem[],
+        runtimes: [] as DetectedItem[],
+        tools: [] as DetectedItem[],
+        qualityTools: [] as DetectedItem[],
+        databases: [] as DetectedItem[],
+      };
+      const readFile = async (path: string): Promise<string | undefined> => {
+        if (path === 'crates/core/Cargo.toml') {
+          return `[package]
+name = "core"
+edition = "2021"
+
+[dependencies]
+tokio = "1"
+`;
+        }
+        return undefined;
+      };
+
+      const result = await extractScopedStack(allFiles, stackInfo, readFile);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toBe('crates/core');
+      const items = result[0]!.items;
+
+      expect(items.find((i) => i.id === 'rust' && i.kind === 'language')).toBeDefined();
+      const rustItem = items.find((i) => i.id === 'rust');
+      expect(rustItem?.version).toBeUndefined();
+
+      expect(items.find((i) => i.id === 'cargo' && i.kind === 'buildTool')).toBeDefined();
+    });
+
+    it('extracts rich nested package.json facts across multiple categories', async () => {
+      const allFiles = ['apps/web/package.json'];
+      const stackInfo = {
+        languages: [] as DetectedItem[],
+        frameworks: [] as DetectedItem[],
+        buildTools: [] as DetectedItem[],
+        testFrameworks: [] as DetectedItem[],
+        runtimes: [] as DetectedItem[],
+        tools: [] as DetectedItem[],
+        qualityTools: [] as DetectedItem[],
+        databases: [] as DetectedItem[],
+      };
+      const readFile = async (path: string): Promise<string | undefined> => {
+        if (path === 'apps/web/package.json') {
+          return JSON.stringify({
+            dependencies: {
+              react: '^18.2.0',
+              'react-dom': '^18.2.0',
+              vue: '~3.4.0',
+              next: '14.1.0',
+              '@angular/core': '^17.0.0',
+              vite: '^5.2.0',
+              esbuild: '^0.21.0',
+              mocha: '^10.4.0',
+            },
+            devDependencies: {
+              typescript: '^5.5.0',
+              jest: '^29.7.0',
+              vitest: '^1.5.0',
+              eslint: '^9.0.0',
+              prettier: '^3.0.0',
+            },
+            packageManager: 'pnpm@9.0.0',
+            engines: { node: '>=20.11.0' },
+          });
+        }
+        return undefined;
+      };
+
+      const result = await extractScopedStack(allFiles, stackInfo, readFile);
+      expect(result).toHaveLength(1);
+      const ids = result[0]!.items.map((i) => i.id);
+
+      expect(ids).toEqual(
+        expect.arrayContaining([
+          'node',
+          'react',
+          'react-dom',
+          'vue',
+          'next',
+          'angular',
+          'vite',
+          'esbuild',
+          'typescript',
+          'jest',
+          'vitest',
+          'mocha',
+          'eslint',
+          'prettier',
+          'pnpm',
+        ]),
+      );
+    });
+
+    it('handles package.json parse errors and unsupported package manager safely', async () => {
+      const allFiles = ['apps/web/package.json', 'apps/bad/package.json'];
+      const stackInfo = {
+        languages: [
+          {
+            id: 'typescript',
+            confidence: 0.9,
+            classification: 'fact' as const,
+            evidence: ['apps/web/package.json'],
+          },
+        ] as DetectedItem[],
+        frameworks: [] as DetectedItem[],
+        buildTools: [] as DetectedItem[],
+        testFrameworks: [] as DetectedItem[],
+        runtimes: [] as DetectedItem[],
+        tools: [] as DetectedItem[],
+        qualityTools: [] as DetectedItem[],
+        databases: [] as DetectedItem[],
+      };
+      const readFile = async (path: string): Promise<string | undefined> => {
+        if (path === 'apps/web/package.json') {
+          return JSON.stringify({ packageManager: 'custompm@1', engines: { node: 'lts/*' } });
+        }
+        if (path === 'apps/bad/package.json') {
+          return '{invalid-json';
+        }
+        return undefined;
+      };
+
+      const result = await extractScopedStack(allFiles, stackInfo, readFile);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toBe('apps/web');
+      expect(result[0]!.items.find((i) => i.id === 'node' && i.version === undefined)).toBeDefined();
+      expect(result[0]!.items.find((i) => i.id === 'custompm')).toBeUndefined();
+    });
+
+    it('extracts nested pyproject and cargo dependency-only facts', async () => {
+      const allFiles = ['services/py/pyproject.toml', 'crates/util/Cargo.toml'];
+      const stackInfo = {
+        languages: [] as DetectedItem[],
+        frameworks: [] as DetectedItem[],
+        buildTools: [] as DetectedItem[],
+        testFrameworks: [] as DetectedItem[],
+        runtimes: [] as DetectedItem[],
+        tools: [] as DetectedItem[],
+        qualityTools: [] as DetectedItem[],
+        databases: [] as DetectedItem[],
+      };
+      const readFile = async (path: string): Promise<string | undefined> => {
+        if (path === 'services/py/pyproject.toml') {
+          return `[tool.poetry]\nname = "svc"\n\n[tool.pytest.ini_options]\naddopts = "-q"\n\n[tool.ruff]\nline-length = 100\n\n[tool.black]\nline-length = 100\n\n[tool.mypy]\nstrict = true\n`;
+        }
+        if (path === 'crates/util/Cargo.toml') {
+          return `[dependencies]\nserde = "1"\n`;
+        }
+        return undefined;
+      };
+
+      const result = await extractScopedStack(allFiles, stackInfo, readFile);
+      expect(result.map((r) => r.path).sort()).toEqual(['crates/util', 'services/py']);
+
+      const pyScope = result.find((r) => r.path === 'services/py');
+      expect(pyScope).toBeDefined();
+      expect(pyScope!.items.map((i) => i.id)).toEqual(
+        expect.arrayContaining(['python', 'pytest', 'ruff', 'black', 'mypy']),
+      );
+
+      const rustScope = result.find((r) => r.path === 'crates/util');
+      expect(rustScope).toBeDefined();
+      expect(rustScope!.items.find((i) => i.id === 'rust')).toBeDefined();
+      expect(rustScope!.items.find((i) => i.id === 'cargo')).toBeUndefined();
+    });
+
     it('extracts database from nested docker-compose', async () => {
       // docker-compose at depth 1 creates scope (e.g., services/docker-compose.yml)
       const allFiles = ['services/docker-compose.yml', 'services/Dockerfile'];
@@ -202,6 +377,8 @@ services:
     image: redis:7-alpine
   mongo:
     image: mongo:7
+  mysql:
+    image: mysql:latest
 `;
         }
         return undefined;
@@ -215,9 +392,11 @@ services:
       expect(dbItems.find((i) => i.id === 'postgresql')).toBeDefined();
       expect(dbItems.find((i) => i.id === 'postgresql')?.version).toBe('16');
       expect(dbItems.find((i) => i.id === 'redis')).toBeDefined();
-      expect(dbItems.find((i) => i.id === 'redis')?.version).toBe('7-alpine');
+      expect(dbItems.find((i) => i.id === 'redis')?.version).toBe('7');
       expect(dbItems.find((i) => i.id === 'mongodb')).toBeDefined();
       expect(dbItems.find((i) => i.id === 'mongodb')?.version).toBe('7');
+      expect(dbItems.find((i) => i.id === 'mysql')).toBeDefined();
+      expect(dbItems.find((i) => i.id === 'mysql')?.version).toBeUndefined();
     });
 
     it('does NOT extract database from docker-compose text without image:', async () => {
