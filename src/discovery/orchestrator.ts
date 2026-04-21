@@ -132,6 +132,7 @@ async function runDiscoveryImpl(
     runtimes: [],
     tools: [],
     qualityTools: [],
+    databases: [],
   });
 
   const topology = extractResult(topoResult, 'topology', collectors, {
@@ -211,7 +212,7 @@ export function extractDiscoverySummary(result: DiscoveryResult): DiscoverySumma
   };
 }
 
-/** Sort priority: language=0, framework=1, runtime=2, buildTool=3, tool=4, testFramework=5, qualityTool=6. */
+/** Sort priority: language=0, framework=1, runtime=2, buildTool=3, tool=4, testFramework=5, qualityTool=6, database=7. */
 const TARGET_ORDER: Record<DetectedStackTarget, number> = {
   language: 0,
   framework: 1,
@@ -220,14 +221,15 @@ const TARGET_ORDER: Record<DetectedStackTarget, number> = {
   tool: 4,
   testFramework: 5,
   qualityTool: 6,
+  database: 7,
 };
 
 /**
  * Extract a compact detected stack from a full DiscoveryResult.
  *
- * Collects ALL detected items from all 7 stack categories. Items are sorted
+ * Collects ALL detected items from all 8 stack categories. Items are sorted
  * deterministically: by category (language → framework → runtime → buildTool
- * → tool → testFramework → qualityTool), then by id within each category.
+ * → tool → testFramework → qualityTool → database), then by id within each category.
  *
  * - `items[]` contains every detected item (version optional).
  * - `versions[]` contains only items with a `.version` (backward compatible).
@@ -253,6 +255,7 @@ export function extractDetectedStack(result: DiscoveryResult): DetectedStack | n
     { items: result.stack.tools ?? [], target: 'tool' },
     { items: result.stack.testFrameworks, target: 'testFramework' },
     { items: result.stack.qualityTools ?? [], target: 'qualityTool' },
+    { items: result.stack.databases ?? [], target: 'database' },
   ];
 
   for (const { items: categoryItems, target } of categories) {

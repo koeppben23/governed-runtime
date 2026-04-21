@@ -89,7 +89,7 @@ export type RepoMetadata = z.infer<typeof RepoMetadataSchema>;
 
 // ─── Stack Detection ──────────────────────────────────────────────────────────
 
-/** Stack detection result: languages, frameworks, build tools, test frameworks, runtimes, tools, quality tools. */
+/** Stack detection result: languages, frameworks, build tools, test frameworks, runtimes, tools, quality tools, databases. */
 export const StackInfoSchema = z.object({
   languages: z.array(DetectedItemSchema),
   frameworks: z.array(DetectedItemSchema),
@@ -100,6 +100,8 @@ export const StackInfoSchema = z.object({
   tools: z.array(DetectedItemSchema).default([]),
   /** Detected quality/analysis tools (e.g., spotless, checkstyle, jacoco). Default [] for backward compat. */
   qualityTools: z.array(DetectedItemSchema).default([]),
+  /** Detected database engines (e.g., postgresql, mysql, mongodb). Default [] for backward compat. */
+  databases: z.array(DetectedItemSchema).default([]),
 });
 export type StackInfo = z.infer<typeof StackInfoSchema>;
 
@@ -399,7 +401,7 @@ export type DiscoverySummary = z.infer<typeof DiscoverySummarySchema>;
  * Detected stack category.
  *
  * Determines sort order in the summary string:
- * language → framework → runtime → buildTool → tool → testFramework → qualityTool (deterministic).
+ * language → framework → runtime → buildTool → tool → testFramework → qualityTool → database (deterministic).
  */
 export const DetectedStackTargetSchema = z.enum([
   'language',
@@ -409,6 +411,7 @@ export const DetectedStackTargetSchema = z.enum([
   'tool',
   'testFramework',
   'qualityTool',
+  'database',
 ]);
 export type DetectedStackTarget = z.infer<typeof DetectedStackTargetSchema>;
 

@@ -19,6 +19,7 @@ FlowGuard auto-detects the best profile based on:
 - Package manager
 - Framework indicators
 - Language files
+- Database engine indicators from manifest evidence (dependencies and docker-compose images)
 
 ## Detected Stack and Verification Candidates
 

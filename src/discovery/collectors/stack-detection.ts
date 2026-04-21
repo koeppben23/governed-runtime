@@ -3,7 +3,7 @@
  * @description Collector: technology stack detection.
  *
  * Detects languages, frameworks, build tools, test frameworks, runtimes,
- * ecosystem tools, and quality tools by analyzing file patterns, package
+ * ecosystem tools, quality tools, and database engines by analyzing file patterns, package
  * manifests, and config files.
  *
  * Detection strategy:
@@ -14,13 +14,14 @@
  * - Config files → frameworks, test frameworks, quality tools (fact or derived_signal)
  * - package.json deps/devDeps → JS/TS ecosystem detection with versions (derived_signal)
  * - Manifest content → version extraction (fact, requires readFile on input)
- * - pom.xml artifacts → tools, test frameworks, quality tools (derived_signal)
- * - build.gradle(.kts) artifacts → tools, test frameworks, quality tools (derived_signal)
+ * - pom.xml artifacts → tools, test frameworks, quality tools, databases (derived_signal)
+ * - build.gradle(.kts) artifacts → tools, test frameworks, quality tools, databases (derived_signal)
+ * - docker-compose image refs → databases + optional version when unambiguous (derived_signal)
  *
  * Each detected item carries confidence, classification, and evidence.
  * Version extraction is optional: when readFile is absent, items have no version.
  *
- * @version v3
+ * @version v4
  */
 
 import * as path from 'node:path';
@@ -67,8 +68,8 @@ const BUILD_TOOL_RULES: ReadonlyArray<{
 
 // ─── Artifact Detection Rules ─────────────────────────────────────────────────
 
-/** Artifact category for tool/quality/test detection. */
-type ArtifactCategory = 'tool' | 'testFramework' | 'qualityTool';
+/** Artifact category for tool/quality/test/database detection. */
+type ArtifactCategory = 'tool' | 'testFramework' | 'qualityTool' | 'database';
 
 /**
  * pom.xml artifact detection rules.
@@ -143,6 +144,58 @@ const POM_ARTIFACT_RULES: ReadonlyArray<{
     category: 'qualityTool',
     evidenceType: 'plugin',
   },
+  // Database engines (P14)
+  {
+    artifactId: 'postgresql',
+    id: 'postgresql',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'mysql-connector-j',
+    id: 'mysql',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'mariadb-java-client',
+    id: 'mariadb',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  { artifactId: 'h2', id: 'h2', category: 'database', evidenceType: 'dependency' },
+  {
+    artifactId: 'sqlite-jdbc',
+    id: 'sqlite',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'ojdbc8',
+    id: 'oracle',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'ojdbc11',
+    id: 'oracle',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  {
+    artifactId: 'mssql-jdbc',
+    id: 'sqlserver',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
+  // Testcontainers DB modules (supporting evidence)
+  { artifactId: 'mysql', id: 'mysql', category: 'database', evidenceType: 'dependency' },
+  {
+    artifactId: 'mongodb',
+    id: 'mongodb',
+    category: 'database',
+    evidenceType: 'dependency',
+  },
 ];
 
 /**
@@ -184,6 +237,45 @@ const GRADLE_DEPENDENCY_RULES: ReadonlyArray<{
   { artifact: 'liquibase-core', id: 'liquibase', category: 'tool' },
   { artifact: 'archunit-junit5', id: 'archunit', category: 'qualityTool' },
   { artifact: 'archunit', id: 'archunit', category: 'qualityTool' },
+  // Database engines (P14)
+  { artifact: 'postgresql', id: 'postgresql', category: 'database' },
+  { artifact: 'mysql-connector-j', id: 'mysql', category: 'database' },
+  { artifact: 'mariadb-java-client', id: 'mariadb', category: 'database' },
+  { artifact: 'h2', id: 'h2', category: 'database' },
+  { artifact: 'sqlite-jdbc', id: 'sqlite', category: 'database' },
+  { artifact: 'ojdbc8', id: 'oracle', category: 'database' },
+  { artifact: 'ojdbc11', id: 'oracle', category: 'database' },
+  { artifact: 'mssql-jdbc', id: 'sqlserver', category: 'database' },
+  // Testcontainers DB modules (supporting evidence)
+  { artifact: 'mysql', id: 'mysql', category: 'database' },
+  { artifact: 'mongodb', id: 'mongodb', category: 'database' },
+];
+
+/** package.json dependency → database engine mapping (P14). */
+const JS_DATABASE_DEPS: ReadonlyArray<{ pkg: string; id: string }> = [
+  { pkg: 'pg', id: 'postgresql' },
+  { pkg: 'postgres', id: 'postgresql' },
+  { pkg: 'mysql2', id: 'mysql' },
+  { pkg: 'mysql', id: 'mysql' },
+  { pkg: 'mariadb', id: 'mariadb' },
+  { pkg: 'mongodb', id: 'mongodb' },
+  { pkg: 'ioredis', id: 'redis' },
+  { pkg: 'redis', id: 'redis' },
+  { pkg: 'better-sqlite3', id: 'sqlite' },
+  { pkg: 'sqlite3', id: 'sqlite' },
+  { pkg: 'mssql', id: 'sqlserver' },
+];
+
+/** docker-compose image name → database engine mapping (P14). */
+const DOCKER_IMAGE_DATABASES: ReadonlyArray<{ image: string; id: string }> = [
+  { image: 'postgres', id: 'postgresql' },
+  { image: 'mysql', id: 'mysql' },
+  { image: 'mariadb', id: 'mariadb' },
+  { image: 'mongo', id: 'mongodb' },
+  { image: 'mongodb', id: 'mongodb' },
+  { image: 'redis', id: 'redis' },
+  { image: 'oracle', id: 'oracle' },
+  { image: 'sqlserver', id: 'sqlserver' },
 ];
 
 /** Config file → framework/tool mapping. */
@@ -484,6 +576,7 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
       input.configFiles,
     );
     const tools: DetectedItem[] = [];
+    const databases: DetectedItem[] = [];
 
     // Package manager refinement (highest to lowest priority):
     // 1. packageManager field from package.json (Corepack standard, with version)
@@ -507,12 +600,23 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
         testFrameworks,
         tools,
         qualityTools,
+        databases,
+        input.allFiles,
       );
     }
 
     return {
       status: 'complete',
-      data: { languages, frameworks, buildTools, testFrameworks, runtimes, tools, qualityTools },
+      data: {
+        languages,
+        frameworks,
+        buildTools,
+        testFrameworks,
+        runtimes,
+        tools,
+        qualityTools,
+        databases,
+      },
     };
   } catch {
     return {
@@ -525,6 +629,7 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
         runtimes: [],
         tools: [],
         qualityTools: [],
+        databases: [],
       },
     };
   }
@@ -703,8 +808,9 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  * 4. pom.xml (Java version, Spring Boot version — Maven authority)
  * 5. pom.xml artifacts (tools, test frameworks, quality tools)
  * 6. build.gradle(.kts) (Java version, Spring Boot version — Gradle fallback)
- * 7. build.gradle(.kts) artifacts (tools, test frameworks, quality tools — Gradle fallback)
- * 8. go.mod (Go version — no shared targets)
+ * 7. build.gradle(.kts) artifacts (tools, test frameworks, quality tools, databases — Gradle fallback)
+ * 8. docker-compose files (database engines + optional image tag version)
+ * 9. go.mod (Go version — no shared targets)
  *
  * Maven runs before Gradle: in projects with both pom.xml and build.gradle,
  * Maven is the canonical build system and Gradle values are ignored via
@@ -719,6 +825,8 @@ async function extractVersions(
   testFrameworks: DetectedItem[],
   tools: DetectedItem[],
   qualityTools: DetectedItem[],
+  databases: DetectedItem[],
+  allFiles: readonly string[],
 ): Promise<void> {
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
@@ -730,13 +838,15 @@ async function extractVersions(
     runtimes,
     testFrameworks,
     qualityTools,
+    databases,
   );
   await extractFromTsConfig(readFile, languages);
   // Maven before Gradle: shared write targets (languages.java, frameworks.spring-boot)
   await extractFromPomXml(readFile, languages, frameworks);
-  await extractArtifactsFromPomXml(readFile, testFrameworks, tools, qualityTools);
+  await extractArtifactsFromPomXml(readFile, testFrameworks, tools, qualityTools, databases);
   await extractFromGradleBuild(readFile, languages, frameworks);
-  await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools);
+  await extractArtifactsFromGradle(readFile, testFrameworks, tools, qualityTools, databases);
+  await extractDatabasesFromDockerCompose(readFile, allFiles, databases);
   await extractFromGoMod(readFile, languages);
 }
 
@@ -778,6 +888,7 @@ async function extractFromPackageJson(
   runtimes: DetectedItem[],
   testFrameworks: DetectedItem[],
   qualityTools: DetectedItem[],
+  databases: DetectedItem[],
 ): Promise<void> {
   const content = await safeRead(readFile, 'package.json');
   if (!content) return;
@@ -843,6 +954,16 @@ async function extractFromPackageJson(
         setVersion(tsItem, ver, 'package.json:devDependencies.typescript');
       }
     }
+  }
+
+  // Database engine detection from dependencies/devDependencies (version intentionally omitted).
+  for (const rule of JS_DATABASE_DEPS) {
+    const inDeps = deps?.[rule.pkg] !== undefined;
+    const inDevDeps = devDeps?.[rule.pkg] !== undefined;
+    if (!inDeps && !inDevDeps) continue;
+
+    const sourceKey = inDeps ? 'dependencies' : 'devDependencies';
+    enrichDatabaseItem(databases, rule.id, `package.json:${sourceKey}.${rule.pkg}`);
   }
 }
 
@@ -1104,12 +1225,53 @@ function enrichOrCreateItem(
   items.push(item);
 }
 
+/**
+ * Add or enrich a database detected item.
+ *
+ * - One item per engine ID (dedupe by id)
+ * - Evidence entries are merged (no duplicates)
+ * - Version is set only when an unambiguous source provides one and the item
+ *   does not yet carry a version
+ */
+function enrichDatabaseItem(
+  databases: DetectedItem[],
+  id: string,
+  evidence: string,
+  version?: string,
+): void {
+  const existing = findItem(databases, id);
+  if (!existing) {
+    const item: DetectedItem = {
+      id,
+      confidence: 0.85,
+      classification: 'derived_signal',
+      evidence: [evidence],
+    };
+    if (version) {
+      item.version = version;
+      item.versionEvidence = evidence;
+    }
+    databases.push(item);
+    return;
+  }
+
+  if (!existing.evidence.includes(evidence)) {
+    existing.evidence.push(evidence);
+  }
+
+  if (!existing.version && version) {
+    existing.version = version;
+    existing.versionEvidence = evidence;
+  }
+}
+
 /** Resolve the target array for an artifact category. */
 function resolveTargetArray(
   category: ArtifactCategory,
   testFrameworks: DetectedItem[],
   tools: DetectedItem[],
   qualityTools: DetectedItem[],
+  databases: DetectedItem[],
 ): DetectedItem[] {
   switch (category) {
     case 'tool':
@@ -1118,6 +1280,8 @@ function resolveTargetArray(
       return testFrameworks;
     case 'qualityTool':
       return qualityTools;
+    case 'database':
+      return databases;
   }
 }
 
@@ -1134,6 +1298,7 @@ async function extractArtifactsFromPomXml(
   testFrameworks: DetectedItem[],
   tools: DetectedItem[],
   qualityTools: DetectedItem[],
+  databases: DetectedItem[],
 ): Promise<void> {
   const content = await safeRead(readFile, 'pom.xml');
   if (!content) return;
@@ -1161,9 +1326,19 @@ async function extractArtifactsFromPomXml(
       );
       const version = versionMatch?.[1];
       const evidence = `pom.xml:${rule.evidenceType}.${rule.artifactId}`;
-      const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+      const targetArray = resolveTargetArray(
+        rule.category,
+        testFrameworks,
+        tools,
+        qualityTools,
+        databases,
+      );
 
-      enrichDetectedItem(targetArray, rule.id, evidence, version);
+      if (rule.category === 'database') {
+        enrichDatabaseItem(targetArray, rule.id, evidence);
+      } else {
+        enrichDetectedItem(targetArray, rule.id, evidence, version);
+      }
       detected.add(rule.id);
       break; // Found in a block, move to next rule
     }
@@ -1182,6 +1357,7 @@ async function extractArtifactsFromGradle(
   testFrameworks: DetectedItem[],
   tools: DetectedItem[],
   qualityTools: DetectedItem[],
+  databases: DetectedItem[],
 ): Promise<void> {
   let content: string | undefined;
   let file: string | undefined;
@@ -1197,7 +1373,13 @@ async function extractArtifactsFromGradle(
 
   // ── Plugin declarations with explicit version ──────────────────────────
   for (const rule of GRADLE_PLUGIN_RULES) {
-    const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+    const targetArray = resolveTargetArray(
+      rule.category,
+      testFrameworks,
+      tools,
+      qualityTools,
+      databases,
+    );
     if (findItem(targetArray, rule.id)) continue; // first-match-wins
 
     const escapedId = rule.pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1226,7 +1408,13 @@ async function extractArtifactsFromGradle(
 
   // ── Dependency declarations: "group:artifact:version" or "group:artifact" ──
   for (const rule of GRADLE_DEPENDENCY_RULES) {
-    const targetArray = resolveTargetArray(rule.category, testFrameworks, tools, qualityTools);
+    const targetArray = resolveTargetArray(
+      rule.category,
+      testFrameworks,
+      tools,
+      qualityTools,
+      databases,
+    );
     if (findItem(targetArray, rule.id)) continue; // first-match-wins
 
     const depMatch = content.match(
@@ -1234,6 +1422,100 @@ async function extractArtifactsFromGradle(
     );
     if (!depMatch) continue;
 
-    enrichDetectedItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`, depMatch[1]);
+    if (rule.category === 'database') {
+      enrichDatabaseItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`);
+    } else {
+      enrichDetectedItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`, depMatch[1]);
+    }
   }
+}
+
+/**
+ * Extract database engines from docker-compose image declarations.
+ *
+ * Conservative detection:
+ * - Scans only docker-compose*.yml/yaml files listed in allFiles
+ * - Parses only `image:` lines
+ * - Maps known image names to engines
+ * - Extracts version only when tag is unambiguous and starts with digits
+ */
+async function extractDatabasesFromDockerCompose(
+  readFile: ReadFileFn,
+  allFiles: readonly string[],
+  databases: DetectedItem[],
+): Promise<void> {
+  const composeFiles = allFiles.filter((filePath) => {
+    const normalized = filePath.replaceAll('\\', '/');
+    // Root-first: ignore nested compose files from subprojects/examples/fixtures.
+    if (normalized.includes('/')) return false;
+    const base = path.basename(normalized).toLowerCase();
+    return /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(base);
+  });
+
+  for (const file of composeFiles) {
+    const content = await safeRead(readFile, file);
+    if (!content) continue;
+
+    for (const match of content.matchAll(/^\s*image\s*:\s*['"]?([^'"\s]+)['"]?/gm)) {
+      const imageRef = match[1]?.trim();
+      if (!imageRef) continue;
+
+      const mapped = mapComposeImageToDatabase(imageRef);
+      if (!mapped) continue;
+
+      const evidence = `${file}:image ${imageRef}`;
+      enrichDatabaseItem(databases, mapped.id, evidence, mapped.version);
+    }
+  }
+}
+
+function mapComposeImageToDatabase(imageRef: string): { id: string; version?: string } | null {
+  const normalized = imageRef.toLowerCase();
+
+  // Conservative: skip interpolated tags/references
+  if (normalized.includes('${')) {
+    return null;
+  }
+
+  // SQL Server images often use mcr.microsoft.com/mssql/server:...
+  if (normalized.includes('mssql/server')) {
+    const version = extractComposeTagVersion(imageRef, { allowRegistryVersion: false });
+    return {
+      id: 'sqlserver',
+      ...(version ? { version } : {}),
+    };
+  }
+
+  const withoutDigest = imageRef.split('@')[0] ?? imageRef;
+  const hadRegistryPath = withoutDigest.includes('/');
+  const lastSegment = (withoutDigest.split('/').pop() ?? '').toLowerCase();
+  if (!lastSegment) return null;
+
+  const [imageName] = lastSegment.split(':');
+  const mapped = DOCKER_IMAGE_DATABASES.find((rule) => rule.image === imageName);
+  if (!mapped) return null;
+
+  const version = extractComposeTagVersion(imageRef, { allowRegistryVersion: !hadRegistryPath });
+  return {
+    id: mapped.id,
+    ...(version ? { version } : {}),
+  };
+}
+
+function extractComposeTagVersion(
+  imageRef: string,
+  options: { allowRegistryVersion: boolean },
+): string | undefined {
+  const withoutDigest = imageRef.split('@')[0] ?? imageRef;
+  const lastSegment = withoutDigest.split('/').pop() ?? '';
+  const tag = lastSegment.includes(':') ? (lastSegment.split(':')[1] ?? '') : '';
+  if (!tag || tag === 'latest' || tag.includes('${')) return undefined;
+
+  // Conservative: for registry-prefixed images, do not trust tag version.
+  if (!options.allowRegistryVersion && withoutDigest.includes('/')) {
+    return undefined;
+  }
+
+  const version = captureGroup(tag.match(/^(\d+(?:\.\d+)*)/));
+  return version;
 }

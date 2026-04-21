@@ -174,6 +174,7 @@ describe('discovery/types', () => {
         'tool',
         'testFramework',
         'qualityTool',
+        'database',
       ]) {
         const result = DetectedStackTargetSchema.safeParse(target);
         expect(result.success).toBe(true);
@@ -696,6 +697,182 @@ java {
       const javaItem = result.data.languages.find((l) => l.id === 'java');
       expect(javaItem?.version).toBe('21');
     });
+
+    it('detects PostgreSQL database engine from pom.xml dependency', async () => {
+      const input = inputWithFiles(
+        {
+          'pom.xml': `<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.3</version>
+    </dependency>
+  </dependencies>
+</project>`,
+        },
+        {
+          allFiles: ['src/main/java/App.java', 'pom.xml'],
+          packageFiles: ['pom.xml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db).toBeDefined();
+      expect(db?.evidence).toContain('pom.xml:dependency.postgresql');
+      // JDBC dependency version is driver version, not database engine version.
+      expect(db?.version).toBeUndefined();
+    });
+
+    it('detects MySQL database engine from build.gradle dependency', async () => {
+      const input = inputWithFiles(
+        {
+          'build.gradle': `dependencies {
+  implementation "com.mysql:mysql-connector-j:8.4.0"
+}`,
+        },
+        {
+          allFiles: ['src/main/java/App.java', 'build.gradle'],
+          packageFiles: ['build.gradle'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'mysql');
+      expect(db).toBeDefined();
+      expect(db?.evidence).toContain('build.gradle:dependency.mysql-connector-j');
+      expect(db?.version).toBeUndefined();
+    });
+
+    it('detects JS database engines from package.json dependencies', async () => {
+      const input = inputWithFiles(
+        {
+          'package.json': JSON.stringify({
+            dependencies: {
+              pg: '^8.11.5',
+              mysql2: '^3.10.0',
+              mongodb: '^6.6.0',
+              redis: '^4.6.14',
+            },
+          }),
+        },
+        {
+          allFiles: ['src/index.ts', 'package.json'],
+          packageFiles: ['package.json'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const dbIds = result.data.databases.map((d) => d.id);
+      expect(dbIds).toContain('postgresql');
+      expect(dbIds).toContain('mysql');
+      expect(dbIds).toContain('mongodb');
+      expect(dbIds).toContain('redis');
+    });
+
+    it('detects PostgreSQL with version from docker-compose image postgres:16', async () => {
+      const input = inputWithFiles(
+        {
+          'docker-compose.yml': `services:
+  db:
+    image: postgres:16
+`,
+        },
+        {
+          allFiles: ['docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db).toBeDefined();
+      expect(db?.version).toBe('16');
+      expect(db?.versionEvidence).toBe('docker-compose.yml:image postgres:16');
+    });
+
+    it('detects PostgreSQL version from docker-compose image postgres:16-alpine', async () => {
+      const input = inputWithFiles(
+        {
+          'docker-compose.yml': `services:
+  db:
+    image: "postgres:16-alpine"
+`,
+        },
+        {
+          allFiles: ['docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db?.version).toBe('16');
+    });
+
+    it('detects PostgreSQL from Testcontainers dependency as supporting evidence', async () => {
+      const input = inputWithFiles(
+        {
+          'pom.xml': `<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>1.20.0</version>
+    </dependency>
+  </dependencies>
+</project>`,
+        },
+        {
+          allFiles: ['src/test/java/AppTest.java', 'pom.xml'],
+          packageFiles: ['pom.xml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db).toBeDefined();
+      expect(db?.evidence).toContain('pom.xml:dependency.postgresql');
+    });
+
+    it('dedupes database engine and prefers versioned compose evidence when available', async () => {
+      const input = inputWithFiles(
+        {
+          'pom.xml': `<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+  </dependencies>
+</project>`,
+          'docker-compose.yml': `services:
+  db:
+    image: postgres:16
+`,
+        },
+        {
+          allFiles: ['src/main/java/App.java', 'pom.xml', 'docker-compose.yml'],
+          packageFiles: ['pom.xml'],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const postgres = result.data.databases.filter((d) => d.id === 'postgresql');
+      expect(postgres).toHaveLength(1);
+      expect(postgres[0]?.version).toBe('16');
+      expect(postgres[0]?.versionEvidence).toBe('docker-compose.yml:image postgres:16');
+      expect(postgres[0]?.evidence).toEqual(
+        expect.arrayContaining([
+          'pom.xml:dependency.postgresql',
+          'docker-compose.yml:image postgres:16',
+        ]),
+      );
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -764,6 +941,67 @@ java {
       const result = await collectStack(input);
       const jsItem = result.data.languages.find((l) => l.id === 'javascript');
       expect(jsItem?.version).toBeUndefined();
+    });
+
+    it('does not extract compose database version from interpolated image tags', async () => {
+      const input = inputWithFiles(
+        {
+          'docker-compose.yml': `services:
+  db:
+    image: postgres:${'${POSTGRES_VERSION}'}
+`,
+        },
+        {
+          allFiles: ['docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db).toBeUndefined();
+    });
+
+    it('detects compose engine from registry-prefixed image without trusting tag version', async () => {
+      const input = inputWithFiles(
+        {
+          'docker-compose.yml': `services:
+  db:
+    image: registry.local/postgres:16
+`,
+        },
+        {
+          allFiles: ['docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      const db = result.data.databases.find((d) => d.id === 'postgresql');
+      expect(db).toBeDefined();
+      expect(db?.version).toBeUndefined();
+      expect(db?.evidence).toContain('docker-compose.yml:image registry.local/postgres:16');
+    });
+
+    it('does not detect database engines from nested docker-compose files', async () => {
+      const input = inputWithFiles(
+        {
+          'packages/app/docker-compose.yml': `services:
+  db:
+    image: postgres:16
+`,
+        },
+        {
+          allFiles: ['packages/app/docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['packages/app/docker-compose.yml'],
+        },
+      );
+
+      const result = await collectStack(input);
+      expect(result.data.databases).toEqual([]);
     });
   });
 
@@ -1680,6 +1918,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       const result = await collectStack(input);
       expect(result.data.tools).toHaveLength(0);
       expect(result.data.qualityTools).toHaveLength(0);
+      expect(result.data.databases).toHaveLength(0);
     });
 
     it('gradle dependency without version detected (BOM-managed)', async () => {
@@ -1725,7 +1964,7 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
 
   // ─── EDGE: schema and extractDetectedStack integration ────
   describe('EDGE', () => {
-    it('StackInfoSchema validates data with tools and qualityTools', () => {
+    it('StackInfoSchema validates data with tools, qualityTools, and databases', () => {
       const result = StackInfoSchema.safeParse({
         languages: [],
         frameworks: [],
@@ -1749,6 +1988,15 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
             evidence: ['pom.xml:plugin.jacoco-maven-plugin'],
           },
         ],
+        databases: [
+          {
+            id: 'postgresql',
+            confidence: 0.85,
+            classification: 'derived_signal',
+            evidence: ['docker-compose.yml:image postgres:16'],
+            version: '16',
+          },
+        ],
       });
       expect(result.success).toBe(true);
     });
@@ -1765,10 +2013,11 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
       if (result.success) {
         expect(result.data.tools).toEqual([]);
         expect(result.data.qualityTools).toEqual([]);
+        expect(result.data.databases).toEqual([]);
       }
     });
 
-    it('extractDetectedStack includes tool and qualityTool categories', async () => {
+    it('extractDetectedStack includes tool, qualityTool, and database categories', async () => {
       const result = await runDiscovery(EMPTY_INPUT);
       // Inject synthetic items with versions
       result.stack.languages = [
@@ -1792,6 +2041,15 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
           version: '0.8.12',
         },
       ];
+      result.stack.databases = [
+        {
+          id: 'postgresql',
+          confidence: 0.85,
+          classification: 'derived_signal',
+          evidence: [],
+          version: '16',
+        },
+      ];
       result.stack.testFrameworks = [
         {
           id: 'junit',
@@ -1812,12 +2070,15 @@ describe('discovery/collectors/stack-detection/artifact-detection', () => {
         'tool',
         'testFramework',
         'qualityTool',
+        'database',
       ]);
-      expect(ds!.summary).toBe('java=21, openapi-generator=7.10.0, junit=5.10.2, jacoco=0.8.12');
+      expect(ds!.summary).toBe(
+        'java=21, openapi-generator=7.10.0, junit=5.10.2, jacoco=0.8.12, postgresql=16',
+      );
     });
 
     it('DetectedStackVersion validates new target types', () => {
-      for (const target of ['tool', 'testFramework', 'qualityTool']) {
+      for (const target of ['tool', 'testFramework', 'qualityTool', 'database']) {
         const result = DetectedStackVersionSchema.safeParse({
           id: 'test-item',
           version: '1.0.0',
@@ -2820,6 +3081,34 @@ describe('discovery/collectors/stack-detection/js-ecosystem', () => {
       expect(ds!.summary).toContain('vitest=1.6.0');
       expect(ds!.summary).toContain('pnpm');
     });
+
+    it('detectedStack.items includes database kind from compose evidence', async () => {
+      const input = inputWithFiles(
+        {
+          'docker-compose.yml': `services:
+  db:
+    image: postgres:16
+`,
+        },
+        {
+          allFiles: ['docker-compose.yml'],
+          packageFiles: [],
+          configFiles: ['docker-compose.yml'],
+        },
+      );
+
+      const result = await runDiscovery(input);
+      const ds = extractDetectedStack(result);
+      expect(ds).not.toBeNull();
+
+      const dbItem = ds!.items.find((i) => i.kind === 'database' && i.id === 'postgresql');
+      expect(dbItem).toBeDefined();
+      expect(dbItem?.version).toBe('16');
+
+      const dbVersion = ds!.versions.find((v) => v.target === 'database' && v.id === 'postgresql');
+      expect(dbVersion).toBeDefined();
+      expect(dbVersion?.version).toBe('16');
+    });
   });
 
   // ─── PERF ─────────────────────────────────────────────────
@@ -3256,6 +3545,7 @@ describe('discovery/orchestrator', () => {
           'tool',
           'testFramework',
           'qualityTool',
+          'database',
         ]).toContain(v.target);
       }
 
@@ -3270,6 +3560,7 @@ describe('discovery/orchestrator', () => {
           'tool',
           'testFramework',
           'qualityTool',
+          'database',
         ]).toContain(item.kind);
       }
 

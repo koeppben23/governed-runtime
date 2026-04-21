@@ -329,6 +329,44 @@ describe('stack-evidence E2E', () => {
       const planStatus = await callStatus();
       expect(planStatus.profileRules).toContain(VERSION_EVIDENCE_RULE);
     });
+
+    it('docker-compose project: database engine and version flow through pipeline to status', async () => {
+      await writeManifest(
+        'docker-compose.yml',
+        `services:
+  db:
+    image: postgres:16
+`,
+      );
+
+      vi.mocked(gitMock.listRepoSignals).mockResolvedValueOnce({
+        files: ['docker-compose.yml'],
+        packageFiles: [],
+        configFiles: ['docker-compose.yml'],
+      });
+
+      await hydrateSession();
+
+      const sessDir = await resolveSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.detectedStack).not.toBeNull();
+
+      const dbItem = state!.detectedStack!.items.find(
+        (item) => item.kind === 'database' && item.id === 'postgresql',
+      );
+      expect(dbItem).toBeDefined();
+      expect(dbItem?.version).toBe('16');
+
+      const statusResult = await callStatus();
+      const statusDs = statusResult.detectedStack as Record<string, unknown>;
+      const statusItems = statusDs.items as Array<Record<string, unknown>>;
+      const statusDb = statusItems.find(
+        (item) => item.kind === 'database' && item.id === 'postgresql',
+      );
+      expect(statusDb).toBeDefined();
+      expect(statusDb?.version).toBe('16');
+    });
   });
 
   // ─── BAD ─────────────────────────────────────────────────────────────────
@@ -401,6 +439,7 @@ describe('stack-evidence E2E', () => {
           'tool',
           'testFramework',
           'qualityTool',
+          'database',
         ]).toContain(item.kind);
         // version is optional — string or undefined
         if (item.version !== undefined) {
@@ -425,6 +464,7 @@ describe('stack-evidence E2E', () => {
           'tool',
           'testFramework',
           'qualityTool',
+          'database',
         ]).toContain(v.target);
         // evidence is optional — string or undefined, never fabricated
         if (v.evidence !== undefined) {

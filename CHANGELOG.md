@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Database engine detection in discovery (P14)**: Stack detection now derives database engines from repo evidence (Maven/Gradle dependencies, package.json deps, docker-compose image refs, Testcontainers modules) and surfaces them in `detectedStack.items` as `kind: "database"` with optional version when image tags are unambiguous.
 - **Verification Command Planner (P12/P13)**: Added advisory `verificationCandidates` surfaced via `flowguard_status`, derived deterministically from repository evidence with priority: package scripts > Java wrappers (`./mvnw`, `./gradlew`) > detected-tool fallbacks. Commands are planner output only (never auto-executed). Placeholder script filtering now covers conservative bogus command forms across verification scripts (`exit 1`, `echo ... no test specified ...`, `echo TODO`, `echo not implemented`, `TODO`, `not implemented`) to avoid false high-confidence candidates; fallback candidates remain eligible.
 - **Tool Error Classification in mandates**: Added explicit error classification (blocked, unexpected exception, malformed response, network/process failure) with differentiated handling. Commands reference central classification instead of duplicating error rules.
 - **Rule Conflict Resolution in mandates**: Added explicit priority (Universal Mandates > Slash Command > Profile Rules > Local Style). Profile rules may narrow, never override universal mandates.
