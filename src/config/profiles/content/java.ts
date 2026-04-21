@@ -197,6 +197,11 @@ A change fails if any of these apply:
 | QG-4 Test Quality | Missing behavioral coverage, flaky tests, missing determinism seams, missing concurrency evidence |
 | QG-5 Operational | Logging/metrics/tracing/security regression |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
 ## 9. Verification Commands

@@ -153,6 +153,11 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | QG-4 Architecture | Circular dependencies, boundary violations, deep imports |
 | QG-5 Security | Unsanitized inputs, secret exposure, unsafe eval/exec |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
 ## 6. Verification Commands

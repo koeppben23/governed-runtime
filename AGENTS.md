@@ -28,6 +28,7 @@ When instructions conflict, follow this order:
 6. Verbosity preferences.
 
 Higher-priority rules override lower-priority rules.
+Repository convention or local style must not override quality gates, SSOT, schemas, or fail-closed behavior.
 
 ## 3. Task Class Router
 

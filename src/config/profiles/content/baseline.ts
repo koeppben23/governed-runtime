@@ -99,6 +99,11 @@ unless the change explicitly requires it.
 | QG-4 Security | Secrets committed, unsanitized inputs, unsafe operations |
 | QG-5 Architecture | Circular dependencies, boundary violations, responsibility bleed |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
 ## 6. Verification Commands

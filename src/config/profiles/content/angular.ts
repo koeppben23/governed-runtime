@@ -141,6 +141,11 @@ Follow repo conventions when they exist. Otherwise use these defaults:
 | FQG-4 Contract | contract/client drift, edited generated code |
 | FQG-5 A11y/UX | obvious a11y regressions (roles/labels/focus/keyboard) |
 
+Quality gates are unconditional. Repository conventions and local style may
+narrow implementation choices only inside passing gates. They must never
+override hard-fail gates, SSOT, schemas, fail-closed behavior, or universal
+mandates.
+
 ---
 
 ## 6. Verification Commands

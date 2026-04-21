@@ -895,7 +895,7 @@ describe('config/profile/decision-trees', () => {
 
 describe('config/profile/token-budget', () => {
   it.each([
-    { name: 'baseline', profile: baselineProfile, maxBaseChars: 4500 },
+    { name: 'baseline', profile: baselineProfile, maxBaseChars: 5000 },
     { name: 'typescript', profile: typescriptProfile, maxBaseChars: 8000 },
     { name: 'java', profile: javaProfile, maxBaseChars: 10000 },
     { name: 'angular', profile: angularProfile, maxBaseChars: 8000 },
@@ -1102,6 +1102,74 @@ describe('config/profile/verification-hardening', () => {
         const verLen = apIdx - verIdx;
         expect(verLen).toBeLessThan(500);
         expect(verLen).toBeGreaterThan(50); // not empty
+      }
+    });
+  });
+});
+
+describe('config/profile/convention-override-clause', () => {
+  const ALL_PROFILES = [
+    { name: 'baseline', profile: baselineProfile },
+    { name: 'java', profile: javaProfile },
+    { name: 'angular', profile: angularProfile },
+    { name: 'typescript', profile: typescriptProfile },
+  ] as const;
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    it.each(ALL_PROFILES)(
+      '$name profile base contains "Quality gates are unconditional"',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('Quality gates are unconditional');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile base contains convention-override clause',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('They must never');
+        expect(base).toContain('override hard-fail gates');
+        expect(base).toContain('fail-closed behavior');
+        expect(base).toContain('mandates.');
+      },
+    );
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it.each(ALL_PROFILES)(
+      '$name clause appears after Quality Gates table and before Verification Commands',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        const qgIdx = base.indexOf('Quality Gates');
+        const clauseIdx = base.indexOf('Quality gates are unconditional');
+        const verIdx = base.indexOf('Verification Commands');
+        expect(qgIdx).toBeLessThan(clauseIdx);
+        expect(clauseIdx).toBeLessThan(verIdx);
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name clause mentions conventions may narrow choices inside passing gates',
+      ({ profile }) => {
+        const base = extractBaseInstructions(profile.instructions);
+        expect(base).toContain('narrow implementation choices only inside passing gates');
+      },
+    );
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    it('convention-override clause does NOT appear in phase-specific content', () => {
+      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+        const byPhase = extractByPhaseInstructions(profile.instructions);
+        if (byPhase) {
+          for (const content of Object.values(byPhase)) {
+            expect(content).not.toContain('Quality gates are unconditional');
+          }
+        }
       }
     });
   });
