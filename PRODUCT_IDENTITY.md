@@ -72,6 +72,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Bounded heuristic semantics** — code-surface collector reads a capped subset of source files (hard file/byte/time budgets) to derive endpoint/auth/data/integration hints with confidence and evidence
 - **Immutable snapshots** — discovery results and profile resolution are snapshot-frozen per session before state persistence
 - **Digest-linked** — session state carries SHA-256 `discoveryDigest` linking it to the exact discovery that produced it
+- **Verification command planner** — session state surfaces `verificationCandidates`: repo-native, evidence-backed verification command candidates derived from detected stack + manifests (advisory only, never auto-executed)
 
 ### Archive Hardening
 

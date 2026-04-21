@@ -29,6 +29,7 @@ import type { SessionState } from '../state/schema';
 import type { BindingInfo } from '../state/evidence';
 import type { DiscoverySummary } from '../discovery/types';
 import type { DetectedStack } from '../discovery/types';
+import type { VerificationCandidates } from '../discovery/types';
 import { evaluate } from '../machine/evaluate';
 import type { RailResult, RailContext } from './types';
 import { blocked } from '../config/reasons';
@@ -107,6 +108,11 @@ export interface HydrateInput {
    * Derived evidence — NOT SSOT.
    */
   readonly detectedStack?: DetectedStack | null;
+  /**
+   * Advisory verification command candidates derived from stack + manifest evidence.
+   * Derived evidence — NOT SSOT.
+   */
+  readonly verificationCandidates?: VerificationCandidates;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -222,6 +228,7 @@ export function executeHydrate(
     discoveryDigest: input.discoveryDigest ?? null,
     discoverySummary: input.discoverySummary ?? null,
     detectedStack: input.detectedStack ?? null,
+    verificationCandidates: input.verificationCandidates ?? [],
 
     // Metadata
     transition: null,

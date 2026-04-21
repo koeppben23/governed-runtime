@@ -28,7 +28,11 @@ import {
   TicketEvidence,
   ValidationResult,
 } from './evidence';
-import { DiscoverySummarySchema, DetectedStackSchema } from '../discovery/types';
+import {
+  DiscoverySummarySchema,
+  DetectedStackSchema,
+  VerificationCandidatesSchema,
+} from '../discovery/types';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -260,6 +264,14 @@ export const SessionState = z.object({
    * Null when no items were detected or for pre-discovery sessions.
    */
   detectedStack: DetectedStackSchema.nullable().optional(),
+
+  /**
+   * Advisory verification command candidates derived from stack + manifest evidence.
+   *
+   * Derived evidence — NOT SSOT. These candidates are planning hints only and
+   * MUST NOT be treated as executed checks.
+   */
+  verificationCandidates: VerificationCandidatesSchema.optional(),
 
   // ── Metadata ────────────────────────────────────────────────
 

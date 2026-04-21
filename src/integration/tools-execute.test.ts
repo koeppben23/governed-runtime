@@ -209,6 +209,44 @@ describe('status', () => {
       // evidence absent on second entry — must not be fabricated
       expect(versions[1].evidence).toBeUndefined();
     });
+
+    it('returns verificationCandidates array (empty by default)', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
+    });
+
+    it('returns persisted verificationCandidates in status', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        verificationCandidates: [
+          {
+            kind: 'test',
+            command: 'pnpm test',
+            source: 'package.json:scripts.test',
+            confidence: 'high',
+            reason: 'Repo-native test script detected and pnpm package manager detected',
+          },
+        ],
+      });
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
+      const candidates = result.verificationCandidates as Array<Record<string, unknown>>;
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0]).toMatchObject({
+        kind: 'test',
+        command: 'pnpm test',
+        source: 'package.json:scripts.test',
+        confidence: 'high',
+      });
+    });
   });
 
   describe('BAD', () => {

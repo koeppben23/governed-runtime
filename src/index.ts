@@ -306,6 +306,10 @@ export {
   type DomainSignals,
   type CommandHint,
   type ValidationHints,
+  type VerificationCandidateKind,
+  type VerificationCandidateConfidence,
+  type VerificationCandidate,
+  type VerificationCandidates,
   type DiscoveryResult,
   type ProfileCandidate,
   type RejectedCandidate,
@@ -331,6 +335,10 @@ export {
   DetectedStackTargetSchema,
   DetectedStackItemSchema,
   DetectedStackTargetEntrySchema,
+  VerificationCandidateKindSchema,
+  VerificationCandidateConfidenceSchema,
+  VerificationCandidateSchema,
+  VerificationCandidatesSchema,
   // Constants
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
@@ -342,6 +350,8 @@ export {
   extractDetectedStack,
   computeDiscoveryDigest,
 } from './discovery/orchestrator';
+
+export { planVerificationCandidates } from './discovery/verification-planner';
 
 export { collectRepoMetadata } from './discovery/collectors/repo-metadata';
 export { collectStack } from './discovery/collectors/stack-detection';

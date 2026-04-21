@@ -4,7 +4,8 @@
  * stack versions flow through all three layers:
  *
  *   manifest file → repoSignals → hydrate/discovery
- *   → SessionState.detectedStack → flowguard_status.detectedStack
+ *   → SessionState.detectedStack + verificationCandidates
+ *   → flowguard_status.detectedStack + flowguard_status.verificationCandidates
  *   → profileRules phase instruction
  *
  * Each test uses real manifest files on disk, real discovery extraction,
@@ -201,6 +202,7 @@ describe('stack-evidence E2E', () => {
       const statusResult = await callStatus();
       expect(statusResult.detectedStack).not.toBeNull();
       expect(typeof statusResult.detectedStack).toBe('object');
+      expect(Array.isArray(statusResult.verificationCandidates)).toBe(true);
 
       const statusDs = statusResult.detectedStack as Record<string, unknown>;
       expect(statusDs.summary).toContain('java=21');
@@ -208,6 +210,20 @@ describe('stack-evidence E2E', () => {
       expect((statusDs.items as unknown[]).length).toBeGreaterThanOrEqual(2);
       expect(Array.isArray(statusDs.versions)).toBe(true);
       expect((statusDs.versions as unknown[]).length).toBeGreaterThanOrEqual(2);
+
+      const verificationCandidates = statusResult.verificationCandidates as Array<
+        Record<string, unknown>
+      >;
+      expect(verificationCandidates.length).toBeGreaterThan(0);
+      expect(verificationCandidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'build',
+            command: 'mvn verify',
+            source: 'detectedStack:buildTool:maven',
+          }),
+        ]),
+      );
 
       // 7. Verify PLAN phase profileRules contains version-evidence rule
       await writeState(sessDir, { ...state!, phase: 'PLAN' });
@@ -295,6 +311,18 @@ describe('stack-evidence E2E', () => {
       expect(statusDs.summary).toContain('node=20.11.0');
       expect(Array.isArray(statusDs.items)).toBe(true);
       expect(Array.isArray(statusDs.versions)).toBe(true);
+      expect(Array.isArray(statusResult.verificationCandidates)).toBe(true);
+
+      const candidates = statusResult.verificationCandidates as Array<Record<string, unknown>>;
+      expect(candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'typecheck',
+            command: 'npx tsc --noEmit',
+            source: 'detectedStack:language:typescript',
+          }),
+        ]),
+      );
 
       // 7. PLAN phase profileRules contains version-evidence rule
       await writeState(sessDir, { ...state!, phase: 'PLAN' });
@@ -329,6 +357,7 @@ describe('stack-evidence E2E', () => {
       const statusDs = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(statusDs.items)).toBe(true);
       expect((statusDs.items as unknown[]).length).toBeGreaterThan(0);
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
     });
   });
 

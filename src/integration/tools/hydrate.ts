@@ -11,6 +11,8 @@
 
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
+import { readFile as fsReadFile } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 
 import type { ToolDefinition } from './helpers';
 import {
@@ -51,6 +53,7 @@ import {
 } from '../../discovery/orchestrator';
 import type { DiscoveryResult, ProfileResolution } from '../../discovery/types';
 import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types';
+import { planVerificationCandidates } from '../../discovery/verification-planner';
 import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
 
 // Config
@@ -176,6 +179,7 @@ export const hydrate: ToolDefinition = {
       let discoveryDigest: string | undefined;
       let discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined;
       let detectedStack: ReturnType<typeof extractDetectedStack> | undefined;
+      let verificationCandidates: Awaited<ReturnType<typeof planVerificationCandidates>> | undefined;
       let profileResolution: ProfileResolution | undefined;
       if (!existing && !repoSignals) {
         throwHydrateError(
@@ -292,6 +296,17 @@ export const hydrate: ToolDefinition = {
         discoveryDigest = computeDiscoveryDigest(discoveryResult);
         discoverySummary = extractDiscoverySummary(discoveryResult);
         detectedStack = extractDetectedStack(discoveryResult);
+        verificationCandidates = await planVerificationCandidates({
+          detectedStack,
+          allFiles: repoSignals.files,
+          readFile: async (relativePath: string) => {
+            try {
+              return await fsReadFile(nodePath.join(worktree, relativePath), 'utf8');
+            } catch {
+              return undefined;
+            }
+          },
+        });
         requireDiscoveryContract(discoveryDigest, discoverySummary);
         requireDiscoveryArtifacts(wsDir, sessDir);
       }
@@ -319,6 +334,7 @@ export const hydrate: ToolDefinition = {
           discoveryDigest,
           discoverySummary,
           detectedStack,
+          verificationCandidates,
         },
         ctx,
       );

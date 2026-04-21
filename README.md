@@ -117,6 +117,7 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
 | **14 Phases** | READY entry point with three independent flow paths |
 | **Evidence Gates** | Every phase produces verifiable artifacts |
+| **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
 
 ---
 

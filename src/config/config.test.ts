@@ -1222,6 +1222,7 @@ describe('config/profile/detected-stack-instruction', () => {
           const content = byPhase![phase as keyof typeof byPhase];
           expect(content).toBeDefined();
           expect(content).toContain('flowguard_status.detectedStack');
+          expect(content).toContain('flowguard_status.verificationCandidates');
           expect(content).toContain('NOT_VERIFIED');
         }
       },
@@ -1239,6 +1240,7 @@ describe('config/profile/detected-stack-instruction', () => {
           const content = byPhase![phase as keyof typeof byPhase];
           if (content) {
             expect(content).not.toContain('flowguard_status.detectedStack');
+            expect(content).not.toContain('flowguard_status.verificationCandidates');
           }
         }
       },
@@ -1249,6 +1251,7 @@ describe('config/profile/detected-stack-instruction', () => {
       ({ profile }) => {
         const base = extractBaseInstructions(profile.instructions);
         expect(base).not.toContain('flowguard_status.detectedStack');
+        expect(base).not.toContain('flowguard_status.verificationCandidates');
       },
     );
   });
@@ -1263,6 +1266,7 @@ describe('config/profile/detected-stack-instruction', () => {
         for (const phase of STACK_PHASES) {
           const content = byPhase[phase as keyof typeof byPhase];
           expect(content).toContain(expected);
+          expect(content).toContain('flowguard_status.verificationCandidates');
         }
       }
     });

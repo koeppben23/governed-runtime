@@ -257,6 +257,43 @@ export const ValidationHintsSchema = z.object({
 });
 export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
 
+// ─── Verification Candidates (advisory planner output) ───────────────────────
+
+/** Verification candidate command kind. */
+export const VerificationCandidateKindSchema = z.enum([
+  'build',
+  'test',
+  'lint',
+  'typecheck',
+  'format',
+  'security',
+  'coverage',
+]);
+export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKindSchema>;
+
+/** Confidence level for a planned verification candidate. */
+export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
+export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
+
+/**
+ * Evidence-backed verification command candidate.
+ *
+ * Advisory only: this command is a planning suggestion, not an execution result
+ * and not an instruction to auto-run it.
+ */
+export const VerificationCandidateSchema = z.object({
+  kind: VerificationCandidateKindSchema,
+  command: z.string().min(1),
+  source: z.string().min(1),
+  confidence: VerificationCandidateConfidenceSchema,
+  reason: z.string().min(1),
+});
+export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;
+
+/** Deterministic ordered list of advisory verification candidates. */
+export const VerificationCandidatesSchema = z.array(VerificationCandidateSchema);
+export type VerificationCandidates = z.infer<typeof VerificationCandidatesSchema>;
+
 // ─── Discovery Result ─────────────────────────────────────────────────────────
 
 /**

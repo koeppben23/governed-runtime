@@ -96,6 +96,7 @@ export const status: ToolDefinition = {
             return phaseExtra ? base + '\n\n' + phaseExtra : base;
           })(),
           detectedStack: state.detectedStack ?? null,
+          verificationCandidates: state.verificationCandidates ?? [],
           hasTicket: state.ticket !== null,
           hasPlan: state.plan !== null,
           planVersion: state.plan ? state.plan.history.length + 1 : 0,

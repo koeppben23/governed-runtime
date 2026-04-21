@@ -370,9 +370,12 @@ const DETECTED_STACK_INSTRUCTION = `\
 ## Detected Stack
 
 Use flowguard_status.detectedStack when present. Prefer detected tools,
-frameworks, runtimes, and versions over generic defaults. Do not make
-version-specific claims without repository evidence; mark unsupported
-claims as NOT_VERIFIED.`;
+frameworks, runtimes, and versions over generic defaults.
+When choosing verification commands, prefer
+flowguard_status.verificationCandidates when present. They are advisory
+planning hints, not executed checks.
+Do not make version-specific claims without repository evidence; mark
+unsupported claims as NOT_VERIFIED.`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
