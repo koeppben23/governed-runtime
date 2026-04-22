@@ -40,6 +40,10 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 **Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`.
 When omitted, reads `config.json` → `policy.defaultMode`, then falls back to `solo`.
 
+If `FLOWGUARD_POLICY_PATH` is set, `/hydrate` enforces the central `minimumMode` from that
+file. Explicit weaker modes are blocked; repo/default weaker modes are elevated with visible
+resolution evidence.
+
 `team-ci` semantics:
 
 - In CI context: effective mode = `team-ci` (auto-approve at user gates)

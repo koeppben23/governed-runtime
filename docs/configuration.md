@@ -58,6 +58,18 @@ Sets the default policy mode for new sessions when `/hydrate` is called without 
 2. `config.json` → `policy.defaultMode`
 3. Built-in default: `solo`
 
+**P29 central minimum (optional):**
+
+- If `FLOWGUARD_POLICY_PATH` is set, the central policy file becomes mandatory.
+- Missing/unreadable/invalid central policy blocks `/hydrate` (fail-closed).
+- Central policy defines `minimumMode` (`solo`, `team`, or `regulated`).
+- Repo/default weaker than central minimum is raised to the central minimum with
+  explicit resolution reason.
+- Explicit mode weaker than central minimum is blocked (`EXPLICIT_WEAKER_THAN_CENTRAL`).
+- Explicit mode stronger than central minimum is allowed and remains source `explicit`.
+- Existing sessions are also checked when `/hydrate` runs; if existing session mode is weaker
+  than central minimum, hydrate blocks (`EXISTING_POLICY_WEAKER_THAN_CENTRAL`).
+
 The installer persists `--policy-mode` into this field during `flowguard install`.
 Re-install with `--force` updates the value; without `--force`, the existing config is preserved.
 
@@ -69,11 +81,11 @@ Invalid or unrecognized policy mode values are rejected with an explicit `Policy
 
 Different runtime contexts resolve policy defaults independently:
 
-| Context                 | Priority Chain                                        | Final Fallback |
-| ----------------------- | ----------------------------------------------------- | -------------- |
-| `/hydrate` tool         | explicit arg > `config.policy.defaultMode` > `solo`   | `solo`         |
-| Plugin / session policy | state snapshot > `config.policy.defaultMode` > `team` | `team`         |
-| Install CLI             | `--policy-mode` writes `config.policy.defaultMode`    | —              |
+| Context                 | Priority Chain                                                                                                             | Final Fallback |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `/hydrate` tool         | requested (`explicit > config.defaultMode > solo`) constrained by optional central `minimumMode` (`FLOWGUARD_POLICY_PATH`) | `solo`         |
+| Plugin / session policy | state snapshot > `config.policy.defaultMode` > `team`                                                                      | `team`         |
+| Install CLI             | `--policy-mode` writes `config.policy.defaultMode`                                                                         | —              |
 
 **Why different fallbacks?**
 
@@ -82,27 +94,33 @@ Different runtime contexts resolve policy defaults independently:
 
 Both paths read `config.policy.defaultMode` as the primary configured default. The difference is only in the built-in fallback when no config exists.
 
-### policy.modes
+### Central Policy File (P29)
 
-**Type:** `object`
-**Default:** Built-in policies
-
-Override or extend policy configurations:
+When `FLOWGUARD_POLICY_PATH` is set, the referenced file must be valid JSON:
 
 ```json
 {
-  "policy": {
-    "modes": {
-      "regulated": {
-        "requireHumanGates": true,
-        "allowSelfApproval": false,
-        "maxSelfReviewIterations": 5,
-        "maxImplReviewIterations": 3
-      }
-    }
-  }
+  "schemaVersion": "v1",
+  "minimumMode": "regulated",
+  "version": "2026.04"
 }
 ```
+
+Required fields:
+
+- `schemaVersion`: must be `"v1"`
+- `minimumMode`: `solo`, `team`, or `regulated`
+
+Optional fields:
+
+- `version`: version label surfaced in applied-policy evidence
+- `policyId`: optional operator-defined identifier
+
+### policy.modes
+
+`policy.modes` custom overrides are not a runtime authority surface in the current release.
+FlowGuard policy authority is resolved from explicit mode, repo default mode, and (optionally)
+`FLOWGUARD_POLICY_PATH` central minimum semantics.
 
 ### Audit Chain Verification Mode
 
@@ -186,10 +204,11 @@ Custom profile configurations:
 
 ## Environment Variables
 
-| Variable              | Description | Default              |
-| --------------------- | ----------- | -------------------- |
-| `OPENCODE_CONFIG_DIR` | Config root | `~/.config/opencode` |
-| `FLOWGUARD_LOG_LEVEL` | Log level   | `info`               |
+| Variable                | Description                                                              | Default              |
+| ----------------------- | ------------------------------------------------------------------------ | -------------------- |
+| `OPENCODE_CONFIG_DIR`   | Config root                                                              | `~/.config/opencode` |
+| `FLOWGUARD_LOG_LEVEL`   | Log level                                                                | `info`               |
+| `FLOWGUARD_POLICY_PATH` | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`) | unset                |
 
 ## Examples
 
@@ -210,14 +229,7 @@ Custom profile configurations:
     "level": "debug"
   },
   "policy": {
-    "defaultMode": "regulated",
-    "modes": {
-      "regulated": {
-        "requireHumanGates": true,
-        "maxSelfReviewIterations": 5,
-        "maxImplReviewIterations": 3
-      }
-    }
+    "defaultMode": "regulated"
   },
   "profile": {
     "defaultId": "typescript"

@@ -149,6 +149,7 @@ afterEach(async () => {
     email: 'test@flowguard.dev',
     source: 'env',
   });
+  delete process.env.FLOWGUARD_POLICY_PATH;
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -193,6 +194,17 @@ describe('status', () => {
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
       expect(result.next).toBeTruthy();
+    });
+
+    it('surfaces appliedPolicy provenance fields', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      const applied = result.appliedPolicy as Record<string, unknown>;
+      expect(applied).toBeDefined();
+      expect(applied.source).toBe('explicit');
+      expect(applied.requestedMode).toBe('solo');
+      expect(applied.effectiveMode).toBe('solo');
+      expect(applied.centralPolicyDigest).toBeNull();
     });
 
     it('includes completeness fields', async () => {
@@ -488,6 +500,74 @@ describe('hydrate', () => {
       expect(result.message).toContain('invalid');
     });
 
+    it('fails closed when FLOWGUARD_POLICY_PATH is set but file is missing', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = `${ws.tmpDir}/missing-central-policy.json`;
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_MISSING');
+    });
+
+    it('fails closed when FLOWGUARD_POLICY_PATH is empty string', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = '';
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_PATH_EMPTY');
+    });
+
+    it('fails closed when FLOWGUARD_POLICY_PATH is whitespace', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = '   ';
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_PATH_EMPTY');
+    });
+
+    it('fails closed when central policy file has invalid JSON', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(centralPath, '{invalid-json', 'utf-8');
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_INVALID_JSON');
+    });
+
+    it('blocks explicit weaker mode than central minimum', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EXPLICIT_WEAKER_THAN_CENTRAL');
+    });
+
+    it('existing session fails closed when central policy file is missing', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      process.env.FLOWGUARD_POLICY_PATH = `${ws.tmpDir}/missing-central-policy.json`;
+      const result = await hydrateSession({ policyMode: 'solo' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_MISSING');
+    });
+
+    it('existing session blocks when existing mode is weaker than central minimum', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'solo' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EXISTING_POLICY_WEAKER_THAN_CENTRAL');
+    });
+
     /**
      * Rehydrate fail-closed: legacy session-state.json on disk with missing
      * required snapshot fields must cause /hydrate to return an error.
@@ -563,6 +643,142 @@ describe('hydrate', () => {
       const info = await readWorkspaceInfo(fp.fingerprint);
       expect(info).not.toBeNull();
       expect(info!.fingerprint).toBe(fp.fingerprint);
+    });
+
+    it('existing regulated session remains allowed when central minimum is team', async () => {
+      await hydrateSession({ policyMode: 'regulated' });
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('READY');
+
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.centralMinimumMode).toBe('team');
+      expect(state!.policySnapshot.policyDigest).toMatch(/^[0-9a-f]{64}$/);
+
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      const applied = statusResult.appliedPolicy as Record<string, unknown>;
+      expect(applied.centralMinimumMode).toBe('team');
+      expect(String(applied.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('existing session clears stale central policyVersion when current central policy has no version', async () => {
+      await hydrateSession({ policyMode: 'regulated' });
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const stateBefore = await readState(sessDir);
+      await writeState(sessDir, {
+        ...stateBefore!,
+        policySnapshot: {
+          ...stateBefore!.policySnapshot,
+          policyVersion: '2026.04',
+        },
+      });
+
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.error).toBeUndefined();
+
+      const stateAfter = await readState(sessDir);
+      expect(stateAfter).not.toBeNull();
+      expect(stateAfter!.policySnapshot.policyVersion).toBeUndefined();
+
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      const applied = statusResult.appliedPolicy as Record<string, unknown>;
+      expect(applied.centralPolicyVersion).toBeNull();
+    });
+
+    it('central regulated minimum raises weaker repo mode with visible reason', async () => {
+      // 1. Create workspace and config
+      await hydrateSession({ policyMode: 'solo' });
+      const {
+        computeFingerprint,
+        workspaceDir,
+        sessionDir: resolveSessionDir,
+      } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'solo';
+      await writeConfig(wsDir, config);
+
+      // 2. Central minimum: regulated
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      // 3. New session without explicit policyMode (repo source)
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const result = parseToolResult(await hydrate.execute({ profileId: 'baseline' }, ctx2));
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.effectiveMode).toBe('regulated');
+      expect(resolution.source).toBe('central');
+      expect(resolution.resolutionReason).toBe('repo_weaker_than_central');
+      expect(resolution.centralMinimumMode).toBe('regulated');
+      expect(String(resolution.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
+
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.policySnapshot.mode).toBe('regulated');
+      expect(state!.policySnapshot.source).toBe('central');
+      expect(state!.policySnapshot.resolutionReason).toBe('repo_weaker_than_central');
+      expect(state!.policySnapshot.centralMinimumMode).toBe('regulated');
+      expect(state!.policySnapshot.policyDigest).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('explicit stronger mode remains explicit while preserving central evidence', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.phase).toBe('READY');
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.effectiveMode).toBe('regulated');
+      expect(resolution.source).toBe('explicit');
+      expect(resolution.resolutionReason).toBe('explicit_stronger_than_central');
+      expect(resolution.centralMinimumMode).toBe('team');
+      expect(String(resolution.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('hydrate without explicit mode uses config.policy.defaultMode: regulated', async () => {

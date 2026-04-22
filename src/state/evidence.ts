@@ -253,10 +253,22 @@ export const PolicySnapshotSchema = z.object({
   resolvedAt: z.string().datetime(),
   /** Original requested policy mode at hydrate time. */
   requestedMode: z.string(),
+  /** Applied policy source (P29): explicit, central, repo, or default. */
+  source: z.enum(['explicit', 'central', 'repo', 'default']).optional(),
   /** Effective gate behavior after mode resolution. */
   effectiveGateBehavior: z.enum(['auto_approve', 'human_gated']),
   /** Why requested mode was degraded (if applicable). */
   degradedReason: z.string().optional(),
+  /** Why source precedence selected/overrode a mode (P29). */
+  resolutionReason: z.string().optional(),
+  /** Central minimum mode that constrained resolution (P29). */
+  centralMinimumMode: z.enum(['solo', 'team', 'regulated']).optional(),
+  /** Digest of the central policy bundle used at hydrate time (P29). */
+  policyDigest: z.string().optional(),
+  /** Version string from central policy bundle (P29). */
+  policyVersion: z.string().optional(),
+  /** Redacted policy path hint from central policy bundle (P29). */
+  policyPathHint: z.string().optional(),
 
   // ── Governance-critical fields (frozen copy) ───────────────
   requireHumanGates: z.boolean(),

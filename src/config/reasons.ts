@@ -276,6 +276,78 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'CENTRAL_POLICY_PATH_EMPTY',
+    category: 'input',
+    messageTemplate: 'FLOWGUARD_POLICY_PATH is set but empty: {message}',
+    recoverySteps: [
+      'Set FLOWGUARD_POLICY_PATH to an absolute or relative file path',
+      'Or unset FLOWGUARD_POLICY_PATH to disable central policy for this run',
+    ],
+  },
+  {
+    code: 'CENTRAL_POLICY_MISSING',
+    category: 'precondition',
+    messageTemplate: 'Central policy file is missing: {message}',
+    recoverySteps: [
+      'Create the central policy file at FLOWGUARD_POLICY_PATH',
+      'Or unset FLOWGUARD_POLICY_PATH if no central policy should apply',
+    ],
+  },
+  {
+    code: 'CENTRAL_POLICY_UNREADABLE',
+    category: 'adapter',
+    messageTemplate: 'Central policy file is unreadable: {message}',
+    recoverySteps: [
+      'Ensure the policy file exists and is readable by the current user',
+      'Fix permissions and re-run /hydrate',
+    ],
+  },
+  {
+    code: 'CENTRAL_POLICY_INVALID_JSON',
+    category: 'input',
+    messageTemplate: 'Central policy file is invalid JSON: {message}',
+    recoverySteps: [
+      'Fix JSON syntax in the central policy file',
+      'Validate file structure before re-running /hydrate',
+    ],
+  },
+  {
+    code: 'CENTRAL_POLICY_INVALID_SCHEMA',
+    category: 'input',
+    messageTemplate: 'Central policy file failed schema validation: {message}',
+    recoverySteps: [
+      'Ensure schemaVersion is "v1" and minimumMode is present',
+      'Use only supported fields and data types',
+    ],
+  },
+  {
+    code: 'CENTRAL_POLICY_INVALID_MODE',
+    category: 'input',
+    messageTemplate: 'Central policy minimumMode is invalid: {message}',
+    recoverySteps: [
+      'Set minimumMode to one of: solo, team, regulated',
+      'Re-run /hydrate after updating the central policy file',
+    ],
+  },
+  {
+    code: 'EXPLICIT_WEAKER_THAN_CENTRAL',
+    category: 'precondition',
+    messageTemplate: 'Explicit policy mode violates central minimum: {message}',
+    recoverySteps: [
+      'Use /hydrate with a policyMode that satisfies the central minimum',
+      'Or remove explicit policyMode and allow central minimum to apply',
+    ],
+  },
+  {
+    code: 'EXISTING_POLICY_WEAKER_THAN_CENTRAL',
+    category: 'precondition',
+    messageTemplate: 'Existing session policy violates central minimum: {message}',
+    recoverySteps: [
+      'Resume the session without FLOWGUARD_POLICY_PATH or with a compatible central minimum',
+      'Or start a new session at a compliant policy mode',
+    ],
+  },
+  {
     code: 'HYDRATE_DISCOVERY_CONTRACT_FAILED',
     category: 'state',
     messageTemplate: 'Hydrate discovery contract failed: {message}',

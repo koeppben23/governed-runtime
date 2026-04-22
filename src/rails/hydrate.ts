@@ -40,6 +40,7 @@ import type { DiscoveryResult } from '../discovery/types';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile';
 import { resolvePolicy, createPolicySnapshot } from '../config/policy';
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy';
+import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,18 @@ export interface HydrateInput {
   readonly effectiveGateBehavior?: EffectiveGateBehavior;
   /** Optional reason why requested mode was degraded. */
   readonly policyDegradedReason?: PolicyDegradedReason;
+  /** Applied policy source (P29). */
+  readonly policySource?: PolicySource;
+  /** Why source precedence selected/overrode a mode (P29). */
+  readonly policyResolutionReason?: PolicyResolutionReason;
+  /** Central minimum mode used during precedence resolution (P29). */
+  readonly centralMinimumMode?: CentralMinimumMode;
+  /** Digest of central policy bundle used during hydrate (P29). */
+  readonly policyDigest?: string;
+  /** Version from central policy bundle (P29). */
+  readonly policyVersion?: string;
+  /** Redacted path hint for central policy bundle (P29). */
+  readonly policyPathHint?: string;
   /**
    * Identity of the session initiator (author).
    * Used for four-eyes principle enforcement.
@@ -193,9 +206,15 @@ export function executeHydrate(
   const now = ctx.now();
   const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
     requestedMode: input.requestedPolicyMode ?? policy.mode,
+    source: input.policySource ?? 'default',
     effectiveGateBehavior:
       input.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     degradedReason: input.policyDegradedReason,
+    resolutionReason: input.policyResolutionReason,
+    centralMinimumMode: input.centralMinimumMode,
+    policyDigest: input.policyDigest,
+    policyVersion: input.policyVersion,
+    policyPathHint: input.policyPathHint,
   });
 
   // 5. Create binding

@@ -391,6 +391,35 @@ describe('state schemas', () => {
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
     });
 
+    it('PolicySnapshotSchema accepts P29 applied-policy provenance fields', () => {
+      const snapshot = {
+        mode: 'regulated',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        source: 'central',
+        effectiveGateBehavior: 'human_gated',
+        resolutionReason: 'repo_weaker_than_central',
+        centralMinimumMode: 'regulated',
+        policyDigest: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        policyVersion: '2026.04',
+        policyPathHint: 'basename:org-policy.json',
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: false,
+        audit: {
+          emitTransitions: true,
+          emitToolCalls: true,
+          enableChainHash: true,
+        },
+        actorClassification: {
+          flowguard_decision: 'human',
+        },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
+    });
+
     it('ReviewReport validates overall status enum', () => {
       expect(() =>
         ReviewReport.parse({

@@ -110,6 +110,23 @@ In `config.json`:
 }
 ```
 
+## Central Policy Minimum (P29)
+
+FlowGuard supports an explicit central policy source via `FLOWGUARD_POLICY_PATH`.
+
+- `FLOWGUARD_POLICY_PATH` **unset**: no central override applies.
+- `FLOWGUARD_POLICY_PATH` **set**: central policy file is mandatory and validated.
+- Invalid/missing/unreadable central policy blocks `/hydrate` fail-closed.
+
+Resolution contract:
+
+- Requested mode = `explicit || repo default || built-in default`
+- Central minimum = `minimumMode` from central policy file
+- Repo/default weaker than central minimum -> effective mode raised to central with visible reason
+- Explicit weaker than central minimum -> blocked (`EXPLICIT_WEAKER_THAN_CENTRAL`)
+- Explicit stronger than central minimum -> allowed, source remains `explicit`
+- Existing session policy weaker than central minimum -> blocked (`EXISTING_POLICY_WEAKER_THAN_CENTRAL`)
+
 ## Policy Comparison
 
 | Setting            | Solo     | Team        | Team-CI     | Regulated       |

@@ -43,6 +43,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### FlowGuard & Compliance
 
 - **Four policy modes:** Solo (no human gates, fast feedback), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (four-eyes principle enforced)
+- **Central policy minimum enforcement (P29):** optional explicit central source (`FLOWGUARD_POLICY_PATH`) constrains hydrate policy resolution; explicit weaker-than-central requests fail closed, repo/default weaker modes are elevated with visible resolution evidence
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
@@ -322,6 +323,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
 - **No pipeline orchestration.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services. Integration with external CI systems is via headless mode.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally. Release package provenance is separately attested via GitHub Release signatures, but session verification remains local.
+- **Central policy distribution is baseline-only.** FlowGuard now supports explicit central policy minimum enforcement via `FLOWGUARD_POLICY_PATH` (P29), but it is not a full enterprise policy control plane (no admin UI, remote server, RBAC, or fleet management). See `docs/enterprise-readiness.md` and `docs/admin-model.md`.
 - **Profile auto-detection is heuristic.** Tech-stack detection uses repository signals (pom.xml, package.json, etc.) and may misclassify non-standard layouts. Code-surface analysis adds bounded heuristics with confidence scores, not semantic truth. For deterministic behavior, explicit profile configuration is available.
 
 ---
@@ -342,6 +344,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
+- **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
 - **Archive Verification Checks:** 11 finding codes (including audit chain integrity)
