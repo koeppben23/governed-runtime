@@ -254,8 +254,7 @@ export const hydrate: ToolDefinition = {
             digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
             configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
             configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
-            configRequireVerifiedActorsForApproval:
-              config.policy.requireVerifiedActorsForApproval,
+            configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
           });
       const policy = existing
         ? resolvePolicyFromState(existingWithCentralEvidence)
