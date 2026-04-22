@@ -41,6 +41,8 @@ import {
 import * as crypto from 'node:crypto';
 import { benchmarkSync, measureAsync } from '../test-policy';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types';
+import { writeState } from './persistence';
+import { makeState, POLICY_SNAPSHOT } from '../__fixtures__';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -1039,6 +1041,60 @@ describe('archiveSession failure paths', () => {
       }
     },
   );
+
+  // ── P26: Sidecar regulated hardening ────────────────────────────────────────
+
+  it('regulated + sidecar write failure → throws ARCHIVE_FAILED (fail-closed)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440200';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write a valid regulated state so archiveSessionImpl reads policyMode
+    const regulatedState = makeState('COMPLETE', {
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        mode: 'regulated',
+        requestedMode: 'regulated',
+        allowSelfApproval: false,
+        requireHumanGates: true,
+        audit: { ...POLICY_SNAPSHOT.audit, enableChainHash: true },
+      },
+    });
+    await writeState(sessDir, regulatedState);
+
+    // Pre-create a directory at the checksumPath location.
+    // fs.writeFile to a directory path throws EISDIR/EPERM.
+    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+    const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
+    await fs.mkdir(checksumPath, { recursive: true });
+
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
+  });
+
+  it('non-regulated + sidecar write failure → archive succeeds (tolerant)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440201';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write a valid team state so archiveSessionImpl reads policyMode = team
+    const teamState = makeState('COMPLETE', {
+      policySnapshot: {
+        ...POLICY_SNAPSHOT,
+        mode: 'team',
+        requestedMode: 'team',
+      },
+    });
+    await writeState(sessDir, teamState);
+
+    // Pre-create a directory at the checksumPath location.
+    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+    const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
+    await fs.mkdir(checksumPath, { recursive: true });
+
+    // Non-regulated: sidecar failure is non-fatal, archive succeeds
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain('.tar.gz');
+  });
 });
 
 // =============================================================================

@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Eval-suite reference links to OpenAI and Anthropic docs were revalidated and documented for traceability.
 - **Audit chain strict verification mode**: `verifyChain({ strict: true })` rejects legacy events without chain fields as integrity failures. Adds typed `ChainVerificationReason` (`CHAIN_BREAK` | `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and `reason` field to `ChainVerification`. Compliance summary now distinguishes strict failures from chain breaks in detail messages.
 - **Strict audit verification in regulated paths**: Archive verification (`verifyArchive`) now verifies audit chain integrity. When `manifest.policyMode === "regulated"`, strict mode rejects unchained legacy events. Non-regulated modes remain legacy-tolerant for backward compatibility. New finding code `audit_chain_invalid` reports chain breaks and strict-mode violations with diagnostic counts. This is the first production call-site for `verifyChain`.
+- **Regulated archive completion semantics**: Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires synchronous archive creation and verification success. New `archiveStatus` field on `SessionState` tracks the archive lifecycle (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Non-regulated sessions retain existing fire-and-forget auto-archive behavior. Aborted sessions are excluded from the archive guarantee.
 
 ## [1.1.0] - 2026-04-17
 

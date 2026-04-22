@@ -5,7 +5,12 @@
  * Contains: status, ticket, decision, validate, review, abort_session, archive.
  * These tools follow the pattern: resolve workspace -> read state -> call rail -> persist.
  *
- * @version v3
+ * P26: decision tool now owns regulated archive lifecycle (archive + verify)
+ * for clean regulated completions (EVIDENCE_REVIEW + APPROVE → COMPLETE).
+ * Emits session_completed audit event before archiveSession() so the archive
+ * contains the terminal lifecycle event.
+ *
+ * @version v5
  */
 
 import { z } from 'zod';
@@ -41,10 +46,19 @@ import { executeAbort } from '../../rails/abort';
 import { autoAdvance } from '../../rails/types';
 
 // Adapters
-import { readState, writeReport } from '../../adapters/persistence';
+import {
+  readState,
+  writeReport,
+  appendAuditEvent,
+  readAuditTrail,
+} from '../../adapters/persistence';
 
 // Workspace
-import { archiveSession } from '../../adapters/workspace';
+import { archiveSession, verifyArchive } from '../../adapters/workspace';
+
+// Audit types + integrity (P26: tool-layer audit emission for regulated completions)
+import { createLifecycleEvent, GENESIS_HASH } from '../../audit/types';
+import { getLastChainHash } from '../../audit/integrity';
 
 // Artifacts
 import { writeMadrArtifact } from '../artifacts/madr-writer';
@@ -195,7 +209,7 @@ export const decision: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
+      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
       const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
@@ -217,6 +231,64 @@ export const decision: ToolDefinition = {
         result.state.architecture
       ) {
         await writeMadrArtifact(sessDir, result.state.architecture);
+      }
+
+      // ── P26: Regulated clean completion requires archive + verification ──
+      // Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
+      // Pre-condition guard: only triggers for the exact clean completion path
+      // (EVIDENCE_REVIEW → APPROVE → COMPLETE). Excludes abort, non-regulated,
+      // and future rails that may also produce COMPLETE.
+      //
+      // Fail-closed: the entire finalization chain (audit emit → archive →
+      // verify) runs in a single try/catch. Any failure at any step produces
+      // archiveStatus: 'failed'. This guarantees no "verified archive without
+      // session_completed audit event" can exist.
+      //
+      // The response must reflect the final archiveStatus so the agent/user
+      // sees degraded completion when archive fails (not a stale clean COMPLETE).
+      if (
+        result.kind === 'ok' &&
+        state.phase === 'EVIDENCE_REVIEW' &&
+        args.verdict === 'approve' &&
+        result.state.phase === 'COMPLETE' &&
+        result.state.policySnapshot.mode === 'regulated' &&
+        !result.state.error
+      ) {
+        const pendingState = { ...result.state, archiveStatus: 'pending' as const };
+        await writeStateWithArtifacts(sessDir, pendingState);
+
+        let finalState;
+        try {
+          // 1. Emit session_completed audit event BEFORE archive.
+          //    Reads the trail to get correct prevHash (independent of plugin cache).
+          //    Failure here is fatal — no archive without terminal audit event.
+          const { events } = await readAuditTrail(sessDir);
+          const prevHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
+          const completionEvt = createLifecycleEvent(
+            context.sessionID,
+            { action: 'session_completed', finalPhase: 'COMPLETE' as const },
+            new Date().toISOString(),
+            'machine',
+            prevHash,
+          );
+          await appendAuditEvent(sessDir, completionEvt);
+
+          // 2. Archive session (synchronous, not fire-and-forget).
+          await archiveSession(fingerprint, context.sessionID);
+          const createdState = { ...result.state, archiveStatus: 'created' as const };
+          await writeStateWithArtifacts(sessDir, createdState);
+
+          // 3. Verify archive integrity.
+          const verification = await verifyArchive(fingerprint, context.sessionID);
+          finalState = {
+            ...result.state,
+            archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
+          };
+        } catch {
+          finalState = { ...result.state, archiveStatus: 'failed' as const };
+        }
+
+        return await persistAndFormat(sessDir, { ...result, state: finalState });
       }
 
       return await persistAndFormat(sessDir, result);

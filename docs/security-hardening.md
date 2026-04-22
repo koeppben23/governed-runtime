@@ -182,6 +182,34 @@ finding message includes the chain verification reason (`CHAIN_BREAK` or
 | `team`, `solo`, etc | No      | Yes — backward-compat    |
 | `unknown`           | No      | Yes — backward-compat    |
 
+### Regulated Archive Completion Guarantee (P26)
+
+Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires archive
+creation **and** verification success. The decision tool owns the synchronous archive
+lifecycle for regulated sessions:
+
+1. State set to `archiveStatus: 'pending'`
+2. `session_completed` audit event appended to trail (before archive)
+3. `archiveSession()` called synchronously (not fire-and-forget)
+4. `verifyArchive()` validates archive integrity
+5. State updated to `archiveStatus: 'verified'` or `archiveStatus: 'failed'`
+
+The `session_completed` event is emitted **before** `archiveSession()` so the archive
+contains the terminal lifecycle event. The audit plugin detects `archiveStatus` on the
+persisted state and skips its own `session_completed` emission and auto-archive to avoid
+duplication. The plugin's chain hash cache is invalidated for regulated completions to
+prevent chain forks.
+
+A regulated session with `phase: 'COMPLETE'` and `archiveStatus !== 'verified'` (without
+`error`) is NOT a clean regulated completion — it is a degraded terminal state.
+
+**Checksum sidecar hardening:** In regulated mode, `.sha256` sidecar write failure is
+fatal (`ARCHIVE_FAILED`). Non-regulated mode remains tolerant.
+
+**Scope exclusions:** Aborted sessions (`error.code === 'ABORTED'`) do not trigger the
+regulated archive lifecycle — abort is an emergency escape with no archive guarantee.
+Non-regulated sessions use the existing fire-and-forget auto-archive in the audit plugin.
+
 ---
 
 ## Compliance Mapping
@@ -196,4 +224,4 @@ finding message includes the chain verification reason (`CHAIN_BREAK` or
 ---
 
 _FlowGuard Version: 1.1.0_
-_Last Updated: 2026-04-21_
+_Last Updated: 2026-04-22_

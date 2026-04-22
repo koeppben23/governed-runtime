@@ -4,10 +4,10 @@
  *
  * Creates compressed tar.gz archives of completed sessions with:
  * - Archive manifest (file inventory + SHA-256 digests)
- * - SHA-256 checksum sidecar file
+ * - SHA-256 checksum sidecar file (fatal in regulated mode — P26)
  * - Discovery snapshot soft-check
  *
- * @version v1
+ * @version v2
  */
 
 import * as fs from 'node:fs/promises';
@@ -208,9 +208,16 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     const archiveBuffer = await fs.readFile(archivePath);
     const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
     await fs.writeFile(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`, 'utf-8');
-  } catch {
-    // Non-fatal: archive was created but checksum sidecar failed.
-    // The archive is still usable, just not externally verifiable.
+  } catch (err) {
+    // Regulated: sidecar failure is fatal — archive is not externally verifiable.
+    // Policy derived from state already in scope (line 89), not a call parameter.
+    if (state?.policySnapshot?.mode === 'regulated') {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Checksum sidecar write failed in regulated mode: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    // Non-regulated: non-fatal. Archive is usable, just not externally verifiable.
   }
 
   return archivePath;

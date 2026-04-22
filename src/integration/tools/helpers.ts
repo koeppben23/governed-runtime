@@ -109,6 +109,7 @@ export function formatRailResult(result: RailResult): string {
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
   const reviewDecision = result.state.reviewDecision;
+  const { archiveStatus } = result.state;
   const json = JSON.stringify({
     phase: result.state.phase,
     status: 'ok',
@@ -124,6 +125,7 @@ export function formatRailResult(result: RailResult): string {
           },
         }
       : {}),
+    ...(archiveStatus ? { archiveStatus } : {}),
     _audit: { transitions: result.transitions },
   });
   return json + `\nNext action: ${nextAction.text}`;

@@ -52,7 +52,7 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v4
+ * @version v5
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
@@ -419,8 +419,19 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // Initialize prevHash: proper chain if enabled, genesis otherwise.
           // When chaining is disabled, each event gets an independent hash
           // (prevHash is always GENESIS_HASH, no chain continuity).
+          //
+          // P26: For regulated completions, the tool layer emits session_completed
+          // directly to the audit trail. The plugin's cached lastHash is stale.
+          // Force re-read the trail to avoid a chain fork (two events with the
+          // same prevHash).
           let prevHash: string;
           if (enableChainHash) {
+            if (state?.archiveStatus) {
+              // Regulated completion: tool-layer wrote audit events directly.
+              // Invalidate cache and re-read trail for correct prevHash.
+              chainInitialized = false;
+              lastHash = null;
+            }
             prevHash = await initChain(sessDir);
           } else {
             prevHash = GENESIS_HASH;
@@ -627,28 +638,50 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // ── 5. Detect session completion (always — structural) ──────────
           // Session completion is a machine-driven event (topology transition
           // to COMPLETE). Always emitted, always attributed to "machine".
+          //
+          // P26: For regulated completions, the tool layer already emitted
+          // session_completed before archiveSession(). Skip emission here
+          // to avoid duplicating the lifecycle event.
           const completionTransition = transitions.find((t) => t.to === 'COMPLETE');
           if (completionTransition && !LIFECYCLE_TOOLS[toolName]) {
-            const completionEvt = createLifecycleEvent(
-              sessionId,
-              {
-                action: 'session_completed',
-                finalPhase: 'COMPLETE' as Phase,
-              },
-              now,
-              'machine',
-              prevHash,
-            );
-            await appendAndTrack(completionEvt, sessDir, enableChainHash);
-            if (enableChainHash) prevHash = completionEvt.chainHash;
+            // Check if tool layer already handled completion (regulated path)
+            const freshState = cachedFingerprint ? await readState(sessDir) : null;
+            const toolLayerHandled = !!freshState?.archiveStatus;
 
-            // Auto-archive completed session (fire-and-forget)
-            if (cachedFingerprint) {
-              archiveSession(cachedFingerprint, sessionId).catch((err) => {
-                log.warn('audit', 'auto-archive failed', {
-                  error: err instanceof Error ? err.message : String(err),
-                });
+            if (!toolLayerHandled) {
+              const completionEvt = createLifecycleEvent(
+                sessionId,
+                {
+                  action: 'session_completed',
+                  finalPhase: 'COMPLETE' as Phase,
+                },
+                now,
+                'machine',
+                prevHash,
+              );
+              await appendAndTrack(completionEvt, sessDir, enableChainHash);
+              if (enableChainHash) prevHash = completionEvt.chainHash;
+            } else {
+              log.debug('audit', 'session_completed handled by tool layer', {
+                archiveStatus: freshState.archiveStatus,
               });
+            }
+
+            // Auto-archive completed session.
+            // Regulated archive handling is owned by the tool layer (P26).
+            // Non-regulated: existing auto-archive behavior.
+            if (cachedFingerprint) {
+              if (toolLayerHandled) {
+                log.debug('audit', 'archive handled by tool layer', {
+                  archiveStatus: freshState!.archiveStatus,
+                });
+              } else {
+                archiveSession(cachedFingerprint, sessionId).catch((err) => {
+                  log.warn('audit', 'auto-archive failed', {
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                });
+              }
             }
           }
 

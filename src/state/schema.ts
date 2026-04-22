@@ -283,5 +283,23 @@ export const SessionState = z.object({
 
   /** Session creation timestamp (set once by init()). */
   createdAt: z.string().datetime(),
+
+  /**
+   * Archive lifecycle status for completed sessions.
+   *
+   * Only set for regulated clean completions (EVIDENCE_REVIEW → APPROVE → COMPLETE).
+   * Non-regulated sessions and aborted sessions do not set this field.
+   *
+   * - `pending`  — archive creation in progress
+   * - `created`  — archive created, verification pending
+   * - `verified` — archive created and verification passed
+   * - `failed`   — archive creation or verification failed
+   *
+   * Invariant: `phase === 'COMPLETE' && policySnapshot.mode === 'regulated'
+   *            && !error && archiveStatus !== 'verified'` = NOT a clean regulated completion.
+   *
+   * Added in P26 — .optional() for backward compatibility (no schema version bump).
+   */
+  archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
 });
 export type SessionState = z.infer<typeof SessionState>;

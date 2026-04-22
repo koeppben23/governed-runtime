@@ -182,4 +182,8 @@ If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_exp
 
 **Verification:** `verifyArchive()` validates integrity (11 finding codes, including audit chain verification).
 
+**Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
+synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
+(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode.
+
 **Note:** This is an operational export action. The original session is preserved.
