@@ -27,6 +27,7 @@
 
 import type { SessionState } from '../state/schema';
 import type { BindingInfo } from '../state/evidence';
+import type { ActorInfo } from '../audit/types';
 import type { DiscoverySummary } from '../discovery/types';
 import type { DetectedStack } from '../discovery/types';
 import type { VerificationCandidates } from '../discovery/types';
@@ -86,6 +87,12 @@ export interface HydrateInput {
    * Defaults to sessionId if not provided.
    */
   readonly initiatedBy?: string;
+  /**
+   * Resolved actor identity (P27).
+   * Best-effort operator identity resolved at hydrate time.
+   * Absent for pre-P27 sessions.
+   */
+  readonly actorInfo?: ActorInfo;
   /**
    * Discovery result from the orchestrator.
    * Used for profile detection when available (Phase 5+).
@@ -223,6 +230,7 @@ export function executeHydrate(
     activeChecks,
     policySnapshot: snapshotWithContext,
     initiatedBy: input.initiatedBy ?? input.sessionId,
+    ...(input.actorInfo ? { actorInfo: input.actorInfo } : {}),
 
     // Discovery
     discoveryDigest: input.discoveryDigest ?? null,

@@ -106,6 +106,27 @@ export type TypedDetail =
   | LifecycleDetail
   | DecisionDetail;
 
+// ─── Actor Identity ──────────────────────────────────────────────────────────
+
+/**
+ * Resolved operator identity for audit attribution.
+ *
+ * P27: Best-effort identity — NOT a cryptographic authentication claim.
+ * The `source` field makes the identity origin transparent:
+ * - `env`:     Operator-provided via FLOWGUARD_ACTOR_ID / FLOWGUARD_ACTOR_EMAIL
+ * - `git`:     Derived from `git config user.name` / `git config user.email`
+ * - `unknown`: Neither env nor git identity available
+ *
+ * Resolved once at hydrate time, immutable for the session lifecycle.
+ * Changing FLOWGUARD_ACTOR_* or git config after hydrate does not affect
+ * the current session. Re-run /hydrate to resolve a new actor.
+ */
+export interface ActorInfo {
+  readonly id: string;
+  readonly email: string | null;
+  readonly source: 'env' | 'git' | 'unknown';
+}
+
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────
 
 /**
@@ -116,6 +137,13 @@ export type TypedDetail =
  * - `prevHash`: hash of the previous event (or "genesis" for the first event)
  * - `chainHash`: SHA-256(prevHash + JSON(this event without chainHash))
  * - To verify: recompute chainHash from prevHash + event data, compare
+ *
+ * Actor identity (P27):
+ * - `actor`: Classification label — "human", "machine", or "system" (backward-compat string)
+ * - `actorInfo`: Optional structured identity (id, email, source). Present on
+ *   human-influenced events (lifecycle, tool_call, decision). Absent on
+ *   machine-only events (transition, error). When absent, JSON.stringify
+ *   omits the field — chain hash stays identical for pre-P27 events.
  */
 export interface ChainedAuditEvent {
   readonly id: string;
@@ -124,6 +152,7 @@ export interface ChainedAuditEvent {
   readonly event: string;
   readonly timestamp: string;
   readonly actor: string;
+  readonly actorInfo?: ActorInfo;
   readonly detail: Readonly<Record<string, unknown>>;
   readonly prevHash: string;
   readonly chainHash: string;
@@ -210,6 +239,7 @@ export function createToolCallEvent(
   timestamp: string,
   actor: string,
   prevHash: string,
+  actorInfo?: ActorInfo,
 ): ChainedAuditEvent {
   const eventName = `tool_call:${detail.tool}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -219,6 +249,7 @@ export function createToolCallEvent(
     event: eventName,
     timestamp,
     actor,
+    ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
     prevHash,
   };
@@ -259,6 +290,7 @@ export function createLifecycleEvent(
   timestamp: string,
   actor: string,
   prevHash: string,
+  actorInfo?: ActorInfo,
 ): ChainedAuditEvent {
   const eventName = `lifecycle:${detail.action}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -268,6 +300,7 @@ export function createLifecycleEvent(
     event: eventName,
     timestamp,
     actor,
+    ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
   };
@@ -285,6 +318,7 @@ export function createDecisionEvent(
   timestamp: string,
   actor: string,
   prevHash: string,
+  actorInfo?: ActorInfo,
 ): ChainedAuditEvent {
   const eventName = `decision:${detail.decisionId}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -294,6 +328,7 @@ export function createDecisionEvent(
     event: eventName,
     timestamp,
     actor,
+    ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
     prevHash,
   };

@@ -277,6 +277,26 @@ export const PolicySnapshotSchema = z.object({
 });
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 
+// ─── Actor Identity ───────────────────────────────────────────────────────────
+
+/**
+ * Resolved operator identity for audit attribution (P27).
+ *
+ * Best-effort identity — NOT a cryptographic authentication claim.
+ * The `source` field makes the identity origin transparent:
+ * - `env`:     Operator-provided via FLOWGUARD_ACTOR_ID / FLOWGUARD_ACTOR_EMAIL
+ * - `git`:     Derived from `git config user.name` / `git config user.email`
+ * - `unknown`: Neither env nor git identity available
+ *
+ * Resolved once at hydrate time, immutable for the session lifecycle.
+ */
+export const ActorInfoSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().nullable(),
+  source: z.enum(['env', 'git', 'unknown']),
+});
+export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
+
 // ─── Audit Event ──────────────────────────────────────────────────────────────
 
 /**
@@ -287,6 +307,13 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
  * - Legacy events (pre-chain) omit these fields
  * - New events always include them
  * - The integrity verifier handles mixed trails gracefully
+ *
+ * Actor identity (P27):
+ * - `actor`: Classification label — "human", "machine", or "system" (string)
+ * - `actorInfo`: Optional structured identity (id, email, source). Present on
+ *   human-influenced events (lifecycle, tool_call, decision). Absent on
+ *   machine-only events (transition, error). When absent, JSON.stringify
+ *   omits the field — chain hash stays identical for pre-P27 events.
  */
 export const AuditEvent = z.object({
   id: z.string().uuid(),
@@ -297,6 +324,8 @@ export const AuditEvent = z.object({
   timestamp: z.string().datetime(),
   actor: z.string(),
   detail: z.record(z.unknown()),
+  /** Resolved actor identity. Present on human-influenced events, absent on machine-only. */
+  actorInfo: ActorInfoSchema.optional(),
   /** Hash of the previous event in the chain (or "genesis" for the first event). */
   prevHash: z.string().optional(),
   /** SHA-256(prevHash + canonical JSON of this event). Tamper-evident chain link. */

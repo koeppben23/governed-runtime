@@ -37,7 +37,12 @@ export type {
   PolicySnapshot,
 } from './state/evidence';
 
-export { PolicySnapshotSchema, REQUIRED_ADR_SECTIONS, validateAdrSections } from './state/evidence';
+export {
+  PolicySnapshotSchema,
+  ActorInfoSchema,
+  REQUIRED_ADR_SECTIONS,
+  validateAdrSections,
+} from './state/evidence';
 
 // ─── Layer 2: Machine ────────────────────────────────────────────────────────
 
@@ -219,6 +224,7 @@ export {
 // ─── Layer 6: Audit ──────────────────────────────────────────────────────────
 
 export {
+  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type ToolCallDetail,

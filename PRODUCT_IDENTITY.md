@@ -338,6 +338,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
+- **Actor Identity:** Best-effort operator attribution (env → git → unknown) resolved at hydrate, immutable per session
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)

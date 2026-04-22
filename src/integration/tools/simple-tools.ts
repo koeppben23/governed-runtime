@@ -270,6 +270,7 @@ export const decision: ToolDefinition = {
             new Date().toISOString(),
             'machine',
             prevHash,
+            result.state.actorInfo,
           );
           await appendAuditEvent(sessDir, completionEvt);
 

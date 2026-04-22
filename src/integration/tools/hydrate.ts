@@ -44,6 +44,9 @@ import {
 // Workspace
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 
+// Actor identity (P27)
+import { resolveActor } from '../../adapters/actor';
+
 // Discovery
 import {
   runDiscovery,
@@ -333,6 +336,9 @@ export const hydrate: ToolDefinition = {
         requireDiscoveryArtifacts(wsDir, sessDir);
       }
 
+      // P27: Resolve actor identity (env → git → unknown)
+      const actorInfo = await resolveActor(worktree);
+
       const result = executeHydrate(
         existing,
         {
@@ -352,6 +358,7 @@ export const hydrate: ToolDefinition = {
           profileId: args.profileId,
           repoSignals,
           initiatedBy: context.sessionID,
+          actorInfo,
           discoveryResult,
           discoveryDigest,
           discoverySummary,

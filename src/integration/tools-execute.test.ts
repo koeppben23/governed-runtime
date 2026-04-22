@@ -92,9 +92,31 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   };
 });
 
+// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
+// Mock resolveActor to return a deterministic actor for integration tests.
+// Prevents dependency on real env vars or git config.
+
+const actorOriginal = vi.hoisted(() => ({
+  resolveActor: null as unknown as (typeof import('../adapters/actor'))['resolveActor'],
+}));
+
+vi.mock('../adapters/actor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/actor')>();
+  actorOriginal.resolveActor = original.resolveActor;
+  return {
+    ...original,
+    resolveActor: vi.fn().mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      source: 'env',
+    }),
+  };
+});
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git');
 const wsMock = await import('../adapters/workspace');
+const actorMock = await import('../adapters/actor');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -121,6 +143,12 @@ afterEach(async () => {
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  // Reset actor mock to default deterministic value (P27)
+  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
+    id: 'test-operator',
+    email: 'test@flowguard.dev',
+    source: 'env',
+  });
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -737,6 +765,91 @@ describe('hydrate', () => {
       expect(result.message).toContain('config write denied');
 
       spy.mockRestore();
+    });
+  });
+
+  // ── P27: Actor Identity ──────────────────────────────────────────────────
+  describe('P27 Actor Identity', () => {
+    it('hydrate stores actorInfo in session state', async () => {
+      const result = await hydrateSession();
+      expect(result.phase).toBe('READY');
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+    });
+
+    it('actorInfo persisted at hydrate is reused even if env changes', async () => {
+      // First hydrate with default mock actor
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state1 = await readState(sessDir);
+      expect(state1!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+
+      // Change actor mock — simulates env change mid-session
+      vi.mocked(actorMock.resolveActor).mockResolvedValue({
+        id: 'changed-operator',
+        email: 'changed@flowguard.dev',
+        source: 'env',
+      });
+
+      // Re-hydrate — should return existing state unchanged (idempotent)
+      const result = await hydrateSession();
+      expect(result.phase).toBe('READY');
+      const state2 = await readState(sessDir);
+      // Actor should be the original value, NOT the changed one
+      expect(state2!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+    });
+
+    it('audit lifecycle event contains actorInfo after hydrate', async () => {
+      // Note: In integration tests, tools are called directly (not through plugin
+      // wrapper that emits audit events). Verify actorInfo is wired to the state
+      // which the plugin uses: state.actorInfo is passed to createLifecycleEvent.
+      // Factory-level audit event tests are in audit.test.ts (P27 section).
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      // Verify the actorInfo that plugin.ts would use for audit events
+      expect(state!.actorInfo).toBeDefined();
+      expect(state!.actorInfo!.id).toBe('test-operator');
+      expect(state!.actorInfo!.source).toBe('env');
+    });
+
+    it('sessionID is still present separately from actorInfo in state', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      // sessionID lives in binding, actorInfo is separate
+      expect(state!.binding.sessionId).toBe(ctx.sessionID);
+      expect(state!.actorInfo).toBeDefined();
+      expect(state!.binding.sessionId).not.toBe(state!.actorInfo!.id);
     });
   });
 });

@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import {
+  ActorInfoSchema,
   ArchitectureDecision,
   BindingInfo,
   CheckId,
@@ -235,6 +236,13 @@ export const SessionState = z.object({
    * initiatedBy !== reviewDecision.decidedBy (in regulated mode).
    */
   initiatedBy: z.string().min(1),
+
+  /**
+   * Resolved actor identity at hydrate time (P27).
+   * Best-effort operator identity — NOT an authentication claim.
+   * Absent for sessions created before P27.
+   */
+  actorInfo: ActorInfoSchema.optional(),
 
   // ── Discovery ───────────────────────────────────────────────
 

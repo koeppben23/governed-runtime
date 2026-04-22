@@ -13,6 +13,7 @@
 
 // Structured event types + factories
 export {
+  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type ToolCallDetail,

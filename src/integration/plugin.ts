@@ -482,6 +482,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               now,
               actor,
               prevHash,
+              state?.actorInfo,
             );
             await appendAndTrack(toolCallEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = toolCallEvt.chainHash;
@@ -590,6 +591,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                   now,
                   actor,
                   prevHash,
+                  state?.actorInfo,
                 );
                 await appendAndTrack(decisionEvt, sessDir, enableChainHash);
                 if (enableChainHash) prevHash = decisionEvt.chainHash;
@@ -630,6 +632,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               now,
               actor, // Actor from policy (e.g., REGULATED: abort is "human")
               prevHash,
+              state?.actorInfo,
             );
             await appendAndTrack(lifecycleEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = lifecycleEvt.chainHash;
@@ -658,6 +661,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 now,
                 'machine',
                 prevHash,
+                state?.actorInfo,
               );
               await appendAndTrack(completionEvt, sessDir, enableChainHash);
               if (enableChainHash) prevHash = completionEvt.chainHash;

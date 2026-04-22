@@ -23,6 +23,7 @@ import {
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
+  type ActorInfo,
 } from './types';
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity';
 import {
@@ -339,6 +340,77 @@ describe('audit types', () => {
       expect(event.detail.decisionSequence).toBe(1);
     });
 
+    // ─── P27: Actor Identity ───────────────────────────────────
+
+    it('lifecycle event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'jane', email: 'jane@dev.io', source: 'git' };
+      const event = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+      expect(event.actor).toBe('system');
+    });
+
+    it('tool_call event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'ci-bot', email: null, source: 'env' };
+      const event = createToolCallEvent(
+        SESSION_ID,
+        'PLAN',
+        { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
+        TS1,
+        'user',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+      expect(event.actor).toBe('user');
+    });
+
+    it('decision event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'reviewer', email: 'rev@co.com', source: 'env' };
+      const event = createDecisionEvent(
+        SESSION_ID,
+        'PLAN_REVIEW',
+        {
+          decisionId: 'DEC-002',
+          decisionSequence: 1,
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer',
+          decidedAt: TS1,
+          fromPhase: 'PLAN_REVIEW',
+          toPhase: 'VALIDATION',
+          transitionEvent: 'APPROVE',
+          policyMode: 'team',
+        },
+        TS1,
+        'human',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+    });
+
+    it('sessionID is still present separately from actorInfo', () => {
+      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git' };
+      const event = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.actorInfo).toBeDefined();
+      expect(event.sessionId).not.toBe(event.actorInfo!.id);
+    });
+
     it('summarizeArgs handles all scalar types', () => {
       const result = summarizeArgs({
         str: 'hello',
@@ -487,6 +559,77 @@ describe('audit types', () => {
       expect(e.event).toMatch(/^error:/);
       expect(l.event).toMatch(/^lifecycle:/);
       expect(d.event).toMatch(/^decision:/);
+    });
+
+    // ─── P27: Hash Backward Compatibility ──────────────────────
+
+    it('event without actorInfo has same hash as event created before P27', () => {
+      // Simulate a "pre-P27" event — no actorInfo parameter
+      const withoutActor = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+      );
+      // actorInfo should be absent from the object (not undefined-as-value)
+      expect('actorInfo' in withoutActor).toBe(false);
+
+      // Manually build the same event object as pre-P27 code would have produced
+      const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
+        id: withoutActor.id,
+        sessionId: withoutActor.sessionId,
+        phase: withoutActor.phase,
+        event: withoutActor.event,
+        timestamp: withoutActor.timestamp,
+        actor: withoutActor.actor,
+        detail: withoutActor.detail,
+        prevHash: withoutActor.prevHash,
+      };
+      const prePatchHash = computeChainHash(GENESIS_HASH, prePatchEvent);
+      expect(withoutActor.chainHash).toBe(prePatchHash);
+    });
+
+    it('actorInfo changes the chain hash (isolated, same event body)', () => {
+      const actor: ActorInfo = { id: 'dev', email: null, source: 'git' };
+      const sharedId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const base = {
+        id: sharedId,
+        sessionId: SESSION_ID,
+        phase: 'TICKET',
+        event: 'lifecycle:session_created',
+        timestamp: TS1,
+        actor: 'system',
+        detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
+        prevHash: GENESIS_HASH,
+      };
+      const withActorInfo = { ...base, actorInfo: actor };
+
+      const hashWithout = computeChainHash(GENESIS_HASH, base);
+      const hashWith = computeChainHash(GENESIS_HASH, withActorInfo);
+
+      // Same body, same ID — only actorInfo differs → different hash
+      expect(hashWithout).toMatch(/^[0-9a-f]{64}$/);
+      expect(hashWith).toMatch(/^[0-9a-f]{64}$/);
+      expect(hashWithout).not.toBe(hashWith);
+    });
+
+    it('actorInfo absent on transition and error events', () => {
+      const transition = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      const error = createErrorEvent(
+        SESSION_ID,
+        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        TS1,
+        GENESIS_HASH,
+      );
+      expect('actorInfo' in transition).toBe(false);
+      expect('actorInfo' in error).toBe(false);
     });
   });
 
