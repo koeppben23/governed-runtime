@@ -36,6 +36,8 @@ export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1' as const;
  * - content_digest_mismatch: overall content digest doesn't match manifest
  * - archive_checksum_missing: .tar.gz.sha256 sidecar file not found
  * - archive_checksum_mismatch: archive file hash doesn't match sidecar
+ * - audit_chain_invalid: audit trail hash-chain verification failed (chain break
+ *   or unchained legacy events in strict/regulated mode)
  * - snapshot_missing: discovery or profile-resolution snapshot not found
  * - state_missing: session-state.json not found in archive
  */
@@ -48,6 +50,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'content_digest_mismatch',
   'archive_checksum_missing',
   'archive_checksum_mismatch',
+  'audit_chain_invalid',
   'snapshot_missing',
   'state_missing',
 ]);

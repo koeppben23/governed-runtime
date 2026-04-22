@@ -17,6 +17,7 @@ import type {
   ImplEvidence,
   ImplReviewResult,
   ReviewDecision,
+  DecisionIdentity,
   ErrorInfo,
   BindingInfo,
   PolicySnapshot,
@@ -57,6 +58,27 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   actorClassification: {
     flowguard_decision: 'human',
   },
+};
+
+export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
+  ...POLICY_SNAPSHOT,
+  mode: 'regulated',
+  requestedMode: 'regulated',
+  allowSelfApproval: false,
+};
+
+export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {
+  actorId: 'initiator-1',
+  actorEmail: 'initiator@test.com',
+  actorSource: 'env',
+  actorAssurance: 'best_effort',
+};
+
+export const DECISION_IDENTITY_REVIEWER: DecisionIdentity = {
+  actorId: 'reviewer-1',
+  actorEmail: 'reviewer@test.com',
+  actorSource: 'env',
+  actorAssurance: 'best_effort',
 };
 
 export const TICKET: TicketEvidence = {
@@ -185,6 +207,7 @@ export function makeState(
     activeChecks: ['test_quality', 'rollback_safety'],
     policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
+    initiatedByIdentity: DECISION_IDENTITY_INITIATOR,
     transition: null,
     error: null,
     createdAt: FIXED_TIME,

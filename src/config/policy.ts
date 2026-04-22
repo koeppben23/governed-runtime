@@ -30,6 +30,8 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence';
+import { readFile as fsReadFile } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 
 // ─── Audit Policy ─────────────────────────────────────────────────────────────
 
@@ -100,6 +102,74 @@ export type EffectiveGateBehavior = 'auto_approve' | 'human_gated';
 /** Why policy mode was degraded. */
 export type PolicyDegradedReason = 'ci_context_missing';
 
+/** Policy source used for hydrate-time authority resolution. */
+export type PolicySource = 'explicit' | 'central' | 'repo' | 'default';
+
+/** Central policy minimum modes (team-ci is intentionally excluded). */
+export type CentralMinimumMode = 'solo' | 'team' | 'regulated';
+
+/** Why a policy source was selected or overridden. */
+export type PolicyResolutionReason =
+  | 'repo_weaker_than_central'
+  | 'default_weaker_than_central'
+  | 'explicit_stronger_than_central';
+
+/** Central policy bundle schema (P29 local distribution model). */
+export interface CentralPolicyBundle {
+  readonly schemaVersion: 'v1';
+  readonly minimumMode: CentralMinimumMode;
+  readonly policyId?: string;
+  readonly version?: string;
+}
+
+/** Provenance/evidence for a resolved central policy bundle. */
+export interface CentralPolicyEvidence {
+  readonly minimumMode: CentralMinimumMode;
+  readonly digest: string;
+  readonly version?: string;
+  readonly pathHint: string;
+}
+
+/** Hydrate policy authority resolution result (P29). */
+export interface HydratePolicyResolution {
+  readonly requestedMode: PolicyMode;
+  readonly requestedSource: Exclude<PolicySource, 'central'>;
+  readonly effectiveMode: PolicyMode;
+  readonly effectiveSource: PolicySource;
+  readonly effectiveGateBehavior: EffectiveGateBehavior;
+  readonly degradedReason?: PolicyDegradedReason;
+  readonly policy: FlowGuardPolicy;
+  readonly resolutionReason?: PolicyResolutionReason;
+  readonly centralEvidence?: CentralPolicyEvidence;
+}
+
+/** Validate an existing session mode against optional central minimum (P29). */
+export async function validateExistingPolicyAgainstCentral(opts: {
+  existingMode: PolicyMode;
+  centralPolicyPath?: string;
+  digestFn: (text: string) => string;
+  readFileFn?: (path: string) => Promise<string>;
+}): Promise<CentralPolicyEvidence | undefined> {
+  if (opts.centralPolicyPath === undefined) {
+    return undefined;
+  }
+
+  const centralEvidence = await loadCentralPolicyEvidence(
+    opts.centralPolicyPath,
+    opts.digestFn,
+    opts.readFileFn,
+  );
+
+  if (modeStrength(opts.existingMode) < modeStrength(centralEvidence.minimumMode)) {
+    throw new PolicyConfigurationError(
+      'EXISTING_POLICY_WEAKER_THAN_CENTRAL',
+      `Existing session policy mode '${opts.existingMode}' is weaker than centrally required minimum '${centralEvidence.minimumMode}'`,
+    );
+  }
+
+  return centralEvidence;
+}
+
 /** Detailed policy resolution result (requested vs effective). */
 export interface PolicyResolution {
   readonly requestedMode: PolicyMode;
@@ -107,6 +177,23 @@ export interface PolicyResolution {
   readonly effectiveGateBehavior: EffectiveGateBehavior;
   readonly degradedReason?: PolicyDegradedReason;
   readonly policy: FlowGuardPolicy;
+}
+
+// ─── Errors ──────────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when policy configuration is invalid or contains an unsupported mode.
+ *
+ * Fail-stop: invalid policy must surface immediately, never silently degrade.
+ */
+export class PolicyConfigurationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'PolicyConfigurationError';
+    this.code = code;
+  }
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
@@ -255,12 +342,228 @@ export function detectCiContext(env: Record<string, string | undefined> = proces
   return ciSignals.some(isTruthyEnv);
 }
 
-function normalizePolicyMode(mode?: string): PolicyMode {
-  if (!mode) return 'team';
+/**
+ * Validate and normalize a policy mode string.
+ *
+ * Fail-stop: unrecognized modes throw PolicyConfigurationError.
+ * No silent fallback — every caller must pass a validated mode string.
+ * Zod schema validation on config and CLI args prevents normal users from
+ * hitting this; it catches programmatic errors and config drift.
+ *
+ * @param mode - Policy mode string. Must be one of: solo, team, team-ci, regulated.
+ * @throws PolicyConfigurationError for unsupported mode values.
+ */
+function normalizePolicyMode(mode: string): PolicyMode {
   if (mode === 'solo' || mode === 'team' || mode === 'team-ci' || mode === 'regulated') {
     return mode;
   }
-  return 'team';
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_MODE',
+    `Unsupported policy mode: '${mode}'. Valid modes: solo, team, team-ci, regulated`,
+  );
+}
+
+function normalizeCentralMinimumMode(mode: unknown): CentralMinimumMode {
+  if (mode === 'solo' || mode === 'team' || mode === 'regulated') {
+    return mode;
+  }
+  throw new PolicyConfigurationError(
+    'CENTRAL_POLICY_INVALID_MODE',
+    `Central policy minimumMode must be one of: solo, team, regulated (received: ${String(mode)})`,
+  );
+}
+
+function parseCentralPolicyBundle(raw: string): CentralPolicyBundle {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_INVALID_JSON',
+      'Central policy file is not valid JSON',
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_INVALID_SCHEMA',
+      'Central policy must be a JSON object',
+    );
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (obj.schemaVersion !== 'v1') {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_INVALID_SCHEMA',
+      'Central policy schemaVersion must be "v1"',
+    );
+  }
+
+  const minimumMode = normalizeCentralMinimumMode(obj.minimumMode);
+
+  if (obj.version !== undefined && typeof obj.version !== 'string') {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_INVALID_SCHEMA',
+      'Central policy version must be a string when provided',
+    );
+  }
+
+  if (obj.policyId !== undefined && typeof obj.policyId !== 'string') {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_INVALID_SCHEMA',
+      'Central policy policyId must be a string when provided',
+    );
+  }
+
+  return {
+    schemaVersion: 'v1',
+    minimumMode,
+    ...(typeof obj.policyId === 'string' ? { policyId: obj.policyId } : {}),
+    ...(typeof obj.version === 'string' ? { version: obj.version } : {}),
+  };
+}
+
+function modeStrength(mode: PolicyMode | CentralMinimumMode): number {
+  if (mode === 'solo') return 1;
+  if (mode === 'team' || mode === 'team-ci') return 2;
+  return 3;
+}
+
+function centralPathHint(absolutePath: string): string {
+  return `basename:${nodePath.basename(absolutePath)}`;
+}
+
+export async function loadCentralPolicyEvidence(
+  policyPath: string,
+  digestFn: (text: string) => string,
+  readFileFn: (path: string) => Promise<string> = async (path) => fsReadFile(path, 'utf8'),
+): Promise<CentralPolicyEvidence> {
+  if (!policyPath.trim()) {
+    throw new PolicyConfigurationError(
+      'CENTRAL_POLICY_PATH_EMPTY',
+      'FLOWGUARD_POLICY_PATH is set but empty',
+    );
+  }
+
+  const absolutePath = nodePath.resolve(policyPath);
+  let raw: string;
+  try {
+    raw = await readFileFn(absolutePath);
+  } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code: unknown }).code)
+        : '';
+    const message = err instanceof Error ? err.message : String(err);
+    throw new PolicyConfigurationError(
+      code === 'ENOENT' ? 'CENTRAL_POLICY_MISSING' : 'CENTRAL_POLICY_UNREADABLE',
+      `Central policy file cannot be read at ${absolutePath}: ${message}`,
+    );
+  }
+
+  const bundle = parseCentralPolicyBundle(raw);
+  return {
+    minimumMode: bundle.minimumMode,
+    digest: digestFn(raw),
+    ...(bundle.version ? { version: bundle.version } : {}),
+    pathHint: centralPathHint(absolutePath),
+  };
+}
+
+export async function resolvePolicyForHydrate(opts: {
+  explicitMode?: PolicyMode;
+  repoMode?: PolicyMode;
+  defaultMode: PolicyMode;
+  ciContext: boolean;
+  centralPolicyPath?: string;
+  digestFn: (text: string) => string;
+  readFileFn?: (path: string) => Promise<string>;
+  configMaxSelfReviewIterations?: number;
+  configMaxImplReviewIterations?: number;
+}): Promise<HydratePolicyResolution> {
+  const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
+    ? 'explicit'
+    : opts.repoMode
+      ? 'repo'
+      : 'default';
+  const requestedMode = opts.explicitMode ?? opts.repoMode ?? opts.defaultMode;
+  const requestedResolution = resolvePolicyWithContext(requestedMode, opts.ciContext);
+
+  // Apply config iteration-limit overrides over the selected policy preset.
+  const basePolicy = requestedResolution.policy;
+  const policyWithOverrides: FlowGuardPolicy = {
+    ...basePolicy,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+  };
+
+  if (opts.centralPolicyPath === undefined) {
+    return {
+      requestedMode,
+      requestedSource,
+      effectiveMode: requestedResolution.effectiveMode,
+      effectiveSource: requestedSource,
+      effectiveGateBehavior: requestedResolution.effectiveGateBehavior,
+      degradedReason: requestedResolution.degradedReason,
+      policy: policyWithOverrides,
+    };
+  }
+
+  const centralEvidence = await loadCentralPolicyEvidence(
+    opts.centralPolicyPath,
+    opts.digestFn,
+    opts.readFileFn,
+  );
+
+  const requestedStrength = modeStrength(requestedResolution.effectiveMode);
+  const centralStrength = modeStrength(centralEvidence.minimumMode);
+
+  if (requestedSource === 'explicit' && requestedStrength < centralStrength) {
+    throw new PolicyConfigurationError(
+      'EXPLICIT_WEAKER_THAN_CENTRAL',
+      `Explicit policy mode '${requestedResolution.effectiveMode}' is weaker than centrally required minimum '${centralEvidence.minimumMode}'`,
+    );
+  }
+
+  if (requestedStrength >= centralStrength) {
+    return {
+      requestedMode,
+      requestedSource,
+      effectiveMode: requestedResolution.effectiveMode,
+      effectiveSource: requestedSource,
+      effectiveGateBehavior: requestedResolution.effectiveGateBehavior,
+      degradedReason: requestedResolution.degradedReason,
+      policy: policyWithOverrides,
+      ...(requestedSource === 'explicit' && requestedStrength > centralStrength
+        ? { resolutionReason: 'explicit_stronger_than_central' as const }
+        : {}),
+      centralEvidence,
+    };
+  }
+
+  const centralResolution = resolvePolicyWithContext(centralEvidence.minimumMode, opts.ciContext);
+  // Apply config overrides to central policy as well
+  const centralPolicyWithOverrides: FlowGuardPolicy = {
+    ...centralResolution.policy,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
+  };
+  return {
+    requestedMode,
+    requestedSource,
+    effectiveMode: centralResolution.effectiveMode,
+    effectiveSource: 'central',
+    effectiveGateBehavior: centralResolution.effectiveGateBehavior,
+    degradedReason: centralResolution.degradedReason,
+    policy: centralPolicyWithOverrides,
+    resolutionReason:
+      requestedSource === 'repo' ? 'repo_weaker_than_central' : 'default_weaker_than_central',
+    centralEvidence,
+  };
 }
 
 /**
@@ -275,9 +578,13 @@ function normalizePolicyMode(mode?: string): PolicyMode {
  *
  * The returned policy object reflects the effective (possibly degraded) policy.
  * Compare: resolvePolicy() returns the raw preset without context.
+ *
+ * @param mode - Policy mode string (required). Callers must resolve their own fallback.
+ * @param ciContext - Whether CI environment is detected. Defaults to runtime detection.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
 export function resolvePolicyWithContext(
-  mode?: string,
+  mode: string,
   ciContext = detectCiContext(),
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
@@ -325,18 +632,21 @@ export function resolvePolicyWithContext(
  * Degradation to TEAM_POLICY only happens inside resolvePolicyWithContext.
  *
  * @param mode - Policy mode string (solo | team | team-ci | regulated).
- *               Falls back to "team" for unknown or undefined values.
+ *               Required. Callers must resolve their own fallback.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
-export function getPolicyPreset(mode?: string): FlowGuardPolicy {
+export function getPolicyPreset(mode: string): FlowGuardPolicy {
   const m = normalizePolicyMode(mode);
+  // defensive: POLICIES[m] is guaranteed after normalizePolicyMode validation
   return POLICIES[m] ?? TEAM_POLICY;
 }
 
 /**
  * @deprecated Use getPolicyPreset() for preset lookup, or
  * resolvePolicyWithContext() for runtime authority.
+ * @throws PolicyConfigurationError for unsupported mode values.
  */
-export function resolvePolicy(mode?: string): FlowGuardPolicy {
+export function resolvePolicy(mode: string): FlowGuardPolicy {
   return getPolicyPreset(mode);
 }
 
@@ -366,6 +676,12 @@ export function createPolicySnapshot(
     requestedMode: PolicyMode;
     effectiveGateBehavior: EffectiveGateBehavior;
     degradedReason?: PolicyDegradedReason;
+    source?: PolicySource;
+    resolutionReason?: PolicyResolutionReason;
+    centralMinimumMode?: CentralMinimumMode;
+    policyDigest?: string;
+    policyVersion?: string;
+    policyPathHint?: string;
   },
 ): PolicySnapshot {
   // Canonical JSON: sorted keys for deterministic hashing.
@@ -378,10 +694,18 @@ export function createPolicySnapshot(
     hash: digestFn(canonical),
     resolvedAt,
     requestedMode: resolution?.requestedMode ?? policy.mode,
+    ...(resolution?.source ? { source: resolution.source } : {}),
     effectiveGateBehavior:
       resolution?.effectiveGateBehavior ??
       (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
+    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
+    ...(resolution?.centralMinimumMode
+      ? { centralMinimumMode: resolution.centralMinimumMode }
+      : {}),
+    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
+    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
+    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,

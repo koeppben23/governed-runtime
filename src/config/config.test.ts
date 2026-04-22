@@ -4,10 +4,12 @@ import {
   TEAM_POLICY,
   TEAM_CI_POLICY,
   REGULATED_POLICY,
+  PolicyConfigurationError,
   detectCiContext,
   getPolicyPreset,
   resolvePolicy,
   resolvePolicyWithContext,
+  resolvePolicyForHydrate,
   policyModes,
   createPolicySnapshot,
   policyFromSnapshot,
@@ -74,6 +76,44 @@ describe('config/policy', () => {
       expect(result.degradedReason).toBe('ci_context_missing');
     });
 
+    it('resolvePolicyForHydrate applies central minimum over weaker repo mode', async () => {
+      const result = await resolvePolicyForHydrate({
+        repoMode: 'solo',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/org-policy.json',
+        digestFn: (s) => `sha256:${s.length}`,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated' }),
+      });
+
+      expect(result.requestedMode).toBe('solo');
+      expect(result.requestedSource).toBe('repo');
+      expect(result.effectiveMode).toBe('regulated');
+      expect(result.effectiveSource).toBe('central');
+      expect(result.resolutionReason).toBe('repo_weaker_than_central');
+      expect(result.centralEvidence?.minimumMode).toBe('regulated');
+      expect(result.centralEvidence?.digest).toMatch(/^sha256:/);
+    });
+
+    it('resolvePolicyForHydrate allows explicit stronger than central with explicit source', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        repoMode: 'team',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/org-policy.json',
+        digestFn: (s) => `sha256:${s.length}`,
+        readFileFn: async () =>
+          JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.04' }),
+      });
+
+      expect(result.effectiveMode).toBe('regulated');
+      expect(result.effectiveSource).toBe('explicit');
+      expect(result.resolutionReason).toBe('explicit_stronger_than_central');
+      expect(result.centralEvidence?.minimumMode).toBe('team');
+      expect(result.centralEvidence?.version).toBe('2026.04');
+    });
+
     it('SOLO has no human gates and 1 iteration', () => {
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
       expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
@@ -125,20 +165,131 @@ describe('config/policy', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
-    it('resolvePolicy returns TEAM for unknown mode', () => {
-      expect(resolvePolicy('enterprise')).toBe(TEAM_POLICY);
+    it('resolvePolicy throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => resolvePolicy('enterprise')).toThrow(PolicyConfigurationError);
+      expect(() => resolvePolicy('enterprise')).toThrow(/Unsupported policy mode/);
     });
 
-    it('resolvePolicy returns TEAM for undefined', () => {
-      expect(resolvePolicy()).toBe(TEAM_POLICY);
+    it('getPolicyPreset throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => getPolicyPreset('invalid')).toThrow(PolicyConfigurationError);
+      expect(() => getPolicyPreset('invalid')).toThrow(/Unsupported policy mode/);
     });
 
-    it('resolvePolicyWithContext falls back to TEAM for unknown mode', () => {
-      const result = resolvePolicyWithContext('enterprise', false);
-      expect(result.requestedMode).toBe('team');
-      expect(result.effectiveMode).toBe('team');
-      expect(result.policy).toBe(TEAM_POLICY);
-      expect(result.degradedReason).toBeUndefined();
+    it('resolvePolicyWithContext throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(PolicyConfigurationError);
+      expect(() => resolvePolicyWithContext('enterprise', false)).toThrow(
+        /Unsupported policy mode/,
+      );
+    });
+
+    it('PolicyConfigurationError carries code and message', () => {
+      try {
+        resolvePolicy('typo');
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(PolicyConfigurationError);
+        const pce = err as PolicyConfigurationError;
+        expect(pce.code).toBe('INVALID_POLICY_MODE');
+        expect(pce.message).toContain('typo');
+        expect(pce.name).toBe('PolicyConfigurationError');
+      }
+    });
+
+    it('resolvePolicyForHydrate blocks explicit weaker mode than central minimum', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          explicitMode: 'team',
+          repoMode: 'solo',
+          defaultMode: 'solo',
+          ciContext: false,
+          centralPolicyPath: '/tmp/org-policy.json',
+          digestFn: (s) => `sha256:${s.length}`,
+          readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated' }),
+        }),
+      ).rejects.toMatchObject({ code: 'EXPLICIT_WEAKER_THAN_CENTRAL' });
+    });
+
+    it('resolvePolicyForHydrate blocks empty central policy path when env is set', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          defaultMode: 'solo',
+          ciContext: false,
+          centralPolicyPath: '',
+          digestFn: (s) => `sha256:${s.length}`,
+          readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        }),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
+    });
+
+    it('resolvePolicyForHydrate blocks whitespace central policy path when env is set', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          defaultMode: 'solo',
+          ciContext: false,
+          centralPolicyPath: '   ',
+          digestFn: (s) => `sha256:${s.length}`,
+          readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        }),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
+    });
+
+    it('resolvePolicyForHydrate applies config maxSelfReviewIterations override', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxSelfReviewIterations: 5,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(5);
+      expect(result.policy.maxImplReviewIterations).toBe(1); // preset unchanged
+    });
+
+    it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'team',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxImplReviewIterations: 10,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(3); // preset unchanged
+      expect(result.policy.maxImplReviewIterations).toBe(10);
+    });
+
+    it('resolvePolicyForHydrate applies both config iteration overrides', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'team',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxSelfReviewIterations: 7,
+        configMaxImplReviewIterations: 14,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(7);
+      expect(result.policy.maxImplReviewIterations).toBe(14);
+    });
+
+    it('resolvePolicyForHydrate uses preset when config undefined', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(2); // SOLO preset
+      expect(result.policy.maxImplReviewIterations).toBe(1); // SOLO preset
+    });
+
+    it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'team',
+        ciContext: false,
+        centralPolicyPath: '/tmp/org-policy.json',
+        digestFn: (s) => `sha256:${s.length}`,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        configMaxSelfReviewIterations: 8,
+        configMaxImplReviewIterations: 16,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(8);
+      expect(result.policy.maxImplReviewIterations).toBe(16);
     });
   });
 

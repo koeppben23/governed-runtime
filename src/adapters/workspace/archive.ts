@@ -4,16 +4,17 @@
  *
  * Creates compressed tar.gz archives of completed sessions with:
  * - Archive manifest (file inventory + SHA-256 digests)
- * - SHA-256 checksum sidecar file
+ * - SHA-256 checksum sidecar file (fatal in regulated mode — P26)
  * - Discovery snapshot soft-check
  *
- * @version v1
+ * @version v2
  */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { readAuditTrail, readConfig, readState } from '../persistence';
+import { verifyChain } from '../../audit/integrity';
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -207,9 +208,16 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     const archiveBuffer = await fs.readFile(archivePath);
     const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
     await fs.writeFile(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`, 'utf-8');
-  } catch {
-    // Non-fatal: archive was created but checksum sidecar failed.
-    // The archive is still usable, just not externally verifiable.
+  } catch (err) {
+    // Regulated: sidecar failure is fatal — archive is not externally verifiable.
+    // Policy derived from state already in scope (line 89), not a call parameter.
+    if (state?.policySnapshot?.mode === 'regulated') {
+      throw new WorkspaceError(
+        'ARCHIVE_FAILED',
+        `Checksum sidecar write failed in regulated mode: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    // Non-regulated: non-fatal. Archive is usable, just not externally verifiable.
   }
 
   return archivePath;
@@ -227,6 +235,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
  * 6. Archive .sha256 sidecar matches (if available)
  * 7. Discovery snapshots present (if state has discoveryDigest)
  * 8. Session state file present
+ * 9. Audit chain integrity (strict in regulated mode, legacy-tolerant otherwise)
  *
  * @param fingerprint - Workspace fingerprint.
  * @param sessionId - Session ID to verify.
@@ -419,6 +428,57 @@ async function verifyArchiveImpl(
     } catch {
       // Can't read archive or sidecar — skip
     }
+  }
+
+  // 8. Verify audit chain integrity
+  //    Regulated mode → strict (rejects unchained legacy events).
+  //    Non-regulated modes remain legacy-tolerant for backward compatibility.
+  //    Regulated strictness is selected only by explicit policyMode === 'regulated'.
+  try {
+    const { events, skipped } = await readAuditTrail(sessDir);
+    const strict = manifest.policyMode === 'regulated';
+
+    // In regulated mode, ANY unparseable lines are an integrity failure.
+    // A partially malformed audit trail must not pass silently — even if
+    // the parseable subset has a valid chain.
+    if (strict && skipped > 0) {
+      findings.push({
+        code: 'audit_chain_invalid',
+        severity: 'error',
+        message: `Audit trail contains ${skipped} unparseable line(s) in regulated mode`,
+        file: 'audit.jsonl',
+      });
+    }
+
+    if (events.length > 0) {
+      const chainResult = verifyChain(events as Array<Record<string, unknown>>, { strict });
+      if (!chainResult.valid) {
+        findings.push({
+          code: 'audit_chain_invalid',
+          severity: 'error',
+          message:
+            `Audit chain verification failed (${chainResult.reason}): ` +
+            `${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified, ` +
+            `${chainResult.skippedCount} skipped`,
+          file: 'audit.jsonl',
+        });
+      }
+    }
+  } catch (error) {
+    // In regulated mode, audit trail read failure (e.g. permission denied) must
+    // surface as an error. File digest consistency does not prove semantic validity.
+    if (manifest.policyMode === 'regulated') {
+      findings.push({
+        code: 'audit_chain_invalid',
+        severity: 'error',
+        message: `Audit chain verification could not read audit.jsonl: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        file: 'audit.jsonl',
+      });
+    }
+    // Non-regulated: read failure is non-fatal. File digest check (step 4)
+    // already covers audit.jsonl content integrity at the byte level.
   }
 
   return buildVerificationResult(findings, manifest);

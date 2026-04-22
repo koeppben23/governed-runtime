@@ -23,6 +23,7 @@ import {
   createDecisionEvent,
   summarizeArgs,
   type ChainedAuditEvent,
+  type ActorInfo,
 } from './types';
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity';
 import {
@@ -339,6 +340,77 @@ describe('audit types', () => {
       expect(event.detail.decisionSequence).toBe(1);
     });
 
+    // ─── P27: Actor Identity ───────────────────────────────────
+
+    it('lifecycle event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'jane', email: 'jane@dev.io', source: 'git' };
+      const event = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+      expect(event.actor).toBe('system');
+    });
+
+    it('tool_call event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'ci-bot', email: null, source: 'env' };
+      const event = createToolCallEvent(
+        SESSION_ID,
+        'PLAN',
+        { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
+        TS1,
+        'user',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+      expect(event.actor).toBe('user');
+    });
+
+    it('decision event contains actorInfo when provided', () => {
+      const actor: ActorInfo = { id: 'reviewer', email: 'rev@co.com', source: 'env' };
+      const event = createDecisionEvent(
+        SESSION_ID,
+        'PLAN_REVIEW',
+        {
+          decisionId: 'DEC-002',
+          decisionSequence: 1,
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer',
+          decidedAt: TS1,
+          fromPhase: 'PLAN_REVIEW',
+          toPhase: 'VALIDATION',
+          transitionEvent: 'APPROVE',
+          policyMode: 'team',
+        },
+        TS1,
+        'human',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.actorInfo).toEqual(actor);
+    });
+
+    it('sessionID is still present separately from actorInfo', () => {
+      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git' };
+      const event = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+        actor,
+      );
+      expect(event.sessionId).toBe(SESSION_ID);
+      expect(event.actorInfo).toBeDefined();
+      expect(event.sessionId).not.toBe(event.actorInfo!.id);
+    });
+
     it('summarizeArgs handles all scalar types', () => {
       const result = summarizeArgs({
         str: 'hello',
@@ -488,6 +560,77 @@ describe('audit types', () => {
       expect(l.event).toMatch(/^lifecycle:/);
       expect(d.event).toMatch(/^decision:/);
     });
+
+    // ─── P27: Hash Backward Compatibility ──────────────────────
+
+    it('event without actorInfo has same hash as event created before P27', () => {
+      // Simulate a "pre-P27" event — no actorInfo parameter
+      const withoutActor = createLifecycleEvent(
+        SESSION_ID,
+        { action: 'session_created', finalPhase: 'TICKET' },
+        TS1,
+        'system',
+        GENESIS_HASH,
+      );
+      // actorInfo should be absent from the object (not undefined-as-value)
+      expect('actorInfo' in withoutActor).toBe(false);
+
+      // Manually build the same event object as pre-P27 code would have produced
+      const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
+        id: withoutActor.id,
+        sessionId: withoutActor.sessionId,
+        phase: withoutActor.phase,
+        event: withoutActor.event,
+        timestamp: withoutActor.timestamp,
+        actor: withoutActor.actor,
+        detail: withoutActor.detail,
+        prevHash: withoutActor.prevHash,
+      };
+      const prePatchHash = computeChainHash(GENESIS_HASH, prePatchEvent);
+      expect(withoutActor.chainHash).toBe(prePatchHash);
+    });
+
+    it('actorInfo changes the chain hash (isolated, same event body)', () => {
+      const actor: ActorInfo = { id: 'dev', email: null, source: 'git' };
+      const sharedId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      const base = {
+        id: sharedId,
+        sessionId: SESSION_ID,
+        phase: 'TICKET',
+        event: 'lifecycle:session_created',
+        timestamp: TS1,
+        actor: 'system',
+        detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
+        prevHash: GENESIS_HASH,
+      };
+      const withActorInfo = { ...base, actorInfo: actor };
+
+      const hashWithout = computeChainHash(GENESIS_HASH, base);
+      const hashWith = computeChainHash(GENESIS_HASH, withActorInfo);
+
+      // Same body, same ID — only actorInfo differs → different hash
+      expect(hashWithout).toMatch(/^[0-9a-f]{64}$/);
+      expect(hashWith).toMatch(/^[0-9a-f]{64}$/);
+      expect(hashWithout).not.toBe(hashWith);
+    });
+
+    it('actorInfo absent on transition and error events', () => {
+      const transition = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      const error = createErrorEvent(
+        SESSION_ID,
+        { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
+        TS1,
+        GENESIS_HASH,
+      );
+      expect('actorInfo' in transition).toBe(false);
+      expect('actorInfo' in error).toBe(false);
+    });
   });
 
   // ─── PERF ───────────────────────────────────────────────────
@@ -537,6 +680,7 @@ describe('audit integrity', () => {
       expect(result.verifiedCount).toBe(3);
       expect(result.skippedCount).toBe(0);
       expect(result.firstBreak).toBeNull();
+      expect(result.reason).toBeNull();
     });
 
     it('getLastChainHash returns last event chainHash', () => {
@@ -587,6 +731,7 @@ describe('audit integrity', () => {
       expect(result.valid).toBe(false);
       expect(result.firstBreak).not.toBeNull();
       expect(result.firstBreak!.index).toBe(2);
+      expect(result.reason).toBe('CHAIN_BREAK');
     });
   });
 
@@ -597,6 +742,7 @@ describe('audit integrity', () => {
       expect(result.valid).toBe(true);
       expect(result.totalEvents).toBe(0);
       expect(result.verifiedCount).toBe(0);
+      expect(result.reason).toBeNull();
     });
 
     it('verifyChain with single event → valid', () => {
@@ -604,6 +750,7 @@ describe('audit integrity', () => {
       const result = verifyChain(chain as unknown as Record<string, unknown>[]);
       expect(result.valid).toBe(true);
       expect(result.verifiedCount).toBe(1);
+      expect(result.reason).toBeNull();
     });
 
     it('getLastChainHash with empty trail → GENESIS_HASH', () => {
@@ -626,6 +773,7 @@ describe('audit integrity', () => {
       expect(result.totalEvents).toBe(1);
       expect(result.verifiedCount).toBe(0);
       expect(result.skippedCount).toBe(1);
+      expect(result.reason).toBeNull();
     });
   });
 
@@ -658,6 +806,7 @@ describe('audit integrity', () => {
       // The chain is valid because event[1] (chained, index=2) was built
       // with event[0].chainHash as prevHash
       expect(result.valid).toBe(true);
+      expect(result.reason).toBeNull();
     });
 
     it('insertion attack detected — new event breaks prevHash chain', () => {
@@ -688,6 +837,7 @@ describe('audit integrity', () => {
       // but the verifier expects prevHash = inserted.chainHash → break
       expect(result.valid).toBe(false);
       expect(result.firstBreak!.index).toBe(2);
+      expect(result.reason).toBe('CHAIN_BREAK');
     });
 
     it('getLastChainHash skips trailing legacy events', () => {
@@ -713,6 +863,205 @@ describe('audit integrity', () => {
       const raw = chain.map((e) => e as unknown as Record<string, unknown>);
       const { p99Ms } = benchmarkSync(() => verifyChain(raw), 5, 1);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.auditChainVerify1000Ms);
+    });
+  });
+
+  // ─── STRICT MODE ───────────────────────────────────────────
+  describe('STRICT MODE', () => {
+    // ─── HAPPY ──────────────────────────────────────────────
+    describe('HAPPY', () => {
+      it('strict mode with all chained events → valid', () => {
+        const chain = buildChain(3);
+        const raw = chain.map((e) => e as unknown as Record<string, unknown>);
+        const result = verifyChain(raw, { strict: true });
+        expect(result.valid).toBe(true);
+        expect(result.reason).toBeNull();
+        expect(result.skippedCount).toBe(0);
+        expect(result.verifiedCount).toBe(3);
+      });
+
+      it('strict mode with single chained event → valid', () => {
+        const chain = buildChain(1);
+        const raw = chain.map((e) => e as unknown as Record<string, unknown>);
+        const result = verifyChain(raw, { strict: true });
+        expect(result.valid).toBe(true);
+        expect(result.reason).toBeNull();
+      });
+    });
+
+    // ─── BAD ────────────────────────────────────────────────
+    describe('BAD', () => {
+      it('strict mode rejects single legacy event', () => {
+        const legacyEvent: Record<string, unknown> = {
+          id: 'legacy-strict-1',
+          sessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'transition:PLAN_READY',
+          timestamp: TS1,
+          actor: 'machine',
+          detail: {},
+        };
+        const result = verifyChain([legacyEvent], { strict: true });
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+        expect(result.skippedCount).toBe(1);
+        expect(result.verifiedCount).toBe(0);
+        expect(result.firstBreak).toBeNull();
+      });
+
+      it('strict mode rejects multiple legacy events', () => {
+        const legacyEvents: Record<string, unknown>[] = [
+          {
+            id: 'leg-1',
+            sessionId: SESSION_ID,
+            phase: 'TICKET',
+            event: 'e1',
+            timestamp: TS1,
+            actor: 'machine',
+            detail: {},
+          },
+          {
+            id: 'leg-2',
+            sessionId: SESSION_ID,
+            phase: 'PLAN',
+            event: 'e2',
+            timestamp: TS2,
+            actor: 'machine',
+            detail: {},
+          },
+          {
+            id: 'leg-3',
+            sessionId: SESSION_ID,
+            phase: 'PLAN',
+            event: 'e3',
+            timestamp: TS3,
+            actor: 'machine',
+            detail: {},
+          },
+        ];
+        const result = verifyChain(legacyEvents, { strict: true });
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+        expect(result.skippedCount).toBe(3);
+      });
+
+      it('strict mode with tampered event → CHAIN_BREAK (not legacy)', () => {
+        const chain = buildChain(3);
+        const tampered = chain.map((e, i) => {
+          if (i === 1) return { ...e, phase: 'TAMPERED' } as unknown as Record<string, unknown>;
+          return e as unknown as Record<string, unknown>;
+        });
+        const result = verifyChain(tampered, { strict: true });
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('CHAIN_BREAK');
+        expect(result.firstBreak).not.toBeNull();
+      });
+    });
+
+    // ─── CORNER ─────────────────────────────────────────────
+    describe('CORNER', () => {
+      it('strict mode with empty trail → valid (nothing to skip)', () => {
+        const result = verifyChain([], { strict: true });
+        expect(result.valid).toBe(true);
+        expect(result.reason).toBeNull();
+        expect(result.skippedCount).toBe(0);
+      });
+
+      it('non-strict (default) with legacy events → still valid (backward compat)', () => {
+        const legacyEvent: Record<string, unknown> = {
+          id: 'legacy-compat',
+          sessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'transition:PLAN_READY',
+          timestamp: TS1,
+          actor: 'machine',
+          detail: {},
+        };
+        const result = verifyChain([legacyEvent]);
+        expect(result.valid).toBe(true);
+        expect(result.reason).toBeNull();
+        expect(result.skippedCount).toBe(1);
+      });
+
+      it('explicit strict: false behaves like default (legacy-tolerant)', () => {
+        const legacyEvent: Record<string, unknown> = {
+          id: 'legacy-explicit-false',
+          sessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'transition:PLAN_READY',
+          timestamp: TS1,
+          actor: 'machine',
+          detail: {},
+        };
+        const result = verifyChain([legacyEvent], { strict: false });
+        expect(result.valid).toBe(true);
+        expect(result.reason).toBeNull();
+        expect(result.skippedCount).toBe(1);
+      });
+    });
+
+    // ─── EDGE ───────────────────────────────────────────────
+    describe('EDGE', () => {
+      it('strict mode with mixed chained + legacy → fails on legacy', () => {
+        const chain = buildChain(2);
+        const legacy: Record<string, unknown> = {
+          id: 'legacy-mixed-strict',
+          sessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'some:event',
+          timestamp: TS2,
+          actor: 'machine',
+          detail: {},
+        };
+        const mixed = [
+          chain[0] as unknown as Record<string, unknown>,
+          legacy,
+          chain[1] as unknown as Record<string, unknown>,
+        ];
+        const result = verifyChain(mixed, { strict: true });
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+        expect(result.skippedCount).toBe(1);
+        expect(result.verifiedCount).toBe(2);
+        // Chain hashes themselves are valid — the break is due to legacy event
+        expect(result.firstBreak).toBeNull();
+      });
+
+      it('strict mode: chain break + legacy events → reason is CHAIN_BREAK (severity priority)', () => {
+        const chain = buildChain(3);
+        const legacy: Record<string, unknown> = {
+          id: 'legacy-plus-break',
+          sessionId: SESSION_ID,
+          phase: 'PLAN',
+          event: 'some:event',
+          timestamp: TS2,
+          actor: 'machine',
+          detail: {},
+        };
+        // Tamper chain[1] AND insert a legacy event
+        const tampered = [
+          chain[0] as unknown as Record<string, unknown>,
+          legacy,
+          { ...chain[1], phase: 'TAMPERED' } as unknown as Record<string, unknown>,
+          chain[2] as unknown as Record<string, unknown>,
+        ];
+        const result = verifyChain(tampered, { strict: true });
+        expect(result.valid).toBe(false);
+        // CHAIN_BREAK wins over LEGACY — more severe
+        expect(result.reason).toBe('CHAIN_BREAK');
+        expect(result.skippedCount).toBe(1);
+        expect(result.firstBreak).not.toBeNull();
+      });
+    });
+
+    // ─── PERF ───────────────────────────────────────────────
+    describe('PERF', () => {
+      it('strict mode adds no measurable overhead vs default', () => {
+        const chain = buildChain(1000);
+        const raw = chain.map((e) => e as unknown as Record<string, unknown>);
+        const { p99Ms } = benchmarkSync(() => verifyChain(raw, { strict: true }), 5, 1);
+        expect(p99Ms).toBeLessThan(PERF_BUDGETS.auditChainVerify1000Ms);
+      });
     });
   });
 });
@@ -1114,6 +1463,7 @@ describe('audit summary', () => {
         skippedCount: 2,
         firstBreak: { index: 3, eventId: 'broken-event', valid: false, reason: 'tampered' },
         results: [],
+        reason: 'CHAIN_BREAK' as const,
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, brokenChain, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
@@ -1219,6 +1569,47 @@ describe('audit summary', () => {
         5,
       );
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.complianceSummary500Ms);
+    });
+  });
+
+  // ─── STRICT CHAIN SUMMARY ─────────────────────────────────
+  describe('STRICT CHAIN SUMMARY', () => {
+    it('compliance summary with strict failure (legacy events) reports STRICT detail', () => {
+      const trail = buildSessionTrail();
+      const strictFailure = {
+        valid: false,
+        totalEvents: 5,
+        verifiedCount: 3,
+        skippedCount: 2,
+        firstBreak: null,
+        results: [],
+        reason: 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE' as const,
+      };
+      const summary = generateComplianceSummary(trail, SESSION_ID, strictFailure, TS3);
+      const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
+      expect(chainCheck).toBeDefined();
+      expect(chainCheck!.passed).toBe(false);
+      expect(chainCheck!.detail).toContain('STRICT');
+      expect(chainCheck!.detail).toContain('legacy');
+      expect(chainCheck!.detail).toContain('2');
+    });
+
+    it('compliance summary with strict valid (all chained) passes', () => {
+      const trail = buildSessionTrail();
+      const strictValid = {
+        valid: true,
+        totalEvents: 5,
+        verifiedCount: 5,
+        skippedCount: 0,
+        firstBreak: null,
+        results: [],
+        reason: null,
+      };
+      const summary = generateComplianceSummary(trail, SESSION_ID, strictValid, TS3);
+      const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
+      expect(chainCheck).toBeDefined();
+      expect(chainCheck!.passed).toBe(true);
+      expect(chainCheck!.detail).toContain('verified');
     });
   });
 });

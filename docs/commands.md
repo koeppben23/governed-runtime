@@ -37,7 +37,12 @@ Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedl
 - Discovery results (repository metadata, stack, topology)
 - Profile resolution
 
-**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`
+**Arguments:** `policyMode` (optional): `solo`, `team`, `team-ci`, or `regulated`.
+When omitted, reads `config.json` → `policy.defaultMode`, then falls back to `solo`.
+
+If `FLOWGUARD_POLICY_PATH` is set, `/hydrate` enforces the central `minimumMode` from that
+file. Explicit weaker modes are blocked; repo/default weaker modes are elevated with visible
+resolution evidence.
 
 `team-ci` semantics:
 
@@ -66,7 +71,7 @@ Generate an implementation plan with self-review loop.
 3. Plan refined until convergence
 4. Advances to PLAN_REVIEW
 
-**Allowed in:** READY, TICKET, PLAN
+**Allowed in:** TICKET, PLAN
 
 **Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
 
@@ -85,7 +90,7 @@ Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REV
 - `changes_requested` → return to previous phase for revision
 - `reject` → restart (TICKET for ticket flow, READY for architecture flow)
 
-**Four-eyes:** In regulated mode, reviewer must differ from session initiator.
+**Four-eyes:** In regulated mode, `approve` requires reviewer identity different from session initiator, and both identities must be known.
 
 Every successful `/review-decision` emits a decision receipt in the audit trail (`decision:DEC-xxx`).
 
@@ -179,6 +184,10 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
 If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
 
-**Verification:** `verifyArchive()` validates integrity (10 finding codes).
+**Verification:** `verifyArchive()` validates integrity (11 finding codes, including audit chain verification).
+
+**Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
+synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
+(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode.
 
 **Note:** This is an operational export action. The original session is preserved.

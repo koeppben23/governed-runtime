@@ -14,6 +14,9 @@
  * 2. Single event verification — checks one event against its predecessor
  * 3. Mixed trail support — events without hash fields (pre-chain) are skipped
  *    with a warning (backward-compatible with legacy trails)
+ * 4. Strict mode — events without hash fields are treated as integrity failures.
+ *    Regulated verification paths must use strict mode to ensure no unchained
+ *    events are silently tolerated in new sessions.
  *
  * Why this matters for DATEV/banks:
  * - Regulators require proof that audit trails have not been tampered with
@@ -25,6 +28,31 @@
  */
 
 import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types';
+
+// ─── Verification Options ─────────────────────────────────────────────────────
+
+/**
+ * Options for chain verification.
+ *
+ * - `strict: false` (default): legacy events without chain fields are skipped
+ *   and counted in `skippedCount`. The chain remains valid. Use for migration
+ *   and diagnostic workflows with mixed legacy/chained trails.
+ *
+ * - `strict: true`: legacy events without chain fields are treated as integrity
+ *   failures. `skippedCount > 0` makes the chain invalid. Regulated verification
+ *   paths must use strict mode.
+ */
+export interface ChainVerifyOptions {
+  readonly strict?: boolean;
+}
+
+/**
+ * Typed failure reason for chain verification.
+ *
+ * - `CHAIN_BREAK`: hash chain integrity failure (tampered, inserted, or deleted event).
+ * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects unchained events.
+ */
+export type ChainVerificationReason = 'CHAIN_BREAK' | 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
 
 // ─── Verification Result ──────────────────────────────────────────────────────
 
@@ -50,10 +78,20 @@ export interface ChainVerification {
   readonly verifiedCount: number;
   /** Events skipped (without hash fields — legacy/pre-chain). */
   readonly skippedCount: number;
-  /** First broken event (null if chain is valid). */
+  /** First broken event (null if no hash chain break). */
   readonly firstBreak: EventVerification | null;
   /** All verification results (one per chained event). */
   readonly results: readonly EventVerification[];
+  /**
+   * Top-level failure classification. Null when chain is valid.
+   *
+   * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
+   * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects
+   *   unchained legacy events (skippedCount > 0).
+   *
+   * Priority: CHAIN_BREAK > LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE.
+   */
+  readonly reason: ChainVerificationReason | null;
 }
 
 // ─── Verification Functions ──────────────────────────────────────────────────
@@ -107,10 +145,18 @@ export function verifyEvent(
  * Events without chainHash/prevHash fields are skipped (legacy support).
  * The chain continues from the last known hash after skipped events.
  *
+ * In strict mode (`options.strict = true`), skipped events make the chain
+ * invalid. Regulated verification paths must use strict mode.
+ *
  * @param events - The audit trail events in chronological order.
+ * @param options - Verification options (strict mode, etc.).
  * @returns ChainVerification with full results.
  */
-export function verifyChain(events: Array<Record<string, unknown>>): ChainVerification {
+export function verifyChain(
+  events: Array<Record<string, unknown>>,
+  options?: ChainVerifyOptions,
+): ChainVerification {
+  const strict = options?.strict === true;
   const results: EventVerification[] = [];
   let skippedCount = 0;
   let lastHash = GENESIS_HASH;
@@ -137,13 +183,30 @@ export function verifyChain(events: Array<Record<string, unknown>>): ChainVerifi
     lastHash = event.chainHash;
   }
 
+  // Determine validity and reason.
+  // Priority: CHAIN_BREAK > LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE > valid.
+  let valid: boolean;
+  let reason: ChainVerificationReason | null;
+
+  if (firstBreak !== null) {
+    valid = false;
+    reason = 'CHAIN_BREAK';
+  } else if (strict && skippedCount > 0) {
+    valid = false;
+    reason = 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+  } else {
+    valid = true;
+    reason = null;
+  }
+
   return {
-    valid: firstBreak === null,
+    valid,
     totalEvents: events.length,
     verifiedCount: results.length,
     skippedCount,
     firstBreak,
     results,
+    reason,
   };
 }
 

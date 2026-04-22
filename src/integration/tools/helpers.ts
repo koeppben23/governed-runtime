@@ -109,6 +109,7 @@ export function formatRailResult(result: RailResult): string {
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
   const reviewDecision = result.state.reviewDecision;
+  const { archiveStatus } = result.state;
   const json = JSON.stringify({
     phase: result.state.phase,
     status: 'ok',
@@ -124,6 +125,7 @@ export function formatRailResult(result: RailResult): string {
           },
         }
       : {}),
+    ...(archiveStatus ? { archiveStatus } : {}),
     _audit: { transitions: result.transitions },
   });
   return json + `\nNext action: ${nextAction.text}`;
@@ -236,13 +238,16 @@ export async function writeStateWithArtifacts(
 
 /**
  * Resolve policy from session state (existing session)
- * or default to SOLO_POLICY (no session yet).
+ * or default to TEAM_POLICY (no session yet — conservative fallback).
+ *
+ * This is the helper/plugin fallback path. Hydrate owns its own
+ * developer-friendly solo fallback via the P21 config chain.
  */
 export function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
   if (state?.policySnapshot) {
     return policyFromSnapshot(state.policySnapshot);
   }
-  return resolvePolicy();
+  return resolvePolicy('team');
 }
 
 /**

@@ -15,9 +15,11 @@
 
 import { z } from 'zod';
 import {
+  ActorInfoSchema,
   ArchitectureDecision,
   BindingInfo,
   CheckId,
+  DecisionIdentitySchema,
   ErrorInfo,
   ImplEvidence,
   ImplReviewResult,
@@ -231,10 +233,27 @@ export const SessionState = z.object({
   /**
    * Identity of the session initiator (author).
    * Set once at hydrate time, never mutated.
-   * Used for four-eyes principle enforcement:
-   * initiatedBy !== reviewDecision.decidedBy (in regulated mode).
+   * Used for regulated approval four-eyes enforcement:
+   * initiatedBy !== reviewDecision.decidedBy (approve path).
+   *
+   * P30: For regulated sessions, this MUST be a known actor identity,
+   * not the technical session ID. Use initiatedByIdentity for full provenance.
    */
   initiatedBy: z.string().min(1),
+
+  /**
+   * Structured initiator identity for regulated approval (P30).
+   * Persists actor identity at session creation for four-eyes proof.
+   * Required for regulated mode; absent for pre-P30 sessions.
+   */
+  initiatedByIdentity: DecisionIdentitySchema.optional(),
+
+  /**
+   * Resolved actor identity at hydrate time (P27).
+   * Best-effort operator identity — NOT an authentication claim.
+   * Absent for sessions created before P27.
+   */
+  actorInfo: ActorInfoSchema.optional(),
 
   // ── Discovery ───────────────────────────────────────────────
 
@@ -283,5 +302,23 @@ export const SessionState = z.object({
 
   /** Session creation timestamp (set once by init()). */
   createdAt: z.string().datetime(),
+
+  /**
+   * Archive lifecycle status for completed sessions.
+   *
+   * Only set for regulated clean completions (EVIDENCE_REVIEW → APPROVE → COMPLETE).
+   * Non-regulated sessions and aborted sessions do not set this field.
+   *
+   * - `pending`  — archive creation in progress
+   * - `created`  — archive created, verification pending
+   * - `verified` — archive created and verification passed
+   * - `failed`   — archive creation or verification failed
+   *
+   * Invariant: `phase === 'COMPLETE' && policySnapshot.mode === 'regulated'
+   *            && !error && archiveStatus !== 'verified'` = NOT a clean regulated completion.
+   *
+   * Added in P26 — .optional() for backward compatibility (no schema version bump).
+   */
+  archiveStatus: z.enum(['pending', 'created', 'verified', 'failed']).nullable().optional(),
 });
 export type SessionState = z.infer<typeof SessionState>;

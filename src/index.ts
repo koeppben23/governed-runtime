@@ -37,7 +37,12 @@ export type {
   PolicySnapshot,
 } from './state/evidence';
 
-export { PolicySnapshotSchema, REQUIRED_ADR_SECTIONS, validateAdrSections } from './state/evidence';
+export {
+  PolicySnapshotSchema,
+  ActorInfoSchema,
+  REQUIRED_ADR_SECTIONS,
+  validateAdrSections,
+} from './state/evidence';
 
 // ─── Layer 2: Machine ────────────────────────────────────────────────────────
 
@@ -110,6 +115,7 @@ export {
   appendAuditEvent,
   readAuditTrail,
   readConfig,
+  writeConfig,
   writeDefaultConfig,
   writeDiscovery,
   readDiscovery,
@@ -180,6 +186,7 @@ export {
 export {
   type AuditPolicy,
   type FlowGuardPolicy,
+  PolicyConfigurationError,
   SOLO_POLICY,
   TEAM_POLICY,
   REGULATED_POLICY,
@@ -217,6 +224,7 @@ export {
 // ─── Layer 6: Audit ──────────────────────────────────────────────────────────
 
 export {
+  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type ToolCallDetail,

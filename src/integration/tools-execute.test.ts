@@ -38,9 +38,21 @@ import {
   abort_session,
   archive,
 } from './tools';
-import { readState, writeState } from '../adapters/persistence';
+import { readState, writeState, readAuditTrail } from '../adapters/persistence';
 import * as persistence from '../adapters/persistence';
-import { makeState, makeProgressedState } from '../__fixtures__';
+import {
+  makeState,
+  makeProgressedState,
+  TICKET,
+  PLAN_RECORD,
+  SELF_REVIEW_CONVERGED,
+  REVIEW_APPROVE,
+  VALIDATION_PASSED,
+  IMPL_EVIDENCE,
+  IMPL_REVIEW_CONVERGED,
+} from '../__fixtures__';
+import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers';
+import { TEAM_POLICY } from '../config/policy';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -54,8 +66,57 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
+// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
+// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
+// default to the real implementations. P26 tests override them per-test.
+// All other workspace exports (computeFingerprint, initWorkspace, etc.)
+// remain real for full integration fidelity.
+//
+// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
+// can fully reset the once-queues (vi.clearAllMocks does NOT clear
+// mockResolvedValueOnce queues — unconsumed values leak across tests).
+
+const wsOriginals = vi.hoisted(() => ({
+  archiveSession: null as unknown as (typeof import('../adapters/workspace'))['archiveSession'],
+  verifyArchive: null as unknown as (typeof import('../adapters/workspace'))['verifyArchive'],
+}));
+
+vi.mock('../adapters/workspace', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/workspace')>();
+  wsOriginals.archiveSession = original.archiveSession;
+  wsOriginals.verifyArchive = original.verifyArchive;
+  return {
+    ...original,
+    archiveSession: vi.fn(original.archiveSession),
+    verifyArchive: vi.fn(original.verifyArchive),
+  };
+});
+
+// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
+// Mock resolveActor to return a deterministic actor for integration tests.
+// Prevents dependency on real env vars or git config.
+
+const actorOriginal = vi.hoisted(() => ({
+  resolveActor: null as unknown as (typeof import('../adapters/actor'))['resolveActor'],
+}));
+
+vi.mock('../adapters/actor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/actor')>();
+  actorOriginal.resolveActor = original.resolveActor;
+  return {
+    ...original,
+    resolveActor: vi.fn().mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      source: 'env',
+    }),
+  };
+});
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git');
+const wsMock = await import('../adapters/workspace');
+const actorMock = await import('../adapters/actor');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -76,6 +137,19 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Reset workspace mock once-queues to prevent cross-test leaks.
+  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
+  // queues. If a P26 test fails before consuming its once-mocks, the stale
+  // values leak into subsequent tests (e.g. archive manifest test).
+  vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
+  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  // Reset actor mock to default deterministic value (P27)
+  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
+    id: 'test-operator',
+    email: 'test@flowguard.dev',
+    source: 'env',
+  });
+  delete process.env.FLOWGUARD_POLICY_PATH;
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -86,10 +160,13 @@ afterEach(async () => {
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
-  const raw = await hydrate.execute(
-    { policyMode: overrides.policyMode ?? 'solo', profileId: overrides.profileId ?? 'baseline' },
-    ctx,
-  );
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
+  if (overrides.profileId !== undefined) {
+    args.profileId = overrides.profileId;
+  }
+  const raw = await hydrate.execute(args, ctx);
   return parseToolResult(raw);
 }
 
@@ -120,6 +197,17 @@ describe('status', () => {
       expect(result.hasTicket).toBe(false);
       expect(result.evalKind).toBeTruthy();
       expect(result.next).toBeTruthy();
+    });
+
+    it('surfaces appliedPolicy provenance fields', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      const applied = result.appliedPolicy as Record<string, unknown>;
+      expect(applied).toBeDefined();
+      expect(applied.source).toBe('explicit');
+      expect(applied.requestedMode).toBe('solo');
+      expect(applied.effectiveMode).toBe('solo');
+      expect(applied.centralPolicyDigest).toBeNull();
     });
 
     it('includes completeness fields', async () => {
@@ -358,7 +446,8 @@ describe('hydrate', () => {
     });
 
     it('auto-detects TypeScript profile from repo signals', async () => {
-      const result = await hydrateSession({ profileId: 'baseline' });
+      // P31: No profileId = auto-detect (not profileId: 'baseline')
+      const result = await hydrateSession({});
       // With tsconfig.json in signals, TypeScript profile should be detected
       expect(result.profileId).toBe('typescript');
       expect(result.profileName).toContain('TypeScript');
@@ -413,6 +502,74 @@ describe('hydrate', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('WORKSPACE_CONFIG_INVALID');
       expect(result.message).toContain('invalid');
+    });
+
+    it('fails closed when FLOWGUARD_POLICY_PATH is set but file is missing', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = `${ws.tmpDir}/missing-central-policy.json`;
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_MISSING');
+    });
+
+    it('fails closed when FLOWGUARD_POLICY_PATH is empty string', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = '';
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_PATH_EMPTY');
+    });
+
+    it('fails closed when FLOWGUARD_POLICY_PATH is whitespace', async () => {
+      process.env.FLOWGUARD_POLICY_PATH = '   ';
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_PATH_EMPTY');
+    });
+
+    it('fails closed when central policy file has invalid JSON', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(centralPath, '{invalid-json', 'utf-8');
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_INVALID_JSON');
+    });
+
+    it('blocks explicit weaker mode than central minimum', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EXPLICIT_WEAKER_THAN_CENTRAL');
+    });
+
+    it('existing session fails closed when central policy file is missing', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      process.env.FLOWGUARD_POLICY_PATH = `${ws.tmpDir}/missing-central-policy.json`;
+      const result = await hydrateSession({ policyMode: 'solo' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CENTRAL_POLICY_MISSING');
+    });
+
+    it('existing session blocks when existing mode is weaker than central minimum', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'solo' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EXISTING_POLICY_WEAKER_THAN_CENTRAL');
     });
 
     /**
@@ -490,6 +647,256 @@ describe('hydrate', () => {
       const info = await readWorkspaceInfo(fp.fingerprint);
       expect(info).not.toBeNull();
       expect(info!.fingerprint).toBe(fp.fingerprint);
+    });
+
+    it('existing regulated session remains allowed when central minimum is team', async () => {
+      await hydrateSession({ policyMode: 'regulated' });
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('READY');
+
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.centralMinimumMode).toBe('team');
+      expect(state!.policySnapshot.policyDigest).toMatch(/^[0-9a-f]{64}$/);
+
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      const applied = statusResult.appliedPolicy as Record<string, unknown>;
+      expect(applied.centralMinimumMode).toBe('team');
+      expect(String(applied.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('existing session clears stale central policyVersion when current central policy has no version', async () => {
+      await hydrateSession({ policyMode: 'regulated' });
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const stateBefore = await readState(sessDir);
+      await writeState(sessDir, {
+        ...stateBefore!,
+        policySnapshot: {
+          ...stateBefore!.policySnapshot,
+          policyVersion: '2026.04',
+        },
+      });
+
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.error).toBeUndefined();
+
+      const stateAfter = await readState(sessDir);
+      expect(stateAfter).not.toBeNull();
+      expect(stateAfter!.policySnapshot.policyVersion).toBeUndefined();
+
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      const applied = statusResult.appliedPolicy as Record<string, unknown>;
+      expect(applied.centralPolicyVersion).toBeNull();
+    });
+
+    it('central regulated minimum raises weaker repo mode with visible reason', async () => {
+      // 1. Create workspace and config
+      await hydrateSession({ policyMode: 'solo' });
+      const {
+        computeFingerprint,
+        workspaceDir,
+        sessionDir: resolveSessionDir,
+      } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'solo';
+      await writeConfig(wsDir, config);
+
+      // 2. Central minimum: regulated
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      // 3. New session without explicit policyMode (repo source)
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const result = parseToolResult(await hydrate.execute({ profileId: 'baseline' }, ctx2));
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.effectiveMode).toBe('regulated');
+      expect(resolution.source).toBe('central');
+      expect(resolution.resolutionReason).toBe('repo_weaker_than_central');
+      expect(resolution.centralMinimumMode).toBe('regulated');
+      expect(String(resolution.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
+
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.policySnapshot.mode).toBe('regulated');
+      expect(state!.policySnapshot.source).toBe('central');
+      expect(state!.policySnapshot.resolutionReason).toBe('repo_weaker_than_central');
+      expect(state!.policySnapshot.centralMinimumMode).toBe('regulated');
+      expect(state!.policySnapshot.policyDigest).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('explicit stronger mode remains explicit while preserving central evidence', async () => {
+      const centralPath = `${ws.tmpDir}/central-policy.json`;
+      await fs.writeFile(
+        centralPath,
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: '2026.04' }),
+        'utf-8',
+      );
+      process.env.FLOWGUARD_POLICY_PATH = centralPath;
+
+      const result = await hydrateSession({ policyMode: 'regulated' });
+      expect(result.phase).toBe('READY');
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.effectiveMode).toBe('regulated');
+      expect(resolution.source).toBe('explicit');
+      expect(resolution.resolutionReason).toBe('explicit_stronger_than_central');
+      expect(resolution.centralMinimumMode).toBe('team');
+      expect(String(resolution.centralPolicyDigest)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('hydrate without explicit mode uses config.policy.defaultMode: regulated', async () => {
+      // Enterprise blocker test: install intent must flow through to policySnapshot.
+      // 1. Hydrate once to create workspace + session
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Write config with regulated as defaultMode
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'regulated';
+      await writeConfig(wsDir, config);
+
+      // 3. Create a NEW session (new sessionID) WITHOUT explicit policyMode
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      expect(result.phase).toBe('READY');
+      // policySnapshot must reflect config default
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('regulated');
+      expect(resolution.effectiveMode).toBe('regulated');
+
+      // Also verify persisted state
+      const { sessionDir: resolveSessionDir } = await import('../adapters/workspace');
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.mode).toBe('regulated');
+    });
+
+    it('hydrate with explicit mode overrides config default', async () => {
+      // 1. Create workspace
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Set config default to regulated
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'regulated';
+      await writeConfig(wsDir, config);
+
+      // 3. New session with explicit solo — explicit arg wins over config
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('solo');
+      expect(resolution.effectiveMode).toBe('solo');
+    });
+
+    it('hydrate falls back to solo when config has no defaultMode', async () => {
+      // Config has no defaultMode set (fresh workspace with DEFAULT_CONFIG)
+      // New session without explicit mode → should default to 'solo'
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.phase).toBe('READY');
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('solo');
+      expect(resolution.effectiveMode).toBe('solo');
+    });
+
+    it('config team default produces human-gated policy', async () => {
+      // 1. Create workspace
+      await hydrateSession({ policyMode: 'solo' });
+
+      // 2. Set config default to team
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.defaultMode = 'team';
+      await writeConfig(wsDir, config);
+
+      // 3. New session without explicit mode
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
+
+      const resolution = result.policyResolution as Record<string, unknown>;
+      expect(resolution.requestedMode).toBe('team');
+      expect(resolution.effectiveMode).toBe('team');
+      expect(resolution.effectiveGateBehavior).toBe('human_gated');
+    });
+
+    it('resolvePolicyFromState(null) returns TEAM policy (plugin/helper fallback)', () => {
+      // Plugin and helper contexts fall back to team (conservative), not solo.
+      // Hydrate has its own developer-friendly solo fallback via the P21 config chain.
+      // This distinction is documented in the runtime truth table.
+      const policy = resolvePolicyFromState(null);
+      expect(policy).toBe(TEAM_POLICY);
+      expect(policy.mode).toBe('team');
+      expect(policy.requireHumanGates).toBe(true);
     });
   });
 
@@ -582,6 +989,444 @@ describe('hydrate', () => {
       expect(result.message).toContain('config write denied');
 
       spy.mockRestore();
+    });
+  });
+
+  // ── P31: Config as Runtime Authority ────────────────────────────────────────────
+  describe('P31 Config as Runtime Authority', () => {
+    it('config.profile.defaultId is used when no explicit profileId', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-a-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+        const baseConfig = await readConfig(wsDir);
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          profile: { ...baseConfig.profile, defaultId: 'typescript' },
+        });
+        const ctx2 = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        const result = parseToolResult(await hydrate.execute({}, ctx2));
+        expect(result.profileId).toBe('typescript');
+
+        // Stronger assertion: persisted session state must materialize the same profile.
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+        const state = await readState(sessDir);
+        expect(state).not.toBeNull();
+        expect(state!.activeProfile?.id).toBe('typescript');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('explicit profileId wins over config', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-explicit-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+        const baseConfig = await readConfig(wsDir);
+        // Set config default to baseline, then override explicitly to typescript.
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          profile: { ...baseConfig.profile, defaultId: 'baseline' },
+        });
+
+        const ctx2 = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        const result = parseToolResult(await hydrate.execute({ profileId: 'typescript' }, ctx2));
+
+        expect(result.profileId).toBe('typescript');
+
+        // Stronger assertion: rails/session state must match effective explicit profile.
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+        const state = await readState(sessDir);
+        expect(state).not.toBeNull();
+        expect(state!.activeProfile?.id).toBe('typescript');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('explicit profileId=baseline wins over config.defaultId', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-baseline-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+        const baseConfig = await readConfig(wsDir);
+        // Set config default to typescript, but explicitly request baseline.
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          profile: { ...baseConfig.profile, defaultId: 'typescript' },
+        });
+
+        const ctx2 = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        const result = parseToolResult(await hydrate.execute({ profileId: 'baseline' }, ctx2));
+
+        // Explicit "baseline" must win — not config.defaultId.
+        expect(result.profileId).toBe('baseline');
+
+        // Persisted session state must also reflect explicit baseline.
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+        const state = await readState(sessDir);
+        expect(state).not.toBeNull();
+        expect(state!.activeProfile?.id).toBe('baseline');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('existing session retains activeProfile despite explicit override attempt', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const { readState } = await import('../adapters/persistence');
+
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+        const baseConfig = await readConfig(wsDir);
+        await writeConfig(wsDir, { ...baseConfig });
+
+        // Create first session with baseline.
+        const ctx1 = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        await hydrate.execute({ profileId: 'baseline' }, ctx1);
+
+        // Verify initial session state.
+        const sessDir1 = resolveSessionDir(fp.fingerprint, ctx1.sessionID);
+        const state1 = await readState(sessDir1);
+        expect(state1!.activeProfile?.id).toBe('baseline');
+
+        // Create second call (existing session) but TRY to override profile.
+        // P31: Existing sessions should preserve snapshot, not accept new args.
+        const ctx2 = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: ctx1.sessionID, // Same session ID = existing session.
+        });
+        const result = await parseToolResult(
+          // Note: args.profileId is effectively ignored for existing sessions in P31.
+          await hydrate.execute({ profileId: 'typescript' }, ctx2),
+        );
+        // Result should still be successful (not an error).
+        expect(result.error).toBeUndefined();
+
+        // P31: Existing session must retain original snapshot profile.
+        const state2 = await readState(sessDir1);
+        expect(state2!.activeProfile?.id).toBe('baseline');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('new session persists config iteration limits in policySnapshot', async () => {
+      // Create fresh workspace with config iteration limits
+      const tmpDir = await fs.mkdtemp('/tmp/p31-iter-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const { readState } = await import('../adapters/persistence');
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+
+        const baseConfig = await readConfig(wsDir);
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          policy: {
+            ...baseConfig.policy,
+            maxSelfReviewIterations: 5,
+            maxImplReviewIterations: 7,
+          },
+        });
+
+        const ctx = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        await hydrate.execute({ profileId: 'baseline' }, ctx);
+
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        expect(state!.policySnapshot.maxSelfReviewIterations).toBe(5);
+        expect(state!.policySnapshot.maxImplReviewIterations).toBe(7);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('explicit profileId=unknown blocks with INVALID_PROFILE', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-d-');
+      try {
+        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+
+        // Set up any config (not needed for explicit override)
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const config = await readConfig(wsDir);
+        await writeConfig(wsDir, { ...config });
+
+        // Explicit unknown profile should fail
+        const result = parseToolResult(
+          await hydrate.execute(
+            { profileId: 'nonexistent-profile-xyz' },
+            createToolContext({
+              worktree: tmpDir,
+              directory: tmpDir,
+              sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+            }),
+          ),
+        );
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('INVALID_PROFILE');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('config.profile.defaultId=unknown blocks with INVALID_PROFILE', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p31-c-');
+      try {
+        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+        const baseConfig = await readConfig(wsDir);
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          profile: { ...baseConfig.profile, defaultId: 'nonexistent-profile-xyz' },
+        });
+        const result = parseToolResult(
+          await hydrate.execute(
+            {},
+            createToolContext({
+              worktree: tmpDir,
+              directory: tmpDir,
+              sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+            }),
+          ),
+        );
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('INVALID_PROFILE');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('config.profile.activeChecks overrides selected profile defaults', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+
+      // Write config with custom activeChecks
+      const baseConfig = await readConfig(wsDir);
+      await writeConfig(wsDir, {
+        ...baseConfig,
+        profile: {
+          ...baseConfig.profile,
+          defaultId: 'typescript',
+          activeChecks: ['custom_check_a', 'custom_check_b'],
+        },
+      });
+
+      // New session uses config activeChecks, not profile defaults
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      await hydrate.execute({ profileId: 'typescript' }, ctx2);
+
+      // Read from workspace profile-resolution.json (not from session snapshot)
+      const fs = await import('node:fs/promises');
+      const prPath = `${wsDir}/discovery/profile-resolution.json`;
+      const pr = JSON.parse(await fs.readFile(prPath, 'utf-8'));
+      expect(pr.activeChecks).toEqual(['custom_check_a', 'custom_check_b']);
+    });
+
+    // Note: policy iteration limits from config are tested in config.test.ts (unit tests)
+    // New-session test above proves config values are persisted in snapshot
+  });
+
+  it('existing session keeps snapshot values despite changed config', async () => {
+    const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
+    try {
+      const {
+        computeFingerprint,
+        workspaceDir,
+        sessionDir: resolveSessionDir,
+      } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+
+      const fp = await computeFingerprint(tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const ctxExisting = createToolContext({
+        worktree: tmpDir,
+        directory: tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+
+      // First hydrate with explicit config limits
+      const config1 = await readConfig(wsDir);
+      await writeConfig(wsDir, {
+        ...config1,
+        policy: { ...config1.policy, maxSelfReviewIterations: 2 },
+      });
+      await hydrate.execute({}, ctxExisting);
+
+      const sessDir = resolveSessionDir(fp.fingerprint, ctxExisting.sessionID);
+      const before = await readState(sessDir);
+      expect(before).not.toBeNull();
+      expect(before!.policySnapshot.maxSelfReviewIterations).toBe(2);
+
+      // Change config and re-hydrate same session
+      const config2 = await readConfig(wsDir);
+      await writeConfig(wsDir, {
+        ...config2,
+        policy: { ...config2.policy, maxSelfReviewIterations: 5 },
+      });
+      await hydrate.execute({}, ctxExisting);
+
+      const after = await readState(sessDir);
+      expect(after).not.toBeNull();
+      expect(after!.policySnapshot.maxSelfReviewIterations).toBe(2);
+      expect(after!.policySnapshot.maxSelfReviewIterations).not.toBe(5);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // ── P27: Actor Identity ──────────────────────────────────────────────────
+  describe('P27 Actor Identity', () => {
+    it('hydrate stores actorInfo in session state', async () => {
+      const result = await hydrateSession();
+      expect(result.phase).toBe('READY');
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+    });
+
+    it('actorInfo persisted at hydrate is reused even if env changes', async () => {
+      // First hydrate with default mock actor
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state1 = await readState(sessDir);
+      expect(state1!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+
+      // Change actor mock — simulates env change mid-session
+      vi.mocked(actorMock.resolveActor).mockResolvedValue({
+        id: 'changed-operator',
+        email: 'changed@flowguard.dev',
+        source: 'env',
+      });
+
+      // Re-hydrate — should return existing state unchanged (idempotent)
+      const result = await hydrateSession();
+      expect(result.phase).toBe('READY');
+      const state2 = await readState(sessDir);
+      // Actor should be the original value, NOT the changed one
+      expect(state2!.actorInfo).toEqual({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        source: 'env',
+      });
+    });
+
+    it('audit lifecycle event contains actorInfo after hydrate', async () => {
+      // Note: In integration tests, tools are called directly (not through plugin
+      // wrapper that emits audit events). Verify actorInfo is wired to the state
+      // which the plugin uses: state.actorInfo is passed to createLifecycleEvent.
+      // Factory-level audit event tests are in audit.test.ts (P27 section).
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      // Verify the actorInfo that plugin.ts would use for audit events
+      expect(state!.actorInfo).toBeDefined();
+      expect(state!.actorInfo!.id).toBe('test-operator');
+      expect(state!.actorInfo!.source).toBe('env');
+    });
+
+    it('sessionID is still present separately from actorInfo in state', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      // sessionID lives in binding, actorInfo is separate
+      expect(state!.binding.sessionId).toBe(ctx.sessionID);
+      expect(state!.actorInfo).toBeDefined();
+      expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
+      expect(state!.binding.sessionId).not.toBe(state!.actorInfo!.id);
+      expect(state!.binding.sessionId).not.toBe(state!.initiatedBy);
     });
   });
 });
@@ -721,12 +1566,12 @@ describe('plan', () => {
       expect(result.code).toBe('EMPTY_PLAN');
     });
 
-    it('blocks without ticket', async () => {
+    it('blocks in READY phase (command not allowed without ticket phase)', async () => {
       await hydrateSession();
       const raw = await plan.execute({ planText: '## Plan' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('TICKET_REQUIRED');
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
     });
 
     it('blocks without session', async () => {
@@ -829,6 +1674,397 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+    });
+  });
+});
+
+// =============================================================================
+// P26: Regulated Archive Completion Semantics
+// =============================================================================
+
+describe('P26: regulated archive completion', () => {
+  /**
+   * Build a regulated EVIDENCE_REVIEW state deterministically.
+   *
+   * Uses direct state write with fixture evidence instead of walking the full
+   * workflow. The P26 tests verify the EVIDENCE_REVIEW → COMPLETE archive
+   * boundary — the workflow walk is covered by e2e-workflow.test.ts.
+   *
+   * Returns the session directory for post-assertion state reads.
+   */
+  async function reachRegulatedEvidenceReview(): Promise<string> {
+    // 1. Hydrate to set up workspace + session directory
+    await hydrateSession({ policyMode: 'team' });
+    const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    // 2. Read hydrated state for session identity + binding
+    const baseState = await readState(sessDir);
+    expect(baseState).not.toBeNull();
+
+    // 3. Write EVIDENCE_REVIEW state with regulated policy + fixture evidence.
+    //    Uses writeStateWithArtifacts to materialize ticket/plan artifacts
+    //    (required by requireStateForMutation's verifyEvidenceArtifacts).
+    const regulatedState = {
+      ...baseState!,
+      phase: 'EVIDENCE_REVIEW' as const,
+      ticket: TICKET,
+      plan: PLAN_RECORD,
+      selfReview: SELF_REVIEW_CONVERGED,
+      reviewDecision: {
+        ...REVIEW_APPROVE,
+        decisionIdentity: {
+          actorId: 'reviewer',
+          actorEmail: 'reviewer@test.com',
+          actorSource: 'env' as const,
+          actorAssurance: 'best_effort' as const,
+        },
+      },
+      validation: VALIDATION_PASSED,
+      implementation: IMPL_EVIDENCE,
+      implReview: IMPL_REVIEW_CONVERGED,
+      initiatedBy: 'initiator',
+      initiatedByIdentity: {
+        actorId: 'initiator',
+        actorEmail: 'initiator@test.com',
+        actorSource: 'env' as const,
+        actorAssurance: 'best_effort' as const,
+      },
+      policySnapshot: {
+        ...baseState!.policySnapshot,
+        mode: 'regulated' as const,
+        requestedMode: 'regulated',
+        allowSelfApproval: false,
+        requireHumanGates: true,
+        audit: {
+          ...baseState!.policySnapshot.audit,
+          enableChainHash: true,
+        },
+      },
+      error: null,
+    };
+    await writeStateWithArtifacts(sessDir, regulatedState);
+    return sessDir;
+  }
+
+  describe('HAPPY', () => {
+    it('regulated + archive success + verify pass → archiveStatus: verified', async () => {
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
+      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+        passed: true,
+        findings: [],
+        manifest: null,
+        verifiedAt: new Date().toISOString(),
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Response must surface archiveStatus — agent/user must see clean completion
+      expect(result.archiveStatus).toBe('verified');
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBe('verified');
+    });
+  });
+
+  describe('BAD', () => {
+    it('regulated + archive creation throws → archiveStatus: failed', async () => {
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar command failed'));
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Response must surface failure — agent/user must NOT see clean completion
+      expect(result.archiveStatus).toBe('failed');
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBe('failed');
+    });
+
+    it('regulated + archive ok + verify fails → archiveStatus: failed', async () => {
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
+      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+        passed: false,
+        findings: [
+          {
+            code: 'archive_checksum_mismatch',
+            severity: 'error',
+            message: 'Checksum mismatch',
+          },
+        ],
+        manifest: null,
+        verifiedAt: new Date().toISOString(),
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Response must surface failure — agent/user must NOT see clean completion
+      expect(result.archiveStatus).toBe('failed');
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBe('failed');
+    });
+  });
+
+  describe('CORNER', () => {
+    it('team + clean completion → no archiveStatus (backward-compatible)', async () => {
+      // Use team workflow directly (no regulated patch)
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Team task', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      for (let i = 0; i < 5; i++) {
+        const s = parseToolResult(await status.execute({}, ctx));
+        if (s.phase === 'PLAN_REVIEW') break;
+        await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      }
+      await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
+      await validate.execute(
+        {
+          results: [
+            { checkId: 'test_quality', passed: true, detail: 'OK' },
+            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
+          ],
+        },
+        ctx,
+      );
+      await implement.execute({}, ctx);
+      for (let i = 0; i < 5; i++) {
+        const s = parseToolResult(await status.execute({}, ctx));
+        if (s.phase === 'EVIDENCE_REVIEW') break;
+        await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      }
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Non-regulated: response must NOT include archiveStatus
+      expect(result.archiveStatus).toBeUndefined();
+
+      // Read state — archiveStatus should NOT be set
+      const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBeUndefined();
+    });
+
+    it('solo + completion → no archiveStatus', async () => {
+      // Solo auto-approves at gates — simple workflow
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      await validate.execute(
+        {
+          results: [
+            { checkId: 'test_quality', passed: true, detail: 'OK' },
+            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
+          ],
+        },
+        ctx,
+      );
+      await implement.execute({}, ctx);
+      await implement.execute({ reviewVerdict: 'approve' }, ctx);
+
+      // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).toBe('COMPLETE');
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBeUndefined();
+    });
+
+    it('abort at regulated session → no archiveStatus (emergency escape)', async () => {
+      // Hydrate with team mode and patch to regulated
+      await hydrateSession({ policyMode: 'team' });
+      const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          mode: 'regulated',
+          requestedMode: 'regulated',
+          allowSelfApproval: false,
+          requireHumanGates: true,
+        },
+      });
+
+      // Abort → COMPLETE with error
+      const raw = await abort_session.execute({ reason: 'Emergency' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.error).not.toBeNull();
+      expect(finalState!.error!.code).toBe('ABORTED');
+      // No archive attempt for aborted sessions
+      expect(finalState!.archiveStatus).toBeUndefined();
+    });
+  });
+
+  describe('EDGE', () => {
+    it('regulated + verify throws → archiveStatus: failed (fail-closed)', async () => {
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
+      vi.mocked(wsMock.verifyArchive).mockRejectedValueOnce(new Error('Verification I/O error'));
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Response must surface failure — fail-closed on verify exception
+      expect(result.archiveStatus).toBe('failed');
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.archiveStatus).toBe('failed');
+    });
+
+    it('regulated COMPLETE + archiveStatus !== verified is not clean completion', async () => {
+      // Structural invariant test: regulated + failed archive = degraded terminal
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar failed'));
+
+      await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+
+      const finalState = await readState(sessDir);
+      expect(finalState).not.toBeNull();
+      expect(finalState!.phase).toBe('COMPLETE');
+      expect(finalState!.policySnapshot.mode).toBe('regulated');
+      expect(finalState!.error).toBeNull();
+      expect(finalState!.archiveStatus).not.toBe('verified');
+      // This combination means: regulated session completed but archive failed.
+      // Doctor/status tools should surface this as degraded completion.
+    });
+
+    it('session_completed audit event is appended BEFORE archiveSession is called', async () => {
+      // P26 Review 3 blocker: the archive must contain the terminal lifecycle event.
+      // Verifies call ordering: appendAuditEvent(session_completed) → archiveSession.
+      await reachRegulatedEvidenceReview();
+
+      const callOrder: string[] = [];
+      const appendSpy = vi
+        .spyOn(persistence, 'appendAuditEvent')
+        .mockImplementation(async (_sessDir, event) => {
+          // Track lifecycle completion events
+          const detail = (event as Record<string, unknown>).detail as
+            | Record<string, unknown>
+            | undefined;
+          if (detail?.action === 'session_completed') {
+            callOrder.push('session_completed');
+          }
+        });
+      vi.mocked(wsMock.archiveSession).mockImplementationOnce(async () => {
+        callOrder.push('archiveSession');
+        return '/fake/archive.tar.gz';
+      });
+      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+        passed: true,
+        findings: [],
+        manifest: null,
+        verifiedAt: new Date().toISOString(),
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+
+      // session_completed MUST appear before archiveSession in call order
+      const completedIdx = callOrder.indexOf('session_completed');
+      const archiveIdx = callOrder.indexOf('archiveSession');
+      expect(completedIdx).toBeGreaterThanOrEqual(0);
+      expect(archiveIdx).toBeGreaterThanOrEqual(0);
+      expect(completedIdx).toBeLessThan(archiveIdx);
+
+      appendSpy.mockRestore();
+    });
+
+    it('regulated audit trail contains exactly one session_completed event', async () => {
+      // P26 Review 3: the tool-layer emits session_completed to the audit trail.
+      // Verifies: (a) the event exists on disk, (b) there is exactly one (no duplication).
+      // The plugin is not running in tool-execute tests, so this proves the tool-layer
+      // writes the event and sets archiveStatus (which the plugin uses to skip its own).
+      const sessDir = await reachRegulatedEvidenceReview();
+      vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
+      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+        passed: true,
+        findings: [],
+        manifest: null,
+        verifiedAt: new Date().toISOString(),
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      expect(result.archiveStatus).toBe('verified');
+
+      // Read the actual audit trail from disk
+      const { events } = await readAuditTrail(sessDir);
+      const completionEvents = events.filter((e) => e.event === 'lifecycle:session_completed');
+      // Exactly one session_completed — tool-layer wrote it, no duplication
+      expect(completionEvents).toHaveLength(1);
+      expect(completionEvents[0]!.actor).toBe('machine');
+      expect(completionEvents[0]!.sessionId).toBe(ctx.sessionID);
+
+      // archiveStatus on persisted state enables plugin to skip its own emission
+      const finalState = await readState(sessDir);
+      expect(finalState!.archiveStatus).toBe('verified');
+    });
+
+    it('regulated + session_completed append fails → archiveStatus: failed', async () => {
+      // P26 Review 5: audit emission is part of the fail-closed finalization chain.
+      // If appendAuditEvent throws, the entire chain fails — no "verified archive
+      // without session_completed" can exist.
+      const sessDir = await reachRegulatedEvidenceReview();
+      const appendSpy = vi
+        .spyOn(persistence, 'appendAuditEvent')
+        .mockRejectedValueOnce(new Error('Audit write I/O failure'));
+      // archiveSession/verifyArchive are NOT mocked here — they must not be
+      // reached when audit emission fails (fail-closed short-circuit).
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('COMPLETE');
+      // Must be failed — audit append failure blocks verified archive
+      expect(result.archiveStatus).toBe('failed');
+
+      const finalState = await readState(sessDir);
+      expect(finalState!.archiveStatus).toBe('failed');
+
+      appendSpy.mockRestore();
+    });
+
+    it('archiveSession is not called when session_completed append fails', async () => {
+      // P26 Review 5: proves archiveSession is never reached when audit emission
+      // fails. The single try/catch ensures audit → archive → verify is atomic.
+      await reachRegulatedEvidenceReview();
+      const appendSpy = vi
+        .spyOn(persistence, 'appendAuditEvent')
+        .mockRejectedValueOnce(new Error('Disk full'));
+      const archiveSpy = vi.mocked(wsMock.archiveSession);
+
+      await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+
+      // archiveSession must NOT have been called — audit failure short-circuits
+      expect(archiveSpy).not.toHaveBeenCalled();
+
+      appendSpy.mockRestore();
     });
   });
 });

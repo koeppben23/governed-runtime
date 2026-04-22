@@ -120,14 +120,15 @@ FlowGuard supports two roles within a session:
 **Currently Delivered:**
 
 - 4 built-in profiles (Baseline, Java, Angular, TypeScript)
-- 3 policy modes (Solo, Team, Regulated)
+- 4 policy modes (Solo, Team, Team-CI, Regulated)
+- Central minimum policy enforcement via `FLOWGUARD_POLICY_PATH` (P29)
 - Configurable reason codes
 - Custom check executors
 
 **Customer Responsibility:**
 
 - Profile customization for domain
-- Policy documentation for teams
+- Central policy file lifecycle and distribution to execution environments
 - Compliance mapping
 
 ---

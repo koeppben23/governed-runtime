@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Actor identity bridge v0 (P27)**: Minimal best-effort operator identity for audit attribution. `resolveActor()` resolves identity at hydrate time via `FLOWGUARD_ACTOR_ID` env → `git config user.name` → `unknown` fallback. `actorInfo` (id, email, source) stored in `SessionState` and passed to lifecycle, tool_call, and decision audit events. Machine-only events (transition, error) excluded. Hash-backward-compatible: absent `actorInfo` produces identical chain hashes to pre-P27 events.
+- **Enterprise readiness + threat model narrative (P28)**: Added `docs/enterprise-readiness.md` as a consolidated control narrative for enterprise/security/procurement review. Documents system boundary, trust model, regulated guarantees from P25-P27, tamper-evident vs tamper-prevention scope, threat mitigations, residual risks, and explicit deferred scope (P29 central policy distribution/admin governance).
+- **Central policy authority baseline (P29)**: Added explicit central policy distribution model via `FLOWGUARD_POLICY_PATH` (no auto-discovery). If env is set, central policy file must exist, be readable, and validate (`schemaVersion: "v1"`, `minimumMode: solo|team|regulated`) or hydrate blocks fail-closed (including empty/whitespace path values). Resolution semantics: requested mode (`explicit || repo || default`) is constrained by central minimum; explicit weaker-than-central is blocked (`EXPLICIT_WEAKER_THAN_CENTRAL`), repo/default weaker-than-central is raised with visible resolution reason, and existing sessions weaker than central minimum are blocked (`EXISTING_POLICY_WEAKER_THAN_CENTRAL`). `policySnapshot` now includes applied source/provenance fields (`source`, `resolutionReason`, `centralMinimumMode`, `policyDigest`, `policyVersion`, `policyPathHint`) and `flowguard_status` surfaces the same applied-policy evidence.
 - **Knowledge Pack external-docs ADR (P20)**: Added `docs/adr/ADR-0001-knowledge-packs-and-external-docs.md` defining authority and precedence for external documentation as advisory, provenance-stamped Knowledge Packs only. Establishes non-SSOT policy, fail-closed risk behavior (`NOT_VERIFIED`/`BLOCKED` when packs are absent), and explicit non-goals for provider/runtime implementation.
 - **Database engine detection in discovery (P14)**: Stack detection now derives database engines from repo evidence (Maven/Gradle dependencies, package.json deps, docker-compose image refs, Testcontainers modules) and surfaces them in `detectedStack.items` as `kind: "database"` with optional version when image tags are unambiguous.
 - **Python/Rust/Go ecosystem detection in discovery (P16)**: Stack detection now derives root-level Python, Rust, and Go ecosystem signals from manifest/toolchain evidence (`pyproject.toml`, `.python-version`, `requirements*.txt`, `uv.lock`, `poetry.lock`, `Cargo.toml`, `rust-toolchain*`, `go.mod`, `.golangci.*`) and surfaces them in `detectedStack.items`.
@@ -54,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration and E2E tests now run with OpenCode-style session IDs and include regression assertions for hydrate discovery/config contracts.
 - Added `src/documentation/__tests__/agents-v3.test.ts` to enforce AGENTS v3 structure, marker rules, high-risk verification policy, guidance link integrity, and rubric presence.
 - Eval-suite reference links to OpenAI and Anthropic docs were revalidated and documented for traceability.
+- **Audit chain strict verification mode**: `verifyChain({ strict: true })` rejects legacy events without chain fields as integrity failures. Adds typed `ChainVerificationReason` (`CHAIN_BREAK` | `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and `reason` field to `ChainVerification`. Compliance summary now distinguishes strict failures from chain breaks in detail messages.
+- **Strict audit verification in regulated paths**: Archive verification (`verifyArchive`) now verifies audit chain integrity. When `manifest.policyMode === "regulated"`, strict mode rejects unchained legacy events. Non-regulated modes remain legacy-tolerant for backward compatibility. New finding code `audit_chain_invalid` reports chain breaks and strict-mode violations with diagnostic counts. This is the first production call-site for `verifyChain`.
+- **Regulated archive completion semantics**: Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires synchronous archive creation and verification success. New `archiveStatus` field on `SessionState` tracks the archive lifecycle (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Non-regulated sessions retain existing fire-and-forget auto-archive behavior. Aborted sessions are excluded from the archive guarantee.
 
 ## [1.1.0] - 2026-04-17
 
@@ -83,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release/build packaging integrity check: `npm run check:esm` verifies dist ESM imports after build
 - CI workflow linting now runs via `rhysd/actionlint@v1` (blocking) instead of direct docker image invocation
 - Added `.github/security-advisories.yml` so private vulnerability reporting policy check is materially configured
-- `/review-decision` now enforces four-eyes review with `SOLO_APPROVAL_FORBIDDEN` blocker when `allowSelfApproval=false`
+- `/review-decision` now enforces regulated approve identity hardening: explicit initiator/reviewer identity required, unknown actors blocked, and actor-match blocked via reason-coded outcomes
 - NextAction system — deterministic next-step guidance on every tool response
 - `/review` as standalone flow (READY → REVIEW → REVIEW_COMPLETE) with phase transitions
 - `/architecture` command and tool for ADR creation with MADR format validation and self-review loop
@@ -118,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed stale architecture command/test surfaces requiring user-provided ADR IDs
 - Archive export is now fail-closed when redaction is enabled and redaction input is invalid
 - Archive manifests now record redaction metadata (`redactionMode`, `rawIncluded`, `redactedArtifacts`, `excludedFiles`, `riskFlags`)
-- `FOUR_EYES_VIOLATION` → `SELF_APPROVAL_FORBIDDEN` in documentation (matches actual reason code in code)
+- Four-eyes reason code docs aligned to `FOUR_EYES_ACTOR_MATCH`, with additional regulated approve blockers `REGULATED_ACTOR_UNKNOWN` and `DECISION_IDENTITY_REQUIRED`
 - Discovery collector count corrected from "5 collectors" to "6 collectors" in product identity
 
 ## [1.0.0] - 2026-04-16

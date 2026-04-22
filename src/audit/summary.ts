@@ -280,12 +280,30 @@ function checkValidationExecuted(filtered: AuditEvent[]): ComplianceCheck {
 
 /** Check 6: Chain integrity verification. */
 function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCheck {
+  if (chainVerification.valid) {
+    return {
+      name: 'chain_integrity',
+      passed: true,
+      detail: `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} legacy`,
+    };
+  }
+
+  // Failure — use typed reason for explicit detail.
+  const { reason, firstBreak, skippedCount } = chainVerification;
+
+  if (reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE') {
+    return {
+      name: 'chain_integrity',
+      passed: false,
+      detail: `STRICT: ${skippedCount} legacy event(s) without chain fields not allowed in strict verification mode`,
+    };
+  }
+
+  // CHAIN_BREAK or unknown — use firstBreak details.
   return {
     name: 'chain_integrity',
-    passed: chainVerification.valid,
-    detail: chainVerification.valid
-      ? `Chain verified: ${chainVerification.verifiedCount} events, ${chainVerification.skippedCount} legacy`
-      : `Chain BROKEN at event #${chainVerification.firstBreak?.index ?? '?'}: ${chainVerification.firstBreak?.reason ?? 'unknown'}`,
+    passed: false,
+    detail: `Chain BROKEN at event #${firstBreak?.index ?? '?'}: ${firstBreak?.reason ?? 'unknown'}`,
   };
 }
 

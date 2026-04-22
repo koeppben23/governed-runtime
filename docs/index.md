@@ -50,6 +50,10 @@ How to install FlowGuard in environments without internet access.
 
 ## Compliance
 
+### [Enterprise Readiness & Threat Model](./enterprise-readiness.md)
+
+Consolidated control narrative: guarantees, boundaries, threats, mitigations, and residual risk.
+
 ### [BSI C5 Mapping](./bsi-c5-mapping.md)
 
 How FlowGuard capabilities map to BSI C5:2020 control domains.

@@ -328,7 +328,7 @@ describe('archive/types', () => {
       expect(result.success).toBe(true);
     });
 
-    it('all 10 finding codes are valid', () => {
+    it('all 11 finding codes are valid', () => {
       const codes = [
         'missing_manifest',
         'manifest_parse_error',
@@ -338,6 +338,7 @@ describe('archive/types', () => {
         'content_digest_mismatch',
         'archive_checksum_missing',
         'archive_checksum_mismatch',
+        'audit_chain_invalid',
         'snapshot_missing',
         'state_missing',
       ];

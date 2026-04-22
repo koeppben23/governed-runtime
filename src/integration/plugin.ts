@@ -52,7 +52,7 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v4
+ * @version v5
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
@@ -338,19 +338,24 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
    * Resolve the FlowGuard policy for the current session.
    *
    * Resolution chain:
-   * 1. Session state policySnapshot.mode (if session exists)
+   * 1. Session state policySnapshot.mode (if session exists — authoritative)
    * 2. Config policy.defaultMode (per-workspace config file)
-   * 3. resolvePolicy(undefined) -> TEAM_POLICY (built-in default)
+   * 3. Built-in fallback: 'team' (conservative — human gates on, full audit)
    *
    * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
    * (human gates on, full audit, hash chain enabled).
+   *
+   * Normal paths use resolvePolicyWithContext() for CI context awareness.
+   * Error recovery path uses resolvePolicy() to minimize secondary failures.
    */
   async function resolveSessionPolicy(
     sessDir: string | null,
   ): Promise<{ policy: FlowGuardPolicy; state: SessionState | null }> {
     try {
       if (!sessDir) {
-        return { policy: resolvePolicy(config.policy.defaultMode), state: null };
+        const fallbackMode = config.policy.defaultMode ?? 'team';
+        const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
+        return { policy: resolution.policy, state: null };
       }
       const state = await readState(sessDir);
       if (state?.policySnapshot) {
@@ -362,15 +367,20 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         return { policy, state };
       }
 
-      const resolution = resolvePolicyWithContext(config.policy.defaultMode, detectCiContext());
+      const resolution = resolvePolicyWithContext(
+        config.policy.defaultMode ?? 'team',
+        detectCiContext(),
+      );
       log.debug('policy', 'resolved default policy', {
         requestedMode: resolution.requestedMode,
         effectiveMode: resolution.effectiveMode,
       });
       return { policy: resolution.policy, state };
     } catch {
+      // Error recovery: use simpler resolvePolicy to minimize secondary failures.
+      // Still passes explicit fallback — no implicit undefined path.
       log.warn('policy', 'failed to resolve session policy, using default');
-      return { policy: resolvePolicy(config.policy.defaultMode), state: null };
+      return { policy: resolvePolicy(config.policy.defaultMode ?? 'team'), state: null };
     }
   }
 
@@ -409,8 +419,19 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // Initialize prevHash: proper chain if enabled, genesis otherwise.
           // When chaining is disabled, each event gets an independent hash
           // (prevHash is always GENESIS_HASH, no chain continuity).
+          //
+          // P26: For regulated completions, the tool layer emits session_completed
+          // directly to the audit trail. The plugin's cached lastHash is stale.
+          // Force re-read the trail to avoid a chain fork (two events with the
+          // same prevHash).
           let prevHash: string;
           if (enableChainHash) {
+            if (state?.archiveStatus) {
+              // Regulated completion: tool-layer wrote audit events directly.
+              // Invalidate cache and re-read trail for correct prevHash.
+              chainInitialized = false;
+              lastHash = null;
+            }
             prevHash = await initChain(sessDir);
           } else {
             prevHash = GENESIS_HASH;
@@ -461,6 +482,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               now,
               actor,
               prevHash,
+              state?.actorInfo,
             );
             await appendAndTrack(toolCallEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = toolCallEvt.chainHash;
@@ -569,6 +591,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                   now,
                   actor,
                   prevHash,
+                  state?.actorInfo,
                 );
                 await appendAndTrack(decisionEvt, sessDir, enableChainHash);
                 if (enableChainHash) prevHash = decisionEvt.chainHash;
@@ -591,8 +614,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               lifecycleAction === 'session_created'
                 ? `${
                     typeof parsed?.policyResolution === 'object'
-                      ? `requested_mode:${String((parsed.policyResolution as Record<string, unknown>).requestedMode ?? 'unknown')};effective_mode:${String((parsed.policyResolution as Record<string, unknown>).effectiveMode ?? state?.policySnapshot.mode ?? policy.mode)};effective_gate_behavior:${String((parsed.policyResolution as Record<string, unknown>).effectiveGateBehavior ?? state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'))};reason:${String((parsed.policyResolution as Record<string, unknown>).reason ?? state?.policySnapshot.degradedReason ?? 'none')}`
-                      : `requested_mode:${state?.policySnapshot.requestedMode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve')};reason:${state?.policySnapshot.degradedReason ?? 'none'}`
+                      ? `requested_mode:${String((parsed.policyResolution as Record<string, unknown>).requestedMode ?? 'unknown')};effective_mode:${String((parsed.policyResolution as Record<string, unknown>).effectiveMode ?? state?.policySnapshot.mode ?? policy.mode)};source:${String((parsed.policyResolution as Record<string, unknown>).source ?? state?.policySnapshot.source ?? 'unknown')};effective_gate_behavior:${String((parsed.policyResolution as Record<string, unknown>).effectiveGateBehavior ?? state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'))};reason:${String((parsed.policyResolution as Record<string, unknown>).reason ?? state?.policySnapshot.degradedReason ?? 'none')};resolution_reason:${String((parsed.policyResolution as Record<string, unknown>).resolutionReason ?? state?.policySnapshot.resolutionReason ?? 'none')};central_minimum_mode:${String((parsed.policyResolution as Record<string, unknown>).centralMinimumMode ?? state?.policySnapshot.centralMinimumMode ?? 'none')};central_policy_digest:${String((parsed.policyResolution as Record<string, unknown>).centralPolicyDigest ?? state?.policySnapshot.policyDigest ?? 'none')}`
+                      : `requested_mode:${state?.policySnapshot.requestedMode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};source:${state?.policySnapshot.source ?? 'unknown'};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve')};reason:${state?.policySnapshot.degradedReason ?? 'none'};resolution_reason:${state?.policySnapshot.resolutionReason ?? 'none'};central_minimum_mode:${state?.policySnapshot.centralMinimumMode ?? 'none'};central_policy_digest:${state?.policySnapshot.policyDigest ?? 'none'}`
                   }`
                 : undefined;
 
@@ -609,6 +632,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               now,
               actor, // Actor from policy (e.g., REGULATED: abort is "human")
               prevHash,
+              state?.actorInfo,
             );
             await appendAndTrack(lifecycleEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = lifecycleEvt.chainHash;
@@ -617,28 +641,51 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // ── 5. Detect session completion (always — structural) ──────────
           // Session completion is a machine-driven event (topology transition
           // to COMPLETE). Always emitted, always attributed to "machine".
+          //
+          // P26: For regulated completions, the tool layer already emitted
+          // session_completed before archiveSession(). Skip emission here
+          // to avoid duplicating the lifecycle event.
           const completionTransition = transitions.find((t) => t.to === 'COMPLETE');
           if (completionTransition && !LIFECYCLE_TOOLS[toolName]) {
-            const completionEvt = createLifecycleEvent(
-              sessionId,
-              {
-                action: 'session_completed',
-                finalPhase: 'COMPLETE' as Phase,
-              },
-              now,
-              'machine',
-              prevHash,
-            );
-            await appendAndTrack(completionEvt, sessDir, enableChainHash);
-            if (enableChainHash) prevHash = completionEvt.chainHash;
+            // Check if tool layer already handled completion (regulated path)
+            const freshState = cachedFingerprint ? await readState(sessDir) : null;
+            const toolLayerHandled = !!freshState?.archiveStatus;
 
-            // Auto-archive completed session (fire-and-forget)
-            if (cachedFingerprint) {
-              archiveSession(cachedFingerprint, sessionId).catch((err) => {
-                log.warn('audit', 'auto-archive failed', {
-                  error: err instanceof Error ? err.message : String(err),
-                });
+            if (!toolLayerHandled) {
+              const completionEvt = createLifecycleEvent(
+                sessionId,
+                {
+                  action: 'session_completed',
+                  finalPhase: 'COMPLETE' as Phase,
+                },
+                now,
+                'machine',
+                prevHash,
+                state?.actorInfo,
+              );
+              await appendAndTrack(completionEvt, sessDir, enableChainHash);
+              if (enableChainHash) prevHash = completionEvt.chainHash;
+            } else {
+              log.debug('audit', 'session_completed handled by tool layer', {
+                archiveStatus: freshState.archiveStatus,
               });
+            }
+
+            // Auto-archive completed session.
+            // Regulated archive handling is owned by the tool layer (P26).
+            // Non-regulated: existing auto-archive behavior.
+            if (cachedFingerprint) {
+              if (toolLayerHandled) {
+                log.debug('audit', 'archive handled by tool layer', {
+                  archiveStatus: freshState.archiveStatus,
+                });
+              } else {
+                archiveSession(cachedFingerprint, sessionId).catch((err) => {
+                  log.warn('audit', 'auto-archive failed', {
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                });
+              }
             }
           }
 

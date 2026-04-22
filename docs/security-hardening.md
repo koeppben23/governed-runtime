@@ -141,6 +141,105 @@ FlowGuard stores session data as plaintext JSON. If encryption is required:
 
 ---
 
+## Strict Audit Chain Verification
+
+The `verifyChain` function supports a strict verification mode via `{ strict: true }`.
+
+**Default (legacy-tolerant):** Events without hash chain fields (`prevHash`, `chainHash`) are
+skipped and counted in `skippedCount`. The chain remains valid. This mode supports migration
+and diagnostic workflows with mixed legacy/chained trails.
+
+**Strict mode:** Events without hash chain fields are treated as integrity failures.
+`skippedCount > 0` makes the chain invalid with reason `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
+Regulated verification paths must use strict mode to ensure no unchained events are silently
+tolerated in new sessions.
+
+| Mode    | Legacy events    | Chain break | Result                                         |
+| ------- | ---------------- | ----------- | ---------------------------------------------- |
+| Default | Skipped, counted | Detected    | `valid: true` (if no chain break)              |
+| Strict  | Rejected         | Detected    | `valid: false`, reason identifies failure type |
+
+Failure reason priority: `CHAIN_BREAK` > `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`.
+A tampered chain is a harder failure than unchained events.
+
+Legacy audit tolerance exists only for migration/diagnostic workflows and is reported
+explicitly via `skippedCount` in the verification result.
+
+### Archive Verification Call-Site
+
+Archive verification (`verifyArchive`) is the first production call-site for strict chain
+verification. When the archive manifest declares `policyMode: "regulated"`, the verifier
+passes `{ strict: true }` to `verifyChain`. Unknown or non-regulated policy modes remain
+legacy-tolerant for backward compatibility.
+
+On failure, the verifier emits an `audit_chain_invalid` finding with error severity. The
+finding message includes the chain verification reason (`CHAIN_BREAK` or
+`LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and event counts for diagnosis.
+
+| Manifest policyMode | Strict? | Legacy events tolerated? |
+| ------------------- | ------- | ------------------------ |
+| `regulated`         | Yes     | No — error finding       |
+| `team`, `solo`, etc | No      | Yes — backward-compat    |
+| `unknown`           | No      | Yes — backward-compat    |
+
+### Regulated Archive Completion Guarantee (P26)
+
+Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires archive
+creation **and** verification success. The decision tool owns the synchronous archive
+lifecycle for regulated sessions:
+
+1. State set to `archiveStatus: 'pending'`
+2. `session_completed` audit event appended to trail (before archive)
+3. `archiveSession()` called synchronously (not fire-and-forget)
+4. `verifyArchive()` validates archive integrity
+5. State updated to `archiveStatus: 'verified'` or `archiveStatus: 'failed'`
+
+The `session_completed` event is emitted **before** `archiveSession()` so the archive
+contains the terminal lifecycle event. The audit plugin detects `archiveStatus` on the
+persisted state and skips its own `session_completed` emission and auto-archive to avoid
+duplication. The plugin's chain hash cache is invalidated for regulated completions to
+prevent chain forks.
+
+A regulated session with `phase: 'COMPLETE'` and `archiveStatus !== 'verified'` (without
+`error`) is NOT a clean regulated completion — it is a degraded terminal state.
+
+**Checksum sidecar hardening:** In regulated mode, `.sha256` sidecar write failure is
+fatal (`ARCHIVE_FAILED`). Non-regulated mode remains tolerant.
+
+**Scope exclusions:** Aborted sessions (`error.code === 'ABORTED'`) do not trigger the
+regulated archive lifecycle — abort is an emergency escape with no archive guarantee.
+Non-regulated sessions use the existing fire-and-forget auto-archive in the audit plugin.
+
+---
+
+## Actor Identity (P27)
+
+FlowGuard resolves a best-effort operator identity at hydrate time for audit attribution.
+This is **not** a cryptographic authentication claim — it is an operator-provided or
+git-derived identifier for traceability.
+
+### Resolution Priority
+
+1. `FLOWGUARD_ACTOR_ID` environment variable present → `source: 'env'`
+2. `git config user.name` present → `source: 'git'`
+3. Neither available → `{ id: 'unknown', source: 'unknown' }`
+
+### Design Constraints
+
+- **Not authentication.** `FLOWGUARD_ACTOR_ID` is an operator-provided identifier, not a
+  verified login claim. No OIDC, SAML, LDAP, or RBAC.
+- **Resolved once.** Actor identity is resolved at `/hydrate` and immutable for the session
+  lifecycle. Changing `FLOWGUARD_ACTOR_*` or git config after hydrate does not affect the
+  current session. Re-run `/hydrate` to resolve a new actor.
+- **Session ID != Actor.** `sessionId` remains the workflow/session identity.
+  `actorInfo` is a separate, optional field for human attribution.
+- **Hash-safe.** When absent, `actorInfo` is omitted from the event object — `JSON.stringify`
+  excludes `undefined` keys. Chain hashes for pre-P27 events remain identical.
+- **Selective attribution.** `actorInfo` appears on human-influenced events (lifecycle,
+  tool_call, decision). Machine-only events (transition, error) never carry `actorInfo`.
+
+---
+
 ## Compliance Mapping
 
 | Control               | Implementation                  |
@@ -153,4 +252,4 @@ FlowGuard stores session data as plaintext JSON. If encryption is required:
 ---
 
 _FlowGuard Version: 1.1.0_
-_Last Updated: 2026-04-15_
+_Last Updated: 2026-04-22_

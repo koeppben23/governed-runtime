@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { existsSync } from 'node:fs';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
+import { createHash } from 'node:crypto';
 
 import type { ToolDefinition } from './helpers';
 import {
@@ -44,6 +45,9 @@ import {
 // Workspace
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 
+// Actor identity (P27)
+import { resolveActor } from '../../adapters/actor';
+
 // Discovery
 import {
   runDiscovery,
@@ -57,7 +61,11 @@ import { planVerificationCandidates } from '../../discovery/verification-planner
 import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
 
 // Config
-import { detectCiContext, resolvePolicyWithContext } from '../../config/policy';
+import {
+  detectCiContext,
+  resolvePolicyForHydrate,
+  validateExistingPolicyAgainstCentral,
+} from '../../config/policy';
 
 function throwHydrateError(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
@@ -143,11 +151,11 @@ export const hydrate: ToolDefinition = {
   args: {
     policyMode: z
       .enum(['solo', 'team', 'team-ci', 'regulated'])
-      .default('solo')
+      .optional()
       .describe(
-        "FlowGuard policy mode. 'solo' = no human gates (default). " +
-          "'team' = human gates, self-approval allowed. " +
-          "'regulated' = human gates, four-eyes principle enforced.",
+        'FlowGuard policy mode. When omitted, reads from workspace config ' +
+          "(policy.defaultMode), then falls back to 'solo'. " +
+          "Priority: explicit arg > config > 'solo'.",
       ),
     profileId: z
       .string()
@@ -165,12 +173,90 @@ export const hydrate: ToolDefinition = {
       // Workspace config must be materialized and editable.
       await ensureWorkspaceConfig(wsDir);
 
+      // ── Policy mode resolution ─────────────────────────────────
+      // P29 precedence (requested): explicit tool arg > repo config > default.
+      // Optional central minimum via FLOWGUARD_POLICY_PATH:
+      // - If set: file must exist/read/validate (fail-closed)
+      // - If unset: no central override
+      const config = await readConfig(wsDir);
+
       const existing = await readState(sessDir);
 
       // Resolve policy for context
       const ciContext = detectCiContext();
-      const policyResolution = resolvePolicyWithContext(args.policyMode, ciContext);
-      const policy = existing ? resolvePolicyFromState(existing) : policyResolution.policy;
+      const centralEvidenceForExisting = existing
+        ? await validateExistingPolicyAgainstCentral({
+            existingMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
+            centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
+            digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+          })
+        : undefined;
+      const existingWithCentralEvidence =
+        existing && centralEvidenceForExisting
+          ? {
+              ...existing,
+              policySnapshot: {
+                ...existing.policySnapshot,
+                centralMinimumMode: centralEvidenceForExisting.minimumMode,
+                policyDigest: centralEvidenceForExisting.digest,
+                policyVersion: centralEvidenceForExisting.version,
+                policyPathHint: centralEvidenceForExisting.pathHint,
+              },
+            }
+          : existing;
+      const policyResolution = existing
+        ? {
+            requestedMode: existing.policySnapshot.requestedMode as
+              | 'solo'
+              | 'team'
+              | 'team-ci'
+              | 'regulated',
+            requestedSource: (existing.policySnapshot.source ?? 'default') as
+              | 'explicit'
+              | 'repo'
+              | 'default',
+            effectiveMode: existing.policySnapshot.mode as
+              | 'solo'
+              | 'team'
+              | 'team-ci'
+              | 'regulated',
+            effectiveSource: existing.policySnapshot.source ?? 'default',
+            effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
+            degradedReason: existing.policySnapshot.degradedReason as
+              | 'ci_context_missing'
+              | undefined,
+            policy: resolvePolicyFromState(existing),
+            resolutionReason: existing.policySnapshot.resolutionReason as
+              | 'repo_weaker_than_central'
+              | 'default_weaker_than_central'
+              | 'explicit_stronger_than_central'
+              | undefined,
+            centralEvidence:
+              centralEvidenceForExisting ??
+              (existing.policySnapshot.centralMinimumMode
+                ? {
+                    minimumMode: existing.policySnapshot.centralMinimumMode,
+                    digest: existing.policySnapshot.policyDigest ?? '',
+                    ...(existing.policySnapshot.policyVersion
+                      ? { version: existing.policySnapshot.policyVersion }
+                      : {}),
+                    pathHint: existing.policySnapshot.policyPathHint ?? 'basename:unknown',
+                  }
+                : undefined),
+          }
+        : await resolvePolicyForHydrate({
+            explicitMode: args.policyMode,
+            repoMode: config.policy.defaultMode,
+            defaultMode: 'solo',
+            ciContext,
+            centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
+            digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+            configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
+            configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
+          });
+      const policy = existing
+        ? resolvePolicyFromState(existingWithCentralEvidence)
+        : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 
       // ── Discovery (only for new sessions) ──────────────────────
@@ -221,10 +307,40 @@ export const hydrate: ToolDefinition = {
           );
         }
 
-        // 3. Detect profile with discovery context
+        // 3. Profile resolution with explicit > config > detected > baseline priority (P31)
         const detectionInput = { repoSignals, discovery: discoveryResult };
+        const explicitProfileId = args.profileId;
+        const configDefaultProfileId = config.profile.defaultId;
+        const configDefaultProfile = configDefaultProfileId
+          ? profileRegistryForResolution.get(configDefaultProfileId)
+          : null;
         const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-        const selectedProfile = detectedProfile ?? profileRegistryForResolution.get('baseline');
+
+        if (configDefaultProfileId && !configDefaultProfile) {
+          throwHydrateError(
+            'INVALID_PROFILE',
+            `Profile "${configDefaultProfileId}" from config is not registered.`,
+          );
+        }
+
+        // Validate explicit profileId if provided
+        if (explicitProfileId !== undefined) {
+          const explicitProfileLookup = profileRegistryForResolution.get(explicitProfileId);
+          if (!explicitProfileLookup) {
+            throwHydrateError(
+              'INVALID_PROFILE',
+              `Profile "${explicitProfileId}" is not registered.`,
+            );
+          }
+        }
+
+        // P31 priority: explicit > config > detected > baseline
+        const selectedProfile =
+          explicitProfileId !== undefined
+            ? profileRegistryForResolution.get(explicitProfileId)
+            : (configDefaultProfile ??
+              detectedProfile ??
+              profileRegistryForResolution.get('baseline'));
 
         // 4. Build profile resolution (including rejected candidates)
         const allCandidates: ProfileResolution['secondary'] = [];
@@ -262,7 +378,10 @@ export const hydrate: ToolDefinition = {
           },
           secondary: allCandidates,
           rejected: rejectedCandidates,
-          activeChecks: [...(selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety'])],
+          activeChecks: [
+            ...(config.profile.activeChecks ??
+              selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
+          ],
         };
 
         // 5. Write workspace-level profile resolution
@@ -326,8 +445,11 @@ export const hydrate: ToolDefinition = {
         requireDiscoveryArtifacts(wsDir, sessDir);
       }
 
+      // P27: Resolve actor identity (env → git → unknown)
+      const actorInfo = await resolveActor(worktree);
+
       const result = executeHydrate(
-        existing,
+        existingWithCentralEvidence,
         {
           sessionId: context.sessionID,
           worktree,
@@ -336,15 +458,57 @@ export const hydrate: ToolDefinition = {
           requestedPolicyMode: existing
             ? (existing.policySnapshot.requestedMode as 'solo' | 'team' | 'team-ci' | 'regulated')
             : policyResolution.requestedMode,
+          policySource: existing
+            ? (existing.policySnapshot.source ?? 'default')
+            : policyResolution.effectiveSource,
           effectiveGateBehavior: existing
             ? existing.policySnapshot.effectiveGateBehavior
             : policyResolution.effectiveGateBehavior,
           policyDegradedReason: existing
             ? (existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined)
             : policyResolution.degradedReason,
-          profileId: args.profileId,
+          policyResolutionReason: existing
+            ? (existing.policySnapshot.resolutionReason as
+                | 'repo_weaker_than_central'
+                | 'default_weaker_than_central'
+                | 'explicit_stronger_than_central'
+                | undefined)
+            : policyResolution.resolutionReason,
+          centralMinimumMode: existing
+            ? (centralEvidenceForExisting?.minimumMode ??
+              existing.policySnapshot.centralMinimumMode)
+            : policyResolution.centralEvidence?.minimumMode,
+          policyDigest: existing
+            ? (centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest)
+            : policyResolution.centralEvidence?.digest,
+          policyVersion: existing
+            ? centralEvidenceForExisting
+              ? centralEvidenceForExisting.version
+              : existing.policySnapshot.policyVersion
+            : policyResolution.centralEvidence?.version,
+          policyPathHint: existing
+            ? (centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint)
+            : policyResolution.centralEvidence?.pathHint,
+          // P31: Existing sessions preserve snapshot profile. New sessions get resolved profile.
+          profileId: existing
+            ? existing.activeProfile?.id
+            : (profileResolution?.primary?.id ?? 'baseline'),
+          // P31: pass config-provided activeChecks into rails when explicitly configured.
+          // Otherwise keep existing rails profile-driven behavior.
+          activeChecks: existing ? undefined : config.profile.activeChecks,
           repoSignals,
-          initiatedBy: context.sessionID,
+          // P31: Only apply config iteration limits to NEW sessions
+          // Existing sessions preserve their snapshot values
+          maxSelfReviewIterations: existing ? undefined : config.policy.maxSelfReviewIterations,
+          maxImplReviewIterations: existing ? undefined : config.policy.maxImplReviewIterations,
+          initiatedBy: actorInfo.id,
+          initiatedByIdentity: {
+            actorId: actorInfo.id,
+            actorEmail: actorInfo.email,
+            actorSource: actorInfo.source,
+            actorAssurance: 'best_effort',
+          },
+          actorInfo,
           discoveryResult,
           discoveryDigest,
           discoverySummary,
@@ -374,8 +538,14 @@ export const hydrate: ToolDefinition = {
           policyResolution: {
             requestedMode: policyResolution.requestedMode,
             effectiveMode: policyResolution.effectiveMode,
+            source: policyResolution.effectiveSource,
             effectiveGateBehavior: policyResolution.effectiveGateBehavior,
             reason: policyResolution.degradedReason ?? null,
+            resolutionReason: policyResolution.resolutionReason ?? null,
+            centralMinimumMode: policyResolution.centralEvidence?.minimumMode ?? null,
+            centralPolicyDigest: policyResolution.centralEvidence?.digest ?? null,
+            centralPolicyVersion: policyResolution.centralEvidence?.version ?? null,
+            centralPolicyPathHint: policyResolution.centralEvidence?.pathHint ?? null,
           },
         };
         return appendNextAction(JSON.stringify(response), state);

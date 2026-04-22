@@ -397,6 +397,7 @@ describe('plugin-integration', () => {
             policyResolution: {
               requestedMode: 'team-ci',
               effectiveMode: 'team',
+              source: 'repo',
               effectiveGateBehavior: 'human_gated',
               reason: 'ci_context_missing',
             },
@@ -410,6 +411,7 @@ describe('plugin-integration', () => {
       expect(lifecycle).toBeDefined();
       expect(String(lifecycle!.detail.reason)).toContain('requested_mode:team-ci');
       expect(String(lifecycle!.detail.reason)).toContain('effective_mode:team');
+      expect(String(lifecycle!.detail.reason)).toContain('source:repo');
       expect(String(lifecycle!.detail.reason)).toContain('reason:ci_context_missing');
     });
   });

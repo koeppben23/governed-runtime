@@ -45,7 +45,7 @@ type AllowedIn = ReadonlySet<Phase> | '*';
  * |------------------|-----------------------------------------------|----------|------------------------------------------|
  * | /hydrate         | * (all)                                       | Yes      | Bootstrap — creates or loads state       |
  * | /ticket          | READY, TICKET                                 | Yes      | Starts ticket flow or updates ticket     |
- * | /plan            | READY, TICKET, PLAN                           | Yes      | Generates plan + self-review loop        |
+ * | /plan            | TICKET, PLAN                                  | Yes      | Generates plan + self-review loop        |
  * | /continue        | * (all)                                       | Yes      | Routing — guards decide event            |
  * | /implement       | IMPLEMENTATION                                | Yes      | Executes implementation + review loop    |
  * | /review-decision | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Yes      | Human verdict at User Gate               |
@@ -57,7 +57,7 @@ type AllowedIn = ReadonlySet<Phase> | '*';
 const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, AllowedIn>([
   [Command.HYDRATE, '*'],
   [Command.TICKET, new Set<Phase>(['READY', 'TICKET'])],
-  [Command.PLAN, new Set<Phase>(['READY', 'TICKET', 'PLAN'])],
+  [Command.PLAN, new Set<Phase>(['TICKET', 'PLAN'])],
   [Command.CONTINUE, '*'],
   [Command.IMPLEMENT, new Set<Phase>(['IMPLEMENTATION'])],
   [Command.REVIEW_DECISION, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],

@@ -58,7 +58,20 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
+vi.mock('../adapters/actor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/actor')>();
+  return {
+    ...original,
+    resolveActor: vi.fn().mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      source: 'env',
+    }),
+  };
+});
+
 const gitMock = await import('../adapters/git');
+const actorMock = await import('../adapters/actor');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -79,6 +92,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
+    id: 'test-operator',
+    email: 'test@flowguard.dev',
+    source: 'env',
+  });
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -817,7 +835,7 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('ARCH_COMPLETE');
     });
 
-    it('regulated mode blocks self-approval at PLAN_REVIEW (four-eyes enforcement)', async () => {
+    it('regulated mode blocks self-approval approve at PLAN_REVIEW', async () => {
       // Regulated mode: allowSelfApproval === false.
       // In this E2E test, the same session actor attempts approval,
       // so four-eyes must block self-approval.
@@ -840,7 +858,7 @@ describe('e2e-workflow', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
       expect(result.recovery).toBeDefined();
 
       // Phase must not have changed — still at PLAN_REVIEW
@@ -852,11 +870,7 @@ describe('e2e-workflow', () => {
       expect(state!.reviewDecision).toBeNull();
     });
 
-    it('regulated mode blocks all decisions by same actor at PLAN_REVIEW (four-eyes enforcement)', async () => {
-      // In regulated mode, the four-eyes principle blocks ALL decisions
-      // (approve, changes_requested, reject) by the session initiator.
-      // The check is identity-based: decidedBy !== initiatedBy.
-
+    it('regulated mode allows changes_requested by same actor at PLAN_REVIEW', async () => {
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated changes test', source: 'user' });
       await callOk(plan, { planText: '## Plan needing changes' });
@@ -868,23 +882,58 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
-      // changes_requested by same actor — also blocked in regulated mode
+      // changes_requested by same actor is allowed for safe intervention
       const crRaw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'Needs more detail' },
         ctx,
       );
       const crResult = parseToolResult(crRaw);
-      expect(crResult.error).toBe(true);
-      expect(crResult.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(crResult.error).toBeUndefined();
+      expect(crResult.phase).toBe('PLAN');
+    });
 
-      // reject by same actor — also blocked
+    it('regulated mode allows reject by same actor at PLAN_REVIEW', async () => {
+      await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
+      await callOk(ticket, { text: 'Regulated reject test', source: 'user' });
+      await callOk(plan, { planText: '## Plan that should be rejected' });
+
+      for (let i = 0; i < 5; i++) {
+        if ((await getPhase()) === 'PLAN_REVIEW') break;
+        await callOk(plan, { selfReviewVerdict: 'approve' });
+      }
+      expect(await getPhase()).toBe('PLAN_REVIEW');
+
       const rejRaw = await decision.execute({ verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejResult = parseToolResult(rejRaw);
-      expect(rejResult.error).toBe(true);
-      expect(rejResult.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      expect(rejResult.error).toBeUndefined();
+      expect(rejResult.phase).toBe('TICKET');
+    });
 
-      // Phase unchanged — still PLAN_REVIEW
-      expect(await getPhase()).toBe('PLAN_REVIEW');
+    it('regulated mode blocks approve when actor identity is unknown', async () => {
+      vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
+        id: 'unknown',
+        email: null,
+        source: 'unknown',
+      });
+
+      await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
+      await callOk(ticket, { text: 'Unknown actor test', source: 'user' });
+      await callOk(plan, { planText: '## Plan' });
+
+      for (let i = 0; i < 5; i++) {
+        if ((await getPhase()) === 'PLAN_REVIEW') break;
+        await callOk(plan, { selfReviewVerdict: 'approve' });
+      }
+
+      vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
+        id: 'unknown',
+        email: null,
+        source: 'unknown',
+      });
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
     });
 
     it('full re-traversal after EVIDENCE_REVIEW reject completes successfully', async () => {

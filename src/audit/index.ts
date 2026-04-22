@@ -13,6 +13,7 @@
 
 // Structured event types + factories
 export {
+  type ActorInfo,
   type AuditEventKind,
   type TransitionDetail,
   type ToolCallDetail,
@@ -31,6 +32,8 @@ export {
 
 // Hash chain integrity verification
 export {
+  type ChainVerifyOptions,
+  type ChainVerificationReason,
   type EventVerification,
   type ChainVerification,
   verifyEvent,

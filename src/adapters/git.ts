@@ -416,6 +416,36 @@ export async function listRepoSignals(worktree: string): Promise<{
   };
 }
 
+// ─── Actor Identity Helpers ──────────────────────────────────────────────────
+
+/**
+ * Read `git config user.name` for actor resolution.
+ * Returns null on any failure (not a repo, no config, git not found).
+ * Non-fatal — actor resolution falls through to 'unknown'.
+ */
+export async function gitUserName(cwd: string): Promise<string | null> {
+  try {
+    const name = await git(cwd, ['config', 'user.name']);
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read `git config user.email` for actor resolution.
+ * Returns null on any failure (not a repo, no config, git not found).
+ * Non-fatal — email is optional for ActorInfo.
+ */
+export async function gitUserEmail(cwd: string): Promise<string | null> {
+  try {
+    const email = await git(cwd, ['config', 'user.email']);
+    return email || null;
+  } catch {
+    return null;
+  }
+}
+
 // -- Internals ----------------------------------------------------------------
 
 /** Type-safe timeout check (process killed). */

@@ -8,8 +8,9 @@
  * - ARCH_REVIEW:     approve → ARCH_COMPLETE, changes → ARCHITECTURE, reject → READY
  *
  * Four-eyes principle enforcement (regulated mode):
- * When policy.allowSelfApproval === false, the reviewer (decidedBy)
- * MUST be different from the session initiator (state.initiatedBy).
+ * For approval decisions only, when policy.allowSelfApproval === false,
+ * the reviewer (decidedBy) MUST be different from the session initiator
+ * (state.initiatedBy).
  * This satisfies MaRisk AT 7.2 (5) — separation of duties.
  *
  * State clearing patterns (FlowGuard-critical):
@@ -30,7 +31,12 @@
  */
 
 import type { SessionState, Event } from '../state/schema';
-import type { ReviewDecision, ReviewVerdict, ValidationResult } from '../state/evidence';
+import type {
+  ReviewDecision,
+  ReviewVerdict,
+  ValidationResult,
+  DecisionIdentity,
+} from '../state/evidence';
 import { Command, isCommandAllowed } from '../machine/commands';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate';
 import type { RailResult, RailContext, TransitionRecord } from './types';
@@ -39,10 +45,18 @@ import { blocked } from '../config/reasons';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
+/**
+ * Input for /review-decision rail.
+ *
+ * P30: Includes decisionIdentity for regulated approval attribution.
+ * The decidedBy field remains for backward compatibility;
+ * decisionIdentity provides full provenance for audit and four-eyes proof.
+ */
 export interface ReviewDecisionInput {
   readonly verdict: ReviewVerdict;
   readonly rationale: string;
   readonly decidedBy: string;
+  readonly decisionIdentity?: DecisionIdentity;
 }
 
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
@@ -138,14 +152,38 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes principle enforcement
-  //    In regulated mode (allowSelfApproval: false), the reviewer
-  //    must be different from the session initiator.
-  //    This satisfies MaRisk AT 7.2 (5) — separation of duties.
-  if (ctx.policy?.allowSelfApproval === false) {
-    if (input.decidedBy === state.initiatedBy) {
-      return blocked('SELF_APPROVAL_FORBIDDEN', {
-        initiator: state.initiatedBy,
+  // 3. Four-eyes and decision identity enforcement.
+  //    Regulated mode applies strict identity checks only for approval decisions.
+  //    changes_requested/reject remain available for safety interventions.
+  //    P30: Requires structured identity — no legacy fail-open from sessionID only.
+  if (ctx.policy?.allowSelfApproval === false && input.verdict === 'approve') {
+    // P30: Require structured initiator identity (fail-closed on legacy sessions)
+    if (!state.initiatedByIdentity) {
+      return blocked('DECISION_IDENTITY_REQUIRED');
+    }
+
+    // P30: Require structured decision identity (fail-closed on legacy decisions)
+    if (!input.decisionIdentity) {
+      return blocked('DECISION_IDENTITY_REQUIRED');
+    }
+
+    // P30: Block unknown source actors
+    if (state.initiatedByIdentity.actorSource === 'unknown') {
+      return blocked('REGULATED_ACTOR_UNKNOWN', {
+        role: 'initiator',
+      });
+    }
+
+    if (input.decisionIdentity.actorSource === 'unknown') {
+      return blocked('REGULATED_ACTOR_UNKNOWN', {
+        role: 'reviewer',
+      });
+    }
+
+    // P30: Four-eyes enforcement via structured identity
+    if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
+      return blocked('FOUR_EYES_ACTOR_MATCH', {
+        initiator: state.initiatedByIdentity.actorId,
       });
     }
   }
@@ -160,11 +198,13 @@ export function executeReviewDecision(
   }
 
   // 5. Create evidence
+  // P30: Include structured decisionIdentity for regulated approval attribution
   const decision: ReviewDecision = {
     verdict: input.verdict,
     rationale: input.rationale,
     decidedAt: ctx.now(),
     decidedBy: input.decidedBy,
+    ...(input.decisionIdentity ? { decisionIdentity: input.decisionIdentity } : {}),
   };
 
   // 6. Apply state clearing pattern based on gate + verdict

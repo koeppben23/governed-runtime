@@ -88,10 +88,14 @@ async function resolveSessionDir(): Promise<string> {
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
-  const raw = await hydrate.execute(
-    { policyMode: overrides.policyMode ?? 'solo', profileId: overrides.profileId ?? 'baseline' },
-    ctx,
-  );
+  // P31: No profileId = auto-detect
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
+  if (overrides.profileId !== undefined) {
+    args.profileId = overrides.profileId;
+  }
+  const raw = await hydrate.execute(args, ctx);
   return parseToolResult(raw);
 }
 
