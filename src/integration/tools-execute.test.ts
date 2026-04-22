@@ -628,6 +628,17 @@ describe('hydrate', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('DISCOVERY_RESULT_MISSING');
     });
+
+    it('maps actor claim resolution errors to structured hydrate errors', async () => {
+      const { ActorClaimError } = actorMock;
+      vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
+        new ActorClaimError('ACTOR_CLAIM_MISSING', 'claim file missing'),
+      );
+
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_CLAIM_MISSING');
+    });
   });
 
   describe('CORNER', () => {
@@ -1196,6 +1207,43 @@ describe('hydrate', () => {
       }
     });
 
+    it('new session persists config requireVerifiedActorsForApproval in policySnapshot', async () => {
+      const tmpDir = await fs.mkdtemp('/tmp/p33-verified-');
+      try {
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
+        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const { readState } = await import('../adapters/persistence');
+        const fp = await computeFingerprint(tmpDir);
+        const wsDir = workspaceDir(fp.fingerprint);
+
+        const baseConfig = await readConfig(wsDir);
+        await writeConfig(wsDir, {
+          ...baseConfig,
+          policy: {
+            ...baseConfig.policy,
+            requireVerifiedActorsForApproval: true,
+          },
+        });
+
+        const localCtx = createToolContext({
+          worktree: tmpDir,
+          directory: tmpDir,
+          sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+        });
+        await hydrate.execute({ profileId: 'baseline' }, localCtx);
+
+        const sessDir = resolveSessionDir(fp.fingerprint, localCtx.sessionID);
+        const state = await readState(sessDir);
+        expect(state!.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     it('explicit profileId=unknown blocks with INVALID_PROFILE', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-d-');
       try {
@@ -1654,6 +1702,19 @@ describe('decision', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('EVIDENCE_ARTIFACT_MISSING');
     });
+
+    it('maps actor claim expiration to structured decision errors', async () => {
+      const { ActorClaimError } = actorMock;
+      await reachPlanReview();
+      vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
+        new ActorClaimError('ACTOR_CLAIM_EXPIRED', 'claim expired'),
+      );
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_CLAIM_EXPIRED');
+    });
   });
 
   describe('CORNER', () => {
@@ -1674,6 +1735,27 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+    });
+
+    it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const baseConfig = await readConfig(wsDir);
+      await writeConfig(wsDir, {
+        ...baseConfig,
+        policy: {
+          ...baseConfig.policy,
+          requireVerifiedActorsForApproval: true,
+        },
+      });
+
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
     });
   });
 });

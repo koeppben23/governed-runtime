@@ -124,7 +124,7 @@ export type TypedDetail =
 export interface ActorInfo {
   readonly id: string;
   readonly email: string | null;
-  readonly source: 'env' | 'git' | 'unknown';
+  readonly source: 'env' | 'git' | 'claim' | 'unknown';
 }
 
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────

@@ -52,7 +52,7 @@ import {
   appendAuditEvent,
   readAuditTrail,
 } from '../../adapters/persistence';
-import { resolveActor } from '../../adapters/actor';
+import { resolveActor, ActorClaimError } from '../../adapters/actor';
 
 // Workspace
 import { archiveSession, verifyArchive } from '../../adapters/workspace';
@@ -157,6 +157,9 @@ export const status: ToolDefinition = {
         state,
       );
     } catch (err) {
+      if (err instanceof ActorClaimError) {
+        return formatBlocked(err.code);
+      }
       return formatError(err);
     }
   },
@@ -196,6 +199,9 @@ export const ticket: ToolDefinition = {
 
       return await persistAndFormat(sessDir, result);
     } catch (err) {
+      if (err instanceof ActorClaimError) {
+        return formatBlocked(err.code);
+      }
       return formatError(err);
     }
   },
@@ -228,13 +234,16 @@ export const decision: ToolDefinition = {
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const actorInfo = await resolveActor(context.worktree || context.directory);
+      const actorAssurance: 'verified' | 'best_effort' =
+        actorInfo.source === 'claim' ? 'verified' : 'best_effort';
 
-      // P30: Build structured decision identity from actor resolution
+      // P30/P33: Build structured decision identity from actor resolution
+      // P33: If actor source is 'claim', it's verified; otherwise best_effort
       const decisionIdentity = {
         actorId: actorInfo.id,
         actorEmail: actorInfo.email,
         actorSource: actorInfo.source,
-        actorAssurance: 'best_effort' as const,
+        actorAssurance,
       };
 
       const result = executeReviewDecision(

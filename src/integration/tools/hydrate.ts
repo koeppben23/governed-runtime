@@ -21,6 +21,7 @@ import {
   resolvePolicyFromState,
   createPolicyContext,
   persistAndFormat,
+  formatBlocked,
   formatError,
   appendNextAction,
 } from './helpers';
@@ -46,7 +47,7 @@ import {
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
 
 // Actor identity (P27)
-import { resolveActor } from '../../adapters/actor';
+import { resolveActor, ActorClaimError } from '../../adapters/actor';
 
 // Discovery
 import {
@@ -253,6 +254,8 @@ export const hydrate: ToolDefinition = {
             digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
             configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
             configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
+            configRequireVerifiedActorsForApproval:
+              config.policy.requireVerifiedActorsForApproval,
           });
       const policy = existing
         ? resolvePolicyFromState(existingWithCentralEvidence)
@@ -501,12 +504,15 @@ export const hydrate: ToolDefinition = {
           // Existing sessions preserve their snapshot values
           maxSelfReviewIterations: existing ? undefined : config.policy.maxSelfReviewIterations,
           maxImplReviewIterations: existing ? undefined : config.policy.maxImplReviewIterations,
+          requireVerifiedActorsForApproval: existing
+            ? undefined
+            : config.policy.requireVerifiedActorsForApproval,
           initiatedBy: actorInfo.id,
           initiatedByIdentity: {
             actorId: actorInfo.id,
             actorEmail: actorInfo.email,
             actorSource: actorInfo.source,
-            actorAssurance: 'best_effort',
+            actorAssurance: actorInfo.source === 'claim' ? 'verified' : 'best_effort',
           },
           actorInfo,
           discoveryResult,
@@ -553,6 +559,9 @@ export const hydrate: ToolDefinition = {
 
       return await persistAndFormat(sessDir, result);
     } catch (err) {
+      if (err instanceof ActorClaimError) {
+        return formatBlocked(err.code);
+      }
       return formatError(err);
     }
   },

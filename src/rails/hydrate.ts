@@ -99,6 +99,8 @@ export interface HydrateInput {
   readonly maxSelfReviewIterations?: number;
   /** P31: Override maxImplReviewIterations from config.policy */
   readonly maxImplReviewIterations?: number;
+  /** Override verified actor requirement from config.policy for new sessions. */
+  readonly requireVerifiedActorsForApproval?: boolean;
   /**
    * Identity of the session initiator (author).
    * Used for four-eyes principle enforcement.
@@ -215,11 +217,17 @@ export function executeHydrate(
   const policyMode = input.policyMode ?? 'solo';
   let policy = resolvePolicy(policyMode);
   // P31: Apply config iteration limit overrides
-  if (input.maxSelfReviewIterations !== undefined || input.maxImplReviewIterations !== undefined) {
+  if (
+    input.maxSelfReviewIterations !== undefined ||
+    input.maxImplReviewIterations !== undefined ||
+    input.requireVerifiedActorsForApproval !== undefined
+  ) {
     policy = {
       ...policy,
       maxSelfReviewIterations: input.maxSelfReviewIterations ?? policy.maxSelfReviewIterations,
       maxImplReviewIterations: input.maxImplReviewIterations ?? policy.maxImplReviewIterations,
+      requireVerifiedActorsForApproval:
+        input.requireVerifiedActorsForApproval ?? policy.requireVerifiedActorsForApproval,
     };
   }
   const now = ctx.now();
