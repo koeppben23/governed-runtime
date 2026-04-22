@@ -39,7 +39,7 @@ FlowGuard has a flat ownership model:
 **Currently Delivered:**
 
 - CLI with upgrade, uninstall, doctor commands
-- Optional workspace `config.json` configuration
+- Workspace `config.json` configuration artifact (materialized by install/hydrate; missing config is an integrity error in doctor)
 - Archive management
 
 **Customer Responsibility:**
