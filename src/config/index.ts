@@ -40,6 +40,7 @@ export {
   getPolicyPreset,
   resolvePolicy,
   resolvePolicyForHydrate,
+  resolveRuntimePolicyMode,
   loadCentralPolicyEvidence,
   validateExistingPolicyAgainstCentral,
   policyModes,

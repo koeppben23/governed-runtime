@@ -10,6 +10,7 @@ import {
   resolvePolicy,
   resolvePolicyWithContext,
   resolvePolicyForHydrate,
+  resolveRuntimePolicyMode,
   policyModes,
   createPolicySnapshot,
   policyFromSnapshot,
@@ -1824,6 +1825,127 @@ describe('cli/templates/verification-output-contract', () => {
     it('/implement review checklist includes Verification Evidence', () => {
       const implementTemplate = COMMANDS['implement.md'];
       expect(implementTemplate).toMatch(/Verification Evidence clearly distinguishes/i);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // P32: Runtime Policy Mode Unification
+  // ═══════════════════════════════════════════════════════════════════════════════
+  describe('P32 Runtime Policy Mode Unification', () => {
+    // ─── HAPPY ─────────────────────────────────────────────────
+    describe('HAPPY', () => {
+      it('state.policySnapshot.mode takes precedence over config', () => {
+        const state = {
+          policySnapshot: { mode: 'regulated' as const },
+        };
+        const result = resolveRuntimePolicyMode({
+          state,
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('regulated');
+      });
+
+      it('config.defaultMode is used when no state', () => {
+        const result = resolveRuntimePolicyMode({
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+
+      it('solo is fallback when no state and no config', () => {
+        const result = resolveRuntimePolicyMode({});
+        expect(result).toBe('solo');
+      });
+
+      it('team config used correctly', () => {
+        const result = resolveRuntimePolicyMode({
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+
+      it('solo config used correctly', () => {
+        const result = resolveRuntimePolicyMode({
+          configDefaultMode: 'solo',
+        });
+        expect(result).toBe('solo');
+      });
+
+      it('team-ci config used correctly', () => {
+        const result = resolveRuntimePolicyMode({
+          configDefaultMode: 'team-ci',
+        });
+        expect(result).toBe('team-ci');
+      });
+    });
+
+    // ─── BAD ─────────────────────────────────────────────────
+    describe('BAD', () => {
+      it('undefined state is handled gracefully', () => {
+        const result = resolveRuntimePolicyMode({
+          state: undefined,
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+
+      it('empty policySnapshot is handled', () => {
+        const result = resolveRuntimePolicyMode({
+          state: { policySnapshot: {} },
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+    });
+
+    // ─── CORNER ─────────────────────────────────────────────────
+    describe('CORNER', () => {
+      it('null configDefaultMode falls back to solo', () => {
+        const result = resolveRuntimePolicyMode({
+          configDefaultMode: undefined,
+        });
+        expect(result).toBe('solo');
+      });
+
+      it('null state falls back to config', () => {
+        const result = resolveRuntimePolicyMode({
+          state: undefined,
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+    });
+
+    // ─── EDGE ─────────────────────────────────────────────────
+    describe('EDGE', () => {
+      it('empty state object falls back to config', () => {
+        const result = resolveRuntimePolicyMode({
+          state: {},
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+
+      it('state with null mode falls back to config', () => {
+        const result = resolveRuntimePolicyMode({
+          state: { policySnapshot: { mode: undefined } },
+          configDefaultMode: 'team',
+        });
+        expect(result).toBe('team');
+      });
+
+      it('complex state object works', () => {
+        const result = resolveRuntimePolicyMode({
+          state: {
+            policySnapshot: {
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+          },
+          configDefaultMode: 'solo',
+        });
+        expect(result).toBe('regulated');
+      });
     });
   });
 
