@@ -232,6 +232,65 @@ describe('config/policy', () => {
         }),
       ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
     });
+
+    it('resolvePolicyForHydrate applies config maxSelfReviewIterations override', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxSelfReviewIterations: 5,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(5);
+      expect(result.policy.maxImplReviewIterations).toBe(1); // preset unchanged
+    });
+
+    it('resolvePolicyForHydrate applies config maxImplReviewIterations override', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'team',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxImplReviewIterations: 10,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(3); // preset unchanged
+      expect(result.policy.maxImplReviewIterations).toBe(10);
+    });
+
+    it('resolvePolicyForHydrate applies both config iteration overrides', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'team',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configMaxSelfReviewIterations: 7,
+        configMaxImplReviewIterations: 14,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(7);
+      expect(result.policy.maxImplReviewIterations).toBe(14);
+    });
+
+    it('resolvePolicyForHydrate uses preset when config undefined', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(2); // SOLO preset
+      expect(result.policy.maxImplReviewIterations).toBe(1); // SOLO preset
+    });
+
+    it('resolvePolicyForHydrate applies config overrides with central policy', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'team',
+        ciContext: false,
+        centralPolicyPath: '/tmp/org-policy.json',
+        digestFn: (s) => `sha256:${s.length}`,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        configMaxSelfReviewIterations: 8,
+        configMaxImplReviewIterations: 16,
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(8);
+      expect(result.policy.maxImplReviewIterations).toBe(16);
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────

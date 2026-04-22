@@ -251,6 +251,8 @@ export const hydrate: ToolDefinition = {
             ciContext,
             centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
             digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+            configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
+            configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
           });
       const policy = existing
         ? resolvePolicyFromState(existingWithCentralEvidence)
@@ -305,10 +307,37 @@ export const hydrate: ToolDefinition = {
           );
         }
 
-        // 3. Detect profile with discovery context
+        // 3. Profile resolution with explicit > config > detected > baseline priority (P31)
         const detectionInput = { repoSignals, discovery: discoveryResult };
+        const explicitProfileId = args.profileId;
+        const configDefaultProfileId = config.profile.defaultId;
+        const configDefaultProfile = configDefaultProfileId
+          ? profileRegistryForResolution.get(configDefaultProfileId)
+          : null;
         const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-        const selectedProfile = detectedProfile ?? profileRegistryForResolution.get('baseline');
+
+        if (configDefaultProfileId && !configDefaultProfile) {
+          throwHydrateError(
+            'INVALID_PROFILE',
+            `Profile "${configDefaultProfileId}" from config is not registered.`,
+          );
+        }
+
+        // Validate explicit profileId if provided
+        if (explicitProfileId !== undefined) {
+          const explicitProfileLookup = profileRegistryForResolution.get(explicitProfileId);
+          if (!explicitProfileLookup) {
+            throwHydrateError(
+              'INVALID_PROFILE',
+              `Profile "${explicitProfileId}" is not registered.`,
+            );
+          }
+        }
+
+        // P31 priority: explicit > config > detected > baseline
+        const selectedProfile = explicitProfileId !== undefined
+          ? profileRegistryForResolution.get(explicitProfileId)
+          : configDefaultProfile ?? detectedProfile ?? profileRegistryForResolution.get('baseline');
 
         // 4. Build profile resolution (including rejected candidates)
         const allCandidates: ProfileResolution['secondary'] = [];
@@ -346,7 +375,12 @@ export const hydrate: ToolDefinition = {
           },
           secondary: allCandidates,
           rejected: rejectedCandidates,
-          activeChecks: [...(selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety'])],
+          activeChecks: [
+            ...(config.profile.activeChecks ?? selectedProfile?.activeChecks ?? [
+              'test_quality',
+              'rollback_safety',
+            ]),
+          ],
         };
 
         // 5. Write workspace-level profile resolution
@@ -454,8 +488,16 @@ export const hydrate: ToolDefinition = {
           policyPathHint: existing
             ? (centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint)
             : policyResolution.centralEvidence?.pathHint,
-          profileId: args.profileId,
+          // P31: Existing sessions preserve snapshot profile. New sessions get resolved profile.
+          profileId: existing ? existing.activeProfile?.id : profileResolution?.primary?.id ?? 'baseline',
+          // P31: pass config-provided activeChecks into rails when explicitly configured.
+          // Otherwise keep existing rails profile-driven behavior.
+          activeChecks: existing ? undefined : config.profile.activeChecks,
           repoSignals,
+          // P31: Only apply config iteration limits to NEW sessions
+          // Existing sessions preserve their snapshot values
+          maxSelfReviewIterations: existing ? undefined : config.policy.maxSelfReviewIterations,
+          maxImplReviewIterations: existing ? undefined : config.policy.maxImplReviewIterations,
           initiatedBy: actorInfo.id,
           initiatedByIdentity: {
             actorId: actorInfo.id,

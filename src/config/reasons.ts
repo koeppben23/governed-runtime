@@ -38,7 +38,8 @@ export type BlockedCategory =
   | 'input'
   | 'identity'
   | 'adapter'
-  | 'state';
+  | 'state'
+  | 'config';
 
 /** A registered blocked reason with metadata. */
 export interface BlockedReason {
@@ -345,6 +346,16 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Resume the session without FLOWGUARD_POLICY_PATH or with a compatible central minimum',
       'Or start a new session at a compliant policy mode',
+    ],
+  },
+  {
+    code: 'INVALID_PROFILE',
+    category: 'config',
+    messageTemplate: 'Profile "{profile}" from config is not registered.',
+    recoverySteps: [
+      'Register the profile in the profile registry',
+      'Use an explicit profileId with /hydrate',
+      'Remove config.profile.defaultId from config.json',
     ],
   },
   {

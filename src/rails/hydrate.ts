@@ -95,6 +95,10 @@ export interface HydrateInput {
   readonly policyVersion?: string;
   /** Redacted path hint for central policy bundle (P29). */
   readonly policyPathHint?: string;
+  /** P31: Override maxSelfReviewIterations from config.policy */
+  readonly maxSelfReviewIterations?: number;
+  /** P31: Override maxImplReviewIterations from config.policy */
+  readonly maxImplReviewIterations?: number;
   /**
    * Identity of the session initiator (author).
    * Used for four-eyes principle enforcement.
@@ -177,18 +181,18 @@ export function executeHydrate(
   // 3. Resolve profile → activeChecks + activeProfile
   let profile: FlowGuardProfile | undefined;
 
-  if (input.profileId && input.profileId !== 'baseline') {
-    // Explicit profile requested — look up by ID
+  // P31: explicit > config > detected > baseline
+  // profileId === undefined → auto-detect
+  // profileId set (including "baseline") → explicit profile
+  if (input.profileId !== undefined) {
     profile = defaultProfileRegistry.get(input.profileId);
   } else if (input.repoSignals) {
-    // Auto-detect from repo signals (highest confidence wins)
     profile = defaultProfileRegistry.detect({
       repoSignals: input.repoSignals,
       discovery: input.discoveryResult,
     });
   }
 
-  // Fall back to baseline if nothing matched
   if (!profile) {
     profile = defaultProfileRegistry.get('baseline');
   }
@@ -209,7 +213,15 @@ export function executeHydrate(
 
   // 4. Resolve policy → immutable snapshot
   const policyMode = input.policyMode ?? 'solo';
-  const policy = resolvePolicy(policyMode);
+  let policy = resolvePolicy(policyMode);
+  // P31: Apply config iteration limit overrides
+  if (input.maxSelfReviewIterations !== undefined || input.maxImplReviewIterations !== undefined) {
+    policy = {
+      ...policy,
+      maxSelfReviewIterations: input.maxSelfReviewIterations ?? policy.maxSelfReviewIterations,
+      maxImplReviewIterations: input.maxImplReviewIterations ?? policy.maxImplReviewIterations,
+    };
+  }
   const now = ctx.now();
   const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
     requestedMode: input.requestedPolicyMode ?? policy.mode,

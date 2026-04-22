@@ -478,6 +478,8 @@ export async function resolvePolicyForHydrate(opts: {
   centralPolicyPath?: string;
   digestFn: (text: string) => string;
   readFileFn?: (path: string) => Promise<string>;
+  configMaxSelfReviewIterations?: number;
+  configMaxImplReviewIterations?: number;
 }): Promise<HydratePolicyResolution> {
   const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
     ? 'explicit'
@@ -487,6 +489,14 @@ export async function resolvePolicyForHydrate(opts: {
   const requestedMode = opts.explicitMode ?? opts.repoMode ?? opts.defaultMode;
   const requestedResolution = resolvePolicyWithContext(requestedMode, opts.ciContext);
 
+  // Apply config iteration-limit overrides over the selected policy preset.
+  const basePolicy = requestedResolution.policy;
+  const policyWithOverrides: FlowGuardPolicy = {
+    ...basePolicy,
+    maxSelfReviewIterations: opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
+    maxImplReviewIterations: opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+  };
+
   if (opts.centralPolicyPath === undefined) {
     return {
       requestedMode,
@@ -495,7 +505,7 @@ export async function resolvePolicyForHydrate(opts: {
       effectiveSource: requestedSource,
       effectiveGateBehavior: requestedResolution.effectiveGateBehavior,
       degradedReason: requestedResolution.degradedReason,
-      policy: requestedResolution.policy,
+      policy: policyWithOverrides,
     };
   }
 
@@ -523,7 +533,7 @@ export async function resolvePolicyForHydrate(opts: {
       effectiveSource: requestedSource,
       effectiveGateBehavior: requestedResolution.effectiveGateBehavior,
       degradedReason: requestedResolution.degradedReason,
-      policy: requestedResolution.policy,
+      policy: policyWithOverrides,
       ...(requestedSource === 'explicit' && requestedStrength > centralStrength
         ? { resolutionReason: 'explicit_stronger_than_central' as const }
         : {}),
@@ -532,6 +542,12 @@ export async function resolvePolicyForHydrate(opts: {
   }
 
   const centralResolution = resolvePolicyWithContext(centralEvidence.minimumMode, opts.ciContext);
+  // Apply config overrides to central policy as well
+  const centralPolicyWithOverrides: FlowGuardPolicy = {
+    ...centralResolution.policy,
+    maxSelfReviewIterations: opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
+    maxImplReviewIterations: opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
+  };
   return {
     requestedMode,
     requestedSource,
@@ -539,7 +555,7 @@ export async function resolvePolicyForHydrate(opts: {
     effectiveSource: 'central',
     effectiveGateBehavior: centralResolution.effectiveGateBehavior,
     degradedReason: centralResolution.degradedReason,
-    policy: centralResolution.policy,
+    policy: centralPolicyWithOverrides,
     resolutionReason:
       requestedSource === 'repo' ? 'repo_weaker_than_central' : 'default_weaker_than_central',
     centralEvidence,
