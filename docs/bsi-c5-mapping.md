@@ -108,11 +108,11 @@ The IDM domain covers identity management, access control, and separation of dut
 **Separation of Duties:**
 
 - Three policy modes with escalating enforcement: Solo, Team, Regulated
-- **Regulated mode** enforces the four-eyes principle: the reviewer must differ from the session initiator
-- Self-approval is blocked in Regulated mode (`allowSelfApproval: false`)
+- **Regulated mode** enforces the four-eyes principle on `approve`: the reviewer must differ from the session initiator
+- Regulated approval requires known, explicit initiator/reviewer identities
 - Initiator and reviewer identities are tracked in session state and audit trail
 - 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in Team and Regulated modes
-- `SELF_APPROVAL_FORBIDDEN` reason code blocks progress when the principle is violated
+- `FOUR_EYES_ACTOR_MATCH`, `REGULATED_ACTOR_UNKNOWN`, and `DECISION_IDENTITY_REQUIRED` reason codes block non-compliant approvals
 
 **Policy Enforcement:**
 

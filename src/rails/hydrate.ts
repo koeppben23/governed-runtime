@@ -28,6 +28,7 @@
 import type { SessionState } from '../state/schema';
 import type { BindingInfo } from '../state/evidence';
 import type { ActorInfo } from '../audit/types';
+import type { DecisionIdentity } from '../state/evidence';
 import type { DiscoverySummary } from '../discovery/types';
 import type { DetectedStack } from '../discovery/types';
 import type { VerificationCandidates } from '../discovery/types';
@@ -97,9 +98,15 @@ export interface HydrateInput {
   /**
    * Identity of the session initiator (author).
    * Used for four-eyes principle enforcement.
-   * Defaults to sessionId if not provided.
+   * Tool layer should pass actor identity (not OpenCode sessionId).
+   * Defaults to sessionId only as a backward-compatible fallback.
    */
   readonly initiatedBy?: string;
+  /**
+   * Structured initiator identity for regulated approval (P30).
+   * Persists actor identity at session creation for four-eyes proof.
+   */
+  readonly initiatedByIdentity?: DecisionIdentity;
   /**
    * Resolved actor identity (P27).
    * Best-effort operator identity resolved at hydrate time.
@@ -249,6 +256,9 @@ export function executeHydrate(
     activeChecks,
     policySnapshot: snapshotWithContext,
     initiatedBy: input.initiatedBy ?? input.sessionId,
+    ...(input.initiatedByIdentity
+      ? { initiatedByIdentity: input.initiatedByIdentity }
+      : {}),
     ...(input.actorInfo ? { actorInfo: input.actorInfo } : {}),
 
     // Discovery

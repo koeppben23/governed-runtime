@@ -19,6 +19,7 @@ import {
   ArchitectureDecision,
   BindingInfo,
   CheckId,
+  DecisionIdentitySchema,
   ErrorInfo,
   ImplEvidence,
   ImplReviewResult,
@@ -232,10 +233,20 @@ export const SessionState = z.object({
   /**
    * Identity of the session initiator (author).
    * Set once at hydrate time, never mutated.
-   * Used for four-eyes principle enforcement:
-   * initiatedBy !== reviewDecision.decidedBy (in regulated mode).
+   * Used for regulated approval four-eyes enforcement:
+   * initiatedBy !== reviewDecision.decidedBy (approve path).
+   *
+   * P30: For regulated sessions, this MUST be a known actor identity,
+   * not the technical session ID. Use initiatedByIdentity for full provenance.
    */
   initiatedBy: z.string().min(1),
+
+  /**
+   * Structured initiator identity for regulated approval (P30).
+   * Persists actor identity at session creation for four-eyes proof.
+   * Required for regulated mode; absent for pre-P30 sessions.
+   */
+  initiatedByIdentity: DecisionIdentitySchema.optional(),
 
   /**
    * Resolved actor identity at hydrate time (P27).

@@ -52,6 +52,7 @@ import {
   appendAuditEvent,
   readAuditTrail,
 } from '../../adapters/persistence';
+import { resolveActor } from '../../adapters/actor';
 
 // Workspace
 import { archiveSession, verifyArchive } from '../../adapters/workspace';
@@ -226,13 +227,23 @@ export const decision: ToolDefinition = {
       const state = await requireStateForMutation(sessDir);
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
+      const actorInfo = await resolveActor(context.worktree || context.directory);
+
+      // P30: Build structured decision identity from actor resolution
+      const decisionIdentity = {
+        actorId: actorInfo.id,
+        actorEmail: actorInfo.email,
+        actorSource: actorInfo.source,
+        actorAssurance: 'best_effort' as const,
+      };
 
       const result = executeReviewDecision(
         state,
         {
           verdict: args.verdict,
           rationale: args.rationale,
-          decidedBy: context.sessionID,
+          decidedBy: actorInfo.id,
+          decisionIdentity,
         },
         ctx,
       );

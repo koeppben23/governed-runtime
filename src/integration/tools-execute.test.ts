@@ -1073,7 +1073,9 @@ describe('hydrate', () => {
       // sessionID lives in binding, actorInfo is separate
       expect(state!.binding.sessionId).toBe(ctx.sessionID);
       expect(state!.actorInfo).toBeDefined();
+      expect(state!.initiatedBy).toBe(state!.actorInfo!.id);
       expect(state!.binding.sessionId).not.toBe(state!.actorInfo!.id);
+      expect(state!.binding.sessionId).not.toBe(state!.initiatedBy);
     });
   });
 });
@@ -1359,11 +1361,25 @@ describe('P26: regulated archive completion', () => {
       ticket: TICKET,
       plan: PLAN_RECORD,
       selfReview: SELF_REVIEW_CONVERGED,
-      reviewDecision: REVIEW_APPROVE,
+      reviewDecision: {
+        ...REVIEW_APPROVE,
+        decisionIdentity: {
+          actorId: 'reviewer',
+          actorEmail: 'reviewer@test.com',
+          actorSource: 'env' as const,
+          actorAssurance: 'best_effort' as const,
+        },
+      },
       validation: VALIDATION_PASSED,
       implementation: IMPL_EVIDENCE,
       implReview: IMPL_REVIEW_CONVERGED,
-      initiatedBy: 'other-actor', // distinct from ctx.sessionID for four-eyes
+      initiatedBy: 'initiator',
+      initiatedByIdentity: {
+        actorId: 'initiator',
+        actorEmail: 'initiator@test.com',
+        actorSource: 'env' as const,
+        actorAssurance: 'best_effort' as const,
+      },
       policySnapshot: {
         ...baseState!.policySnapshot,
         mode: 'regulated' as const,

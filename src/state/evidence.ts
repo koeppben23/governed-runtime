@@ -203,14 +203,35 @@ export const ArchitectureDecision = z.object({
 });
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
 
+// ─── Decision Identity ────────────────────────────────────────────────────────
+
+/**
+ * Structured identity for decision attribution (P30).
+ * Extends ActorInfo with assurance level for regulated contexts.
+ */
+export const DecisionIdentity = z.object({
+  actorId: z.string().min(1),
+  actorEmail: z.string().nullable(),
+  actorSource: z.enum(['env', 'git', 'unknown']),
+  actorAssurance: z.enum(['best_effort', 'verified']).default('best_effort'),
+});
+export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
+
 // ─── Review Decision ──────────────────────────────────────────────────────────
 
-/** Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). */
+/**
+ * Human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
+ *
+ * P30: Includes structured decisionIdentity for regulated approval attribution.
+ * The decidedBy field remains for backward compatibility; decisionIdentity
+ * provides full provenance for audit and four-eyes proof.
+ */
 export const ReviewDecision = z.object({
   verdict: ReviewVerdict,
   rationale: z.string(),
   decidedAt: z.string().datetime(),
   decidedBy: z.string().min(1),
+  decisionIdentity: DecisionIdentity.optional(),
 });
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 
@@ -308,6 +329,11 @@ export const ActorInfoSchema = z.object({
   source: z.enum(['env', 'git', 'unknown']),
 });
 export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
+
+/**
+ * Schema version of DecisionIdentity for state imports.
+ */
+export const DecisionIdentitySchema = DecisionIdentity;
 
 // ─── Audit Event ──────────────────────────────────────────────────────────────
 

@@ -17,6 +17,9 @@ import {
   ARCHITECTURE_DECISION,
   FIXED_SESSION_UUID,
   FIXED_FINGERPRINT,
+  REGULATED_POLICY_SNAPSHOT,
+  DECISION_IDENTITY_INITIATOR,
+  DECISION_IDENTITY_REVIEWER,
 } from '../__fixtures__';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy';
 
@@ -423,38 +426,105 @@ describe('review-decision rail', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('four-eyes blocks when decidedBy === initiatedBy in regulated mode', () => {
-      const state = makeProgressedState('PLAN_REVIEW');
+    it('four-eyes blocks when decidedBy === initiatedBy in regulated mode (P30)', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT },
+      };
       const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
       const result = executeReviewDecision(
         state,
         {
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: state.initiatedBy, // same person
+          decidedBy: state.initiatedByIdentity!.actorId,
+          decisionIdentity: state.initiatedByIdentity,
         },
         regulatedCtx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      if (result.kind === 'blocked') expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
     });
 
-    it('four-eyes allows when decidedBy !== initiatedBy in regulated mode', () => {
-      const state = makeProgressedState('PLAN_REVIEW');
+    it('four-eyes allows when decidedBy !== initiatedBy in regulated mode (P30)', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT },
+      };
       const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
       const result = executeReviewDecision(
         state,
         {
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: 'different-reviewer',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER,
         },
         regulatedCtx,
       );
       expect(result.kind).toBe('ok');
     });
 
-    it('reject at EVIDENCE_REVIEW clears everything back to TICKET', () => {
+    it('P30: legacy regulated state without initiatedByIdentity blocks approve', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        initiatedByIdentity: undefined,
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT },
+      };
+      const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER,
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+    });
+
+    it('P30: regulate approve without input.decisionIdentity blocks', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT },
+      };
+      const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+    });
+
+    it('P30: reviewDecision persists decisionIdentity', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'OK',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER,
+        },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.reviewDecision?.decisionIdentity).toEqual(DECISION_IDENTITY_REVIEWER);
+        expect(result.state.reviewDecision?.decidedBy).toBe(DECISION_IDENTITY_REVIEWER.actorId);
+      }
+    });
+
+    it('rejects at EVIDENCE_REVIEW clears everything back to TICKET', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
         state,
@@ -568,20 +638,24 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('four-eyes blocks at ARCH_REVIEW when decidedBy === initiatedBy in regulated mode', () => {
-      const state = makeProgressedState('ARCH_REVIEW');
+    it('four-eyes blocks at ARCH_REVIEW when same actor (P30)', () => {
+      const state = {
+        ...makeProgressedState('ARCH_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT },
+      };
       const regulatedCtx = { ...ctx, policy: REGULATED_POLICY };
       const result = executeReviewDecision(
         state,
         {
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: state.initiatedBy,
+          decidedBy: state.initiatedByIdentity!.actorId,
+          decisionIdentity: state.initiatedByIdentity,
         },
         regulatedCtx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      if (result.kind === 'blocked') expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
     });
   });
 

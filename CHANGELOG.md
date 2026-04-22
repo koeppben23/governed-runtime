@@ -89,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release/build packaging integrity check: `npm run check:esm` verifies dist ESM imports after build
 - CI workflow linting now runs via `rhysd/actionlint@v1` (blocking) instead of direct docker image invocation
 - Added `.github/security-advisories.yml` so private vulnerability reporting policy check is materially configured
-- `/review-decision` now enforces four-eyes review with `SOLO_APPROVAL_FORBIDDEN` blocker when `allowSelfApproval=false`
+- `/review-decision` now enforces regulated approve identity hardening: explicit initiator/reviewer identity required, unknown actors blocked, and actor-match blocked via reason-coded outcomes
 - NextAction system — deterministic next-step guidance on every tool response
 - `/review` as standalone flow (READY → REVIEW → REVIEW_COMPLETE) with phase transitions
 - `/architecture` command and tool for ADR creation with MADR format validation and self-review loop
@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed stale architecture command/test surfaces requiring user-provided ADR IDs
 - Archive export is now fail-closed when redaction is enabled and redaction input is invalid
 - Archive manifests now record redaction metadata (`redactionMode`, `rawIncluded`, `redactedArtifacts`, `excludedFiles`, `riskFlags`)
-- `FOUR_EYES_VIOLATION` → `SELF_APPROVAL_FORBIDDEN` in documentation (matches actual reason code in code)
+- Four-eyes reason code docs aligned to `FOUR_EYES_ACTOR_MATCH`, with additional regulated approve blockers `REGULATED_ACTOR_UNKNOWN` and `DECISION_IDENTITY_REQUIRED`
 - Discovery collector count corrected from "5 collectors" to "6 collectors" in product identity
 
 ## [1.0.0] - 2026-04-16

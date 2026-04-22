@@ -306,7 +306,9 @@ Critical boundaries validate and fail closed:
 When the platform cannot proceed, it emits explicit blocked outcomes with specific codes:
 - `COMMAND_NOT_ALLOWED` — command not valid in current phase
 - `MISSING_SESSION_ID` — no session context available
-- `SELF_APPROVAL_FORBIDDEN` — reviewer same as initiator in regulated mode
+- `FOUR_EYES_ACTOR_MATCH` — regulated approve reviewer matches initiator
+- `REGULATED_ACTOR_UNKNOWN` — regulated approve actor identity is unknown
+- `DECISION_IDENTITY_REQUIRED` — regulated approve identity is missing
 - `VALIDATION_INCOMPLETE` — not all checks passed
 - `EMPTY_PLAN` — plan text is empty
 - And 30+ more reason codes with recovery guidance

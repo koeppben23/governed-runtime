@@ -90,7 +90,7 @@ Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REV
 - `changes_requested` → return to previous phase for revision
 - `reject` → restart (TICKET for ticket flow, READY for architecture flow)
 
-**Four-eyes:** In regulated mode, reviewer must differ from session initiator.
+**Four-eyes:** In regulated mode, `approve` requires reviewer identity different from session initiator, and both identities must be known.
 
 Every successful `/review-decision` emits a decision receipt in the audit trail (`decision:DEC-xxx`).
 

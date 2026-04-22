@@ -499,7 +499,29 @@ const SEED_REASONS: readonly BlockedReason[] = [
 
   // ── Identity / Four-Eyes ──────────────────────────────────────
   {
-    code: 'SELF_APPROVAL_FORBIDDEN',
+    code: 'DECISION_IDENTITY_REQUIRED',
+    category: 'identity',
+    messageTemplate:
+      'Regulated approval requires explicit initiator and reviewer identities. Unable to verify decision identity.',
+    recoverySteps: [
+      'Set FLOWGUARD_ACTOR_ID before running /hydrate and /review-decision',
+      'Ensure both session initiator and reviewer identities are non-empty',
+      'Re-run /review-decision with verdict=approve after identity is available',
+    ],
+  },
+  {
+    code: 'REGULATED_ACTOR_UNKNOWN',
+    category: 'identity',
+    messageTemplate:
+      'Regulated approval blocked: {role} identity is unknown. A known actor identity is required.',
+    recoverySteps: [
+      'Provide a stable reviewer identity via FLOWGUARD_ACTOR_ID',
+      'Ensure git user.name is configured when env identity is not set',
+      'Retry /review-decision after identity resolution succeeds',
+    ],
+  },
+  {
+    code: 'FOUR_EYES_ACTOR_MATCH',
     category: 'identity',
     messageTemplate:
       'Four-eyes principle: session initiator ({initiator}) cannot approve their own work. A different reviewer is required.',
