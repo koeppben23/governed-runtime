@@ -156,35 +156,45 @@ export function executeReviewDecision(
   //    Regulated mode applies strict identity checks only for approval decisions.
   //    changes_requested/reject remain available for safety interventions.
   //    P30: Requires structured identity — no legacy fail-open from sessionID only.
-  if (ctx.policy?.allowSelfApproval === false && input.verdict === 'approve') {
-    // P30: Require structured initiator identity (fail-closed on legacy sessions)
-    if (!state.initiatedByIdentity) {
-      return blocked('DECISION_IDENTITY_REQUIRED');
+  if (input.verdict === 'approve') {
+    if (ctx.policy?.allowSelfApproval === false) {
+      // P30: Require structured initiator identity (fail-closed on legacy sessions)
+      if (!state.initiatedByIdentity) {
+        return blocked('DECISION_IDENTITY_REQUIRED');
+      }
+
+      // P30: Require structured decision identity (fail-closed on legacy decisions)
+      if (!input.decisionIdentity) {
+        return blocked('DECISION_IDENTITY_REQUIRED');
+      }
+
+      // P30: Block unknown source actors
+      if (state.initiatedByIdentity.actorSource === 'unknown') {
+        return blocked('REGULATED_ACTOR_UNKNOWN', {
+          role: 'initiator',
+        });
+      }
+
+      if (input.decisionIdentity.actorSource === 'unknown') {
+        return blocked('REGULATED_ACTOR_UNKNOWN', {
+          role: 'reviewer',
+        });
+      }
+
+      // P30: Four-eyes enforcement via structured identity
+      if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
+        return blocked('FOUR_EYES_ACTOR_MATCH', {
+          initiator: state.initiatedByIdentity.actorId,
+        });
+      }
     }
 
-    // P30: Require structured decision identity (fail-closed on legacy decisions)
-    if (!input.decisionIdentity) {
-      return blocked('DECISION_IDENTITY_REQUIRED');
-    }
-
-    // P30: Block unknown source actors
-    if (state.initiatedByIdentity.actorSource === 'unknown') {
-      return blocked('REGULATED_ACTOR_UNKNOWN', {
-        role: 'initiator',
-      });
-    }
-
-    if (input.decisionIdentity.actorSource === 'unknown') {
-      return blocked('REGULATED_ACTOR_UNKNOWN', {
-        role: 'reviewer',
-      });
-    }
-
-    // P30: Four-eyes enforcement via structured identity
-    if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
-      return blocked('FOUR_EYES_ACTOR_MATCH', {
-        initiator: state.initiatedByIdentity.actorId,
-      });
+    // Verified actor requirement is independent from self-approval policy.
+    if (
+      ctx.policy?.requireVerifiedActorsForApproval &&
+      (!input.decisionIdentity || input.decisionIdentity.actorAssurance !== 'verified')
+    ) {
+      return blocked('VERIFIED_ACTOR_REQUIRED');
     }
   }
 

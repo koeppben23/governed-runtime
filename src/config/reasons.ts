@@ -542,6 +542,70 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Ask a colleague with reviewer permissions to run /review-decision',
     ],
   },
+  // P33: Verified Actor Identity
+  {
+    code: 'ACTOR_CLAIM_MISSING',
+    category: 'identity',
+    messageTemplate:
+      'Actor claim file not found at configured path. A valid verified identity is required.',
+    recoverySteps: [
+      'Ensure FLOWGUARD_ACTOR_CLAIMS_PATH points to an existing JSON file',
+      'Create a valid actor claim file with schema v1',
+      'If verified actors are not required, unset FLOWGUARD_ACTOR_CLAIMS_PATH',
+    ],
+  },
+  {
+    code: 'ACTOR_CLAIM_UNREADABLE',
+    category: 'identity',
+    messageTemplate: 'Actor claim file exists but cannot be read. Check file permissions.',
+    recoverySteps: [
+      'Verify the file at FLOWGUARD_ACTOR_CLAIMS_PATH is readable',
+      'Check file system permissions for the process',
+      'If verified actors are not required, unset FLOWGUARD_ACTOR_CLAIMS_PATH',
+    ],
+  },
+  {
+    code: 'ACTOR_CLAIM_INVALID',
+    category: 'identity',
+    messageTemplate:
+      'Actor claim file contains invalid data. Expected valid v1 claim with non-empty actorId and issuer, issuedAt <= now.',
+    recoverySteps: [
+      'Ensure the claim file matches schema v1 with required fields',
+      'actorId and issuer must be non-empty strings',
+      'issuedAt must be a valid datetime not in the future',
+      'Check the claim file content is valid JSON',
+    ],
+  },
+  {
+    code: 'ACTOR_CLAIM_EXPIRED',
+    category: 'identity',
+    messageTemplate: 'Actor claim has expired. A current verified identity is required.',
+    recoverySteps: [
+      'Obtain a fresh actor claim with a future expiresAt',
+      'Regenerate the claim file with a valid time window',
+      'If verified actors are not required, unset FLOWGUARD_ACTOR_CLAIMS_PATH',
+    ],
+  },
+  {
+    code: 'ACTOR_CLAIM_PATH_EMPTY',
+    category: 'identity',
+    messageTemplate: 'Actor claim path is configured but empty or whitespace only.',
+    recoverySteps: [
+      'Provide a valid path to a verified actor claim file',
+      'If verified actors are not required, unset FLOWGUARD_ACTOR_CLAIMS_PATH',
+    ],
+  },
+  {
+    code: 'VERIFIED_ACTOR_REQUIRED',
+    category: 'identity',
+    messageTemplate:
+      'Regulated approval requires verified actor identity. Current actor has best_effort assurance.',
+    recoverySteps: [
+      'Configure FLOWGUARD_ACTOR_CLAIMS_PATH with a valid verified claim',
+      'Ensure the policy does not require verified actors if not available',
+      'A verified actor with assurance=verified is required for this approval',
+    ],
+  },
 
   // ── Adapter ───────────────────────────────────────────────────
   {

@@ -50,6 +50,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  requireVerifiedActorsForApproval: false,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -65,6 +66,7 @@ export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
   mode: 'regulated',
   requestedMode: 'regulated',
   allowSelfApproval: false,
+  requireVerifiedActorsForApproval: false,
 };
 
 export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {
@@ -79,6 +81,13 @@ export const DECISION_IDENTITY_REVIEWER: DecisionIdentity = {
   actorEmail: 'reviewer@test.com',
   actorSource: 'env',
   actorAssurance: 'best_effort',
+};
+
+export const DECISION_IDENTITY_VERIFIED_REVIEWER: DecisionIdentity = {
+  actorId: 'verified-reviewer-1',
+  actorEmail: 'verified@test.com',
+  actorSource: 'claim',
+  actorAssurance: 'verified',
 };
 
 export const TICKET: TicketEvidence = {

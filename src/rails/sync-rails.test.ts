@@ -20,6 +20,7 @@ import {
   REGULATED_POLICY_SNAPSHOT,
   DECISION_IDENTITY_INITIATOR,
   DECISION_IDENTITY_REVIEWER,
+  DECISION_IDENTITY_VERIFIED_REVIEWER,
 } from '../__fixtures__';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy';
 
@@ -484,6 +485,154 @@ describe('review-decision rail', () => {
       );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+    });
+
+    // P33: Verified Actor Requirement
+    it('P33: blocks approve when requireVerifiedActorsForApproval=true but best_effort actor', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: true },
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: true },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER, // best_effort
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
+    });
+
+    it('P33: allows approve when requireVerifiedActorsForApproval=true and verified actor', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: true },
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: true },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_VERIFIED_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_VERIFIED_REVIEWER, // verified
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('P33: different reviewer + verified passes both four-eyes and verified actor check', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: true },
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: true },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_VERIFIED_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_VERIFIED_REVIEWER,
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('VALIDATION');
+      }
+    });
+
+    it('P33: same actor + verified blocks FOUR_EYES_ACTOR_MATCH', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: true },
+        initiatedByIdentity: DECISION_IDENTITY_VERIFIED_REVIEWER,
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: true },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_VERIFIED_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_VERIFIED_REVIEWER,
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
+    });
+
+    it('P33: allow approve when requireVerifiedActorsForApproval=false (P30 behavior)', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: false },
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: false },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER, // best_effort
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('P33: verified actor requirement applies even when self-approval is allowed', () => {
+      const state = {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: {
+          ...REGULATED_POLICY_SNAPSHOT,
+          allowSelfApproval: true,
+          requireVerifiedActorsForApproval: true,
+        },
+      };
+      const regulatedCtx = {
+        ...ctx,
+        policy: {
+          ...REGULATED_POLICY,
+          allowSelfApproval: true,
+          requireVerifiedActorsForApproval: true,
+        },
+      };
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_REVIEWER,
+        },
+        regulatedCtx,
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
     });
 
     it('P30: regulate approve without input.decisionIdentity blocks', () => {

@@ -268,6 +268,16 @@ describe('config/policy', () => {
       expect(result.policy.maxImplReviewIterations).toBe(14);
     });
 
+    it('resolvePolicyForHydrate applies config requireVerifiedActorsForApproval override', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'regulated',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configRequireVerifiedActorsForApproval: true,
+      });
+      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+    });
+
     it('resolvePolicyForHydrate uses preset when config undefined', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
@@ -288,9 +298,11 @@ describe('config/policy', () => {
         readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
         configMaxSelfReviewIterations: 8,
         configMaxImplReviewIterations: 16,
+        configRequireVerifiedActorsForApproval: true,
       });
       expect(result.policy.maxSelfReviewIterations).toBe(8);
       expect(result.policy.maxImplReviewIterations).toBe(16);
+      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
     });
   });
 

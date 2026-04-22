@@ -408,6 +408,7 @@ describe('state schemas', () => {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
+        requireVerifiedActorsForApproval: false,
         audit: {
           emitTransitions: true,
           emitToolCalls: true,

@@ -91,6 +91,15 @@ export interface FlowGuardPolicy {
    * Tools not listed default to "system".
    */
   readonly actorClassification: Readonly<Record<string, string>>;
+
+  /**
+   * P33: Whether regulated approvals require verified actor identity.
+   * false (default) → best_effort actors allowed at regulated gates.
+   * true → only verified actors allowed at regulated gates.
+   * When true and a best_effort actor attempts approval, they are blocked
+   * with reason VERIFIED_ACTOR_REQUIRED.
+   */
+  readonly requireVerifiedActorsForApproval: boolean;
 }
 
 /** Supported policy modes. */
@@ -221,6 +230,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   actorClassification: {
     flowguard_decision: 'system',
   },
+  requireVerifiedActorsForApproval: false,
 };
 
 /**
@@ -245,6 +255,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   actorClassification: {
     flowguard_decision: 'human',
   },
+  requireVerifiedActorsForApproval: false,
 };
 
 /**
@@ -269,6 +280,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   actorClassification: {
     flowguard_decision: 'system',
   },
+  requireVerifiedActorsForApproval: false,
 };
 
 /**
@@ -303,6 +315,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     flowguard_decision: 'human',
     flowguard_abort_session: 'human',
   },
+  requireVerifiedActorsForApproval: false,
 };
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
@@ -480,6 +493,7 @@ export async function resolvePolicyForHydrate(opts: {
   readFileFn?: (path: string) => Promise<string>;
   configMaxSelfReviewIterations?: number;
   configMaxImplReviewIterations?: number;
+  configRequireVerifiedActorsForApproval?: boolean;
 }): Promise<HydratePolicyResolution> {
   const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
     ? 'explicit'
@@ -497,6 +511,8 @@ export async function resolvePolicyForHydrate(opts: {
       opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    requireVerifiedActorsForApproval:
+      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
   };
 
   if (opts.centralPolicyPath === undefined) {
@@ -551,6 +567,9 @@ export async function resolvePolicyForHydrate(opts: {
       opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
+    requireVerifiedActorsForApproval:
+      opts.configRequireVerifiedActorsForApproval ??
+      centralResolution.policy.requireVerifiedActorsForApproval,
   };
   return {
     requestedMode,
@@ -710,6 +729,7 @@ export function createPolicySnapshot(
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
     allowSelfApproval: policy.allowSelfApproval,
+    requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
     audit: {
       emitTransitions: policy.audit.emitTransitions,
       emitToolCalls: policy.audit.emitToolCalls,
@@ -733,6 +753,7 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
+    requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
