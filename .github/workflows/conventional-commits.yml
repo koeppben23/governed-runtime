@@ -33,4 +33,6 @@ jobs:
         if: github.event_name == 'push'
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: echo "$COMMIT_MESSAGE" | npx commitlint
+        run: |
+          COMMIT_SUBJECT="${COMMIT_MESSAGE%%$'\n'*}"
+          echo "$COMMIT_SUBJECT" | npx commitlint
