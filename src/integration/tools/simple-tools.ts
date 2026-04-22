@@ -57,7 +57,7 @@ import {
 import { archiveSession, verifyArchive } from '../../adapters/workspace';
 
 // Audit types + integrity (P26: tool-layer audit emission for regulated completions)
-import { createLifecycleEvent, GENESIS_HASH } from '../../audit/types';
+import { createLifecycleEvent } from '../../audit/types';
 import { getLastChainHash } from '../../audit/integrity';
 
 // Artifacts

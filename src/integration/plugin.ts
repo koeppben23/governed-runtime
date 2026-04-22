@@ -677,7 +677,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
             if (cachedFingerprint) {
               if (toolLayerHandled) {
                 log.debug('audit', 'archive handled by tool layer', {
-                  archiveStatus: freshState!.archiveStatus,
+                  archiveStatus: freshState.archiveStatus,
                 });
               } else {
                 archiveSession(cachedFingerprint, sessionId).catch((err) => {
