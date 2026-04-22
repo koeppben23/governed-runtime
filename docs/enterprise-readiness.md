@@ -58,7 +58,7 @@ Authority precedence remains:
 
 ---
 
-## 3) Regulated Guarantees (P25-P27)
+## 3) Regulated Guarantees
 
 In regulated mode, FlowGuard currently guarantees:
 
@@ -90,13 +90,13 @@ admin/root compromise can still alter files.
 
 ## 5) Threats and Mitigations
 
-| Threat                                                | Mitigation                                                                                                                                                      | Residual risk                                                                                            |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Prompt attempts to bypass command/phase rails         | Command admissibility + phase gates + fail-closed blockers                                                                                                      | Incorrect or malicious prompt content is still possible; blocked execution does not sanitize user intent |
-| Audit trail tampering                                 | Hash chain + regulated strict verification (`verifyChain({ strict: true })`)                                                                                    | Local privileged attacker can still alter files; detection depends on verification being run             |
-| Archive missing/invalid on regulated clean completion | Regulated completion path requires synchronous archive creation and `verifyArchive()` success                                                                   | Aborted sessions are explicitly outside clean-completion guarantee                                       |
-| Fake human identity claims                            | Source-labeled best-effort `actorInfo` (`env`/`git`/`unknown`)                                                                                                  | No authentication proof; attribution can be spoofed in compromised/locally uncontrolled environments     |
-| Policy weakening through local config drift           | P29 central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker-than-central is blocked; repo/default weaker-than-central is raised with visible reason | Central source is file-based only (no remote control plane, no fleet governance)                         |
+| Threat                                                | Mitigation                                                                                                                                                  | Residual risk                                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Prompt attempts to bypass command/phase rails         | Command admissibility + phase gates + fail-closed blockers                                                                                                  | Incorrect or malicious prompt content is still possible; blocked execution does not sanitize user intent |
+| Audit trail tampering                                 | Hash chain + regulated strict verification (`verifyChain({ strict: true })`)                                                                                | Local privileged attacker can still alter files; detection depends on verification being run             |
+| Archive missing/invalid on regulated clean completion | Regulated completion path requires synchronous archive creation and `verifyArchive()` success                                                               | Aborted sessions are explicitly outside clean-completion guarantee                                       |
+| Fake human identity claims                            | Source-labeled best-effort `actorInfo` (`env`/`git`/`unknown`)                                                                                              | No authentication proof; attribution can be spoofed in compromised/locally uncontrolled environments     |
+| Policy weakening through local config drift           | Central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker-than-central is blocked; repo/default weaker-than-central is raised with visible reason | Central source is file-based only (no remote control plane, no fleet governance)                         |
 
 ---
 
@@ -123,7 +123,7 @@ FlowGuard is not yet positioned as a complete enterprise IAM/GRC/policy-administ
 
 ## 8) Deferred Scope
 
-P29 baseline central policy distribution is delivered as explicit local bundle loading via
+Baseline central policy distribution is delivered as explicit local bundle loading via
 `FLOWGUARD_POLICY_PATH`. Full enterprise control-plane capabilities (remote distribution,
 delegated admin, policy signing infrastructure, fleet governance) are still deferred.
 

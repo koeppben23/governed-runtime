@@ -99,7 +99,7 @@ Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests 
 
 **Currently Delivered:**
 
-- Configuration stored in `flowguard.json` (optional)
+- Configuration stored in workspace `config.json` (optional)
 - Profile auto-detection from repository signals
 
 ### Installation Artifacts
@@ -172,7 +172,7 @@ Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests 
 | Data Type            | Retention         | Notes                            |
 | -------------------- | ----------------- | -------------------------------- |
 | **CLI installation** | Until uninstalled | Can be reinstalled from artifact |
-| **Configuration**    | Until changed     | Optional `flowguard.json`        |
+| **Configuration**    | Until changed     | Optional workspace `config.json` |
 | **Mandates**         | Until updated     | Content-digested, versioned      |
 
 ---

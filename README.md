@@ -120,7 +120,7 @@ See [docs/phases.md](./docs/phases.md) for full phase details.
 | **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
 | **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect |
 | **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
-| **Knowledge Pack Policy (ADR)** | External documentation authority is advisory-only, provenance-stamped, and non-SSOT |
+| **Knowledge Pack Policy** | External documentation authority is advisory-only, provenance-stamped, and non-SSOT |
 | **Central Policy Authority** | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence |
 | **Verified Actor Identity** | Optional verified actor identity via `FLOWGUARD_ACTOR_CLAIMS_PATH`; regulated approvals require verified actors when `requireVerifiedActorsForApproval` is enabled |
 
@@ -143,6 +143,11 @@ flowguard serve --detach --port 4096
 
 **Note:** Headless features are experimental. For production, use OpenCode directly:
 `opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
+
+## Product Facts
+
+| Feature | Description |
+|---------|-------------|
 | **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
 | **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
 | **Python/Rust/Go Detection** | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files |

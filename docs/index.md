@@ -96,7 +96,7 @@ Responsibilities, contact channels, and expectations.
 | ------------------ | ----------------------------------------- | ------------------------------ |
 | `/hydrate`         | Any                                       | Bootstrap session → READY      |
 | `/ticket`          | READY, TICKET                             | Record task, start ticket flow |
-| `/plan`            | READY, TICKET, PLAN                       | Generate plan                  |
+| `/plan`            | TICKET, PLAN                              | Generate plan                  |
 | `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW | Human approval                 |
 | `/validate`        | VALIDATION                                | Run checks                     |
 | `/implement`       | IMPLEMENTATION                            | Execute plan                   |
