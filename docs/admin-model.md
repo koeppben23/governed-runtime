@@ -39,7 +39,7 @@ FlowGuard has a flat ownership model:
 **Currently Delivered:**
 
 - CLI with upgrade, uninstall, doctor commands
-- Optional `flowguard.json` configuration
+- Workspace `config.json` configuration artifact (materialized by install/hydrate; missing config is an integrity error in doctor)
 - Archive management
 
 **Customer Responsibility:**
@@ -121,7 +121,7 @@ FlowGuard supports two roles within a session:
 
 - 4 built-in profiles (Baseline, Java, Angular, TypeScript)
 - 4 policy modes (Solo, Team, Team-CI, Regulated)
-- Central minimum policy enforcement via `FLOWGUARD_POLICY_PATH` (P29)
+- Central minimum policy enforcement via `FLOWGUARD_POLICY_PATH`
 - Configurable reason codes
 - Custom check executors
 
@@ -186,11 +186,11 @@ For teams sharing a single installation:
 
 ### Repository-Scoped Deployment
 
-| Feature                   | Status                      | Notes                     |
-| ------------------------- | --------------------------- | ------------------------- |
-| **Per-repo installation** | **Currently Delivered**     | `--install-scope repo`    |
-| **Repo-specific config**  | **Currently Delivered**     | `flowguard.json` per repo |
-| **Team-wide policies**    | **Customer Responsibility** | Git hooks, CI enforcement |
+| Feature                   | Status                      | Notes                                              |
+| ------------------------- | --------------------------- | -------------------------------------------------- |
+| **Per-repo installation** | **Currently Delivered**     | `--install-scope repo`                             |
+| **Repo-specific config**  | **Currently Delivered**     | Workspace `config.json` per repository fingerprint |
+| **Team-wide policies**    | **Customer Responsibility** | Git hooks, CI enforcement                          |
 
 ---
 

@@ -265,14 +265,14 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Create mock tarball for testing
+      - name: Pack real release tarball for testing
         id: tarball
         shell: bash
         run: |
-          PKG_VERSION=$(node -p 'require("./package.json").version')
+          PKG_FILE=$(npm pack --silent)
           mkdir -p "$RUNNER_TEMP/flowguard-test"
-          printf '%s' "mock tarball" > "$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz"
-          echo "path=$RUNNER_TEMP/flowguard-test/flowguard-core-${PKG_VERSION}.tgz" >> "$GITHUB_OUTPUT"
+          mv "$PKG_FILE" "$RUNNER_TEMP/flowguard-test/$PKG_FILE"
+          echo "path=$RUNNER_TEMP/flowguard-test/$PKG_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Install FlowGuard (test install)
         shell: bash

@@ -109,7 +109,7 @@ if (result.passed) {
 }
 ```
 
-## Regulated Archive Completion Semantics (P26)
+## Regulated Archive Completion Semantics
 
 In regulated mode (`policySnapshot.mode === 'regulated'`), clean completion
 (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) requires archive creation **and**

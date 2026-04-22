@@ -1,4 +1,4 @@
-# FlowGuard — AI EngineeringGovernance Platform
+# FlowGuard — AI Engineering Governance Platform
 
 **AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.**
 

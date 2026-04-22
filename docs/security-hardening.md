@@ -182,7 +182,7 @@ finding message includes the chain verification reason (`CHAIN_BREAK` or
 | `team`, `solo`, etc | No      | Yes — backward-compat    |
 | `unknown`           | No      | Yes — backward-compat    |
 
-### Regulated Archive Completion Guarantee (P26)
+### Regulated Archive Completion Guarantee
 
 Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires archive
 creation **and** verification success. The decision tool owns the synchronous archive
@@ -212,7 +212,7 @@ Non-regulated sessions use the existing fire-and-forget auto-archive in the audi
 
 ---
 
-## Actor Identity (P27)
+## Actor Identity
 
 FlowGuard resolves a best-effort operator identity at hydrate time for audit attribution.
 This is **not** a cryptographic authentication claim — it is an operator-provided or
@@ -234,7 +234,7 @@ git-derived identifier for traceability.
 - **Session ID != Actor.** `sessionId` remains the workflow/session identity.
   `actorInfo` is a separate, optional field for human attribution.
 - **Hash-safe.** When absent, `actorInfo` is omitted from the event object — `JSON.stringify`
-  excludes `undefined` keys. Chain hashes for pre-P27 events remain identical.
+  excludes `undefined` keys. Chain hashes for pre-existing events remain identical.
 - **Selective attribution.** `actorInfo` appears on human-influenced events (lifecycle,
   tool_call, decision). Machine-only events (transition, error) never carry `actorInfo`.
 

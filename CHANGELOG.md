@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documentation and product collateral were aligned to runtime SSOT: command allowlists, configuration path terminology (`workspace .../config.json`), and external-facing wording now match current FlowGuard behavior.
+- CI install smoke tests now use a real packed tarball (`npm pack`) instead of a mock tarball, so install verification exercises the actual artifact path.
 - SOLO_POLICY now allows 2 self-review iterations (up from 1), enabling single revision after initial review before convergence. Team remains at 3.
 - `/hydrate` now enforces a fail-closed discovery contract for new sessions: READY is emitted only when discovery and profile-resolution artifacts are successfully persisted and `discoveryDigest`/`discoverySummary` are non-null.
 - Workspace `config.json` is now materialized as a required artifact (install + hydrate self-heal) and doctor reports missing config as an error instead of silently accepting defaults.
@@ -55,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed product one-pager title typo: "AI Engineering Governance Platform".
 - OpenCode-style non-UUID session IDs (`ses_...`) are now accepted across binding and audit event schemas, preventing hydration/runtime schema validation failures.
 - Integration and E2E tests now run with OpenCode-style session IDs and include regression assertions for hydrate discovery/config contracts.
 - Added `src/documentation/__tests__/agents-v3.test.ts` to enforce AGENTS v3 structure, marker rules, high-risk verification policy, guidance link integrity, and rubric presence.

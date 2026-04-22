@@ -110,7 +110,7 @@ In `config.json`:
 }
 ```
 
-## Central Policy Minimum (P29)
+## Central Policy Minimum
 
 FlowGuard supports an explicit central policy source via `FLOWGUARD_POLICY_PATH`.
 

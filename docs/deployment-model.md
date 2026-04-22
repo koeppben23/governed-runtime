@@ -53,7 +53,7 @@ FlowGuard is installed system-wide in `~/.config/opencode/`:
 
 - Single installation available across all projects
 - Updates affect all projects using global install
-- Configuration via `~/.config/opencode/flowguard.json` (optional)
+- Configuration via `~/.config/opencode/workspaces/{fingerprint}/config.json` (materialized workspace artifact; doctor fails on missing config)
 
 ### Project Installation
 

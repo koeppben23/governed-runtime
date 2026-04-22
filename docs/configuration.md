@@ -58,7 +58,7 @@ Sets the default policy mode for new sessions when `/hydrate` is called without 
 2. `config.json` → `policy.defaultMode`
 3. Built-in default: `solo`
 
-**P29 central minimum (optional):**
+**Central minimum policy (optional):**
 
 - If `FLOWGUARD_POLICY_PATH` is set, the central policy file becomes mandatory.
 - Missing/unreadable/invalid central policy blocks `/hydrate` (fail-closed).
@@ -125,15 +125,15 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 
 Different runtime contexts resolve policy defaults independently:
 
-| Context          | Priority Chain                                              | Final Fallback |
-| ---------------- | ----------------------------------------------------------- | -------------- |
-| `/hydrate` tool  | explicit > central > config.defaultMode > `solo` (P29/P31)  | `solo`         |
-| Plugin / runtime | state snapshot > `config.policy.defaultMode` > `solo` (P32) | `solo`         |
-| Install CLI      | `--policy-mode` writes `config.policy.defaultMode`          | —              |
+| Context          | Priority Chain                                        | Final Fallback |
+| ---------------- | ----------------------------------------------------- | -------------- |
+| `/hydrate` tool  | explicit > central > config.defaultMode > `solo`      | `solo`         |
+| Plugin / runtime | state snapshot > `config.policy.defaultMode` > `solo` | `solo`         |
+| Install CLI      | `--policy-mode` writes `config.policy.defaultMode`    | —              |
 
-**P32: Runtime Policy Mode Unification**
+**Runtime policy mode unification**
 
-Since P32, all runtime surfaces (plugin, status, etc.) use the same fallback priority:
+All runtime surfaces (plugin, status, etc.) use the same fallback priority:
 
 ```
 state.policySnapshot.mode → config.policy.defaultMode → solo
@@ -157,7 +157,7 @@ Re-running `/hydrate` on an existing session reads from the snapshot, not from u
 
 Config changes apply only to **new** sessions. To update an existing session's config-driven values, a migration path would need to be explicitly implemented.
 
-### Central Policy File (P29)
+### Central Policy File
 
 When `FLOWGUARD_POLICY_PATH` is set, the referenced file must be valid JSON:
 
@@ -248,7 +248,7 @@ Override automatic profile detection:
 }
 ```
 
-**Resolution priority chain (P31):**
+**Resolution priority chain:**
 
 1. Explicit `/hydrate` tool argument (`profileId`)
 2. `config.profile.defaultId`
@@ -275,7 +275,7 @@ Override the active checks for the selected profile:
 }
 ```
 
-**Resolution priority (P31):**
+**Resolution priority:**
 
 1. `config.profile.activeChecks` (array)
 2. Selected profile's `activeChecks`

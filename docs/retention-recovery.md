@@ -155,11 +155,11 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ### Installation Data Disposal
 
-| Data              | Disposal Method         | Notes                   |
-| ----------------- | ----------------------- | ----------------------- |
-| **CLI**           | `flowguard uninstall`   | Removes installed files |
-| **Configuration** | Delete `flowguard.json` | Uses defaults           |
-| **Mandates**      | Overwritten on update   | Content-digested        |
+| Data              | Disposal Method                | Notes                                                                        |
+| ----------------- | ------------------------------ | ---------------------------------------------------------------------------- |
+| **CLI**           | `flowguard uninstall`          | Removes installed files                                                      |
+| **Configuration** | Delete workspace `config.json` | Must be re-materialized; doctor reports missing config as an integrity error |
+| **Mandates**      | Overwritten on update          | Content-digested                                                             |
 
 ### Secure Disposal
 
