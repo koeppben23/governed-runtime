@@ -268,9 +268,7 @@ export function executeHydrate(
     activeChecks,
     policySnapshot: snapshotWithContext,
     initiatedBy: input.initiatedBy ?? input.sessionId,
-    ...(input.initiatedByIdentity
-      ? { initiatedByIdentity: input.initiatedByIdentity }
-      : {}),
+    ...(input.initiatedByIdentity ? { initiatedByIdentity: input.initiatedByIdentity } : {}),
     ...(input.actorInfo ? { actorInfo: input.actorInfo } : {}),
 
     // Discovery

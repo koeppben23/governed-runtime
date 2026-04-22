@@ -160,7 +160,9 @@ afterEach(async () => {
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
-  const args: { policyMode: string; profileId?: string } = { policyMode: overrides.policyMode ?? 'solo' };
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
   if (overrides.profileId !== undefined) {
     args.profileId = overrides.profileId;
   }
@@ -990,14 +992,16 @@ describe('hydrate', () => {
     });
   });
 
-// ── P31: Config as Runtime Authority ────────────────────────────────────────────
+  // ── P31: Config as Runtime Authority ────────────────────────────────────────────
   describe('P31 Config as Runtime Authority', () => {
     it('config.profile.defaultId is used when no explicit profileId', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-a-');
       try {
-        const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
         const { writeConfig, readConfig } = await import('../adapters/persistence');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1027,9 +1031,11 @@ describe('hydrate', () => {
     it('explicit profileId wins over config', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-explicit-');
       try {
-        const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
         const { writeConfig, readConfig } = await import('../adapters/persistence');
 
         const fp = await computeFingerprint(tmpDir);
@@ -1063,9 +1069,11 @@ describe('hydrate', () => {
     it('explicit profileId=baseline wins over config.defaultId', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-baseline-');
       try {
-        const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
         const { writeConfig, readConfig } = await import('../adapters/persistence');
 
         const fp = await computeFingerprint(tmpDir);
@@ -1100,9 +1108,11 @@ describe('hydrate', () => {
     it('existing session retains activeProfile despite explicit override attempt', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
       try {
-        const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
-        );
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
         const { writeConfig, readConfig } = await import('../adapters/persistence');
         const { readState } = await import('../adapters/persistence');
 
@@ -1133,7 +1143,7 @@ describe('hydrate', () => {
         });
         const result = await parseToolResult(
           // Note: args.profileId is effectively ignored for existing sessions in P31.
-          await hydrate.execute({ profileId: 'typescript' }, ctx2)
+          await hydrate.execute({ profileId: 'typescript' }, ctx2),
         );
         // Result should still be successful (not an error).
         expect(result.error).toBeUndefined();
@@ -1150,7 +1160,11 @@ describe('hydrate', () => {
       // Create fresh workspace with config iteration limits
       const tmpDir = await fs.mkdtemp('/tmp/p31-iter-');
       try {
-        const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import('../adapters/workspace');
+        const {
+          computeFingerprint,
+          workspaceDir,
+          sessionDir: resolveSessionDir,
+        } = await import('../adapters/workspace');
         const { writeConfig, readConfig } = await import('../adapters/persistence');
         const { readState } = await import('../adapters/persistence');
         const fp = await computeFingerprint(tmpDir);
@@ -1196,11 +1210,14 @@ describe('hydrate', () => {
 
         // Explicit unknown profile should fail
         const result = parseToolResult(
-          await hydrate.execute({ profileId: 'nonexistent-profile-xyz' }, createToolContext({
-            worktree: tmpDir,
-            directory: tmpDir,
-            sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-          }))
+          await hydrate.execute(
+            { profileId: 'nonexistent-profile-xyz' },
+            createToolContext({
+              worktree: tmpDir,
+              directory: tmpDir,
+              sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+            }),
+          ),
         );
         expect(result.error).toBe(true);
         expect(result.code).toBe('INVALID_PROFILE');
@@ -1222,11 +1239,14 @@ describe('hydrate', () => {
           profile: { ...baseConfig.profile, defaultId: 'nonexistent-profile-xyz' },
         });
         const result = parseToolResult(
-          await hydrate.execute({}, createToolContext({
-            worktree: tmpDir,
-            directory: tmpDir,
-            sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-          }))
+          await hydrate.execute(
+            {},
+            createToolContext({
+              worktree: tmpDir,
+              directory: tmpDir,
+              sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+            }),
+          ),
         );
         expect(result.error).toBe(true);
         expect(result.code).toBe('INVALID_PROFILE');
@@ -1236,9 +1256,7 @@ describe('hydrate', () => {
     });
 
     it('config.profile.activeChecks overrides selected profile defaults', async () => {
-      const { computeFingerprint, workspaceDir } = await import(
-        '../adapters/workspace'
-      );
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
       const { writeConfig, readConfig } = await import('../adapters/persistence');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
@@ -1276,9 +1294,11 @@ describe('hydrate', () => {
   it('existing session keeps snapshot values despite changed config', async () => {
     const tmpDir = await fs.mkdtemp('/tmp/p31-existing-');
     try {
-      const { computeFingerprint, workspaceDir, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
-      );
+      const {
+        computeFingerprint,
+        workspaceDir,
+        sessionDir: resolveSessionDir,
+      } = await import('../adapters/workspace');
       const { writeConfig, readConfig } = await import('../adapters/persistence');
 
       const fp = await computeFingerprint(tmpDir);

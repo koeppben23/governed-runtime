@@ -31,7 +31,12 @@
  */
 
 import type { SessionState, Event } from '../state/schema';
-import type { ReviewDecision, ReviewVerdict, ValidationResult, DecisionIdentity } from '../state/evidence';
+import type {
+  ReviewDecision,
+  ReviewVerdict,
+  ValidationResult,
+  DecisionIdentity,
+} from '../state/evidence';
 import { Command, isCommandAllowed } from '../machine/commands';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate';
 import type { RailResult, RailContext, TransitionRecord } from './types';

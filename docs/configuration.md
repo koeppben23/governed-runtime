@@ -147,6 +147,7 @@ Config values are resolved once at session creation (first `/hydrate`). The reso
 - `profileResolution.activeChecks`
 
 Re-running `/hydrate` on an existing session reads from the snapshot, not from updated config. This ensures:
+
 - Deterministic behavior across session lifetime
 - Audit trail integrity (what rules governed the session are preserved)
 - Reproducible replays

@@ -493,8 +493,10 @@ export async function resolvePolicyForHydrate(opts: {
   const basePolicy = requestedResolution.policy;
   const policyWithOverrides: FlowGuardPolicy = {
     ...basePolicy,
-    maxSelfReviewIterations: opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations: opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
   };
 
   if (opts.centralPolicyPath === undefined) {
@@ -545,8 +547,10 @@ export async function resolvePolicyForHydrate(opts: {
   // Apply config overrides to central policy as well
   const centralPolicyWithOverrides: FlowGuardPolicy = {
     ...centralResolution.policy,
-    maxSelfReviewIterations: opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
-    maxImplReviewIterations: opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
   };
   return {
     requestedMode,

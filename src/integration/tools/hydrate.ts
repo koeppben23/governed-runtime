@@ -335,9 +335,12 @@ export const hydrate: ToolDefinition = {
         }
 
         // P31 priority: explicit > config > detected > baseline
-        const selectedProfile = explicitProfileId !== undefined
-          ? profileRegistryForResolution.get(explicitProfileId)
-          : configDefaultProfile ?? detectedProfile ?? profileRegistryForResolution.get('baseline');
+        const selectedProfile =
+          explicitProfileId !== undefined
+            ? profileRegistryForResolution.get(explicitProfileId)
+            : (configDefaultProfile ??
+              detectedProfile ??
+              profileRegistryForResolution.get('baseline'));
 
         // 4. Build profile resolution (including rejected candidates)
         const allCandidates: ProfileResolution['secondary'] = [];
@@ -376,10 +379,8 @@ export const hydrate: ToolDefinition = {
           secondary: allCandidates,
           rejected: rejectedCandidates,
           activeChecks: [
-            ...(config.profile.activeChecks ?? selectedProfile?.activeChecks ?? [
-              'test_quality',
-              'rollback_safety',
-            ]),
+            ...(config.profile.activeChecks ??
+              selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
           ],
         };
 
@@ -489,7 +490,9 @@ export const hydrate: ToolDefinition = {
             ? (centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint)
             : policyResolution.centralEvidence?.pathHint,
           // P31: Existing sessions preserve snapshot profile. New sessions get resolved profile.
-          profileId: existing ? existing.activeProfile?.id : profileResolution?.primary?.id ?? 'baseline',
+          profileId: existing
+            ? existing.activeProfile?.id
+            : (profileResolution?.primary?.id ?? 'baseline'),
           // P31: pass config-provided activeChecks into rails when explicitly configured.
           // Otherwise keep existing rails profile-driven behavior.
           activeChecks: existing ? undefined : config.profile.activeChecks,

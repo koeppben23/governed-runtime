@@ -89,7 +89,9 @@ async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
   // P31: No profileId = auto-detect
-  const args: { policyMode: string; profileId?: string } = { policyMode: overrides.policyMode ?? 'solo' };
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
   if (overrides.profileId !== undefined) {
     args.profileId = overrides.profileId;
   }
