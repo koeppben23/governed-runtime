@@ -8,13 +8,19 @@
  * - Export shape: FlowGuardAuditPlugin is an async function with correct arity
  * - Hooks contract: calling the plugin returns an object with the expected hooks
  * - Barrel export: integration/index.ts re-exports FlowGuardAuditPlugin
+ * - P32: Plugin uses resolveRuntimePolicyMode() for state > config > solo priority
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FlowGuardAuditPlugin } from './plugin';
+import { resolvePluginSessionPolicy } from './plugin-policy';
+import { makeState } from '../__fixtures__';
+import type { PolicyMode } from '../config/policy';
 import * as barrel from './index';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 // ─── Mock Plugin Input ────────────────────────────────────────────────────────
 
@@ -196,6 +202,150 @@ describe('integration/plugin', () => {
       const elapsed = performance.now() - start;
       // 1000 calls in < 20ms => < 0.02ms per call (prefix check)
       expect(elapsed).toBeLessThan(20);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // P32: Plugin-Path Resolver Tests (resolvePluginSessionPolicy)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  describe('P32 Plugin-Path Resolver', () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp('/tmp/p32-test-');
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+
+    function createValidState(policyMode: PolicyMode) {
+      const state = makeState('TICKET');
+      return {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          mode: policyMode,
+          requestedMode: policyMode,
+        },
+      };
+    }
+
+    // HAPPY: State exists → state wins
+    describe('HAPPY', () => {
+      it('state=solo + config=team → solo', async () => {
+        const sessDir = path.join(tmpDir, 'sess_solo');
+        await fs.mkdir(sessDir, { recursive: true });
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          JSON.stringify(createValidState('solo')),
+        );
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+          configDefaultMode: 'team',
+        });
+
+        expect(result.policy.mode).toBe('solo');
+      });
+
+      it('state=regulated + config=team → regulated', async () => {
+        const sessDir = path.join(tmpDir, 'sess_regulated');
+        await fs.mkdir(sessDir, { recursive: true });
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          JSON.stringify(createValidState('regulated')),
+        );
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+          configDefaultMode: 'team',
+        });
+
+        expect(result.policy.mode).toBe('regulated');
+      });
+
+      it('state=team-ci + config=team → team-ci', async () => {
+        const sessDir = path.join(tmpDir, 'sess_teamci');
+        await fs.mkdir(sessDir, { recursive: true });
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          JSON.stringify(createValidState('team-ci')),
+        );
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+          configDefaultMode: 'team',
+        });
+
+        expect(result.policy.mode).toBe('team-ci');
+      });
+    });
+
+    // BAD: Missing/corrupt state → fallback or fail
+    describe('BAD', () => {
+      it('no state file + config=team → team', async () => {
+        const sessDir = path.join(tmpDir, 'sess_no_file');
+        await fs.mkdir(sessDir, { recursive: true });
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+          configDefaultMode: 'team',
+        });
+
+        expect(result.policy.mode).toBe('team');
+        expect(result.state).toBeNull();
+      });
+
+      it('no state file + no config → solo', async () => {
+        const sessDir = path.join(tmpDir, 'sess_no_config');
+        await fs.mkdir(sessDir, { recursive: true });
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+        });
+
+        expect(result.policy.mode).toBe('solo');
+        expect(result.state).toBeNull();
+      });
+
+      it('sessDir=null + config=team → team', async () => {
+        const result = await resolvePluginSessionPolicy({
+          sessDir: null,
+          configDefaultMode: 'team',
+        });
+
+        expect(result.policy.mode).toBe('team');
+        expect(result.state).toBeNull();
+      });
+
+      it('corrupt state file → throw (fail closed)', async () => {
+        const sessDir = path.join(tmpDir, 'sess_corrupt');
+        await fs.mkdir(sessDir, { recursive: true });
+        await fs.writeFile(path.join(sessDir, 'session-state.json'), '{ invalid json }');
+
+        await expect(
+          resolvePluginSessionPolicy({
+            sessDir,
+            configDefaultMode: 'team',
+          }),
+        ).rejects.toThrow();
+      });
+    });
+
+    // CORNER: Edge cases
+    describe('CORNER', () => {
+      it('config=solo + no state → solo', async () => {
+        const sessDir = path.join(tmpDir, 'sess_solo_config');
+        await fs.mkdir(sessDir, { recursive: true });
+
+        const result = await resolvePluginSessionPolicy({
+          sessDir,
+          configDefaultMode: 'solo',
+        });
+
+        expect(result.policy.mode).toBe('solo');
+      });
     });
   });
 });

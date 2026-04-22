@@ -36,7 +36,7 @@
  * - Only FlowGuard tools (name starting with "flowguard_") are audited.
  * - Hash chain is initialized by reading the last event from the trail on first call.
  * - Policy is resolved from session state (read from persistence after tool executes).
- *   Falls back to TEAM_POLICY if state is unavailable.
+ *   Falls back to config.policy.defaultMode > solo if state is unavailable (P32).
  *
  * Auto-archive:
  * - On session completion (COMPLETE phase transition), automatically archives the session
@@ -75,12 +75,7 @@ import {
 } from '../audit/types';
 import { decisionReceipts } from '../audit/query';
 import { getLastChainHash } from '../audit/integrity';
-import {
-  detectCiContext,
-  policyFromSnapshot,
-  resolvePolicy,
-  resolvePolicyWithContext,
-} from '../config/policy';
+import { resolvePluginSessionPolicy } from './plugin-policy';
 import type { FlowGuardPolicy } from '../config/policy';
 import type { FlowGuardConfig } from '../config/flowguard-config';
 import { DEFAULT_CONFIG } from '../config/flowguard-config';
@@ -335,53 +330,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   }
 
   /**
-   * Resolve the FlowGuard policy for the current session.
-   *
-   * Resolution chain:
-   * 1. Session state policySnapshot.mode (if session exists — authoritative)
-   * 2. Config policy.defaultMode (per-workspace config file)
-   * 3. Built-in fallback: 'team' (conservative — human gates on, full audit)
-   *
-   * Falls back to TEAM_POLICY on any failure — TEAM is the safe default
-   * (human gates on, full audit, hash chain enabled).
-   *
-   * Normal paths use resolvePolicyWithContext() for CI context awareness.
-   * Error recovery path uses resolvePolicy() to minimize secondary failures.
+   * P32: Plugin policy resolver.
+   * Delegates to resolvePluginSessionPolicy for testable P32 semantics.
    */
   async function resolveSessionPolicy(
     sessDir: string | null,
   ): Promise<{ policy: FlowGuardPolicy; state: SessionState | null }> {
-    try {
-      if (!sessDir) {
-        const fallbackMode = config.policy.defaultMode ?? 'team';
-        const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
-        return { policy: resolution.policy, state: null };
-      }
-      const state = await readState(sessDir);
-      if (state?.policySnapshot) {
-        const policy = policyFromSnapshot(state.policySnapshot);
-        log.debug('policy', 'resolved session policy', {
-          requestedMode: state.policySnapshot.requestedMode,
-          effectiveMode: state.policySnapshot.mode,
-        });
-        return { policy, state };
-      }
-
-      const resolution = resolvePolicyWithContext(
-        config.policy.defaultMode ?? 'team',
-        detectCiContext(),
-      );
-      log.debug('policy', 'resolved default policy', {
-        requestedMode: resolution.requestedMode,
-        effectiveMode: resolution.effectiveMode,
-      });
-      return { policy: resolution.policy, state };
-    } catch {
-      // Error recovery: use simpler resolvePolicy to minimize secondary failures.
-      // Still passes explicit fallback — no implicit undefined path.
-      log.warn('policy', 'failed to resolve session policy, using default');
-      return { policy: resolvePolicy(config.policy.defaultMode ?? 'team'), state: null };
-    }
+    return resolvePluginSessionPolicy({
+      sessDir,
+      configDefaultMode: config.policy.defaultMode,
+      log,
+    });
   }
 
   return {

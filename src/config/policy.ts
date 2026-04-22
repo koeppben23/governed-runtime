@@ -741,3 +741,35 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     actorClassification: { ...snapshot.actorClassification },
   };
 }
+
+/**
+ * P32: Resolve Runtime Policy Mode — unified fallback for runtime surfaces.
+ *
+ * Priority: state snapshot > config > solo
+ * - state.policySnapshot.mode (existing session) takes precedence
+ * - config.policy.defaultMode is secondary
+ * - solo is the final safe fallback
+ *
+ * This function is for runtime surfaces (plugin, status, etc.) that already have
+ * an existing session state. It does NOT handle explicit user input —
+ * that is handled by resolvePolicyForHydrate() which includes P29/P31 logic.
+ *
+ * @example
+ * // Plugin with existing session
+ * const mode = resolveRuntimePolicyMode({ state: existingState });
+ *
+ * // Plugin without session, using config
+ * const mode = resolveRuntimePolicyMode({ configDefaultMode: config.policy.defaultMode });
+ *
+ * // Plugin without anything
+ * const mode = resolveRuntimePolicyMode({});
+ */
+export function resolveRuntimePolicyMode(opts: {
+  state?: { policySnapshot?: { mode?: PolicyMode } };
+  configDefaultMode?: PolicyMode;
+}): PolicyMode {
+  if (opts.state?.policySnapshot?.mode) {
+    return opts.state.policySnapshot.mode;
+  }
+  return opts.configDefaultMode ?? 'solo';
+}

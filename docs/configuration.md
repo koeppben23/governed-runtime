@@ -125,18 +125,21 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 
 Different runtime contexts resolve policy defaults independently:
 
-| Context                 | Priority Chain                                                                                                             | Final Fallback |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `/hydrate` tool         | requested (`explicit > config.defaultMode > solo`) constrained by optional central `minimumMode` (`FLOWGUARD_POLICY_PATH`) | `solo`         |
-| Plugin / session policy | state snapshot > `config.policy.defaultMode` > `team`                                                                      | `team`         |
-| Install CLI             | `--policy-mode` writes `config.policy.defaultMode`                                                                         | —              |
+| Context          | Priority Chain                                              | Final Fallback |
+| ---------------- | ----------------------------------------------------------- | -------------- |
+| `/hydrate` tool  | explicit > central > config.defaultMode > `solo` (P29/P31)  | `solo`         |
+| Plugin / runtime | state snapshot > `config.policy.defaultMode` > `solo` (P32) | `solo`         |
+| Install CLI      | `--policy-mode` writes `config.policy.defaultMode`          | —              |
 
-**Why different fallbacks?**
+**P32: Runtime Policy Mode Unification**
 
-- `/hydrate` defaults to `solo` — developer-friendly for initial workspace bootstrap.
-- Plugin/session policy defaults to `team` — conservative (human gates on, full audit, hash chain enabled). A running plugin should not silently fall into the most permissive mode when config is missing.
+Since P32, all runtime surfaces (plugin, status, etc.) use the same fallback priority:
 
-Both paths read `config.policy.defaultMode` as the primary configured default. The difference is only in the built-in fallback when no config exists.
+```
+state.policySnapshot.mode → config.policy.defaultMode → solo
+```
+
+This unified fallback replaces the previous plugin-specific `team` fallback.
 
 ### Existing Sessions and Snapshot Authority
 
