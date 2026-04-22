@@ -85,7 +85,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured manifests** — every archive includes `archive-manifest.json` with session identity, file inventory, per-file digests, and content digest
 - **SHA-256 file hash** — `.tar.gz.sha256` sidecar for external integrity verification (fatal on write failure in regulated mode)
 - **Regulated archive completion guarantee** — clean regulated completion requires synchronous archive creation + verification success; `archiveStatus` field tracks lifecycle (`pending` → `verified` or `failed`)
-- **10-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, and state presence
+- **11-check verification** — `verifyArchive()` validates manifest presence, file completeness, digest integrity, discovery consistency, state presence, and audit-chain integrity findings
 - **Redacted export by default** — archive artifacts are export-redacted (`mode=basic`, `includeRaw=false`) while runtime/audit SSOT remains raw internally
 - **Receipt export** — archives include `decision-receipts.redacted.v1.json` (and raw receipts only when explicitly opted in)
 - **Manifest risk signaling** — manifest records redaction mode, raw inclusion, redacted artifacts, excluded raw artifacts, and `raw_export_enabled` when raw export is opt-in

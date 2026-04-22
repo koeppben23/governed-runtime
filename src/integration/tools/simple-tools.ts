@@ -101,6 +101,7 @@ export const status: ToolDefinition = {
           phase: state.phase,
           sessionId: state.id,
           policyMode: state.policySnapshot?.mode ?? 'unknown',
+          archiveStatus: state.archiveStatus ?? null,
           appliedPolicy: {
             source: state.policySnapshot?.source ?? 'unknown',
             requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
