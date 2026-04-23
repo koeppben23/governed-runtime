@@ -159,6 +159,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install OpenCode CLI
+        run: npm install -g opencode-ai
+
       - name: Verify OpenCode CLI availability
         run: |
           if ! command -v opencode >/dev/null 2>&1; then
