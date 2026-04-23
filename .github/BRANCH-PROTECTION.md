@@ -30,15 +30,16 @@ These check names must be configured exactly as required checks:
 6. `build`
 7. `audit`
 8. `actionlint`
-9. `security-policy`
-10. `secrets-scan`
-11. `codeql-sast`
+9. `secrets-scan`
+10. `codeql-sast`
+11. `security-policy`
 12. `install (ubuntu-latest)`
 13. `install (macos-latest)`
 14. `install (windows-latest)`
 15. `install-verify (ubuntu-latest)`
 16. `install-verify (macos-latest)`
 17. `install-verify (windows-latest)`
+18. `acp-smoke`
 
 ## Source of Truth
 
