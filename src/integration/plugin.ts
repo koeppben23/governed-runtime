@@ -56,13 +56,18 @@
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
-import { readState, appendAuditEvent, readAuditTrail, readConfig } from '../adapters/persistence';
+import {
+  readState,
+  appendAuditEvent,
+  readAuditTrail,
+  readConfig,
+} from '../adapters/persistence.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
   archiveSession,
-} from '../adapters/workspace';
+} from '../adapters/workspace/index.js';
 import {
   createToolCallEvent,
   createTransitionEvent,
@@ -72,17 +77,17 @@ import {
   summarizeArgs,
   GENESIS_HASH,
   type ChainedAuditEvent,
-} from '../audit/types';
-import { decisionReceipts } from '../audit/query';
-import { getLastChainHash } from '../audit/integrity';
-import { resolvePluginSessionPolicy } from './plugin-policy';
-import type { FlowGuardPolicy } from '../config/policy';
-import type { FlowGuardConfig } from '../config/flowguard-config';
-import { DEFAULT_CONFIG } from '../config/flowguard-config';
-import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger';
-import { createFileSink, getLogDir } from '../logging/file-sink';
-import type { Phase, Event } from '../state/schema';
-import type { SessionState } from '../state/schema';
+} from '../audit/types.js';
+import { decisionReceipts } from '../audit/query.js';
+import { getLastChainHash } from '../audit/integrity.js';
+import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import type { FlowGuardPolicy } from '../config/policy.js';
+import type { FlowGuardConfig } from '../config/flowguard-config.js';
+import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
+import { createFileSink, getLogDir } from '../logging/file-sink.js';
+import type { Phase, Event } from '../state/schema.js';
+import type { SessionState } from '../state/schema.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';

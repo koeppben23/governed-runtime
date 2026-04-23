@@ -26,9 +26,9 @@
  * @version v2
  */
 
-import type { SessionState, Phase, Event } from '../state/schema';
-import { GUARDS } from './guards';
-import { resolveTransition, USER_GATES, TERMINAL } from './topology';
+import type { SessionState, Phase, Event } from '../state/schema.js';
+import { GUARDS } from './guards.js';
+import { resolveTransition, USER_GATES, TERMINAL } from './topology.js';
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { evaluate, evaluateWithEvent } from '../machine/evaluate';
-import type { EvalResult } from '../machine/evaluate';
+import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
+import type { EvalResult } from '../machine/evaluate.js';
 import {
   makeState,
   makeProgressedState,
@@ -14,8 +14,8 @@ import {
   IMPL_REVIEW_CONVERGED,
   ERROR_INFO,
   ARCHITECTURE_DECISION,
-} from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+} from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('evaluate', () => {
   // ─── HAPPY ─────────────────────────────────────────────────

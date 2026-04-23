@@ -25,7 +25,7 @@ import type {
   TopologyKind,
   ModuleInfo,
   EntryPointInfo,
-} from '../types';
+} from '../types.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

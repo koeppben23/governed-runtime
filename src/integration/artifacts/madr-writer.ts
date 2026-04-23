@@ -15,7 +15,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import type { ArchitectureDecision } from '../../state/evidence';
+import type { ArchitectureDecision } from '../../state/evidence.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

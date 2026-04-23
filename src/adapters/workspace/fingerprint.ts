@@ -11,9 +11,9 @@
 
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { remoteOriginUrl } from '../git';
+import { remoteOriginUrl } from '../git.js';
 
-import { FINGERPRINT_LENGTH, type FingerprintResult } from './types';
+import { FINGERPRINT_LENGTH, type FingerprintResult } from './types.js';
 
 // -- URL Canonicalization -----------------------------------------------------
 

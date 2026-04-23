@@ -19,7 +19,7 @@
 import { createHash } from 'node:crypto';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
-import { withSpan, addFingerprint } from '../telemetry';
+import { withSpan, addFingerprint } from '../telemetry/index.js';
 import type {
   CollectorInput,
   CollectorStatus,
@@ -33,15 +33,15 @@ import type {
   StackInfo,
   TopologyInfo,
   ValidationHints,
-} from './types';
-import { DISCOVERY_SCHEMA_VERSION } from './types';
-import { collectRepoMetadata } from './collectors/repo-metadata';
-import { collectStack } from './collectors/stack-detection';
-import { collectTopology } from './collectors/topology';
-import { collectSurfaces } from './collectors/surface-detection';
-import { collectCodeSurfaces } from './collectors/code-surface-analysis';
-import { collectDomainSignals } from './collectors/domain-signals';
-import { extractScopedStack } from './scoped-stack';
+} from './types.js';
+import { DISCOVERY_SCHEMA_VERSION } from './types.js';
+import { collectRepoMetadata } from './collectors/repo-metadata.js';
+import { collectStack } from './collectors/stack-detection.js';
+import { collectTopology } from './collectors/topology.js';
+import { collectSurfaces } from './collectors/surface-detection.js';
+import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
+import { collectDomainSignals } from './collectors/domain-signals.js';
+import { extractScopedStack } from './scoped-stack.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

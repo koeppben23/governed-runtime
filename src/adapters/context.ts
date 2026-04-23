@@ -19,7 +19,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import type { RailContext } from '../rails/types';
+import type { RailContext } from '../rails/types.js';
 
 // -- Factory ------------------------------------------------------------------
 

@@ -19,7 +19,7 @@
 
 import { writeFile, readdir, unlink, mkdir, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import type { LogEntry, LogSink } from './logger';
+import type { LogEntry, LogSink } from './logger.js';
 
 /** Log file directory relative to workspace. */
 const LOG_SUBDIR = '.opencode/logs';

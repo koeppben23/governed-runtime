@@ -26,8 +26,8 @@
  */
 
 import * as path from 'node:path';
-import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types';
-import { getRootBasename } from '../repo-paths';
+import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types.js';
+import { getRootBasename } from '../repo-paths.js';
 
 // ─── Detection Rules ──────────────────────────────────────────────────────────
 

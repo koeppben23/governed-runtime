@@ -20,14 +20,14 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence';
-import { validateAdrSections } from '../state/evidence';
-import { Command, isCommandAllowed } from '../machine/commands';
-import { evaluate } from '../machine/evaluate';
-import type { RailResult, RailContext, TransitionRecord } from './types';
-import { autoAdvance } from './types';
-import { blocked } from '../config/reasons';
+import type { SessionState } from '../state/schema.js';
+import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence.js';
+import { validateAdrSections } from '../state/evidence.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import { evaluate } from '../machine/evaluate.js';
+import type { RailResult, RailContext, TransitionRecord } from './types.js';
+import { autoAdvance } from './types.js';
+import { blocked } from '../config/reasons.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 

@@ -27,8 +27,8 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import { resolveRoot, isGitRepo } from './git';
+import type { SessionState } from '../state/schema.js';
+import { resolveRoot, isGitRepo } from './git.js';
 import * as path from 'node:path';
 
 // -- Error --------------------------------------------------------------------

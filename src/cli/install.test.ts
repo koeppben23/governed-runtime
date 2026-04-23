@@ -37,7 +37,7 @@ import {
   type CliResult,
   type DoctorCheck,
   type InstallScope,
-} from './install';
+} from './install.js';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
@@ -51,8 +51,8 @@ import {
   extractManagedVersion,
   extractManagedBody,
   isManagedArtifact,
-} from './templates';
-import { measureAsync } from '../test-policy';
+} from './templates.js';
+import { measureAsync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -816,7 +816,7 @@ describe('cli/install', () => {
       // vendor directory with tarball
       expect(existsSync(path.join(oc, 'vendor', `flowguard-core-${VERSION}.tgz`))).toBe(true);
       // workspace config materialized for current workspace
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(process.cwd());
       expect(existsSync(path.join(workspaceDir(fp.fingerprint), 'config.json'))).toBe(true);
     });
@@ -826,8 +826,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
       expect(result.errors).toEqual([]);
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const config = await readConfig(workspaceDir(fp.fingerprint));
       expect(config.policy.defaultMode).toBe('regulated');
@@ -838,8 +838,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
       expect(result.errors).toEqual([]);
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const config = await readConfig(workspaceDir(fp.fingerprint));
       expect(config.policy.defaultMode).toBe('solo');
@@ -850,8 +850,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'team' }));
       expect(result.errors).toEqual([]);
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const config = await readConfig(workspaceDir(fp.fingerprint));
       expect(config.policy.defaultMode).toBe('team');
@@ -1162,8 +1162,8 @@ describe('cli/install', () => {
       // Re-install with solo (without --force) — config should NOT be overwritten
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const config = await readConfig(workspaceDir(fp.fingerprint));
       // Still regulated — config.json already existed, no --force
@@ -1178,8 +1178,8 @@ describe('cli/install', () => {
       // Re-install with --force and regulated
       await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const config = await readConfig(workspaceDir(fp.fingerprint));
       // Updated to regulated — --force updates config
@@ -1191,8 +1191,8 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
 
       // Manually set a non-policy config field
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { readConfig, writeConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { readConfig, writeConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(process.cwd());
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(wsDir);
@@ -1575,7 +1575,7 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(process.cwd());
       await fs.unlink(path.join(workspaceDir(fp.fingerprint), 'config.json'));
 

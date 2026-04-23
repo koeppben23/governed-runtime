@@ -23,8 +23,8 @@
  */
 
 import * as crypto from 'node:crypto';
-import type { Phase, Event } from '../state/schema';
-import type { ReviewVerdict } from '../state/evidence';
+import type { Phase, Event } from '../state/schema.js';
+import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 

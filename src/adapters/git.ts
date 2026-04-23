@@ -28,7 +28,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
-import { isEnoent } from './persistence';
+import { isEnoent } from './persistence.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -15,14 +15,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config';
+import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import {
   readConfig,
   writeDefaultConfig,
   configPath,
   PersistenceError,
-} from '../adapters/persistence';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+} from '../adapters/persistence.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

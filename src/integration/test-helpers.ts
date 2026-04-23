@@ -154,7 +154,7 @@ export async function isTarAvailable(): Promise<boolean> {
  * Usage in test files:
  *
  *   vi.mock("../adapters/git", async (importOriginal) => {
- *     const original = await importOriginal<typeof import("../adapters/git")>();
+ *     const original = await importOriginal<typeof import("../adapters/git.js")>();
  *     return {
  *       ...original,
  *       remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),

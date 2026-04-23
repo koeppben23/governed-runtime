@@ -20,6 +20,7 @@ High-risk surfaces include:
 - Run typecheck, lint, build, and relevant integration or e2e checks.
 - For release/installer changes, verify exact generated artifact install path.
 - Document rollback or recovery strategy.
+- In non-interactive execution (`flowguard run`, `flowguard serve` automation), return `BLOCKED` instead of asking follow-up questions.
 
 ## High-Risk Examples
 

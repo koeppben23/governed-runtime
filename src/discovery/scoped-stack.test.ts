@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { DetectedItem } from './types';
-import { extractScopedStack } from './scoped-stack';
+import type { DetectedItem } from './types.js';
+import { extractScopedStack } from './scoped-stack.js';
 
 describe('discovery/scoped-stack', () => {
   // ─── HAPPY: basic scope detection ──────
@@ -648,8 +648,8 @@ services:
   // ─── EDGE: verify extractDetectedStack integration ──────
   describe('EDGE: extractDetectedStack integration', () => {
     it('extractDetectedStack includes scopes when allFiles provided', async () => {
-      const { extractDetectedStack } = await import('./orchestrator');
-      const { DiscoveryResultSchema } = await import('./types');
+      const { extractDetectedStack } = await import('./orchestrator.js');
+      const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
         schemaVersion: 'discovery.v1',
@@ -728,8 +728,8 @@ services:
     });
 
     it('extractDetectedStack detects nested manifest facts via readFile', async () => {
-      const { extractDetectedStack } = await import('./orchestrator');
-      const { DiscoveryResultSchema } = await import('./types');
+      const { extractDetectedStack } = await import('./orchestrator.js');
+      const { DiscoveryResultSchema } = await import('./types.js');
 
       const nestedPackageJson = JSON.stringify({
         name: 'web',
@@ -814,8 +814,8 @@ services:
     });
 
     it('extractDetectedStack omits scopes when no nested manifests', async () => {
-      const { extractDetectedStack } = await import('./orchestrator');
-      const { DiscoveryResultSchema } = await import('./types');
+      const { extractDetectedStack } = await import('./orchestrator.js');
+      const { DiscoveryResultSchema } = await import('./types.js');
 
       const result = DiscoveryResultSchema.parse({
         schemaVersion: 'discovery.v1',

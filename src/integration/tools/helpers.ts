@@ -16,32 +16,32 @@
 import { z } from 'zod';
 
 // State & Machine
-import type { SessionState } from '../../state/schema';
-import type { EvalResult } from '../../machine/evaluate';
-import { resolveNextAction } from '../../machine/next-action';
+import type { SessionState } from '../../state/schema.js';
+import type { EvalResult } from '../../machine/evaluate.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 
 // Rail helpers
-import type { RailResult, RailContext } from '../../rails/types';
+import type { RailResult, RailContext } from '../../rails/types.js';
 
 // Adapters
-import { readState, writeState } from '../../adapters/persistence';
+import { readState, writeState } from '../../adapters/persistence.js';
 import {
   materializeEvidenceArtifacts,
   verifyEvidenceArtifacts,
-} from '../artifacts/evidence-artifacts';
+} from '../artifacts/evidence-artifacts.js';
 
 // Workspace
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
-} from '../../adapters/workspace';
+} from '../../adapters/workspace/index.js';
 
 // Config
-import { policyFromSnapshot, resolvePolicy } from '../../config/policy';
-import type { FlowGuardPolicy } from '../../config/policy';
-import { defaultReasonRegistry } from '../../config/reasons';
-import { createRailContext } from '../../adapters/context';
+import { policyFromSnapshot, resolvePolicy } from '../../config/policy.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import { defaultReasonRegistry } from '../../config/reasons.js';
+import { createRailContext } from '../../adapters/context.js';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 

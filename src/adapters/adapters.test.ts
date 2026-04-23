@@ -29,19 +29,19 @@ import {
   auditPath,
   PersistenceError,
   isEnoent,
-} from './persistence';
-import { validateBinding, fromOpenCodeContext, BindingError } from './binding';
-import { createRailContext } from './context';
-import type { SessionState } from '../state/schema';
-import type { AuditEvent, ReviewReport } from '../state/evidence';
+} from './persistence.js';
+import { validateBinding, fromOpenCodeContext, BindingError } from './binding.js';
+import { createRailContext } from './context.js';
+import type { SessionState } from '../state/schema.js';
+import type { AuditEvent, ReviewReport } from '../state/evidence.js';
 import {
   makeState,
   makeProgressedState,
   FIXED_TIME,
   FIXED_UUID,
   FIXED_SESSION_UUID,
-} from '../__fixtures__';
-import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy';
+} from '../__fixtures__.js';
+import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

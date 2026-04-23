@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveNextAction, ACTION_CODES } from './next-action';
-import type { NextAction } from './next-action';
+import { resolveNextAction, ACTION_CODES } from './next-action.js';
+import type { NextAction } from './next-action.js';
 import {
   makeState,
   makeProgressedState,
@@ -12,9 +12,9 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
   ARCHITECTURE_DECISION,
-} from '../__fixtures__';
-import { Phase } from '../state/schema';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+} from '../__fixtures__.js';
+import { Phase } from '../state/schema.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

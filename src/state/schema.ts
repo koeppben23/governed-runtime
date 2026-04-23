@@ -29,12 +29,12 @@ import {
   SelfReviewLoop,
   TicketEvidence,
   ValidationResult,
-} from './evidence';
+} from './evidence.js';
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
   VerificationCandidatesSchema,
-} from '../discovery/types';
+} from '../discovery/types.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 

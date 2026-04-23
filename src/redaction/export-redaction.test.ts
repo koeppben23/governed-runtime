@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { redactDecisionReceipts, redactReviewReport } from './export-redaction';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+import { redactDecisionReceipts, redactReviewReport } from './export-redaction.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('redaction/export-redaction', () => {
   // ─── HAPPY ────────────────────────────────────────────────────────────────

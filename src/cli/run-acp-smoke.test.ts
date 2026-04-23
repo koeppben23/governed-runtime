@@ -29,19 +29,29 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
       stderr += d.toString();
     });
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       proc.on('close', (code) => {
-        // Must have exit code 0 OR some output
-        expect(code === 0 || stdout.length > 0 || stderr.length > 0).toBe(true);
-        resolve();
+        finish(() => {
+          // Must have exit code 0 OR some output
+          expect(code === 0 || stdout.length > 0 || stderr.length > 0).toBe(true);
+          resolve();
+        });
       });
-      proc.on('error', () => {
-        expect(true).toBe(false);
-        resolve();
+      proc.on('error', (err) => {
+        finish(() => reject(new Error(`opencode --version failed to start: ${String(err)}`)));
       });
       setTimeout(() => {
-        proc.kill();
-        resolve();
+        finish(() => {
+          proc.kill();
+          resolve();
+        });
       }, TIMEOUT);
     });
   });
@@ -51,16 +61,25 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       setTimeout(() => {
-        // Process started - that's the smoke test
-        expect(proc.pid).toBeDefined();
-        proc.kill();
-        resolve();
+        finish(() => {
+          // Process started - that's the smoke test
+          expect(proc.pid).toBeDefined();
+          proc.kill();
+          resolve();
+        });
       }, TIMEOUT);
 
-      proc.on('error', () => {
-        resolve();
+      proc.on('error', (err) => {
+        finish(() => reject(new Error(`opencode acp failed to start: ${String(err)}`)));
       });
     });
   });
@@ -70,15 +89,26 @@ const IS_ENABLED = process.env.RUN_OPENCODE_ACP_TESTS === '1';
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       setTimeout(() => {
-        const killed = proc.kill('SIGTERM');
-        expect(killed).toBe(true);
-        resolve();
+        finish(() => {
+          const killed = proc.kill('SIGTERM');
+          expect(killed).toBe(true);
+          resolve();
+        });
       }, 500);
 
-      proc.on('error', () => {
-        resolve();
+      proc.on('error', (err) => {
+        finish(() =>
+          reject(new Error(`opencode acp termination test failed to start: ${String(err)}`)),
+        );
       });
     });
   });

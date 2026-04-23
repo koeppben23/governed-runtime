@@ -12,8 +12,8 @@ import {
   reviewDone,
   isConverged,
   GUARDS,
-} from '../machine/guards';
-import type { Phase } from '../state/schema';
+} from '../machine/guards.js';
+import type { Phase } from '../state/schema.js';
 import {
   makeState,
   TICKET,
@@ -26,8 +26,8 @@ import {
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
   ERROR_INFO,
-} from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+} from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('guards', () => {
   // ─── HAPPY ─────────────────────────────────────────────────

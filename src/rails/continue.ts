@@ -22,7 +22,7 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
+import type { SessionState } from '../state/schema.js';
 import type {
   CheckId,
   ValidationResult,
@@ -31,18 +31,18 @@ import type {
   PlanRecord,
   LoopVerdict,
   ArchitectureDecision,
-} from '../state/evidence';
-import { validateAdrSections } from '../state/evidence';
-import { Command, isCommandAllowed } from '../machine/commands';
-import { USER_GATES, TERMINAL } from '../machine/topology';
-import type { RailResult, RailContext } from './types';
+} from '../state/evidence.js';
+import { validateAdrSections } from '../state/evidence.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import type { RailResult, RailContext } from './types.js';
 import {
   autoAdvance,
   runSingleIteration,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
-} from './types';
-import { blocked } from '../config/reasons';
+} from './types.js';
+import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 

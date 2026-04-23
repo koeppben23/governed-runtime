@@ -29,7 +29,7 @@
  * @version v1
  */
 
-import type { PolicySnapshot } from '../state/evidence';
+import type { PolicySnapshot } from '../state/evidence.js';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 

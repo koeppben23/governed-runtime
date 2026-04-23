@@ -40,9 +40,8 @@
   },
   "scripts": {
     "clean": "node scripts/clean-dist.js",
-    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run fix-esm",
-    "fix-esm": "node scripts/fix-esm-imports.js",
-    "check:esm": "node scripts/fix-esm-imports.js --check",
+    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
+    "check:esm": "node scripts/check-esm-imports.js",
     "check": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",

@@ -6,9 +6,9 @@ import {
   runSingleIteration,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
-} from '../rails/types';
-import type { RailContext, ConvergenceResult, IterationResult } from '../rails/types';
-import { evaluate } from '../machine/evaluate';
+} from '../rails/types.js';
+import type { RailContext, ConvergenceResult, IterationResult } from '../rails/types.js';
+import { evaluate } from '../machine/evaluate.js';
 import {
   makeState,
   makeProgressedState,
@@ -18,9 +18,9 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
-import { createTestContext } from '../testing';
+} from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { createTestContext } from '../testing.js';
 
 const ctx = createTestContext();
 

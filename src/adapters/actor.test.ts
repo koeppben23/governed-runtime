@@ -20,7 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { resolveActor, resolveActorFromClaim, ActorClaimError } from './actor';
+import { resolveActor, resolveActorFromClaim, ActorClaimError } from './actor.js';
 
 // Mock git adapter — actor resolution must not depend on real git
 vi.mock('./git', () => ({
@@ -35,7 +35,7 @@ vi.mock('./git', () => ({
 }));
 
 // Import mocked functions for per-test configuration
-import { gitUserName, gitUserEmail } from './git';
+import { gitUserName, gitUserEmail } from './git.js';
 const mockGitUserName = vi.mocked(gitUserName);
 const mockGitUserEmail = vi.mocked(gitUserEmail);
 

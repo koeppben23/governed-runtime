@@ -12,8 +12,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from './logger';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from './logger.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

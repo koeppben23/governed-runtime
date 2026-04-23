@@ -9,15 +9,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { executeReview, type ReviewExecutors } from './review';
+import { executeReview, type ReviewExecutors } from './review.js';
 import {
   makeState,
   makeProgressedState,
   FIXED_TIME,
   FIXED_UUID,
   VALIDATION_FAILED,
-} from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS, measureAsync } from '../test-policy';
+} from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS, measureAsync } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

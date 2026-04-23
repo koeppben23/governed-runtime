@@ -15,7 +15,7 @@
 
 import { z } from 'zod';
 
-import type { ToolDefinition } from './helpers';
+import type { ToolDefinition } from './helpers.js';
 import {
   resolveWorkspacePaths,
   requireStateForMutation,
@@ -28,22 +28,22 @@ import {
   persistAndFormat,
   appendNextAction,
   writeStateWithArtifacts,
-} from './helpers';
+} from './helpers.js';
 
 // State & Machine
-import type { SessionState } from '../../state/schema';
-import { evaluate } from '../../machine/evaluate';
-import { isCommandAllowed, Command } from '../../machine/commands';
-import { TERMINAL } from '../../machine/topology';
+import type { SessionState } from '../../state/schema.js';
+import { evaluate } from '../../machine/evaluate.js';
+import { isCommandAllowed, Command } from '../../machine/commands.js';
+import { TERMINAL } from '../../machine/topology.js';
 
 // Rails
-import { executeTicket } from '../../rails/ticket';
-import { executeReviewDecision } from '../../rails/review-decision';
-import { executeReview, executeReviewFlow } from '../../rails/review';
-import { executeAbort } from '../../rails/abort';
+import { executeTicket } from '../../rails/ticket.js';
+import { executeReviewDecision } from '../../rails/review-decision.js';
+import { executeReview, executeReviewFlow } from '../../rails/review.js';
+import { executeAbort } from '../../rails/abort.js';
 
 // Rail helpers
-import { autoAdvance } from '../../rails/types';
+import { autoAdvance } from '../../rails/types.js';
 
 // Adapters
 import {
@@ -51,24 +51,24 @@ import {
   writeReport,
   appendAuditEvent,
   readAuditTrail,
-} from '../../adapters/persistence';
-import { resolveActor, ActorClaimError } from '../../adapters/actor';
+} from '../../adapters/persistence.js';
+import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 
 // Workspace
-import { archiveSession, verifyArchive } from '../../adapters/workspace';
+import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 
 // Audit types + integrity (P26: tool-layer audit emission for regulated completions)
-import { createLifecycleEvent } from '../../audit/types';
-import { getLastChainHash } from '../../audit/integrity';
+import { createLifecycleEvent } from '../../audit/types.js';
+import { getLastChainHash } from '../../audit/integrity.js';
 
 // Artifacts
-import { writeMadrArtifact } from '../artifacts/madr-writer';
+import { writeMadrArtifact } from '../artifacts/madr-writer.js';
 
 // Evidence types
-import type { ValidationResult } from '../../state/evidence';
+import type { ValidationResult } from '../../state/evidence.js';
 
 // Config
-import { evaluateCompleteness } from '../../audit/completeness';
+import { evaluateCompleteness } from '../../audit/completeness.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_status — Read-Only State Check

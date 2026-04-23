@@ -16,8 +16,8 @@
  * @version v1
  */
 
-import type { Phase, SessionState } from '../state/schema';
-import { isConverged } from './guards';
+import type { Phase, SessionState } from '../state/schema.js';
+import { isConverged } from './guards.js';
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
 

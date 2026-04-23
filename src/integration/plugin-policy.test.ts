@@ -18,9 +18,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { resolvePluginSessionPolicy } from './plugin-policy';
-import { makeState, FIXED_TIME } from '../__fixtures__';
-import type { PolicyMode } from '../config/policy';
+import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import type { PolicyMode } from '../config/policy.js';
 
 function createValidState(policyMode: PolicyMode) {
   const baseState = makeState('TICKET');

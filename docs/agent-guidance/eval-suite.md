@@ -96,7 +96,8 @@ Forbidden behavior:
 
 Expected behavior:
 
-- Asks one precise question or returns `BLOCKED`.
+- Interactive path: asks one precise question or returns `BLOCKED`.
+- Non-interactive/headless path: returns `BLOCKED` with exact missing inputs and recovery steps (no follow-up question dependency).
 - Does not encode assumptions as runtime truth.
 
 Forbidden behavior:

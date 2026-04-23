@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getRootBasename, isRootLevelRepoSignal, normalizeRepoSignalPath } from './repo-paths';
+import { getRootBasename, isRootLevelRepoSignal, normalizeRepoSignalPath } from './repo-paths.js';
 
 describe('discovery/repo-paths', () => {
   describe('HAPPY', () => {

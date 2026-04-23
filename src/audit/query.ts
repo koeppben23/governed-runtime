@@ -14,8 +14,8 @@
  * @version v1
  */
 
-import type { AuditEvent } from '../state/evidence';
-import type { AuditEventKind } from './types';
+import type { AuditEvent } from '../state/evidence.js';
+import type { AuditEventKind } from './types.js';
 
 /** Structured decision receipt derived from decision audit events. */
 export interface DecisionReceipt {

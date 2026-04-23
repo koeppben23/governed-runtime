@@ -25,7 +25,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
-} from './test-helpers';
+} from './test-helpers.js';
 import {
   status,
   hydrate,
@@ -37,9 +37,9 @@ import {
   review,
   abort_session,
   archive,
-} from './tools';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence';
-import * as persistence from '../adapters/persistence';
+} from './tools/index.js';
+import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
   makeProgressedState,
@@ -50,14 +50,14 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__';
-import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers';
-import { TEAM_POLICY } from '../config/policy';
+} from '../__fixtures__.js';
+import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/git')>();
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
@@ -77,12 +77,14 @@ vi.mock('../adapters/git', async (importOriginal) => {
 // mockResolvedValueOnce queues — unconsumed values leak across tests).
 
 const wsOriginals = vi.hoisted(() => ({
-  archiveSession: null as unknown as (typeof import('../adapters/workspace'))['archiveSession'],
-  verifyArchive: null as unknown as (typeof import('../adapters/workspace'))['verifyArchive'],
+  archiveSession:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
+  verifyArchive:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
 }));
 
 vi.mock('../adapters/workspace', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/workspace')>();
+  const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
   wsOriginals.archiveSession = original.archiveSession;
   wsOriginals.verifyArchive = original.verifyArchive;
   return {
@@ -97,11 +99,11 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
 // Prevents dependency on real env vars or git config.
 
 const actorOriginal = vi.hoisted(() => ({
-  resolveActor: null as unknown as (typeof import('../adapters/actor'))['resolveActor'],
+  resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
 }));
 
 vi.mock('../adapters/actor', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/actor')>();
+  const original = await importOriginal<typeof import('../adapters/actor.js')>();
   actorOriginal.resolveActor = original.resolveActor;
   return {
     ...original,
@@ -114,9 +116,9 @@ vi.mock('../adapters/actor', async (importOriginal) => {
 });
 
 // Lazy import for per-test overrides
-const gitMock = await import('../adapters/git');
-const wsMock = await import('../adapters/workspace');
-const actorMock = await import('../adapters/actor');
+const gitMock = await import('../adapters/git.js');
+const wsMock = await import('../adapters/workspace/index.js');
+const actorMock = await import('../adapters/actor.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -238,7 +240,7 @@ describe('status', () => {
       await hydrateSession();
       // Resolve session dir and inject detectedStack into persisted state
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -308,7 +310,7 @@ describe('status', () => {
     it('returns persisted verificationCandidates in status', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -435,7 +437,7 @@ describe('hydrate', () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -459,7 +461,7 @@ describe('hydrate', () => {
         computeFingerprint,
         workspaceDir,
         sessionDir: resolveSessionDir,
-      } = await import('../adapters/workspace');
+      } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -493,7 +495,7 @@ describe('hydrate', () => {
     it('fails closed when existing workspace config is invalid', async () => {
       await hydrateSession();
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
       await fs.writeFile(cfgPath, '{invalid{{{', 'utf-8');
@@ -587,7 +589,7 @@ describe('hydrate', () => {
 
       // 2. Locate session dir on disk
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -653,7 +655,9 @@ describe('hydrate', () => {
     it('idempotent hydrate preserves workspace metadata', async () => {
       await hydrateSession();
       await hydrateSession();
-      const { computeFingerprint, readWorkspaceInfo } = await import('../adapters/workspace');
+      const { computeFingerprint, readWorkspaceInfo } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const info = await readWorkspaceInfo(fp.fingerprint);
       expect(info).not.toBeNull();
@@ -664,7 +668,7 @@ describe('hydrate', () => {
       await hydrateSession({ policyMode: 'regulated' });
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
 
@@ -696,7 +700,7 @@ describe('hydrate', () => {
       await hydrateSession({ policyMode: 'regulated' });
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -736,8 +740,8 @@ describe('hydrate', () => {
         computeFingerprint,
         workspaceDir,
         sessionDir: resolveSessionDir,
-      } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(wsDir);
@@ -802,8 +806,8 @@ describe('hydrate', () => {
       await hydrateSession({ policyMode: 'solo' });
 
       // 2. Write config with regulated as defaultMode
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(wsDir);
@@ -826,7 +830,7 @@ describe('hydrate', () => {
       expect(resolution.effectiveMode).toBe('regulated');
 
       // Also verify persisted state
-      const { sessionDir: resolveSessionDir } = await import('../adapters/workspace');
+      const { sessionDir: resolveSessionDir } = await import('../adapters/workspace/index.js');
       const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
       const state = await readState(sessDir);
       expect(state).not.toBeNull();
@@ -838,8 +842,8 @@ describe('hydrate', () => {
       await hydrateSession({ policyMode: 'solo' });
 
       // 2. Set config default to regulated
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(wsDir);
@@ -877,8 +881,8 @@ describe('hydrate', () => {
       await hydrateSession({ policyMode: 'solo' });
 
       // 2. Set config default to team
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(wsDir);
@@ -973,7 +977,7 @@ describe('hydrate', () => {
 
     it('re-materializes missing workspace config on hydrate', async () => {
       await hydrateSession();
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
       await fs.unlink(cfgPath);
@@ -984,7 +988,7 @@ describe('hydrate', () => {
     });
 
     it('fails closed when workspace config cannot be written', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
       // Ensure config is missing so hydrate must write it.
@@ -1012,8 +1016,8 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
         const baseConfig = await readConfig(wsDir);
@@ -1046,8 +1050,8 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1084,8 +1088,8 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1123,9 +1127,9 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
-        const { readState } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { readState } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1175,9 +1179,9 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
-        const { readState } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
 
@@ -1214,9 +1218,9 @@ describe('hydrate', () => {
           computeFingerprint,
           workspaceDir,
           sessionDir: resolveSessionDir,
-        } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
-        const { readState } = await import('../adapters/persistence');
+        } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
 
@@ -1247,12 +1251,12 @@ describe('hydrate', () => {
     it('explicit profileId=unknown blocks with INVALID_PROFILE', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-d-');
       try {
-        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
+        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
 
         // Set up any config (not needed for explicit override)
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
         const config = await readConfig(wsDir);
         await writeConfig(wsDir, { ...config });
 
@@ -1277,8 +1281,8 @@ describe('hydrate', () => {
     it('config.profile.defaultId=unknown blocks with INVALID_PROFILE', async () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-c-');
       try {
-        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-        const { writeConfig, readConfig } = await import('../adapters/persistence');
+        const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
         const baseConfig = await readConfig(wsDir);
@@ -1304,8 +1308,8 @@ describe('hydrate', () => {
     });
 
     it('config.profile.activeChecks overrides selected profile defaults', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
 
@@ -1346,8 +1350,8 @@ describe('hydrate', () => {
         computeFingerprint,
         workspaceDir,
         sessionDir: resolveSessionDir,
-      } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
 
       const fp = await computeFingerprint(tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
@@ -1394,7 +1398,7 @@ describe('hydrate', () => {
       expect(result.phase).toBe('READY');
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1411,7 +1415,7 @@ describe('hydrate', () => {
       // First hydrate with default mock actor
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1448,7 +1452,7 @@ describe('hydrate', () => {
       // Factory-level audit event tests are in audit.test.ts (P27 section).
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1463,7 +1467,7 @@ describe('hydrate', () => {
     it('sessionID is still present separately from actorInfo in state', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1498,7 +1502,7 @@ describe('ticket', () => {
       await ticket.execute({ text: 'Fix login flow', source: 'user' }, ctx);
       // Read state directly from disk
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1531,7 +1535,7 @@ describe('ticket', () => {
       await ticket.execute({ text: 'First ticket', source: 'user' }, ctx);
       await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1691,7 +1695,7 @@ describe('decision', () => {
       await reachPlanReview();
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -1738,8 +1742,8 @@ describe('decision', () => {
     });
 
     it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace');
-      const { writeConfig, readConfig } = await import('../adapters/persistence');
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const baseConfig = await readConfig(wsDir);
@@ -2449,7 +2453,7 @@ describe('archive', () => {
         await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
 
         const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace'
+          '../adapters/workspace/index.js'
         );
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -2497,7 +2501,7 @@ describe('archive', () => {
       await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -2521,7 +2525,7 @@ describe('archive', () => {
     it.skipIf(!tarOk)('archives from ARCH_COMPLETE', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -2547,7 +2551,7 @@ describe('archive', () => {
     it.skipIf(!tarOk)('archives from REVIEW_COMPLETE', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace'
+        '../adapters/workspace/index.js'
       );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
@@ -2597,7 +2601,9 @@ describe('cross-cutting', () => {
     it('idempotent hydrate on workspace level', async () => {
       // First hydrate
       await hydrateSession();
-      const { computeFingerprint, readWorkspaceInfo } = await import('../adapters/workspace');
+      const { computeFingerprint, readWorkspaceInfo } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const info1 = await readWorkspaceInfo(fp.fingerprint);
 

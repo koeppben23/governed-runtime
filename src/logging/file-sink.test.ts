@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFile, readFile, readdir, stat, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createFileSink, getLogDir } from './file-sink';
-import type { LogEntry } from './logger';
+import { createFileSink, getLogDir } from './file-sink.js';
+import type { LogEntry } from './logger.js';
 
 describe('createFileSink', () => {
   const getTestDir = () =>

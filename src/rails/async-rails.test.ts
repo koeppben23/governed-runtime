@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { executePlan } from '../rails/plan';
-import { executeValidate } from '../rails/validate';
-import { executeImplement } from '../rails/implement';
-import { executeContinue } from '../rails/continue';
-import { createTestContext } from '../testing';
+import { executePlan } from '../rails/plan.js';
+import { executeValidate } from '../rails/validate.js';
+import { executeImplement } from '../rails/implement.js';
+import { executeContinue } from '../rails/continue.js';
+import { createTestContext } from '../testing.js';
 import {
   makeState,
   makeProgressedState,
@@ -16,8 +16,8 @@ import {
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
   ARCHITECTURE_DECISION,
-} from '../__fixtures__';
-import { SOLO_POLICY, TEAM_POLICY } from '../config/policy';
+} from '../__fixtures__.js';
+import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();
 

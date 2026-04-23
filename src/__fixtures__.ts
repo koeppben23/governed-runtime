@@ -6,7 +6,7 @@
  * All timestamps are fixed for deterministic assertions.
  */
 
-import type { SessionState, Phase } from './state/schema';
+import type { SessionState, Phase } from './state/schema.js';
 import type {
   TicketEvidence,
   ArchitectureDecision,
@@ -21,7 +21,7 @@ import type {
   ErrorInfo,
   BindingInfo,
   PolicySnapshot,
-} from './state/evidence';
+} from './state/evidence.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

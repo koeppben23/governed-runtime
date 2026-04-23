@@ -44,19 +44,19 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { SessionState } from '../state/schema';
-import { AuditEvent, ReviewReport } from '../state/evidence';
+import { SessionState } from '../state/schema.js';
+import { AuditEvent, ReviewReport } from '../state/evidence.js';
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
   type DiscoveryResult,
   type ProfileResolution,
-} from '../discovery/types';
+} from '../discovery/types.js';
 import {
   FlowGuardConfigSchema,
   DEFAULT_CONFIG,
   type FlowGuardConfig,
-} from '../config/flowguard-config';
+} from '../config/flowguard-config.js';
 
 // -- Constants ----------------------------------------------------------------
 

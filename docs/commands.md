@@ -13,6 +13,12 @@ FlowGuard uses a two-level command surface:
 
 The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
 
+### Interactive vs Non-Interactive Execution
+
+- Interactive chat sessions may ask one precise follow-up question when required inputs are missing.
+- Non-interactive/headless execution (`flowguard run`, `flowguard serve`, OpenCode API automation) does not rely on follow-up questions.
+- In headless mode, missing safety-critical input returns `BLOCKED` with required values and recovery guidance.
+
 ## Flows
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:

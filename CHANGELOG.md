@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Non-interactive fail-closed mandate clarity**: AGENTS + agent guidance + command/distribution docs now explicitly require headless/non-interactive paths to return `BLOCKED` with exact missing inputs and recovery guidance instead of relying on follow-up questions.
 - **Verified Actor Identity Bridge v0 (P33)**: Add verified actor claim support via `FLOWGUARD_ACTOR_CLAIMS_PATH`. If set, read validated actor claim JSON with `schemaVersion: "v1"`, `actorId`, `issuer`, `issuedAt` (<= now), `expiresAt` (> now). Claim wins over env/git. Invalid/expired/missing claims fail closed (no fallback to env/git). Adds `source: 'claim'` and `assurance: 'verified'` to actor identity. Also adds `requireVerifiedActorsForApproval` policy flag: when true, regulated approvals require verified actors (`assurance === 'verified'`), best_effort actors are blocked with `VERIFIED_ACTOR_REQUIRED`. New reason codes: `ACTOR_CLAIM_MISSING`, `ACTOR_CLAIM_UNREADABLE`, `ACTOR_CLAIM_INVALID`, `ACTOR_CLAIM_EXPIRED`, `VERIFIED_ACTOR_REQUIRED`.
 - **Config as Runtime Authority (P31)**: Profile resolution follows explicit > config > detected > baseline priority. `profileId: undefined` means auto-detect, `profileId: "baseline"` means explicit baseline (not auto-detect sentinel). Config iteration limits (`maxSelfReviewIterations`, `maxImplReviewIterations`) are persisted in policySnapshot for new sessions. Existing sessions retain snapshot values.
 - **Runtime Policy Mode Unification (P32)**: Unified fallback for all runtime surfaces (plugin, status, etc.): `state > config > solo`. Previously plugin used `team` as fallback, now uses `solo`. Added `resolveRuntimePolicyMode()` in `src/config/policy.ts` as central function.
@@ -43,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI now enforces ACP smoke coverage via dedicated `acp-smoke` job (`RUN_OPENCODE_ACP_TESTS=1`) and fails closed when `opencode` is unavailable on the runner.
+- TypeScript module resolution moved from Bundler to NodeNext. Source imports now use explicit Node ESM specifiers (`.js` / `/index.js`) and build no longer rewrites compiled output post-`tsc`.
+- ESM integrity verification now uses `scripts/check-esm-imports.js` as a strict dist validation step.
+- Product and README collateral now align with verified-claim actor attribution semantics (`claim` verified; `env`/`git`/`unknown` best-effort) and headless fail-closed behavior.
 - Documentation and product collateral were aligned to runtime SSOT: command allowlists, configuration path terminology (`workspace .../config.json`), and external-facing wording now match current FlowGuard behavior.
 - CI install smoke tests now use a real packed tarball (`npm pack`) instead of a mock tarball, so install verification exercises the actual artifact path.
 - SOLO_POLICY now allows 2 self-review iterations (up from 1), enabling single revision after initial review before convergence. Team remains at 3.
@@ -57,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Telemetry code is no longer excluded from coverage collection in `vitest.config.ts`, so telemetry tests contribute to global coverage thresholds.
 - Fixed product one-pager title typo: "AI Engineering Governance Platform".
 - OpenCode-style non-UUID session IDs (`ses_...`) are now accepted across binding and audit event schemas, preventing hydration/runtime schema validation failures.
 - Integration and E2E tests now run with OpenCode-style session IDs and include regression assertions for hydrate discovery/config contracts.

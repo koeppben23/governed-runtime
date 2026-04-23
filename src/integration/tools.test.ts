@@ -28,9 +28,9 @@ import {
   abort_session,
   archive,
   architecture,
-} from './tools';
-import * as barrel from './index';
-import { benchmarkSync } from '../test-policy';
+} from './tools/index.js';
+import * as barrel from './index.js';
+import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

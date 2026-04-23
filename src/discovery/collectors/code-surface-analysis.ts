@@ -16,7 +16,7 @@ import type {
   CodeSurfaceSignal,
   CodeSurfacesInfo,
   EvidenceClass,
-} from '../types';
+} from '../types.js';
 
 const MAX_FILES = 200;
 const MAX_BYTES_PER_FILE = 64 * 1024;

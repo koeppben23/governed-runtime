@@ -22,8 +22,8 @@
 
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
-import type { ActorInfo } from '../audit/types';
-import { gitUserEmail, gitUserName } from './git';
+import type { ActorInfo } from '../audit/types.js';
+import { gitUserEmail, gitUserName } from './git.js';
 
 /**
  * Actor claim schema (P33).

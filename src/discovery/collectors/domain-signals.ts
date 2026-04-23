@@ -13,7 +13,7 @@
  */
 
 import * as path from 'node:path';
-import type { CollectorInput, CollectorOutput, DomainSignals, DomainKeyword } from '../types';
+import type { CollectorInput, CollectorOutput, DomainSignals, DomainKeyword } from '../types.js';
 
 // ─── Domain Keyword Rules ─────────────────────────────────────────────────────
 

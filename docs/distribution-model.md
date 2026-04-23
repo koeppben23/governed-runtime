@@ -79,6 +79,8 @@ opencode serve --port 4096
 
 **Note:** FlowGuard requires OpenCode as its host runtime. See the [OpenCode CLI Documentation](https://opencode.ai/docs/cli/) for official commands.
 
+**Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
+
 ### ACP Mode (Experimental)
 
 The Agent Client Protocol (ACP) provides STDIN/STDOUT-based communication:

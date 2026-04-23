@@ -56,11 +56,14 @@ import {
   isManagedArtifact,
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
-} from './templates';
-import { configPath, readConfig, writeConfig } from '../adapters/persistence';
-import { PersistenceError } from '../adapters/persistence';
-import { DEFAULT_CONFIG } from '../config/flowguard-config';
-import { computeFingerprint, workspaceDir as resolveWorkspaceDir } from '../adapters/workspace';
+} from './templates.js';
+import { configPath, readConfig, writeConfig } from '../adapters/persistence.js';
+import { PersistenceError } from '../adapters/persistence.js';
+import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import {
+  computeFingerprint,
+  workspaceDir as resolveWorkspaceDir,
+} from '../adapters/workspace/index.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
