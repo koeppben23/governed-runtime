@@ -259,7 +259,7 @@ Representative typed fail-closed IdP errors:
 ### Design Constraints
 
 - **Not authentication.** `FLOWGUARD_ACTOR_ID` is an operator-provided identifier, not a
-  verified login claim. No OIDC, SAML, LDAP, or RBAC.
+  verified login claim. No OIDC discovery, SAML, LDAP, or RBAC.
 - **Resolved once.** Actor identity is resolved at `/hydrate` and immutable for the session
   lifecycle. Changing `FLOWGUARD_ACTOR_*` or git config after hydrate does not affect the
   current session. Re-run `/hydrate` to resolve a new actor.

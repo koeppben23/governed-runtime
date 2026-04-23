@@ -82,13 +82,14 @@ The following tiers are defined in ascending order of assurance strength:
 
 ### 3.3 `idp_verified`
 
-**Semantics:** Identity validated through a cryptographic proof from an external Identity Provider (IdP). JWT/OIDC/JWKS chain is cryptographically verified. Issuer, audience, and expiry are validated. The identity originates from a trusted IdP (e.g., corporate OIDC, SAML IdP, Keycloak, Azure AD, Okta).
+**Semantics:** Identity validated through a cryptographic proof from an external Identity Provider (IdP). JWT/JWKS verification is cryptographically enforced. Issuer, audience, and expiry are validated. The identity originates from a trusted IdP key authority configured in policy.
 
 **Sources that produce this tier:**
 
-- `FLOWGUARD_ACTOR_IDP_CONFIG` with static keys (`mode: 'static'`)
-- `FLOWGUARD_ACTOR_IDP_CONFIG` with local pinned JWKS (`mode: 'jwks'` + `jwksPath`)
-- `FLOWGUARD_ACTOR_IDP_CONFIG` with remote JWKS (`mode: 'jwks'` + HTTPS `jwksUri`)
+- `policy.identityProvider` with static keys (`mode: 'static'`)
+- `policy.identityProvider` with local pinned JWKS (`mode: 'jwks'` + `jwksPath`)
+- `policy.identityProvider` with remote JWKS (`mode: 'jwks'` + HTTPS `jwksUri`)
+- `FLOWGUARD_ACTOR_TOKEN_PATH` with a readable JWT token file
 
 **When it applies:** The actor's identity has been established by a trusted IdP and the token/assertion has been cryptographically verified by FlowGuard. This is the strongest assurance level for human actor identity.
 
@@ -234,7 +235,8 @@ Loads raw identity data from environment, filesystem, or future IdP.
 
 - Enumerate `FLOWGUARD_ACTOR_ID`, `FLOWGUARD_ACTOR_EMAIL`
 - Enumerate `FLOWGUARD_ACTOR_CLAIMS_PATH` → load raw JSON
-- Enumerate `FLOWGUARD_ACTOR_IDP_CONFIG` → load IdP config
+- Read `policy.identityProvider` from the active policy snapshot
+- Enumerate `FLOWGUARD_ACTOR_TOKEN_PATH` → load JWT token file
 - Enumerate `git config user.name/email`
 - Return raw data + source to validator
 

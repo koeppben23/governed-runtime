@@ -84,7 +84,7 @@ For compliance-required environments (banks, healthcare, etc.).
 ### Via Command
 
 ```bash
-/flowguard_hydrate policyMode=regulated
+/hydrate policyMode=regulated
 ```
 
 ### Via Configuration

@@ -93,35 +93,40 @@ FlowGuard integrates with OpenCode via a two-level command surface:
 
 Use these commands in OpenCode chat to drive workflows:
 
-| Command                            | Description       |
-| ---------------------------------- | ----------------- |
-| `/hydrate`                         | Bootstrap session |
-| `/ticket <text>`                   | Record task       |
-| `/plan`                            | Generate plan     |
-| `/continue`                        | Auto-advance      |
-| `/validate`                        | Run checks        |
-| `/implement`                       | Execute plan      |
-| `/review-decision approve\|reject` | Human approval    |
-| `/review`                          | Generate report   |
-| `/abort`                           | Terminate session |
-| `/archive`                         | Archive session   |
+| Command                      | Description       |
+| ---------------------------- | ----------------- |
+| `/hydrate`                   | Bootstrap session |
+| `/status`                    | Read session view |
+| `/ticket <text>`             | Record task       |
+| `/plan`                      | Generate plan     |
+| `/continue`                  | Auto-advance      |
+| `/validate`                  | Run checks        |
+| `/implement`                 | Execute plan      |
+| `/review-decision <verdict>` | Human approval    |
+| `/review`                    | Generate report   |
+| `/architecture`              | Create/revise ADR |
+| `/abort`                     | Terminate session |
+| `/archive`                   | Archive session   |
+
+`<verdict>` accepts `approve`, `changes_requested`, or `reject`.
 
 ### Internal Tool Bindings (OpenCode Infrastructure)
 
 These are the underlying tool names that FlowGuard installs into OpenCode:
 
-| Tool Name                 | Purpose                    |
-| ------------------------- | -------------------------- |
-| `flowguard_status`        | Check session state        |
-| `flowguard_hydrate`       | Session bootstrap          |
-| `flowguard_ticket`        | Task recording             |
-| `flowguard_plan`          | Plan generation            |
-| `flowguard_decision`      | Record review verdict      |
-| `flowguard_validate`      | Validation runner          |
-| `flowguard_implement`     | Plan executor              |
-| `flowguard_review`        | Generate compliance report |
-| `flowguard_abort_session` | Session termination        |
-| `flowguard_archive`       | Session archival           |
+| Tool Name                 | Purpose                     |
+| ------------------------- | --------------------------- |
+| `flowguard_status`        | Check session state         |
+| `flowguard_hydrate`       | Session bootstrap           |
+| `flowguard_ticket`        | Task recording              |
+| `flowguard_plan`          | Plan generation             |
+| `flowguard_decision`      | Record review verdict       |
+| `flowguard_validate`      | Validation runner           |
+| `flowguard_implement`     | Plan executor               |
+| `flowguard_review`        | Generate compliance report  |
+| `flowguard_architecture`  | ADR authoring + self-review |
+| `flowguard_abort_session` | Session termination         |
+| `flowguard_archive`       | Session archival            |
 
 ## Uninstall
 

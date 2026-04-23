@@ -106,6 +106,10 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 
 Configures IdP-based actor verification for `idp_verified` assurance.
 
+Runtime token input for both modes is provided via `FLOWGUARD_ACTOR_TOKEN_PATH` (JWT file path).
+If `policy.identityProvider` is set and `identityProviderMode` is `required`, missing or invalid
+token input blocks `/hydrate` fail-closed.
+
 `mode: "static"` (local key bundle):
 
 ```json

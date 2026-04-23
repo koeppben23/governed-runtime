@@ -95,6 +95,7 @@ Responsibilities, contact channels, and expectations.
 | Command            | Allowed In                                | Description                    |
 | ------------------ | ----------------------------------------- | ------------------------------ |
 | `/hydrate`         | Any                                       | Bootstrap session → READY      |
+| `/status`          | Any                                       | Read-only workflow orientation |
 | `/ticket`          | READY, TICKET                             | Record task, start ticket flow |
 | `/plan`            | TICKET, PLAN                              | Generate plan                  |
 | `/review-decision` | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW | Human approval                 |
