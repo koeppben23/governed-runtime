@@ -145,12 +145,16 @@ afterEach(async () => {
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27)
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'test-operator',
-    email: 'test@flowguard.dev',
-    source: 'env',
-  });
+  // Reset actor mock to default deterministic value (P27/P34)
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'best_effort' as const,
+    });
   delete process.env.FLOWGUARD_POLICY_PATH;
   vi.clearAllMocks();
   await ws.cleanup();
@@ -307,6 +311,52 @@ describe('status', () => {
       expect(Array.isArray(result.verificationCandidates)).toBe(true);
     });
 
+    it('returns why-blocked surface when whyBlocked flag is set', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ whyBlocked: true }, ctx));
+
+      expect(result.phase).toBe('READY');
+      expect(result.whyBlocked).toBeDefined();
+      const blocked = result.whyBlocked as Record<string, unknown>;
+      expect(typeof blocked.blocked).toBe('boolean');
+      expect(Array.isArray(blocked.missingEvidence)).toBe(true);
+    });
+
+    it('returns evidence detail surface when evidence flag is set', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ evidence: true }, ctx));
+
+      expect(result.phase).toBe('READY');
+      expect(result.evidence).toBeDefined();
+      const evidence = result.evidence as Record<string, unknown>;
+      expect(Array.isArray(evidence.slots)).toBe(true);
+      const firstSlot = (evidence.slots as Array<Record<string, unknown>>)[0];
+      expect(firstSlot).toHaveProperty('artifactKind');
+      expect(firstSlot).toHaveProperty('hint');
+    });
+
+    it('returns context surface when context flag is set', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ context: true }, ctx));
+
+      expect(result.phase).toBe('READY');
+      expect(result.context).toBeDefined();
+      const detail = result.context as Record<string, unknown>;
+      expect(detail).toHaveProperty('policyMode');
+      expect(detail).toHaveProperty('regulated');
+    });
+
+    it('returns readiness surface when readiness flag is set', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ readiness: true }, ctx));
+
+      expect(result.phase).toBe('READY');
+      expect(result.readiness).toBeDefined();
+      const detail = result.readiness as Record<string, unknown>;
+      expect(typeof detail.blocked).toBe('boolean');
+      expect(typeof detail.evidenceComplete).toBe('boolean');
+    });
+
     it('returns persisted verificationCandidates in status', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
@@ -353,6 +403,21 @@ describe('status', () => {
       const raw = await status.execute({}, badCtx);
       const result = parseToolResult(raw);
       expect(result.phase === null || result.error === true).toBe(true);
+    });
+
+    it('uses deterministic flag precedence when multiple flags are true', async () => {
+      await hydrateSession();
+      const result = parseToolResult(
+        await status.execute(
+          { whyBlocked: true, evidence: true, context: true, readiness: true },
+          ctx,
+        ),
+      );
+
+      expect(result.whyBlocked).toBeDefined();
+      expect(result.evidence).toBeUndefined();
+      expect(result.context).toBeUndefined();
+      expect(result.readiness).toBeUndefined();
     });
   });
 
@@ -1407,7 +1472,9 @@ describe('hydrate', () => {
       expect(state!.actorInfo).toEqual({
         id: 'test-operator',
         email: 'test@flowguard.dev',
+        displayName: null,
         source: 'env',
+        assurance: 'best_effort',
       });
     });
 
@@ -1420,17 +1487,20 @@ describe('hydrate', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state1 = await readState(sessDir);
-      expect(state1!.actorInfo).toEqual({
+      expect(state1!.actorInfo).toMatchObject({
         id: 'test-operator',
         email: 'test@flowguard.dev',
         source: 'env',
+        assurance: 'best_effort',
       });
 
       // Change actor mock — simulates env change mid-session
       vi.mocked(actorMock.resolveActor).mockResolvedValue({
         id: 'changed-operator',
         email: 'changed@flowguard.dev',
+        displayName: null,
         source: 'env',
+        assurance: 'best_effort',
       });
 
       // Re-hydrate — should return existing state unchanged (idempotent)
@@ -1438,10 +1508,11 @@ describe('hydrate', () => {
       expect(result.phase).toBe('READY');
       const state2 = await readState(sessDir);
       // Actor should be the original value, NOT the changed one
-      expect(state2!.actorInfo).toEqual({
+      expect(state2!.actorInfo).toMatchObject({
         id: 'test-operator',
         email: 'test@flowguard.dev',
         source: 'env',
+        assurance: 'best_effort',
       });
     });
 
@@ -1759,7 +1830,7 @@ describe('decision', () => {
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
     });
   });
 });

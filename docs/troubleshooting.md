@@ -127,7 +127,7 @@ Config file location: `~/.config/opencode/workspaces/{fingerprint}/config.json` 
 
 ## Getting Help
 
-1. Check `/flowguard_review` for session status
+1. Check `/status` for session status
 2. Run `flowguard doctor` for diagnostics
 3. Review audit trail in `audit.jsonl`
 4. Check logs in `~/.config/opencode/workspaces/*/logs/`

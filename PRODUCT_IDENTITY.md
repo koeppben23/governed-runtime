@@ -37,6 +37,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
+- **Explicit orientation surface** — `/status` provides read-only canonical projections for phase, blockers, evidence, context, and readiness
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
 - **Policy-aware evaluation** — every transition is checked against the active FlowGuard policy
 
@@ -55,7 +56,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
-- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports optional verified actor claims (`FLOWGUARD_ACTOR_CLAIMS_PATH`), and regulated approvals can require verified actors via policy (`requireVerifiedActorsForApproval`).
+- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks; `optional` degrades only on typed IdP errors). OIDC discovery and stale/last-known-good fallback are out of scope for P35.
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
@@ -64,7 +65,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
-- **Self-hosted** — runs locally, no outbound network calls from FlowGuard. All data stays on the user's filesystem.
+- **Self-hosted** — runs locally with filesystem-first operation. Optional remote JWKS fetches occur only when `identityProvider.mode = jwks` with `jwksUri`; otherwise runtime behavior is offline.
 
 ### Repository Discovery
 
@@ -348,7 +349,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
-- **Actor Identity:** Source-labeled attribution (`claim` verified when configured; otherwise `env`/`git`/`unknown` best-effort), immutable per session
+- **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; regulated approvals enforce `minimumActorAssuranceForApproval` threshold
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)

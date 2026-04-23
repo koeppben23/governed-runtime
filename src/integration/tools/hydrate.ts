@@ -255,6 +255,9 @@ export const hydrate: ToolDefinition = {
             configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
             configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
             configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
+            configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
+            configIdentityProvider: config.policy.identityProvider,
+            configIdentityProviderMode: config.policy.identityProviderMode,
           });
       const policy = existing
         ? resolvePolicyFromState(existingWithCentralEvidence)
@@ -511,7 +514,7 @@ export const hydrate: ToolDefinition = {
             actorId: actorInfo.id,
             actorEmail: actorInfo.email,
             actorSource: actorInfo.source,
-            actorAssurance: actorInfo.source === 'claim' ? 'verified' : 'best_effort',
+            actorAssurance: actorInfo.assurance,
           },
           actorInfo,
           discoveryResult,

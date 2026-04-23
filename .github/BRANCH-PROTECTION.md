@@ -8,37 +8,45 @@ This document defines the merge-blocking settings for the `main` branch.
 
 ## Required Protection Settings
 
-| Setting | Value |
-|---------|-------|
-| Require a pull request before merging | Enabled |
-| Required approvals | 1 or more |
-| Dismiss stale reviews | Enabled |
-| Require status checks to pass before merging | Enabled |
-| Do not allow bypassing the above settings | Enabled |
-| Do not allow force pushes | Enabled |
-| Do not allow deletion | Enabled |
+| Setting                                      | Value     |
+| -------------------------------------------- | --------- |
+| Require a pull request before merging        | Enabled   |
+| Required approvals                           | 1 or more |
+| Dismiss stale reviews                        | Enabled   |
+| Require status checks to pass before merging | Enabled   |
+| Do not allow bypassing the above settings    | Enabled   |
+| Do not allow force pushes                    | Enabled   |
+| Do not allow deletion                        | Enabled   |
 
 ## Required Status Checks (merge-blocking)
 
-These check names must be configured exactly as required checks:
+Only real CI job names are allowed in this list. Configure the following check names exactly:
+
+From `.github/workflows/conventional-commits.yml`:
 
 1. `Validate Commit Messages`
+
+From `.github/workflows/ci.yml`:
+
 2. `test`
 3. `typecheck`
 4. `lint`
 5. `format`
 6. `build`
-7. `audit`
-8. `actionlint`
-9. `security-policy`
-10. `secrets-scan`
-11. `codeql-sast`
-12. `install (ubuntu-latest)`
-13. `install (macos-latest)`
-14. `install (windows-latest)`
-15. `install-verify (ubuntu-latest)`
-16. `install-verify (macos-latest)`
-17. `install-verify (windows-latest)`
+7. `install-verify (ubuntu-latest)`
+8. `install-verify (macos-latest)`
+9. `install-verify (windows-latest)`
+10. `acp-smoke`
+11. `audit`
+12. `actionlint`
+13. `secrets-scan`
+14. `codeql-sast`
+15. `security-policy`
+16. `install (ubuntu-latest)`
+17. `install (macos-latest)`
+18. `install (windows-latest)`
+
+`install-verify (...)` and `install (...)` are distinct required jobs and must both stay aligned with CI truth.
 
 ## Source of Truth
 

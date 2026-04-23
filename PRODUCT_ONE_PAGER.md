@@ -24,6 +24,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 
 - Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation), Review
 - 14 explicit phases with computed next actions
+- Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
 
@@ -43,7 +44,10 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Four-Eyes Governance
 
 - Regulated mode enforces initiator/reviewer separation
-- Optional verified actor claims are supported (`FLOWGUARD_ACTOR_CLAIMS_PATH`); regulated approvals can require verified actors via policy
+- Minimum actor assurance is policy-bound via `minimumActorAssuranceForApproval` across `best_effort`, `claim_validated`, and `idp_verified`
+- `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification
+- `identityProviderMode: required` blocks fail-closed; `identityProviderMode: optional` degrades only for typed IdP errors
+- P35 excludes OIDC discovery and stale/last-known-good JWKS fallback
 - Team and Regulated modes require explicit human decisions at gates
 
 ### Headless Fail-Closed Behavior
@@ -78,7 +82,7 @@ FlowGuard fills this gap without replacing existing tools.
 
 ## Getting Started
 
-FlowGuard is an OpenCode-native governance runtime. It runs locally within the AI coding assistant's session workspace. No outbound network calls. No external service dependency.
+FlowGuard is an OpenCode-native governance runtime. It runs locally within the AI coding assistant's session workspace with filesystem-first operation. Optional remote JWKS fetches apply only when configured via `identityProvider.mode = jwks` + `jwksUri`; otherwise no outbound runtime dependency is required.
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 

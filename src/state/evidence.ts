@@ -3,12 +3,41 @@
  * @description All evidence and artifact types for the FlowGuard state model.
  *              Zod schemas — single source of truth for runtime validation and TypeScript types.
  *
- * Dependency: leaf module — no imports from other FlowGuard modules.
+ * Dependency: imports identity schema for typed policy snapshot authority.
  *
  * @version v1
  */
 
 import { z } from 'zod';
+import { IdpConfigSchema } from '../identity/types.js';
+
+/**
+ * P34: Coerce P33 v0 'verified' to 'claim_validated'.
+ * Any unknown value falls through to 'best_effort' (safe default for backward compat).
+ */
+function coerceAssurance(raw: unknown): 'best_effort' | 'claim_validated' | 'idp_verified' {
+  if (raw === 'verified' || raw === 'claim_validated' || raw === 'idp_verified') {
+    if (raw === 'verified') return 'claim_validated';
+    return raw as 'claim_validated' | 'idp_verified';
+  }
+  return 'best_effort';
+}
+
+/**
+ * Assurance value parser with P33 v0 backward compat.
+ * "verified" passes through the union and is coerced to "claim_validated".
+ * Unknown values fall back to "best_effort".
+ */
+function assuranceSchema() {
+  return z
+    .union([
+      z.literal('verified'),
+      z.literal('best_effort'),
+      z.literal('claim_validated'),
+      z.literal('idp_verified'),
+    ])
+    .transform((val) => coerceAssurance(val));
+}
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 
@@ -206,14 +235,22 @@ export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
 // ─── Decision Identity ────────────────────────────────────────────────────────
 
 /**
- * Structured identity for decision attribution (P30/P33).
+ * Structured identity for decision attribution (P30/P33/P34).
  * Extends ActorInfo with assurance level for regulated contexts.
+ *
+ * P34: actorAssurance now uses three-tier model:
+ * - best_effort: operator-provided, no third-party verification
+ * - claim_validated: schema + expiry validated from local claim file
+ * - idp_verified: cryptographic IdP verification (future P35)
+ *
+ * Backward compat: 'verified' from P33 v0 is coerced to 'claim_validated'.
  */
 export const DecisionIdentity = z.object({
   actorId: z.string().min(1),
   actorEmail: z.string().nullable(),
-  actorSource: z.enum(['env', 'git', 'claim', 'unknown']),
-  actorAssurance: z.enum(['best_effort', 'verified']).default('best_effort'),
+  actorDisplayName: z.string().nullable().optional(),
+  actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
+  actorAssurance: assuranceSchema().default('best_effort'),
 });
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
 
@@ -296,8 +333,29 @@ export const PolicySnapshotSchema = z.object({
   maxSelfReviewIterations: z.number().int().positive(),
   maxImplReviewIterations: z.number().int().positive(),
   allowSelfApproval: z.boolean(),
-  /** P33: Whether regulated approvals require verified actor identity. */
+  /**
+   * P34: Minimum required actor assurance for regulated approval decisions.
+   * Supersedes requireVerifiedActorsForApproval at session resolution time.
+   * 'best_effort' | 'claim_validated' | 'idp_verified'
+   */
+  minimumActorAssuranceForApproval: z
+    .enum(['best_effort', 'claim_validated', 'idp_verified'])
+    .default('best_effort'),
+  /**
+   * P33 (deprecated): Whether regulated approvals require verified actor identity.
+   * Preserved for backward compat with existing sessions. Prefer minimumActorAssuranceForApproval.
+   */
   requireVerifiedActorsForApproval: z.boolean().default(false),
+  /**
+   * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
+   * Frozen at hydrate time. When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
+   */
+  identityProvider: IdpConfigSchema.optional(),
+  /**
+   * P35a: IdP verification mode ('optional' or 'required').
+   * Controls whether IdP failure blocks session creation.
+   */
+  identityProviderMode: z.enum(['optional', 'required']).default('optional'),
   audit: z.object({
     emitTransitions: z.boolean(),
     emitToolCalls: z.boolean(),
@@ -315,23 +373,42 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 // ─── Actor Identity ───────────────────────────────────────────────────────────
 
 /**
- * Resolved operator identity for audit attribution (P27).
+ * Actor verification metadata for IdP-verified actors (P35a).
+ * Provides provenance information about the IdP verification:
+ * - Which issuer and audience were verified
+ * - Which key was used for signature verification
+ * - When the verification occurred
+ */
+export const ActorVerificationMetaSchema = z.object({
+  issuer: z.string(),
+  audience: z.array(z.string()),
+  keyId: z.string(),
+  algorithm: z.string(),
+  verifiedAt: z.string().datetime(),
+});
+export type ActorVerificationMeta = z.infer<typeof ActorVerificationMetaSchema>;
+
+/**
+ * Resolved operator identity for audit attribution (P27/P34/P35a).
  *
- * Best-effort identity — NOT a cryptographic authentication claim.
- * The `source` field makes the identity origin transparent:
- * - `env`:     Operator-provided via FLOWGUARD_ACTOR_ID / FLOWGUARD_ACTOR_EMAIL
- * - `git`:     Derived from `git config user.name` / `git config user.email`
- * - `claim`:   Verified claim from FLOWGUARD_ACTOR_CLAIMS_PATH (P33)
- * - `unknown`: Neither env nor git identity available
+ * Three-tier assurance model:
+ * - best_effort: operator-provided, no third-party verification (env/git/unknown)
+ * - claim_validated: schema + expiry validated from local claim file (claim source)
+ * - idp_verified: cryptographic IdP verification (oidc source, P35a)
  *
- * Resolved once at hydrate time, immutable for the session lifecycle.
+ * P35a adds verificationMeta for idp_verified actors to provide IdP provenance.
+ *
+ * P34 design doc: docs/actor-assurance-architecture.md
  */
 export const ActorInfoSchema = z.object({
   id: z.string().min(1),
   email: z.string().nullable(),
-  source: z.enum(['env', 'git', 'claim', 'unknown']),
+  displayName: z.string().nullable().optional(),
+  source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
+  assurance: assuranceSchema().default('best_effort'),
+  verificationMeta: ActorVerificationMetaSchema.optional(),
 });
-export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
+export type ActorInfo = z.infer<typeof ActorInfoSchema>;
 
 /**
  * Schema version of DecisionIdentity for state imports.

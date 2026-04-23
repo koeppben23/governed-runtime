@@ -99,6 +99,100 @@ Overrides the maximum self-review iterations in PLAN phase:
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
+### policy.identityProvider
+
+**Type:** discriminated object (`mode: "static" | "jwks"`)
+**Default:** unset
+
+Configures IdP-based actor verification for `idp_verified` assurance.
+
+Runtime token input for both modes is provided via `FLOWGUARD_ACTOR_TOKEN_PATH` (JWT file path).
+If `policy.identityProvider` is set and `identityProviderMode` is `required`, missing or invalid
+token input blocks `/hydrate` fail-closed.
+
+`mode: "static"` (local key bundle):
+
+```json
+{
+  "policy": {
+    "identityProvider": {
+      "mode": "static",
+      "issuer": "https://issuer.example.com",
+      "audience": ["flowguard"],
+      "claimMapping": {
+        "subjectClaim": "sub",
+        "emailClaim": "email",
+        "nameClaim": "name"
+      },
+      "signingKeys": [
+        {
+          "kind": "pem",
+          "kid": "key-1",
+          "alg": "RS256",
+          "pem": "-----BEGIN PUBLIC KEY-----..."
+        }
+      ]
+    }
+  }
+}
+```
+
+`mode: "jwks"` (JWKS source, exactly one authority):
+
+```json
+{
+  "policy": {
+    "identityProvider": {
+      "mode": "jwks",
+      "issuer": "https://issuer.example.com",
+      "audience": ["flowguard"],
+      "claimMapping": {
+        "subjectClaim": "sub",
+        "emailClaim": "email",
+        "nameClaim": "name"
+      },
+      "jwksPath": "/etc/flowguard/jwks.json"
+    }
+  }
+}
+```
+
+Or remote JWKS with cache TTL:
+
+```json
+{
+  "policy": {
+    "identityProvider": {
+      "mode": "jwks",
+      "issuer": "https://issuer.example.com",
+      "audience": ["flowguard"],
+      "claimMapping": {
+        "subjectClaim": "sub",
+        "emailClaim": "email",
+        "nameClaim": "name"
+      },
+      "jwksUri": "https://id.example.com/.well-known/jwks.json",
+      "cacheTtlSeconds": 300
+    }
+  }
+}
+```
+
+Authority rule: no mixed mode. `static` accepts `signingKeys` only; `jwks` accepts exactly one of `jwksPath` or `jwksUri`.
+
+`jwksUri` policy: HTTPS only, cached for `cacheTtlSeconds` (default 300s), fail-closed on fetch/parse/validation errors when refresh is required. P35b2 intentionally has no stale-on-error and no last-known-good fallback after TTL expiry.
+
+### policy.identityProviderMode
+
+**Type:** `enum`
+**Values:** `optional`, `required`
+**Default:** `optional`
+
+Controls whether IdP verification failure blocks session creation:
+
+- `optional`: IdP verification errors degrade to next identity source (claim/env/git/unknown)
+- `required`: IdP verification must succeed (fail-closed on missing/invalid token or key mismatch)
+
 ### policy.maxImplReviewIterations
 
 **Type:** `number` (1-20)

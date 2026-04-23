@@ -66,6 +66,7 @@ const TOOLS: Record<string, unknown> = {
 
 /** Tools that accept arguments (have non-empty args schema). */
 const TOOLS_WITH_ARGS = [
+  'status',
   'hydrate',
   'ticket',
   'plan',
@@ -77,7 +78,7 @@ const TOOLS_WITH_ARGS = [
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['status', 'review', 'archive'] as const;
+const TOOLS_WITHOUT_ARGS = ['review', 'archive'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

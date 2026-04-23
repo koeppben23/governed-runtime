@@ -508,7 +508,7 @@ describe('review-decision rail', () => {
         regulatedCtx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
+      if (result.kind === 'blocked') expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
     });
 
     it('P33: allows approve when requireVerifiedActorsForApproval=true and verified actor', () => {
@@ -632,7 +632,7 @@ describe('review-decision rail', () => {
         regulatedCtx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
+      if (result.kind === 'blocked') expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
     });
 
     it('P30: regulate approve without input.decisionIdentity blocks', () => {

@@ -596,6 +596,18 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'ACTOR_ASSURANCE_INSUFFICIENT',
+    category: 'identity',
+    messageTemplate:
+      'Regulated approval requires minimum actor assurance "{minimum}". Current actor has "{current}" assurance.',
+    recoverySteps: [
+      'Ensure the actor identity meets the minimum assurance requirement for this policy mode',
+      'For claim_validated requirement: configure FLOWGUARD_ACTOR_CLAIMS_PATH with a valid claim file',
+      'For idp_verified requirement: configure FLOWGUARD_ACTOR_IDP_CONFIG with a valid IdP token (P35)',
+      'Adjust minimumActorAssuranceForApproval in the policy if a lower assurance level is acceptable',
+    ],
+  },
+  {
     code: 'VERIFIED_ACTOR_REQUIRED',
     category: 'identity',
     messageTemplate:
@@ -603,7 +615,7 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Configure FLOWGUARD_ACTOR_CLAIMS_PATH with a valid verified claim',
       'Ensure the policy does not require verified actors if not available',
-      'A verified actor with assurance=verified is required for this approval',
+      'A verified actor with assurance=claim_validated is required for this approval',
     ],
   },
 

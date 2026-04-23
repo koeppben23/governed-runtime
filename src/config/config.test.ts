@@ -303,6 +303,32 @@ describe('config/policy', () => {
       expect(result.policy.maxSelfReviewIterations).toBe(8);
       expect(result.policy.maxImplReviewIterations).toBe(16);
       expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+    });
+
+    it('resolvePolicyForHydrate wires jwks identityProvider and mode through to effective policy', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'team',
+        ciContext: false,
+        digestFn: (s) => `sha256:${s.length}`,
+        configIdentityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+        },
+        configIdentityProviderMode: 'required',
+      });
+
+      expect(result.policy.identityProvider).toEqual({
+        mode: 'jwks',
+        issuer: 'https://issuer.example.com',
+        audience: ['flowguard'],
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+        jwksPath: '/etc/flowguard/jwks.json',
+      });
+      expect(result.policy.identityProviderMode).toBe('required');
     });
   });
 
@@ -318,6 +344,26 @@ describe('config/policy', () => {
       expect(snap.allowSelfApproval).toBe(false);
       expect(snap.audit.enableChainHash).toBe(true);
       expect(snap.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
+      expect(snap.identityProviderMode).toBe('optional');
+    });
+
+    it('policyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
+      const digest = (s: string) => `hash-${s.length}`;
+      const snap = {
+        ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
+        identityProvider: {
+          mode: 'jwks' as const,
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+        },
+        identityProviderMode: 'required' as const,
+      };
+
+      const reconstructed = policyFromSnapshot(snap);
+      expect(reconstructed.identityProvider).toEqual(snap.identityProvider);
+      expect(reconstructed.identityProviderMode).toBe('required');
     });
 
     it('different policies produce different hashes', () => {

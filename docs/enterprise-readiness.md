@@ -67,9 +67,11 @@ In regulated mode, FlowGuard currently guarantees:
 - Regulated archive lifecycle is explicit (`pending` -> `created` -> `verified` or `failed`).
 - Terminal `session_completed` lifecycle event is written before archive generation so the
   archive contains completion evidence.
-- Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `unknown`).
-- Claim-sourced actor attribution is verified at claim-resolution time; `env`/`git`/`unknown`
-  attribution remains best-effort metadata.
+- Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `oidc`, `unknown`).
+- Actor assurance tiers: `best_effort` (env/git/unknown), `claim_validated` (validated claim file), `idp_verified` (IdP token verification via static keys, local pinned JWKS, or remote JWKS with TTL cache and fail-closed refresh).
+- P35 scope boundary: no OIDC discovery and no stale-on-error/last-known-good JWKS fallback.
+- `identityProviderMode: 'required'` blocks fail-closed on IdP configuration/token/verification errors.
+- `identityProviderMode: 'optional'` degrades to claim/env/git/unknown only for typed IdP errors.
 
 These guarantees are scoped to current runtime behavior and local execution model.
 
@@ -91,22 +93,22 @@ admin/root compromise can still alter files.
 
 ## 5) Threats and Mitigations
 
-| Threat                                                | Mitigation                                                                                                                                                                                                  | Residual risk                                                                                                                        |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Prompt attempts to bypass command/phase rails         | Command admissibility + phase gates + fail-closed blockers                                                                                                                                                  | Incorrect or malicious prompt content is still possible; blocked execution does not sanitize user intent                             |
-| Audit trail tampering                                 | Hash chain + regulated strict verification (`verifyChain({ strict: true })`)                                                                                                                                | Local privileged attacker can still alter files; detection depends on verification being run                                         |
-| Archive missing/invalid on regulated clean completion | Regulated completion path requires synchronous archive creation and `verifyArchive()` success                                                                                                               | Aborted sessions are explicitly outside clean-completion guarantee                                                                   |
-| Fake or weak human identity claims                    | Best-effort `actorInfo` for `env`/`git`/`unknown`; optional verified actor claims via `FLOWGUARD_ACTOR_CLAIMS_PATH`; regulated approvals can require verified actors via `requireVerifiedActorsForApproval` | Verified claims are local trusted-claim files, not a full IAM/IdP integration; compromised local environments remain a residual risk |
-| Policy weakening through local config drift           | Central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker-than-central is blocked; repo/default weaker-than-central is raised with visible reason                                                 | Central source is file-based only (no remote control plane, no fleet governance)                                                     |
+| Threat                                                | Mitigation                                                                                                                                                                                                                                                                                                                                                                                               | Residual risk                                                                                                                                                         |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt attempts to bypass command/phase rails         | Command admissibility + phase gates + fail-closed blockers                                                                                                                                                                                                                                                                                                                                               | Incorrect or malicious prompt content is still possible; blocked execution does not sanitize user intent                                                              |
+| Audit trail tampering                                 | Hash chain + regulated strict verification (`verifyChain({ strict: true })`)                                                                                                                                                                                                                                                                                                                             | Local privileged attacker can still alter files; detection depends on verification being run                                                                          |
+| Archive missing/invalid on regulated clean completion | Regulated completion path requires synchronous archive creation and `verifyArchive()` success                                                                                                                                                                                                                                                                                                            | Aborted sessions are explicitly outside clean-completion guarantee                                                                                                    |
+| Fake or weak human identity claims                    | Best-effort `actorInfo` for `env`/`git`/`unknown`; optional actor claims via `FLOWGUARD_ACTOR_CLAIMS_PATH` with `claim_validated` assurance; optional IdP verification via `identityProvider` (`mode: 'static'` or `mode: 'jwks'` with `jwksPath`/HTTPS `jwksUri`) yields `idp_verified`; regulated approvals enforce `minimumActorAssuranceForApproval` threshold (`claim_validated` or `idp_verified`) | Remote JWKS uses TTL cache with fail-closed refresh; P35 excludes discovery and stale/last-known-good fallback; compromised local environments remain a residual risk |
+| Policy weakening through local config drift           | Central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker-than-central is blocked; repo/default weaker-than-central is raised with visible reason                                                                                                                                                                                                                                              | Central source is file-based only (no remote control plane, no fleet governance)                                                                                      |
 
 ---
 
 ## 6) Residual Risks
 
-- No built-in enterprise IAM integration (OIDC, SAML, LDAP-backed auth, RBAC).
+- No built-in enterprise IAM integration (OIDC discovery, SAML, LDAP-backed auth, RBAC).
 - Central policy is local-bundle based (`FLOWGUARD_POLICY_PATH`) only; no remote admin control plane.
 - Local filesystem or host compromise can alter state, audit, or archive artifacts.
-- Verified actor claims are local trusted-claim files, not enterprise IAM/IdP authentication.
+- Claim-validated actor identities are local trusted-claim files, not enterprise IAM authentication.
 - Archive and audit controls are evidence-oriented, not immutable external storage.
 - FlowGuard does not replace CI controls, human review, change-management, or deployment
   approvals.

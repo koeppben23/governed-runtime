@@ -391,6 +391,73 @@ describe('state schemas', () => {
       expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
     });
 
+    it('PolicySnapshotSchema accepts typed jwks identityProvider', () => {
+      const snapshot = {
+        mode: 'team',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        requireVerifiedActorsForApproval: false,
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+        },
+        identityProviderMode: 'required',
+        audit: {
+          emitTransitions: true,
+          emitToolCalls: true,
+          enableChainHash: true,
+        },
+        actorClassification: {
+          flowguard_decision: 'human',
+        },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).not.toThrow();
+    });
+
+    it('PolicySnapshotSchema rejects mixed jwks+signingKeys identityProvider', () => {
+      const snapshot = {
+        mode: 'team',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        requireVerifiedActorsForApproval: false,
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+          signingKeys: [{ kind: 'pem', kid: 'a', alg: 'RS256', pem: 'pem' }],
+        },
+        identityProviderMode: 'required',
+        audit: {
+          emitTransitions: true,
+          emitToolCalls: true,
+          enableChainHash: true,
+        },
+        actorClassification: {
+          flowguard_decision: 'human',
+        },
+      };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
     it('PolicySnapshotSchema accepts P29 applied-policy provenance fields', () => {
       const snapshot = {
         mode: 'regulated',

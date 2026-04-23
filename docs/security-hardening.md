@@ -87,7 +87,7 @@ FlowGuard is designed to run locally with no network access. Security hardening 
 
 ### No Outbound Connections
 
-FlowGuard does not make outbound network connections. After installation, FlowGuard runs entirely offline.
+FlowGuard runs offline by default. If remote JWKS is configured (`identityProvider.mode = jwks` + `jwksUri`), FlowGuard performs bounded HTTPS fetches for JWKS refresh; fetch failures are fail-closed in `identityProviderMode: required`.
 
 **Verification:**
 
@@ -214,20 +214,52 @@ Non-regulated sessions use the existing fire-and-forget auto-archive in the audi
 
 ## Actor Identity
 
-FlowGuard resolves a best-effort operator identity at hydrate time for audit attribution.
-This is **not** a cryptographic authentication claim — it is an operator-provided or
-git-derived identifier for traceability.
+FlowGuard resolves actor identity at hydrate time for audit attribution. The `actorInfo` field carries both `source` (WHERE the identity came from) and `assurance` (HOW STRONG the verification is).
 
 ### Resolution Priority
 
-1. `FLOWGUARD_ACTOR_ID` environment variable present → `source: 'env'`
-2. `git config user.name` present → `source: 'git'`
-3. Neither available → `{ id: 'unknown', source: 'unknown' }`
+| Source    | Assurance         | Description                                                                               |
+| --------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified                            |
+| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                                        |
+| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                                 |
+| `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified |
+| `unknown` | `best_effort`     | No identity available                                                                     |
+
+### IdP Trust Modes (P35)
+
+- `mode: 'static'` with pinned signing keys (`jwk` or `pem`)
+- `mode: 'jwks'` with pinned local `jwksPath`
+- `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
+
+P35 explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
+
+### Policy Gate
+
+In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum required tier:
+
+- `best_effort` — any actor may approve
+- `claim_validated` — only claim-validated actors may approve (P33 `verified` equivalent)
+- `idp_verified` — only IdP-verified actors may approve
+
+Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
+
+### Fail-Closed Identity Behavior
+
+- `identityProviderMode: 'required'` blocks session hydration on IdP failures (no implicit fallback).
+- `identityProviderMode: 'optional'` degrades only on typed IdP errors; claim/env/git/unknown resolution remains bounded by priority rules.
+- Remote JWKS refresh failures after TTL expiry fail closed (`IDP_JWKS_FETCH_FAILED`).
+
+Representative typed fail-closed IdP errors:
+
+- `IDP_TOKEN_MISSING`, `IDP_TOKEN_INVALID`, `IDP_TOKEN_HEADER_INVALID`, `IDP_TOKEN_KID_MISSING`
+- `IDP_SIGNATURE_INVALID`, `IDP_ISSUER_MISMATCH`, `IDP_AUDIENCE_MISMATCH`, `IDP_EXPIRED`, `IDP_NOT_YET_VALID`
+- `IDP_JWKS_INVALID`, `IDP_JWKS_URI_INVALID`, `IDP_JWKS_FETCH_FAILED`, `IDP_JWKS_KEY_NOT_FOUND`, `IDP_JWKS_ALGORITHM_MISMATCH`
 
 ### Design Constraints
 
 - **Not authentication.** `FLOWGUARD_ACTOR_ID` is an operator-provided identifier, not a
-  verified login claim. No OIDC, SAML, LDAP, or RBAC.
+  verified login claim. No OIDC discovery, SAML, LDAP, or RBAC.
 - **Resolved once.** Actor identity is resolved at `/hydrate` and immutable for the session
   lifecycle. Changing `FLOWGUARD_ACTOR_*` or git config after hydrate does not affect the
   current session. Re-run `/hydrate` to resolve a new actor.
@@ -252,4 +284,4 @@ git-derived identifier for traceability.
 ---
 
 _FlowGuard Version: 1.1.0_
-_Last Updated: 2026-04-22_
+_Last Updated: 2026-04-23_

@@ -22,6 +22,7 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ```bash
 /hydrate
+/status
 ```
 
 After hydration, choose one of three flows:
@@ -108,21 +109,31 @@ After hydration, choose one of three flows:
 
 See [docs/phases.md](./docs/phases.md) for full phase details.
 
+### Status Surface
+
+Use `/status` as a read-only orientation command:
+
+- `/status` — compact phase/policy/allowed/next view
+- `/status --why-blocked` — focused blocker analysis
+- `/status --evidence` — slot-by-slot evidence view
+- `/status --context` — actor/policy/archive context
+- `/status --readiness` — compact readiness projection
+
 ---
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **3 Flows** | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report) |
-| **14 Phases** | READY entry point with three independent flow paths |
-| **Evidence Gates** | Every phase produces verifiable artifacts |
-| **Verification Planner** | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only) |
-| **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect |
-| **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
-| **Knowledge Pack Policy** | External documentation authority is advisory-only, provenance-stamped, and non-SSOT |
-| **Central Policy Authority** | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence |
-| **Verified Actor Identity** | Optional verified actor identity via `FLOWGUARD_ACTOR_CLAIMS_PATH`; regulated approvals require verified actors when `requireVerifiedActorsForApproval` is enabled |
+| Feature                          | Description                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **3 Flows**                      | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report)                                                                                                                                                                                                                                                                                       |
+| **14 Phases**                    | READY entry point with three independent flow paths                                                                                                                                                                                                                                                                                                               |
+| **Evidence Gates**               | Every phase produces verifiable artifacts                                                                                                                                                                                                                                                                                                                         |
+| **Verification Planner**         | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only)                                                                                                                                                                                                                                   |
+| **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect                                                                                                                                                                                                                                 |
+| **Module-Scoped Detection**      | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts                                                                                                                                                                                                                                                                        |
+| **Knowledge Pack Policy**        | External documentation authority is advisory-only, provenance-stamped, and non-SSOT                                                                                                                                                                                                                                                                               |
+| **Central Policy Authority**     | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence                                                                                                                                                                                             |
+| **Actor Assurance**              | Three-tier minimum actor assurance model: `best_effort`, `claim_validated`, `idp_verified`; IdP verification supports static keys, local pinned JWKS (`jwksPath`), and remote JWKS (`jwksUri` + `cacheTtlSeconds`) with fail-closed `identityProviderMode` (`required` blocks; `optional` degrades only for typed IdP errors). OIDC discovery is not part of P35. |
 
 ---
 
@@ -148,43 +159,43 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 
 ## Product Facts
 
-| Feature | Description |
-|---------|-------------|
-| **Policy Modes** | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review) |
-| **Profiles** | Auto-detect tech stack (TypeScript, Java, Angular) |
-| **Python/Rust/Go Detection** | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files |
-| **Database Detection** | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence |
-| **Audit Trail** | Hash-chained, tamper-evident |
-| **Decision Receipts** | Append-only `decision:DEC-xxx` events for every `/review-decision` |
-| **Derived Evidence Artifacts** | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance |
-| **Archive** | Session archival with integrity verification + redacted export artifacts by default |
-| **Code Surface Analysis** | Bounded heuristic detection of endpoints/auth/data/integration surfaces |
+| Feature                           | Description                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Policy Modes**                  | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review)                                                                                |
+| **Profiles**                      | Auto-detect tech stack (TypeScript, Java, Angular)                                                                                                                             |
+| **Python/Rust/Go Detection**      | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files                                                                                        |
+| **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                              |
+| **Audit Trail**                   | Hash-chained, tamper-evident                                                                                                                                                   |
+| **Decision Receipts**             | Append-only `decision:DEC-xxx` events for every `/review-decision`                                                                                                             |
+| **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                  |
+| **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                            |
+| **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                        |
 | **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing |
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Installation](./docs/installation.md) | Install and configure FlowGuard |
-| [Commands](./docs/commands.md) | Command reference |
-| [Phases](./docs/phases.md) | Workflow phases and gates |
-| [Policies](./docs/policies.md) | Solo, Team, Regulated modes |
-| [Profiles](./docs/profiles.md) | Tech stack profiles |
-| [Archive](./docs/archive.md) | Session archiving |
+| Document                                               | Description                                      |
+| ------------------------------------------------------ | ------------------------------------------------ |
+| [Installation](./docs/installation.md)                 | Install and configure FlowGuard                  |
+| [Commands](./docs/commands.md)                         | Command reference                                |
+| [Phases](./docs/phases.md)                             | Workflow phases and gates                        |
+| [Policies](./docs/policies.md)                         | Solo, Team, Regulated modes                      |
+| [Profiles](./docs/profiles.md)                         | Tech stack profiles                              |
+| [Archive](./docs/archive.md)                           | Session archiving                                |
 | [Enterprise Readiness](./docs/enterprise-readiness.md) | Consolidated threat model and control boundaries |
-| [Configuration](./docs/configuration.md) | Configuration reference |
-| [Troubleshooting](./docs/troubleshooting.md) | FAQ and error handling |
+| [Configuration](./docs/configuration.md)               | Configuration reference                          |
+| [Troubleshooting](./docs/troubleshooting.md)           | FAQ and error handling                           |
 
 ---
 
 ## Product Documentation
 
-| Document | Audience | Notes |
-|----------|----------|-------|
-| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations |
-| [AGENTS.md](./AGENTS.md) | Development repo | FlowGuard mandates used by this repo's AI assistants. End users receive `flowguard-mandates.md` via the installer instead. |
+| Document                                     | Audience         | Notes                                                                                                                      |
+| -------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations                                                                                    |
+| [AGENTS.md](./AGENTS.md)                     | Development repo | FlowGuard mandates used by this repo's AI assistants. End users receive `flowguard-mandates.md` via the installer instead. |
 
 ---
 

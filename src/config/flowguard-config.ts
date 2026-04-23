@@ -17,6 +17,7 @@
  */
 
 import { z } from 'zod';
+import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -45,8 +46,18 @@ export const FlowGuardConfigSchema = z.object({
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */
       maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
-      /** P33: Require verified actor identity for regulated approvals. */
+      /** P33/P34: Require verified actor identity for regulated approvals.
+       * Superseded by minimumActorAssuranceForApproval when set. */
       requireVerifiedActorsForApproval: z.boolean().optional(),
+      /** P34: Minimum assurance level required for approval.
+       * 'best_effort' | 'claim_validated' | 'idp_verified' */
+      minimumActorAssuranceForApproval: z
+        .enum(['best_effort', 'claim_validated', 'idp_verified'])
+        .optional(),
+      /** P35a/P35b1/P35b2: IdP configuration for static keys or JWKS (path/URI). */
+      identityProvider: IdpConfigSchema.optional(),
+      /** P35a: IdP verification mode ('optional' or 'required'). */
+      identityProviderMode: IdentityProviderModeSchema.optional(),
     })
     .default({}),
 

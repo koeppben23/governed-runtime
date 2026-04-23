@@ -418,12 +418,13 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(parsed.instructions).toEqual([]);
     });
 
-    it('COMMANDS template covers all 11 slash commands', () => {
+    it('COMMANDS template covers all slash commands', () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(11);
+      expect(commandNames).toHaveLength(12);
       // Verify all expected commands are present
       for (const expected of [
         'hydrate.md',
+        'status.md',
         'ticket.md',
         'plan.md',
         'continue.md',
