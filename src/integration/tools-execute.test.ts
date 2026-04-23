@@ -145,11 +145,13 @@ afterEach(async () => {
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27)
+  // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
     id: 'test-operator',
     email: 'test@flowguard.dev',
-    source: 'env',
+    displayName: null,
+    source: 'env' as const,
+    assurance: 'best_effort' as const,
   });
   delete process.env.FLOWGUARD_POLICY_PATH;
   vi.clearAllMocks();
@@ -1465,7 +1467,9 @@ describe('hydrate', () => {
       expect(state!.actorInfo).toEqual({
         id: 'test-operator',
         email: 'test@flowguard.dev',
+        displayName: null,
         source: 'env',
+        assurance: 'best_effort',
       });
     });
 
@@ -1478,17 +1482,20 @@ describe('hydrate', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state1 = await readState(sessDir);
-      expect(state1!.actorInfo).toEqual({
+expect(state1!.actorInfo).toMatchObject({
         id: 'test-operator',
         email: 'test@flowguard.dev',
         source: 'env',
+        assurance: 'best_effort',
       });
 
       // Change actor mock — simulates env change mid-session
       vi.mocked(actorMock.resolveActor).mockResolvedValue({
         id: 'changed-operator',
         email: 'changed@flowguard.dev',
+        displayName: null,
         source: 'env',
+        assurance: 'best_effort',
       });
 
       // Re-hydrate — should return existing state unchanged (idempotent)
@@ -1496,10 +1503,11 @@ describe('hydrate', () => {
       expect(result.phase).toBe('READY');
       const state2 = await readState(sessDir);
       // Actor should be the original value, NOT the changed one
-      expect(state2!.actorInfo).toEqual({
+      expect(state2!.actorInfo).toMatchObject({
         id: 'test-operator',
         email: 'test@flowguard.dev',
         source: 'env',
+        assurance: 'best_effort',
       });
     });
 
@@ -1817,7 +1825,7 @@ describe('decision', () => {
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('VERIFIED_ACTOR_REQUIRED');
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
     });
   });
 });

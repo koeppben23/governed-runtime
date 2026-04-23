@@ -51,8 +51,9 @@ export interface StatusProjection {
   profileId: string;
   /** Actor attribution (null when no session exists). */
   actor: {
-    id: string | null;
-    source: 'env' | 'git' | 'claim' | 'unknown' | null;
+    id: string;
+    source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
+    assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
   } | null;
   /** Archive lifecycle status. */
   archiveStatus: string | null;
@@ -202,6 +203,7 @@ export function buildStatusProjection(
     ? {
         id: state.actorInfo.id,
         source: state.actorInfo.source,
+        assurance: state.actorInfo.assurance,
       }
     : null;
 
@@ -306,6 +308,7 @@ export function buildContextProjection(state: SessionState): ContextProjection {
       ? {
           id: state.actorInfo.id,
           source: state.actorInfo.source,
+          assurance: state.actorInfo.assurance,
         }
       : null,
     archiveStatus: state.archiveStatus ?? null,

@@ -111,11 +111,18 @@ export type TypedDetail =
 /**
  * Resolved operator identity for audit attribution.
  *
- * P27: Best-effort identity — NOT a cryptographic authentication claim.
- * The `source` field makes the identity origin transparent:
- * - `env`:     Operator-provided via FLOWGUARD_ACTOR_ID / FLOWGUARD_ACTOR_EMAIL
- * - `git`:     Derived from `git config user.name` / `git config user.email`
- * - `unknown`: Neither env nor git identity available
+ * P27/P34: Identity with source and assurance tier.
+ * The `source` field tells WHERE the identity came from.
+ * The `assurance` field tells HOW STRONG the verification is.
+ *
+ * Source → Assurance mapping (authoritative):
+ * - `env`     → `best_effort` (operator-provided, no third-party verification)
+ * - `git`     → `best_effort` (derived from git config)
+ * - `unknown` → `best_effort` (no identity available)
+ * - `claim`   → `claim_validated` (schema + expiry validated from local claim file)
+ * - `oidc`    → `idp_verified` (cryptographic IdP verification, future P35)
+ *
+ * P34 design doc: docs/actor-assurance-architecture.md
  *
  * Resolved once at hydrate time, immutable for the session lifecycle.
  * Changing FLOWGUARD_ACTOR_* or git config after hydrate does not affect
@@ -124,7 +131,9 @@ export type TypedDetail =
 export interface ActorInfo {
   readonly id: string;
   readonly email: string | null;
-  readonly source: 'env' | 'git' | 'claim' | 'unknown';
+  readonly displayName?: string | null;
+  readonly source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
+  readonly assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
 }
 
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────

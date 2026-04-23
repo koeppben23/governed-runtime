@@ -206,14 +206,25 @@ export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
 // ─── Decision Identity ────────────────────────────────────────────────────────
 
 /**
- * Structured identity for decision attribution (P30/P33).
+ * Structured identity for decision attribution (P30/P33/P34).
  * Extends ActorInfo with assurance level for regulated contexts.
+ *
+ * P34: actorAssurance now uses three-tier model:
+ * - best_effort: operator-provided, no third-party verification
+ * - claim_validated: schema + expiry validated from local claim file
+ * - idp_verified: cryptographic IdP verification (future P35)
+ *
+ * Backward compat: 'verified' from P33 v0 is coerced to 'claim_validated'.
  */
 export const DecisionIdentity = z.object({
   actorId: z.string().min(1),
   actorEmail: z.string().nullable(),
-  actorSource: z.enum(['env', 'git', 'claim', 'unknown']),
-  actorAssurance: z.enum(['best_effort', 'verified']).default('best_effort'),
+  actorDisplayName: z.string().nullable().optional(),
+  actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
+  actorAssurance: z
+    .enum(['best_effort', 'claim_validated', 'idp_verified'])
+    .default('best_effort')
+    .catch('best_effort'),
 });
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
 
@@ -296,7 +307,18 @@ export const PolicySnapshotSchema = z.object({
   maxSelfReviewIterations: z.number().int().positive(),
   maxImplReviewIterations: z.number().int().positive(),
   allowSelfApproval: z.boolean(),
-  /** P33: Whether regulated approvals require verified actor identity. */
+  /**
+   * P34: Minimum required actor assurance for regulated approval decisions.
+   * Supersedes requireVerifiedActorsForApproval at session resolution time.
+   * 'best_effort' | 'claim_validated' | 'idp_verified'
+   */
+  minimumActorAssuranceForApproval: z
+    .enum(['best_effort', 'claim_validated', 'idp_verified'])
+    .default('best_effort'),
+  /**
+   * P33 (deprecated): Whether regulated approvals require verified actor identity.
+   * Preserved for backward compat with existing sessions. Prefer minimumActorAssuranceForApproval.
+   */
   requireVerifiedActorsForApproval: z.boolean().default(false),
   audit: z.object({
     emitTransitions: z.boolean(),
@@ -315,21 +337,24 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 // ─── Actor Identity ───────────────────────────────────────────────────────────
 
 /**
- * Resolved operator identity for audit attribution (P27).
+ * Resolved operator identity for audit attribution (P27/P34).
  *
- * Best-effort identity — NOT a cryptographic authentication claim.
- * The `source` field makes the identity origin transparent:
- * - `env`:     Operator-provided via FLOWGUARD_ACTOR_ID / FLOWGUARD_ACTOR_EMAIL
- * - `git`:     Derived from `git config user.name` / `git config user.email`
- * - `claim`:   Verified claim from FLOWGUARD_ACTOR_CLAIMS_PATH (P33)
- * - `unknown`: Neither env nor git identity available
+ * Three-tier assurance model:
+ * - best_effort: operator-provided, no third-party verification (env/git/unknown)
+ * - claim_validated: schema + expiry validated from local claim file (claim source)
+ * - idp_verified: cryptographic IdP verification (oidc source, future P35)
  *
- * Resolved once at hydrate time, immutable for the session lifecycle.
+ * P34 design doc: docs/actor-assurance-architecture.md
  */
 export const ActorInfoSchema = z.object({
   id: z.string().min(1),
   email: z.string().nullable(),
-  source: z.enum(['env', 'git', 'claim', 'unknown']),
+  displayName: z.string().nullable().optional(),
+  source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
+  assurance: z
+    .enum(['best_effort', 'claim_validated', 'idp_verified'])
+    .default('best_effort')
+    .catch('best_effort'),
 });
 export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
 

@@ -76,9 +76,10 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'ci-operator',
       email: 'ci@example.com',
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     });
-    // Should NOT call git when env is present
     expect(mockGitUserName).not.toHaveBeenCalled();
   });
 
@@ -91,7 +92,9 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'Jane Dev',
       email: 'jane@dev.io',
+      displayName: null,
       source: 'git',
+      assurance: 'best_effort',
     });
     expect(mockGitUserName).toHaveBeenCalledWith(WORKTREE);
     expect(mockGitUserEmail).toHaveBeenCalledWith(WORKTREE);
@@ -103,7 +106,9 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'unknown',
       email: null,
+      displayName: null,
       source: 'unknown',
+      assurance: 'best_effort',
     });
   });
 
@@ -146,12 +151,13 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'no-email-user',
       email: null,
+      displayName: null,
       source: 'env',
+      assurance: 'best_effort',
     });
   });
 
   it('git unavailable / not a repo falls to unknown', async () => {
-    // gitUserName returns null (simulates git failure or not a repo)
     mockGitUserName.mockResolvedValue(null);
 
     const actor = await resolveActor(WORKTREE);
@@ -159,7 +165,9 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'unknown',
       email: null,
+      displayName: null,
       source: 'unknown',
+      assurance: 'best_effort',
     });
   });
 
@@ -181,7 +189,9 @@ describe('resolveActor', () => {
     expect(actor).toEqual({
       id: 'Name Only',
       email: null,
+      displayName: null,
       source: 'git',
+      assurance: 'best_effort',
     });
   });
 
@@ -347,8 +357,8 @@ describe('resolveActor', () => {
 
     // ── CORNER ─────────────────────────────────────────────────────────────────
     describe('CORNER', () => {
-      it('claim beats env when both available', async () => {
-        const claimPath = path.join(tmpDir, 'claim-beats-env.json');
+      it('P34: claim wins over env when both available (fail-closed)', async () => {
+        const claimPath = path.join(tmpDir, 'claim-wins-over-env.json');
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 3600000);
         const issuedAt = new Date(now.getTime() - 60000);
@@ -357,7 +367,7 @@ describe('resolveActor', () => {
           claimPath,
           JSON.stringify({
             schemaVersion: 'v1',
-            actorId: 'claim-wins',
+            actorId: 'claim-user',
             actorEmail: 'claim@example.com',
             issuer: 'ci-oidc-bridge',
             issuedAt: issuedAt.toISOString(),
@@ -370,8 +380,10 @@ describe('resolveActor', () => {
 
         const actor = await resolveActor(WORKTREE);
 
+        // P34: claim wins over env when configured (fail-closed)
         expect(actor.source).toBe('claim');
-        expect(actor.id).toBe('claim-wins');
+        expect(actor.id).toBe('claim-user');
+        expect(actor.assurance).toBe('claim_validated');
       });
 
       it('fails closed when claim path is set but missing, even if env actor is present', async () => {

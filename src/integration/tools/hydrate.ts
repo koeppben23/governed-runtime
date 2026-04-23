@@ -511,7 +511,7 @@ export const hydrate: ToolDefinition = {
             actorId: actorInfo.id,
             actorEmail: actorInfo.email,
             actorSource: actorInfo.source,
-            actorAssurance: actorInfo.source === 'claim' ? 'verified' : 'best_effort',
+            actorAssurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
           },
           actorInfo,
           discoveryResult,

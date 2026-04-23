@@ -93,11 +93,29 @@ export interface FlowGuardPolicy {
   readonly actorClassification: Readonly<Record<string, string>>;
 
   /**
-   * P33: Whether regulated approvals require verified actor identity.
-   * false (default) → best_effort actors allowed at regulated gates.
-   * true → only verified actors allowed at regulated gates.
-   * When true and a best_effort actor attempts approval, they are blocked
-   * with reason VERIFIED_ACTOR_REQUIRED.
+   * P34: Minimum required actor assurance for regulated approval decisions.
+   *
+   * - 'best_effort'     → any actor may approve (default, backward-compat with P33 v0)
+   * - 'claim_validated' → only actors with validated local claims may approve
+   * - 'idp_verified'    → only IdP-verified actors may approve (future P35 enterprise target)
+   *
+   * Applies at User Gates in regulated mode. Actors below the threshold are blocked
+   * with reason ACTOR_ASSURANCE_INSUFFICIENT.
+   *
+   * Migration from P33 v0:
+   *   requireVerifiedActorsForApproval: true  ��� minimumActorAssuranceForApproval: 'claim_validated'
+   *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
+   *
+   * P34 design doc: docs/actor-assurance-architecture.md
+   */
+  readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
+
+  /**
+   * P33 (deprecated): Whether regulated approvals require verified actor identity.
+   * Ignored if minimumActorAssuranceForApproval is set.
+   * Translated to minimumActorAssuranceForApproval at resolution time:
+   *   true  → 'claim_validated'
+   *   false → 'best_effort'
    */
   readonly requireVerifiedActorsForApproval: boolean;
 }
@@ -230,6 +248,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   actorClassification: {
     flowguard_decision: 'system',
   },
+  minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
 };
 
@@ -253,8 +272,9 @@ export const TEAM_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: 'human',
+    flowguard_decision: 'system',
   },
+  minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
 };
 
@@ -272,14 +292,15 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
-  audit: {
+audit: {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: 'system',
+    flowguard_decision: 'human',
   },
+  minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
 };
 
@@ -315,6 +336,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     flowguard_decision: 'human',
     flowguard_abort_session: 'human',
   },
+  minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
 };
 
@@ -511,6 +533,8 @@ export async function resolvePolicyForHydrate(opts: {
       opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    // P34: Translate legacy requireVerifiedActorsForApproval to minimumActorAssuranceForApproval
+    minimumActorAssuranceForApproval: basePolicy.minimumActorAssuranceForApproval,
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
   };
@@ -736,6 +760,7 @@ export function createPolicySnapshot(
       enableChainHash: policy.audit.enableChainHash,
     },
     actorClassification: { ...policy.actorClassification },
+    minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
   };
 }
 
@@ -753,6 +778,9 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
+    minimumActorAssuranceForApproval:
+      (snapshot.minimumActorAssuranceForApproval as 'best_effort' | 'claim_validated' | 'idp_verified' | undefined) ??
+      (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {
       emitTransitions: snapshot.audit.emitTransitions,
