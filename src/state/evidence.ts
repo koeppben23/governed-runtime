@@ -15,9 +15,27 @@ import { z } from 'zod';
  * Any unknown value falls through to 'best_effort' (safe default for backward compat).
  */
 function coerceAssurance(raw: unknown): 'best_effort' | 'claim_validated' | 'idp_verified' {
-  if (raw === 'verified' || raw === 'claim_validated') return 'claim_validated';
-  if (raw === 'idp_verified') return 'idp_verified';
+  if (raw === 'verified' || raw === 'claim_validated' || raw === 'idp_verified') {
+    if (raw === 'verified') return 'claim_validated';
+    return raw as 'claim_validated' | 'idp_verified';
+  }
   return 'best_effort';
+}
+
+/**
+ * Assurance value parser with P33 v0 backward compat.
+ * "verified" passes through the union and is coerced to "claim_validated".
+ * Unknown values fall back to "best_effort".
+ */
+function assuranceSchema() {
+  return z
+    .union([
+      z.literal('verified'),
+      z.literal('best_effort'),
+      z.literal('claim_validated'),
+      z.literal('idp_verified'),
+    ])
+    .transform((val) => coerceAssurance(val));
 }
 
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
@@ -231,10 +249,7 @@ export const DecisionIdentity = z.object({
   actorEmail: z.string().nullable(),
   actorDisplayName: z.string().nullable().optional(),
   actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-  actorAssurance: z
-    .enum(['best_effort', 'claim_validated', 'idp_verified'])
-    .default('best_effort')
-    .transform((val) => coerceAssurance(val)),
+  actorAssurance: assuranceSchema().default('best_effort'),
 });
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
 
@@ -361,10 +376,7 @@ export const ActorInfoSchema = z.object({
   email: z.string().nullable(),
   displayName: z.string().nullable().optional(),
   source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
-  assurance: z
-    .enum(['best_effort', 'claim_validated', 'idp_verified'])
-    .default('best_effort')
-    .transform((val) => coerceAssurance(val)),
+  assurance: assuranceSchema().default('best_effort'),
 });
 export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
 
