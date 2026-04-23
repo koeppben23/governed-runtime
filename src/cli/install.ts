@@ -455,7 +455,9 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
     // 0c. Extract version from tarball filename
     const tarballName = basename(tarballPath);
-    const versionMatch = tarballName.match(/^flowguard-core-(\d+\.\d+\.\d+)\.tgz$/);
+    const versionMatch = tarballName.match(
+      /^flowguard-core-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/,
+    );
     if (!versionMatch) {
       errors.push(
         'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +

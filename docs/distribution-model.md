@@ -141,7 +141,7 @@ FlowGuard uses `file:`-based npm dependencies for offline resolution:
 ```json
 {
   "dependencies": {
-    "@flowguard/core": "file:./vendor/flowguard-core-1.1.0.tgz"
+    "@flowguard/core": "file:./vendor/flowguard-core-1.2.0-rc.1.tgz"
   }
 }
 ```
@@ -229,5 +229,5 @@ No network access required during installation or runtime.
 
 ---
 
-_FlowGuard Version: 1.1.0_
+_FlowGuard Version: 1.2.0-rc.1-rc.1_
 _Last Updated: 2026-04-15_

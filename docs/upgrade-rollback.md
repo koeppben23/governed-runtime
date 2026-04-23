@@ -150,9 +150,9 @@ flowguard doctor
 
 ```
 /artifact-store/
-├── flowguard-core-1.1.0.tgz
-├── flowguard-core-1.1.0.tgz
-├── flowguard-core-1.1.0.tgz
+├── flowguard-core-1.2.0-rc.1.tgz
+├── flowguard-core-1.2.0-rc.1.tgz
+├── flowguard-core-1.2.0-rc.1.tgz
 └── checksums.sha256
 ```
 
@@ -230,5 +230,5 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 ---
 
-_FlowGuard Version: 1.1.0_
+_FlowGuard Version: 1.2.0-rc.1-rc.1_
 _Last Updated: 2026-04-15_
