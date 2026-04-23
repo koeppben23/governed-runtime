@@ -52,6 +52,8 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
+  identityProvider: undefined,
+  identityProviderMode: 'optional',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

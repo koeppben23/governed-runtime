@@ -345,6 +345,16 @@ export const PolicySnapshotSchema = z.object({
    * Preserved for backward compat with existing sessions. Prefer minimumActorAssuranceForApproval.
    */
   requireVerifiedActorsForApproval: z.boolean().default(false),
+  /**
+   * P35a: IdP configuration for static key verification.
+   * Frozen at hydrate time. When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
+   */
+  identityProvider: z.unknown().optional(),
+  /**
+   * P35a: IdP verification mode ('optional' or 'required').
+   * Controls whether IdP failure blocks session creation.
+   */
+  identityProviderMode: z.enum(['optional', 'required']).default('optional'),
   audit: z.object({
     emitTransitions: z.boolean(),
     emitToolCalls: z.boolean(),
@@ -362,12 +372,30 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 // ─── Actor Identity ───────────────────────────────────────────────────────────
 
 /**
- * Resolved operator identity for audit attribution (P27/P34).
+ * Actor verification metadata for IdP-verified actors (P35a).
+ * Provides provenance information about the IdP verification:
+ * - Which issuer and audience were verified
+ * - Which key was used for signature verification
+ * - When the verification occurred
+ */
+export const ActorVerificationMetaSchema = z.object({
+  issuer: z.string(),
+  audience: z.array(z.string()),
+  keyId: z.string(),
+  algorithm: z.string(),
+  verifiedAt: z.string().datetime(),
+});
+export type ActorVerificationMeta = z.infer<typeof ActorVerificationMetaSchema>;
+
+/**
+ * Resolved operator identity for audit attribution (P27/P34/P35a).
  *
  * Three-tier assurance model:
  * - best_effort: operator-provided, no third-party verification (env/git/unknown)
  * - claim_validated: schema + expiry validated from local claim file (claim source)
- * - idp_verified: cryptographic IdP verification (oidc source, future P35)
+ * - idp_verified: cryptographic IdP verification (oidc source, P35a)
+ *
+ * P35a adds verificationMeta for idp_verified actors to provide IdP provenance.
  *
  * P34 design doc: docs/actor-assurance-architecture.md
  */
@@ -377,8 +405,9 @@ export const ActorInfoSchema = z.object({
   displayName: z.string().nullable().optional(),
   source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
   assurance: assuranceSchema().default('best_effort'),
+  verificationMeta: ActorVerificationMetaSchema.optional(),
 });
-export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
+export type ActorInfo = z.infer<typeof ActorInfoSchema>;
 
 /**
  * Schema version of DecisionIdentity for state imports.

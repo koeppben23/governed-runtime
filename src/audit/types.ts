@@ -128,12 +128,21 @@ export type TypedDetail =
  * Changing FLOWGUARD_ACTOR_* or git config after hydrate does not affect
  * the current session. Re-run /hydrate to resolve a new actor.
  */
+export interface ActorVerificationMeta {
+  readonly issuer: string;
+  readonly audience: string[];
+  readonly keyId: string;
+  readonly algorithm: string;
+  readonly verifiedAt: string;
+}
+
 export interface ActorInfo {
   readonly id: string;
   readonly email: string | null;
   readonly displayName?: string | null;
   readonly source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
   readonly assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly verificationMeta?: ActorVerificationMeta;
 }
 
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────

@@ -118,6 +118,23 @@ export interface FlowGuardPolicy {
    *   false → 'best_effort'
    */
   readonly requireVerifiedActorsForApproval: boolean;
+
+  /**
+   * P35a: IdP configuration for static key verification.
+   * Defines issuer, audience, claim mapping, and signing keys.
+   * When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
+   */
+  readonly identityProvider?: unknown;
+
+  /**
+   * P35a: Controls IdP verification behavior when identityProvider is set.
+   * - 'optional': Token verification is attempted but failure doesn't block hydration
+   * - 'required': IdP verification must succeed at hydration time
+   *
+   * Note: Approval gates respect minimumActorAssuranceForApproval regardless of this mode.
+   * This mode only controls whether IdP failure blocks session creation.
+   */
+  readonly identityProviderMode: 'optional' | 'required';
 }
 
 /** Supported policy modes. */
@@ -250,6 +267,8 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   },
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
+  identityProvider: undefined,
+  identityProviderMode: 'optional',
 };
 
 /**
@@ -272,10 +291,12 @@ export const TEAM_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: 'system',
+    flowguard_decision: 'human',
   },
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
+  identityProvider: undefined,
+  identityProviderMode: 'optional',
 };
 
 /**
@@ -298,10 +319,12 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
     enableChainHash: true,
   },
   actorClassification: {
-    flowguard_decision: 'human',
+    flowguard_decision: 'system',
   },
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
+  identityProvider: undefined,
+  identityProviderMode: 'optional',
 };
 
 /**
@@ -338,6 +361,8 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   },
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
+  identityProvider: undefined,
+  identityProviderMode: 'optional',
 };
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
@@ -517,6 +542,8 @@ export async function resolvePolicyForHydrate(opts: {
   configMaxImplReviewIterations?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
   configRequireVerifiedActorsForApproval?: boolean;
+  configIdentityProvider?: unknown;
+  configIdentityProviderMode?: 'optional' | 'required';
 }): Promise<HydratePolicyResolution> {
   const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
     ? 'explicit'
@@ -526,7 +553,7 @@ export async function resolvePolicyForHydrate(opts: {
   const requestedMode = opts.explicitMode ?? opts.repoMode ?? opts.defaultMode;
   const requestedResolution = resolvePolicyWithContext(requestedMode, opts.ciContext);
 
-  // Apply config iteration-limit overrides over the selected policy preset.
+// Apply config iteration-limit overrides over the selected policy preset.
   const basePolicy = requestedResolution.policy;
   const policyWithOverrides: FlowGuardPolicy = {
     ...basePolicy,
@@ -545,6 +572,9 @@ export async function resolvePolicyForHydrate(opts: {
       basePolicy.minimumActorAssuranceForApproval,
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
+    // P35a: Wire IdP configuration through
+    identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
+    identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
   };
 
   if (opts.centralPolicyPath === undefined) {
@@ -602,6 +632,9 @@ export async function resolvePolicyForHydrate(opts: {
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ??
       centralResolution.policy.requireVerifiedActorsForApproval,
+    identityProvider: opts.configIdentityProvider ?? centralResolution.policy.identityProvider,
+    identityProviderMode:
+      opts.configIdentityProviderMode ?? centralResolution.policy.identityProviderMode,
   };
   return {
     requestedMode,
@@ -769,6 +802,8 @@ export function createPolicySnapshot(
     },
     actorClassification: { ...policy.actorClassification },
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
+    ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
+    identityProviderMode: policy.identityProviderMode,
   };
 }
 
@@ -800,6 +835,8 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
       enableChainHash: snapshot.audit.enableChainHash,
     },
     actorClassification: { ...snapshot.actorClassification },
+    identityProvider: snapshot.identityProvider,
+    identityProviderMode: snapshot.identityProviderMode ?? 'optional',
   };
 }
 

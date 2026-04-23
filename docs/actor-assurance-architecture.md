@@ -1,7 +1,7 @@
 # Actor Assurance Architecture
 
-**Design Version:** 1.0
-**Status:** Final — P34
+**Design Version:** 1.1
+**Status:** Final — P35a
 **Last Updated:** 2026-04-23
 **Owner:** FlowGuard Core
 **Audience:** Enterprise engineers, product, security review
@@ -318,30 +318,54 @@ These tiers do NOT change the current three-tier model. They extend it.
 
 ### P34b — Claim-Validated Cleanup
 
-**Deliverable:**
-
-- Extend `ActorIdentitySchema` with `idp_verified` enum value
-- Rename `verified` → `claim_validated` in Zod schemas and state
-- Add `displayName` field to `ActorIdentity` and `DecisionIdentity`
-- Replace `requireVerifiedActorsForApproval` with `minimumActorAssuranceForApproval` in policy schema
-- Update `review-decision.ts` rail to use new threshold comparison
-- Update `resolveActor` and `resolveActorFromClaim` JSDoc with new semantics
-- Update `security-hardening.md`, `enterprise-readiness.md`, `PRODUCT_IDENTITY.md`, `PRODUCT_ONE_PAGER.md`
-- Add coercion for `verified` → `claim_validated` in Zod parse for backward compatibility
-- Add test coverage for new threshold logic
-
-### P35 — IdP-Verified Actors
+**Status:** Complete
 
 **Deliverable:**
 
-- JWT/JOSE library integration
-- OIDC discovery or static JWKS/JWK support
-- `FLOWGUARD_ACTOR_IDP_CONFIG` config surface (issuer, audience, jwks_uri, or inline JWK)
-- IdP validator (signature, issuer, audience, expiry)
-- OIDC claim → `ActorIdentity` mapper
-- `source: 'oidc'`, `assurance: 'idp_verified'`
-- `ACTOR_ASSURANCE_INSUFFICIENT` for IdP-tier failures
-- OIDC/enterprise docs
+- ✅ Extend `ActorIdentitySchema` with `idp_verified` enum value
+- ✅ Rename `verified` → `claim_validated` in Zod schemas and state
+- ✅ Add `displayName` field to `ActorIdentity` and `DecisionIdentity`
+- ✅ Replace `requireVerifiedActorsForApproval` with `minimumActorAssuranceForApproval` in policy schema
+- ✅ Update `review-decision.ts` rail to use new threshold comparison
+- ✅ Update `resolveActor` and `resolveActorFromClaim` JSDoc with new semantics
+- ✅ Update `security-hardening.md`, `enterprise-readiness.md`, `PRODUCT_IDENTITY.md`, `PRODUCT_ONE_PAGER.md`
+- ✅ Add coercion for `verified` → `claim_validated` in Zod parse for backward compatibility
+- ✅ Add test coverage for new threshold logic
+
+### P35b — JWKS-Fetched Keys (Future)
+
+**Status:** Not started
+
+**Deliverable:** Remote JWKS endpoint fetching with caching and rotation support.
+
+### P35c — OIDC Discovery (Future)
+
+**Status:** Not started
+
+**Deliverable:** OIDC discovery endpoint for dynamic IdP configuration.
+
+### P35a — IdP-Verified Actors (Static Keys)
+
+**Status:** Implemented
+
+**Deliverable:**
+
+- ✅ JWT/JOSE verification via Node.js crypto (RS256, ES256)
+- ✅ Static JWK/PEM key binding in policy configuration
+- ✅ `FLOWGUARD_ACTOR_TOKEN_PATH` for JWT token file
+- ✅ IdP validator (signature, issuer, audience, expiry, nbf)
+- ✅ `source: 'oidc'`, `assurance: 'idp_verified'`
+- ✅ `ActorVerificationMeta` for IdP provenance
+- ✅ `identityProviderMode: 'optional' | 'required'` for session creation control
+- ✅ Fail-closed behavior with typed error codes
+
+**Files:**
+
+- `src/identity/` — IdP module (errors, types, key-resolver, token-verifier, index)
+- `src/adapters/actor.ts` — IdP resolver integrated
+- `src/state/evidence.ts` — `ActorVerificationMeta` schema
+- `src/config/policy.ts` — `identityProvider`, `identityProviderMode` fields
+- `src/config/flowguard-config.ts` — IdP config surface
 
 ---
 
@@ -356,10 +380,11 @@ These tiers do NOT change the current three-tier model. They extend it.
 
 ## 14) Related Documents
 
-- `src/adapters/actor.ts` — current P33 actor resolver
-- `src/state/evidence.ts` — `DecisionIdentity` schema (P30/P33)
-- `src/config/policy.ts` — policy schema with `requireVerifiedActorsForApproval` (to be replaced)
-- `src/rails/review-decision.ts` — regulated approval gate (to be updated)
+- `src/adapters/actor.ts` — P35a actor resolver with IdP integration
+- `src/identity/` — P35a IdP identity module
+- `src/state/evidence.ts` — `DecisionIdentity` schema with `ActorVerificationMeta`
+- `src/config/policy.ts` — P35a policy schema with `identityProvider` and `identityProviderMode`
+- `src/rails/review-decision.ts` — regulated approval gate with `ACTOR_ASSURANCE_INSUFFICIENT`
 - `docs/security-hardening.md` — actor identity hardening guidance
 - `docs/enterprise-readiness.md` — threat model and regulated guarantees
-- `PRODUCT_IDENTITY.md` — product capabilities (actor identity section to be updated)
+- `PRODUCT_IDENTITY.md` — product capabilities
