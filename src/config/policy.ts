@@ -515,6 +515,7 @@ export async function resolvePolicyForHydrate(opts: {
   readFileFn?: (path: string) => Promise<string>;
   configMaxSelfReviewIterations?: number;
   configMaxImplReviewIterations?: number;
+  configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
   configRequireVerifiedActorsForApproval?: boolean;
 }): Promise<HydratePolicyResolution> {
   const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
@@ -534,7 +535,11 @@ export async function resolvePolicyForHydrate(opts: {
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
     // P34: Translate legacy requireVerifiedActorsForApproval to minimumActorAssuranceForApproval
-    minimumActorAssuranceForApproval: basePolicy.minimumActorAssuranceForApproval,
+    // Priority: explicit new config > legacy bool true > preset value > default
+    minimumActorAssuranceForApproval:
+      (opts.configMinimumActorAssuranceForApproval as 'best_effort' | 'claim_validated' | 'idp_verified') ??
+      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
+      basePolicy.minimumActorAssuranceForApproval,
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
   };

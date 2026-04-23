@@ -315,16 +315,15 @@ export const decision: ToolDefinition = {
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const actorInfo = await resolveActor(context.worktree || context.directory);
-      const actorAssurance: 'best_effort' | 'claim_validated' | 'idp_verified' =
-        actorInfo.source === 'claim' ? 'claim_validated' : actorInfo.source === 'oidc' ? 'idp_verified' : 'best_effort';
 
-      // P30/P34: Build structured decision identity from actor resolution
+      // P30/P34: Build structured decision identity directly from resolved actor info
+      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
       const decisionIdentity = {
         actorId: actorInfo.id,
         actorEmail: actorInfo.email,
         actorDisplayName: actorInfo.displayName,
         actorSource: actorInfo.source,
-        actorAssurance,
+        actorAssurance: actorInfo.assurance,
       };
 
       const result = executeReviewDecision(

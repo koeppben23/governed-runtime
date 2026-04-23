@@ -10,6 +10,16 @@
 
 import { z } from 'zod';
 
+/**
+ * P34: Coerce P33 v0 'verified' to 'claim_validated'.
+ * Any unknown value falls through to 'best_effort' (safe default for backward compat).
+ */
+function coerceAssurance(raw: unknown): 'best_effort' | 'claim_validated' | 'idp_verified' {
+  if (raw === 'verified' || raw === 'claim_validated') return 'claim_validated';
+  if (raw === 'idp_verified') return 'idp_verified';
+  return 'best_effort';
+}
+
 // ─── Closed Enums ─────────────────────────────────────────────────────────────
 
 /**
@@ -224,7 +234,7 @@ export const DecisionIdentity = z.object({
   actorAssurance: z
     .enum(['best_effort', 'claim_validated', 'idp_verified'])
     .default('best_effort')
-    .catch('best_effort'),
+    .transform((val) => coerceAssurance(val)),
 });
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
 
@@ -354,7 +364,7 @@ export const ActorInfoSchema = z.object({
   assurance: z
     .enum(['best_effort', 'claim_validated', 'idp_verified'])
     .default('best_effort')
-    .catch('best_effort'),
+    .transform((val) => coerceAssurance(val)),
 });
 export type ActorInfoSchema = z.infer<typeof ActorInfoSchema>;
 
