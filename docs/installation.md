@@ -63,8 +63,8 @@ For teams that want FlowGuard integrated into their project workflow:
 ```json
 {
   "scripts": {
-    "flowguard:install": "npx --package ./vendor/flowguard-core-1.1.0.tgz flowguard install --core-tarball ./vendor/flowguard-core-1.1.0.tgz",
-    "flowguard:doctor": "npx --package ./vendor/flowguard-core-1.1.0.tgz flowguard doctor"
+    "flowguard:install": "npx --package ./vendor/flowguard-core-1.2.0-rc.1.tgz flowguard install --core-tarball ./vendor/flowguard-core-1.2.0-rc.1.tgz",
+    "flowguard:doctor": "npx --package ./vendor/flowguard-core-1.2.0-rc.1.tgz flowguard doctor"
   }
 }
 ```
@@ -221,7 +221,7 @@ This uses nd-JSON for communication via stdin/stdout.
 
 ```
 ERROR: --core-tarball is required.
-Usage: npx --package ./flowguard-core-1.1.0.tgz flowguard install --core-tarball ./flowguard-core-1.1.0.tgz
+Usage: npx --package ./flowguard-core-1.2.0-rc.1.tgz flowguard install --core-tarball ./flowguard-core-1.2.0-rc.1.tgz
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 

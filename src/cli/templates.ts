@@ -1124,7 +1124,9 @@ export function extractManagedDigest(content: string): string | null {
  * Returns null if the file does not have a valid managed-artifact header.
  */
 export function extractManagedVersion(content: string): string | null {
-  const match = content.match(/^<!-- @flowguard\/core v([\d.]+) \| managed artifact/m);
+  const match = content.match(
+    /^<!-- @flowguard\/core v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?) \| managed artifact/m,
+  );
   return match?.[1] ?? null;
 }
 
@@ -1132,7 +1134,9 @@ export function extractManagedVersion(content: string): string | null {
  * Check if a file has a valid managed-artifact header.
  */
 export function isManagedArtifact(content: string): boolean {
-  return /^<!-- @flowguard\/core v[\d.]+ \| managed artifact/.test(content);
+  return /^<!-- @flowguard\/core v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)? \| managed artifact/.test(
+    content,
+  );
 }
 
 /**
