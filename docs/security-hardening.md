@@ -214,15 +214,27 @@ Non-regulated sessions use the existing fire-and-forget auto-archive in the audi
 
 ## Actor Identity
 
-FlowGuard resolves a best-effort operator identity at hydrate time for audit attribution.
-This is **not** a cryptographic authentication claim — it is an operator-provided or
-git-derived identifier for traceability.
+FlowGuard resolves actor identity at hydrate time for audit attribution. The `actorInfo` field carries both `source` (WHERE the identity came from) and `assurance` (HOW STRONG the verification is).
 
 ### Resolution Priority
 
-1. `FLOWGUARD_ACTOR_ID` environment variable present → `source: 'env'`
-2. `git config user.name` present → `source: 'git'`
-3. Neither available → `{ id: 'unknown', source: 'unknown' }`
+| Source    | Assurance         | Description                                                    |
+| --------- | ----------------- | -------------------------------------------------------------- |
+| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified |
+| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified             |
+| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated      |
+| `oidc`    | `idp_verified`    | Future IdP/OIDC token — cryptographically verified (P35)       |
+| `unknown` | `best_effort`     | No identity available                                          |
+
+### Policy Gate
+
+In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum required tier:
+
+- `best_effort` — any actor may approve
+- `claim_validated` — only claim-validated actors may approve (P33 `verified` equivalent)
+- `idp_verified` — only IdP-verified actors may approve (P35 target)
+
+Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
 
 ### Design Constraints
 
@@ -252,4 +264,4 @@ git-derived identifier for traceability.
 ---
 
 _FlowGuard Version: 1.1.0_
-_Last Updated: 2026-04-22_
+_Last Updated: 2026-04-23_
