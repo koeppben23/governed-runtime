@@ -95,14 +95,8 @@ export const status: ToolDefinition = {
       .boolean()
       .optional()
       .describe('Return per-slot evidence detail from canonical completeness truth.'),
-    context: z
-      .boolean()
-      .optional()
-      .describe('Return actor/policy/archive context projection.'),
-    readiness: z
-      .boolean()
-      .optional()
-      .describe('Return compact operational readiness projection.'),
+    context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
+    readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
   },
   async execute(_args, context) {
     try {

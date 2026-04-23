@@ -189,35 +189,39 @@ export function executeReviewDecision(
       }
     }
 
-// P34: Assurance threshold enforcement.
-      // Only blocks if a stricter-than-default threshold is configured.
-      const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
-      const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
-      if (requireVerified) {
-        // P33 legacy: requireVerifiedActorsForApproval: true → equivalent to 'claim_validated'
-        if (input.decisionIdentity?.actorAssurance !== 'claim_validated' && input.decisionIdentity?.actorAssurance !== 'idp_verified') {
-          return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-            minimum: 'claim_validated',
-            current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-          });
-        }
-      } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
-        // P34: Explicit threshold stricter than default
-        const ASSURANCE_ORDER: Record<string, number> = {
-          best_effort: 0,
-          claim_validated: 1,
-          idp_verified: 2,
-        };
-        const actorLevel = ASSURANCE_ORDER[input.decisionIdentity?.actorAssurance ?? 'best_effort'] ?? 0;
-        const requiredLevel = ASSURANCE_ORDER[minimumAssurance] ?? 0;
-        if (actorLevel < requiredLevel) {
-          return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-            minimum: minimumAssurance,
-            current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-          });
-        }
+    // P34: Assurance threshold enforcement.
+    // Only blocks if a stricter-than-default threshold is configured.
+    const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
+    const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
+    if (requireVerified) {
+      // P33 legacy: requireVerifiedActorsForApproval: true → equivalent to 'claim_validated'
+      if (
+        input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
+        input.decisionIdentity?.actorAssurance !== 'idp_verified'
+      ) {
+        return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
+          minimum: 'claim_validated',
+          current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
+        });
+      }
+    } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
+      // P34: Explicit threshold stricter than default
+      const ASSURANCE_ORDER: Record<string, number> = {
+        best_effort: 0,
+        claim_validated: 1,
+        idp_verified: 2,
+      };
+      const actorLevel =
+        ASSURANCE_ORDER[input.decisionIdentity?.actorAssurance ?? 'best_effort'] ?? 0;
+      const requiredLevel = ASSURANCE_ORDER[minimumAssurance] ?? 0;
+      if (actorLevel < requiredLevel) {
+        return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
+          minimum: minimumAssurance,
+          current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
+        });
       }
     }
+  }
 
   // 4. Resolve target phase via topology
   const target = evaluateWithEvent(state.phase, event);

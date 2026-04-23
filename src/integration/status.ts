@@ -27,7 +27,11 @@ import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { resolveNextAction } from '../machine/next-action.js';
-import { isCommandAllowed, Command, type Command as FlowGuardCommand } from '../machine/commands.js';
+import {
+  isCommandAllowed,
+  Command,
+  type Command as FlowGuardCommand,
+} from '../machine/commands.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -291,11 +295,7 @@ export function buildBlockedProjection(
     missingEvidence,
     nextResolvableCommand: next.commands[0] ?? null,
     humanActionRequired:
-      evalResult.kind === 'waiting'
-        ? true
-        : evalResult.kind === 'pending'
-          ? null
-          : false,
+      evalResult.kind === 'waiting' ? true : evalResult.kind === 'pending' ? null : false,
   };
 }
 
@@ -315,7 +315,9 @@ export function buildContextProjection(state: SessionState): ContextProjection {
     policyMode: snapshot.mode,
     regulated: {
       applicable: isRegulated,
-      requireVerifiedActorsForApproval: isRegulated ? snapshot.requireVerifiedActorsForApproval : null,
+      requireVerifiedActorsForApproval: isRegulated
+        ? snapshot.requireVerifiedActorsForApproval
+        : null,
       centralPolicyActive: snapshot.centralMinimumMode ? true : null,
       fourEyesRelevant: isRegulated ? snapshot.allowSelfApproval === false : null,
     },
@@ -354,9 +356,7 @@ export function buildReadinessProjection(
  * human-facing guidance. This is the same truth that feeds
  * formatEval() — no new blocker logic is invented here.
  */
-function buildBlocker(
-  evalResult: ReturnType<typeof evaluate>,
-): StatusProjection['blocker'] {
+function buildBlocker(evalResult: ReturnType<typeof evaluate>): StatusProjection['blocker'] {
   switch (evalResult.kind) {
     case 'waiting':
       return {

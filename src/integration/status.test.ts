@@ -157,7 +157,12 @@ describe('profileId — from activeProfile', () => {
   it('should project profile id when set', () => {
     const state = {
       ...makeMinimalState('READY'),
-      activeProfile: { id: 'typescript-node', name: 'TypeScript/Node.js', rules: [], ruleContent: '' },
+      activeProfile: {
+        id: 'typescript-node',
+        name: 'TypeScript/Node.js',
+        rules: [],
+        ruleContent: '',
+      },
     };
     const projection = buildStatusProjection(state, policy);
 
@@ -429,7 +434,12 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       activeChecks: ['check_1'],
       validation: [
-        { checkId: 'check_1', passed: true, detail: 'All checks passed', executedAt: new Date().toISOString() },
+        {
+          checkId: 'check_1',
+          passed: true,
+          detail: 'All checks passed',
+          executedAt: new Date().toISOString(),
+        },
       ],
       implementation: {
         changedFiles: ['a.ts'],
@@ -476,8 +486,18 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
       },
       activeChecks: ['check_1', 'check_2'],
       validation: [
-        { checkId: 'check_1', passed: false, detail: 'Failed check 1', executedAt: new Date().toISOString() },
-        { checkId: 'check_2', passed: true, detail: 'Passed check 2', executedAt: new Date().toISOString() },
+        {
+          checkId: 'check_1',
+          passed: false,
+          detail: 'Failed check 1',
+          executedAt: new Date().toISOString(),
+        },
+        {
+          checkId: 'check_2',
+          passed: true,
+          detail: 'Passed check 2',
+          executedAt: new Date().toISOString(),
+        },
       ],
     };
     const detail = buildEvidenceDetailProjection(state);

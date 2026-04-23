@@ -292,7 +292,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
-audit: {
+  audit: {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
@@ -537,7 +537,10 @@ export async function resolvePolicyForHydrate(opts: {
     // P34: Translate legacy requireVerifiedActorsForApproval to minimumActorAssuranceForApproval
     // Priority: explicit new config > legacy bool true > preset value > default
     minimumActorAssuranceForApproval:
-      (opts.configMinimumActorAssuranceForApproval as 'best_effort' | 'claim_validated' | 'idp_verified') ??
+      (opts.configMinimumActorAssuranceForApproval as
+        | 'best_effort'
+        | 'claim_validated'
+        | 'idp_verified') ??
       (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
       basePolicy.minimumActorAssuranceForApproval,
     requireVerifiedActorsForApproval:
@@ -784,7 +787,11 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
     minimumActorAssuranceForApproval:
-      (snapshot.minimumActorAssuranceForApproval as 'best_effort' | 'claim_validated' | 'idp_verified' | undefined) ??
+      (snapshot.minimumActorAssuranceForApproval as
+        | 'best_effort'
+        | 'claim_validated'
+        | 'idp_verified'
+        | undefined) ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {

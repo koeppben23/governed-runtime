@@ -185,9 +185,21 @@ export async function resolveActor(worktree: string): Promise<ActorInfo> {
   const gitName = await gitUserName(worktree);
   if (gitName) {
     const gitEmail = await gitUserEmail(worktree);
-    return { id: gitName, email: gitEmail, displayName: null, source: 'git' as const, assurance: 'best_effort' as const };
+    return {
+      id: gitName,
+      email: gitEmail,
+      displayName: null,
+      source: 'git' as const,
+      assurance: 'best_effort' as const,
+    };
   }
 
   // Priority 4: Unknown fallback
-  return { id: 'unknown', email: null, displayName: null, source: 'unknown' as const, assurance: 'best_effort' as const };
+  return {
+    id: 'unknown',
+    email: null,
+    displayName: null,
+    source: 'unknown' as const,
+    assurance: 'best_effort' as const,
+  };
 }

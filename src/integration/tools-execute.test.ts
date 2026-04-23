@@ -146,13 +146,15 @@ afterEach(async () => {
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
   // Reset actor mock to default deterministic value (P27/P34)
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'test-operator',
-    email: 'test@flowguard.dev',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'best_effort' as const,
-  });
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'best_effort' as const,
+    });
   delete process.env.FLOWGUARD_POLICY_PATH;
   vi.clearAllMocks();
   await ws.cleanup();
@@ -406,7 +408,10 @@ describe('status', () => {
     it('uses deterministic flag precedence when multiple flags are true', async () => {
       await hydrateSession();
       const result = parseToolResult(
-        await status.execute({ whyBlocked: true, evidence: true, context: true, readiness: true }, ctx),
+        await status.execute(
+          { whyBlocked: true, evidence: true, context: true, readiness: true },
+          ctx,
+        ),
       );
 
       expect(result.whyBlocked).toBeDefined();
@@ -1482,7 +1487,7 @@ describe('hydrate', () => {
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state1 = await readState(sessDir);
-expect(state1!.actorInfo).toMatchObject({
+      expect(state1!.actorInfo).toMatchObject({
         id: 'test-operator',
         email: 'test@flowguard.dev',
         source: 'env',

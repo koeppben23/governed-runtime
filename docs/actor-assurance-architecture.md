@@ -43,6 +43,7 @@ The following tiers are defined in ascending order of assurance strength:
 **Semantics:** Operator-provided or derived identifier with no cryptographic verification.
 
 **Sources that produce this tier:**
+
 - `FLOWGUARD_ACTOR_ID` environment variable (`source: 'env'`)
 - `git config user.name` (`source: 'git'`)
 - No identity available (`source: 'unknown'`)
@@ -56,6 +57,7 @@ The following tiers are defined in ascending order of assurance strength:
 **Semantics:** Identity validated from a structured local claim file. Schema validated, temporal bounds checked (issuedAt ≤ now < expiresAt). No cryptographic signature verification.
 
 **Sources that produce this tier:**
+
 - `FLOWGUARD_ACTOR_CLAIMS_PATH` with a valid claim JSON (`source: 'claim'`)
 
 **When it applies:** An external system (HR system, identity provisioning tool, IdM) has written a structured claim to a local file. FlowGuard validates the schema and expiry. The claim is trusted as a locally-provisioned, policy-enforced identity artifact.
@@ -69,6 +71,7 @@ The following tiers are defined in ascending order of assurance strength:
 **Semantics:** Identity validated through a cryptographic proof from an external Identity Provider (IdP). JWT/OIDC/JWKS chain is cryptographically verified. Issuer, audience, and expiry are validated. The identity originates from a trusted IdP (e.g., corporate OIDC, SAML IdP, Keycloak, Azure AD, Okta).
 
 **Sources that produce this tier:**
+
 - `FLOWGUARD_ACTOR_IDP_CONFIG` pointing to IdP configuration (OIDC discovery, JWKS URI, or static JWK) — future P35 (`source: 'oidc'`)
 - Other IdP integrations (future)
 
@@ -80,13 +83,13 @@ The following tiers are defined in ascending order of assurance strength:
 
 ## 4) Source/Assurance Matrix
 
-| source  | best_effort | claim_validated | idp_verified |
-|---------|:-----------:|:----------------:|:-------------:|
-| `env`   | ✓           |                  |               |
-| `git`   | ✓           |                  |               |
-| `unknown` | ✓         |                  |               |
-| `claim` |             | ✓                |               |
-| `oidc`  |             |                  | ✓             |
+| source    | best_effort | claim_validated | idp_verified |
+| --------- | :---------: | :-------------: | :----------: |
+| `env`     |      ✓      |                 |              |
+| `git`     |      ✓      |                 |              |
+| `unknown` |      ✓      |                 |              |
+| `claim`   |             |        ✓        |              |
+| `oidc`    |             |                 |      ✓       |
 
 **Rule:** `source` and `assurance` are always consistent. A given `source` always produces a fixed `assurance` tier. The table above is the authoritative mapping.
 
@@ -189,16 +192,16 @@ if (decisionIdentity.actorAssurance < policy.minimumActorAssuranceForApproval) {
 
 All three tiers share a common fail-closed guarantee:
 
-| Scenario | Behavior |
-|----------|----------|
-| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING` |
-| Claim file unreadable | **BLOCK** — `ACTOR_CLAIM_UNREADABLE` |
-| Claim JSON invalid | **BLOCK** — `ACTOR_CLAIM_INVALID` |
-| Claim expired | **BLOCK** — `ACTOR_CLAIM_EXPIRED` |
-| Claim issuedAt in future | **BLOCK** — `ACTOR_CLAIM_INVALID` |
-| No IdP config, no claim, no env/git | `unknown` + `best_effort` — allowed at non-regulated gates only |
-| Assurance below policy threshold | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT` |
-| IdP token invalid/missing (future P35) | **BLOCK** — `IDP_IDENTITY_INVALID` |
+| Scenario                                   | Behavior                                                        |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING`                               |
+| Claim file unreadable                      | **BLOCK** — `ACTOR_CLAIM_UNREADABLE`                            |
+| Claim JSON invalid                         | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
+| Claim expired                              | **BLOCK** — `ACTOR_CLAIM_EXPIRED`                               |
+| Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
+| No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only |
+| Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                      |
+| IdP token invalid/missing (future P35)     | **BLOCK** — `IDP_IDENTITY_INVALID`                              |
 
 There is **no fallback** from higher to lower tiers when the configured path is active. If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set, its failure is fatal. Only absence of the path triggers fallback to env/git.
 
@@ -213,6 +216,7 @@ Runtime responsibility is split across three layers:
 Loads raw identity data from environment, filesystem, or future IdP.
 
 **Responsibilities:**
+
 - Enumerate `FLOWGUARD_ACTOR_ID`, `FLOWGUARD_ACTOR_EMAIL`
 - Enumerate `FLOWGUARD_ACTOR_CLAIMS_PATH` → load raw JSON
 - Enumerate `FLOWGUARD_ACTOR_IDP_CONFIG` → load IdP config (future P35)
@@ -226,6 +230,7 @@ Loads raw identity data from environment, filesystem, or future IdP.
 Checks schema, temporal bounds, and (future) cryptographic signatures.
 
 **Responsibilities:**
+
 - Parse and validate claim schema (Zod)
 - Validate temporal constraints (issuedAt ≤ now < expiresAt)
 - Future: Verify JWT signature, check issuer/audience, validate nonce/state
@@ -236,6 +241,7 @@ Checks schema, temporal bounds, and (future) cryptographic signatures.
 Maps validated/verified identity data to canonical `ActorIdentity` structure.
 
 **Responsibilities:**
+
 - Map claim fields → canonical `ActorIdentity`
 - Map IdP token claims → canonical `ActorIdentity`
 - Apply display name / email normalization
@@ -246,6 +252,7 @@ Maps validated/verified identity data to canonical `ActorIdentity` structure.
 Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 **Responsibilities:**
+
 - Compare `actorInfo.assurance` against `policy.minimumActorAssuranceForApproval`
 - Return blocked outcome with `ACTOR_ASSURANCE_INSUFFICIENT` if below threshold
 
@@ -254,6 +261,7 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 `ActorIdentity` is frozen at hydrate time and remains immutable for the session lifecycle.
 
 **Responsibilities:**
+
 - Call Resolver/Validator/Mapper chain at hydrate time
 - Persist canonical `ActorIdentity` to session state
 - Re-hydrate on session reload (verify consistency, reject if IdP token expired mid-session)
@@ -264,21 +272,21 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.1 Schema Changes
 
-| P33 v0 | P34 |
-|--------|-----|
-| `actorInfo.source: 'claim'` | `actorInfo.source: 'claim'` (unchanged) |
-| `actorAssurance: 'verified'` | `actorAssurance: 'claim_validated'` |
-| `actorAssurance: 'best_effort'` | `actorAssurance: 'best_effort'` (unchanged) |
+| P33 v0                                      | P34                                                                                      |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `actorInfo.source: 'claim'`                 | `actorInfo.source: 'claim'` (unchanged)                                                  |
+| `actorAssurance: 'verified'`                | `actorAssurance: 'claim_validated'`                                                      |
+| `actorAssurance: 'best_effort'`             | `actorAssurance: 'best_effort'` (unchanged)                                              |
 | `requireVerifiedActorsForApproval: boolean` | `minimumActorAssuranceForApproval: 'best_effort' \| 'claim_validated' \| 'idp_verified'` |
 
 ### 10.2 Migration Mapping
 
-| P33 Config | P34 Behavior |
-|------------|--------------|
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
-| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`) |
-| `requireVerifiedActorsForApproval: false` (default) | `minimumActorAssuranceForApproval: 'best_effort'` |
-| `requireVerifiedActorsForApproval: true` | `minimumActorAssuranceForApproval: 'claim_validated'` |
+| P33 Config                                          | P34 Behavior                                                            |
+| --------------------------------------------------- | ----------------------------------------------------------------------- |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` not set               | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
+| `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim      | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
+| `requireVerifiedActorsForApproval: false` (default) | `minimumActorAssuranceForApproval: 'best_effort'`                       |
+| `requireVerifiedActorsForApproval: true`            | `minimumActorAssuranceForApproval: 'claim_validated'`                   |
 
 ### 10.3 Backward Compatibility
 
@@ -305,10 +313,13 @@ These tiers do NOT change the current three-tier model. They extend it.
 ## 12) Implementation Roadmap
 
 ### P34a — Architecture & Design (This Document)
+
 **Deliverable:** This document. Normative decisions on tiers, source/assurance separation, policy contract, state contract, and fail-closed semantics.
 
 ### P34b — Claim-Validated Cleanup
+
 **Deliverable:**
+
 - Extend `ActorIdentitySchema` with `idp_verified` enum value
 - Rename `verified` → `claim_validated` in Zod schemas and state
 - Add `displayName` field to `ActorIdentity` and `DecisionIdentity`
@@ -320,7 +331,9 @@ These tiers do NOT change the current three-tier model. They extend it.
 - Add test coverage for new threshold logic
 
 ### P35 — IdP-Verified Actors
+
 **Deliverable:**
+
 - JWT/JOSE library integration
 - OIDC discovery or static JWKS/JWK support
 - `FLOWGUARD_ACTOR_IDP_CONFIG` config surface (issuer, audience, jwks_uri, or inline JWK)
