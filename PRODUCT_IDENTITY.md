@@ -37,6 +37,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
+- **Explicit orientation surface** — `/status` provides read-only canonical projections for phase, blockers, evidence, context, and readiness
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
 - **Policy-aware evaluation** — every transition is checked against the active FlowGuard policy
 

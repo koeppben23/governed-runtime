@@ -33,6 +33,24 @@ After `/hydrate`, the session starts in the **READY** phase. Three standalone fl
 
 These commands drive the session through the workflow phases.
 
+### /status
+
+Read-only orientation surface for the current session.
+
+Use `/status` to inspect where the workflow is, what is allowed, and what happens next.
+It does not mutate state and is safe to call at any time.
+
+Optional focused views:
+
+- `/status --why-blocked` — blocker analysis from evaluator/completeness truth
+- `/status --evidence` — slot-by-slot evidence detail
+- `/status --context` — actor/policy/archive context projection
+- `/status --readiness` — compact operational readiness projection
+
+When multiple flags are provided simultaneously, flag precedence is deterministic: `--why-blocked` > `--evidence` > `--context` > `--readiness`. Only the highest-precedence matching flag is applied.
+
+`/status` maps internally to `flowguard_status`.
+
 ### /hydrate
 
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.
@@ -165,7 +183,7 @@ These tools operate on session artifacts but don't drive workflow.
 
 ### flowguard_status (internal)
 
-Read-only status tool used by slash commands to inspect session state.
+Read-only status tool used by `/status` and other slash commands to inspect session state.
 
 In addition to phase and evidence summary, status now surfaces:
 

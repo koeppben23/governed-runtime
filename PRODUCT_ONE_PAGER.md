@@ -24,6 +24,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 
 - Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation), Review
 - 14 explicit phases with computed next actions
+- Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
 

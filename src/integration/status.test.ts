@@ -23,7 +23,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionState } from '../state/schema.js';
-import { buildStatusProjection, buildEvidenceDetailProjection } from './status.js';
+import {
+  buildStatusProjection,
+  buildEvidenceDetailProjection,
+  buildBlockedProjection,
+  buildContextProjection,
+  buildReadinessProjection,
+} from './status.js';
 import { resolvePolicy } from '../config/policy.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
@@ -385,6 +391,19 @@ describe('buildEvidenceDetailProjection — HAPPY', () => {
 
     expect(ticketSlot!.detail).toContain('source: user');
     expect(ticketSlot!.detail).toContain('digest:');
+    expect(ticketSlot!.artifactKind).toBe('ticket_evidence');
+    expect(ticketSlot!.hint).toBeNull();
+  });
+
+  it('should keep hint null for missing slot when canonical source has no hint', () => {
+    const state = makeMinimalState('PLAN');
+    const detail = buildEvidenceDetailProjection(state);
+    const planSlot = detail.slots.find((s) => s.slot === 'plan');
+
+    expect(planSlot).toBeDefined();
+    expect(planSlot!.status).toBe('missing');
+    expect(planSlot!.hint).toBeNull();
+    expect(planSlot!.artifactKind).toBe('plan_record');
   });
 });
 
@@ -535,6 +554,73 @@ describe('blocker field mapping', () => {
       expect(projection.blocker).not.toBeNull();
       expect(projection.blocker!.reasonCode).toBeNull();
     }
+  });
+});
+
+// ─── why-blocked projection ───────────────────────────────────────────────────
+
+describe('buildBlockedProjection', () => {
+  const solo = resolvePolicy('solo');
+  const regulated = resolvePolicy('regulated');
+
+  it('reports blocked=false on terminal phase', () => {
+    const blocked = buildBlockedProjection(makeMinimalState('COMPLETE'), solo);
+    expect(blocked.blocked).toBe(false);
+    expect(blocked.reasonCode).toBeNull();
+  });
+
+  it('reports blocked=true and missingEvidence on pending phase', () => {
+    const blocked = buildBlockedProjection(makeMinimalState('PLAN'), solo);
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.missingEvidence.some((slot) => slot.slot === 'plan')).toBe(true);
+    expect(blocked.nextResolvableCommand).toBe('/continue');
+  });
+
+  it('reports waiting reason at user gate under regulated policy', () => {
+    const blocked = buildBlockedProjection(makeMinimalState('PLAN_REVIEW'), regulated);
+    expect(blocked.blocked).toBe(true);
+    expect(typeof blocked.reasonText).toBe('string');
+    expect(blocked.reasonText).toContain('Awaiting');
+    expect(blocked.nextResolvableCommand).toBe('/review-decision');
+    expect(blocked.humanActionRequired).toBe(true);
+  });
+});
+
+// ─── context/readiness projections ────────────────────────────────────────────
+
+describe('context and readiness projections', () => {
+  it('buildContextProjection maps actor/policy/archive from state', () => {
+    const state: SessionState = {
+      ...makeMinimalState('EVIDENCE_REVIEW'),
+      actorInfo: { id: 'operator', source: 'env', email: 'op@example.com' },
+      archiveStatus: 'pending',
+      policySnapshot: {
+        ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+        mode: 'regulated' as const,
+        allowSelfApproval: false,
+        requireVerifiedActorsForApproval: true,
+        centralMinimumMode: 'team' as const,
+      },
+    };
+
+    const contextProjection = buildContextProjection(state);
+    expect(contextProjection.actor?.id).toBe('operator');
+    expect(contextProjection.archiveStatus).toBe('pending');
+    expect(contextProjection.policyMode).toBe('regulated');
+    expect(contextProjection.regulated.applicable).toBe(true);
+    expect(contextProjection.regulated.centralPolicyActive).toBe(true);
+    expect(contextProjection.regulated.fourEyesRelevant).toBe(true);
+  });
+
+  it('buildReadinessProjection is pure projection over canonical evaluators', () => {
+    const state = makeMinimalState('READY');
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+
+    expect(readiness.phase).toBe('READY');
+    expect(readiness.policyMode).toBe('solo');
+    expect(typeof readiness.blocked).toBe('boolean');
+    expect(typeof readiness.evidenceComplete).toBe('boolean');
+    expect(typeof readiness.actorKnown).toBe('boolean');
   });
 });
 

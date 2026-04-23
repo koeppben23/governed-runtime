@@ -69,6 +69,13 @@ import type { ValidationResult } from '../../state/evidence.js';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
+import {
+  buildStatusProjection,
+  buildEvidenceDetailProjection,
+  buildBlockedProjection,
+  buildContextProjection,
+  buildReadinessProjection,
+} from '../status.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_status — Read-Only State Check
@@ -79,7 +86,24 @@ export const status: ToolDefinition = {
     'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
     'policy info, completeness matrix, and next action. ' +
     'Does NOT mutate state. Use this to understand where the workflow is before taking action.',
-  args: {},
+  args: {
+    whyBlocked: z
+      .boolean()
+      .optional()
+      .describe('Return focused blocker surface from canonical evaluator/completeness truth.'),
+    evidence: z
+      .boolean()
+      .optional()
+      .describe('Return per-slot evidence detail from canonical completeness truth.'),
+    context: z
+      .boolean()
+      .optional()
+      .describe('Return actor/policy/archive context projection.'),
+    readiness: z
+      .boolean()
+      .optional()
+      .describe('Return compact operational readiness projection.'),
+  },
   async execute(_args, context) {
     try {
       const { sessDir } = await resolveWorkspacePaths(context);
@@ -96,9 +120,66 @@ export const status: ToolDefinition = {
       const policy = resolvePolicyFromState(state);
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
+      const args = _args as {
+        whyBlocked?: boolean;
+        evidence?: boolean;
+        context?: boolean;
+        readiness?: boolean;
+      };
+
+      if (args.whyBlocked === true) {
+        const blocked = buildBlockedProjection(state, policy);
+        return appendNextAction(
+          JSON.stringify({
+            phase: state.phase,
+            sessionId: state.id,
+            whyBlocked: blocked,
+          }),
+          state,
+        );
+      }
+
+      if (args.evidence === true) {
+        const evidenceDetail = buildEvidenceDetailProjection(state);
+        return appendNextAction(
+          JSON.stringify({
+            phase: state.phase,
+            sessionId: state.id,
+            evidence: evidenceDetail,
+          }),
+          state,
+        );
+      }
+
+      if (args.context === true) {
+        const contextDetail = buildContextProjection(state);
+        return appendNextAction(
+          JSON.stringify({
+            phase: state.phase,
+            sessionId: state.id,
+            context: contextDetail,
+          }),
+          state,
+        );
+      }
+
+      if (args.readiness === true) {
+        const readinessDetail = buildReadinessProjection(state, policy);
+        return appendNextAction(
+          JSON.stringify({
+            phase: state.phase,
+            sessionId: state.id,
+            readiness: readinessDetail,
+          }),
+          state,
+        );
+      }
+
+      const projection = buildStatusProjection(state, policy);
 
       return appendNextAction(
         JSON.stringify({
+          status: projection,
           phase: state.phase,
           sessionId: state.id,
           policyMode: state.policySnapshot?.mode ?? 'unknown',

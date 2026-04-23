@@ -57,6 +57,8 @@ export interface EvidenceSlotStatus {
   readonly status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
   /** Optional detail (digest, iteration count, etc.). */
   readonly detail?: string;
+  /** Canonical artifact kind for this slot, when applicable. */
+  readonly artifactKind?: string;
 }
 
 /** Four-eyes principle compliance status. */
@@ -167,6 +169,20 @@ const SLOT_LABELS: Readonly<Record<string, string>> = {
   implementation: 'Implementation Evidence',
   implReview: 'Implementation Review',
   evidenceReviewDecision: 'Evidence Review Decision',
+};
+
+/** Canonical artifact kind mapping per slot (single authority for projections). */
+const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
+  ticket: 'ticket_evidence',
+  plan: 'plan_record',
+  selfReview: 'self_review_loop',
+  planReviewDecision: 'review_decision',
+  validation: 'validation_results',
+  implementation: 'implementation_evidence',
+  implReview: 'implementation_review',
+  evidenceReviewDecision: 'review_decision',
+  architecture: 'architecture_decision',
+  archReviewDecision: 'review_decision',
 };
 
 // ─── Slot Evaluation ──────────────────────────────────────────────────────────
@@ -369,6 +385,7 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
         present,
         status,
         detail: getSlotDetail(state, slot),
+        artifactKind: SLOT_ARTIFACT_KIND[slot],
       };
     });
   } else if (isReviewFlow) {
@@ -401,6 +418,7 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
         present,
         status,
         detail: getSlotDetail(state, slot),
+        artifactKind: SLOT_ARTIFACT_KIND[slot],
       };
     });
   }

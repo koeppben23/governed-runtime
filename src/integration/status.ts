@@ -85,12 +85,15 @@ export interface StatusProjection {
 
 /**
  * Evidence slot detail — per-slot breakdown for --evidence flag.
+ * artifactKind sourced from canonical completeness.ts (SLOT_ARTIFACT_KIND).
  */
 export interface EvidenceSlotProjection {
   slot: string;
   label: string;
   status: 'complete' | 'missing' | 'not_yet_required' | 'failed';
   required: boolean;
+  artifactKind: string | null;
+  hint: string | null;
   detail: string | null;
 }
 
@@ -109,6 +112,57 @@ export interface EvidenceDetailProjection {
     decidedBy: string | null;
     detail: string;
   };
+}
+
+/** Blocked surface for /status --why-blocked. */
+export interface BlockedProjection {
+  blocked: boolean;
+  reasonCode: string | null;
+  reasonText: string | null;
+  recoveryHint: string | null;
+  missingEvidence: Array<{
+    slot: string;
+    hint: string | null;
+  }>;
+  nextResolvableCommand: string | null;
+  /**
+   * Whether a human decision is required at a User Gate.
+   *
+   * DERIVED from evalResult.kind (canonical runtime truth):
+   * - waiting  → true  (blocked at User Gate, human must decide)
+   * - pending  → null  (workflow in progress, no gate block)
+   * - terminal → false (session complete)
+   * - transition → false (auto-advanced)
+   *
+   * This is a DISPLAY HINT, not an independent canonical fact.
+   * It mirrors the same signal that feeds formatEval() for user guidance.
+   */
+  humanActionRequired: boolean | null;
+}
+
+/** Context surface for /status --context. */
+export interface ContextProjection {
+  actor: StatusProjection['actor'];
+  archiveStatus: string | null;
+  policyMode: string;
+  regulated: {
+    applicable: boolean;
+    requireVerifiedActorsForApproval: boolean | null;
+    centralPolicyActive: boolean | null;
+    fourEyesRelevant: boolean | null;
+  };
+}
+
+/** Readiness surface for /status --readiness. */
+export interface ReadinessProjection {
+  phase: string;
+  policyMode: string;
+  archiveStatus: string | null;
+  blocked: boolean;
+  evidenceComplete: boolean;
+  fourEyesSatisfied: boolean;
+  actorKnown: boolean;
+  requiresVerifiedActorsForApproval: boolean;
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────
@@ -190,6 +244,8 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
       label: s.label,
       required: s.required,
       status: s.status,
+      artifactKind: s.artifactKind ?? null,
+      hint: s.status === 'failed' ? (s.detail ?? null) : null,
       detail: s.detail ?? null,
     })),
     summary: {
@@ -205,6 +261,84 @@ export function buildEvidenceDetailProjection(state: SessionState): EvidenceDeta
       decidedBy: report.fourEyes.decidedBy,
       detail: report.fourEyes.detail,
     },
+  };
+}
+
+/** Build blocked detail projection for /status --why-blocked. */
+export function buildBlockedProjection(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+): BlockedProjection {
+  const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
+  const next = resolveNextAction(state.phase, state);
+  const completeness = evaluateCompleteness(state);
+
+  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+  const missingEvidence = completeness.slots
+    .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
+    .map((slot) => ({
+      slot: slot.slot,
+      hint: slot.status === 'failed' ? (slot.detail ?? null) : null,
+    }));
+
+  return {
+    blocked,
+    reasonCode: null,
+    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : null,
+    recoveryHint: next.text,
+    missingEvidence,
+    nextResolvableCommand: next.commands[0] ?? null,
+    humanActionRequired:
+      evalResult.kind === 'waiting'
+        ? true
+        : evalResult.kind === 'pending'
+          ? null
+          : false,
+  };
+}
+
+/** Build context detail projection for /status --context. */
+export function buildContextProjection(state: SessionState): ContextProjection {
+  const snapshot = state.policySnapshot;
+  const isRegulated = snapshot.mode === 'regulated';
+  return {
+    actor: state.actorInfo
+      ? {
+          id: state.actorInfo.id,
+          source: state.actorInfo.source,
+        }
+      : null,
+    archiveStatus: state.archiveStatus ?? null,
+    policyMode: snapshot.mode,
+    regulated: {
+      applicable: isRegulated,
+      requireVerifiedActorsForApproval: isRegulated ? snapshot.requireVerifiedActorsForApproval : null,
+      centralPolicyActive: snapshot.centralMinimumMode ? true : null,
+      fourEyesRelevant: isRegulated ? snapshot.allowSelfApproval === false : null,
+    },
+  };
+}
+
+/** Build readiness projection for /status --readiness. */
+export function buildReadinessProjection(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+): ReadinessProjection {
+  const completeness = evaluateCompleteness(state);
+  const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
+  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+
+  return {
+    phase: state.phase,
+    policyMode: state.policySnapshot.mode,
+    archiveStatus: state.archiveStatus ?? null,
+    blocked,
+    evidenceComplete: completeness.overallComplete,
+    fourEyesSatisfied: completeness.fourEyes.satisfied,
+    actorKnown: state.actorInfo?.source !== 'unknown',
+    requiresVerifiedActorsForApproval:
+      state.policySnapshot.mode === 'regulated' &&
+      state.policySnapshot.requireVerifiedActorsForApproval === true,
   };
 }
 
@@ -237,5 +371,3 @@ function buildBlocker(
       return null;
   }
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────

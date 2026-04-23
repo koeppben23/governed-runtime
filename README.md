@@ -22,6 +22,7 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ```bash
 /hydrate
+/status
 ```
 
 After hydration, choose one of three flows:
@@ -107,6 +108,16 @@ After hydration, choose one of three flows:
 ```
 
 See [docs/phases.md](./docs/phases.md) for full phase details.
+
+### Status Surface
+
+Use `/status` as a read-only orientation command:
+
+- `/status` — compact phase/policy/allowed/next view
+- `/status --why-blocked` — focused blocker analysis
+- `/status --evidence` — slot-by-slot evidence view
+- `/status --context` — actor/policy/archive context
+- `/status --readiness` — compact readiness projection
 
 ---
 
