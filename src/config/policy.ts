@@ -32,6 +32,7 @@
 import type { PolicySnapshot } from '../state/evidence.js';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
+import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 
 // ─── Audit Policy ─────────────────────────────────────────────────────────────
 
@@ -120,11 +121,11 @@ export interface FlowGuardPolicy {
   readonly requireVerifiedActorsForApproval: boolean;
 
   /**
-   * P35a: IdP configuration for static key verification.
-   * Defines issuer, audience, claim mapping, and signing keys.
+   * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
+   * Defines issuer, audience, claim mapping, and key source details.
    * When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
    */
-  readonly identityProvider?: unknown;
+  readonly identityProvider?: IdpConfig;
 
   /**
    * P35a: Controls IdP verification behavior when identityProvider is set.
@@ -134,7 +135,7 @@ export interface FlowGuardPolicy {
    * Note: Approval gates respect minimumActorAssuranceForApproval regardless of this mode.
    * This mode only controls whether IdP failure blocks session creation.
    */
-  readonly identityProviderMode: 'optional' | 'required';
+  readonly identityProviderMode: IdentityProviderMode;
 }
 
 /** Supported policy modes. */
@@ -542,8 +543,8 @@ export async function resolvePolicyForHydrate(opts: {
   configMaxImplReviewIterations?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
   configRequireVerifiedActorsForApproval?: boolean;
-  configIdentityProvider?: unknown;
-  configIdentityProviderMode?: 'optional' | 'required';
+  configIdentityProvider?: IdpConfig;
+  configIdentityProviderMode?: IdentityProviderMode;
 }): Promise<HydratePolicyResolution> {
   const requestedSource: Exclude<PolicySource, 'central'> = opts.explicitMode
     ? 'explicit'
@@ -553,7 +554,7 @@ export async function resolvePolicyForHydrate(opts: {
   const requestedMode = opts.explicitMode ?? opts.repoMode ?? opts.defaultMode;
   const requestedResolution = resolvePolicyWithContext(requestedMode, opts.ciContext);
 
-// Apply config iteration-limit overrides over the selected policy preset.
+  // Apply config iteration-limit overrides over the selected policy preset.
   const basePolicy = requestedResolution.policy;
   const policyWithOverrides: FlowGuardPolicy = {
     ...basePolicy,
@@ -629,6 +630,13 @@ export async function resolvePolicyForHydrate(opts: {
       opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
+    minimumActorAssuranceForApproval:
+      (opts.configMinimumActorAssuranceForApproval as
+        | 'best_effort'
+        | 'claim_validated'
+        | 'idp_verified') ??
+      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
+      centralResolution.policy.minimumActorAssuranceForApproval,
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ??
       centralResolution.policy.requireVerifiedActorsForApproval,

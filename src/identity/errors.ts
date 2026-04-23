@@ -1,6 +1,6 @@
 /**
  * @module identity/errors
- * @description IdP verification error codes (P35a).
+ * @description IdP verification error codes (P35a/P35b1).
  *
  * All errors are fail-closed. No silent degradation.
  */
@@ -18,8 +18,16 @@ export class IdpError extends Error {
 export type IdpErrorCode =
   | 'IDP_TOKEN_MISSING'
   | 'IDP_TOKEN_INVALID'
+  | 'IDP_TOKEN_KID_MISSING'
   | 'IDP_TOKEN_HEADER_INVALID'
   | 'IDP_KEY_NOT_FOUND'
+  | 'IDP_JWKS_PATH_MISSING'
+  | 'IDP_JWKS_URI_INVALID'
+  | 'IDP_JWKS_READ_FAILED'
+  | 'IDP_JWKS_FETCH_FAILED'
+  | 'IDP_JWKS_INVALID'
+  | 'IDP_JWKS_KEY_NOT_FOUND'
+  | 'IDP_JWKS_ALGORITHM_MISMATCH'
   | 'IDP_ALGORITHM_NOT_ALLOWED'
   | 'IDP_SIGNATURE_INVALID'
   | 'IDP_ISSUER_MISMATCH'
@@ -34,8 +42,16 @@ export type IdpErrorCode =
 export const IDP_ERROR_MESSAGES: Record<IdpErrorCode, string> = {
   IDP_TOKEN_MISSING: 'No IdP token found at configured path',
   IDP_TOKEN_INVALID: 'IdP token is not valid JWT format',
+  IDP_TOKEN_KID_MISSING: 'IdP token header is missing kid',
   IDP_TOKEN_HEADER_INVALID: 'IdP token header is invalid or missing alg/kid',
   IDP_KEY_NOT_FOUND: 'Signing key with matching kid not found in IdP configuration',
+  IDP_JWKS_PATH_MISSING: 'JWKS mode requires a non-empty jwksPath',
+  IDP_JWKS_URI_INVALID: 'JWKS URI is invalid or not allowed',
+  IDP_JWKS_READ_FAILED: 'JWKS file could not be read',
+  IDP_JWKS_FETCH_FAILED: 'JWKS URI fetch failed',
+  IDP_JWKS_INVALID: 'JWKS document is invalid',
+  IDP_JWKS_KEY_NOT_FOUND: 'No matching kid key found in JWKS document',
+  IDP_JWKS_ALGORITHM_MISMATCH: 'JWT alg does not match JWKS key alg',
   IDP_ALGORITHM_NOT_ALLOWED: 'Token algorithm does not match any configured key algorithm',
   IDP_SIGNATURE_INVALID: 'IdP token signature verification failed',
   IDP_ISSUER_MISMATCH: 'Token issuer does not match configured issuer',

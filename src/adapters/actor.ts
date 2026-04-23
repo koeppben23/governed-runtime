@@ -210,8 +210,9 @@ export async function resolveActor(
               `IdP verification required but failed: ${err.code} - ${err.message}`,
             );
           }
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
   }

@@ -3,12 +3,13 @@
  * @description All evidence and artifact types for the FlowGuard state model.
  *              Zod schemas — single source of truth for runtime validation and TypeScript types.
  *
- * Dependency: leaf module — no imports from other FlowGuard modules.
+ * Dependency: imports identity schema for typed policy snapshot authority.
  *
  * @version v1
  */
 
 import { z } from 'zod';
+import { IdpConfigSchema } from '../identity/types.js';
 
 /**
  * P34: Coerce P33 v0 'verified' to 'claim_validated'.
@@ -346,10 +347,10 @@ export const PolicySnapshotSchema = z.object({
    */
   requireVerifiedActorsForApproval: z.boolean().default(false),
   /**
-   * P35a: IdP configuration for static key verification.
+   * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
    * Frozen at hydrate time. When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
    */
-  identityProvider: z.unknown().optional(),
+  identityProvider: IdpConfigSchema.optional(),
   /**
    * P35a: IdP verification mode ('optional' or 'required').
    * Controls whether IdP failure blocks session creation.

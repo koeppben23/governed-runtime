@@ -44,7 +44,8 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Four-Eyes Governance
 
 - Regulated mode enforces initiator/reviewer separation
-- Optional verified actor claims are supported (`FLOWGUARD_ACTOR_CLAIMS_PATH`); regulated approvals can require verified actors via policy
+- Optional verified actor claims are supported (`FLOWGUARD_ACTOR_CLAIMS_PATH`); regulated approvals can require minimum assurance via policy (`minimumActorAssuranceForApproval`)
+- IdP-verified actors support static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`) plus TTL cache and strict fail-closed verification
 - Team and Regulated modes require explicit human decisions at gates
 
 ### Headless Fail-Closed Behavior

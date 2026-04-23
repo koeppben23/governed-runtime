@@ -218,13 +218,13 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 
 ### Resolution Priority
 
-| Source    | Assurance         | Description                                                    |
-| --------- | ----------------- | -------------------------------------------------------------- |
-| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified |
-| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified             |
-| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated      |
-| `oidc`    | `idp_verified`    | Future IdP/OIDC token — cryptographically verified (P35)       |
-| `unknown` | `best_effort`     | No identity available                                          |
+| Source    | Assurance         | Description                                                                 |
+| --------- | ----------------- | --------------------------------------------------------------------------- |
+| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified              |
+| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                          |
+| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                   |
+| `oidc`    | `idp_verified`    | IdP token via static keys or pinned local JWKS — cryptographically verified |
+| `unknown` | `best_effort`     | No identity available                                                       |
 
 ### Policy Gate
 
@@ -232,7 +232,7 @@ In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum requ
 
 - `best_effort` — any actor may approve
 - `claim_validated` — only claim-validated actors may approve (P33 `verified` equivalent)
-- `idp_verified` — only IdP-verified actors may approve (P35 target)
+- `idp_verified` — only IdP-verified actors may approve
 
 Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
 

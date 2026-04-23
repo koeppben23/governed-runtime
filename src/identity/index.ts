@@ -1,9 +1,9 @@
 /**
  * @module identity
- * @description IdP identity resolver for P35a (static keys, no JWKS, no Remote Fetch).
+ * @description IdP identity resolver for P35a/P35b1/P35b2 (static + JWKS path/URI).
  *
  * Entry point for IdP token verification.
- * Combines StaticKeyResolver + JwtStaticTokenVerifier.
+ * Combines KeyResolver + JwtStaticTokenVerifier.
  *
  * Usage:
  * ```typescript
@@ -17,23 +17,36 @@
 
 import * as fs from 'node:fs/promises';
 import { IdpError } from './errors.js';
-import { StaticKeyResolver, type KeyResolver } from './key-resolver.js';
+import {
+  JwksFileKeyResolver,
+  JwksRemoteKeyResolver,
+  StaticKeyResolver,
+  type KeyResolver,
+} from './key-resolver.js';
 import { JwtStaticTokenVerifier, type TokenVerifier } from './token-verifier.js';
 import type { IdpConfig, ResolvedIdpActor } from './types.js';
 
 export { IdpError, type IdpErrorCode } from './errors.js';
 export {
   IdpConfigSchema,
+  StaticIdpConfigSchema,
+  JwksIdpConfigSchema,
+  JwksDocumentSchema,
+  JwksKeySchema,
   IdentityProviderModeSchema,
   SigningKeySchema,
   ClaimMappingSchema,
   type IdpConfig,
+  type StaticIdpConfig,
+  type JwksIdpConfig,
   type IdentityProviderMode,
   type SigningKey,
   type ClaimMapping,
   type VerifiedToken,
   type ActorVerificationMeta,
   type ResolvedIdpActor,
+  type JwksDocument,
+  type JwksKey,
   type KeyAlgorithm,
   type KeyKind,
 } from './types.js';
@@ -46,7 +59,7 @@ export interface IdpResolutionResult {
 export type IdpResolutionOutcome = IdpResolutionResult | { kind: 'not_configured' };
 
 /**
- * Resolve IdP token using static key verification.
+ * Resolve IdP token using configured key source.
  *
  * @param tokenPath - Path to JWT token file (FLOWGUARD_ACTOR_TOKEN_PATH).
  * @param config - IdP configuration from policy.
@@ -74,7 +87,21 @@ export async function resolveIdpToken(
     throw new IdpError('IDP_TOKEN_MISSING', 'IdP token file is empty');
   }
 
-  const keyResolver: KeyResolver = new StaticKeyResolver(config.signingKeys);
+  const keyResolver: KeyResolver =
+    config.mode === 'jwks'
+      ? config.jwksPath
+        ? await JwksFileKeyResolver.fromPath(config.jwksPath)
+        : await JwksRemoteKeyResolver.fromUri(
+            config.jwksUri ??
+              (() => {
+                throw new IdpError(
+                  'IDP_JWKS_URI_INVALID',
+                  "JWKS mode requires exactly one of 'jwksPath' or 'jwksUri'",
+                );
+              })(),
+            config.cacheTtlSeconds,
+          )
+      : new StaticKeyResolver(config.signingKeys);
   const tokenVerifier: TokenVerifier = new JwtStaticTokenVerifier(config, keyResolver);
 
   const verifiedToken = await tokenVerifier.verify(token);
@@ -102,5 +129,5 @@ export async function resolveIdpToken(
  * @returns true if IdP is configured with at least one signing key.
  */
 export function isIdpConfigured(config: IdpConfig | undefined | null): config is IdpConfig {
-  return config !== undefined && config !== null && config.signingKeys.length > 0;
+  return config !== undefined && config !== null;
 }

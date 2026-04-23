@@ -1,10 +1,10 @@
 /**
  * @module identity/token-verifier
- * @description JWT token verifier for P35a static key verification.
+ * @description JWT token verifier for P35a/P35b1 key verification.
  *
  * Design: TokenVerifier is separated from KeyResolver for future extensibility.
- * P35a: JwtStaticTokenVerifier uses StaticKeyResolver with Node.js crypto.
- * Future (P35b/c): Could use JwksTokenVerifier with remote key fetching.
+ * P35a/P35b1: JwtStaticTokenVerifier uses KeyResolver with Node.js crypto.
+ * Future (P35b2/c): Could use remote JWKS and OIDC discovery resolvers.
  */
 
 import * as crypto from 'node:crypto';
@@ -59,10 +59,10 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 
     const kid = header.kid;
     if (!kid) {
-      throw new IdpError('IDP_TOKEN_HEADER_INVALID', 'IdP token header missing kid');
+      throw new IdpError('IDP_TOKEN_KID_MISSING', 'IdP token header missing kid');
     }
 
-    const resolvedKey = this.keyResolver.resolveKey(kid);
+    const resolvedKey = this.keyResolver.resolveKey(kid, header.alg);
 
     if (header.alg !== resolvedKey.algorithm) {
       throw new IdpError(

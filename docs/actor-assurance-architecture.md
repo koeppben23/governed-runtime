@@ -1,7 +1,7 @@
 # Actor Assurance Architecture
 
-**Design Version:** 1.1
-**Status:** Final — P35a
+**Design Version:** 1.2
+**Status:** Final — P35b2
 **Last Updated:** 2026-04-23
 **Owner:** FlowGuard Core
 **Audience:** Enterprise engineers, product, security review
@@ -332,11 +332,29 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ Add coercion for `verified` → `claim_validated` in Zod parse for backward compatibility
 - ✅ Add test coverage for new threshold logic
 
-### P35b — JWKS-Fetched Keys (Future)
+### P35b1 — Pinned Local JWKS
 
-**Status:** Not started
+**Status:** Implemented
 
-**Deliverable:** Remote JWKS endpoint fetching with caching and rotation support.
+**Deliverable:**
+
+- ✅ Discriminated IdP config authority: `mode: 'static' | 'jwks'`
+- ✅ `jwks` mode with pinned local `jwksPath` (no network)
+- ✅ Kid-based key resolution from JWKS (`no first-key fallback`)
+- ✅ Explicit JWKS error taxonomy (`IDP_JWKS_*`, `IDP_TOKEN_KID_MISSING`)
+- ✅ Fail-closed semantics preserved for `identityProviderMode: 'required'`
+- ✅ Typed IdP config frozen in policy snapshot (no `unknown` pass-through)
+
+### P35b2 — Remote JWKS Fetch
+
+**Status:** Implemented
+
+**Deliverable:**
+
+- ✅ `jwksUri` support (HTTPS only)
+- ✅ TTL cache (`cacheTtlSeconds`, default 300)
+- ✅ Fail-closed refresh behavior (no stale-on-error fallback after expiry)
+- ✅ Typed JWKS fetch/URI errors (`IDP_JWKS_URI_INVALID`, `IDP_JWKS_FETCH_FAILED`)
 
 ### P35c — OIDC Discovery (Future)
 
@@ -359,6 +377,14 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ `identityProviderMode: 'optional' | 'required'` for session creation control
 - ✅ Fail-closed behavior with typed error codes
 
+### P35b1 Files Added/Extended
+
+- `src/identity/types.ts` — discriminated IdP schema (`static` vs `jwks`) and JWKS schemas
+- `src/identity/key-resolver.ts` — `JwksFileKeyResolver` (local/pinned JWKS)
+- `src/identity/token-verifier.ts` — explicit `IDP_TOKEN_KID_MISSING`, resolver alg handoff
+- `src/identity/errors.ts` — JWKS-specific fail-closed error taxonomy
+- `src/state/evidence.ts` — typed `identityProvider` in `PolicySnapshotSchema`
+
 **Files:**
 
 - `src/identity/` — IdP module (errors, types, key-resolver, token-verifier, index)
@@ -380,10 +406,10 @@ These tiers do NOT change the current three-tier model. They extend it.
 
 ## 14) Related Documents
 
-- `src/adapters/actor.ts` — P35a actor resolver with IdP integration
-- `src/identity/` — P35a IdP identity module
+- `src/adapters/actor.ts` — P35a/P35b1 actor resolver with IdP integration
+- `src/identity/` — P35a/P35b1 IdP identity module
 - `src/state/evidence.ts` — `DecisionIdentity` schema with `ActorVerificationMeta`
-- `src/config/policy.ts` — P35a policy schema with `identityProvider` and `identityProviderMode`
+- `src/config/policy.ts` — P35a/P35b1 policy schema with typed `identityProvider` and `identityProviderMode`
 - `src/rails/review-decision.ts` — regulated approval gate with `ACTOR_ASSURANCE_INSUFFICIENT`
 - `docs/security-hardening.md` — actor identity hardening guidance
 - `docs/enterprise-readiness.md` — threat model and regulated guarantees

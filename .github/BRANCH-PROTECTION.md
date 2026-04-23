@@ -37,6 +37,9 @@ These check names must be configured exactly as required checks:
 13. `secrets-scan`
 14. `codeql-sast`
 15. `security-policy`
+16. `install (ubuntu-latest)`
+17. `install (macos-latest)`
+18. `install (windows-latest)`
 
 ## Source of Truth
 

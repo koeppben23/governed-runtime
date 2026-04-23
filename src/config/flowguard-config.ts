@@ -54,7 +54,7 @@ export const FlowGuardConfigSchema = z.object({
       minimumActorAssuranceForApproval: z
         .enum(['best_effort', 'claim_validated', 'idp_verified'])
         .optional(),
-      /** P35a: IdP configuration for static key verification. */
+      /** P35a/P35b1/P35b2: IdP configuration for static keys or JWKS (path/URI). */
       identityProvider: IdpConfigSchema.optional(),
       /** P35a: IdP verification mode ('optional' or 'required'). */
       identityProviderMode: IdentityProviderModeSchema.optional(),

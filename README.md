@@ -133,7 +133,7 @@ Use `/status` as a read-only orientation command:
 | **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
 | **Knowledge Pack Policy** | External documentation authority is advisory-only, provenance-stamped, and non-SSOT |
 | **Central Policy Authority** | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence |
-| **Actor Assurance** | Three-tier identity: `best_effort` (env/git), `claim_validated` (claim file), `idp_verified` (JWT/IdP); `minimumActorAssuranceForApproval` threshold for regulated approvals |
+| **Actor Assurance** | Three-tier identity: `best_effort` (env/git), `claim_validated` (claim file), `idp_verified` (JWT/IdP); IdP supports `mode: static` (JWK/PEM keys) and `mode: jwks` (exactly one source: `jwksPath` or HTTPS `jwksUri` + `cacheTtlSeconds`) with fail-closed `identityProviderMode` |
 
 ---
 

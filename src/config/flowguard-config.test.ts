@@ -289,6 +289,127 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts static IdP policy config with signingKeys', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'pem',
+              kid: 'key-1',
+              alg: 'RS256',
+              pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts jwks IdP policy config with jwksPath', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts jwks IdP policy config with jwksUri and cacheTtlSeconds', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksUri: 'https://id.example.com/.well-known/jwks.json',
+          cacheTtlSeconds: 120,
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects jwks mode when signingKeys is also provided (no mixed authority)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+          signingKeys: [
+            {
+              kind: 'pem',
+              kid: 'key-1',
+              alg: 'RS256',
+              pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects static mode when jwksPath is also provided (no mixed authority)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'pem',
+              kid: 'key-1',
+              alg: 'RS256',
+              pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----',
+            },
+          ],
+          jwksPath: '/etc/flowguard/jwks.json',
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects jwks mode when both jwksPath and jwksUri are provided', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        identityProvider: {
+          mode: 'jwks',
+          issuer: 'https://issuer.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/flowguard/jwks.json',
+          jwksUri: 'https://id.example.com/.well-known/jwks.json',
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── CORNER ─────────────────────────────────────────────────────────────
 
   it('accepts boundary values for iterations (1 and 10)', () => {
