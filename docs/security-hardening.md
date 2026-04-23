@@ -87,7 +87,7 @@ FlowGuard is designed to run locally with no network access. Security hardening 
 
 ### No Outbound Connections
 
-FlowGuard does not make outbound network connections. After installation, FlowGuard runs entirely offline.
+FlowGuard runs offline by default. If remote JWKS is configured (`identityProvider.mode = jwks` + `jwksUri`), FlowGuard performs bounded HTTPS fetches for JWKS refresh; fetch failures are fail-closed in `identityProviderMode: required`.
 
 **Verification:**
 
@@ -218,13 +218,21 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 
 ### Resolution Priority
 
-| Source    | Assurance         | Description                                                                 |
-| --------- | ----------------- | --------------------------------------------------------------------------- |
-| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified              |
-| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                          |
-| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                   |
-| `oidc`    | `idp_verified`    | IdP token via static keys or pinned local JWKS — cryptographically verified |
-| `unknown` | `best_effort`     | No identity available                                                       |
+| Source    | Assurance         | Description                                                                               |
+| --------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified                            |
+| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                                        |
+| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                                 |
+| `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified |
+| `unknown` | `best_effort`     | No identity available                                                                     |
+
+### IdP Trust Modes (P35)
+
+- `mode: 'static'` with pinned signing keys (`jwk` or `pem`)
+- `mode: 'jwks'` with pinned local `jwksPath`
+- `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
+
+P35 explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
 
 ### Policy Gate
 
@@ -235,6 +243,18 @@ In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum requ
 - `idp_verified` — only IdP-verified actors may approve
 
 Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
+
+### Fail-Closed Identity Behavior
+
+- `identityProviderMode: 'required'` blocks session hydration on IdP failures (no implicit fallback).
+- `identityProviderMode: 'optional'` degrades only on typed IdP errors; claim/env/git/unknown resolution remains bounded by priority rules.
+- Remote JWKS refresh failures after TTL expiry fail closed (`IDP_JWKS_FETCH_FAILED`).
+
+Representative typed fail-closed IdP errors:
+
+- `IDP_TOKEN_MISSING`, `IDP_TOKEN_INVALID`, `IDP_TOKEN_HEADER_INVALID`, `IDP_TOKEN_KID_MISSING`
+- `IDP_SIGNATURE_INVALID`, `IDP_ISSUER_MISMATCH`, `IDP_AUDIENCE_MISMATCH`, `IDP_EXPIRED`, `IDP_NOT_YET_VALID`
+- `IDP_JWKS_INVALID`, `IDP_JWKS_URI_INVALID`, `IDP_JWKS_FETCH_FAILED`, `IDP_JWKS_KEY_NOT_FOUND`, `IDP_JWKS_ALGORITHM_MISMATCH`
 
 ### Design Constraints
 

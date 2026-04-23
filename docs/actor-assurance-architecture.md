@@ -32,6 +32,20 @@ This document defines the canonical target model for actor assurance in FlowGuar
 - **Migration Path** — P33 v0 semantics map cleanly into the target model.
 - **Extensible** — future tiers (`service_verified`, `ci_verified`) fit the model without breaking changes.
 
+## 2a) P35 Closure Scope
+
+### Implemented (product truth)
+
+- static keys (`identityProvider.mode: 'static'`)
+- local pinned JWKS (`identityProvider.mode: 'jwks'` + `jwksPath`)
+- remote JWKS (`identityProvider.mode: 'jwks'` + HTTPS `jwksUri`) with TTL cache and fail-closed refresh
+
+### Not in scope for P35
+
+- OIDC discovery
+- last-known-good or stale-on-error JWKS fallback
+- RBAC/group-based authorization mapping
+
 ---
 
 ## 3) Assurance Tiers (Canonical)
@@ -72,8 +86,9 @@ The following tiers are defined in ascending order of assurance strength:
 
 **Sources that produce this tier:**
 
-- `FLOWGUARD_ACTOR_IDP_CONFIG` pointing to IdP configuration (OIDC discovery, JWKS URI, or static JWK) — future P35 (`source: 'oidc'`)
-- Other IdP integrations (future)
+- `FLOWGUARD_ACTOR_IDP_CONFIG` with static keys (`mode: 'static'`)
+- `FLOWGUARD_ACTOR_IDP_CONFIG` with local pinned JWKS (`mode: 'jwks'` + `jwksPath`)
+- `FLOWGUARD_ACTOR_IDP_CONFIG` with remote JWKS (`mode: 'jwks'` + HTTPS `jwksUri`)
 
 **When it applies:** The actor's identity has been established by a trusted IdP and the token/assertion has been cryptographically verified by FlowGuard. This is the strongest assurance level for human actor identity.
 
@@ -112,7 +127,7 @@ interface ActorIdentity {
    * - `env`: FLOWGUARD_ACTOR_ID environment variable
    * - `git`: git config user.name
    * - `claim`: Validated local claim file (FLOWGUARD_ACTOR_CLAIMS_PATH)
-   * - `oidc`: Cryptographically verified IdP token (future P35)
+   * - `oidc`: Cryptographically verified IdP token (P35a/P35b1/P35b2)
    * - `unknown`: No identity available
    */
   source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
@@ -120,7 +135,7 @@ interface ActorIdentity {
    * HOW STRONG the identity verification is.
    * - `best_effort`: operator-provided, no third-party verification
    * - `claim_validated`: schema + expiry validated, locally provisioned
-   * - `idp_verified`: cryptographic proof from trusted IdP (future P35)
+   * - `idp_verified`: cryptographic proof from trusted IdP
    */
   assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
 }
@@ -160,7 +175,7 @@ interface FlowGuardPolicy {
    *
    * - 'best_effort'     → any actor may approve (default for Team, backward-compat with P33 v0)
    * - 'claim_validated' → only claim-validated actors may approve (P33 v0 "verified" equivalent)
-   * - 'idp_verified'    → only IdP-verified actors may approve (future P35, enterprise target)
+   * - 'idp_verified'    → only IdP-verified actors may approve (implemented in P35)
    *
    * Applies at User Gates in regulated mode. Actors below the threshold are blocked
    * with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
@@ -201,7 +216,7 @@ All three tiers share a common fail-closed guarantee:
 | Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
 | No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only |
 | Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                      |
-| IdP token invalid/missing (future P35)     | **BLOCK** — `IDP_IDENTITY_INVALID`                              |
+| IdP token invalid/missing                  | **BLOCK** — `IDP_IDENTITY_INVALID`                              |
 
 There is **no fallback** from higher to lower tiers when the configured path is active. If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set, its failure is fatal. Only absence of the path triggers fallback to env/git.
 
@@ -219,7 +234,7 @@ Loads raw identity data from environment, filesystem, or future IdP.
 
 - Enumerate `FLOWGUARD_ACTOR_ID`, `FLOWGUARD_ACTOR_EMAIL`
 - Enumerate `FLOWGUARD_ACTOR_CLAIMS_PATH` → load raw JSON
-- Enumerate `FLOWGUARD_ACTOR_IDP_CONFIG` → load IdP config (future P35)
+- Enumerate `FLOWGUARD_ACTOR_IDP_CONFIG` → load IdP config
 - Enumerate `git config user.name/email`
 - Return raw data + source to validator
 
@@ -227,13 +242,13 @@ Loads raw identity data from environment, filesystem, or future IdP.
 
 ### 9.2 Validator
 
-Checks schema, temporal bounds, and (future) cryptographic signatures.
+Checks schema, temporal bounds, and cryptographic signatures.
 
 **Responsibilities:**
 
 - Parse and validate claim schema (Zod)
 - Validate temporal constraints (issuedAt ≤ now < expiresAt)
-- Future: Verify JWT signature, check issuer/audience, validate nonce/state
+- Verify JWT signature, check issuer/audience
 - Return validated claim data or throw
 
 ### 9.3 Mapper

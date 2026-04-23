@@ -20,9 +20,14 @@ This document defines the merge-blocking settings for the `main` branch.
 
 ## Required Status Checks (merge-blocking)
 
-These check names must be configured exactly as required checks:
+Only real CI job names are allowed in this list. Configure the following check names exactly:
+
+From `.github/workflows/conventional-commits.yml`:
 
 1. `Validate Commit Messages`
+
+From `.github/workflows/ci.yml`:
+
 2. `test`
 3. `typecheck`
 4. `lint`
@@ -40,6 +45,8 @@ These check names must be configured exactly as required checks:
 16. `install (ubuntu-latest)`
 17. `install (macos-latest)`
 18. `install (windows-latest)`
+
+`install-verify (...)` and `install (...)` are distinct required jobs and must both stay aligned with CI truth.
 
 ## Source of Truth
 

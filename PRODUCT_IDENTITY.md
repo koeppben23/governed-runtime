@@ -56,7 +56,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
-- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior.
+- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks; `optional` degrades only on typed IdP errors). OIDC discovery and stale/last-known-good fallback are out of scope for P35.
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
@@ -65,7 +65,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
-- **Self-hosted** — runs locally, no outbound network calls from FlowGuard. All data stays on the user's filesystem.
+- **Self-hosted** — runs locally with filesystem-first operation. Optional remote JWKS fetches occur only when `identityProvider.mode = jwks` with `jwksUri`; otherwise runtime behavior is offline.
 
 ### Repository Discovery
 
