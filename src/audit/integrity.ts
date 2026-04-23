@@ -27,7 +27,7 @@
  * @version v1
  */
 
-import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types';
+import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types.js';
 
 // ─── Verification Options ─────────────────────────────────────────────────────
 

@@ -14,8 +14,8 @@ import {
   policyModes,
   createPolicySnapshot,
   policyFromSnapshot,
-} from '../config/policy';
-import { COMMANDS } from '../cli/templates';
+} from '../config/policy.js';
+import { COMMANDS } from '../cli/templates.js';
 import {
   ProfileRegistry,
   baselineProfile,
@@ -26,13 +26,13 @@ import {
   resolveProfileInstructions,
   extractBaseInstructions,
   extractByPhaseInstructions,
-} from '../config/profile';
-import type { RepoSignals, PhaseInstructions, CheckExecutor } from '../config/profile';
-import { BlockedReasonRegistry, defaultReasonRegistry, blocked } from '../config/reasons';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
-import { makeState, makeProgressedState, PLAN_RECORD, IMPL_EVIDENCE } from '../__fixtures__';
-import type { SessionState } from '../state/schema';
-import type { PlanEvidence, PlanRecord } from '../state/evidence';
+} from '../config/profile.js';
+import type { RepoSignals, PhaseInstructions, CheckExecutor } from '../config/profile.js';
+import { BlockedReasonRegistry, defaultReasonRegistry, blocked } from '../config/reasons.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { makeState, makeProgressedState, PLAN_RECORD, IMPL_EVIDENCE } from '../__fixtures__.js';
+import type { SessionState } from '../state/schema.js';
+import type { PlanEvidence, PlanRecord } from '../state/evidence.js';
 
 describe('config/policy', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -654,7 +654,7 @@ describe('config/profile/phase-instructions', () => {
       };
       for (const [phase, extra] of Object.entries(allPhases.byPhase!)) {
         expect(
-          resolveProfileInstructions(allPhases, phase as import('../state/schema').Phase),
+          resolveProfileInstructions(allPhases, phase as import('../state/schema.js').Phase),
         ).toBe(`b\n\n${extra}`);
       }
     });

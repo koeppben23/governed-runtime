@@ -67,8 +67,9 @@ In regulated mode, FlowGuard currently guarantees:
 - Regulated archive lifecycle is explicit (`pending` -> `created` -> `verified` or `failed`).
 - Terminal `session_completed` lifecycle event is written before archive generation so the
   archive contains completion evidence.
-- Audit events can include source-labeled actor attribution (`env`, `git`, `unknown`) as
-  best-effort metadata.
+- Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `unknown`).
+- Claim-sourced actor attribution is verified at claim-resolution time; `env`/`git`/`unknown`
+  attribution remains best-effort metadata.
 
 These guarantees are scoped to current runtime behavior and local execution model.
 

@@ -36,18 +36,18 @@ import {
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
   type CollectorInput,
   type DiscoveryResult,
-} from '../index';
+} from '../index.js';
 
 // Collectors
-import { collectStack } from './collectors/stack-detection';
-import { collectTopology } from './collectors/topology';
-import { collectSurfaces } from './collectors/surface-detection';
-import { collectCodeSurfaces } from './collectors/code-surface-analysis';
-import { collectDomainSignals } from './collectors/domain-signals';
+import { collectStack } from './collectors/stack-detection.js';
+import { collectTopology } from './collectors/topology.js';
+import { collectSurfaces } from './collectors/surface-detection.js';
+import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
+import { collectDomainSignals } from './collectors/domain-signals.js';
 
 // Orchestrator
-import { runDiscovery, extractDiscoverySummary, computeDiscoveryDigest } from './orchestrator';
-import { extractDetectedStack } from './orchestrator';
+import { runDiscovery, extractDiscoverySummary, computeDiscoveryDigest } from './orchestrator.js';
+import { extractDetectedStack } from './orchestrator.js';
 
 // ─── Git Adapter Mock (module-level, deterministic) ──────────────────────────
 // The repo-metadata collector imports from ../adapters/git. A single
@@ -61,7 +61,7 @@ vi.mock('../adapters/git', () => ({
   remoteOriginUrl: vi.fn().mockResolvedValue(null),
 }));
 
-const gitMock = await import('../adapters/git');
+const gitMock = await import('../adapters/git.js');
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 

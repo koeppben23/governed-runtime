@@ -125,6 +125,17 @@ Runtime behavior claims remain `NOT_VERIFIED` until execution evidence exists.
 - High-risk ambiguity: ask or return `BLOCKED` before implementation.
 - Never encode an assumption as runtime fact.
 
+### Non-Interactive Runtime Rule
+
+For non-interactive/headless execution contexts (for example `flowguard run` and `flowguard serve`
+automation paths), agents MUST NOT rely on asking follow-up questions.
+
+- If required input is missing or ambiguity is safety-relevant, return `BLOCKED` with:
+  - exact missing value(s),
+  - smallest safe recovery step,
+  - no speculative continuation.
+- Never replace missing operator input with guessed defaults in non-interactive mode.
+
 ## 8. Output Contract
 
 Use one output contract, scaled by task class:

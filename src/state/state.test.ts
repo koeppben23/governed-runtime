@@ -21,11 +21,11 @@ import {
   PolicySnapshotSchema,
   AuditEvent,
   ReviewReport,
-} from '../state/evidence';
-import { Phase, Event, Transition, SessionState } from '../state/schema';
-import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
-import { readState } from '../adapters/persistence';
+} from '../state/evidence.js';
+import { Phase, Event, Transition, SessionState } from '../state/schema.js';
+import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { readState } from '../adapters/persistence.js';
 
 describe('state schemas', () => {
   // ─── HAPPY ─────────────────────────────────────────────────

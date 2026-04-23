@@ -23,7 +23,7 @@
 
 import { z } from 'zod';
 
-import type { ToolDefinition } from './helpers';
+import type { ToolDefinition } from './helpers.js';
 import {
   resolveWorkspacePaths,
   requireStateForMutation,
@@ -34,21 +34,21 @@ import {
   formatError,
   appendNextAction,
   writeStateWithArtifacts,
-} from './helpers';
+} from './helpers.js';
 
 // State & Machine
-import type { SessionState } from '../../state/schema';
-import { evaluate } from '../../machine/evaluate';
-import { isCommandAllowed, Command } from '../../machine/commands';
+import type { SessionState } from '../../state/schema.js';
+import { evaluate } from '../../machine/evaluate.js';
+import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
-import { autoAdvance } from '../../rails/types';
+import { autoAdvance } from '../../rails/types.js';
 
 // Adapters
-import { changedFiles } from '../../adapters/git';
+import { changedFiles } from '../../adapters/git.js';
 
 // Evidence types
-import type { LoopVerdict, RevisionDelta } from '../../state/evidence';
+import type { LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict

@@ -24,8 +24,8 @@ import {
   summarizeArgs,
   type ChainedAuditEvent,
   type ActorInfo,
-} from './types';
-import { verifyEvent, verifyChain, getLastChainHash } from './integrity';
+} from './types.js';
+import { verifyEvent, verifyChain, getLastChainHash } from './integrity.js';
 import {
   bySession,
   byPhase,
@@ -49,12 +49,12 @@ import {
   countByKind,
   countByPhase,
   timeSpan,
-} from './query';
-import { generateTimeline, generateComplianceSummary } from './summary';
-import { evaluateCompleteness } from './completeness';
-import type { AuditEvent } from '../state/evidence';
-import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../__fixtures__';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+} from './query.js';
+import { generateTimeline, generateComplianceSummary } from './summary.js';
+import { evaluateCompleteness } from './completeness.js';
+import type { AuditEvent } from '../state/evidence.js';
+import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

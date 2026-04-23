@@ -14,7 +14,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { isEnoent } from '../persistence';
+import { isEnoent } from '../persistence.js';
 
 import {
   WORKSPACE_FILE,
@@ -27,8 +27,8 @@ import {
   type FingerprintResult,
   type WorkspaceInfo,
   type SessionPointer,
-} from './types';
-import { computeFingerprint } from './fingerprint';
+} from './types.js';
+import { computeFingerprint } from './fingerprint.js';
 
 // -- Path Resolution (SSOT) ---------------------------------------------------
 

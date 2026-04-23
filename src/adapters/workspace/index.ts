@@ -23,7 +23,7 @@ export {
   WorkspaceError,
   validateFingerprint,
   validateSessionId,
-} from './types';
+} from './types.js';
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
 export {
@@ -32,7 +32,7 @@ export {
   computeFingerprint,
   computeFingerprintFromRemote,
   computeFingerprintFromPath,
-} from './fingerprint';
+} from './fingerprint.js';
 
 // ── Path Resolution & Initialization ─────────────────────────────────────────
 export {
@@ -44,7 +44,7 @@ export {
   readWorkspaceInfo,
   writeSessionPointer,
   readSessionPointer,
-} from './init';
+} from './init.js';
 
 // ── Archive ──────────────────────────────────────────────────────────────────
-export { archiveSession, verifyArchive } from './archive';
+export { archiveSession, verifyArchive } from './archive.js';

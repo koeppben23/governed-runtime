@@ -22,7 +22,7 @@ import type {
   SurfaceInfo,
   LayerInfo,
   EvidenceClass,
-} from '../types';
+} from '../types.js';
 
 // ─── Detection Rules ──────────────────────────────────────────────────────────
 

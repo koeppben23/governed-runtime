@@ -21,18 +21,18 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../state/evidence';
-import { Command, isCommandAllowed } from '../machine/commands';
-import type { RailResult, RailContext, TransitionRecord } from './types';
+import type { SessionState } from '../state/schema.js';
+import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../state/evidence.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
   applyTransition,
   autoAdvance,
   runConvergenceLoop,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
-} from './types';
-import { blocked } from '../config/reasons';
+} from './types.js';
+import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 

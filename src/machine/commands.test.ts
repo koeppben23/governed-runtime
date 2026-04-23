@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { Command, isCommandAllowed } from '../machine/commands';
-import type { Phase } from '../state/schema';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import type { Phase } from '../state/schema.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('commands', () => {
   // ─── HAPPY ─────────────────────────────────────────────────

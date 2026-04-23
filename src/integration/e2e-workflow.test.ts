@@ -23,7 +23,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
-} from './test-helpers';
+} from './test-helpers.js';
 import {
   status,
   hydrate,
@@ -36,20 +36,20 @@ import {
   abort_session,
   archive,
   architecture,
-} from './tools';
-import { readState } from '../adapters/persistence';
-import { readAuditTrail } from '../adapters/persistence';
-import { verifyChain } from '../audit/integrity';
+} from './tools/index.js';
+import { readState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence.js';
+import { verifyChain } from '../audit/integrity.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
-} from '../adapters/workspace';
+} from '../adapters/workspace/index.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/git')>();
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
@@ -59,7 +59,7 @@ vi.mock('../adapters/git', async (importOriginal) => {
 });
 
 vi.mock('../adapters/actor', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/actor')>();
+  const original = await importOriginal<typeof import('../adapters/actor.js')>();
   return {
     ...original,
     resolveActor: vi.fn().mockResolvedValue({
@@ -70,8 +70,8 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-const gitMock = await import('../adapters/git');
-const actorMock = await import('../adapters/actor');
+const gitMock = await import('../adapters/git.js');
+const actorMock = await import('../adapters/actor.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 

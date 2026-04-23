@@ -20,6 +20,6 @@ export {
   abort_session,
   archive,
   architecture,
-} from './tools';
+} from './tools/index.js';
 
-export { FlowGuardAuditPlugin } from './plugin';
+export { FlowGuardAuditPlugin } from './plugin.js';

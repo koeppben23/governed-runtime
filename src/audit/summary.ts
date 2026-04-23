@@ -15,9 +15,16 @@
  * @version v1
  */
 
-import type { AuditEvent } from '../state/evidence';
-import { sessionEvents, countByKind, countByPhase, timeSpan, filterEvents, byKind } from './query';
-import type { ChainVerification } from './integrity';
+import type { AuditEvent } from '../state/evidence.js';
+import {
+  sessionEvents,
+  countByKind,
+  countByPhase,
+  timeSpan,
+  filterEvents,
+  byKind,
+} from './query.js';
+import type { ChainVerification } from './integrity.js';
 
 // ─── Timeline Types ───────────────────────────────────────────────────────────
 

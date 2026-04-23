@@ -24,13 +24,13 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import type { Phase } from '../state/schema';
-import type { DiscoveryResult } from '../discovery/types';
-import { profileRuleContent as javaRuleContent } from './profiles/content/java';
-import { profileRuleContent as angularRuleContent } from './profiles/content/angular';
-import { profileRuleContent as typescriptRuleContent } from './profiles/content/typescript';
-import { profileRuleContent as baselineRuleContent } from './profiles/content/baseline';
+import type { SessionState } from '../state/schema.js';
+import type { Phase } from '../state/schema.js';
+import type { DiscoveryResult } from '../discovery/types.js';
+import { profileRuleContent as javaRuleContent } from './profiles/content/java.js';
+import { profileRuleContent as angularRuleContent } from './profiles/content/angular.js';
+import { profileRuleContent as typescriptRuleContent } from './profiles/content/typescript.js';
+import { profileRuleContent as baselineRuleContent } from './profiles/content/baseline.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

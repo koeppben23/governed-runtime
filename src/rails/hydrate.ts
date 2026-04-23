@@ -25,23 +25,23 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import type { BindingInfo } from '../state/evidence';
-import type { ActorInfo } from '../audit/types';
-import type { DecisionIdentity } from '../state/evidence';
-import type { DiscoverySummary } from '../discovery/types';
-import type { DetectedStack } from '../discovery/types';
-import type { VerificationCandidates } from '../discovery/types';
-import { evaluate } from '../machine/evaluate';
-import type { RailResult, RailContext } from './types';
-import { blocked } from '../config/reasons';
-import { defaultProfileRegistry } from '../config/profile';
-import type { FlowGuardProfile, RepoSignals } from '../config/profile';
-import type { DiscoveryResult } from '../discovery/types';
-import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile';
-import { resolvePolicy, createPolicySnapshot } from '../config/policy';
-import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy';
-import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy';
+import type { SessionState } from '../state/schema.js';
+import type { BindingInfo } from '../state/evidence.js';
+import type { ActorInfo } from '../audit/types.js';
+import type { DecisionIdentity } from '../state/evidence.js';
+import type { DiscoverySummary } from '../discovery/types.js';
+import type { DetectedStack } from '../discovery/types.js';
+import type { VerificationCandidates } from '../discovery/types.js';
+import { evaluate } from '../machine/evaluate.js';
+import type { RailResult, RailContext } from './types.js';
+import { blocked } from '../config/reasons.js';
+import { defaultProfileRegistry } from '../config/profile.js';
+import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
+import type { DiscoveryResult } from '../discovery/types.js';
+import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
+import { resolvePolicy, createPolicySnapshot } from '../config/policy.js';
+import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
+import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 

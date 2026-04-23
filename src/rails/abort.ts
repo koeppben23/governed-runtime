@@ -28,10 +28,10 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema';
-import type { ErrorInfo } from '../state/evidence';
-import { evaluate } from '../machine/evaluate';
-import type { RailResult, RailContext, TransitionRecord } from './types';
+import type { SessionState } from '../state/schema.js';
+import type { ErrorInfo } from '../state/evidence.js';
+import { evaluate } from '../machine/evaluate.js';
+import type { RailResult, RailContext, TransitionRecord } from './types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 

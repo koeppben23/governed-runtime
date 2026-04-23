@@ -13,7 +13,6 @@ export default defineConfig({
         'src/**/__tests__/**',
         'src/**/__fixtures__*',
         'src/test-policy.ts',
-        'src/telemetry/**',
         'src/cli/run.ts',
       ],
       thresholds: {

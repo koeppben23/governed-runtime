@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { DetectedStack } from './types';
-import { planVerificationCandidates } from './verification-planner';
+import type { DetectedStack } from './types.js';
+import { planVerificationCandidates } from './verification-planner.js';
 
 function makeDetectedStack(items: DetectedStack['items']): DetectedStack {
   return {

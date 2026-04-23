@@ -11,6 +11,6 @@ export {
   type LogSink,
   createLogger,
   createNoopLogger,
-} from './logger';
+} from './logger.js';
 
-export { createFileSink, getLogDir } from './file-sink';
+export { createFileSink, getLogDir } from './file-sink.js';

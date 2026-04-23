@@ -15,7 +15,7 @@ import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { createHash } from 'node:crypto';
 
-import type { ToolDefinition } from './helpers';
+import type { ToolDefinition } from './helpers.js';
 import {
   getWorktree,
   resolvePolicyFromState,
@@ -24,14 +24,14 @@ import {
   formatBlocked,
   formatError,
   appendNextAction,
-} from './helpers';
+} from './helpers.js';
 
 // Rails
-import { executeHydrate } from '../../rails/hydrate';
+import { executeHydrate } from '../../rails/hydrate.js';
 
 // Adapters
-import { readState } from '../../adapters/persistence';
-import { listRepoSignals } from '../../adapters/git';
+import { readState } from '../../adapters/persistence.js';
+import { listRepoSignals } from '../../adapters/git.js';
 import {
   configPath,
   readConfig,
@@ -41,13 +41,13 @@ import {
   writeProfileResolution,
   writeDiscoverySnapshot,
   writeProfileResolutionSnapshot,
-} from '../../adapters/persistence';
+} from '../../adapters/persistence.js';
 
 // Workspace
-import { initWorkspace, writeSessionPointer } from '../../adapters/workspace';
+import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
 
 // Actor identity (P27)
-import { resolveActor, ActorClaimError } from '../../adapters/actor';
+import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 
 // Discovery
 import {
@@ -55,18 +55,18 @@ import {
   extractDiscoverySummary,
   extractDetectedStack,
   computeDiscoveryDigest,
-} from '../../discovery/orchestrator';
-import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types';
-import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types';
-import { planVerificationCandidates } from '../../discovery/verification-planner';
-import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile';
+} from '../../discovery/orchestrator.js';
+import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types.js';
+import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types.js';
+import { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile.js';
 
 // Config
 import {
   detectCiContext,
   resolvePolicyForHydrate,
   validateExistingPolicyAgainstCentral,
-} from '../../config/policy';
+} from '../../config/policy.js';
 
 function throwHydrateError(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });

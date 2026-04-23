@@ -13,26 +13,26 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { readAuditTrail, readConfig, readState } from '../persistence';
-import { verifyChain } from '../../audit/integrity';
+import { readAuditTrail, readConfig, readState } from '../persistence.js';
+import { verifyChain } from '../../audit/integrity.js';
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
   type ArchiveManifest,
   type ArchiveVerification,
   type ArchiveFinding,
-} from '../../archive/types';
-import { decisionReceipts } from '../../audit/query';
+} from '../../archive/types.js';
+import { decisionReceipts } from '../../audit/query.js';
 import {
   redactDecisionReceipts,
   redactReviewReport,
   type RedactionMode,
-} from '../../redaction/export-redaction';
+} from '../../redaction/export-redaction.js';
 
-import { WorkspaceError, validateFingerprint, validateSessionId } from './types';
-import { workspacesHome, sessionDir, workspaceDir } from './init';
-import { withSpan, addFingerprint, addSessionId } from '../../telemetry';
-import { verifyEvidenceArtifacts } from '../../integration/artifacts/evidence-artifacts';
+import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
+import { workspacesHome, sessionDir, workspaceDir } from './init.js';
+import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
+import { verifyEvidenceArtifacts } from '../../integration/artifacts/evidence-artifacts.js';
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -494,7 +494,7 @@ async function verifyArchiveImpl(
  */
 async function buildArchiveManifest(
   sessDir: string,
-  state: import('../../state/schema').SessionState | null,
+  state: import('../../state/schema.js').SessionState | null,
   fingerprint: string,
   sessionId: string,
   redaction: {

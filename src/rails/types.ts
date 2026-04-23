@@ -12,11 +12,11 @@
  * @version v1
  */
 
-import type { SessionState, Phase, Event } from '../state/schema';
-import type { LoopVerdict, RevisionDelta } from '../state/evidence';
-import { evaluate } from '../machine/evaluate';
-import type { EvalResult } from '../machine/evaluate';
-import type { FlowGuardPolicy } from '../config/policy';
+import type { SessionState, Phase, Event } from '../state/schema.js';
+import type { LoopVerdict, RevisionDelta } from '../state/evidence.js';
+import { evaluate } from '../machine/evaluate.js';
+import type { EvalResult } from '../machine/evaluate.js';
+import type { FlowGuardPolicy } from '../config/policy.js';
 
 // ─── Transition Record ────────────────────────────────────────────────────────
 

@@ -25,22 +25,22 @@ import {
   isTarAvailable,
   GIT_MOCK_DEFAULTS,
   type TestWorkspace,
-} from './test-helpers';
-import { FlowGuardAuditPlugin } from './plugin';
-import { writeState, readAuditTrail } from '../adapters/persistence';
+} from './test-helpers.js';
+import { FlowGuardAuditPlugin } from './plugin.js';
+import { writeState, readAuditTrail } from '../adapters/persistence.js';
 import {
   initWorkspace,
   computeFingerprint,
   sessionDir as resolveSessionDir,
-} from '../adapters/workspace';
-import { verifyChain } from '../audit/integrity';
-import { makeState, makeProgressedState } from '../__fixtures__';
-import type { Phase } from '../state/schema';
+} from '../adapters/workspace/index.js';
+import { verifyChain } from '../audit/integrity.js';
+import { makeState, makeProgressedState } from '../__fixtures__.js';
+import type { Phase } from '../state/schema.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/git')>();
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),

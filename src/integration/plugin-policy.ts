@@ -15,11 +15,11 @@
  * @tested-by plugin-policy.test.ts
  */
 
-import { resolveRuntimePolicyMode, resolvePolicyWithContext } from '../config/policy';
-import type { PolicyMode, FlowGuardPolicy } from '../config/policy';
-import type { SessionState } from '../state/schema';
-import { policyFromSnapshot } from '../config/policy';
-import { detectCiContext } from '../config/policy';
+import { resolveRuntimePolicyMode, resolvePolicyWithContext } from '../config/policy.js';
+import type { PolicyMode, FlowGuardPolicy } from '../config/policy.js';
+import type { SessionState } from '../state/schema.js';
+import { policyFromSnapshot } from '../config/policy.js';
+import { detectCiContext } from '../config/policy.js';
 
 interface Logger {
   debug: (topic: string, message: string, data?: Record<string, unknown>) => void;
@@ -79,7 +79,7 @@ export async function resolvePluginSessionPolicy(
   // Any error here is a state integrity problem → fail closed
   let state: SessionState | null = null;
   try {
-    const { readState } = await import('../adapters/persistence');
+    const { readState } = await import('../adapters/persistence.js');
     state = await readState(sessDir);
   } catch (err) {
     // Corrupt/unparseable state → fail closed, NOT fallback

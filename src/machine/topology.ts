@@ -24,7 +24,7 @@
  * @version v2
  */
 
-import type { Phase, Event } from '../state/schema';
+import type { Phase, Event } from '../state/schema.js';
 
 // ─── Transition Table ─────────────────────────────────────────────────────────
 

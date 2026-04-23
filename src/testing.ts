@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import type { RailContext } from './rails/types';
+import type { RailContext } from './rails/types.js';
 
 // ─── Test Context Factory ────────────────────────────────────────────────────
 

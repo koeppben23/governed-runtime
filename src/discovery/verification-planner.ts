@@ -10,7 +10,7 @@
  * Planner only: it never executes commands.
  */
 
-import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types';
+import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 

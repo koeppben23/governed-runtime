@@ -13,8 +13,8 @@
  * @version v2
  */
 
-import type { Phase } from '../state/schema';
-import { TERMINAL } from './topology';
+import type { Phase } from '../state/schema.js';
+import { TERMINAL } from './topology.js';
 
 // ─── Command Enum ─────────────────────────────────────────────────────────────
 

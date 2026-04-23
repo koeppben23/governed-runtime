@@ -9,13 +9,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { makeState, PLAN_EVIDENCE, TICKET } from '../../__fixtures__';
-import { writeState } from '../../adapters/persistence';
+import { makeState, PLAN_EVIDENCE, TICKET } from '../../__fixtures__.js';
+import { writeState } from '../../adapters/persistence.js';
 import {
   EVIDENCE_ARTIFACTS_DIR,
   materializeEvidenceArtifacts,
   verifyEvidenceArtifacts,
-} from './evidence-artifacts';
+} from './evidence-artifacts.js';
 
 let sessionDir: string;
 

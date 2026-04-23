@@ -34,6 +34,13 @@ Use this guide for implementation depth beyond `AGENTS.md`.
 - `HIGH-RISK`: negative-path coverage plus lint, typecheck, build, and relevant integration/e2e checks.
 - Release/installer: validate exact generated artifact install path.
 
+## Non-Interactive Execution
+
+- Treat `flowguard run` and `flowguard serve` automation as non-interactive.
+- Do not depend on follow-up questions in headless contexts.
+- When required input is missing or ambiguity is safety-relevant, return `BLOCKED` with exact missing inputs and the smallest safe recovery step.
+- Do not substitute guessed defaults for missing operator input in non-interactive paths.
+
 ## Documentation Rules
 
 - Update docs when behavior, interfaces, or operator expectations change.

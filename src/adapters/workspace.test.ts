@@ -37,12 +37,12 @@ import {
   verifyArchive,
   WorkspaceError,
   type WorkspaceInfo,
-} from './workspace';
+} from './workspace/index.js';
 import * as crypto from 'node:crypto';
-import { benchmarkSync, measureAsync } from '../test-policy';
-import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types';
-import { writeState } from './persistence';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__';
+import { benchmarkSync, measureAsync } from '../test-policy.js';
+import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
+import { writeState } from './persistence.js';
+import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

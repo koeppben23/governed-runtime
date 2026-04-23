@@ -15,7 +15,7 @@
  * @version v4
  */
 
-import type { ToolDefinition } from './helpers';
+import type { ToolDefinition } from './helpers.js';
 import {
   status as rawStatus,
   ticket as rawTicket,
@@ -24,11 +24,11 @@ import {
   review as rawReview,
   abort_session as rawAbortSession,
   archive as rawArchive,
-} from './simple-tools';
-import { hydrate as rawHydrate } from './hydrate';
-import { plan as rawPlan } from './plan';
-import { implement as rawImplement } from './implement';
-import { architecture as rawArchitecture } from './architecture';
+} from './simple-tools.js';
+import { hydrate as rawHydrate } from './hydrate.js';
+import { plan as rawPlan } from './plan.js';
+import { implement as rawImplement } from './implement.js';
+import { architecture as rawArchitecture } from './architecture.js';
 
 function zodCompat(tool: ToolDefinition): ToolDefinition {
   for (const schema of Object.values(tool.args)) {

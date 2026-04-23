@@ -144,6 +144,8 @@ flowguard serve --detach --port 4096
 **Note:** Headless features are experimental. For production, use OpenCode directly:
 `opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
 
+In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
+
 ## Product Facts
 
 | Feature | Description |
@@ -157,6 +159,7 @@ flowguard serve --detach --port 4096
 | **Derived Evidence Artifacts** | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance |
 | **Archive** | Session archival with integrity verification + redacted export artifacts by default |
 | **Code Surface Analysis** | Bounded heuristic detection of endpoints/auth/data/integration surfaces |
+| **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing |
 
 ---
 

@@ -14,11 +14,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { FlowGuardAuditPlugin } from './plugin';
-import { resolvePluginSessionPolicy } from './plugin-policy';
-import { makeState } from '../__fixtures__';
-import type { PolicyMode } from '../config/policy';
-import * as barrel from './index';
+import { FlowGuardAuditPlugin } from './plugin.js';
+import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { makeState } from '../__fixtures__.js';
+import type { PolicyMode } from '../config/policy.js';
+import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 

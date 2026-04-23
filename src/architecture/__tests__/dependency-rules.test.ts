@@ -36,7 +36,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy';
+import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');

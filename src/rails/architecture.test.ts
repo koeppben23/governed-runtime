@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { executeArchitecture } from './architecture';
-import type { ArchitectureInput } from './architecture';
-import { createTestContext } from '../testing';
-import { makeState, FIXED_TIME } from '../__fixtures__';
-import { SOLO_POLICY, TEAM_POLICY } from '../config/policy';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+import { executeArchitecture } from './architecture.js';
+import type { ArchitectureInput } from './architecture.js';
+import { createTestContext } from '../testing.js';
+import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 const ctx = createTestContext();
 

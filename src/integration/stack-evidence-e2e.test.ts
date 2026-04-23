@@ -31,14 +31,14 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
-} from './test-helpers';
-import { status, hydrate } from './tools';
-import { readState, writeState } from '../adapters/persistence';
+} from './test-helpers.js';
+import { status, hydrate } from './tools/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/git')>();
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
   return {
     ...original,
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
@@ -47,7 +47,7 @@ vi.mock('../adapters/git', async (importOriginal) => {
   };
 });
 
-const gitMock = await import('../adapters/git');
+const gitMock = await import('../adapters/git.js');
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
@@ -79,7 +79,9 @@ async function writeManifest(name: string, content: string): Promise<void> {
 
 /** Resolve the session directory for state read/write. */
 async function resolveSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessDir } = await import('../adapters/workspace');
+  const { computeFingerprint, sessionDir: resolveSessDir } = await import(
+    '../adapters/workspace/index.js'
+  );
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessDir(fp.fingerprint, ctx.sessionID);
 }

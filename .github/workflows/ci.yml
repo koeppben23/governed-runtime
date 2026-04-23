@@ -143,6 +143,36 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  acp-smoke:
+    name: acp-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify OpenCode CLI availability
+        run: |
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "::error::opencode CLI not found on runner. ACP smoke tests are mandatory."
+            exit 1
+          fi
+          opencode --version
+
+      - name: Run ACP smoke tests
+        run: npm run test:acp
+        env:
+          FORCE_COLOR: 0
+          RUN_OPENCODE_ACP_TESTS: '1'
+
   audit:
     name: audit
     runs-on: ubuntu-latest

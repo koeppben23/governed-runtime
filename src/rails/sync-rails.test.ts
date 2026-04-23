@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { executeHydrate } from '../rails/hydrate';
-import { executeTicket } from '../rails/ticket';
-import { executeReviewDecision } from '../rails/review-decision';
-import { executeAbort } from '../rails/abort';
-import { createTestContext } from '../testing';
+import { executeHydrate } from '../rails/hydrate.js';
+import { executeTicket } from '../rails/ticket.js';
+import { executeReviewDecision } from '../rails/review-decision.js';
+import { executeAbort } from '../rails/abort.js';
+import { createTestContext } from '../testing.js';
 import {
   makeState,
   makeProgressedState,
@@ -21,8 +21,8 @@ import {
   DECISION_IDENTITY_INITIATOR,
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
-} from '../__fixtures__';
-import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy';
+} from '../__fixtures__.js';
+import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();
 

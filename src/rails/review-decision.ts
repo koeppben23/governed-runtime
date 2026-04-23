@@ -30,18 +30,18 @@
  * @version v1
  */
 
-import type { SessionState, Event } from '../state/schema';
+import type { SessionState, Event } from '../state/schema.js';
 import type {
   ReviewDecision,
   ReviewVerdict,
   ValidationResult,
   DecisionIdentity,
-} from '../state/evidence';
-import { Command, isCommandAllowed } from '../machine/commands';
-import { evaluate, evaluateWithEvent } from '../machine/evaluate';
-import type { RailResult, RailContext, TransitionRecord } from './types';
-import { applyTransition } from './types';
-import { blocked } from '../config/reasons';
+} from '../state/evidence.js';
+import { Command, isCommandAllowed } from '../machine/commands.js';
+import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
+import type { RailResult, RailContext, TransitionRecord } from './types.js';
+import { applyTransition } from './types.js';
+import { blocked } from '../config/reasons.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 

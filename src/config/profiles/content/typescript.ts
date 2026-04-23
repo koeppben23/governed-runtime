@@ -14,7 +14,7 @@
  * @version v2
  */
 
-import type { PhaseInstructions } from '../../profile';
+import type { PhaseInstructions } from '../../profile.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 

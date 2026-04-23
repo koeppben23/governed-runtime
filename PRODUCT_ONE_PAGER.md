@@ -43,8 +43,13 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Four-Eyes Governance
 
 - Regulated mode enforces initiator/reviewer separation
-- Current attribution is best-effort; enterprise identity integration is extensible
+- Optional verified actor claims are supported (`FLOWGUARD_ACTOR_CLAIMS_PATH`); regulated approvals can require verified actors via policy
 - Team and Regulated modes require explicit human decisions at gates
+
+### Headless Fail-Closed Behavior
+
+- Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) does not rely on follow-up questions
+- Missing safety-critical input returns explicit `BLOCKED` outcomes with recovery guidance
 
 ## Compliance Alignment
 

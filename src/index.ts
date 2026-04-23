@@ -16,7 +16,7 @@
 
 // ─── Layer 1: State Model ────────────────────────────────────────────────────
 
-export { Phase, Event, Transition, SessionState } from './state/schema';
+export { Phase, Event, Transition, SessionState } from './state/schema.js';
 
 export type {
   BindingInfo,
@@ -35,18 +35,18 @@ export type {
   LoopVerdict,
   RevisionDelta,
   PolicySnapshot,
-} from './state/evidence';
+} from './state/evidence.js';
 
 export {
   PolicySnapshotSchema,
   ActorInfoSchema,
   REQUIRED_ADR_SECTIONS,
   validateAdrSections,
-} from './state/evidence';
+} from './state/evidence.js';
 
 // ─── Layer 2: Machine ────────────────────────────────────────────────────────
 
-export { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from './machine/topology';
+export { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from './machine/topology.js';
 export {
   type GuardFn,
   type GuardEntry,
@@ -61,12 +61,12 @@ export {
   implReviewPending,
   reviewDone,
   GUARDS,
-} from './machine/guards';
-export { Command, isCommandAllowed } from './machine/commands';
-export { evaluate } from './machine/evaluate';
-export type { EvalResult } from './machine/evaluate';
-export { resolveNextAction, ACTION_CODES } from './machine/next-action';
-export type { NextAction } from './machine/next-action';
+} from './machine/guards.js';
+export { Command, isCommandAllowed } from './machine/commands.js';
+export { evaluate } from './machine/evaluate.js';
+export type { EvalResult } from './machine/evaluate.js';
+export { resolveNextAction, ACTION_CODES } from './machine/next-action.js';
+export type { NextAction } from './machine/next-action.js';
 
 // ─── Layer 3: Rails ──────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ export type {
   TransitionRecord,
   ConvergenceResult,
   IterationResult,
-} from './rails/types';
+} from './rails/types.js';
 export {
   autoAdvance,
   applyTransition,
@@ -86,19 +86,19 @@ export {
   runSingleIteration,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
-} from './rails/types';
-export { executeHydrate } from './rails/hydrate';
-export type { HydrateInput } from './rails/hydrate';
-export { executeTicket } from './rails/ticket';
-export { executePlan } from './rails/plan';
-export { executeReviewDecision } from './rails/review-decision';
-export { executeValidate } from './rails/validate';
-export { executeImplement } from './rails/implement';
-export { executeContinue } from './rails/continue';
-export { executeReview, executeReviewFlow } from './rails/review';
-export { executeArchitecture } from './rails/architecture';
-export type { ArchitectureInput } from './rails/architecture';
-export { executeAbort } from './rails/abort';
+} from './rails/types.js';
+export { executeHydrate } from './rails/hydrate.js';
+export type { HydrateInput } from './rails/hydrate.js';
+export { executeTicket } from './rails/ticket.js';
+export { executePlan } from './rails/plan.js';
+export { executeReviewDecision } from './rails/review-decision.js';
+export { executeValidate } from './rails/validate.js';
+export { executeImplement } from './rails/implement.js';
+export { executeContinue } from './rails/continue.js';
+export { executeReview, executeReviewFlow } from './rails/review.js';
+export { executeArchitecture } from './rails/architecture.js';
+export type { ArchitectureInput } from './rails/architecture.js';
+export { executeAbort } from './rails/abort.js';
 
 // ─── Layer 4: Adapters ──────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ export {
   writeDiscoverySnapshot,
   writeProfileResolutionSnapshot,
   PersistenceError,
-} from './adapters/persistence';
+} from './adapters/persistence.js';
 export {
   resolveRoot,
   isGitRepo,
@@ -137,9 +137,9 @@ export {
   listRepoSignals,
   remoteOriginUrl,
   GitError,
-} from './adapters/git';
-export { fromOpenCodeContext } from './adapters/binding';
-export { createRailContext } from './adapters/context';
+} from './adapters/git.js';
+export { fromOpenCodeContext } from './adapters/binding.js';
+export { createRailContext } from './adapters/context.js';
 export {
   canonicalizeOriginUrl,
   normalizeForFingerprint,
@@ -162,11 +162,11 @@ export {
   type FingerprintResult,
   type WorkspaceInfo,
   type SessionPointer,
-} from './adapters/workspace';
+} from './adapters/workspace/index.js';
 
 // ─── Testing Utilities (import separately for test bundles) ──────────────────
 
-export { createTestContext } from './testing';
+export { createTestContext } from './testing.js';
 
 // ─── Layer 5: Config (Extension Points) ──────────────────────────────────────
 
@@ -181,7 +181,7 @@ export {
   angularProfile,
   typescriptProfile,
   defaultProfileRegistry,
-} from './config/profile';
+} from './config/profile.js';
 
 export {
   type AuditPolicy,
@@ -193,7 +193,7 @@ export {
   resolvePolicy,
   policyModes,
   createPolicySnapshot,
-} from './config/policy';
+} from './config/policy.js';
 
 export {
   type BlockedCategory,
@@ -202,14 +202,14 @@ export {
   BlockedReasonRegistry,
   defaultReasonRegistry,
   blocked,
-} from './config/reasons';
+} from './config/reasons.js';
 
 export {
   FlowGuardConfigSchema,
   type FlowGuardConfig,
   type LogLevel,
   DEFAULT_CONFIG,
-} from './config/flowguard-config';
+} from './config/flowguard-config.js';
 
 // ─── Layer 5b: Logging ───────────────────────────────────────────────────────
 
@@ -219,7 +219,7 @@ export {
   type LogSink,
   createLogger,
   createNoopLogger,
-} from './logging/logger';
+} from './logging/logger.js';
 
 // ─── Layer 6: Audit ──────────────────────────────────────────────────────────
 
@@ -239,7 +239,7 @@ export {
   createErrorEvent,
   createLifecycleEvent,
   summarizeArgs,
-} from './audit/types';
+} from './audit/types.js';
 
 export {
   type EventVerification,
@@ -247,7 +247,7 @@ export {
   verifyEvent,
   verifyChain,
   getLastChainHash,
-} from './audit/integrity';
+} from './audit/integrity.js';
 
 export {
   type AuditFilter,
@@ -271,7 +271,7 @@ export {
   countByKind,
   countByPhase,
   timeSpan,
-} from './audit/query';
+} from './audit/query.js';
 
 export {
   type TimelineEntry,
@@ -280,7 +280,7 @@ export {
   type ComplianceSummary,
   generateTimeline,
   generateComplianceSummary,
-} from './audit/summary';
+} from './audit/summary.js';
 
 export {
   type EvidenceSlotStatus,
@@ -288,7 +288,7 @@ export {
   type CompletenessSummary,
   type CompletenessReport,
   evaluateCompleteness,
-} from './audit/completeness';
+} from './audit/completeness.js';
 
 // ─── Layer 7: Discovery ──────────────────────────────────────────────────────
 
@@ -350,23 +350,23 @@ export {
   // Constants
   DISCOVERY_SCHEMA_VERSION,
   PROFILE_RESOLUTION_SCHEMA_VERSION,
-} from './discovery/types';
+} from './discovery/types.js';
 
 export {
   runDiscovery,
   extractDiscoverySummary,
   extractDetectedStack,
   computeDiscoveryDigest,
-} from './discovery/orchestrator';
+} from './discovery/orchestrator.js';
 
-export { planVerificationCandidates } from './discovery/verification-planner';
+export { planVerificationCandidates } from './discovery/verification-planner.js';
 
-export { collectRepoMetadata } from './discovery/collectors/repo-metadata';
-export { collectStack } from './discovery/collectors/stack-detection';
-export { collectTopology } from './discovery/collectors/topology';
-export { collectSurfaces } from './discovery/collectors/surface-detection';
-export { collectCodeSurfaces } from './discovery/collectors/code-surface-analysis';
-export { collectDomainSignals } from './discovery/collectors/domain-signals';
+export { collectRepoMetadata } from './discovery/collectors/repo-metadata.js';
+export { collectStack } from './discovery/collectors/stack-detection.js';
+export { collectTopology } from './discovery/collectors/topology.js';
+export { collectSurfaces } from './discovery/collectors/surface-detection.js';
+export { collectCodeSurfaces } from './discovery/collectors/code-surface-analysis.js';
+export { collectDomainSignals } from './discovery/collectors/domain-signals.js';
 
 // ─── Layer 8: Archive ────────────────────────────────────────────────────────
 
@@ -383,9 +383,9 @@ export {
   ArchiveFindingSchema,
   // Constants
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
-} from './archive/types';
+} from './archive/types.js';
 
-export { verifyArchive } from './adapters/workspace';
+export { verifyArchive } from './adapters/workspace/index.js';
 
 // ─── Layer 9: Integration (OpenCode Tools + Plugin) ──────────────────────────
 
@@ -402,4 +402,4 @@ export {
   archive,
   architecture,
   FlowGuardAuditPlugin,
-} from './integration';
+} from './integration/index.js';

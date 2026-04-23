@@ -15,8 +15,8 @@
  * @version v1
  */
 
-import type { CollectorInput, CollectorOutput, RepoMetadata } from '../types';
-import * as git from '../../adapters/git';
+import type { CollectorInput, CollectorOutput, RepoMetadata } from '../types.js';
+import * as git from '../../adapters/git.js';
 
 /**
  * Collect repository metadata.

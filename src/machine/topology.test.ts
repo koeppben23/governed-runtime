@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from '../machine/topology';
-import type { Phase, Event } from '../state/schema';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy';
+import { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from '../machine/topology.js';
+import type { Phase, Event } from '../state/schema.js';
+import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('topology', () => {
   // ─── HAPPY ─────────────────────────────────────────────────

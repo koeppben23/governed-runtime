@@ -15,7 +15,7 @@
  * @version v2
  */
 
-import type { SessionState, Phase, Event } from '../state/schema';
+import type { SessionState, Phase, Event } from '../state/schema.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

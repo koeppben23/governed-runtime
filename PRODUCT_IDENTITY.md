@@ -55,7 +55,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
-- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. Current attribution is best-effort; enterprise identity integration is extensible.
+- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports optional verified actor claims (`FLOWGUARD_ACTOR_CLAIMS_PATH`), and regulated approvals can require verified actors via policy (`requireVerifiedActorsForApproval`).
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
@@ -221,7 +221,7 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **Runtime**          | OpenCode host runtime (process-injected)                                              |
 | **State Validation** | Zod schemas, validated on every write                                                 |
 | **Audit Integrity**  | SHA-256 hash chain, JSONL append-only                                                 |
-| **Module System**    | ES2022 modules, Bundler resolution                                                    |
+| **Module System**    | ES2022 modules, NodeNext resolution (`module` + `moduleResolution`)                   |
 | **Package**          | `@flowguard/core` (distributed via GitHub Releases as pre-built proprietary artifact) |
 
 ### Layer Architecture
@@ -250,7 +250,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
 3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
 4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.
-5. **Headless operation** — `flowguard run` and `flowguard serve` are experimental wrappers. For production, use OpenCode directly (`opencode run`, `opencode serve`).
+5. **Headless operation** — `flowguard run` and `flowguard serve` are experimental wrappers. In non-interactive execution, missing safety-critical input returns explicit `BLOCKED` outcomes (no follow-up question loop). For production, use OpenCode directly (`opencode run`, `opencode serve`).
 
 ### OpenCode Integration
 
@@ -348,7 +348,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
-- **Actor Identity:** Best-effort operator attribution (env → git → unknown) resolved at hydrate, immutable per session
+- **Actor Identity:** Source-labeled attribution (`claim` verified when configured; otherwise `env`/`git`/`unknown` best-effort), immutable per session
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)

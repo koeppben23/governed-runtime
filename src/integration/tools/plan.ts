@@ -20,7 +20,7 @@
 
 import { z } from 'zod';
 
-import type { ToolDefinition } from './helpers';
+import type { ToolDefinition } from './helpers.js';
 import {
   resolveWorkspacePaths,
   requireStateForMutation,
@@ -32,18 +32,18 @@ import {
   extractSections,
   appendNextAction,
   writeStateWithArtifacts,
-} from './helpers';
+} from './helpers.js';
 
 // State & Machine
-import type { SessionState } from '../../state/schema';
-import { evaluate } from '../../machine/evaluate';
-import { isCommandAllowed, Command } from '../../machine/commands';
+import type { SessionState } from '../../state/schema.js';
+import { evaluate } from '../../machine/evaluate.js';
+import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
-import { autoAdvance } from '../../rails/types';
+import { autoAdvance } from '../../rails/types.js';
 
 // Evidence types
-import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence';
+import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
