@@ -1,7 +1,7 @@
 # Actor Assurance Architecture
 
 **Design Version:** 1.0
-**Status:** Draft — P34a
+**Status:** Final — P34
 **Last Updated:** 2026-04-23
 **Owner:** FlowGuard Core
 **Audience:** Enterprise engineers, product, security review

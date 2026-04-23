@@ -133,7 +133,7 @@ Use `/status` as a read-only orientation command:
 | **Module-Scoped Detection** | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts |
 | **Knowledge Pack Policy** | External documentation authority is advisory-only, provenance-stamped, and non-SSOT |
 | **Central Policy Authority** | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence |
-| **Verified Actor Identity** | Optional verified actor identity via `FLOWGUARD_ACTOR_CLAIMS_PATH`; regulated approvals require verified actors when `requireVerifiedActorsForApproval` is enabled |
+| **Actor Assurance** | Three-tier actor identity via `FLOWGUARD_ACTOR_CLAIMS_PATH`; regulated approvals require minimum `claim_validated` assurance when `minimumActorAssuranceForApproval` is set |
 
 ---
 

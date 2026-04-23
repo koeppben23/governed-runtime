@@ -152,7 +152,7 @@ export interface ContextProjection {
   policyMode: string;
   regulated: {
     applicable: boolean;
-    requireVerifiedActorsForApproval: boolean | null;
+    minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified' | null;
     centralPolicyActive: boolean | null;
     fourEyesRelevant: boolean | null;
   };
@@ -167,7 +167,7 @@ export interface ReadinessProjection {
   evidenceComplete: boolean;
   fourEyesSatisfied: boolean;
   actorKnown: boolean;
-  requiresVerifiedActorsForApproval: boolean;
+  minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified' | null;
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────
@@ -315,8 +315,8 @@ export function buildContextProjection(state: SessionState): ContextProjection {
     policyMode: snapshot.mode,
     regulated: {
       applicable: isRegulated,
-      requireVerifiedActorsForApproval: isRegulated
-        ? snapshot.requireVerifiedActorsForApproval
+      minimumActorAssuranceForApproval: isRegulated
+        ? (snapshot.minimumActorAssuranceForApproval ?? 'best_effort')
         : null,
       centralPolicyActive: snapshot.centralMinimumMode ? true : null,
       fourEyesRelevant: isRegulated ? snapshot.allowSelfApproval === false : null,
@@ -332,18 +332,19 @@ export function buildReadinessProjection(
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
   const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
-
+  const snapshot = state.policySnapshot;
   return {
     phase: state.phase,
-    policyMode: state.policySnapshot.mode,
+    policyMode: snapshot.mode,
     archiveStatus: state.archiveStatus ?? null,
     blocked,
     evidenceComplete: completeness.overallComplete,
     fourEyesSatisfied: completeness.fourEyes.satisfied,
     actorKnown: state.actorInfo?.source !== 'unknown',
-    requiresVerifiedActorsForApproval:
-      state.policySnapshot.mode === 'regulated' &&
-      state.policySnapshot.requireVerifiedActorsForApproval === true,
+    minimumActorAssuranceForApproval:
+      snapshot.mode === 'regulated'
+        ? (snapshot.minimumActorAssuranceForApproval ?? 'best_effort')
+        : null,
   };
 }
 

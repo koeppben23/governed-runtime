@@ -56,7 +56,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
-- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports optional verified actor claims (`FLOWGUARD_ACTOR_CLAIMS_PATH`), and regulated approvals can require verified actors via policy (`requireVerifiedActorsForApproval`).
+- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports optional actor claims (`FLOWGUARD_ACTOR_CLAIMS_PATH`), and regulated approvals can require minimum `claim_validated` actor assurance via policy (`minimumActorAssuranceForApproval`).
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
@@ -349,7 +349,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
-- **Actor Identity:** Source-labeled attribution (`claim` verified when configured; otherwise `env`/`git`/`unknown` best-effort), immutable per session
+- **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; regulated approvals enforce `minimumActorAssuranceForApproval` threshold
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
