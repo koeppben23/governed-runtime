@@ -146,6 +146,14 @@ export const implement: ToolDefinition = {
             expected: String(0),
           });
         }
+
+        // Rule 4: version binding - planVersion should match current plan version
+        if (rf.planVersion !== (state.plan?.history.length ?? 0) + 1) {
+          return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
+            provided: String(rf.planVersion),
+            expected: String((state.plan?.history.length ?? 0) + 1),
+          });
+        }
       }
 
       // Rule 4: approve requires reviewFindings when subagent enabled
@@ -277,6 +285,14 @@ export const implement: ToolDefinition = {
             return formatBlocked('REVIEW_ITERATION_MISMATCH', {
               provided: String(rf.iteration),
               expected: String(expectedIteration),
+            });
+          }
+
+          // Rule 4: version binding in Mode B
+          if (rf.planVersion !== (state.plan?.history.length ?? 0) + 1) {
+            return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
+              provided: String(rf.planVersion),
+              expected: String((state.plan?.history.length ?? 0) + 1),
             });
           }
         }

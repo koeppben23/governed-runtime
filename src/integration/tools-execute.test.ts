@@ -2659,6 +2659,104 @@ describe('implement', () => {
       expect(domain).not.toContain('node_modules/dep/index.js');
     });
   });
+
+  describe('P34b: Agent-Orchestrated Implementation Review', () => {
+    const validReviewFindingsSubagent = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'approve' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_test' },
+      reviewedAt: new Date().toISOString(),
+    };
+
+    const validReviewFindingsSelf = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'self' as const,
+      overallVerdict: 'approve' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_self' },
+      reviewedAt: new Date().toISOString(),
+    };
+
+    it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
+      await reachImplementation();
+      const raw = await implement.execute(
+        { reviewFindings: validReviewFindingsSubagent },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+    });
+
+    it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
+      await reachImplementation();
+      const raw = await implement.execute(
+        { reviewFindings: validReviewFindingsSelf },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.latestImplementationReview).toBeTruthy();
+      expect(result.latestImplementationReview.reviewMode).toBe('self');
+    });
+
+    it('planVersion mismatch blocked', async () => {
+      await reachImplementation();
+      const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
+      const raw = await implement.execute(
+        { reviewFindings: wrongVersion },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+    });
+
+    it('persists implReviewFindings in state', async () => {
+      await reachImplementation();
+      await implement.execute(
+        { reviewFindings: validReviewFindingsSelf },
+        ctx,
+      );
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+
+      expect(state.implReviewFindings).toHaveLength(1);
+      expect(state.implReviewFindings?.[0].reviewMode).toBe('self');
+    });
+
+    it('latestImplementationReview appears in status', async () => {
+      await reachImplementation();
+      await implement.execute(
+        { reviewFindings: validReviewFindingsSelf },
+        ctx,
+      );
+
+      const raw = await status.execute({}, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.latestImplementationReview).toBeDefined();
+      expect(result.latestImplementationReview.reviewMode).toBe('self');
+      expect(result.latestImplementationReview.iteration).toBe(0);
+    });
+  });
 });
 
 // =============================================================================
