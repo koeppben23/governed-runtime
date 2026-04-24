@@ -2,7 +2,7 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
- * P34b: Agent-Orchestrated Independent Review for /implement
+ * Agent-Orchestrated Independent Review for /implement
  *
  * Architecture: FlowGuard does NOT call subagents — it accepts and governs
  * independently produced ReviewFindings from OpenCode primary agent orchestration.
@@ -23,7 +23,7 @@
  * - subagentEnabled: enforces subagent review mode
  * - fallbackToSelf: allows self-review fallback when subagent unavailable
  *
- * Validation rules (same as P34a):
+ * Validation rules:
  * - reviewMode=subagent + !subagentEnabled → BLOCKED
  * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
  * - reviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
@@ -45,7 +45,7 @@
  * OR Step 4: LLM calls flowguard_implement({ reviewVerdict: "changes_requested" })
  *   -> LLM makes more code changes, then calls flowguard_implement({}) again
  *
- * @version v4 (P34b agent-orchestrated)
+ * @version v4
  */
 
 import { z } from 'zod';
@@ -78,6 +78,9 @@ import { changedFiles } from '../../adapters/git.js';
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
+// Review findings validation (shared with plan.ts)
+import { validateReviewFindings, requireFindingsForApprove } from './review-validation.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -91,7 +94,7 @@ export const implement: ToolDefinition = {
     'Use at IMPL_REVIEW after reviewing the implementation.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to EVIDENCE_REVIEW.\n' +
-    'P34b: Accepts ReviewFindings from independent agent orchestrator.',
+    'Optionally accepts reviewFindings from an independent review agent.',
   args: {
     reviewVerdict: z
       .enum(['approve', 'changes_requested'])
@@ -114,54 +117,26 @@ export const implement: ToolDefinition = {
       const ctx = createPolicyContext(policy);
       const maxImplReviewIterations = policy.maxImplReviewIterations;
 
-      // P34b: Policy config (same as P34a)
+      // Policy config for review findings validation
       const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const isRecordImpl = !args.reviewVerdict;
 
-      // P34b: Validate reviewFindings for Mode A only
+      // Validate review findings for Mode A
       if (args.reviewFindings && isRecordImpl) {
-        const rf = args.reviewFindings as ReviewFindings;
-
-        // Rule 1: subagent mode requires policy enabled
-        if (rf.reviewMode === 'subagent' && !subagentEnabled) {
-          return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
-            action: 'submit subagent review findings',
-            policy: 'selfReview.subagentEnabled',
-          });
-        }
-
-        // Rule 2: self mode requires fallbackToSelf when subagent enabled
-        if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
-          return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-            action: 'submit self-review findings',
-            policyHint: 'selfReview.fallbackToSelf=true required',
-          });
-        }
-
-        // Rule 3: iteration binding for Mode A (first submission = iteration 0)
-        if (rf.iteration !== 0) {
-          return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-            provided: String(rf.iteration),
-            expected: String(0),
-          });
-        }
-
-        // Rule 4: version binding - planVersion should match current plan version
-        if (rf.planVersion !== (state.plan?.history.length ?? 0) + 1) {
-          return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-            provided: String(rf.planVersion),
-            expected: String((state.plan?.history.length ?? 0) + 1),
-          });
-        }
+        const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
+          subagentEnabled,
+          fallbackToSelf,
+          expectedIteration: 0,
+          expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
+        });
+        if (blocked) return blocked;
       }
 
-      // Rule 4: approve requires reviewFindings when subagent enabled
-      if (args.reviewVerdict === 'approve' && subagentEnabled && !args.reviewFindings) {
-        return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
-          action: 'approve with subagentEnabled=true',
-          required: 'reviewFindings',
-        });
+      // Approve requires findings when subagent enabled
+      if (args.reviewVerdict === 'approve') {
+        const blocked = requireFindingsForApprove(subagentEnabled, !!args.reviewFindings);
+        if (blocked) return blocked;
       }
 
       if (isRecordImpl) {
@@ -194,7 +169,7 @@ export const implement: ToolDefinition = {
           executedAt: ctx.now(),
         };
 
-        // P34b: Persist reviewFindings if provided (Mode A with findings)
+        // Persist review findings if provided (Mode A with findings)
         const existingFindings = state.implReviewFindings ?? [];
         const newReviewFindings = args.reviewFindings
           ? [...existingFindings, args.reviewFindings as ReviewFindings]
@@ -253,42 +228,18 @@ export const implement: ToolDefinition = {
           return formatBlocked('NO_IMPLEMENTATION');
         }
 
-        // P34b: Compute iteration before validation
+        // Compute iteration before validation
         const iteration = (state.implReview?.iteration ?? 0) + 1;
 
-        // P34b: Validate reviewFindings in Mode B
+        // Validate review findings in Mode B
         if (args.reviewFindings) {
-          const rf = args.reviewFindings as ReviewFindings;
-
-          if (rf.reviewMode === 'subagent' && !subagentEnabled) {
-            return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
-              action: 'submit subagent review findings',
-              policy: 'selfReview.subagentEnabled',
-            });
-          }
-
-          if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
-            return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-              action: 'submit self-review findings',
-              policyHint: 'selfReview.fallbackToSelf=true required',
-            });
-          }
-
-          const expectedIteration = iteration;
-          if (rf.iteration !== expectedIteration) {
-            return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-              provided: String(rf.iteration),
-              expected: String(expectedIteration),
-            });
-          }
-
-          // Rule 4: version binding in Mode B
-          if (rf.planVersion !== (state.plan?.history.length ?? 0) + 1) {
-            return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-              provided: String(rf.planVersion),
-              expected: String((state.plan?.history.length ?? 0) + 1),
-            });
-          }
+          const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
+            subagentEnabled,
+            fallbackToSelf,
+            expectedIteration: iteration,
+            expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
+          });
+          if (blocked) return blocked;
         }
 
         const verdict = args.reviewVerdict as LoopVerdict;
@@ -299,7 +250,7 @@ export const implement: ToolDefinition = {
         // the review verdict.
         const revisionDelta: RevisionDelta = 'none';
 
-        // P34b: Persist reviewFindings in Mode B
+        // Persist review findings in Mode B
         const existingFindings = state.implReviewFindings ?? [];
         const newReviewFindings = args.reviewFindings
           ? [...existingFindings, args.reviewFindings as ReviewFindings]

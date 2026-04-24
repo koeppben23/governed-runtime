@@ -191,7 +191,7 @@ export const SessionState = z.object({
   /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
   implReview: ImplReviewResult.nullable(),
 
-  /** P34b: Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
+  /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
   implReviewFindings: z.array(ReviewFindings).optional(),
 
   /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */

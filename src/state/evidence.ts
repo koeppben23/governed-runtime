@@ -106,7 +106,7 @@ export const TicketEvidence = z.object({
 });
 export type TicketEvidence = z.infer<typeof TicketEvidence>;
 
-// ─── P34a: Independent Self-Review Findings ───────────────────────────────
+// ─── Independent Review Findings ──────────────────────────────────────────
 
 /**
  * Single finding from an independent review.
@@ -121,7 +121,7 @@ export type Finding = z.infer<typeof Finding>;
 
 /**
  * Identity information for the review actor (subagent or self).
- * P34a: Provides provenance for independent review attribution.
+ * Provides provenance for independent review attribution.
  */
 export const ReviewActorInfo = z.object({
   sessionId: z.string(),
@@ -133,7 +133,7 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 
 /**
  * Structured findings from an independent review.
- * P34a: Enables read-only subagent review without direct state/file writes.
+ * Enables read-only subagent review without direct state/file writes.
  */
 export const ReviewFindings = z.object({
   iteration: z.number().int().nonnegative(),
@@ -168,7 +168,7 @@ export type PlanEvidence = z.infer<typeof PlanEvidence>;
  *
  * - current: the active plan version
  * - history: all previous versions (newest first)
- * - reviewFindings: P34a: independent review findings per iteration (parallel, NOT mixed)
+ * - reviewFindings: independent review findings per iteration (parallel, NOT mixed)
  *
  * Architecture invariant: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
  */
@@ -234,9 +234,6 @@ export const ImplReviewResult = z.object({
   executedAt: z.string().datetime(),
 });
 export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
-
-/** Implementation review findings. P34b: separate from ImplEvidence for agent-orchestrated review. */
-export const ImplementationReviewFindings = ReviewFindings;
 
 // ─── Architecture Decision Record ─────────────────────────────────────────────
 
@@ -408,7 +405,7 @@ export const PolicySnapshotSchema = z.object({
    */
   identityProviderMode: z.enum(['optional', 'required']).default('optional'),
   /**
-   * P34a: Self-review configuration for independent review.
+   * Self-review configuration for independent review.
    * Frozen at hydrate time. Controls subagent-based review behavior.
    */
   selfReview: z

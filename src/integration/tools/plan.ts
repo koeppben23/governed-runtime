@@ -2,7 +2,7 @@
  * @module integration/tools/plan
  * @description FlowGuard plan tool — submit plan or record self-review verdict.
  *
- * P34a: Agent-Orchestrated Independent Review Persistence Boundary
+ * Agent-Orchestrated Independent Review Persistence Boundary
  *
  * Architecture: FlowGuard does NOT call subagents. FlowGuard accepts and governs
  * independently produced ReviewFindings from OpenCode primary agent orchestration.
@@ -28,7 +28,7 @@
  * - selfReviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
  * - reviewFindings.planVersion mismatch → BLOCKED
  *
- * @version v5 (P34a agent-orchestrated)
+ * @version v5
  */
 
 import { z } from 'zod';
@@ -64,9 +64,12 @@ import type {
 } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
+// Review findings validation (shared with implement.ts)
+import { validateReviewFindings, requireFindingsForApprove } from './review-validation.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
-// ═══════════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export const plan: ToolDefinition = {
   description:
@@ -76,7 +79,7 @@ export const plan: ToolDefinition = {
     "If 'changes_requested', also provide revised planText.\n" +
     'The self-review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to PLAN_REVIEW.\n' +
-    'P34a: Accepts ReviewFindings from independent agent orchestrator.',
+    'Optionally accepts reviewFindings from an independent review agent.',
   args: {
     planText: z
       .string()
@@ -119,54 +122,24 @@ export const plan: ToolDefinition = {
         return formatBlocked('TICKET_REQUIRED', { action: 'creating a plan' });
       }
 
-      // P34a: Validate reviewFindings against policy
+      // Validate review findings against policy (shared logic)
       const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
 
       if (args.reviewFindings) {
-        const rf = args.reviewFindings as ReviewFindings;
-
-        // Rule 1: subagent mode requires policy enabled
-        if (rf.reviewMode === 'subagent' && !subagentEnabled) {
-          return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
-            action: 'submit subagent review findings',
-            policy: 'selfReview.subagentEnabled',
-          });
-        }
-
-        // Rule 2: self mode requires fallbackToSelf when subagent enabled
-        if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
-          return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-            action: 'submit self-review findings',
-            policyHint: 'selfReview.fallbackToSelf=true required',
-          });
-        }
-
-        // Rule 3: planVersion binding
-        const history = state.plan ? [...state.plan.history] : [];
-        const expectedVersion = history.length + 1;
-        if (rf.planVersion !== expectedVersion) {
-          return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-            provided: String(rf.planVersion),
-            expected: String(expectedVersion),
-          });
-        }
-
-        // Rule 4: iteration binding (initial submission = iteration 0)
-        if (rf.iteration !== 0) {
-          return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-            provided: String(rf.iteration),
-            expected: String(0),
-          });
-        }
+        const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
+          subagentEnabled,
+          fallbackToSelf,
+          expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
+          expectedIteration: 0,
+        });
+        if (blocked) return blocked;
       }
 
-      // Rule 5: approve requires reviewFindings when subagent enabled
-      if (args.selfReviewVerdict === 'approve' && subagentEnabled && !args.reviewFindings) {
-        return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
-          action: 'approve with subagentEnabled=true',
-          required: 'reviewFindings',
-        });
+      // Approve requires findings when subagent enabled
+      if (args.selfReviewVerdict === 'approve') {
+        const blocked = requireFindingsForApprove(subagentEnabled, !!args.reviewFindings);
+        if (blocked) return blocked;
       }
 
       const isInitialSubmission = !args.selfReviewVerdict;
@@ -189,7 +162,7 @@ export const plan: ToolDefinition = {
         const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
         const planVersion = history.length + 1;
 
-        // P34a: Use submitted reviewFindings (from agent orchestrator)
+        // Use submitted reviewFindings (from agent orchestrator)
         let reviewFindings: ReviewFindings | null = null;
         if (args.reviewFindings) {
           reviewFindings = args.reviewFindings as ReviewFindings;
@@ -223,7 +196,7 @@ export const plan: ToolDefinition = {
         const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
         await writeStateWithArtifacts(sessDir, finalState);
 
-        // Build response with optional P34a review findings summary
+        // Build response with optional review findings summary
         const response: Record<string, unknown> = {
           phase: finalState.phase,
           status: 'Plan submitted (v' + planVersion + ').',
@@ -254,44 +227,16 @@ export const plan: ToolDefinition = {
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
 
-        // P34a: Validate reviewFindings in Mode B (after state existence check)
+        // Validate review findings in Mode B (after state existence check)
         if (state.plan && args.reviewFindings) {
-          const rf = args.reviewFindings as ReviewFindings;
-          const historyLen = state.plan.history.length;
-
-          // Rule 1: subagent mode requires policy enabled
-          if (rf.reviewMode === 'subagent' && !subagentEnabled) {
-            return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
-              action: 'submit subagent review findings',
-              policy: 'selfReview.subagentEnabled',
-            });
-          }
-
-          // Rule 2: self mode requires fallbackToSelf when subagent enabled
-          if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
-            return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-              action: 'submit self-review findings',
-              policyHint: 'selfReview.fallbackToSelf=true required',
-            });
-          }
-
-          // Rule 3: planVersion binding
-          const expectedVersion = historyLen + 1;
-          if (rf.planVersion !== expectedVersion) {
-            return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
-              provided: String(rf.planVersion),
-              expected: String(expectedVersion),
-            });
-          }
-
-          // Rule 4: iteration binding
           const expectedIteration = state.selfReview ? state.selfReview.iteration + 1 : 0;
-          if (rf.iteration !== expectedIteration) {
-            return formatBlocked('REVIEW_ITERATION_MISMATCH', {
-              provided: String(rf.iteration),
-              expected: String(expectedIteration),
-            });
-          }
+          const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
+            subagentEnabled,
+            fallbackToSelf,
+            expectedPlanVersion: state.plan.history.length + 1,
+            expectedIteration,
+          });
+          if (blocked) return blocked;
         }
 
         if (!state.selfReview) {
@@ -328,7 +273,7 @@ export const plan: ToolDefinition = {
         }
 
         // Build updated state
-        // P34a: Preserve reviewFindings append-only in Mode B
+        // Preserve review findings append-only in Mode B
         const existingReviewFindings = state.plan?.reviewFindings;
         const newReviewFindings = args.reviewFindings
           ? [...(existingReviewFindings ?? []), args.reviewFindings as ReviewFindings]

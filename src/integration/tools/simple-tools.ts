@@ -208,7 +208,7 @@ export const status: ToolDefinition = {
             ? state.selfReview.iteration >= state.selfReview.maxIterations ||
               (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
             : null,
-          // P34a: latest independent review summary
+          // Latest independent plan review summary
           latestReview: (() => {
             const findings = state.plan?.reviewFindings;
             if (!findings || findings.length === 0) return null;
@@ -235,7 +235,7 @@ export const status: ToolDefinition = {
             ? state.implReview.iteration >= state.implReview.maxIterations ||
               (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
             : null,
-          // P34b: latest implementation independent review summary
+          // Latest independent implementation review summary
           latestImplementationReview: (() => {
             const findings = state.implReviewFindings;
             if (!findings || findings.length === 0) return null;

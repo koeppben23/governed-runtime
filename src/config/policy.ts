@@ -47,7 +47,7 @@ export interface AuditPolicy {
 }
 
 /**
- * P34a: Independent self-review configuration.
+ * Independent self-review configuration.
  * Controls whether a subagent performs independent review.
  */
 export interface SelfReviewConfig {
@@ -100,7 +100,7 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** P34a: Independent self-review configuration. */
+  /** Independent self-review configuration. */
   readonly selfReview: SelfReviewConfig;
 
   /** Audit event emission controls. */

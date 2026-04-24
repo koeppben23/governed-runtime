@@ -150,7 +150,7 @@ READY → REVIEW → REVIEW_COMPLETE
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality.
+**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality. Both plan and implement tools optionally accept structured `reviewFindings` from an independent review agent (controlled by `selfReview.subagentEnabled` policy). Author and reviewer artifacts are stored separately (append-only). See [docs/independent-review.md](./docs/independent-review.md).
 
 **Backward Transitions**:
 
