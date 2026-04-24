@@ -1641,6 +1641,34 @@ describe('ticket', () => {
 // =============================================================================
 
 describe('plan', () => {
+  const modeBSubagentFindings = {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent_mode_b' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const modeBSelfFindings = {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self_mode_b' },
+    reviewedAt: new Date().toISOString(),
+  };
+
   describe('HAPPY', () => {
     it('Mode A: records initial plan with digest', async () => {
       await hydrateAndTicket();
@@ -1713,6 +1741,99 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVISED_PLAN_REQUIRED');
+    });
+
+    it('Mode B blocks subagent findings when subagentEnabled=false', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const findings = { ...modeBSubagentFindings };
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings: findings,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+    });
+
+    it('Mode B blocks self findings when fallbackToSelf=false and subagentEnabled=true', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          selfReview: { subagentEnabled: true, fallbackToSelf: false },
+        },
+      });
+
+      await plan.execute({ planText: '## Plan' }, ctx);
+      const findings = { ...modeBSelfFindings };
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings: findings,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    });
+
+    it('Mode B blocks with NO_SELF_REVIEW when selfReview is null', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        selfReview: null,
+      });
+
+      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('NO_SELF_REVIEW');
+    });
+
+    it('Mode B blocks with NO_PLAN when plan is null', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        plan: null,
+      });
+
+      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('NO_PLAN');
     });
   });
 });
@@ -2661,6 +2782,35 @@ describe('implement', () => {
       expect(domain).not.toContain('.opencode/tools/flowguard.ts');
       expect(domain).not.toContain('node_modules/dep/index.js');
     });
+
+    it('Mode B blocks with WRONG_PHASE outside IMPL_REVIEW', async () => {
+      await reachImplementation();
+      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('WRONG_PHASE');
+    });
+
+    it('Mode B blocks with NO_IMPLEMENTATION when implementation is null', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        implementation: null,
+      });
+
+      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('NO_IMPLEMENTATION');
+    });
   });
 
   describe('P34b: Agent-Orchestrated Implementation Review', () => {
@@ -2709,6 +2859,12 @@ describe('implement', () => {
           selfReview: { subagentEnabled, fallbackToSelf },
         },
       });
+    }
+
+    async function enterImplReviewWithFindings(
+      findings: typeof validReviewFindingsSelf,
+    ): Promise<void> {
+      await implement.execute({ reviewFindings: findings }, ctx);
     }
 
     it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
@@ -2764,6 +2920,86 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    });
+
+    it('Mode B: reviewMode=subagent blocked when subagentEnabled=false', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      const raw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: validReviewFindingsSubagent },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+    });
+
+    it('Mode B: reviewMode=self blocked when subagentEnabled=true and fallbackToSelf=false', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+      await enterImplReviewWithFindings(validReviewFindingsSubagent);
+
+      const modeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
+      const raw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: modeBFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    });
+
+    it('Mode B: planVersion mismatch blocked', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const wrongVersion = { ...validReviewFindingsSelf, iteration: 1, planVersion: 99 };
+      const raw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+    });
+
+    it('Mode B: iteration mismatch blocked', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const wrongIteration = { ...validReviewFindingsSelf, iteration: 99 };
+      const raw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
+    });
+
+    it('Mode B: changes_requested accepted with valid reviewFindings', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const validModeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
+      const raw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.status).toContain('Changes requested');
+    });
+
+    it('approve + subagentEnabled=true + missing reviewFindings -> BLOCKED', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+      await implement.execute({}, ctx);
+
+      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
     });
 
     it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
