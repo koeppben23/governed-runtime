@@ -65,7 +65,9 @@
  * 7. Updates enforcement state to satisfy L1/L2/L4 checks
  *
  * On failure: graceful degradation — original output preserved, LLM follows
- * the probabilistic path via Task tool.
+ * the probabilistic path via Task tool. Unparseable reviewer responses are
+ * treated as failure (fail-closed) — only structured ReviewFindings trigger
+ * the COMPLETED path.
  *
  * @version v7
  */
@@ -548,43 +550,62 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 );
 
                 if (reviewerResult) {
-                  // Build mutated output with findings injected
-                  const mutated = buildMutatedOutput(rawOutput, reviewerResult);
-
-                  if (mutated) {
-                    // Update enforcement state to satisfy L1/L2/L4
-                    const eState = getEnforcementState(sessionId);
-                    const captured: CapturedFindings | null = reviewerResult.findings
-                      ? {
-                          overallVerdict:
-                            typeof reviewerResult.findings.overallVerdict === 'string'
-                              ? reviewerResult.findings.overallVerdict
-                              : 'unknown',
-                          blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
-                            ? reviewerResult.findings.blockingIssues.length
-                            : 0,
-                          sessionId: reviewerResult.sessionId,
-                        }
-                      : null;
-
-                    recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
-
-                    // Mutate the output — the LLM will see the modified response
-                    // ASSUMPTION: output.output mutation in after-hook is effective
-                    // (based on before-hook mutation pattern in OpenCode plugin API)
-                    output.output = mutated;
-
-                    log.info('orchestrator', 'reviewer invocation succeeded', {
-                      tool: toolName,
-                      sessionId,
-                      childSessionId: reviewerResult.sessionId,
-                      verdict: reviewerResult.findings?.overallVerdict ?? 'unparseable',
-                    });
+                  // Fail-closed: only proceed to COMPLETED path when structured
+                  // ReviewFindings were successfully parsed. Unparseable reviewer
+                  // responses must NOT produce INDEPENDENT_REVIEW_COMPLETED —
+                  // that would violate P34 contract (completed ≠ unparseable).
+                  if (!reviewerResult.findings) {
+                    log.warn(
+                      'orchestrator',
+                      'reviewer returned unparseable response — fallback to LLM-driven path',
+                      {
+                        tool: toolName,
+                        sessionId,
+                        childSessionId: reviewerResult.sessionId,
+                        rawResponseLength: reviewerResult.rawResponse.length,
+                      },
+                    );
+                    // Do NOT mutate output, do NOT call recordPluginReview.
+                    // Original INDEPENDENT_REVIEW_REQUIRED is preserved.
+                    // LLM follows fallback Path A2 (Task tool to reviewer).
                   } else {
-                    log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
-                      tool: toolName,
-                      sessionId,
-                    });
+                    // Structured findings available — proceed with deterministic path
+                    const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+
+                    if (mutated) {
+                      // Update enforcement state to satisfy L1/L2/L4
+                      const eState = getEnforcementState(sessionId);
+                      const captured: CapturedFindings = {
+                        overallVerdict:
+                          typeof reviewerResult.findings.overallVerdict === 'string'
+                            ? reviewerResult.findings.overallVerdict
+                            : 'unknown',
+                        blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
+                          ? reviewerResult.findings.blockingIssues.length
+                          : 0,
+                        sessionId: reviewerResult.sessionId,
+                      };
+
+                      recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
+
+                      // Mutate the output — the LLM will see the modified response.
+                      // VERIFIED: output.output mutation in after-hook is effective
+                      // (confirmed via OpenCode source: prompt.ts passes output by
+                      // reference through plugin.trigger, same object returned to AI SDK)
+                      output.output = mutated;
+
+                      log.info('orchestrator', 'reviewer invocation succeeded', {
+                        tool: toolName,
+                        sessionId,
+                        childSessionId: reviewerResult.sessionId,
+                        verdict: reviewerResult.findings.overallVerdict,
+                      });
+                    } else {
+                      log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
+                        tool: toolName,
+                        sessionId,
+                      });
+                    }
                   }
                 } else {
                   log.warn('orchestrator', 'reviewer invocation failed (fallback to LLM-driven)', {

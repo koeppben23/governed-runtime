@@ -38,7 +38,7 @@ Separation of concerns:
   Reviewer artifacts: plan.reviewFindings, implReviewFindings
 ```
 
-**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer — the plugin does it programmatically in `tool.execute.after`. On failure, the output preserves the original `INDEPENDENT_REVIEW_REQUIRED` signal and the LLM can still invoke the reviewer via the Task tool (probabilistic fallback).
+**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. Unparseable responses are treated as invocation failure (fail-closed). On failure, the output preserves the original `INDEPENDENT_REVIEW_REQUIRED` signal and the LLM can still invoke the reviewer via the Task tool (probabilistic fallback).
 
 ---
 
@@ -60,14 +60,16 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 3. **Creates a child session** via `client.session.create({ parentID })` for traceability
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ agent: "flowguard-reviewer" })`
 5. **Parses ReviewFindings** from the reviewer's response
-6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `_pluginReviewFindings` injected
+6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `_pluginReviewFindings` injected (only when structured ReviewFindings are available)
 7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
 The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
 
+**Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid, structured `ReviewFindings` (with `overallVerdict` and `blockingIssues`). Unparseable reviewer responses never produce `COMPLETED`.
+
 ### Fallback Path (LLM-Driven)
 
-If any step in the deterministic invocation fails (session creation error, prompt timeout, unparseable response, output mutation failure), the plugin:
+If any step in the deterministic invocation fails (session creation error, prompt timeout, output mutation failure), or if the reviewer's response is not parseable as structured ReviewFindings, the plugin:
 
 - Logs the error (non-blocking)
 - Preserves the original `INDEPENDENT_REVIEW_REQUIRED` output unchanged

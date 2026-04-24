@@ -18,10 +18,16 @@
  * 4. Parses the reviewer's JSON ReviewFindings response
  * 5. Returns the findings for the plugin to inject into the tool output
  *
- * Graceful degradation: If any step fails, returns null. The plugin
- * preserves the original tool output, falling back to the probabilistic
- * flow where the LLM calls the Task tool manually. Enforcement (L1-L4)
- * still gates the verdict submission.
+ * Graceful degradation: If any step fails, returns null. If the reviewer
+ * responds but the response is not parseable as structured ReviewFindings,
+ * the orchestrator signals failure (null mutation) — fail-closed. The
+ * plugin preserves the original tool output with INDEPENDENT_REVIEW_REQUIRED,
+ * falling back to the probabilistic flow where the LLM calls the Task tool
+ * manually. Enforcement (L1-L4) still gates the verdict submission.
+ *
+ * Contract: INDEPENDENT_REVIEW_COMPLETED is only signaled when structured
+ * ReviewFindings (with overallVerdict + blockingIssues) are available.
+ * Unparseable reviewer responses never produce COMPLETED.
  *
  * Conformance: Uses documented OpenCode SDK client API
  * per https://opencode.ai/docs/plugins
@@ -313,16 +319,23 @@ export function parseReviewerFindings(responseText: string): Record<string, unkn
  * Build mutated tool output with reviewer findings injected.
  *
  * Replaces the `next` field from INDEPENDENT_REVIEW_REQUIRED to
- * INDEPENDENT_REVIEW_COMPLETED and adds the findings data.
+ * INDEPENDENT_REVIEW_COMPLETED and adds the structured findings data.
+ *
+ * Fail-closed: requires `reviewerResult.findings` to be non-null.
+ * If findings are null (unparseable reviewer response), returns null.
+ * The caller must NOT signal COMPLETED without structured ReviewFindings.
  *
  * @param originalOutput - Original tool output JSON string
- * @param reviewerResult - Successful reviewer invocation result
- * @returns Mutated JSON string, or null if mutation fails
+ * @param reviewerResult - Successful reviewer invocation result (must have .findings)
+ * @returns Mutated JSON string, or null if mutation fails or findings are missing
  */
 export function buildMutatedOutput(
   originalOutput: string,
   reviewerResult: ReviewerResult,
 ): string | null {
+  // Fail-closed: COMPLETED requires structured findings
+  if (!reviewerResult.findings) return null;
+
   try {
     const parsed = JSON.parse(originalOutput) as Record<string, unknown>;
 
@@ -334,8 +347,8 @@ export function buildMutatedOutput(
       `overallVerdict, and include the reviewFindings object from ` +
       `_pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
 
-    // Inject findings
-    parsed._pluginReviewFindings = reviewerResult.findings ?? reviewerResult.rawResponse;
+    // Inject structured findings
+    parsed._pluginReviewFindings = reviewerResult.findings;
     parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
     return JSON.stringify(parsed);

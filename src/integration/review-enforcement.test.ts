@@ -1672,8 +1672,11 @@ describe('review-enforcement', () => {
       expect(result).toBe(false);
     });
 
-    // CORNER: null captured findings (reviewer returned unparseable response)
-    it('records with null captured findings', () => {
+    // CORNER: null captured findings (defensive — plugin gate prevents this path)
+    // recordPluginReview still accepts null for robustness, but the plugin
+    // orchestration code in plugin.ts gates on findings !== null before calling
+    // recordPluginReview. This test verifies the function's defensive behavior.
+    it('accepts null captured findings defensively but plugin never calls this path', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
 

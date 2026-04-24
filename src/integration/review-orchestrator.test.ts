@@ -554,18 +554,15 @@ describe('buildMutatedOutput', () => {
     expect(findings.overallVerdict).toBe('changes_requested');
   });
 
-  // EDGE: findings is null (parsing failed) — raw response used
-  it('uses raw response when findings is null', () => {
+  // EDGE: findings is null (parsing failed) — fail-closed: returns null
+  it('returns null when findings is null (fail-closed)', () => {
     const nullFindingsResult: ReviewerResult = {
       sessionId: 'child-session-3',
       rawResponse: 'Unparseable response text',
       findings: null,
     };
     const mutated = buildMutatedOutput(modeAOutput(), nullFindingsResult);
-    expect(mutated).not.toBeNull();
-
-    const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    expect(parsed._pluginReviewFindings).toBe('Unparseable response text');
+    expect(mutated).toBeNull();
   });
 
   // BAD: invalid original output
@@ -748,8 +745,8 @@ describe('end-to-end orchestration flow', () => {
     expect(isReviewRequired(original)).toBe(true);
   });
 
-  // CORNER: reviewer returns unparseable findings — still usable
-  it('handles unparseable reviewer findings in mutation', async () => {
+  // CORNER: reviewer returns unparseable findings — fail-closed, no COMPLETED
+  it('preserves INDEPENDENT_REVIEW_REQUIRED when findings are unparseable', async () => {
     const original = modeAOutput();
 
     const client = mockClient({
@@ -763,10 +760,11 @@ describe('end-to-end orchestration flow', () => {
     expect(result!.findings).toBeNull();
     expect(result!.rawResponse).toBe('Sorry, I could not review.');
 
-    // Mutation still works — raw response is injected
+    // buildMutatedOutput returns null for unparseable findings (fail-closed)
     const mutated = buildMutatedOutput(original, result!);
-    expect(mutated).not.toBeNull();
-    const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    expect(parsed._pluginReviewFindings).toBe('Sorry, I could not review.');
+    expect(mutated).toBeNull();
+
+    // Original output is preserved — LLM follows fallback Path A2
+    expect(isReviewRequired(original)).toBe(true);
   });
 });
