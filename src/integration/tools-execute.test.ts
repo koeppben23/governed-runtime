@@ -1717,6 +1717,160 @@ describe('plan', () => {
   });
 });
 
+describe('P34a: Agent-Orchestrated Review', () => {
+  const validReviewFindingsSubagent = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_test' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSelf = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+  });
+
+  it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.reviewMode).toBe('self');
+  });
+
+  it('planVersion mismatch blocked', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: wrongVersion },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+  });
+
+  it('iteration mismatch blocked in Mode B', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const wrongIteration = { ...validReviewFindingsSelf, iteration: 99 };
+    const raw = await plan.execute(
+      { selfReviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
+  });
+
+  it('persists reviewFindings in state.plan.reviewFindings', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+
+    expect(state.plan).toBeDefined();
+    expect(state.plan?.reviewFindings).toHaveLength(1);
+    expect(state.plan?.reviewFindings?.[0].reviewMode).toBe('self');
+    expect(state.plan?.history).toHaveLength(0);
+  });
+
+  it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+
+    expect(state.plan).toBeDefined();
+    expect(state.plan?.current).toBeDefined();
+    expect(state.plan?.current.body).toContain('## Plan');
+    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_self');
+    expect(state.plan?.history).toHaveLength(0);
+  });
+
+  it('accepts valid reviewFindings with planVersion=1 on initial submission', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.planVersion).toBe(1);
+  });
+
+  it('latestReview summary appears in response', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+
+    expect(result.latestReview).toBeDefined();
+    expect(result.latestReview.iteration).toBe(0);
+    expect(result.latestReview.planVersion).toBe(1);
+    expect(result.latestReview.reviewMode).toBe('self');
+    expect(result.latestReview.overallVerdict).toBe('approve');
+    expect(result.latestReview.blockingIssueCount).toBe(0);
+    expect(result.latestReview.majorRiskCount).toBe(0);
+    expect(result.latestReview.reviewedAt).toBeTruthy();
+  });
+});
+
 // =============================================================================
 // Tool 5: decision (review-decision)
 // =============================================================================
