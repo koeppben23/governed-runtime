@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { makeState } from '../__fixtures__.js';
@@ -21,6 +22,13 @@ import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { createTestWorkspace } from './test-helpers.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
 
 // ─── Mock Plugin Input ────────────────────────────────────────────────────────
 
@@ -43,6 +51,90 @@ function createMockInput(overrides: Record<string, unknown> = {}) {
     serverUrl: new URL('http://localhost:3000'),
     ...overrides,
   } as Parameters<typeof FlowGuardAuditPlugin>[0];
+}
+
+async function seedStrictPlanSession(worktree: string, sessionID: string) {
+  const now = new Date().toISOString();
+  const fp = await computeFingerprint(worktree);
+  const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+  const obligationId = '11111111-1111-4111-8111-111111111111';
+
+  await fs.mkdir(sessDir, { recursive: true });
+  await writeState(
+    sessDir,
+    makeState('PLAN', {
+      ticket: {
+        text: 'Fix auth issue',
+        digest: 'ticket-digest',
+        source: 'user',
+        createdAt: now,
+      },
+      plan: {
+        current: {
+          body: '## Plan\n1. Fix auth',
+          digest: 'plan-digest',
+          sections: ['Plan'],
+          createdAt: now,
+        },
+        history: [],
+        reviewFindings: [],
+      },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'plan-digest',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      policySnapshot: {
+        ...makeState('PLAN').policySnapshot,
+        selfReview: {
+          subagentEnabled: true,
+          fallbackToSelf: false,
+          strictEnforcement: true,
+        },
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId,
+            obligationType: 'plan',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+          },
+        ],
+        invocations: [],
+      },
+    }),
+  );
+
+  return { sessDir, obligationId };
+}
+
+function strictPlanReviewRequiredOutput(
+  obligationId: string,
+  overrides: Partial<Record<string, unknown>> = {},
+): string {
+  return JSON.stringify({
+    phase: 'PLAN',
+    selfReviewIteration: 0,
+    reviewMode: 'subagent',
+    reviewObligationId: obligationId,
+    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+    ...overrides,
+  });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -346,6 +438,204 @@ describe('integration/plugin', () => {
 
         expect(result.policy.mode).toBe('solo');
       });
+    });
+  });
+
+  describe('strict review orchestration', () => {
+    it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when reviewer invocation fails', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ error: { message: 'boom' } }),
+                prompt: async () => ({ error: { message: 'unused' } }),
+              },
+            },
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('blocked');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks with SUBAGENT_MANDATE_MISSING when attestation is missing in strict mode', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const findings = {
+          iteration: 0,
+          planVersion: 1,
+          reviewMode: 'subagent',
+          overallVerdict: 'approve',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+          reviewedAt: new Date().toISOString(),
+        };
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ data: { id: 'child-session-1' } }),
+                prompt: async () => ({
+                  data: { parts: [{ type: 'text', text: JSON.stringify(findings) }] },
+                }),
+              },
+            },
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISSING');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
+          'SUBAGENT_MANDATE_MISSING',
+        );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('fulfills strict obligation and mutates output when attestation is valid', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const findings = {
+          iteration: 0,
+          planVersion: 1,
+          reviewMode: 'subagent',
+          overallVerdict: 'approve',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+          reviewedAt: new Date().toISOString(),
+          attestation: {
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            toolObligationId: obligationId,
+            iteration: 0,
+            planVersion: 1,
+            reviewedBy: 'flowguard-reviewer',
+          },
+        };
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ data: { id: 'child-session-1' } }),
+                prompt: async () => ({
+                  data: { parts: [{ type: 'text', text: JSON.stringify(findings) }] },
+                }),
+              },
+            },
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const mutated = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect((mutated.next as string).startsWith('INDEPENDENT_REVIEW_COMPLETED')).toBe(true);
+        expect(mutated._pluginReviewSessionId).toBe('child-session-1');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.status).toBe('fulfilled');
+        expect((state?.reviewAssurance?.invocations.length ?? 0) > 0).toBe(true);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks with PLUGIN_ENFORCEMENT_UNAVAILABLE when strict context extraction fails', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId, {
+            selfReviewIteration: 1,
+            next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
+          }),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      } finally {
+        await ws.cleanup();
+      }
     });
   });
 });

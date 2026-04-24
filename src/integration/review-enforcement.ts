@@ -625,22 +625,48 @@ function extractSubagentSessionId(taskResult: string): string | null {
   try {
     // Try direct JSON parse (subagent might return clean JSON)
     const parsed = JSON.parse(taskResult) as Record<string, unknown>;
-    const reviewedBy = parsed?.reviewedBy as Record<string, unknown> | undefined;
-    if (typeof reviewedBy?.sessionId === 'string') {
-      return reviewedBy.sessionId;
-    }
+    const direct = extractSessionIdFromObject(parsed);
+    if (direct) return direct;
   } catch {
     // Not clean JSON — try to find JSON in the text
   }
 
-  // Try to find a JSON block in the response
-  const jsonMatch = taskResult.match(
-    /\{[\s\S]*"reviewedBy"\s*:\s*\{[\s\S]*"sessionId"\s*:\s*"([^"]+)"/,
-  );
-  if (jsonMatch?.[1]) {
-    return jsonMatch[1];
+  // Try to find embedded JSON blocks containing "reviewedBy"
+  let searchFrom = 0;
+  while (searchFrom < taskResult.length) {
+    const markerIdx = taskResult.indexOf('"reviewedBy"', searchFrom);
+    if (markerIdx < 0) break;
+
+    const startIdx = taskResult.lastIndexOf('{', markerIdx);
+    if (startIdx < 0) break;
+
+    const candidate = extractJsonBlock(taskResult, startIdx);
+    if (candidate) {
+      try {
+        const parsed = JSON.parse(candidate) as Record<string, unknown>;
+        const extracted = extractSessionIdFromObject(parsed);
+        if (extracted) return extracted;
+      } catch {
+        // Continue scanning for another candidate
+      }
+      searchFrom = startIdx + candidate.length;
+      continue;
+    }
+
+    searchFrom = markerIdx + '"reviewedBy"'.length;
   }
 
+  return null;
+}
+
+function extractSessionIdFromObject(obj: Record<string, unknown>): string | null {
+  const reviewedBy = obj.reviewedBy as Record<string, unknown> | undefined;
+  if (typeof reviewedBy?.sessionId === 'string') {
+    return reviewedBy.sessionId;
+  }
+  if (typeof obj.sessionId === 'string') {
+    return obj.sessionId;
+  }
   return null;
 }
 
