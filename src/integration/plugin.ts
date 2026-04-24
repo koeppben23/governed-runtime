@@ -95,6 +95,8 @@ import {
   onFlowGuardToolAfter as enforcementOnToolAfter,
   onTaskToolAfter as enforcementOnTaskAfter,
   enforceBeforeVerdict,
+  enforceBeforeSubagentCall,
+  REVIEWER_SUBAGENT_TYPE,
   type SessionEnforcementState,
 } from './review-enforcement.js';
 
@@ -375,21 +377,42 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   return {
     // ── Review enforcement gate (blocks before tool execution) ─────────────
-    // Checks that the flowguard-reviewer subagent was actually invoked
-    // before allowing a self-review verdict when subagent mode is active.
+    // Level 1+2+4: Checks that the flowguard-reviewer subagent was actually
+    // invoked and findings were not tampered before allowing a self-review
+    // verdict when subagent mode is active.
+    // Level 3: Validates prompt integrity before subagent calls.
     'tool.execute.before': async (input, _output) => {
       const toolName: string = input?.tool ?? '';
       const sessionId: string = input?.sessionID ?? 'unknown';
       const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
 
-      // Enforcement only applies to FlowGuard plan/implement verdict calls
+      // Level 3: Prompt integrity enforcement for Task calls to flowguard-reviewer
+      if (toolName === 'task') {
+        const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
+        if (subagentType === REVIEWER_SUBAGENT_TYPE) {
+          const eState = getEnforcementState(sessionId);
+          const result = enforceBeforeSubagentCall(eState, args);
+
+          if (!result.allowed) {
+            log.warn('enforcement', 'blocked subagent call with invalid prompt', {
+              tool: toolName,
+              sessionId,
+              code: result.code,
+            });
+            throw new Error(`[FlowGuard] ${result.code}: ${result.reason}`);
+          }
+        }
+        return;
+      }
+
+      // Level 1+2+4: Enforcement for FlowGuard plan/implement verdict calls
       if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return;
 
       const eState = getEnforcementState(sessionId);
       const result = enforceBeforeVerdict(eState, toolName, args);
 
       if (!result.allowed) {
-        log.warn('enforcement', 'blocked verdict without subagent review', {
+        log.warn('enforcement', 'blocked verdict submission', {
           tool: toolName,
           sessionId,
           code: result.code,

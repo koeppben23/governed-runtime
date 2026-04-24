@@ -4,29 +4,37 @@
  *
  * Problem: FlowGuard tools return advisory `next` messages instructing the
  * primary agent to call the flowguard-reviewer subagent via the Task tool.
- * However, the primary agent could ignore this instruction and fabricate
- * ReviewFindings without actually invoking the subagent.
+ * However, the primary agent could ignore this instruction, fabricate
+ * ReviewFindings without invoking the subagent, send an empty/garbage prompt,
+ * or modify the subagent's actual findings before submitting them.
  *
  * Solution: This module observes the entire tool-call sequence via OpenCode's
- * plugin hook system (tool.execute.before/after) and enforces that:
- * 1. When a FlowGuard tool signals INDEPENDENT_REVIEW_REQUIRED, a Task call
- *    to flowguard-reviewer MUST occur before the next selfReviewVerdict.
- * 2. The submitted reviewFindings.reviewedBy.sessionId must match the actual
- *    subagent session ID from the Task call.
+ * plugin hook system (tool.execute.before/after) and enforces four levels:
+ *
+ * Enforcement levels:
+ * - Level 1 (Binary Gate): A Task call to flowguard-reviewer MUST occur
+ *   before any verdict submission. Enforced in tool.execute.before for
+ *   flowguard_plan/flowguard_implement Mode B calls.
+ * - Level 2 (Session ID): The submitted reviewFindings.reviewedBy.sessionId
+ *   must match the actual subagent session ID. Enforced when both the actual
+ *   and submitted session IDs are available.
+ * - Level 3 (Prompt Integrity): The Task call prompt must contain expected
+ *   iteration/planVersion values and meet minimum length requirements.
+ *   Enforced in tool.execute.before for task calls to flowguard-reviewer.
+ * - Level 4 (Findings Integrity): The submitted reviewFindings must match the
+ *   actual subagent response (overallVerdict and blockingIssues count).
+ *   Enforced in tool.execute.before for flowguard_plan/flowguard_implement
+ *   Mode B calls.
  *
  * Architecture:
  * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
- * Enforcement levels:
- * - Level 1: Verify Task call to flowguard-reviewer was made (binary gate)
- * - Level 2: Verify reviewedBy.sessionId matches actual subagent session ID
- *
  * Conformance: Uses documented OpenCode plugin hooks (tool.execute.before/after)
  * per https://opencode.ai/docs/plugins
  *
- * @version v1
+ * @version v2
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,10 +44,34 @@ export type ReviewableTool = 'flowguard_plan' | 'flowguard_implement';
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
-  /** Subagent session ID returned by the Task tool. */
-  readonly sessionId: string;
+  /** Subagent session ID extracted from response, or null if extraction failed. */
+  readonly sessionId: string | null;
   /** ISO 8601 timestamp when the Task call completed. */
   readonly completedAt: string;
+}
+
+/**
+ * Content metadata captured from FlowGuard tool response.
+ * Used by Level 3 (Prompt Integrity) to validate the Task call prompt.
+ */
+export interface ContentMeta {
+  /** Expected iteration value parsed from the INDEPENDENT_REVIEW_REQUIRED message. */
+  readonly expectedIteration: number;
+  /** Expected planVersion value parsed from the message (null if not present). */
+  readonly expectedPlanVersion: number | null;
+}
+
+/**
+ * Key fields captured from the actual subagent response.
+ * Used by Level 4 (Findings Integrity) to detect findings modification.
+ */
+export interface CapturedFindings {
+  /** The overallVerdict from the subagent's ReviewFindings. */
+  readonly overallVerdict: string;
+  /** Count of blockingIssues from the subagent's ReviewFindings. */
+  readonly blockingIssuesCount: number;
+  /** The sessionId from reviewedBy, if present. */
+  readonly sessionId: string | null;
 }
 
 /** Per-tool pending review state. */
@@ -48,10 +80,14 @@ export interface PendingReview {
   readonly tool: ReviewableTool;
   /** ISO 8601 timestamp when the requirement was signaled. */
   readonly requestedAt: string;
-  /** Whether a Task call to flowguard-reviewer has been made. */
+  /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
   subagentCalled: boolean;
-  /** Record of the actual subagent call, if made. */
+  /** Record of the actual subagent call, if made (Level 2). */
   subagentRecord: SubagentRecord | null;
+  /** Content metadata for prompt integrity validation (Level 3). */
+  contentMeta: ContentMeta | null;
+  /** Actual findings from the subagent response (Level 4). */
+  capturedFindings: CapturedFindings | null;
 }
 
 /** Session-level enforcement state. */
@@ -65,13 +101,21 @@ export type EnforcementResult =
   | { readonly allowed: true }
   | { readonly allowed: false; readonly code: string; readonly reason: string };
 
-// ─── Prefix constant ─────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 /** The prefix that FlowGuard tools use to signal subagent review is required. */
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
 
 /** The subagent type name for the FlowGuard reviewer. */
 export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+
+/**
+ * Minimum prompt length for subagent calls (Level 3).
+ * A real review prompt must include plan/implementation text, ticket context,
+ * iteration, and planVersion. 200 characters is a generous floor that catches
+ * empty or trivially short prompts.
+ */
+export const MIN_SUBAGENT_PROMPT_LENGTH = 200;
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -85,11 +129,11 @@ export function createSessionState(): SessionEnforcementState {
 /**
  * Process a FlowGuard tool response (tool.execute.after).
  *
- * If the response `next` field starts with INDEPENDENT_REVIEW_REQUIRED,
- * registers a pending review for that tool.
+ * Mode A (plan/impl submission): If the response `next` field starts with
+ * INDEPENDENT_REVIEW_REQUIRED, registers a pending review with content metadata
+ * extracted from the message.
  *
- * If the response is a Mode B result (selfReviewVerdict present in args),
- * clears the pending review for that tool.
+ * Mode B (verdict submission): If the call succeeded, clears the pending review.
  *
  * @param state - Session enforcement state (mutated in place)
  * @param toolName - FlowGuard tool name
@@ -130,15 +174,102 @@ export function onFlowGuardToolAfter(
       requestedAt: now,
       subagentCalled: false,
       subagentRecord: null,
+      contentMeta: extractContentMeta(next),
+      capturedFindings: null,
     });
   }
 }
 
 /**
+ * Enforce prompt integrity before allowing a subagent call (Level 3).
+ * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
+ *
+ * Validates:
+ * 1. Prompt meets minimum length (catches empty/trivial prompts)
+ * 2. Prompt contains expected iteration value (contextual match)
+ * 3. Prompt contains expected planVersion value (contextual match, plan only)
+ *
+ * @param state - Session enforcement state (read-only check)
+ * @param taskArgs - Task tool call arguments
+ * @returns Enforcement result
+ */
+export function enforceBeforeSubagentCall(
+  state: SessionEnforcementState,
+  taskArgs: Record<string, unknown>,
+): EnforcementResult {
+  const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
+  if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
+
+  const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
+
+  // Collect pending reviews that haven't had a subagent call yet
+  const pendingReviews = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
+  if (pendingReviews.length === 0) {
+    // No pending review — subagent call without prior FlowGuard tool signal.
+    // Allow: could be a legitimate retry or the first call in a new iteration.
+    return { allowed: true };
+  }
+
+  // Check prompt is substantive (not empty/trivial)
+  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_EMPTY',
+      reason:
+        `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short ` +
+        `(${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). ` +
+        `Include the plan/implementation text, ticket text, iteration, and planVersion.`,
+    };
+  }
+
+  // Check prompt contains expected context from at least one pending review
+  const missingFields: string[] = [];
+  let hasMatchingContext = false;
+
+  for (const pending of pendingReviews) {
+    if (!pending.contentMeta) {
+      // Content meta extraction failed — cannot validate, allow defensively
+      hasMatchingContext = true;
+      break;
+    }
+
+    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
+    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
+    const hasPlanVersion =
+      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
+
+    if (hasIteration && hasPlanVersion) {
+      hasMatchingContext = true;
+      break;
+    }
+
+    if (!hasIteration) missingFields.push(`iteration=${expectedIteration}`);
+    if (!hasPlanVersion && expectedPlanVersion !== null) {
+      missingFields.push(`planVersion=${expectedPlanVersion}`);
+    }
+  }
+
+  if (!hasMatchingContext) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
+      reason:
+        `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain ` +
+        `the expected review context. Missing: ${[...new Set(missingFields)].join(', ')}. ` +
+        `Include the iteration and planVersion values from the FlowGuard tool response.`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
  * Process a Task tool completion (tool.execute.after for 'task').
  *
- * If the Task call was to flowguard-reviewer, marks the pending review as
- * having a completed subagent call and records the subagent session ID.
+ * If the Task call was to flowguard-reviewer:
+ * - Marks all pending reviews as having a completed subagent call (Level 1)
+ * - Records the subagent session ID — null if extraction fails (Level 2 strict)
+ * - Captures actual findings from the subagent response (Level 4)
  *
  * @param state - Session enforcement state (mutated in place)
  * @param args - Task tool arguments (expects subagent_type field)
@@ -154,13 +285,14 @@ export function onTaskToolAfter(
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Extract session ID from the task result if possible.
-  // The Task tool returns the subagent's response. The subagent includes
-  // reviewedBy.sessionId in its JSON output.
+  // Extract session ID — null if extraction fails (no fallback, strict)
   const sessionId = extractSubagentSessionId(taskResult);
 
+  // Capture actual findings from the subagent response
+  const capturedFindings = extractCapturedFindings(taskResult);
+
   const record: SubagentRecord = {
-    sessionId: sessionId ?? `task-${now}`,
+    sessionId,
     completedAt: now,
   };
 
@@ -170,12 +302,19 @@ export function onTaskToolAfter(
   for (const pending of state.pendingReviews.values()) {
     pending.subagentCalled = true;
     pending.subagentRecord = record;
+    pending.capturedFindings = capturedFindings;
   }
 }
 
 /**
- * Enforce subagent invocation before allowing a self-review verdict
- * (tool.execute.before for flowguard_plan/flowguard_implement).
+ * Enforce subagent invocation and findings integrity before allowing a
+ * self-review verdict (tool.execute.before for flowguard_plan/flowguard_implement).
+ *
+ * Enforcement checks (in order):
+ * - Level 1: Binary gate — subagent must have been called
+ * - Level 2: Session ID match — when both actual and submitted IDs are available
+ * - Level 4: Findings integrity — submitted overallVerdict and blockingIssues count
+ *   must match the actual subagent response
  *
  * Returns { allowed: true } if no enforcement is needed, or
  * { allowed: false, code, reason } if the call should be blocked.
@@ -204,7 +343,7 @@ export function enforceBeforeVerdict(
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) return { allowed: true }; // No pending review = no enforcement
 
-  // Enforce: subagent must have been called
+  // ── Level 1: Binary gate — subagent must have been called ──────────────
   if (!pending.subagentCalled) {
     return {
       allowed: false,
@@ -217,7 +356,7 @@ export function enforceBeforeVerdict(
     };
   }
 
-  // Enforce: if reviewFindings provided, sessionId must match subagent session
+  // ── Level 2: Session ID match (strict when both IDs available) ─────────
   const reviewFindings = args.reviewFindings as Record<string, unknown> | undefined;
   if (reviewFindings && pending.subagentRecord) {
     const reviewedBy = reviewFindings.reviewedBy as Record<string, unknown> | undefined;
@@ -226,27 +365,145 @@ export function enforceBeforeVerdict(
 
     if (
       submittedSessionId &&
-      pending.subagentRecord.sessionId !== `task-${pending.subagentRecord.completedAt}`
+      pending.subagentRecord.sessionId !== null &&
+      submittedSessionId !== pending.subagentRecord.sessionId
     ) {
-      // We have a real subagent session ID (not the fallback)
-      if (submittedSessionId !== pending.subagentRecord.sessionId) {
-        return {
-          allowed: false,
-          code: 'SUBAGENT_SESSION_MISMATCH',
-          reason:
-            `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ` +
-            `("${submittedSessionId}") does not match the actual subagent session ` +
-            `("${pending.subagentRecord.sessionId}"). ` +
-            `The findings must come from the flowguard-reviewer subagent that was invoked.`,
-        };
-      }
+      return {
+        allowed: false,
+        code: 'SUBAGENT_SESSION_MISMATCH',
+        reason:
+          `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ` +
+          `("${submittedSessionId}") does not match the actual subagent session ` +
+          `("${pending.subagentRecord.sessionId}"). ` +
+          `The findings must come from the flowguard-reviewer subagent that was invoked.`,
+      };
+    }
+  }
+
+  // ── Level 4: Findings integrity — submitted must match captured ────────
+  if (reviewFindings && pending.capturedFindings) {
+    const submittedVerdict =
+      typeof reviewFindings.overallVerdict === 'string' ? reviewFindings.overallVerdict : null;
+    const submittedBlockingIssues = Array.isArray(reviewFindings.blockingIssues)
+      ? reviewFindings.blockingIssues
+      : null;
+
+    // Verdict must match the actual subagent verdict
+    if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings.overallVerdict) {
+      return {
+        allowed: false,
+        code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+        reason:
+          `FlowGuard enforcement: submitted reviewFindings.overallVerdict ` +
+          `("${submittedVerdict}") does not match the actual subagent verdict ` +
+          `("${pending.capturedFindings.overallVerdict}"). ` +
+          `The findings must not be modified after the subagent produces them.`,
+      };
+    }
+
+    // Blocking issues count must match
+    if (
+      submittedBlockingIssues !== null &&
+      submittedBlockingIssues.length !== pending.capturedFindings.blockingIssuesCount
+    ) {
+      return {
+        allowed: false,
+        code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
+        reason:
+          `FlowGuard enforcement: submitted reviewFindings.blockingIssues count ` +
+          `(${submittedBlockingIssues.length}) does not match the actual subagent count ` +
+          `(${pending.capturedFindings.blockingIssuesCount}). ` +
+          `The findings must not be modified after the subagent produces them.`,
+      };
     }
   }
 
   return { allowed: true };
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers (exported for testing) ──────────────────────────────────────────
+
+/**
+ * Extract content metadata (iteration, planVersion) from the
+ * INDEPENDENT_REVIEW_REQUIRED message string.
+ *
+ * The FlowGuard tools embed these values in the `next` field:
+ * - plan Mode A: "... iteration=0, (4) planVersion=3 ..."
+ * - plan Mode B: "... iteration=2, (4) planVersion=4 ..."
+ * - implement Mode A: "... iteration=1, (5) planVersion=3 ..."
+ *
+ * @returns ContentMeta or null if iteration cannot be extracted
+ */
+export function extractContentMeta(nextField: string): ContentMeta | null {
+  const iterMatch = nextField.match(/iteration[=:\s]+(\d+)/i);
+  if (!iterMatch) return null;
+
+  const versionMatch = nextField.match(/planVersion[=:\s]+(\d+)/i);
+
+  return {
+    expectedIteration: parseInt(iterMatch[1]!, 10),
+    expectedPlanVersion: versionMatch ? parseInt(versionMatch[1]!, 10) : null,
+  };
+}
+
+/**
+ * Extract key fields from the actual subagent response for integrity checking.
+ *
+ * The flowguard-reviewer subagent returns a JSON ReviewFindings object.
+ * The Task tool may wrap this in additional text. We attempt both direct
+ * JSON parse and regex-based extraction.
+ *
+ * @returns CapturedFindings or null if extraction fails
+ */
+export function extractCapturedFindings(taskResult: string): CapturedFindings | null {
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(taskResult) as unknown;
+    const result = extractFindingsFromObject(parsed);
+    if (result) return result;
+  } catch {
+    // Not clean JSON — continue to regex extraction
+  }
+
+  // Try to find a JSON block containing overallVerdict in the response
+  const jsonMatch = taskResult.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
+  if (jsonMatch) {
+    // Try to find the complete JSON object by finding the matching closing brace
+    const startIdx = taskResult.indexOf(jsonMatch[0]);
+    const candidate = extractJsonBlock(taskResult, startIdx);
+    if (candidate) {
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        const result = extractFindingsFromObject(parsed);
+        if (result) return result;
+      } catch {
+        // Parse failed — fall through
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Check if a prompt contains an expected numeric value near a keyword.
+ *
+ * Uses contextual matching: the keyword (e.g. "iteration") must appear
+ * within 30 characters before the expected number. This prevents false
+ * positives from matching the number in unrelated contexts.
+ *
+ * @param prompt - The full prompt text
+ * @param keyword - The keyword to match near (e.g. "iteration", "version")
+ * @param expected - The expected numeric value
+ * @returns true if the prompt contains the keyword-number pair
+ */
+export function promptContainsValue(prompt: string, keyword: string, expected: number): boolean {
+  // Match keyword followed by up to 30 non-digit chars then the expected number
+  const pattern = new RegExp(`${keyword}[^\\d]{0,30}${expected}\\b`, 'i');
+  return pattern.test(prompt);
+}
+
+// ─── Internal helpers ────────────────────────────────────────────────────────
 
 /**
  * Parse JSON safely, handling NextAction footer lines.
@@ -254,12 +511,12 @@ export function enforceBeforeVerdict(
  */
 function safeParse(raw: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     try {
       const firstLine = raw.split('\n')[0] ?? '';
       if (!firstLine.trim()) return null;
-      return JSON.parse(firstLine);
+      return JSON.parse(firstLine) as Record<string, unknown>;
     } catch {
       return null;
     }
@@ -272,13 +529,16 @@ function safeParse(raw: string): Record<string, unknown> | null {
  * The flowguard-reviewer subagent returns a JSON ReviewFindings object
  * with a reviewedBy.sessionId field. The Task tool wraps this in its
  * own response format. We attempt to extract it.
+ *
+ * Returns null if extraction fails (no fallback — strict for Level 2).
  */
 function extractSubagentSessionId(taskResult: string): string | null {
   try {
     // Try direct JSON parse (subagent might return clean JSON)
-    const parsed = JSON.parse(taskResult);
-    if (typeof parsed?.reviewedBy?.sessionId === 'string') {
-      return parsed.reviewedBy.sessionId;
+    const parsed = JSON.parse(taskResult) as Record<string, unknown>;
+    const reviewedBy = parsed?.reviewedBy as Record<string, unknown> | undefined;
+    if (typeof reviewedBy?.sessionId === 'string') {
+      return reviewedBy.sessionId;
     }
   } catch {
     // Not clean JSON — try to find JSON in the text
@@ -290,6 +550,66 @@ function extractSubagentSessionId(taskResult: string): string | null {
   );
   if (jsonMatch?.[1]) {
     return jsonMatch[1];
+  }
+
+  return null;
+}
+
+/**
+ * Extract CapturedFindings fields from a parsed object.
+ * Returns null if the object doesn't contain a valid overallVerdict.
+ */
+function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
+  if (!obj || typeof obj !== 'object') return null;
+
+  const record = obj as Record<string, unknown>;
+  const overallVerdict = typeof record.overallVerdict === 'string' ? record.overallVerdict : null;
+  if (!overallVerdict) return null;
+
+  const blockingIssues = Array.isArray(record.blockingIssues) ? record.blockingIssues : [];
+  const reviewedBy = record.reviewedBy as Record<string, unknown> | undefined;
+  const sessionId = typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
+
+  return {
+    overallVerdict,
+    blockingIssuesCount: blockingIssues.length,
+    sessionId,
+  };
+}
+
+/**
+ * Extract a complete JSON block starting from a given index.
+ * Counts braces to find the matching closing brace.
+ */
+function extractJsonBlock(text: string, startIdx: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i]!;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIdx, i + 1);
+      }
+    }
   }
 
   return null;

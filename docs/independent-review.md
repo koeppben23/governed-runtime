@@ -72,27 +72,46 @@ FlowGuard enforces the subagent requirement at two layers:
 
 **Layer 2 — Plugin-level enforcement (`review-enforcement.ts` via `plugin.ts`):**
 
-The structural validation layer cannot detect whether the primary agent actually called the flowguard-reviewer subagent — it only validates the shape of the submitted findings. A compliant-looking `ReviewFindings` object could be fabricated without ever invoking the subagent.
+The structural validation layer cannot detect whether the primary agent actually called the flowguard-reviewer subagent — it only validates the shape of the submitted findings. A compliant-looking `ReviewFindings` object could be fabricated without ever invoking the subagent, the prompt could be empty/garbage, or the agent could modify the subagent's findings before submitting them.
 
-The plugin-level enforcement solves this by observing the entire tool-call sequence via OpenCode's `tool.execute.before/after` hooks:
+The plugin-level enforcement solves this with four enforcement levels, using OpenCode's `tool.execute.before/after` hooks:
 
-1. **After FlowGuard tool (Mode A):** When `flowguard_plan` or `flowguard_implement` returns a `next` field starting with `INDEPENDENT_REVIEW_REQUIRED`, the plugin registers a pending review.
-2. **After Task tool:** When the Task tool completes with `subagent_type: "flowguard-reviewer"`, the plugin marks the pending review as satisfied and records the subagent session ID.
-3. **Before FlowGuard tool (Mode B):** When the agent submits a self-review verdict, the plugin checks:
-   - **Level 1 gate:** Was a Task call to `flowguard-reviewer` made? If not → `throw` blocks the tool call with `SUBAGENT_REVIEW_NOT_INVOKED`.
-   - **Level 2 gate:** Does `reviewFindings.reviewedBy.sessionId` match the actual subagent session ID? If not → `throw` blocks with `SUBAGENT_SESSION_MISMATCH`.
+**Level 1 — Binary Gate** (`tool.execute.before` for flowguard tools, Mode B):
+A Task call to `flowguard-reviewer` MUST have occurred before any verdict submission. Blocks with `SUBAGENT_REVIEW_NOT_INVOKED`.
+
+**Level 2 — Session ID Match** (`tool.execute.before` for flowguard tools, Mode B):
+When both the actual subagent session ID and the submitted `reviewFindings.reviewedBy.sessionId` are available, they must match. Blocks with `SUBAGENT_SESSION_MISMATCH`. If the actual session ID couldn't be extracted from the subagent response, Level 2 is skipped (Level 4 covers fabrication detection instead).
+
+**Level 3 — Prompt Integrity** (`tool.execute.before` for task calls):
+Before the agent calls the `flowguard-reviewer` subagent, the prompt is validated:
+
+- Must meet minimum length (200 chars — catches empty/trivial prompts)
+- Must contain the expected `iteration` value near the keyword "iteration"
+- Must contain the expected `planVersion` value near the keyword "version" (plan only)
+  Blocks with `SUBAGENT_PROMPT_EMPTY` or `SUBAGENT_PROMPT_MISSING_CONTEXT`.
+
+**Level 4 — Findings Integrity** (`tool.execute.before` for flowguard tools, Mode B):
+The submitted `reviewFindings` are compared against the actual subagent response captured during the Task call:
+
+- `overallVerdict` must match exactly (blocks `SUBAGENT_FINDINGS_VERDICT_MISMATCH`)
+- `blockingIssues` count must match exactly (blocks `SUBAGENT_FINDINGS_ISSUES_MISMATCH`)
 
 ```
-flowguard_plan (Mode A)     →  plugin registers pending review
+flowguard_plan (Mode A)     →  plugin registers pending review + captures content meta
     ↓
-task (flowguard-reviewer)   →  plugin records subagent call + session ID
+task (flowguard-reviewer)   →  L3: validates prompt integrity (before)
+                            →  plugin records subagent call + captures findings (after)
     ↓
-flowguard_plan (Mode B)     →  plugin enforces: subagent called? session matches?
-                                ↳ YES → tool executes normally
-                                ↳ NO  → throw → tool call physically blocked
+flowguard_plan (Mode B)     →  L1: subagent called?
+                            →  L2: session ID match?
+                            →  L4: findings match captured?
+                                ↳ ALL PASS → tool executes normally
+                                ↳ ANY FAIL → throw → tool call physically blocked
 ```
 
 State is session-scoped and cleared after successful verdict submission. Tracking errors (in `tool.execute.after`) are fire-and-forget and never block governance flow. Enforcement errors (in `tool.execute.before`) are strict and physically prevent the tool call.
+
+**Defense-in-depth note:** The plugin and FlowGuard tools are architecturally separate. If the plugin fails to load, the tools remain available but plugin-level enforcement (Levels 1-4) is inactive. In that case, structural validation (Layer 1) still enforces schema compliance, review-mode gating, and mandatory findings. Plugin load failure would also prevent audit event emission, making it detectable through missing audit trails.
 
 ---
 
@@ -186,10 +205,14 @@ Validation logic is implemented once in `src/integration/tools/review-validation
 
 **Plugin-level enforcement (`review-enforcement.ts`):**
 
-| Rule             | Condition                                                 | BLOCKED Code                  |
-| ---------------- | --------------------------------------------------------- | ----------------------------- |
-| Subagent invoked | Pending review + no Task call to `flowguard-reviewer`     | `SUBAGENT_REVIEW_NOT_INVOKED` |
-| Session ID match | `reviewedBy.sessionId` does not match subagent session ID | `SUBAGENT_SESSION_MISMATCH`   |
+| Level | Rule               | Condition                                                           | BLOCKED Code                         | Hook Point       |
+| ----- | ------------------ | ------------------------------------------------------------------- | ------------------------------------ | ---------------- |
+| L1    | Subagent invoked   | Pending review + no Task call to `flowguard-reviewer`               | `SUBAGENT_REVIEW_NOT_INVOKED`        | before FG Mode B |
+| L2    | Session ID match   | `reviewedBy.sessionId` does not match actual subagent session ID    | `SUBAGENT_SESSION_MISMATCH`          | before FG Mode B |
+| L3    | Prompt substantive | Task prompt < 200 chars                                             | `SUBAGENT_PROMPT_EMPTY`              | before task call |
+| L3    | Prompt has context | Task prompt missing expected iteration or planVersion               | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call |
+| L4    | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict     | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B |
+| L4    | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B |
 
 Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 
@@ -235,7 +258,11 @@ The `flowguard install` command deploys:
 **Fully implemented.** The independent review system provides two enforcement layers:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Plugin-level enforcement** — OpenCode `tool.execute.before/after` hooks observe the tool-call sequence and physically block verdict submission if the flowguard-reviewer subagent was not invoked. Session ID matching prevents findings fabrication.
+2. **Plugin-level enforcement** — Four enforcement levels via OpenCode `tool.execute.before/after` hooks:
+   - L1: Binary gate — subagent must be called before any verdict
+   - L2: Session ID match — submitted session ID must match actual subagent session
+   - L3: Prompt integrity — subagent prompt must contain expected iteration/planVersion and meet minimum length
+   - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match actual subagent response
 
 **Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 
