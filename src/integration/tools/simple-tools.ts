@@ -208,6 +208,23 @@ export const status: ToolDefinition = {
             ? state.selfReview.iteration >= state.selfReview.maxIterations ||
               (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
             : null,
+          // P34a: latest independent review summary
+          latestReview: (() => {
+            const findings = state.plan?.reviewFindings;
+            if (!findings || findings.length === 0) return null;
+            const latest = findings[findings.length - 1];
+            if (!latest) return null;
+            return {
+              iteration: latest.iteration,
+              planVersion: latest.planVersion,
+              overallVerdict: latest.overallVerdict,
+              blockingIssueCount: latest.blockingIssues.length,
+              majorRiskCount: latest.majorRisks.length,
+              missingVerificationCount: latest.missingVerification.length,
+              reviewMode: latest.reviewMode,
+              reviewedAt: latest.reviewedAt,
+            };
+          })(),
           validationResults: state.validation.map((v) => ({
             checkId: v.checkId,
             passed: v.passed,

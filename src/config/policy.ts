@@ -836,6 +836,7 @@ export function createPolicySnapshot(
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
+    ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
   };
 }
 
@@ -853,7 +854,7 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+    selfReview: snapshot.selfReview ?? DEFAULT_SELF_REVIEW_CONFIG,
     minimumActorAssuranceForApproval:
       (snapshot.minimumActorAssuranceForApproval as
         | 'best_effort'

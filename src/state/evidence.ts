@@ -401,9 +401,19 @@ export const PolicySnapshotSchema = z.object({
   identityProvider: IdpConfigSchema.optional(),
   /**
    * P35a: IdP verification mode ('optional' or 'required').
-   * Controls whether IdP failure blocks session creation.
+   * Controls whether IdP verification failure blocks session creation.
    */
   identityProviderMode: z.enum(['optional', 'required']).default('optional'),
+  /**
+   * P34a: Self-review configuration for independent review.
+   * Frozen at hydrate time. Controls subagent-based review behavior.
+   */
+  selfReview: z
+    .object({
+      subagentEnabled: z.boolean(),
+      fallbackToSelf: z.boolean(),
+    })
+    .optional(),
   audit: z.object({
     emitTransitions: z.boolean(),
     emitToolCalls: z.boolean(),

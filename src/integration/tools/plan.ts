@@ -2,20 +2,30 @@
  * @module integration/tools/plan
  * @description FlowGuard plan tool — submit plan or record self-review verdict.
  *
- * Multi-call pattern driven by the LLM:
+ * P34a: Independent Self-Review Subagent
+ *
+ * Multi-call pattern:
  *
  * Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
- *   -> Tool records plan, initializes self-review loop, returns "self-review needed"
+ *   -> Tool records plan
+ *   -> If subagentEnabled: attempt subagent review
+ *   -> Store reviewFindings in state.plan.reviewFindings (parallel)
+ *   -> Return "self-review needed" with findings summary
  *
- * Step 2: LLM reviews plan critically, calls flowguard_plan({
- *   selfReviewVerdict: "changes_requested", planText: "revised..."
- * }) OR flowguard_plan({ selfReviewVerdict: "approve" })
+ * Step 2: LLM reviews plan critically via selfReviewVerdict
  *   -> Tool records iteration, checks convergence
  *
- * Repeat Step 2 until converged or max iterations (from policy).
+ * Repeat Step 2 until converged or max iterations.
  * On convergence: auto-advance to PLAN_REVIEW.
  *
- * @version v3
+ * Subagent behavior (P34a):
+ * - subagentEnabled + subagent succeeds → use findings
+ * - subagentEnabled + subagent fails + fallbackToSelf → degraded warning
+ * - subagentEnabled + subagent fails + !fallbackToSelf → BLOCKED
+ *
+ * Architecture: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
+ *
+ * @version v4 (P34a)
  */
 
 import { z } from 'zod';
@@ -43,11 +53,35 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { autoAdvance } from '../../rails/types.js';
 
 // Evidence types
-import type { PlanEvidence, LoopVerdict, RevisionDelta } from '../../state/evidence.js';
+import type {
+  PlanEvidence,
+  LoopVerdict,
+  RevisionDelta,
+  ReviewFindings,
+} from '../../state/evidence.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// P34a: Subagent Review Stub
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Execute subagent review (P34a stub).
+ *
+ * Returns null—full implementation via Task tool in follow-up.
+ * This triggers fallback behavior per policy.fallbackToSelf.
+ */
+async function executeSubagentReview(
+  _state: SessionState,
+  _sessionId: string,
+): Promise<ReviewFindings | null> {
+  // Stub: returns null to trigger fallback
+  // Full implementation via Task tool in P34a.2
+  return null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════
 
 export const plan: ToolDefinition = {
   description:
@@ -56,7 +90,8 @@ export const plan: ToolDefinition = {
     "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised planText.\n" +
     'The self-review loop runs up to maxIterations (from policy). ' +
-    'On convergence, auto-advances to PLAN_REVIEW.',
+    'On convergence, auto-advances to PLAN_REVIEW.\n' +
+    'P34a: When policy.selfReview.subagentEnabled, uses independent subagent review.',
   args: {
     planText: z
       .string()
@@ -111,12 +146,45 @@ export const plan: ToolDefinition = {
           createdAt: ctx.now(),
         };
 
-        // Preserve version history
+        // Preserve version history and track plan version
         const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
+        const planVersion = history.length + 1;
+
+        // P34a: Independent subagent review
+        const selfReviewConfig = policy.selfReview;
+        const subagentEnabled = selfReviewConfig?.subagentEnabled ?? false;
+        const fallbackToSelf = selfReviewConfig?.fallbackToSelf ?? false;
+        let reviewFindings: ReviewFindings | null = null;
+        let subagentWarning: string | null = null;
+
+        if (subagentEnabled) {
+          const subagentResult = await executeSubagentReview(state, context.sessionID);
+
+          if (subagentResult) {
+            reviewFindings = subagentResult;
+          } else if (fallbackToSelf) {
+            subagentWarning =
+              'Subagent unavailable, using degraded self-review (fallbackToSelf=true)';
+          } else {
+            return formatBlocked('SUBAGENT_UNAVAILABLE', {
+              action: 'independent review',
+              recovery: 'Enable policy.selfReview.fallbackToSelf or disable subagent review',
+            });
+          }
+        }
+
+        // Build plan record with parallel review findings storage
+        const planRecord = {
+          current: planEvidence,
+          history,
+          reviewFindings: reviewFindings
+            ? [...(state.plan?.reviewFindings ?? []), reviewFindings]
+            : state.plan?.reviewFindings,
+        };
 
         const nextState: SessionState = {
           ...state,
-          plan: { current: planEvidence, history },
+          plan: planRecord,
           selfReview: {
             iteration: 0,
             maxIterations: maxSelfReviewIterations,
@@ -133,21 +201,38 @@ export const plan: ToolDefinition = {
         const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
         await writeStateWithArtifacts(sessDir, finalState);
 
-        return appendNextAction(
-          JSON.stringify({
-            phase: finalState.phase,
-            status: 'Plan submitted (v' + (history.length + 1) + ').',
-            planDigest: planEvidence.digest,
-            selfReviewIteration: 0,
-            maxSelfReviewIterations,
-            next:
-              'Self-review needed. Review the plan critically against the ticket. ' +
-              'Check for completeness, correctness, edge cases, and feasibility. ' +
-              'Then call flowguard_plan with selfReviewVerdict.',
-            _audit: { transitions },
-          }),
-          finalState,
-        );
+        // Build response with optional P34a review findings summary
+        const response: Record<string, unknown> = {
+          phase: finalState.phase,
+          status: 'Plan submitted (v' + planVersion + ').',
+          planDigest: planEvidence.digest,
+          selfReviewIteration: 0,
+          maxSelfReviewIterations,
+          next:
+            'Self-review needed. Review the plan critically against the ticket. ' +
+            'Check for completeness, correctness, edge cases, and feasibility. ' +
+            'Then call flowguard_plan with selfReviewVerdict.',
+          _audit: { transitions },
+        };
+
+        if (reviewFindings) {
+          response.latestReview = {
+            iteration: reviewFindings.iteration,
+            planVersion,
+            overallVerdict: reviewFindings.overallVerdict,
+            blockingIssueCount: reviewFindings.blockingIssues.length,
+            majorRiskCount: reviewFindings.majorRisks.length,
+            missingVerificationCount: reviewFindings.missingVerification.length,
+            reviewMode: reviewFindings.reviewMode,
+            reviewedAt: reviewFindings.reviewedAt,
+          };
+        }
+
+        if (subagentWarning) {
+          response.warning = subagentWarning;
+        }
+
+        return appendNextAction(JSON.stringify(response), finalState);
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
         if (!state.selfReview) {
