@@ -1871,6 +1871,205 @@ describe('P34a: Agent-Orchestrated Review', () => {
   });
 });
 
+describe('P34a: Policy-Driven Branches', () => {
+  const validReviewFindingsSubagent = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSubagentModeB = {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSelf = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  it('subagentEnabled=true + reviewMode=subagent → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.reviewMode).toBe('subagent');
+  });
+
+  it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: true },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview.reviewMode).toBe('self');
+  });
+
+  it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self → BLOCKED', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+  });
+
+  it('approve + subagentEnabled=true + missing reviewFindings → BLOCKED', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
+  });
+
+  it('approve + subagentEnabled=true + valid reviewFindings → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    let state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    state = await readState(sessDir);
+    expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
+
+    const validFindings = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'approve' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_actor' },
+      reviewedAt: new Date().toISOString(),
+    };
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validFindings },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+  });
+});
+
 // =============================================================================
 // Tool 5: decision (review-decision)
 // =============================================================================
