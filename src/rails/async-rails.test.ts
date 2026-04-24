@@ -371,6 +371,26 @@ describe('continue rail', () => {
         expect(result.state.validation.length).toBe(2);
       }
     });
+
+    it('at VALIDATION with failing checks clears selfReview and reviewDecision', async () => {
+      const state = makeProgressedState('VALIDATION');
+      const failingExecutors = {
+        ...continueExecutors,
+        runCheck: async (checkId: string) => ({
+          checkId,
+          passed: checkId !== 'test_quality',
+          detail: 'check result',
+          executedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      };
+      const result = await executeContinue(state, ctx, failingExecutors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.validation.some((r) => !r.passed)).toBe(true);
+        expect(result.state.selfReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
+      }
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -517,6 +537,87 @@ describe('continue rail', () => {
       if (result.kind === 'ok') {
         // reviewDone guard fires immediately when phase === "REVIEW"
         expect(result.state.phase).toBe('REVIEW_COMPLETE');
+      }
+    });
+
+    it('at IMPL_REVIEW with no implementation evidence is a no-op', async () => {
+      const state = makeState('IMPL_REVIEW', {
+        plan: PLAN_RECORD,
+        implementation: null,
+      });
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementation).toBeNull();
+      }
+    });
+
+    it('at IMPL_REVIEW with max iteration reached keeps current state', async () => {
+      const state = makeState('IMPL_REVIEW', {
+        plan: PLAN_RECORD,
+        implementation: IMPL_EVIDENCE,
+        implReview: {
+          ...IMPL_REVIEW_PENDING_RESULT,
+          iteration: 3,
+          maxIterations: 3,
+        },
+      });
+      const result = await executeContinue(state, ctx, continueExecutors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implReview!.iteration).toBe(3);
+        expect(result.state.implementation!.digest).toBe(IMPL_EVIDENCE.digest);
+      }
+    });
+
+    it('at IMPL_REVIEW applies updated implementation evidence', async () => {
+      const updatedImpl = {
+        ...IMPL_EVIDENCE,
+        digest: 'digest-of-impl-v2',
+      };
+      const updateExecutors = {
+        ...continueExecutors,
+        implReview: async () => ({
+          verdict: 'changes_requested' as const,
+          updatedImpl,
+        }),
+      };
+      const state = makeState('IMPL_REVIEW', {
+        plan: PLAN_RECORD,
+        implementation: IMPL_EVIDENCE,
+        implReview: IMPL_REVIEW_PENDING_RESULT,
+      });
+      const result = await executeContinue(state, ctx, updateExecutors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementation!.digest).toBe('digest-of-impl-v2');
+        expect(result.state.implReview!.executedAt).toBeDefined();
+      }
+    });
+
+    it('at ARCHITECTURE ignores revised ADR with invalid MADR sections', async () => {
+      const invalidRevisionExecutors = {
+        ...continueExecutors,
+        architectureReview: async () => ({
+          verdict: 'changes_requested' as const,
+          revisedText: '## Context\nOnly context',
+        }),
+      };
+      const state = makeState('ARCHITECTURE', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: ARCHITECTURE_DECISION.digest,
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+      });
+      const result = await executeContinue(state, ctx, invalidRevisionExecutors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture!.adrText).toBe(ARCHITECTURE_DECISION.adrText);
       }
     });
   });
