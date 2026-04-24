@@ -649,7 +649,11 @@ function extractSubagentSessionId(taskResult: string): string | null {
       } catch {
         // Continue scanning for another candidate
       }
-      searchFrom = startIdx + candidate.length;
+      // Ensure forward progress: advance past the marker if the candidate
+      // ended before it (e.g., lastIndexOf found a { from a different block
+      // that precedes the marker). Without this, the same marker is re-found
+      // on the next iteration, causing an infinite loop.
+      searchFrom = Math.max(startIdx + candidate.length, markerIdx + '"reviewedBy"'.length);
       continue;
     }
 
