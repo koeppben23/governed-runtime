@@ -46,6 +46,23 @@ export interface AuditPolicy {
   readonly enableChainHash: boolean;
 }
 
+/**
+ * P34a: Independent self-review configuration.
+ * Controls whether a subagent performs independent review.
+ */
+export interface SelfReviewConfig {
+  /** Enable subagent-based independent review for plan/implement phases. */
+  readonly subagentEnabled: boolean;
+  /** Fallback to self-review (agent reviews own work) on subagent timeout/failure. */
+  readonly fallbackToSelf: boolean;
+}
+
+/** Self-review configuration for FlowGuardPolicy interface. */
+export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
+  subagentEnabled: false,
+  fallbackToSelf: false,
+};
+
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -82,6 +99,9 @@ export interface FlowGuardPolicy {
    * true  → self-approval allowed (solo/team).
    */
   readonly allowSelfApproval: boolean;
+
+  /** P34a: Independent self-review configuration. */
+  readonly selfReview: SelfReviewConfig;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;
@@ -258,6 +278,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 2,
   maxImplReviewIterations: 1,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -286,6 +307,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -314,6 +336,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -351,6 +374,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: false,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -829,6 +853,7 @@ export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
+    selfReview: DEFAULT_SELF_REVIEW_CONFIG,
     minimumActorAssuranceForApproval:
       (snapshot.minimumActorAssuranceForApproval as
         | 'best_effort'

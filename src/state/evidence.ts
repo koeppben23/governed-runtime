@@ -106,6 +106,50 @@ export const TicketEvidence = z.object({
 });
 export type TicketEvidence = z.infer<typeof TicketEvidence>;
 
+// ─── P34a: Independent Self-Review Findings ───────────────────────────────
+
+/**
+ * Single finding from an independent review.
+ */
+export const Finding = z.object({
+  severity: z.enum(['critical', 'major', 'minor']),
+  category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
+  message: z.string(),
+  location: z.string().optional(),
+});
+export type Finding = z.infer<typeof Finding>;
+
+/**
+ * Identity information for the review actor (subagent or self).
+ * P34a: Provides provenance for independent review attribution.
+ */
+export const ReviewActorInfo = z.object({
+  sessionId: z.string(),
+  actorId: z.string().optional(),
+  actorSource: z.enum(['env', 'git', 'claim', 'unknown']).optional(),
+  actorAssurance: assuranceSchema().optional(),
+});
+export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
+
+/**
+ * Structured findings from an independent review.
+ * P34a: Enables read-only subagent review without direct state/file writes.
+ */
+export const ReviewFindings = z.object({
+  iteration: z.number().int().nonnegative(),
+  planVersion: z.number().int().nonnegative(),
+  reviewMode: z.enum(['subagent', 'self']),
+  overallVerdict: LoopVerdict,
+  blockingIssues: z.array(Finding),
+  majorRisks: z.array(Finding),
+  missingVerification: z.array(z.string()),
+  scopeCreep: z.array(z.string()),
+  unknowns: z.array(z.string()),
+  reviewedBy: ReviewActorInfo,
+  reviewedAt: z.string().datetime(),
+});
+export type ReviewFindings = z.infer<typeof ReviewFindings>;
+
 // ─── Plan ─────────────────────────────────────────────────────────────────────
 
 /** A single plan version (immutable snapshot). */
@@ -124,10 +168,14 @@ export type PlanEvidence = z.infer<typeof PlanEvidence>;
  *
  * - current: the active plan version
  * - history: all previous versions (newest first)
+ * - reviewFindings: P34a: independent review findings per iteration (parallel, NOT mixed)
+ *
+ * Architecture invariant: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
  */
 export const PlanRecord = z.object({
   current: PlanEvidence,
   history: z.array(PlanEvidence),
+  reviewFindings: z.array(ReviewFindings).optional(),
 });
 export type PlanRecord = z.infer<typeof PlanRecord>;
 
