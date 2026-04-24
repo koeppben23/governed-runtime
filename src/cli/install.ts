@@ -30,7 +30,7 @@
  * - opencode.json is merge-managed: FlowGuard instruction entry added, legacy entries migrated.
  *
  * Ownership matrix:
- *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md, vendor/*.tgz
+ *   hard-managed:   flowguard-mandates.md, tools/*.ts, plugins/*.ts, commands/*.md, agents/*.md, vendor/*.tgz
  *   merge-managed:  package.json, opencode.json
  *   user-owned:     AGENTS.md (never touched)
  */
@@ -45,6 +45,8 @@ import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
+  REVIEWER_AGENT,
+  REVIEWER_AGENT_FILENAME,
   FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
   OPENCODE_JSON_TEMPLATE,
@@ -148,6 +150,7 @@ const FLOWGUARD_OWNED_FILES = [
   MANDATES_FILENAME,
   'tools/flowguard.ts',
   'plugins/flowguard-audit.ts',
+  `agents/${REVIEWER_AGENT_FILENAME}`,
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
   'vendor',
 ] as const;
@@ -279,6 +282,42 @@ async function mergePackageJson(filePath: string, version: string): Promise<File
 }
 
 /**
+ * Ensure the build agent has task permission for the flowguard-reviewer subagent.
+ *
+ * Deep-merges into parsed.agent.build.permission.task without overwriting
+ * existing user-defined task permissions. Idempotent: no-op if already set.
+ */
+function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type AnyObj = Record<string, any>;
+
+  if (!parsed['agent'] || typeof parsed['agent'] !== 'object') {
+    parsed['agent'] = {};
+  }
+  const agent = parsed['agent'] as AnyObj;
+
+  if (!agent['build'] || typeof agent['build'] !== 'object') {
+    agent['build'] = {};
+  }
+  const build = agent['build'] as AnyObj;
+
+  if (!build['permission'] || typeof build['permission'] !== 'object') {
+    build['permission'] = {};
+  }
+  const permission = build['permission'] as AnyObj;
+
+  if (!permission['task'] || typeof permission['task'] !== 'object') {
+    permission['task'] = {};
+  }
+  const task = permission['task'] as AnyObj;
+
+  // Only set if not already configured (preserve user overrides)
+  if (!('flowguard-reviewer' in task)) {
+    task['flowguard-reviewer'] = 'allow';
+  }
+}
+
+/**
  * Merge FlowGuard config into an existing or new opencode.json.
  *
  * Invariants (idempotent, enforced after every call):
@@ -287,6 +326,7 @@ async function mergePackageJson(filePath: string, version: string): Promise<File
  * 3. Order of existing user entries is preserved
  * 4. All other fields in opencode.json are preserved
  * 5. $schema is set if missing
+ * 6. build agent has task permission for flowguard-reviewer subagent
  *
  * @param filePath - Path to opencode.json
  * @param scope    - Install scope (determines the instruction entry path)
@@ -341,6 +381,9 @@ async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise
     instructions.push(entry);
 
     parsed['instructions'] = instructions;
+
+    // Ensure build agent has task permission for flowguard-reviewer subagent
+    mergeReviewerTaskPermission(parsed);
 
     if (!parsed['$schema']) {
       parsed['$schema'] = 'https://opencode.ai/config.json';
@@ -482,6 +525,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, 'tools'));
     await ensureDir(join(target, 'plugins'));
     await ensureDir(join(target, 'commands'));
+    await ensureDir(join(target, 'agents'));
 
     // 1. Copy tarball to vendor directory (fixed path for A1 model)
     const vendorPath = join(target, 'vendor');
@@ -515,10 +559,19 @@ export async function install(args: CliArgs): Promise<CliResult> {
       ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
     }
 
-    // 6. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
+    // 6. Review subagent definition (write if absent, --force to replace)
+    ops.push(
+      await writeIfAbsent(
+        join(target, 'agents', REVIEWER_AGENT_FILENAME),
+        REVIEWER_AGENT,
+        args.force,
+      ),
+    );
+
+    // 7. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
     ops.push(await mergePackageJson(join(target, 'package.json'), PACKAGE_VERSION()));
 
-    // 7. opencode.json (merge with migration)
+    // 8. opencode.json (merge with migration)
     //    - global: merge into ~/.config/opencode/opencode.json
     //    - repo: merge into ./opencode.json (project root, parent of .opencode/)
     const opencodeJsonPath =
@@ -527,7 +580,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
         : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
 
-    // 8. Workspace config.json (required artifact)
+    // 9. Workspace config.json (required artifact)
     // Persists args.policyMode as config.policy.defaultMode so that
     // /hydrate without explicit mode uses the installer's intent.
     // Priority: existing config preserved (unless --force), new config written with policyMode.

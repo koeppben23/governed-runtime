@@ -1228,8 +1228,8 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config.json
-      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1;
+      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 agent + 1 package.json + 1 opencode.json + 1 config.json
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 

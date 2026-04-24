@@ -11,9 +11,12 @@ FlowGuard's independent review system enables structured, policy-governed review
 │                 OpenCode Primary Agent                  │
 │                                                         │
 │  1. Draft plan / implement code                         │
-│  2. Call hidden review subagent via Task tool            │
-│  3. Receive structured ReviewFindings from subagent      │
-│  4. Submit plan/impl + reviewFindings to FlowGuard tool  │
+│  2. Submit to FlowGuard (flowguard_plan/implement)      │
+│  3. Read tool response: next + reviewMode               │
+│  4. If INDEPENDENT_REVIEW_REQUIRED:                     │
+│     a. Call flowguard-reviewer subagent via Task tool    │
+│     b. Receive structured ReviewFindings from subagent   │
+│  5. Submit verdict + reviewFindings to FlowGuard tool    │
 └────────────────────┬────────────────────────────────────┘
                      │
           ┌──────────▼──────────┐
@@ -22,7 +25,9 @@ FlowGuard's independent review system enables structured, policy-governed review
           │                     │
           │  • Validate         │
           │  • Persist          │
-          │  • Respond          │
+          │  • Respond with     │
+          │    policy-conditional│
+          │    next-action      │
           └─────────────────────┘
 
 Separation of concerns:
@@ -30,61 +35,57 @@ Separation of concerns:
   Reviewer artifacts: plan.reviewFindings, implReviewFindings
 ```
 
-**Key invariant:** FlowGuard is a governance boundary, not an orchestrator. The OpenCode primary agent orchestrates the review subagent. FlowGuard only validates and persists the results.
+**Key invariant:** FlowGuard is a governance boundary, not an orchestrator. The OpenCode primary agent orchestrates the review subagent based on FlowGuard's policy-conditional `next` field. FlowGuard validates and persists the results.
+
+---
+
+## How It Works
+
+### Policy-Conditional Next-Action
+
+When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a `next` field:
+
+- **`subagentEnabled: false` (default):** `next` says "Self-review needed. Review the plan critically..." — the agent reviews its own work using the checklist in the slash command.
+- **`subagentEnabled: true`:** `next` says "INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool..." — the agent MUST call the hidden review subagent.
+
+The `INDEPENDENT_REVIEW_REQUIRED` prefix is a deterministic signal. The slash commands (`/plan`, `/implement`, `/continue`) check for this prefix and follow the appropriate review path.
+
+### Subagent Invocation
+
+When independent review is required, the primary agent:
+
+1. Calls the Task tool with `subagent_type: "flowguard-reviewer"`
+2. Passes a prompt containing the plan/implementation text, ticket text, iteration number, and plan version
+3. The subagent reviews the material (read-only — no write, edit, or bash access)
+4. The subagent returns structured JSON matching the ReviewFindings schema
+5. The primary agent submits the findings to FlowGuard alongside its verdict
+
+### Fail-Closed Enforcement
+
+FlowGuard enforces the subagent requirement:
+
+- When `subagentEnabled: true` and the agent tries to approve without `reviewFindings` → BLOCKED
+- When `subagentEnabled: true` and `fallbackToSelf: false`, self-review findings are rejected → BLOCKED
+- The validation layer is the single authority (`review-validation.ts`)
 
 ---
 
 ## OpenCode Configuration
 
-To use independent review, configure a hidden review subagent in OpenCode and enable the policy in FlowGuard.
+The installer (`flowguard install`) automatically deploys all required artifacts.
 
-### 1. Define Hidden Review Subagent
+### 1. Review Subagent Definition (auto-deployed)
 
-Create `.opencode/agents/flowguard-reviewer.md`:
+The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
-```markdown
----
-description: Independent reviewer for FlowGuard plan and implementation phases
-mode: subagent
-hidden: true
-tools:
-  write: false
-  edit: false
-  bash: false
----
+- `mode: subagent`, `hidden: true`, `temperature: 0.1`
+- Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`
+- Adversarial, falsification-first review prompt
+- Returns structured ReviewFindings JSON
 
-You are an independent code and plan reviewer for FlowGuard governance.
+### 2. Task Permissions (auto-merged)
 
-Your task is to review the provided plan or implementation and return structured findings.
-
-## Output Format
-
-Return a JSON object matching the ReviewFindings schema:
-
-- iteration: current review iteration (0 for initial)
-- planVersion: version number of the plan being reviewed
-- reviewMode: "subagent"
-- overallVerdict: "approve" or "changes_requested"
-- blockingIssues: array of { severity, category, message, location? }
-- majorRisks: array of { severity, category, message, location? }
-- missingVerification: array of strings
-- scopeCreep: array of strings
-- unknowns: array of strings
-- reviewedBy: { sessionId: your session ID }
-- reviewedAt: ISO 8601 timestamp
-
-## Review Criteria
-
-- Completeness: Does the plan/implementation cover all requirements?
-- Correctness: Are there logical errors or incorrect assumptions?
-- Feasibility: Can this be implemented as described?
-- Risk: Are there security, performance, or reliability risks?
-- Quality: Does the code follow project conventions?
-```
-
-### 2. Configure Task Permissions
-
-In `opencode.json`, allow the primary agent to invoke the review subagent:
+The installer merges into `opencode.json`:
 
 ```json
 {
@@ -100,9 +101,9 @@ In `opencode.json`, allow the primary agent to invoke the review subagent:
 }
 ```
 
-### 3. Enable FlowGuard Policy
+### 3. FlowGuard Policy
 
-In FlowGuard policy configuration, enable subagent review:
+Enable subagent review in FlowGuard policy configuration:
 
 ```json
 {
@@ -179,9 +180,21 @@ Both reviewer artifact arrays are **append-only**. Each review submission adds t
 
 ---
 
+## Installed Artifacts
+
+The `flowguard install` command deploys:
+
+| Artifact        | Path                                                        | Purpose                                                       |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
+| Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt     |
+| Task permission | `opencode.json` (merged)                                    | Allows build agent to invoke flowguard-reviewer               |
+| Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A (subagent) / Path B (self) review routing |
+
+---
+
 ## Current Status
 
-**Foundation layer complete.** FlowGuard validates and persists ReviewFindings. The OpenCode-side configuration (subagent definition, system prompt, structured output integration) is documented above as reference architecture. Actual subagent implementation is deferred to a follow-up.
+**Fully implemented.** FlowGuard validates and persists ReviewFindings. The installer deploys the review subagent definition, task permissions, and updated slash commands. When `selfReview.subagentEnabled: true`, the primary agent is instructed to call the `flowguard-reviewer` subagent via the Task tool for independent review of plans and implementations.
 
 **Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. No existing workflows are affected.
 

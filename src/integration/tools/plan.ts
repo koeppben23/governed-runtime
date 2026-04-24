@@ -4,19 +4,30 @@
  *
  * Agent-Orchestrated Independent Review Persistence Boundary
  *
- * Architecture: FlowGuard does NOT call subagents. FlowGuard accepts and governs
- * independently produced ReviewFindings from OpenCode primary agent orchestration.
+ * Architecture: FlowGuard does NOT call subagents. The OpenCode primary agent
+ * orchestrates independent review by calling the flowguard-reviewer subagent
+ * via the Task tool. FlowGuard accepts, validates, and persists the resulting
+ * ReviewFindings.
  *
- * Flow:
- * 1. Primary agent drafts plan, calls hidden review subagent via Task tool
- * 2. Subagent returns structured ReviewFindings (via orchestrator)
- * 3. Primary agent submits plan + reviewFindings to FlowGuard tool
- * 4. FlowGuard validates and persists both (append-only, separate)
+ * Flow (subagentEnabled=true):
+ * 1. Primary agent drafts plan, submits to FlowGuard
+ * 2. FlowGuard returns next-action instructing subagent invocation
+ * 3. Primary agent calls flowguard-reviewer subagent via Task tool
+ * 4. Subagent returns structured ReviewFindings
+ * 5. Primary agent submits selfReviewVerdict + reviewFindings to FlowGuard
+ * 6. FlowGuard validates (mode gating, version binding, iteration binding,
+ *    mandatory findings) and persists both (append-only, separate)
+ *
+ * Flow (subagentEnabled=false, default):
+ * 1. Primary agent drafts plan, submits to FlowGuard
+ * 2. FlowGuard returns next-action instructing self-review
+ * 3. Primary agent reviews own plan, submits selfReviewVerdict
  *
  * Tool responsibilities:
  * - Input validation: reviewFindings vs policy, planVersion binding
  * - Persistence: plan.history (author), plan.reviewFindings (reviewer)
  * - Response: summary of review findings, iteration tracking
+ * - Next-action: policy-conditional instructions (subagent or self-review)
  *
  * Policy config (selfReview):
  * - subagentEnabled: enforces subagent review mode
@@ -28,7 +39,7 @@
  * - selfReviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
  * - reviewFindings.planVersion mismatch → BLOCKED
  *
- * @version v5
+ * @version v6
  */
 
 import { z } from 'zod';
@@ -203,10 +214,22 @@ export const plan: ToolDefinition = {
           planDigest: planEvidence.digest,
           selfReviewIteration: 0,
           maxSelfReviewIterations,
-          next:
-            'Self-review needed. Review the plan critically against the ticket. ' +
-            'Check for completeness, correctness, edge cases, and feasibility. ' +
-            'Then call flowguard_plan with selfReviewVerdict.',
+          reviewMode: subagentEnabled ? 'subagent' : 'self',
+          next: subagentEnabled
+            ? 'INDEPENDENT_REVIEW_REQUIRED: Before submitting your self-review verdict, ' +
+              'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
+              'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+              '(1) the full plan text, (2) the ticket text, (3) iteration=0, ' +
+              '(4) planVersion=' +
+              planVersion +
+              '. ' +
+              'Parse the JSON ReviewFindings from the subagent response. ' +
+              'Then call flowguard_plan with selfReviewVerdict based on the findings ' +
+              'overallVerdict, and include the reviewFindings object. ' +
+              'If the subagent returns changes_requested, revise the plan and resubmit.'
+            : 'Self-review needed. Review the plan critically against the ticket. ' +
+              'Check for completeness, correctness, edge cases, and feasibility. ' +
+              'Then call flowguard_plan with selfReviewVerdict.',
           _audit: { transitions },
         };
 
@@ -332,9 +355,18 @@ export const plan: ToolDefinition = {
             planDigest: currentPlan.digest,
             selfReviewIteration: iteration,
             revisionDelta,
-            next:
-              'Review the plan again. Check if the revisions address all issues. ' +
-              'Call flowguard_plan with selfReviewVerdict.',
+            reviewMode: subagentEnabled ? 'subagent' : 'self',
+            next: subagentEnabled
+              ? 'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
+                'to review the revised plan. Use subagent_type "flowguard-reviewer" with a prompt ' +
+                'that includes: (1) the revised plan text, (2) the ticket text, (3) iteration=' +
+                iteration +
+                ', (4) planVersion=' +
+                (history.length + 1) +
+                '. ' +
+                'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.'
+              : 'Review the plan again. Check if the revisions address all issues. ' +
+                'Call flowguard_plan with selfReviewVerdict.',
             _audit: { transitions },
           }),
           finalState,
