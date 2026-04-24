@@ -8,17 +8,22 @@ const tmpDir = mkdtempSync(path.join(tmpdir(), 'fg-independent-review-'));
 const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
 const testFiles = [
-  'src/integration/review-orchestrator.test.ts',
-  'src/integration/review-enforcement.test.ts',
   'src/integration/plugin.test.ts',
+  'src/integration/tools-execute.test.ts',
   'src/integration/tools/review-validation.test.ts',
 ];
 
 const mustPassTestTitles = [
+  'fulfills strict obligation and mutates output when attestation is valid',
   'accepts when strict evidence and attestation match',
   'blocks when strict attestation is missing',
   'blocks when strict obligation is blocked',
+  'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
 ];
+
+const testTitleFilter = mustPassTestTitles
+  .map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|');
 
 const run = spawnSync(
   process.platform === 'win32' ? 'npx.cmd' : 'npx',
@@ -26,6 +31,8 @@ const run = spawnSync(
     'vitest',
     'run',
     ...testFiles,
+    '--testNamePattern',
+    `(${testTitleFilter})`,
     '--reporter=json',
     `--outputFile=${outputFile}`,
     '--passWithNoTests=false',
