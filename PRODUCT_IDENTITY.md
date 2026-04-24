@@ -150,7 +150,7 @@ READY → REVIEW → REVIEW_COMPLETE
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality. Both plan and implement tools optionally accept structured `reviewFindings` from an independent review agent (controlled by `selfReview.subagentEnabled` policy). Author and reviewer artifacts are stored separately (append-only). See [docs/independent-review.md](./docs/independent-review.md).
+**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality. Both plan and implement tools optionally accept structured `reviewFindings` from an independent review agent (controlled by `selfReview.subagentEnabled` policy). When enabled, the installer deploys a hidden review subagent and the slash commands orchestrate adversarial review via the Task tool. Author and reviewer artifacts are stored separately (append-only). See [docs/independent-review.md](./docs/independent-review.md).
 
 **Backward Transitions**:
 
@@ -257,6 +257,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 - **11 Custom Tools** (`integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers
 - **11 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
+- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for independent adversarial review (deployed when `selfReview.subagentEnabled`)
 - **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
 - **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
