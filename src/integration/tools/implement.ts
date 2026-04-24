@@ -117,9 +117,10 @@ export const implement: ToolDefinition = {
       // P34b: Policy config (same as P34a)
       const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
+      const isRecordImpl = !args.reviewVerdict;
 
-      // P34b: Validate reviewFindings
-      if (args.reviewFindings) {
+      // P34b: Validate reviewFindings for Mode A only
+      if (args.reviewFindings && isRecordImpl) {
         const rf = args.reviewFindings as ReviewFindings;
 
         // Rule 1: subagent mode requires policy enabled
@@ -162,8 +163,6 @@ export const implement: ToolDefinition = {
           required: 'reviewFindings',
         });
       }
-
-      const isRecordImpl = !args.reviewVerdict;
 
       if (isRecordImpl) {
         // ── Mode A: Record implementation evidence ───────────────

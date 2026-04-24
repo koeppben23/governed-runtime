@@ -2692,6 +2692,25 @@ describe('implement', () => {
       reviewedAt: new Date().toISOString(),
     };
 
+    async function setSelfReviewPolicy(
+      subagentEnabled: boolean,
+      fallbackToSelf: boolean,
+    ): Promise<void> {
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          selfReview: { subagentEnabled, fallbackToSelf },
+        },
+      });
+    }
+
     it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
@@ -2716,6 +2735,57 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+    });
+
+    it('subagentEnabled=true + reviewMode=subagent -> accepted', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.latestImplementationReview).toBeTruthy();
+      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
+    });
+
+    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> accepted', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, true);
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.latestImplementationReview).toBeTruthy();
+      expect(result.latestImplementationReview.reviewMode).toBe('self');
+    });
+
+    it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self -> BLOCKED', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    });
+
+    it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
+      await reachImplementation();
+      await setSelfReviewPolicy(true, false);
+
+      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      const st = parseToolResult(await status.execute({}, ctx));
+      const modeBFindings = {
+        ...validReviewFindingsSubagent,
+        iteration: ((st.implReviewIteration as number | null) ?? 0) + 1,
+      };
+      const raw = await implement.execute(
+        { reviewVerdict: 'approve', reviewFindings: modeBFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.implReviewIteration).toBeGreaterThanOrEqual(1);
+      expect(result.latestImplementationReview).toBeTruthy();
+      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
     it('persists implReviewFindings in state', async () => {
