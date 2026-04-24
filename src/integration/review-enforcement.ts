@@ -26,6 +26,15 @@
  *   Enforced in tool.execute.before for flowguard_plan/flowguard_implement
  *   Mode B calls.
  *
+ * 1:1 obligation matching (P34a/P34b contract):
+ * Each Task call to flowguard-reviewer satisfies exactly ONE pending review
+ * obligation. P34a (plan review) and P34b (implement review) are independent
+ * governance obligations — a single subagent call cannot satisfy both.
+ * When multiple pending reviews exist, the Task prompt's iteration/planVersion
+ * values are matched against each pending review's contentMeta to determine
+ * which obligation the call fulfills. If no match is found, no obligation is
+ * satisfied (fail-closed).
+ *
  * Architecture:
  * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
  * - Plugin integration happens in plugin.ts (delegates to this module).
@@ -34,7 +43,7 @@
  * Conformance: Uses documented OpenCode plugin hooks (tool.execute.before/after)
  * per https://opencode.ai/docs/plugins
  *
- * @version v2
+ * @version v3
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -267,12 +276,17 @@ export function enforceBeforeSubagentCall(
  * Process a Task tool completion (tool.execute.after for 'task').
  *
  * If the Task call was to flowguard-reviewer:
- * - Marks all pending reviews as having a completed subagent call (Level 1)
+ * - Matches exactly one pending review obligation via contentMeta (P34 1:1 contract)
  * - Records the subagent session ID — null if extraction fails (Level 2 strict)
  * - Captures actual findings from the subagent response (Level 4)
  *
+ * 1:1 obligation matching: Each Task call satisfies exactly one pending review.
+ * P34a (plan) and P34b (implement) are independent obligations. When multiple
+ * are pending, the prompt's iteration/planVersion must match the target obligation's
+ * contentMeta. If only one is pending, it is matched unambiguously.
+ *
  * @param state - Session enforcement state (mutated in place)
- * @param args - Task tool arguments (expects subagent_type field)
+ * @param args - Task tool arguments (expects subagent_type and prompt fields)
  * @param taskResult - Raw task result string (subagent response)
  * @param now - ISO 8601 timestamp
  */
@@ -296,14 +310,54 @@ export function onTaskToolAfter(
     completedAt: now,
   };
 
-  // Mark ALL pending reviews as having a subagent call.
-  // The subagent reviews the current state — both plan and implement
-  // reviews are satisfied by a single subagent invocation if both are pending.
-  for (const pending of state.pendingReviews.values()) {
-    pending.subagentCalled = true;
-    pending.subagentRecord = record;
-    pending.capturedFindings = capturedFindings;
+  // Match exactly ONE pending review obligation (P34 1:1 contract).
+  // Each subagent call satisfies one obligation. If both plan and implement
+  // reviews are pending, each requires its own subagent invocation.
+  const matched = matchPendingReview(state, args);
+  if (matched) {
+    matched.subagentCalled = true;
+    matched.subagentRecord = record;
+    matched.capturedFindings = capturedFindings;
   }
+}
+
+/**
+ * Match a Task call to exactly one pending review obligation.
+ *
+ * Matching strategy (P34 1:1 contract):
+ * - 0 pending: null (no obligation to satisfy)
+ * - 1 pending: that one (unambiguous — L3 already validated the prompt)
+ * - >1 pending: match by contentMeta (iteration + planVersion from prompt)
+ * - >1 pending, no contentMeta match: null (fail-closed, ambiguous)
+ *
+ * @param state - Session enforcement state (read-only)
+ * @param taskArgs - Task tool call arguments (expects prompt field)
+ * @returns The matched PendingReview, or null if no match
+ */
+export function matchPendingReview(
+  state: SessionEnforcementState,
+  taskArgs: Record<string, unknown>,
+): PendingReview | null {
+  const uncalled = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
+
+  if (uncalled.length === 0) return null;
+  if (uncalled.length === 1) return uncalled[0]!;
+
+  // Multiple pending — match by contentMeta from prompt
+  const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
+
+  for (const pending of uncalled) {
+    if (!pending.contentMeta) continue;
+
+    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
+    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
+    const hasPlanVersion =
+      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
+
+    if (hasIteration && hasPlanVersion) return pending;
+  }
+
+  return null; // No match — fail-closed
 }
 
 /**

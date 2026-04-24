@@ -100,7 +100,7 @@ The submitted `reviewFindings` are compared against the actual subagent response
 flowguard_plan (Mode A)     →  plugin registers pending review + captures content meta
     ↓
 task (flowguard-reviewer)   →  L3: validates prompt integrity (before)
-                            →  plugin records subagent call + captures findings (after)
+                            →  plugin matches + records exactly one pending obligation (after)
     ↓
 flowguard_plan (Mode B)     →  L1: subagent called?
                             →  L2: session ID match?
@@ -108,6 +108,8 @@ flowguard_plan (Mode B)     →  L1: subagent called?
                                 ↳ ALL PASS → tool executes normally
                                 ↳ ANY FAIL → throw → tool call physically blocked
 ```
+
+Each Task call to `flowguard-reviewer` satisfies exactly **one** pending review obligation (P34 1:1 contract). P34a (plan review) and P34b (implement review) are independent governance obligations. When both are pending, the prompt's `iteration`/`planVersion` values are matched against each obligation's content metadata to determine assignment. If no match is found, no obligation is satisfied (fail-closed).
 
 State is session-scoped and cleared after successful verdict submission. Tracking errors (in `tool.execute.after`) are fire-and-forget and never block governance flow. Enforcement errors (in `tool.execute.before`) are strict and physically prevent the tool call.
 
@@ -263,6 +265,7 @@ The `flowguard install` command deploys:
    - L2: Session ID match — submitted session ID must match actual subagent session
    - L3: Prompt integrity — subagent prompt must contain expected iteration/planVersion and meet minimum length
    - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match actual subagent response
+3. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. P34a (plan) and P34b (implement) are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
 
 **Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 

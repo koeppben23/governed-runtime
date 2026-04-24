@@ -20,6 +20,7 @@ import {
   onTaskToolAfter,
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
+  matchPendingReview,
   extractContentMeta,
   extractCapturedFindings,
   promptContainsValue,
@@ -660,37 +661,189 @@ describe('review-enforcement', () => {
       expect(state.pendingReviews.has('flowguard_implement')).toBe(true);
     });
 
-    it('single subagent call satisfies all pending reviews', () => {
+    it('two pending reviews: plan prompt satisfies only plan pending (P34 1:1)', () => {
       const state = createSessionState();
 
+      // Plan pending: iteration=0, planVersion=3
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASubagentResponse(),
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
         NOW,
       );
+      // Implement pending: iteration=1, planVersion=3
       onFlowGuardToolAfter(
         state,
         'flowguard_implement',
         {},
-        modeASubagentResponse({ phase: 'IMPLEMENTATION' }),
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
         NOW,
       );
+      expect(state.pendingReviews.size).toBe(2);
 
+      // Task call with plan-matching prompt (iteration=0)
       onTaskToolAfter(
         state,
-        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
-        taskResultWithFindings('shared-session'),
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 0, planVersion: 3 }),
+        },
+        taskResultWithFindings('plan-session'),
         LATER,
       );
 
       const planPending = state.pendingReviews.get('flowguard_plan');
       const implPending = state.pendingReviews.get('flowguard_implement');
       expect(planPending?.subagentCalled).toBe(true);
+      expect(planPending?.subagentRecord?.sessionId).toBe('plan-session');
+      expect(implPending?.subagentCalled).toBe(false);
+      expect(implPending?.subagentRecord).toBeNull();
+    });
+
+    it('two pending reviews: implement prompt satisfies only implement pending (P34 1:1)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      // Task call with implement-matching prompt (iteration=1)
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 1, planVersion: 3 }),
+        },
+        taskResultWithFindings('impl-session'),
+        LATER,
+      );
+
+      const planPending = state.pendingReviews.get('flowguard_plan');
+      const implPending = state.pendingReviews.get('flowguard_implement');
+      expect(planPending?.subagentCalled).toBe(false);
       expect(implPending?.subagentCalled).toBe(true);
-      expect(planPending?.capturedFindings).not.toBeNull();
-      expect(implPending?.capturedFindings).not.toBeNull();
+      expect(implPending?.subagentRecord?.sessionId).toBe('impl-session');
+    });
+
+    it('two pending reviews require two separate subagent calls (P34 1:1)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      // First call satisfies plan
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 0, planVersion: 3 }),
+        },
+        taskResultWithFindings('plan-session'),
+        LATER,
+      );
+
+      // Second call satisfies implement
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 1, planVersion: 3 }),
+        },
+        taskResultWithFindings('impl-session'),
+        LATER,
+      );
+
+      const planPending = state.pendingReviews.get('flowguard_plan');
+      const implPending = state.pendingReviews.get('flowguard_implement');
+      expect(planPending?.subagentCalled).toBe(true);
+      expect(planPending?.subagentRecord?.sessionId).toBe('plan-session');
+      expect(implPending?.subagentCalled).toBe(true);
+      expect(implPending?.subagentRecord?.sessionId).toBe('impl-session');
+    });
+
+    it('two pending reviews: non-matching prompt satisfies neither (fail-closed)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      // Task call with non-matching prompt (iteration=99)
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 99, planVersion: 3 }),
+        },
+        taskResultWithFindings('orphan-session'),
+        LATER,
+      );
+
+      const planPending = state.pendingReviews.get('flowguard_plan');
+      const implPending = state.pendingReviews.get('flowguard_implement');
+      expect(planPending?.subagentCalled).toBe(false);
+      expect(implPending?.subagentCalled).toBe(false);
+    });
+
+    it('single pending is matched without prompt content validation (unambiguous)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+
+      // Task call with non-matching prompt — but only 1 pending, so unambiguous
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: 'Minimal prompt without matching context',
+        },
+        taskResultWithFindings('s1'),
+        LATER,
+      );
+
+      const pending = state.pendingReviews.get('flowguard_plan');
+      expect(pending?.subagentCalled).toBe(true);
     });
 
     it('fresh session state has no pending reviews', () => {
@@ -1138,6 +1291,148 @@ describe('review-enforcement', () => {
   });
 
   // ─── HELPER FUNCTIONS ──────────────────────────────────────
+  describe('matchPendingReview', () => {
+    it('returns null when no pending reviews exist', () => {
+      const state = createSessionState();
+      const result = matchPendingReview(state, { prompt: 'anything' });
+      expect(result).toBeNull();
+    });
+
+    it('returns single pending automatically (unambiguous)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 5 }),
+        NOW,
+      );
+
+      // Prompt does NOT match contentMeta — but single pending = unambiguous
+      const result = matchPendingReview(state, { prompt: 'no matching context' });
+      expect(result).not.toBeNull();
+      expect(result?.tool).toBe('flowguard_plan');
+    });
+
+    it('matches by contentMeta when multiple pending (iteration distinguishes)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      const result = matchPendingReview(state, {
+        prompt: validSubagentPrompt({ iteration: 1, planVersion: 3 }),
+      });
+      expect(result).not.toBeNull();
+      expect(result?.tool).toBe('flowguard_implement');
+    });
+
+    it('returns null when multiple pending and no contentMeta match (fail-closed)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      const result = matchPendingReview(state, {
+        prompt: validSubagentPrompt({ iteration: 99, planVersion: 99 }),
+      });
+      expect(result).toBeNull();
+    });
+
+    it('skips already-called pending reviews', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 3 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        modeASubagentResponse({ iteration: 1, planVersion: 3, phase: 'IMPLEMENTATION' }),
+        NOW,
+      );
+
+      // First call satisfies plan
+      onTaskToolAfter(
+        state,
+        {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: validSubagentPrompt({ iteration: 0, planVersion: 3 }),
+        },
+        taskResultWithFindings('s1'),
+        LATER,
+      );
+
+      // Now only implement is uncalled — should match it unambiguously
+      const result = matchPendingReview(state, { prompt: 'any prompt' });
+      expect(result).not.toBeNull();
+      expect(result?.tool).toBe('flowguard_implement');
+    });
+
+    it('returns null when multiple pending have null contentMeta (fail-closed)', () => {
+      const state = createSessionState();
+      // Both pending reviews have null contentMeta (extraction failed)
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        JSON.stringify({
+          phase: 'PLAN',
+          reviewMode: 'subagent',
+          next: `${REVIEW_REQUIRED_PREFIX}: Review the plan.`,
+        }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        JSON.stringify({
+          phase: 'IMPLEMENTATION',
+          reviewMode: 'subagent',
+          next: `${REVIEW_REQUIRED_PREFIX}: Review the implementation.`,
+        }),
+        NOW,
+      );
+
+      const plan = state.pendingReviews.get('flowguard_plan');
+      const impl = state.pendingReviews.get('flowguard_implement');
+      expect(plan?.contentMeta).toBeNull();
+      expect(impl?.contentMeta).toBeNull();
+
+      const result = matchPendingReview(state, {
+        prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+      });
+      expect(result).toBeNull();
+    });
+  });
+
   describe('extractContentMeta', () => {
     it('extracts iteration and planVersion from standard format', () => {
       const meta = extractContentMeta(
