@@ -345,3 +345,135 @@ describe('P34a Foundation: Self-Review Fallback Semantics', () => {
     expect(mockPolicy.selfReview.fallbackToSelf).toBe(false);
   });
 });
+
+describe('P34a: Agent-Orchestrated Review Input Validation', () => {
+  const validReviewFindingsSubagent = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSelf = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  it('reviewMode=subagent accepted when subagentEnabled=true', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+    const result = ReviewFindings.safeParse(validReviewFindingsSubagent);
+    expect(result.success).toBe(true);
+  });
+
+  it('reviewMode=self accepted when subagentEnabled=true and fallbackToSelf=true', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+    const result = ReviewFindings.safeParse(validReviewFindingsSelf);
+    expect(result.success).toBe(true);
+  });
+
+  it('ReviewFindings.planVersion must match expected version', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
+    const result = ReviewFindings.safeParse(wrongVersion);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('ReviewFindings.iteration must be non-negative integer', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const negativeIteration = { ...validReviewFindingsSubagent, iteration: -1 };
+    const result = ReviewFindings.safeParse(negativeIteration);
+
+    expect(result.success).toBe(false);
+  });
+
+  it('PlanRecord preserves reviewFindings append-only', async () => {
+    const { PlanRecord } = await import('../../state/evidence.js');
+
+    const existingPlan = {
+      current: {
+        body: 'v1',
+        digest: 'd1',
+        sections: [],
+        createdAt: new Date().toISOString(),
+      },
+      history: [],
+      reviewFindings: [validReviewFindingsSubagent],
+    } as any;
+
+    const result = PlanRecord.safeParse(existingPlan);
+    expect(result.success).toBe(true);
+  });
+
+  it('ReviewFindings rejects invalid reviewMode', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const invalidMode = { ...validReviewFindingsSubagent, reviewMode: 'invalid' as any };
+    const result = ReviewFindings.safeParse(invalidMode);
+
+    expect(result.success).toBe(false);
+  });
+
+  it('ReviewFindings requires reviewedBy', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const missingReviewer = { ...validReviewFindingsSubagent, reviewedBy: undefined };
+    const result = ReviewFindings.safeParse(missingReviewer);
+
+    expect(result.success).toBe(false);
+  });
+
+  it('reviewFindings with valid schema parses correctly', async () => {
+    const { ReviewFindings: ReviewFindingsSchema } = await import('../../state/evidence.js');
+    const result = ReviewFindingsSchema.safeParse(validReviewFindingsSubagent);
+    expect(result.success).toBe(true);
+  });
+
+  it('reviewFindings rejects planVersion=0', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const zeroVersion = { ...validReviewFindingsSubagent, planVersion: 0 };
+    const result = ReviewFindings.safeParse(zeroVersion);
+
+    expect(result.success).toBe(false);
+  });
+
+  it('reviewFindings allows empty arrays for optional fields', async () => {
+    const { ReviewFindings } = await import('../../state/evidence.js');
+
+    const minimalFindings = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'changes_requested' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_min' },
+      reviewedAt: new Date().toISOString(),
+    };
+
+    const result = ReviewFindings.safeParse(minimalFindings);
+    expect(result.success).toBe(true);
+  });
+});

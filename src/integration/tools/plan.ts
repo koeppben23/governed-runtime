@@ -62,6 +62,7 @@ import type {
   RevisionDelta,
   ReviewFindings,
 } from '../../state/evidence.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
@@ -92,9 +93,7 @@ export const plan: ToolDefinition = {
           "'approve' = plan is good, advance. " +
           "'changes_requested' = plan needs revision, provide updated planText.",
       ),
-    reviewFindings: z
-      .any()
-      .optional()
+    reviewFindings: ReviewFindingsSchema.optional()
       .describe(
         'Structured review findings from independent review. ' +
           'Required when selfReviewVerdict is "approve" and subagentEnabled=true.',
