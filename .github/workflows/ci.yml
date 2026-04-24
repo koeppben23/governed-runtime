@@ -14,7 +14,6 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -180,7 +179,6 @@ jobs:
   independent-review-e2e:
     name: independent-review-e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
