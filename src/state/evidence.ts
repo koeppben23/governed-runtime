@@ -235,6 +235,9 @@ export const ImplReviewResult = z.object({
 });
 export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
 
+/** Implementation review findings. P34b: separate from ImplEvidence for agent-orchestrated review. */
+export const ImplementationReviewFindings = ReviewFindings;
+
 // ─── Architecture Decision Record ─────────────────────────────────────────────
 
 /** Status of an Architecture Decision Record. */

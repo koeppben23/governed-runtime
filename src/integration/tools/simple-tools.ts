@@ -235,6 +235,22 @@ export const status: ToolDefinition = {
             ? state.implReview.iteration >= state.implReview.maxIterations ||
               (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
             : null,
+          // P34b: latest implementation independent review summary
+          latestImplementationReview: (() => {
+            const findings = state.implReviewFindings;
+            if (!findings || findings.length === 0) return null;
+            const latest = findings[findings.length - 1];
+            if (!latest) return null;
+            return {
+              iteration: latest.iteration,
+              overallVerdict: latest.overallVerdict,
+              blockingIssueCount: latest.blockingIssues.length,
+              majorRiskCount: latest.majorRisks.length,
+              missingVerificationCount: latest.missingVerification.length,
+              reviewMode: latest.reviewMode,
+              reviewedAt: latest.reviewedAt,
+            };
+          })(),
           hasReviewDecision: state.reviewDecision !== null,
           reviewVerdict: state.reviewDecision?.verdict ?? null,
           error: state.error,

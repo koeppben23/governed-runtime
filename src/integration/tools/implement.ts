@@ -2,6 +2,33 @@
  * @module integration/tools/implement
  * @description FlowGuard implement tool — record implementation or review verdict.
  *
+ * P34b: Agent-Orchestrated Independent Review for /implement
+ *
+ * Architecture: FlowGuard does NOT call subagents — it accepts and governs
+ * independently produced ReviewFindings from OpenCode primary agent orchestration.
+ *
+ * Flow:
+ * 1. Primary agent performs implementation work
+ * 2. Primary agent calls hidden review subagent via Task tool
+ * 3. Subagent returns structured ReviewFindings
+ * 4. Primary agent submits implementation + reviewFindings to FlowGuard tool
+ * 5. FlowGuard validates and persists both (append-only, separate)
+ *
+ * Tool responsibilities:
+ * - Input validation: reviewFindings vs policy, iteration binding
+ * - Persistence: impl history (author), implReviewFindings (reviewer)
+ * - Response: summary of review findings
+ *
+ * Policy config (selfReview):
+ * - subagentEnabled: enforces subagent review mode
+ * - fallbackToSelf: allows self-review fallback when subagent unavailable
+ *
+ * Validation rules (same as P34a):
+ * - reviewMode=subagent + !subagentEnabled → BLOCKED
+ * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
+ * - reviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
+ * - reviewFindings.iteration mismatch → BLOCKED
+ *
  * Multi-call pattern driven by the LLM:
  *
  * Step 1: LLM makes code changes using OpenCode built-in tools (read, write, bash)
@@ -10,15 +37,15 @@
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed"
  *
- * Step 3: LLM reviews the implementation
- * Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve" })
+ * Step 3: LLM reviews the implementation (optionally via subagent)
+ * Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
  * OR Step 4: LLM calls flowguard_implement({ reviewVerdict: "changes_requested" })
  *   -> LLM makes more code changes, then calls flowguard_implement({}) again
  *
- * @version v3
+ * @version v4 (P34b agent-orchestrated)
  */
 
 import { z } from 'zod';
@@ -48,7 +75,8 @@ import { autoAdvance } from '../../rails/types.js';
 import { changedFiles } from '../../adapters/git.js';
 
 // Evidence types
-import type { LoopVerdict, RevisionDelta } from '../../state/evidence.js';
+import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
@@ -62,7 +90,8 @@ export const implement: ToolDefinition = {
     "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
     'Use at IMPL_REVIEW after reviewing the implementation.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
-    'On convergence, auto-advances to EVIDENCE_REVIEW.',
+    'On convergence, auto-advances to EVIDENCE_REVIEW.\n' +
+    'P34b: Accepts ReviewFindings from independent agent orchestrator.',
   args: {
     reviewVerdict: z
       .enum(['approve', 'changes_requested'])
@@ -72,6 +101,11 @@ export const implement: ToolDefinition = {
           "'approve' = implementation is correct. " +
           "'changes_requested' = implementation needs revision.",
       ),
+    reviewFindings: ReviewFindingsSchema.optional()
+      .describe(
+        'Structured review findings from independent review. ' +
+          'Required when reviewVerdict is "approve" and subagentEnabled=true.',
+      ),
   },
   async execute(args, context) {
     try {
@@ -80,6 +114,51 @@ export const implement: ToolDefinition = {
       const policy = resolvePolicyFromState(state);
       const ctx = createPolicyContext(policy);
       const maxImplReviewIterations = policy.maxImplReviewIterations;
+
+      // P34b: Policy config (same as P34a)
+      const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+      const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
+
+      // P34b: Validate reviewFindings
+      if (args.reviewFindings) {
+        const rf = args.reviewFindings as ReviewFindings;
+
+        // Rule 1: subagent mode requires policy enabled
+        if (rf.reviewMode === 'subagent' && !subagentEnabled) {
+          return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
+            action: 'submit subagent review findings',
+            policy: 'selfReview.subagentEnabled',
+          });
+        }
+
+        // Rule 2: self mode requires fallbackToSelf when subagent enabled
+        if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
+          return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+            action: 'submit self-review findings',
+            policyHint: 'selfReview.fallbackToSelf=true required',
+          });
+        }
+
+        // Rule 3: iteration binding for Mode A (first submission = iteration 0)
+        if (rf.iteration !== 0) {
+          return formatBlocked('REVIEW_ITERATION_MISMATCH', {
+            provided: String(rf.iteration),
+            expected: String(0),
+          });
+        }
+      }
+
+      // Rule 4: approve requires reviewFindings when subagent enabled
+      if (
+        args.reviewVerdict === 'approve' &&
+        subagentEnabled &&
+        !args.reviewFindings
+      ) {
+        return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
+          action: 'approve with subagentEnabled=true',
+          required: 'reviewFindings',
+        });
+      }
 
       const isRecordImpl = !args.reviewVerdict;
 
@@ -113,10 +192,17 @@ export const implement: ToolDefinition = {
           executedAt: ctx.now(),
         };
 
+        // P34b: Persist reviewFindings if provided (Mode A with findings)
+        const existingFindings = state.implReviewFindings ?? [];
+        const newReviewFindings = args.reviewFindings
+          ? [...existingFindings, args.reviewFindings as ReviewFindings]
+          : existingFindings;
+
         const nextState: SessionState = {
           ...state,
           implementation: implEvidence,
           implReview: null,
+          implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
           error: null,
         };
 
@@ -125,19 +211,36 @@ export const implement: ToolDefinition = {
         const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
         await writeStateWithArtifacts(sessDir, finalState);
 
-        return appendNextAction(
-          JSON.stringify({
-            phase: finalState.phase,
-            status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
-            changedFiles: files,
-            domainFiles,
-            next:
-              'Review the implementation against the plan. Check correctness, completeness, ' +
-              'edge cases, and code quality. Then call flowguard_implement with reviewVerdict.',
-            _audit: { transitions },
-          }),
-          finalState,
-        );
+        // Build response with latestImplementationReview summary
+        const response: Record<string, unknown> = {
+          phase: finalState.phase,
+          status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
+          changedFiles: files,
+          domainFiles,
+          next:
+            'Review the implementation against the plan. Check correctness, completeness, ' +
+            'edge cases, and code quality. Then call flowguard_implement with reviewVerdict.',
+          _audit: { transitions },
+        };
+
+        if (newReviewFindings.length > 0) {
+          // Use at() for proper TS narrowing
+          const atIndex = newReviewFindings.length - 1;
+          const rf = newReviewFindings.at(atIndex);
+          if (rf) {
+            response.latestImplementationReview = {
+              iteration: rf.iteration,
+              reviewMode: rf.reviewMode,
+              overallVerdict: rf.overallVerdict,
+              blockingIssueCount: rf.blockingIssues.length,
+              majorRiskCount: rf.majorRisks.length,
+              missingVerificationCount: rf.missingVerification.length,
+              reviewedAt: rf.reviewedAt,
+            };
+          }
+        }
+
+        return appendNextAction(JSON.stringify(response), finalState);
       } else {
         // ── Mode B: Implementation review verdict ────────────────
         if (state.phase !== 'IMPL_REVIEW') {
@@ -148,7 +251,36 @@ export const implement: ToolDefinition = {
           return formatBlocked('NO_IMPLEMENTATION');
         }
 
+        // P34b: Compute iteration before validation
         const iteration = (state.implReview?.iteration ?? 0) + 1;
+
+        // P34b: Validate reviewFindings in Mode B
+        if (args.reviewFindings) {
+          const rf = args.reviewFindings as ReviewFindings;
+
+          if (rf.reviewMode === 'subagent' && !subagentEnabled) {
+            return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
+              action: 'submit subagent review findings',
+              policy: 'selfReview.subagentEnabled',
+            });
+          }
+
+          if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
+            return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+              action: 'submit self-review findings',
+              policyHint: 'selfReview.fallbackToSelf=true required',
+            });
+          }
+
+          const expectedIteration = iteration;
+          if (rf.iteration !== expectedIteration) {
+            return formatBlocked('REVIEW_ITERATION_MISMATCH', {
+              provided: String(rf.iteration),
+              expected: String(expectedIteration),
+            });
+          }
+        }
+
         const verdict = args.reviewVerdict as LoopVerdict;
         const prevDigest = state.implementation.digest;
 
@@ -156,6 +288,12 @@ export const implement: ToolDefinition = {
         // flowguard_implement({}) again (Mode A). Here we just record
         // the review verdict.
         const revisionDelta: RevisionDelta = 'none';
+
+        // P34b: Persist reviewFindings in Mode B
+        const existingFindings = state.implReviewFindings ?? [];
+        const newReviewFindings = args.reviewFindings
+          ? [...existingFindings, args.reviewFindings as ReviewFindings]
+          : existingFindings;
 
         const nextState: SessionState = {
           ...state,
@@ -168,6 +306,7 @@ export const implement: ToolDefinition = {
             verdict,
             executedAt: ctx.now(),
           },
+          implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
           error: null,
         };
 
@@ -184,45 +323,46 @@ export const implement: ToolDefinition = {
           iteration >= maxImplReviewIterations ||
           (revisionDelta === 'none' && verdict === 'approve');
 
+        // Build response with latestImplementationReview summary
+        const response: Record<string, unknown> = {
+          phase: finalState.phase,
+          implReviewIteration: iteration,
+          next: verdict === 'approve' ? formatEval(ev) : undefined,
+          _audit: { transitions },
+        };
+
+        if (newReviewFindings.length > 0) {
+          const atIndex = newReviewFindings.length - 1;
+          const rf = newReviewFindings.at(atIndex);
+          if (rf) {
+            response.latestImplementationReview = {
+              iteration: rf.iteration,
+              reviewMode: rf.reviewMode,
+              overallVerdict: rf.overallVerdict,
+              blockingIssueCount: rf.blockingIssues.length,
+              majorRiskCount: rf.majorRisks.length,
+              missingVerificationCount: rf.missingVerification.length,
+              reviewedAt: rf.reviewedAt,
+            };
+          }
+        }
+
         if (converged && verdict === 'approve') {
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Implementation review converged at iteration ${iteration}. Approved.`,
-              implReviewIteration: iteration,
-              next: formatEval(ev),
-              _audit: { transitions },
-            }),
-            finalState,
-          );
+          response.status = `Implementation review converged at iteration ${iteration}. Approved.`;
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         if (verdict === 'changes_requested') {
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
-              implReviewIteration: iteration,
-              next:
-                'Make the requested code changes using read/write/bash tools, ' +
-                'then call flowguard_implement (without reviewVerdict) to re-record the implementation.',
-              _audit: { transitions },
-            }),
-            finalState,
-          );
+          response.status = `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`;
+          response.next =
+            'Make the requested code changes using read/write/bash tools, ' +
+            'then call flowguard_implement (without reviewVerdict) to re-record the implementation.';
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         // Forced convergence (max iterations reached, verdict was not approve)
-        return appendNextAction(
-          JSON.stringify({
-            phase: finalState.phase,
-            status: `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`,
-            implReviewIteration: iteration,
-            next: formatEval(ev),
-            _audit: { transitions },
-          }),
-          finalState,
-        );
+        response.status = `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`;
+        return appendNextAction(JSON.stringify(response), finalState);
       }
     } catch (err) {
       return formatError(err);
