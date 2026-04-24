@@ -1,6 +1,6 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself.
+FlowGuard's independent review system enables structured, policy-governed review of plans and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
 
 ---
 
@@ -15,8 +15,9 @@ FlowGuard's independent review system enables structured, policy-governed review
 │  3. Read tool response:                                 │
 │     → INDEPENDENT_REVIEW_COMPLETED: findings injected   │
 │       (plugin invoked reviewer automatically)           │
-│     → INDEPENDENT_REVIEW_REQUIRED: fallback path        │
-│       (plugin invocation failed, call Task tool)        │
+│     → INDEPENDENT_REVIEW_REQUIRED: non-strict fallback  │
+│       path (plugin invocation failed, call Task tool)   │
+│     → BLOCKED (strict mode orchestration/evidence fail) │
 │  4. Submit verdict + reviewFindings to FlowGuard tool   │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -38,7 +39,7 @@ Separation of concerns:
   Reviewer artifacts: plan.reviewFindings, implReviewFindings
 ```
 
-**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. Unparseable responses are treated as invocation failure (fail-closed). On failure, the output preserves the original `INDEPENDENT_REVIEW_REQUIRED` signal and the LLM can still invoke the reviewer via the Task tool (probabilistic fallback).
+**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. In strict mode, unparseable responses and orchestration failures are BLOCKED (no probabilistic fallback). In non-strict mode, failures preserve `INDEPENDENT_REVIEW_REQUIRED` and the LLM can still invoke the reviewer via the Task tool.
 
 ---
 
@@ -67,15 +68,15 @@ The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the ve
 
 **Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid, structured `ReviewFindings` (with `overallVerdict` and `blockingIssues`). Unparseable reviewer responses never produce `COMPLETED`.
 
-### Fallback Path (LLM-Driven)
+### Fallback Path (Non-Strict Only)
 
-If any step in the deterministic invocation fails (session creation error, prompt timeout, output mutation failure), or if the reviewer's response is not parseable as structured ReviewFindings, the plugin:
+If strict mode is disabled and deterministic invocation fails (session creation error, prompt timeout, output mutation failure), or the reviewer's response is not parseable as structured ReviewFindings, the plugin:
 
 - Logs the error (non-blocking)
 - Preserves the original `INDEPENDENT_REVIEW_REQUIRED` output unchanged
 - The LLM follows the slash command's Path A2: calls the `flowguard-reviewer` subagent via the Task tool
 
-This is the same flow that existed before deterministic invocation was added. Enforcement (L1-L4) still gates the verdict submission.
+In strict mode, this path is disabled: orchestration and parsing failures return BLOCKED (`STRICT_REVIEW_ORCHESTRATION_FAILED`).
 
 ### Fail-Closed Enforcement
 
@@ -181,16 +182,18 @@ Enable subagent review in FlowGuard policy configuration:
 {
   "selfReview": {
     "subagentEnabled": true,
-    "fallbackToSelf": false
+    "fallbackToSelf": false,
+    "strictEnforcement": true
   }
 }
 ```
 
-| Setting                                        | Effect                                                                       |
-| ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| `subagentEnabled: false` (default)             | Only `reviewMode: "self"` accepted. Existing self-review behavior unchanged. |
-| `subagentEnabled: true, fallbackToSelf: false` | Only `reviewMode: "subagent"` accepted. Self-review blocked.                 |
-| `subagentEnabled: true, fallbackToSelf: true`  | Both modes accepted. Self-review used as degraded fallback.                  |
+| Setting                                        | Effect                                                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `subagentEnabled: false` (default)             | Only `reviewMode: "self"` accepted. Existing self-review behavior unchanged.                   |
+| `subagentEnabled: true, fallbackToSelf: false` | Only `reviewMode: "subagent"` accepted. Self-review blocked.                                   |
+| `subagentEnabled: true, fallbackToSelf: true`  | Both modes accepted. Self-review used as degraded fallback.                                    |
+| `strictEnforcement: true`                      | Enforces mandate-bound, one-time subagent evidence; missing or mismatched evidence is BLOCKED. |
 
 ---
 
@@ -209,6 +212,14 @@ Enable subagent review in FlowGuard policy configuration:
   unknowns:             string[]
   reviewedBy:           ReviewActorInfo  // { sessionId, actorId?, actorSource?, actorAssurance? }
   reviewedAt:           string    // ISO 8601 datetime
+  attestation?: {
+    mandateDigest:      string    // must match runtime review mandate digest
+    criteriaVersion:    string    // must match runtime review criteria version
+    toolObligationId:   string    // must match strict review obligation id
+    iteration:          number    // must match expected iteration
+    planVersion:        number    // must match expected plan version
+    reviewedBy:         string    // expected: flowguard-reviewer
+  }
 }
 ```
 
@@ -227,6 +238,12 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Plan version binding | `findings.planVersion !== expected`                       | `REVIEW_PLAN_VERSION_MISMATCH`         |
 | Iteration binding    | `findings.iteration !== expected`                         | `REVIEW_ITERATION_MISMATCH`            |
 | Mandatory findings   | `approve` + `subagentEnabled` + no findings               | `REVIEW_FINDINGS_REQUIRED_FOR_APPROVE` |
+| Strict enforcement   | plugin assurance unavailable                              | `PLUGIN_ENFORCEMENT_UNAVAILABLE`       |
+| Strict enforcement   | orchestration obligation blocked                          | `STRICT_REVIEW_ORCHESTRATION_FAILED`   |
+| Strict enforcement   | subagent evidence missing                                 | `SUBAGENT_EVIDENCE_MISSING`            |
+| Strict enforcement   | attestation missing                                       | `SUBAGENT_MANDATE_MISSING`             |
+| Strict enforcement   | attestation mismatch                                      | `SUBAGENT_MANDATE_MISMATCH`            |
+| Strict enforcement   | invocation evidence already consumed                      | `SUBAGENT_EVIDENCE_REUSED`             |
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by both `/plan` and `/implement` tools.
 
@@ -282,16 +299,17 @@ The `flowguard install` command deploys:
 
 ## Current Status
 
-**Fully implemented.** The independent review system provides three enforcement layers:
+**Fully implemented.** The independent review system provides strict, fail-closed assurance with three enforcement layers:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Deterministic invocation** — Plugin programmatically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()`). No LLM decision involved. Graceful degradation to LLM-driven fallback on failure.
+2. **Deterministic invocation** — Plugin programmatically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()`). No LLM decision involved.
 3. **Plugin-level enforcement** — Four enforcement levels via OpenCode `tool.execute.before/after` hooks:
    - L1: Binary gate — subagent must be called before any verdict
    - L2: Session ID match — submitted session ID must match actual subagent session
    - L3: Prompt integrity — subagent prompt must contain expected iteration/planVersion and meet minimum length
    - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match actual subagent response
 4. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. P34a (plan) and P34b (implement) are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
+5. **Strict evidence contract (P35)** — With `strictEnforcement=true`, verdicts are accepted only when obligation, invocation evidence, and reviewer attestation are all present, mandate-bound, and single-use. No fallback to probabilistic review.
 
 **Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Deterministic invocation and enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 

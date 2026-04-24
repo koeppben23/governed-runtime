@@ -52,6 +52,7 @@
     "test:watch": "vitest",
     "test:install-verify": "vitest run src/cli/install-verify.test.ts",
     "test:acp": "vitest run src/cli/run-acp-smoke.test.ts",
+    "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "sync-version": "node scripts/sync-version.js",
     "generate-docs": "node scripts/generate-docs.js",
     "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",

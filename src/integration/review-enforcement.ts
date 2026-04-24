@@ -160,21 +160,17 @@ export function onFlowGuardToolAfter(
   if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return;
 
   const reviewTool = toolName as ReviewableTool;
+  const parsed = safeParse(output);
+  if (!parsed) return;
 
   // Mode B: agent is submitting a verdict → clear pending review on success
   const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
   if (hasSelfReviewVerdict) {
     // Only clear if the call succeeded (no error in output)
-    const parsed = safeParse(output);
-    if (parsed && parsed.error !== true) {
+    if (parsed.error !== true) {
       state.pendingReviews.delete(reviewTool);
     }
-    return;
   }
-
-  // Mode A: check if response signals review required
-  const parsed = safeParse(output);
-  if (!parsed) return;
 
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX)) {

@@ -176,6 +176,27 @@ jobs:
           FORCE_COLOR: 0
           RUN_OPENCODE_ACP_TESTS: '1'
 
+  independent-review-e2e:
+    name: independent-review-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run independent-review e2e verifier
+        run: npm run test:independent-review-e2e
+        env:
+          FORCE_COLOR: 0
+
   audit:
     name: audit
     runs-on: ubuntu-latest

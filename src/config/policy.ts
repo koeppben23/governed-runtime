@@ -55,12 +55,15 @@ export interface SelfReviewConfig {
   readonly subagentEnabled: boolean;
   /** Fallback to self-review (agent reviews own work) on subagent timeout/failure. */
   readonly fallbackToSelf: boolean;
+  /** Strict assurance mode: fail closed unless mandate-bound subagent evidence exists. */
+  readonly strictEnforcement: boolean;
 }
 
 /** Self-review configuration for FlowGuardPolicy interface. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   subagentEnabled: false,
   fallbackToSelf: false,
+  strictEnforcement: false,
 };
 
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────

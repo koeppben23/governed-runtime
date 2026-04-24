@@ -5,6 +5,7 @@ import {
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../review-assurance.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -39,6 +40,45 @@ function makeCtx(
 
 function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
+}
+
+function strictAssuranceFixture() {
+  return {
+    obligations: [
+      {
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        obligationType: 'plan' as const,
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        createdAt: new Date().toISOString(),
+        pluginHandshakeAt: new Date().toISOString(),
+        status: 'fulfilled' as const,
+        invocationId: '22222222-2222-4222-8222-222222222222',
+        blockedCode: null,
+        fulfilledAt: new Date().toISOString(),
+        consumedAt: null,
+      },
+    ],
+    invocations: [
+      {
+        invocationId: '22222222-2222-4222-8222-222222222222',
+        obligationId: '11111111-1111-4111-8111-111111111111',
+        obligationType: 'plan' as const,
+        parentSessionId: 'ses_parent',
+        childSessionId: 'ses_child',
+        agentType: 'flowguard-reviewer' as const,
+        promptHash: 'abc',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        findingsHash: 'def',
+        invokedAt: new Date().toISOString(),
+        fulfilledAt: new Date().toISOString(),
+        consumedByObligationId: null,
+      },
+    ],
+  };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -279,6 +319,75 @@ describe('validateReviewFindings', () => {
         }
       });
     }
+  });
+
+  describe('strict assurance', () => {
+    it('accepts when strict evidence and attestation match', () => {
+      const findings = makeFindings({
+        reviewMode: 'subagent',
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: '11111111-1111-4111-8111-111111111111',
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).toBeNull();
+    });
+
+    it('blocks when strict attestation is missing', () => {
+      const findings = makeFindings({ reviewMode: 'subagent' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_MANDATE_MISSING');
+    });
+
+    it('blocks when strict obligation is blocked', () => {
+      const assurance = strictAssuranceFixture();
+      assurance.obligations[0]!.status = 'blocked';
+      assurance.obligations[0]!.blockedCode = 'STRICT_REVIEW_ORCHESTRATION_FAILED';
+      const findings = makeFindings({
+        reviewMode: 'subagent',
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: '11111111-1111-4111-8111-111111111111',
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          strictEnforcement: true,
+          assurance,
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    });
   });
 });
 

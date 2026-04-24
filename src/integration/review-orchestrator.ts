@@ -74,6 +74,12 @@ export interface PlanReviewPromptOpts {
   readonly iteration: number;
   /** The plan version number. */
   readonly planVersion: number;
+  /** Strict review obligation identifier. */
+  readonly obligationId: string;
+  /** Strict criteria version string. */
+  readonly criteriaVersion: string;
+  /** Strict mandate digest. */
+  readonly mandateDigest: string;
 }
 
 /** Options for building an implementation review prompt. */
@@ -88,6 +94,12 @@ export interface ImplReviewPromptOpts {
   readonly iteration: number;
   /** The plan version number. */
   readonly planVersion: number;
+  /** Strict review obligation identifier. */
+  readonly obligationId: string;
+  /** Strict criteria version string. */
+  readonly criteriaVersion: string;
+  /** Strict mandate digest. */
+  readonly mandateDigest: string;
 }
 
 /** Result of a successful reviewer invocation. */
@@ -133,7 +145,15 @@ const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
  * @returns Prompt text string
  */
 export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
-  const { planText, ticketText, iteration, planVersion } = opts;
+  const {
+    planText,
+    ticketText,
+    iteration,
+    planVersion,
+    obligationId,
+    criteriaVersion,
+    mandateDigest,
+  } = opts;
   return [
     `You are reviewing a plan for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -151,6 +171,10 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     'for plans. Return your findings as a single JSON object matching the',
     'ReviewFindings schema. Use the exact iteration and planVersion values above.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
+    `Set attestation.toolObligationId=${obligationId}.`,
+    `Set attestation.criteriaVersion=${criteriaVersion}.`,
+    `Set attestation.mandateDigest=${mandateDigest}.`,
+    'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
 
@@ -161,7 +185,16 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
  * @returns Prompt text string
  */
 export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
-  const { changedFiles, planText, ticketText, iteration, planVersion } = opts;
+  const {
+    changedFiles,
+    planText,
+    ticketText,
+    iteration,
+    planVersion,
+    obligationId,
+    criteriaVersion,
+    mandateDigest,
+  } = opts;
   return [
     `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -184,6 +217,10 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     'Follow your review criteria for implementations.',
     'Return your findings as a single JSON object matching the ReviewFindings schema.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
+    `Set attestation.toolObligationId=${obligationId}.`,
+    `Set attestation.criteriaVersion=${criteriaVersion}.`,
+    `Set attestation.mandateDigest=${mandateDigest}.`,
+    'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
 
@@ -388,7 +425,13 @@ export function isReviewRequired(toolOutput: string): boolean {
 export function extractReviewContext(
   toolName: string,
   toolOutput: Record<string, unknown>,
-): { iteration: number; planVersion: number } | null {
+): {
+  iteration: number;
+  planVersion: number;
+  obligationId: string;
+  criteriaVersion: string;
+  mandateDigest: string;
+} | null {
   const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
 
   // Extract iteration from the next field
@@ -401,6 +444,16 @@ export function extractReviewContext(
   if (!versionMatch) return null;
   const planVersion = parseInt(versionMatch[1]!, 10);
 
+  const obligationId =
+    typeof toolOutput.reviewObligationId === 'string' ? toolOutput.reviewObligationId : null;
+  const criteriaVersion =
+    typeof toolOutput.reviewCriteriaVersion === 'string' ? toolOutput.reviewCriteriaVersion : null;
+  const mandateDigest =
+    typeof toolOutput.reviewMandateDigest === 'string' ? toolOutput.reviewMandateDigest : null;
+  if (!obligationId || !criteriaVersion || !mandateDigest) {
+    return null;
+  }
+
   // Validate against the tool response fields for consistency
   if (toolName === 'flowguard_plan') {
     const selfReviewIteration = toolOutput.selfReviewIteration;
@@ -409,7 +462,7 @@ export function extractReviewContext(
     }
   }
 
-  return { iteration, planVersion };
+  return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────

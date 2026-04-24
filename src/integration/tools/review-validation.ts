@@ -16,6 +16,8 @@
 
 import type { ReviewFindings } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
+import { findLatestObligation, validateStrictAttestation } from '../review-assurance.js';
+import type { ReviewAssuranceState, ReviewObligationType } from '../../state/evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -29,6 +31,12 @@ export interface ReviewFindingsValidationContext {
   readonly expectedPlanVersion: number;
   /** Expected iteration number for the current mode/phase. */
   readonly expectedIteration: number;
+  /** Strict assurance mode flag. */
+  readonly strictEnforcement?: boolean;
+  /** Strict assurance store from state. */
+  readonly assurance?: ReviewAssuranceState;
+  /** Obligation type for strict checks. */
+  readonly obligationType?: ReviewObligationType;
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -72,6 +80,70 @@ export function validateReviewFindings(
       provided: String(findings.iteration),
       expected: String(ctx.expectedIteration),
     });
+  }
+
+  if (ctx.strictEnforcement) {
+    if (!ctx.assurance || !ctx.obligationType) {
+      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        required: 'strict review assurance state',
+      });
+    }
+
+    const obligation = findLatestObligation(
+      ctx.assurance.obligations,
+      ctx.obligationType,
+      ctx.expectedIteration,
+      ctx.expectedPlanVersion,
+    );
+    if (!obligation || !obligation.pluginHandshakeAt) {
+      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        obligationType: ctx.obligationType,
+        iteration: String(ctx.expectedIteration),
+        planVersion: String(ctx.expectedPlanVersion),
+      });
+    }
+
+    if (obligation.status === 'blocked') {
+      return formatBlocked('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+        code: obligation.blockedCode ?? 'UNKNOWN',
+      });
+    }
+
+    if (obligation.status !== 'fulfilled' || !obligation.invocationId) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        obligationId: obligation.obligationId,
+      });
+    }
+
+    const attestationError = validateStrictAttestation(findings, {
+      obligationId: obligation.obligationId,
+      iteration: ctx.expectedIteration,
+      planVersion: ctx.expectedPlanVersion,
+    });
+    if (attestationError) {
+      return formatBlocked(attestationError, {
+        obligationId: obligation.obligationId,
+      });
+    }
+
+    const invocation = ctx.assurance.invocations.find(
+      (item) => item.invocationId === obligation.invocationId,
+    );
+    if (!invocation) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        invocationId: obligation.invocationId,
+      });
+    }
+
+    if (
+      invocation.consumedByObligationId &&
+      invocation.consumedByObligationId !== obligation.obligationId
+    ) {
+      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
+        invocationId: invocation.invocationId,
+        consumedBy: invocation.consumedByObligationId,
+      });
+    }
   }
 
   return null;

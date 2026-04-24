@@ -132,6 +132,20 @@ export const ReviewActorInfo = z.object({
 export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 
 /**
+ * P35 strict independent-review attestation.
+ * Binds findings to one obligation + mandate version/digest.
+ */
+export const ReviewAttestation = z.object({
+  mandateDigest: z.string().min(1),
+  criteriaVersion: z.string().min(1),
+  toolObligationId: z.string().uuid(),
+  iteration: z.number().int().nonnegative(),
+  planVersion: z.number().int().positive(),
+  reviewedBy: z.literal('flowguard-reviewer'),
+});
+export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
+
+/**
  * Structured findings from an independent review.
  * Enables read-only subagent review without direct state/file writes.
  */
@@ -147,8 +161,63 @@ export const ReviewFindings = z.object({
   unknowns: z.array(z.string()),
   reviewedBy: ReviewActorInfo,
   reviewedAt: z.string().datetime(),
+  attestation: ReviewAttestation.optional(),
 });
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
+
+/** Independent review obligation type. */
+export const ReviewObligationType = z.enum(['plan', 'implement']);
+export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
+
+/** Strict review obligation state. */
+export const ReviewObligationStatus = z.enum(['pending', 'fulfilled', 'consumed', 'blocked']);
+export type ReviewObligationStatus = z.infer<typeof ReviewObligationStatus>;
+
+/**
+ * P35 strict obligation record.
+ * Exactly one independent review invocation must fulfill each obligation.
+ */
+export const ReviewObligation = z.object({
+  obligationId: z.string().uuid(),
+  obligationType: ReviewObligationType,
+  iteration: z.number().int().nonnegative(),
+  planVersion: z.number().int().positive(),
+  criteriaVersion: z.string().min(1),
+  mandateDigest: z.string().min(1),
+  createdAt: z.string().datetime(),
+  pluginHandshakeAt: z.string().datetime().nullable(),
+  status: ReviewObligationStatus,
+  invocationId: z.string().uuid().nullable(),
+  blockedCode: z.string().nullable(),
+  fulfilledAt: z.string().datetime().nullable(),
+  consumedAt: z.string().datetime().nullable(),
+});
+export type ReviewObligation = z.infer<typeof ReviewObligation>;
+
+/** P35 strict invocation evidence record. */
+export const ReviewInvocationEvidence = z.object({
+  invocationId: z.string().uuid(),
+  obligationId: z.string().uuid(),
+  obligationType: ReviewObligationType,
+  parentSessionId: z.string().min(1),
+  childSessionId: z.string().min(1),
+  agentType: z.literal('flowguard-reviewer'),
+  promptHash: z.string().min(1),
+  mandateDigest: z.string().min(1),
+  criteriaVersion: z.string().min(1),
+  findingsHash: z.string().min(1),
+  invokedAt: z.string().datetime(),
+  fulfilledAt: z.string().datetime(),
+  consumedByObligationId: z.string().uuid().nullable(),
+});
+export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
+
+/** Persistent strict review assurance state. */
+export const ReviewAssuranceState = z.object({
+  obligations: z.array(ReviewObligation),
+  invocations: z.array(ReviewInvocationEvidence),
+});
+export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────
 
@@ -412,6 +481,7 @@ export const PolicySnapshotSchema = z.object({
     .object({
       subagentEnabled: z.boolean(),
       fallbackToSelf: z.boolean(),
+      strictEnforcement: z.boolean().default(false),
     })
     .optional(),
   audit: z.object({

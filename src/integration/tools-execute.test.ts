@@ -1706,6 +1706,49 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
     });
+
+    it('Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: false,
+          },
+        },
+      });
+
+      await plan.execute({ planText: '## Original Plan' }, ctx);
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          planText: '## Revised Plan\n1. Better approach',
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(typeof result.selfReviewIteration).toBe('number');
+      expect(typeof result.next).toBe('string');
+
+      const nextText = result.next as string;
+      const iterMatch = nextText.match(/iteration[=:\s]+(\d+)/i);
+      expect(iterMatch).not.toBeNull();
+      const nextIteration = Number.parseInt(iterMatch![1]!, 10);
+
+      expect(nextIteration).toBe(result.selfReviewIteration as number);
+    });
   });
 
   describe('BAD', () => {

@@ -73,8 +73,10 @@
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
+import * as crypto from 'node:crypto';
 import {
   readState,
+  writeState,
   appendAuditEvent,
   readAuditTrail,
   readConfig,
@@ -105,6 +107,7 @@ import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
 
 // Review enforcement — runtime gate for subagent invocation
 import {
@@ -129,6 +132,15 @@ import {
   buildMutatedOutput,
   type OrchestratorClient,
 } from './review-orchestrator.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  buildInvocationEvidence,
+  ensureReviewAssurance,
+  hashFindings,
+  hashText,
+  hasEvidenceReuse,
+} from './review-assurance.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
@@ -358,6 +370,45 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     }
   }
 
+  function strictBlockedOutput(code: string, detail: Record<string, string>): string {
+    return JSON.stringify({
+      error: true,
+      code,
+      message: `Blocked: ${code}`,
+      detail,
+      recovery: [],
+    });
+  }
+
+  async function updateReviewAssurance(
+    sessDir: string,
+    update: (state: SessionState, now: string) => SessionState,
+  ): Promise<void> {
+    const current = await readState(sessDir);
+    if (!current) return;
+    const now = new Date().toISOString();
+    const next = update(current, now);
+    await writeState(sessDir, next);
+  }
+
+  async function appendReviewAuditEvent(
+    sessDir: string,
+    sessionId: string,
+    phase: string,
+    event: string,
+    detail: Record<string, unknown>,
+  ): Promise<void> {
+    await appendAuditEvent(sessDir, {
+      id: crypto.randomUUID(),
+      sessionId,
+      phase,
+      event,
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
+      detail,
+    });
+  }
+
   async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
     const cached = decisionSequenceCache.get(sessionId);
     if (cached !== undefined) {
@@ -508,8 +559,36 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               const sessionState = await readState(sessDir);
               const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
               const reviewCtx = extractReviewContext(toolName, parsedOutput);
+              const strictEnforcement =
+                sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
               if (sessionState && reviewCtx) {
+                await updateReviewAssurance(sessDir, (s, now) => {
+                  const assurance = ensureReviewAssurance(s.reviewAssurance);
+                  assurance.obligations = assurance.obligations.map((item) => {
+                    if (item.obligationId !== reviewCtx.obligationId) return item;
+                    return {
+                      ...item,
+                      pluginHandshakeAt: now,
+                    };
+                  });
+                  return { ...s, reviewAssurance: assurance };
+                });
+                await appendReviewAuditEvent(
+                  sessDir,
+                  sessionId,
+                  String(parsedOutput.phase ?? sessionState.phase),
+                  'review:obligation_created',
+                  {
+                    obligationId: reviewCtx.obligationId,
+                    obligationType: toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                    iteration: reviewCtx.iteration,
+                    planVersion: reviewCtx.planVersion,
+                    criteriaVersion: reviewCtx.criteriaVersion,
+                    mandateDigest: reviewCtx.mandateDigest,
+                  },
+                );
+
                 // Build the review prompt with session context
                 const ticketText = sessionState.ticket?.text ?? '';
                 const planText = sessionState.plan?.current?.body ?? '';
@@ -524,6 +603,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                         ticketText,
                         iteration: reviewCtx.iteration,
                         planVersion: reviewCtx.planVersion,
+                        obligationId: reviewCtx.obligationId,
+                        criteriaVersion: reviewCtx.criteriaVersion,
+                        mandateDigest: reviewCtx.mandateDigest,
                       })
                     : buildImplReviewPrompt({
                         changedFiles: Array.isArray(parsedOutput.changedFiles)
@@ -533,6 +615,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                         ticketText,
                         iteration: reviewCtx.iteration,
                         planVersion: reviewCtx.planVersion,
+                        obligationId: reviewCtx.obligationId,
+                        criteriaVersion: reviewCtx.criteriaVersion,
+                        mandateDigest: reviewCtx.mandateDigest,
                       });
 
                 // Invoke the reviewer subagent via SDK client
@@ -568,11 +653,205 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     // Do NOT mutate output, do NOT call recordPluginReview.
                     // Original INDEPENDENT_REVIEW_REQUIRED is preserved.
                     // LLM follows fallback Path A2 (Task tool to reviewer).
+                    if (strictEnforcement) {
+                      await updateReviewAssurance(sessDir, (s) => {
+                        const assurance = ensureReviewAssurance(s.reviewAssurance);
+                        assurance.obligations = assurance.obligations.map((item) => {
+                          if (item.obligationId !== reviewCtx.obligationId) return item;
+                          return {
+                            ...item,
+                            status: 'blocked',
+                            blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+                          };
+                        });
+                        return { ...s, reviewAssurance: assurance };
+                      });
+                      await appendReviewAuditEvent(
+                        sessDir,
+                        sessionId,
+                        String(parsedOutput.phase ?? sessionState.phase),
+                        'review:obligation_blocked',
+                        {
+                          obligationId: reviewCtx.obligationId,
+                          code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+                        },
+                      );
+                      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                        reason: 'reviewer response was not parseable as ReviewFindings',
+                      });
+                    }
                   } else {
+                    const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
+                    if (!parsedFindings.success && strictEnforcement) {
+                      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                        reason: 'reviewer response did not match ReviewFindings schema',
+                      });
+                    }
+
+                    if (strictEnforcement && parsedFindings.success) {
+                      const att = parsedFindings.data.attestation;
+                      if (!att) {
+                        await updateReviewAssurance(sessDir, (s) => {
+                          const assurance = ensureReviewAssurance(s.reviewAssurance);
+                          assurance.obligations = assurance.obligations.map((item) => {
+                            if (item.obligationId !== reviewCtx.obligationId) return item;
+                            return {
+                              ...item,
+                              status: 'blocked',
+                              blockedCode: 'SUBAGENT_MANDATE_MISSING',
+                            };
+                          });
+                          return { ...s, reviewAssurance: assurance };
+                        });
+                        await appendReviewAuditEvent(
+                          sessDir,
+                          sessionId,
+                          String(parsedOutput.phase ?? sessionState.phase),
+                          'review:obligation_blocked',
+                          {
+                            obligationId: reviewCtx.obligationId,
+                            code: 'SUBAGENT_MANDATE_MISSING',
+                          },
+                        );
+                        output.output = strictBlockedOutput('SUBAGENT_MANDATE_MISSING', {
+                          obligationId: reviewCtx.obligationId,
+                        });
+                      } else if (
+                        att.toolObligationId !== reviewCtx.obligationId ||
+                        att.iteration !== reviewCtx.iteration ||
+                        att.planVersion !== reviewCtx.planVersion ||
+                        att.criteriaVersion !== REVIEW_CRITERIA_VERSION ||
+                        att.mandateDigest !== REVIEW_MANDATE_DIGEST
+                      ) {
+                        await updateReviewAssurance(sessDir, (s) => {
+                          const assurance = ensureReviewAssurance(s.reviewAssurance);
+                          assurance.obligations = assurance.obligations.map((item) => {
+                            if (item.obligationId !== reviewCtx.obligationId) return item;
+                            return {
+                              ...item,
+                              status: 'blocked',
+                              blockedCode: 'SUBAGENT_MANDATE_MISMATCH',
+                            };
+                          });
+                          return { ...s, reviewAssurance: assurance };
+                        });
+                        await appendReviewAuditEvent(
+                          sessDir,
+                          sessionId,
+                          String(parsedOutput.phase ?? sessionState.phase),
+                          'review:obligation_blocked',
+                          {
+                            obligationId: reviewCtx.obligationId,
+                            code: 'SUBAGENT_MANDATE_MISMATCH',
+                          },
+                        );
+                        output.output = strictBlockedOutput('SUBAGENT_MANDATE_MISMATCH', {
+                          obligationId: reviewCtx.obligationId,
+                        });
+                      }
+                    }
+
+                    const strictGateResult = parseToolResult(output.output);
+                    if (strictEnforcement && strictGateResult?.error === true) {
+                      // Strict gate already produced a blocked output.
+                      // Do not proceed with mutation or evidence recording.
+                      return;
+                    }
+
                     // Structured findings available — proceed with deterministic path
                     const mutated = buildMutatedOutput(rawOutput, reviewerResult);
 
                     if (mutated) {
+                      if (strictEnforcement && parsedFindings.success) {
+                        const promptHash = hashText(prompt);
+                        const findingsHash = hashFindings(reviewerResult.findings);
+                        let reusedEvidence = false;
+                        await updateReviewAssurance(sessDir, (s, now) => {
+                          const assurance = ensureReviewAssurance(s.reviewAssurance);
+                          if (
+                            hasEvidenceReuse(
+                              assurance.invocations,
+                              reviewerResult.sessionId,
+                              findingsHash,
+                            )
+                          ) {
+                            reusedEvidence = true;
+                            assurance.obligations = assurance.obligations.map((item) => {
+                              if (item.obligationId !== reviewCtx.obligationId) return item;
+                              return {
+                                ...item,
+                                status: 'blocked',
+                                blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+                              };
+                            });
+                            return { ...s, reviewAssurance: assurance };
+                          }
+
+                          const invocation = buildInvocationEvidence({
+                            obligationId: reviewCtx.obligationId,
+                            obligationType: toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                            parentSessionId: sessionId,
+                            childSessionId: reviewerResult.sessionId,
+                            promptHash,
+                            findingsHash,
+                            invokedAt: now,
+                            fulfilledAt: now,
+                          });
+                          assurance.invocations.push(invocation);
+                          assurance.obligations = assurance.obligations.map((item) => {
+                            if (item.obligationId !== reviewCtx.obligationId) return item;
+                            return {
+                              ...item,
+                              status: 'fulfilled',
+                              invocationId: invocation.invocationId,
+                              fulfilledAt: now,
+                            };
+                          });
+                          return { ...s, reviewAssurance: assurance };
+                        });
+                        await appendReviewAuditEvent(
+                          sessDir,
+                          sessionId,
+                          String(parsedOutput.phase ?? sessionState.phase),
+                          reusedEvidence ? 'review:obligation_blocked' : 'review:subagent_invoked',
+                          reusedEvidence
+                            ? {
+                                obligationId: reviewCtx.obligationId,
+                                code: 'SUBAGENT_EVIDENCE_REUSED',
+                              }
+                            : {
+                                obligationId: reviewCtx.obligationId,
+                                obligationType:
+                                  toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                                parentSessionId: sessionId,
+                                childSessionId: reviewerResult.sessionId,
+                                agentType: 'flowguard-reviewer',
+                                promptHash,
+                                mandateDigest: REVIEW_MANDATE_DIGEST,
+                                criteriaVersion: REVIEW_CRITERIA_VERSION,
+                                findingsHash,
+                              },
+                        );
+                        if (!reusedEvidence) {
+                          await appendReviewAuditEvent(
+                            sessDir,
+                            sessionId,
+                            String(parsedOutput.phase ?? sessionState.phase),
+                            'review:obligation_fulfilled',
+                            {
+                              obligationId: reviewCtx.obligationId,
+                              childSessionId: reviewerResult.sessionId,
+                            },
+                          );
+                        }
+                        if (reusedEvidence) {
+                          output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+                            obligationId: reviewCtx.obligationId,
+                          });
+                          return;
+                        }
+                      }
+
                       // Update enforcement state to satisfy L1/L2/L4
                       const eState = getEnforcementState(sessionId);
                       const captured: CapturedFindings = {
@@ -605,6 +884,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                         tool: toolName,
                         sessionId,
                       });
+                      if (strictEnforcement) {
+                        output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                          reason: 'output mutation failed',
+                        });
+                      }
                     }
                   }
                 } else {
@@ -612,7 +896,38 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     tool: toolName,
                     sessionId,
                   });
+                  if (strictEnforcement) {
+                    await updateReviewAssurance(sessDir, (s) => {
+                      const assurance = ensureReviewAssurance(s.reviewAssurance);
+                      assurance.obligations = assurance.obligations.map((item) => {
+                        if (item.obligationId !== reviewCtx.obligationId) return item;
+                        return {
+                          ...item,
+                          status: 'blocked',
+                          blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+                        };
+                      });
+                      return { ...s, reviewAssurance: assurance };
+                    });
+                    await appendReviewAuditEvent(
+                      sessDir,
+                      sessionId,
+                      String(parsedOutput.phase ?? sessionState.phase),
+                      'review:obligation_blocked',
+                      {
+                        obligationId: reviewCtx.obligationId,
+                        code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+                      },
+                    );
+                    output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                      reason: 'reviewer invocation failed',
+                    });
+                  }
                 }
+              } else if (strictEnforcement) {
+                output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+                  reason: 'review context missing for strict orchestration',
+                });
               }
             }
           } catch (err) {

@@ -95,6 +95,9 @@ function modeAOutput(
     phase: 'PLAN',
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
+    reviewObligationId: '11111111-1111-4111-8111-111111111111',
+    reviewCriteriaVersion: 'p35-v1',
+    reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
     next:
       `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
@@ -124,6 +127,9 @@ describe('buildPlanReviewPrompt', () => {
     ticketText: 'Implement feature X for the users.',
     iteration: 0,
     planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-mandate-digest',
   };
 
   // HAPPY: produces a prompt containing all required elements
@@ -181,6 +187,9 @@ describe('buildImplReviewPrompt', () => {
     ticketText: 'Implement feature Y.',
     iteration: 1,
     planVersion: 2,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-mandate-digest',
   };
 
   // HAPPY: includes all required elements
@@ -388,6 +397,9 @@ describe('invokeReviewer', () => {
     ticketText: 'Test ticket',
     iteration: 0,
     planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-mandate-digest',
   });
 
   // HAPPY: successful invocation
@@ -624,6 +636,7 @@ describe('extractReviewContext', () => {
     expect(ctx).not.toBeNull();
     expect(ctx!.iteration).toBe(0);
     expect(ctx!.planVersion).toBe(1);
+    expect(ctx!.obligationId).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   // HAPPY: extracts context with different values
@@ -661,6 +674,14 @@ describe('extractReviewContext', () => {
     expect(extractReviewContext('flowguard_plan', { phase: 'PLAN' })).toBeNull();
   });
 
+  it('returns null when obligation metadata is missing', () => {
+    const parsed = {
+      next: `${REVIEW_REQUIRED_PREFIX}: iteration=0, planVersion=1`,
+      selfReviewIteration: 0,
+    };
+    expect(extractReviewContext('flowguard_plan', parsed)).toBeNull();
+  });
+
   // EDGE: next field is not a string
   it('returns null when next is not a string', () => {
     expect(extractReviewContext('flowguard_plan', { next: 42 })).toBeNull();
@@ -678,6 +699,9 @@ describe('extractReviewContext', () => {
   it('does not validate selfReviewIteration for implement tool', () => {
     const parsed = {
       next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
+      reviewObligationId: '11111111-1111-4111-8111-111111111111',
+      reviewCriteriaVersion: 'p35-v1',
+      reviewMandateDigest: 'test-mandate-digest',
       selfReviewIteration: 99, // different — but implement doesn't check
     };
     const ctx = extractReviewContext('flowguard_implement', parsed);
@@ -710,6 +734,9 @@ describe('end-to-end orchestration flow', () => {
       ticketText: 'Test ticket.',
       iteration: ctx!.iteration,
       planVersion: ctx!.planVersion,
+      obligationId: ctx!.obligationId,
+      criteriaVersion: ctx!.criteriaVersion,
+      mandateDigest: ctx!.mandateDigest,
     });
 
     // Step 4: Invoke reviewer
