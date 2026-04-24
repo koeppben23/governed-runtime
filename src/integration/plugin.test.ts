@@ -129,8 +129,8 @@ describe('integration/plugin', () => {
 
     it('returns only the tool.execute.after hook (no other hooks)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
-      const keys = Object.keys(hooks);
-      expect(keys).toEqual(['tool.execute.after']);
+      const keys = Object.keys(hooks).sort();
+      expect(keys).toEqual(['tool.execute.after', 'tool.execute.before']);
     });
   });
 

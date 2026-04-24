@@ -62,11 +62,37 @@ When independent review is required, the primary agent:
 
 ### Fail-Closed Enforcement
 
-FlowGuard enforces the subagent requirement:
+FlowGuard enforces the subagent requirement at two layers:
+
+**Layer 1 — Structural validation (`review-validation.ts`):**
 
 - When `subagentEnabled: true` and the agent tries to approve without `reviewFindings` → BLOCKED
 - When `subagentEnabled: true` and `fallbackToSelf: false`, self-review findings are rejected → BLOCKED
-- The validation layer is the single authority (`review-validation.ts`)
+- Plan-version binding, iteration binding, and mandatory-findings checks
+
+**Layer 2 — Plugin-level enforcement (`review-enforcement.ts` via `plugin.ts`):**
+
+The structural validation layer cannot detect whether the primary agent actually called the flowguard-reviewer subagent — it only validates the shape of the submitted findings. A compliant-looking `ReviewFindings` object could be fabricated without ever invoking the subagent.
+
+The plugin-level enforcement solves this by observing the entire tool-call sequence via OpenCode's `tool.execute.before/after` hooks:
+
+1. **After FlowGuard tool (Mode A):** When `flowguard_plan` or `flowguard_implement` returns a `next` field starting with `INDEPENDENT_REVIEW_REQUIRED`, the plugin registers a pending review.
+2. **After Task tool:** When the Task tool completes with `subagent_type: "flowguard-reviewer"`, the plugin marks the pending review as satisfied and records the subagent session ID.
+3. **Before FlowGuard tool (Mode B):** When the agent submits a self-review verdict, the plugin checks:
+   - **Level 1 gate:** Was a Task call to `flowguard-reviewer` made? If not → `throw` blocks the tool call with `SUBAGENT_REVIEW_NOT_INVOKED`.
+   - **Level 2 gate:** Does `reviewFindings.reviewedBy.sessionId` match the actual subagent session ID? If not → `throw` blocks with `SUBAGENT_SESSION_MISMATCH`.
+
+```
+flowguard_plan (Mode A)     →  plugin registers pending review
+    ↓
+task (flowguard-reviewer)   →  plugin records subagent call + session ID
+    ↓
+flowguard_plan (Mode B)     →  plugin enforces: subagent called? session matches?
+                                ↳ YES → tool executes normally
+                                ↳ NO  → throw → tool call physically blocked
+```
+
+State is session-scoped and cleared after successful verdict submission. Tracking errors (in `tool.execute.after`) are fire-and-forget and never block governance flow. Enforcement errors (in `tool.execute.before`) are strict and physically prevent the tool call.
 
 ---
 
@@ -146,6 +172,8 @@ Enable subagent review in FlowGuard policy configuration:
 
 All validation is fail-closed. Invalid findings return BLOCKED.
 
+**Structural validation (`review-validation.ts`):**
+
 | Rule                 | Condition                                                 | BLOCKED Code                           |
 | -------------------- | --------------------------------------------------------- | -------------------------------------- |
 | Subagent mode gating | `reviewMode=subagent` + `!subagentEnabled`                | `REVIEW_MODE_SUBAGENT_DISABLED`        |
@@ -155,6 +183,15 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Mandatory findings   | `approve` + `subagentEnabled` + no findings               | `REVIEW_FINDINGS_REQUIRED_FOR_APPROVE` |
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by both `/plan` and `/implement` tools.
+
+**Plugin-level enforcement (`review-enforcement.ts`):**
+
+| Rule             | Condition                                                 | BLOCKED Code                  |
+| ---------------- | --------------------------------------------------------- | ----------------------------- |
+| Subagent invoked | Pending review + no Task call to `flowguard-reviewer`     | `SUBAGENT_REVIEW_NOT_INVOKED` |
+| Session ID match | `reviewedBy.sessionId` does not match subagent session ID | `SUBAGENT_SESSION_MISMATCH`   |
+
+Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 
 ---
 
@@ -189,14 +226,18 @@ The `flowguard install` command deploys:
 | Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt     |
 | Task permission | `opencode.json` (merged)                                    | Allows build agent to invoke flowguard-reviewer               |
 | Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A (subagent) / Path B (self) review routing |
+| Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (includes enforcement hooks)  |
 
 ---
 
 ## Current Status
 
-**Fully implemented.** FlowGuard validates and persists ReviewFindings. The installer deploys the review subagent definition, task permissions, and updated slash commands. When `selfReview.subagentEnabled: true`, the primary agent is instructed to call the `flowguard-reviewer` subagent via the Task tool for independent review of plans and implementations.
+**Fully implemented.** The independent review system provides two enforcement layers:
 
-**Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. No existing workflows are affected.
+1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
+2. **Plugin-level enforcement** — OpenCode `tool.execute.before/after` hooks observe the tool-call sequence and physically block verdict submission if the flowguard-reviewer subagent was not invoked. Session ID matching prevents findings fabrication.
+
+**Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 
 ---
 

@@ -52,7 +52,7 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v5
+ * @version v6
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
@@ -88,6 +88,15 @@ import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
+
+// Review enforcement — runtime gate for subagent invocation
+import {
+  createSessionState as createEnforcementState,
+  onFlowGuardToolAfter as enforcementOnToolAfter,
+  onTaskToolAfter as enforcementOnTaskAfter,
+  enforceBeforeVerdict,
+  type SessionEnforcementState,
+} from './review-enforcement.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
@@ -149,6 +158,7 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
  * Captures worktree from plugin context at initialization time.
  * Maintains a hash chain cache for efficient chaining without re-reading the trail.
  * Hooks tool.execute.after to append structured audit events for FlowGuard tools.
+ * Hooks tool.execute.before to enforce subagent invocation for independent review.
  *
  * Policy-aware: reads session state to resolve audit emission controls and
  * actor classification per tool invocation.
@@ -225,6 +235,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   let chainInitialized = false;
   const sessionQueues = new Map<string, Promise<void>>();
   const decisionSequenceCache = new Map<string, number>();
+
+  // ── Review enforcement state (per session) ──────────────────────────────
+  // Tracks INDEPENDENT_REVIEW_REQUIRED signals and Task calls to
+  // flowguard-reviewer. Used by tool.execute.before to block verdicts
+  // when no subagent call was made.
+  const enforcementStates = new Map<string, SessionEnforcementState>();
+
+  function getEnforcementState(sessionId: string): SessionEnforcementState {
+    let state = enforcementStates.get(sessionId);
+    if (!state) {
+      state = createEnforcementState();
+      enforcementStates.set(sessionId, state);
+    }
+    return state;
+  }
 
   /**
    * Initialize the chain hash by reading the existing trail.
@@ -349,12 +374,67 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   }
 
   return {
-    'tool.execute.after': async (input, output) => {
-      // Only audit FlowGuard tools
+    // ── Review enforcement gate (blocks before tool execution) ─────────────
+    // Checks that the flowguard-reviewer subagent was actually invoked
+    // before allowing a self-review verdict when subagent mode is active.
+    'tool.execute.before': async (input, _output) => {
       const toolName: string = input?.tool ?? '';
+      const sessionId: string = input?.sessionID ?? 'unknown';
+      const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+
+      // Enforcement only applies to FlowGuard plan/implement verdict calls
+      if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return;
+
+      const eState = getEnforcementState(sessionId);
+      const result = enforceBeforeVerdict(eState, toolName, args);
+
+      if (!result.allowed) {
+        log.warn('enforcement', 'blocked verdict without subagent review', {
+          tool: toolName,
+          sessionId,
+          code: result.code,
+        });
+        throw new Error(`[FlowGuard] ${result.code}: ${result.reason}`);
+      }
+    },
+
+    'tool.execute.after': async (input, output) => {
+      const toolName: string = input?.tool ?? '';
+      const sessionId: string = input?.sessionID ?? 'unknown';
+      const now = new Date().toISOString();
+
+      // ── Review enforcement tracking (all tools) ─────────────────────────
+      // Track FlowGuard tool responses for INDEPENDENT_REVIEW_REQUIRED signals
+      // and Task calls to flowguard-reviewer subagent.
+      if (toolName === 'flowguard_plan' || toolName === 'flowguard_implement') {
+        try {
+          const eState = getEnforcementState(sessionId);
+          const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+          const rawOutput =
+            typeof output?.output === 'string'
+              ? output.output
+              : JSON.stringify(output?.output ?? '');
+          enforcementOnToolAfter(eState, toolName, args, rawOutput, now);
+        } catch (err) {
+          logError('enforcement tracking failed (non-blocking)', err);
+        }
+      } else if (toolName === 'task') {
+        try {
+          const eState = getEnforcementState(sessionId);
+          const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+          const rawOutput =
+            typeof output?.output === 'string'
+              ? output.output
+              : JSON.stringify(output?.output ?? '');
+          enforcementOnTaskAfter(eState, args, rawOutput, now);
+        } catch (err) {
+          logError('enforcement tracking failed (non-blocking)', err);
+        }
+      }
+
+      // ── Audit event emission (only FlowGuard tools) ─────────────────────
       if (!toolName.startsWith(FG_PREFIX)) return;
 
-      const sessionId: string = input?.sessionID ?? 'unknown';
       await runSerializedForSession(sessionId, async () => {
         try {
           // Resolve session directory from tool context
