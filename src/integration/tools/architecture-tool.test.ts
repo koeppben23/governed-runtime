@@ -301,7 +301,9 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ selfReviewVerdict: 'approve' }, {} as never);
     expect(JSON.parse(String(res)).status).toContain('converged');
-    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as { architecture?: { status?: string } };
+    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
+      architecture?: { status?: string };
+    };
     expect(writtenState.architecture?.status).toBe('accepted');
   });
 
