@@ -20,6 +20,8 @@ export default defineConfig({
         lines: 80,
         functions: 80,
         statements: 80,
+        // TODO: architecture.ts (65%) continues to drag branches down
+        // Working on adding integration tests
       },
       reporter: ['text', 'json-summary', 'html'],
       reportsDirectory: 'coverage',
