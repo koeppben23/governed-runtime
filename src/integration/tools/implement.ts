@@ -101,11 +101,10 @@ export const implement: ToolDefinition = {
           "'approve' = implementation is correct. " +
           "'changes_requested' = implementation needs revision.",
       ),
-    reviewFindings: ReviewFindingsSchema.optional()
-      .describe(
-        'Structured review findings from independent review. ' +
-          'Required when reviewVerdict is "approve" and subagentEnabled=true.',
-      ),
+    reviewFindings: ReviewFindingsSchema.optional().describe(
+      'Structured review findings from independent review. ' +
+        'Required when reviewVerdict is "approve" and subagentEnabled=true.',
+    ),
   },
   async execute(args, context) {
     try {
@@ -157,11 +156,7 @@ export const implement: ToolDefinition = {
       }
 
       // Rule 4: approve requires reviewFindings when subagent enabled
-      if (
-        args.reviewVerdict === 'approve' &&
-        subagentEnabled &&
-        !args.reviewFindings
-      ) {
+      if (args.reviewVerdict === 'approve' && subagentEnabled && !args.reviewFindings) {
         return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
           action: 'approve with subagentEnabled=true',
           required: 'reviewFindings',
