@@ -2,50 +2,33 @@
  * @module integration/tools/plan
  * @description FlowGuard plan tool — submit plan or record self-review verdict.
  *
- * P34a Foundation: Independent Self-Review (Foundation, NOT Complete)
+ * P34a: Agent-Orchestrated Independent Review Persistence Boundary
  *
- * This module provides schema and policy infrastructure for independent subagent review:
- * - selfReview config in policy (subagentEnabled, fallbackToSelf)
- * - ReviewFindings schema with parallel storage
- * - latestReview summary in status
- * - Fallback/blocked semantics
+ * Architecture: FlowGuard does NOT call subagents. FlowGuard accepts and governs
+ * independently produced ReviewFindings from OpenCode primary agent orchestration.
  *
- * ACTUAL SUBAGENT INVOCATION STATUS: STUB
+ * Flow:
+ * 1. Primary agent drafts plan, calls hidden review subagent via Task tool
+ * 2. Subagent returns structured ReviewFindings (via orchestrator)
+ * 3. Primary agent submits plan + reviewFindings to FlowGuard tool
+ * 4. FlowGuard validates and persists both (append-only, separate)
  *
- * The executeSubagentReview() function currently returns null (stub).
- * A complete independent review subagent path requires OpenCode task/subagent
- * orchestration being accessible from FlowGuard's controlled runtime.
- * This pattern is NOT clearly documented as an available API in official OpenCode docs.
+ * Tool responsibilities:
+ * - Input validation: reviewFindings vs policy, planVersion binding
+ * - Persistence: plan.history (author), plan.reviewFindings (reviewer)
+ * - Response: summary of review findings, iteration tracking
  *
- * Current behavior when policy.selfReview.subagentEnabled=true:
- * - Subagent returns null (stub) → fallbackToSelf=true → degraded warning
- * - Subagent returns null (stub) + fallbackToSelf=false → BLOCKED
+ * Policy config (selfReview):
+ * - subagentEnabled: enforces subagent review mode
+ * - fallbackToSelf: allows self-review fallback when subagent unavailable
  *
- * Full subagent integration requires P34a.2 (out of scope for current patch).
+ * Validation rules:
+ * - reviewMode=subagent + !subagentEnabled → BLOCKED
+ * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
+ * - selfReviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
+ * - reviewFindings.planVersion mismatch → BLOCKED
  *
- * Multi-call pattern:
- * Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
- *
- * Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
- *   -> Tool records plan
- *   -> If subagentEnabled: attempt subagent review
- *   -> Store reviewFindings in state.plan.reviewFindings (parallel)
- *   -> Return "self-review needed" with findings summary
- *
- * Step 2: LLM reviews plan critically via selfReviewVerdict
- *   -> Tool records iteration, checks convergence
- *
- * Repeat Step 2 until converged or max iterations.
- * On convergence: auto-advance to PLAN_REVIEW.
- *
- * Subagent behavior (P34a):
- * - subagentEnabled + subagent succeeds → use findings
- * - subagentEnabled + subagent fails + fallbackToSelf → degraded warning
- * - subagentEnabled + subagent fails + !fallbackToSelf → BLOCKED
- *
- * Architecture: plan.history = author artifacts, plan.reviewFindings = reviewer artifacts
- *
- * @version v4 (P34a)
+ * @version v5 (P34a agent-orchestrated)
  */
 
 import { z } from 'zod';
@@ -81,32 +64,6 @@ import type {
 } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// P34a Foundation: Subagent Review Stub
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Execute subagent review (P34a Foundation stub).
- *
- * ACTUAL STATUS: STUB - returns null to trigger fallback semantics
- *
- * Reason: A complete independent review subagent path requires OpenCode
- * task/subagent orchestration being accessible from FlowGuard's runtime.
- * This pattern is NOT clearly documented as an API in official OpenCode docs.
- *
- * Returns null → triggers fallbackToSelf or BLOCKED per policy config.
- *
- * Full implementation requires P34a.2 with actual Task tool integration.
- */
-async function executeSubagentReview(
-  _state: SessionState,
-  _sessionId: string,
-): Promise<ReviewFindings | null> {
-  // Stub: returns null to trigger fallback
-  // Full implementation via Task tool in P34a.2
-  return null;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
@@ -118,7 +75,7 @@ export const plan: ToolDefinition = {
     "If 'changes_requested', also provide revised planText.\n" +
     'The self-review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to PLAN_REVIEW.\n' +
-    'P34a: When policy.selfReview.subagentEnabled, uses independent subagent review.',
+    'P34a: Accepts ReviewFindings from independent agent orchestrator.',
   args: {
     planText: z
       .string()
@@ -134,6 +91,13 @@ export const plan: ToolDefinition = {
         'Self-review verdict. Omit for initial plan submission. ' +
           "'approve' = plan is good, advance. " +
           "'changes_requested' = plan needs revision, provide updated planText.",
+      ),
+    reviewFindings: z
+      .any()
+      .optional()
+      .describe(
+        'Structured review findings from independent review. ' +
+          'Required when selfReviewVerdict is "approve" and subagentEnabled=true.',
       ),
   },
   async execute(args, context) {
@@ -157,6 +121,60 @@ export const plan: ToolDefinition = {
         return formatBlocked('TICKET_REQUIRED', { action: 'creating a plan' });
       }
 
+      // P34a: Validate reviewFindings against policy
+      const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+      const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
+
+      if (args.reviewFindings) {
+        const rf = args.reviewFindings as ReviewFindings;
+
+        // Rule 1: subagent mode requires policy enabled
+        if (rf.reviewMode === 'subagent' && !subagentEnabled) {
+          return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
+            action: 'submit subagent review findings',
+            policy: 'selfReview.subagentEnabled',
+          });
+        }
+
+        // Rule 2: self mode requires fallbackToSelf when subagent enabled
+        if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
+          return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+            action: 'submit self-review findings',
+            policyHint: 'selfReview.fallbackToSelf=true required',
+          });
+        }
+
+        // Rule 3: planVersion binding
+        const history = state.plan ? [...state.plan.history] : [];
+        const expectedVersion = history.length + 1;
+        if (rf.planVersion !== expectedVersion) {
+          return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
+            provided: String(rf.planVersion),
+            expected: String(expectedVersion),
+          });
+        }
+
+        // Rule 4: iteration binding (initial submission = iteration 0)
+        if (rf.iteration !== 0) {
+          return formatBlocked('REVIEW_ITERATION_MISMATCH', {
+            provided: String(rf.iteration),
+            expected: String(0),
+          });
+        }
+      }
+
+      // Rule 5: approve requires reviewFindings when subagent enabled
+      if (
+        args.selfReviewVerdict === 'approve' &&
+        subagentEnabled &&
+        !args.reviewFindings
+      ) {
+        return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
+          action: 'approve with subagentEnabled=true',
+          required: 'reviewFindings',
+        });
+      }
+
       const isInitialSubmission = !args.selfReviewVerdict;
 
       if (isInitialSubmission) {
@@ -177,27 +195,10 @@ export const plan: ToolDefinition = {
         const history = state.plan ? [state.plan.current, ...state.plan.history] : [];
         const planVersion = history.length + 1;
 
-        // P34a: Independent subagent review
-        const selfReviewConfig = policy.selfReview;
-        const subagentEnabled = selfReviewConfig?.subagentEnabled ?? false;
-        const fallbackToSelf = selfReviewConfig?.fallbackToSelf ?? false;
+        // P34a: Use submitted reviewFindings (from agent orchestrator)
         let reviewFindings: ReviewFindings | null = null;
-        let subagentWarning: string | null = null;
-
-        if (subagentEnabled) {
-          const subagentResult = await executeSubagentReview(state, context.sessionID);
-
-          if (subagentResult) {
-            reviewFindings = subagentResult;
-          } else if (fallbackToSelf) {
-            subagentWarning =
-              'Subagent unavailable, using degraded self-review (fallbackToSelf=true)';
-          } else {
-            return formatBlocked('SUBAGENT_UNAVAILABLE', {
-              action: 'independent review',
-              recovery: 'Enable policy.selfReview.fallbackToSelf or disable subagent review',
-            });
-          }
+        if (args.reviewFindings) {
+          reviewFindings = args.reviewFindings as ReviewFindings;
         }
 
         // Build plan record with parallel review findings storage
@@ -255,13 +256,50 @@ export const plan: ToolDefinition = {
           };
         }
 
-        if (subagentWarning) {
-          response.warning = subagentWarning;
-        }
-
         return appendNextAction(JSON.stringify(response), finalState);
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
+
+        // P34a: Validate reviewFindings in Mode B (after state existence check)
+        if (state.plan && args.reviewFindings) {
+          const rf = args.reviewFindings as ReviewFindings;
+          const historyLen = state.plan.history.length;
+
+          // Rule 1: subagent mode requires policy enabled
+          if (rf.reviewMode === 'subagent' && !subagentEnabled) {
+            return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
+              action: 'submit subagent review findings',
+              policy: 'selfReview.subagentEnabled',
+            });
+          }
+
+          // Rule 2: self mode requires fallbackToSelf when subagent enabled
+          if (rf.reviewMode === 'self' && subagentEnabled && !fallbackToSelf) {
+            return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+              action: 'submit self-review findings',
+              policyHint: 'selfReview.fallbackToSelf=true required',
+            });
+          }
+
+          // Rule 3: planVersion binding
+          const expectedVersion = historyLen + 1;
+          if (rf.planVersion !== expectedVersion) {
+            return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
+              provided: String(rf.planVersion),
+              expected: String(expectedVersion),
+            });
+          }
+
+          // Rule 4: iteration binding
+          const expectedIteration = state.selfReview ? state.selfReview.iteration + 1 : 0;
+          if (rf.iteration !== expectedIteration) {
+            return formatBlocked('REVIEW_ITERATION_MISMATCH', {
+              provided: String(rf.iteration),
+              expected: String(expectedIteration),
+            });
+          }
+        }
+
         if (!state.selfReview) {
           return formatBlocked('NO_SELF_REVIEW');
         }
@@ -296,9 +334,19 @@ export const plan: ToolDefinition = {
         }
 
         // Build updated state
+        // P34a: Preserve reviewFindings append-only in Mode B
+        const existingReviewFindings = state.plan?.reviewFindings;
+        const newReviewFindings = args.reviewFindings
+          ? [...(existingReviewFindings ?? []), args.reviewFindings as ReviewFindings]
+          : existingReviewFindings;
+
         const nextState: SessionState = {
           ...state,
-          plan: { current: currentPlan, history },
+          plan: {
+            current: currentPlan,
+            history,
+            reviewFindings: newReviewFindings,
+          },
           selfReview: {
             iteration,
             maxIterations: maxSelfReviewIterations,
