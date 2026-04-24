@@ -2,9 +2,29 @@
  * @module integration/tools/plan
  * @description FlowGuard plan tool — submit plan or record self-review verdict.
  *
- * P34a: Independent Self-Review Subagent
+ * P34a Foundation: Independent Self-Review (Foundation, NOT Complete)
+ *
+ * This module provides schema and policy infrastructure for independent subagent review:
+ * - selfReview config in policy (subagentEnabled, fallbackToSelf)
+ * - ReviewFindings schema with parallel storage
+ * - latestReview summary in status
+ * - Fallback/blocked semantics
+ *
+ * ACTUAL SUBAGENT INVOCATION STATUS: STUB
+ *
+ * The executeSubagentReview() function currently returns null (stub).
+ * A complete independent review subagent path requires OpenCode task/subagent
+ * orchestration being accessible from FlowGuard's controlled runtime.
+ * This pattern is NOT clearly documented as an available API in official OpenCode docs.
+ *
+ * Current behavior when policy.selfReview.subagentEnabled=true:
+ * - Subagent returns null (stub) → fallbackToSelf=true → degraded warning
+ * - Subagent returns null (stub) + fallbackToSelf=false → BLOCKED
+ *
+ * Full subagent integration requires P34a.2 (out of scope for current patch).
  *
  * Multi-call pattern:
+ * Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
  *
  * Step 1: LLM generates plan, calls flowguard_plan({ planText: "..." })
  *   -> Tool records plan
@@ -61,14 +81,21 @@ import type {
 } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// P34a: Subagent Review Stub
+// P34a Foundation: Subagent Review Stub
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Execute subagent review (P34a stub).
+ * Execute subagent review (P34a Foundation stub).
  *
- * Returns null—full implementation via Task tool in follow-up.
- * This triggers fallback behavior per policy.fallbackToSelf.
+ * ACTUAL STATUS: STUB - returns null to trigger fallback semantics
+ *
+ * Reason: A complete independent review subagent path requires OpenCode
+ * task/subagent orchestration being accessible from FlowGuard's runtime.
+ * This pattern is NOT clearly documented as an API in official OpenCode docs.
+ *
+ * Returns null → triggers fallbackToSelf or BLOCKED per policy config.
+ *
+ * Full implementation requires P34a.2 with actual Task tool integration.
  */
 async function executeSubagentReview(
   _state: SessionState,

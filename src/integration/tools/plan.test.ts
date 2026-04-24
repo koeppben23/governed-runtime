@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-describe('P34a: Independent Self-Review', () => {
+describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
   describe('Schema', () => {
     it('ReviewFindings schema validates correctly', async () => {
       const { ReviewFindings } = await import('../../state/evidence.js');
@@ -320,7 +320,7 @@ describe('P34a: Independent Self-Review', () => {
   });
 });
 
-describe('P34a: Self-Review Fallback Semantics', () => {
+describe('P34a Foundation: Self-Review Fallback Semantics', () => {
   it('fallbackToSelf=true enables degraded fallback on subagent failure', async () => {
     const { getPolicyPreset } = await import('../../config/policy.js');
 
