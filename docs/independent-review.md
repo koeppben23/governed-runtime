@@ -1,6 +1,6 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans and implementations by a separate agent. FlowGuard itself does not invoke subagents — it accepts, validates, and persists review findings produced by OpenCode's primary agent orchestration.
+FlowGuard's independent review system enables structured, policy-governed review of plans and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself.
 
 ---
 
@@ -12,30 +12,33 @@ FlowGuard's independent review system enables structured, policy-governed review
 │                                                         │
 │  1. Draft plan / implement code                         │
 │  2. Submit to FlowGuard (flowguard_plan/implement)      │
-│  3. Read tool response: next + reviewMode               │
-│  4. If INDEPENDENT_REVIEW_REQUIRED:                     │
-│     a. Call flowguard-reviewer subagent via Task tool    │
-│     b. Receive structured ReviewFindings from subagent   │
-│  5. Submit verdict + reviewFindings to FlowGuard tool    │
+│  3. Read tool response:                                 │
+│     → INDEPENDENT_REVIEW_COMPLETED: findings injected   │
+│       (plugin invoked reviewer automatically)           │
+│     → INDEPENDENT_REVIEW_REQUIRED: fallback path        │
+│       (plugin invocation failed, call Task tool)        │
+│  4. Submit verdict + reviewFindings to FlowGuard tool   │
 └────────────────────┬────────────────────────────────────┘
                      │
           ┌──────────▼──────────┐
-          │   FlowGuard Tool    │
-          │  (plan / implement) │
-          │                     │
-          │  • Validate         │
-          │  • Persist          │
-          │  • Respond with     │
-          │    policy-conditional│
-          │    next-action      │
-          └─────────────────────┘
+          │   FlowGuard Tool    │     ┌───────────────────────┐
+          │  (plan / implement) │     │    FlowGuard Plugin   │
+          │                     │     │  (tool.execute.after)  │
+          │  • Validate         │────►│                        │
+          │  • Persist          │     │  Detects REVIEW_REQ'd  │
+          │  • Respond with     │     │  → session.create()    │
+          │    REVIEW_REQUIRED  │     │  → session.prompt()    │
+          └─────────────────────┘     │  → Mutates output to   │
+                                      │    REVIEW_COMPLETED    │
+                                      │  → Updates enforcement │
+                                      └───────────────────────┘
 
 Separation of concerns:
   Author artifacts:   plan.history, implementation
   Reviewer artifacts: plan.reviewFindings, implReviewFindings
 ```
 
-**Key invariant:** FlowGuard is a governance boundary, not an orchestrator. The OpenCode primary agent orchestrates the review subagent based on FlowGuard's policy-conditional `next` field. FlowGuard validates and persists the results.
+**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer — the plugin does it programmatically in `tool.execute.after`. On failure, the output preserves the original `INDEPENDENT_REVIEW_REQUIRED` signal and the LLM can still invoke the reviewer via the Task tool (probabilistic fallback).
 
 ---
 
@@ -46,23 +49,35 @@ Separation of concerns:
 When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a `next` field:
 
 - **`subagentEnabled: false` (default):** `next` says "Self-review needed. Review the plan critically..." — the agent reviews its own work using the checklist in the slash command.
-- **`subagentEnabled: true`:** `next` says "INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool..." — the agent MUST call the hidden review subagent.
+- **`subagentEnabled: true`:** `next` says "INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool..." — triggers deterministic plugin invocation.
 
-The `INDEPENDENT_REVIEW_REQUIRED` prefix is a deterministic signal. The slash commands (`/plan`, `/implement`, `/continue`) check for this prefix and follow the appropriate review path.
+### Deterministic Invocation (Primary Path)
 
-### Subagent Invocation
+When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED` in a FlowGuard tool response:
 
-When independent review is required, the primary agent:
+1. **Reads session state** to get ticket text, plan text, and implementation context
+2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
+3. **Creates a child session** via `client.session.create({ parentID })` for traceability
+4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ agent: "flowguard-reviewer" })`
+5. **Parses ReviewFindings** from the reviewer's response
+6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `_pluginReviewFindings` injected
+7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
-1. Calls the Task tool with `subagent_type: "flowguard-reviewer"`
-2. Passes a prompt containing the plan/implementation text, ticket text, iteration number, and plan version
-3. The subagent reviews the material (read-only — no write, edit, or bash access)
-4. The subagent returns structured JSON matching the ReviewFindings schema
-5. The primary agent submits the findings to FlowGuard alongside its verdict
+The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
+
+### Fallback Path (LLM-Driven)
+
+If any step in the deterministic invocation fails (session creation error, prompt timeout, unparseable response, output mutation failure), the plugin:
+
+- Logs the error (non-blocking)
+- Preserves the original `INDEPENDENT_REVIEW_REQUIRED` output unchanged
+- The LLM follows the slash command's Path A2: calls the `flowguard-reviewer` subagent via the Task tool
+
+This is the same flow that existed before deterministic invocation was added. Enforcement (L1-L4) still gates the verdict submission.
 
 ### Fail-Closed Enforcement
 
-FlowGuard enforces the subagent requirement at two layers:
+FlowGuard enforces the subagent requirement at three layers:
 
 **Layer 1 — Structural validation (`review-validation.ts`):**
 
@@ -70,7 +85,11 @@ FlowGuard enforces the subagent requirement at two layers:
 - When `subagentEnabled: true` and `fallbackToSelf: false`, self-review findings are rejected → BLOCKED
 - Plan-version binding, iteration binding, and mandatory-findings checks
 
-**Layer 2 — Plugin-level enforcement (`review-enforcement.ts` via `plugin.ts`):**
+**Layer 2 — Deterministic invocation (`review-orchestrator.ts` via `plugin.ts`):**
+
+The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects `INDEPENDENT_REVIEW_REQUIRED` in a tool response. This ensures invocation happens by code, not by LLM decision.
+
+**Layer 3 — Plugin-level enforcement (`review-enforcement.ts` via `plugin.ts`):**
 
 The structural validation layer cannot detect whether the primary agent actually called the flowguard-reviewer subagent — it only validates the shape of the submitted findings. A compliant-looking `ReviewFindings` object could be fabricated without ever invoking the subagent, the prompt could be empty/garbage, or the agent could modify the subagent's findings before submitting them.
 
@@ -98,7 +117,11 @@ The submitted `reviewFindings` are compared against the actual subagent response
 
 ```
 flowguard_plan (Mode A)     →  plugin registers pending review + captures content meta
+    ↓                          plugin invokes reviewer via SDK (deterministic)
+    ↓                          plugin mutates output to INDEPENDENT_REVIEW_COMPLETED
+    ↓                          plugin records review in enforcement state
     ↓
+[Optional fallback if plugin invocation failed:]
 task (flowguard-reviewer)   →  L3: validates prompt integrity (before)
                             →  plugin matches + records exactly one pending obligation (after)
     ↓
@@ -246,28 +269,29 @@ Both reviewer artifact arrays are **append-only**. Each review submission adds t
 
 The `flowguard install` command deploys:
 
-| Artifact        | Path                                                        | Purpose                                                       |
-| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
-| Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt     |
-| Task permission | `opencode.json` (merged)                                    | Allows build agent to invoke flowguard-reviewer               |
-| Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A (subagent) / Path B (self) review routing |
-| Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (includes enforcement hooks)  |
+| Artifact        | Path                                                        | Purpose                                                          |
+| --------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt        |
+| Task permission | `opencode.json` (merged)                                    | Allows build agent to invoke flowguard-reviewer                  |
+| Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A1 (plugin) / A2 (fallback) / B (self) routing |
+| Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (orchestration + enforcement)    |
 
 ---
 
 ## Current Status
 
-**Fully implemented.** The independent review system provides two enforcement layers:
+**Fully implemented.** The independent review system provides three enforcement layers:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
-2. **Plugin-level enforcement** — Four enforcement levels via OpenCode `tool.execute.before/after` hooks:
+2. **Deterministic invocation** — Plugin programmatically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()`). No LLM decision involved. Graceful degradation to LLM-driven fallback on failure.
+3. **Plugin-level enforcement** — Four enforcement levels via OpenCode `tool.execute.before/after` hooks:
    - L1: Binary gate — subagent must be called before any verdict
    - L2: Session ID match — submitted session ID must match actual subagent session
    - L3: Prompt integrity — subagent prompt must contain expected iteration/planVersion and meet minimum length
    - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match actual subagent response
-3. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. P34a (plan) and P34b (implement) are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
+4. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. P34a (plan) and P34b (implement) are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
 
-**Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
+**Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Deterministic invocation and enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 
 ---
 

@@ -475,6 +475,45 @@ export function enforceBeforeVerdict(
   return { allowed: true };
 }
 
+// ─── Plugin-Initiated Review Recording ───────────────────────────────────────
+
+/**
+ * Record a plugin-initiated review invocation on a pending review.
+ *
+ * When the plugin orchestrator invokes the reviewer subagent directly
+ * (deterministic path), it bypasses the Task tool. This function updates
+ * the enforcement state as if a Task call had been made, so that
+ * subsequent L1/L2/L4 checks pass for the verdict submission.
+ *
+ * @param state - Session enforcement state (mutated in place)
+ * @param toolName - Which tool's pending review to satisfy ('flowguard_plan' or 'flowguard_implement')
+ * @param sessionId - The child session ID from the orchestrator
+ * @param capturedFindings - The findings captured from the reviewer response
+ * @param now - ISO 8601 timestamp
+ * @returns true if a pending review was found and updated, false otherwise
+ */
+export function recordPluginReview(
+  state: SessionEnforcementState,
+  toolName: string,
+  sessionId: string,
+  capturedFindings: CapturedFindings | null,
+  now: string,
+): boolean {
+  if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return false;
+
+  const reviewTool = toolName as ReviewableTool;
+  const pending = state.pendingReviews.get(reviewTool);
+  if (!pending || pending.subagentCalled) return false;
+
+  pending.subagentCalled = true;
+  pending.subagentRecord = {
+    sessionId,
+    completedAt: now,
+  };
+  pending.capturedFindings = capturedFindings;
+  return true;
+}
+
 // ─── Helpers (exported for testing) ──────────────────────────────────────────
 
 /**

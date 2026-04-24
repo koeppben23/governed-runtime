@@ -244,9 +244,25 @@ Generate a comprehensive implementation plan for the current ticket, then review
 
 6. Check the \`next\` field in the tool response:
 
-#### Path A: Independent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")
+#### Path A: Independent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED" or "INDEPENDENT_REVIEW_COMPLETED")
 
-   The tool response instructs you to call the flowguard-reviewer subagent for independent review.
+   There are two sub-paths depending on whether the plugin automatically invoked the reviewer:
+
+   **Path A1: Plugin-Completed Review (when \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED")**
+
+   The FlowGuard plugin has already invoked the reviewer subagent. The response contains \`_pluginReviewFindings\` with the reviewer's findings.
+
+   a. Read the \`_pluginReviewFindings\` field from the tool response. This is the ReviewFindings JSON object from the reviewer.
+   b. Parse the \`overallVerdict\` from the findings:
+      - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_plan\` with \`selfReviewVerdict: "approve"\` and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
+      - If \`overallVerdict\` is \`"changes_requested"\`: Review the \`blockingIssues\` and \`majorRisks\` from the findings. Revise the plan to address them. Call \`flowguard_plan\` with \`selfReviewVerdict: "changes_requested"\`, \`planText\` set to the complete revised plan, and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
+   c. Read the response:
+      - If self-review converged: Report the final status to the user.
+      - If another iteration is needed: Go back to step 6.
+
+   **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
+
+   The plugin could not invoke the reviewer automatically. You must call the subagent manually.
 
    a. Call the Task tool with:
       - \`subagent_type\`: \`"flowguard-reviewer"\`
@@ -286,8 +302,8 @@ Generate a comprehensive implementation plan for the current ticket, then review
 ## Constraints
 
 - DO NOT generate a plan with vague steps like "implement the feature" or "add error handling". Every step must be specific.
-- DO NOT skip the review. You MUST either call the subagent (Path A) or run the checklist (Path B) at least once.
-- When the tool response indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
+- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1), call the subagent manually (Path A2), or run the checklist (Path B) at least once.
+- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
 - DO NOT approve a plan that fails any checklist item (Path B) or has blocking issues (Path A).
 - When providing a revised plan, you MUST include the COMPLETE plan text, not a diff or partial update.
 - The plan MUST include all seven sections listed above (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria, Verification Plan).
@@ -461,9 +477,25 @@ Implement the approved plan and review the implementation.
 
 7. Check the \`next\` field in the tool response:
 
-#### Path A: Independent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")
+#### Path A: Independent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED" or "INDEPENDENT_REVIEW_COMPLETED")
 
-   The tool response instructs you to call the flowguard-reviewer subagent for independent review.
+   There are two sub-paths depending on whether the plugin automatically invoked the reviewer:
+
+   **Path A1: Plugin-Completed Review (when \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED")**
+
+   The FlowGuard plugin has already invoked the reviewer subagent. The response contains \`_pluginReviewFindings\` with the reviewer's findings.
+
+   a. Read the \`_pluginReviewFindings\` field from the tool response. This is the ReviewFindings JSON object from the reviewer.
+   b. Parse the \`overallVerdict\` from the findings:
+      - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_implement\` with \`reviewVerdict: "approve"\` and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
+      - If \`overallVerdict\` is \`"changes_requested"\`: Call \`flowguard_implement\` with \`reviewVerdict: "changes_requested"\` and \`reviewFindings\` set to the \`_pluginReviewFindings\` object. Then make the necessary code changes to address the blocking issues. After making changes, call \`flowguard_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
+   c. Read the response:
+      - If review converged: Report the final status to the user.
+      - If another iteration is needed: Go back to step 7.
+
+   **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
+
+   The plugin could not invoke the reviewer automatically. You must call the subagent manually.
 
    a. Call the Task tool with:
       - \`subagent_type\`: \`"flowguard-reviewer"\`
@@ -503,8 +535,8 @@ Implement the approved plan and review the implementation.
 
 - Follow the plan exactly. Do not deviate from the approved plan.
 - In Verification Evidence, only list checks in "Executed checks" if they were actually run. Otherwise mark as NOT_VERIFIED.
-- DO NOT skip the review. You MUST either call the subagent (Path A) or run the checklist (Path B) at least once.
-- When the tool response indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
+- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1), call the subagent manually (Path A2), or run the checklist (Path B) at least once.
+- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
 - When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
 - Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
 - The review loop runs up to 3 iterations maximum.

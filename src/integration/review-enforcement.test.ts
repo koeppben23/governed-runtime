@@ -21,6 +21,7 @@ import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
   matchPendingReview,
+  recordPluginReview,
   extractContentMeta,
   extractCapturedFindings,
   promptContainsValue,
@@ -1564,6 +1565,161 @@ describe('review-enforcement', () => {
     it('matches when keyword and number have text between them', () => {
       expect(promptContainsValue('This is iteration number 5 of the review', 'iteration', 5)).toBe(
         true,
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // recordPluginReview — Plugin-initiated review recording
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('recordPluginReview', () => {
+    // HAPPY: records plugin review on pending plan review
+    it('satisfies pending plan review and enables L1/L2/L4 pass', () => {
+      const state = createSessionState();
+      // Register pending review via Mode A response
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+      expect(state.pendingReviews.get('flowguard_plan')?.subagentCalled).toBe(false);
+
+      // Record plugin-initiated review
+      const result = recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'approve',
+          blockingIssuesCount: 0,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      expect(result).toBe(true);
+      const pending = state.pendingReviews.get('flowguard_plan');
+      expect(pending?.subagentCalled).toBe(true);
+      expect(pending?.subagentRecord?.sessionId).toBe('child-session-1');
+      expect(pending?.capturedFindings?.overallVerdict).toBe('approve');
+      expect(pending?.capturedFindings?.blockingIssuesCount).toBe(0);
+
+      // L1 check should pass now
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve',
+        reviewFindings: {
+          overallVerdict: 'approve',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      expect(enforcement.allowed).toBe(true);
+    });
+
+    // HAPPY: records plugin review on pending implement review
+    it('satisfies pending implement review', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_implement',
+        {},
+        JSON.stringify({
+          phase: 'IMPL_REVIEW',
+          reviewMode: 'subagent',
+          next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
+        }),
+        NOW,
+      );
+
+      const result = recordPluginReview(
+        state,
+        'flowguard_implement',
+        'child-impl-session',
+        {
+          overallVerdict: 'changes_requested',
+          blockingIssuesCount: 2,
+          sessionId: 'child-impl-session',
+        },
+        LATER,
+      );
+
+      expect(result).toBe(true);
+      const pending = state.pendingReviews.get('flowguard_implement');
+      expect(pending?.subagentCalled).toBe(true);
+      expect(pending?.capturedFindings?.blockingIssuesCount).toBe(2);
+    });
+
+    // BAD: no pending review for the tool
+    it('returns false when no pending review exists', () => {
+      const state = createSessionState();
+      const result = recordPluginReview(state, 'flowguard_plan', 'child-session', null, NOW);
+      expect(result).toBe(false);
+    });
+
+    // BAD: pending review already satisfied
+    it('returns false when review was already satisfied', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      // First call succeeds
+      expect(recordPluginReview(state, 'flowguard_plan', 'child-1', null, LATER)).toBe(true);
+
+      // Second call fails — already satisfied
+      expect(recordPluginReview(state, 'flowguard_plan', 'child-2', null, LATER)).toBe(false);
+    });
+
+    // BAD: invalid tool name
+    it('returns false for non-reviewable tool', () => {
+      const state = createSessionState();
+      const result = recordPluginReview(state, 'flowguard_status', 'child-session', null, NOW);
+      expect(result).toBe(false);
+    });
+
+    // CORNER: null captured findings (reviewer returned unparseable response)
+    it('records with null captured findings', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      const result = recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session',
+        null, // Findings parsing failed
+        LATER,
+      );
+
+      expect(result).toBe(true);
+      const pending = state.pendingReviews.get('flowguard_plan');
+      expect(pending?.subagentCalled).toBe(true);
+      expect(pending?.capturedFindings).toBeNull();
+    });
+
+    // CORNER: L4 catches tampered findings after plugin review
+    it('L4 blocks when submitted verdict differs from plugin-captured verdict', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'changes_requested',
+          blockingIssuesCount: 3,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      // Try to submit "approve" when reviewer said "changes_requested"
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve',
+        reviewFindings: {
+          overallVerdict: 'approve', // Tampered!
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      expect(enforcement.allowed).toBe(false);
+      expect(enforcement.allowed === false && enforcement.code).toBe(
+        'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
       );
     });
   });

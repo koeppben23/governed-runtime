@@ -52,7 +52,22 @@
  * - Returns an object with event hook implementations
  * - Type: Plugin from "@opencode-ai/plugin"
  *
- * @version v6
+ * Deterministic review orchestration (v7):
+ * When a FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED and
+ * policy.selfReview.subagentEnabled is true, the plugin programmatically
+ * invokes the flowguard-reviewer subagent via the SDK client:
+ * 1. Detects INDEPENDENT_REVIEW_REQUIRED in tool.execute.after
+ * 2. Reads session state for ticket/plan context
+ * 3. Creates a child session via client.session.create()
+ * 4. Sends structured prompt to flowguard-reviewer via client.session.prompt()
+ * 5. Parses ReviewFindings from the response
+ * 6. Mutates output.output to inject findings (INDEPENDENT_REVIEW_COMPLETED)
+ * 7. Updates enforcement state to satisfy L1/L2/L4 checks
+ *
+ * On failure: graceful degradation — original output preserved, LLM follows
+ * the probabilistic path via Task tool.
+ *
+ * @version v7
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
@@ -96,9 +111,22 @@ import {
   onTaskToolAfter as enforcementOnTaskAfter,
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
+  recordPluginReview,
   REVIEWER_SUBAGENT_TYPE,
   type SessionEnforcementState,
+  type CapturedFindings,
 } from './review-enforcement.js';
+
+// Review orchestrator — deterministic subagent invocation via SDK
+import {
+  isReviewRequired,
+  extractReviewContext,
+  buildPlanReviewPrompt,
+  buildImplReviewPrompt,
+  invokeReviewer,
+  buildMutatedOutput,
+  type OrchestratorClient,
+} from './review-orchestrator.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
@@ -452,6 +480,126 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           enforcementOnTaskAfter(eState, args, rawOutput, now);
         } catch (err) {
           logError('enforcement tracking failed (non-blocking)', err);
+        }
+      }
+
+      // ── Deterministic review orchestration (plugin-initiated) ────────────
+      // When a FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED,
+      // the plugin programmatically invokes the reviewer subagent via the
+      // SDK client. This is deterministic — no LLM decision involved.
+      //
+      // On success: output is mutated to INDEPENDENT_REVIEW_COMPLETED with
+      // findings injected, and enforcement state is updated.
+      // On failure: original output preserved (graceful degradation to
+      // the probabilistic LLM-driven Task tool path).
+      if (toolName === 'flowguard_plan' || toolName === 'flowguard_implement') {
+        const rawOutput =
+          typeof output?.output === 'string' ? output.output : JSON.stringify(output?.output ?? '');
+
+        if (isReviewRequired(rawOutput)) {
+          try {
+            // Resolve workspace + session for state access
+            await resolveFingerprint();
+            const sessDir = getSessionDir(sessionId);
+
+            if (sessDir) {
+              const sessionState = await readState(sessDir);
+              const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
+              const reviewCtx = extractReviewContext(toolName, parsedOutput);
+
+              if (sessionState && reviewCtx) {
+                // Build the review prompt with session context
+                const ticketText = sessionState.ticket?.text ?? '';
+                const planText = sessionState.plan?.current?.body ?? '';
+                const toolArgs =
+                  ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+
+                const prompt =
+                  toolName === 'flowguard_plan'
+                    ? buildPlanReviewPrompt({
+                        planText:
+                          typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+                        ticketText,
+                        iteration: reviewCtx.iteration,
+                        planVersion: reviewCtx.planVersion,
+                      })
+                    : buildImplReviewPrompt({
+                        changedFiles: Array.isArray(parsedOutput.changedFiles)
+                          ? (parsedOutput.changedFiles as string[])
+                          : (sessionState.implementation?.changedFiles ?? []),
+                        planText,
+                        ticketText,
+                        iteration: reviewCtx.iteration,
+                        planVersion: reviewCtx.planVersion,
+                      });
+
+                // Invoke the reviewer subagent via SDK client
+                log.info('orchestrator', 'invoking reviewer subagent', {
+                  tool: toolName,
+                  sessionId,
+                  iteration: reviewCtx.iteration,
+                  planVersion: reviewCtx.planVersion,
+                });
+
+                const reviewerResult = await invokeReviewer(
+                  client as unknown as OrchestratorClient,
+                  prompt,
+                  sessionId,
+                );
+
+                if (reviewerResult) {
+                  // Build mutated output with findings injected
+                  const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+
+                  if (mutated) {
+                    // Update enforcement state to satisfy L1/L2/L4
+                    const eState = getEnforcementState(sessionId);
+                    const captured: CapturedFindings | null = reviewerResult.findings
+                      ? {
+                          overallVerdict:
+                            typeof reviewerResult.findings.overallVerdict === 'string'
+                              ? reviewerResult.findings.overallVerdict
+                              : 'unknown',
+                          blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
+                            ? reviewerResult.findings.blockingIssues.length
+                            : 0,
+                          sessionId: reviewerResult.sessionId,
+                        }
+                      : null;
+
+                    recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
+
+                    // Mutate the output — the LLM will see the modified response
+                    // ASSUMPTION: output.output mutation in after-hook is effective
+                    // (based on before-hook mutation pattern in OpenCode plugin API)
+                    output.output = mutated;
+
+                    log.info('orchestrator', 'reviewer invocation succeeded', {
+                      tool: toolName,
+                      sessionId,
+                      childSessionId: reviewerResult.sessionId,
+                      verdict: reviewerResult.findings?.overallVerdict ?? 'unparseable',
+                    });
+                  } else {
+                    log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
+                      tool: toolName,
+                      sessionId,
+                    });
+                  }
+                } else {
+                  log.warn('orchestrator', 'reviewer invocation failed (fallback to LLM-driven)', {
+                    tool: toolName,
+                    sessionId,
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            // Fire-and-forget: orchestration failure never blocks the workflow.
+            // The original output with INDEPENDENT_REVIEW_REQUIRED is preserved,
+            // and the LLM can still follow the probabilistic path via Task tool.
+            logError('review orchestration failed (fallback to LLM-driven)', err);
+          }
         }
       }
 
