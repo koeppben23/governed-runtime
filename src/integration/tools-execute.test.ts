@@ -1822,7 +1822,10 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
 
     const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
       '../adapters/workspace/index.js'
@@ -2691,10 +2694,7 @@ describe('implement', () => {
 
     it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
       await reachImplementation();
-      const raw = await implement.execute(
-        { reviewFindings: validReviewFindingsSubagent },
-        ctx,
-      );
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
@@ -2702,10 +2702,7 @@ describe('implement', () => {
 
     it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
       await reachImplementation();
-      const raw = await implement.execute(
-        { reviewFindings: validReviewFindingsSelf },
-        ctx,
-      );
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
@@ -2715,10 +2712,7 @@ describe('implement', () => {
     it('planVersion mismatch blocked', async () => {
       await reachImplementation();
       const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
-      const raw = await implement.execute(
-        { reviewFindings: wrongVersion },
-        ctx,
-      );
+      const raw = await implement.execute({ reviewFindings: wrongVersion }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
@@ -2726,10 +2720,7 @@ describe('implement', () => {
 
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
-      await implement.execute(
-        { reviewFindings: validReviewFindingsSelf },
-        ctx,
-      );
+      await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
         '../adapters/workspace/index.js'
@@ -2744,10 +2735,7 @@ describe('implement', () => {
 
     it('latestImplementationReview appears in status', async () => {
       await reachImplementation();
-      await implement.execute(
-        { reviewFindings: validReviewFindingsSelf },
-        ctx,
-      );
+      await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);

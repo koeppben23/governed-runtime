@@ -191,5 +191,5 @@ FlowGuard integrates with OpenCode via:
 
 ---
 
-_FlowGuard Version: 1.2.0-rc.1-rc.1_
+_FlowGuard Version: 1.2.0-rc.1-rc.1-rc.1_
 _Last Updated: 2026-04-15_
