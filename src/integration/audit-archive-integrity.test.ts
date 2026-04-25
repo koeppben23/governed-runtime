@@ -26,7 +26,10 @@ import { hydrate, ticket, plan, decision, validate, implement, status } from './
 import { readAuditTrail, readState } from '../adapters/persistence.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeChainHash } from '../audit/types.js';
-import { computeFingerprint, sessionDir as resolveSessionDir } from '../adapters/workspace/index.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -77,21 +80,31 @@ beforeEach(async () => {
     sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
   vi.mocked(workspaceMock.archiveSession).mockImplementation(
-    (await vi.importActual<typeof import('../adapters/workspace/index.js')>('../adapters/workspace/index.js')).archiveSession,
+    (
+      await vi.importActual<typeof import('../adapters/workspace/index.js')>(
+        '../adapters/workspace/index.js',
+      )
+    ).archiveSession,
   );
   vi.mocked(workspaceMock.verifyArchive).mockImplementation(
-    (await vi.importActual<typeof import('../adapters/workspace/index.js')>('../adapters/workspace/index.js')).verifyArchive,
+    (
+      await vi.importActual<typeof import('../adapters/workspace/index.js')>(
+        '../adapters/workspace/index.js',
+      )
+    ).verifyArchive,
   );
 });
 
 afterEach(async () => {
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'archive-initiator',
-    email: 'archive@integrity.dev',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'claim_validated' as const,
-  });
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'archive-initiator',
+      email: 'archive@integrity.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'claim_validated' as const,
+    });
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -197,50 +210,69 @@ describe('audit and archive integrity fail-closed behavior', () => {
     ).toBe(true);
   });
 
-  it.skipIf(!tarOk)('archive verification detects manifest/file digest mismatch after evidence tamper', async () => {
-    const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'session-state.json'), '\n{"tampered":true}\n', 'utf-8');
+  it.skipIf(!tarOk)(
+    'archive verification detects manifest/file digest mismatch after evidence tamper',
+    async () => {
+      const ids = await completeRegulatedSession();
+      await fs.appendFile(
+        path.join(ids.sessDir, 'session-state.json'),
+        '\n{"tampered":true}\n',
+        'utf-8',
+      );
 
-    const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
-    expect(verification.passed).toBe(false);
-    expect(
-      verification.findings.some(
-        (f) => f.code === 'file_digest_mismatch' || f.code === 'manifest_parse_error',
-      ),
-    ).toBe(true);
-  });
+      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) => f.code === 'file_digest_mismatch' || f.code === 'manifest_parse_error',
+        ),
+      ).toBe(true);
+    },
+  );
 
-  it.skipIf(!tarOk)('regulated completion records failed archive status when archive write fails', async () => {
-    vi.mocked(workspaceMock.archiveSession).mockRejectedValueOnce(new Error('injected archive failure'));
+  it.skipIf(!tarOk)(
+    'regulated completion records failed archive status when archive write fails',
+    async () => {
+      vi.mocked(workspaceMock.archiveSession).mockRejectedValueOnce(
+        new Error('injected archive failure'),
+      );
 
-    await completeRegulatedSession();
-    const state = await readState((await workspaceIds()).sessDir);
-    expect(state?.phase).toBe('COMPLETE');
-    expect(state?.archiveStatus).toBe('failed');
-  });
+      await completeRegulatedSession();
+      const state = await readState((await workspaceIds()).sessDir);
+      expect(state?.phase).toBe('COMPLETE');
+      expect(state?.archiveStatus).toBe('failed');
+    },
+  );
 
-  it.skipIf(!tarOk)('regulated archive verification rejects legacy unchained audit events', async () => {
-    const ids = await completeRegulatedSession();
-    const legacyEvent = {
-      id: crypto.randomUUID(),
-      sessionId: ctx.sessionID,
-      phase: 'COMPLETE',
-      event: 'legacy_after_archive',
-      timestamp: new Date().toISOString(),
-      actor: 'legacy',
-      detail: { source: 'test' },
-    };
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
+  it.skipIf(!tarOk)(
+    'regulated archive verification rejects legacy unchained audit events',
+    async () => {
+      const ids = await completeRegulatedSession();
+      const legacyEvent = {
+        id: crypto.randomUUID(),
+        sessionId: ctx.sessionID,
+        phase: 'COMPLETE',
+        event: 'legacy_after_archive',
+        timestamp: new Date().toISOString(),
+        actor: 'legacy',
+        detail: { source: 'test' },
+      };
+      await fs.appendFile(
+        path.join(ids.sessDir, 'audit.jsonl'),
+        `${JSON.stringify(legacyEvent)}\n`,
+        'utf-8',
+      );
 
-    const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
-    expect(verification.passed).toBe(false);
-    expect(
-      verification.findings.some(
-        (f) =>
-          f.code === 'audit_chain_invalid' ||
-          f.code === 'file_digest_mismatch' ||
-          f.code === 'manifest_parse_error',
-      ),
-    ).toBe(true);
-  });
+      const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) =>
+            f.code === 'audit_chain_invalid' ||
+            f.code === 'file_digest_mismatch' ||
+            f.code === 'manifest_parse_error',
+        ),
+      ).toBe(true);
+    },
+  );
 });

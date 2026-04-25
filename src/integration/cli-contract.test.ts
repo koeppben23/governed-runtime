@@ -86,13 +86,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'default-cli',
-    email: 'default@cli.dev',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'claim_validated' as const,
-  });
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'default-cli',
+      email: 'default@cli.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'claim_validated' as const,
+    });
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -130,12 +132,16 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
     } else if (lastPhase === 'PLAN') {
       await callOk(plan, { selfReviewVerdict: 'approve' }, context);
     } else if (lastPhase === 'VALIDATION') {
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      }, context);
+      await callOk(
+        validate,
+        {
+          results: [
+            { checkId: 'test_quality', passed: true, detail: 'OK' },
+            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
+          ],
+        },
+        context,
+      );
     } else if (lastPhase === 'IMPLEMENTATION') {
       await callOk(implement, {}, context);
     } else if (lastPhase === 'IMPL_REVIEW') {
@@ -240,7 +246,9 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(ticket, { text: 'Four eyes test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { selfReviewVerdict: 'approve' });
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
+    );
 
     expect(result.error).toBe(true);
     expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
@@ -257,7 +265,9 @@ describe('HAPPY: blocked/error output has stable structure', () => {
         { checkId: 'rollback_safety', passed: true, detail: 'OK' },
       ],
     });
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'At VALIDATION' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'At VALIDATION' }, ctx),
+    );
 
     expect(result.error).toBe(true);
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -305,7 +315,9 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { selfReviewVerdict: 'approve' });
 
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
   });
@@ -319,7 +331,9 @@ describe('HAPPY: reason codes are stable', () => {
     const state = await readState(sessDir);
     await writeState(sessDir, { ...state!, initiatedByIdentity: undefined });
 
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'Legacy identity' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'Legacy identity' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
   });
@@ -337,7 +351,9 @@ describe('HAPPY: reason codes are stable', () => {
       assurance: 'best_effort' as const,
     });
 
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'Unknown actor' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'Unknown actor' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
   });
@@ -346,7 +362,9 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'At TICKET', source: 'user' });
 
-    const result = parseToolResult(await decision.execute({ verdict: 'approve', rationale: 'Wrong phase' }, ctx));
+    const result = parseToolResult(
+      await decision.execute({ verdict: 'approve', rationale: 'Wrong phase' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });

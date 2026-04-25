@@ -23,7 +23,10 @@ import {
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, validate, implement } from './tools/index.js';
 import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
-import { computeFingerprint, sessionDir as resolveSessionDir } from '../adapters/workspace/index.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -65,13 +68,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'regulated-initiator',
-    email: 'initiator@regulated.dev',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'claim_validated' as const,
-  });
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'regulated-initiator',
+      email: 'initiator@regulated.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'claim_validated' as const,
+    });
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -217,7 +222,9 @@ describe('regulated-e2e critical path', () => {
     await fs.appendFile(path.join(dir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
 
     const { events } = await readAuditTrail(dir);
-    const result = verifyChain(events as unknown as Array<Record<string, unknown>>, { strict: true });
+    const result = verifyChain(events as unknown as Array<Record<string, unknown>>, {
+      strict: true,
+    });
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
   });

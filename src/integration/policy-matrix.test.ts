@@ -24,7 +24,10 @@ import {
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, validate } from './tools/index.js';
 import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
-import { computeFingerprint, sessionDir as resolveSessionDir } from '../adapters/workspace/index.js';
+import {
+  computeFingerprint,
+  sessionDir as resolveSessionDir,
+} from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 
 type Mode = 'solo' | 'team' | 'team-ci' | 'regulated';
@@ -67,13 +70,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
-    id: 'matrix-actor',
-    email: 'matrix@policy.dev',
-    displayName: null,
-    source: 'env' as const,
-    assurance: 'claim_validated' as const,
-  });
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'matrix-actor',
+      email: 'matrix@policy.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'claim_validated' as const,
+    });
   vi.clearAllMocks();
   if (previousCI === undefined) delete process.env.CI;
   else process.env.CI = previousCI;
