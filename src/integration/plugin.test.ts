@@ -510,7 +510,7 @@ describe('integration/plugin', () => {
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
-                  data: { parts: [{ type: 'text', text: JSON.stringify(findings) }] },
+                  data: { info: { structured_output: findings } },
                 }),
               },
             },
@@ -534,6 +534,72 @@ describe('integration/plugin', () => {
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
           'SUBAGENT_MANDATE_MISSING',
+        );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('blocks with SUBAGENT_MANDATE_MISMATCH when strict reviewer reports self mode', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const { sessDir, obligationId } = await seedStrictPlanSession(ws.tmpDir, sessionID);
+        const findings = {
+          iteration: 0,
+          planVersion: 1,
+          reviewMode: 'self',
+          overallVerdict: 'approve',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+          reviewedAt: new Date().toISOString(),
+          attestation: {
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            toolObligationId: obligationId,
+            iteration: 0,
+            planVersion: 1,
+            reviewedBy: 'flowguard-reviewer',
+          },
+        };
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: {
+              app: { log: async () => {} },
+              session: {
+                create: async () => ({ data: { id: 'child-session-1' } }),
+                prompt: async () => ({
+                  data: { info: { structured_output: findings } },
+                }),
+              },
+            },
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: strictPlanReviewRequiredOutput(obligationId),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(blocked.error).toBe(true);
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+
+        const state = await readState(sessDir);
+        expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
+          'SUBAGENT_MANDATE_MISMATCH',
         );
       } finally {
         await ws.cleanup();
@@ -576,7 +642,7 @@ describe('integration/plugin', () => {
               session: {
                 create: async () => ({ data: { id: 'child-session-1' } }),
                 prompt: async () => ({
-                  data: { parts: [{ type: 'text', text: JSON.stringify(findings) }] },
+                  data: { info: { structured_output: findings } },
                 }),
               },
             },

@@ -192,6 +192,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build package for runtime install
+        run: npm run build
+
+      - name: Install OpenCode CLI
+        run: npm install -g opencode-ai
+
+      - name: Verify OpenCode CLI availability
+        run: |
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "::error::opencode CLI not found on runner. Independent-review runtime e2e is mandatory."
+            exit 1
+          fi
+          opencode --version
+
       - name: Run independent-review e2e verifier
         run: npm run test:independent-review-e2e
         env:

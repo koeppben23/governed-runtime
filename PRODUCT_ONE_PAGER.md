@@ -44,6 +44,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Four-Eyes Governance
 
 - Regulated mode enforces initiator/reviewer separation
+- Strict independent review uses a hidden `flowguard-reviewer` subagent, SDK `json_schema` structured output, mandate-bound attestation, and fail-closed orchestration in strict mode
 - Minimum actor assurance is policy-bound via `minimumActorAssuranceForApproval` across `best_effort`, `claim_validated`, and `idp_verified`
 - `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification
 - `identityProviderMode: required` blocks fail-closed; `identityProviderMode: optional` degrades only for typed IdP errors

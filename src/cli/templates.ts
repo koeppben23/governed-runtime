@@ -1380,6 +1380,7 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
     "build": {
       "permission": {
         "task": {
+          "*": "deny",
           "flowguard-reviewer": "allow"
         }
       }

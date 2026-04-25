@@ -291,15 +291,37 @@ The `flowguard install` command deploys:
 | Artifact        | Path                                                        | Purpose                                                          |
 | --------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
 | Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt        |
-| Task permission | `opencode.json` (merged)                                    | Allows build agent to invoke flowguard-reviewer                  |
+| Task permission | `opencode.json` (merged)                                    | Explicitly allows flowguard-reviewer, denies all others          |
 | Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A1 (plugin) / A2 (fallback) / B (self) routing |
 | Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (orchestration + enforcement)    |
+
+### Security Model Clarification
+
+**Task tool permissions** use OpenCode's last-matching-rule semantics. The explicit allow for `flowguard-reviewer` combined with deny for `*` ensures no other subagent can be invoked via the Task tool by the build agent. However, `permission.task` controls only Task tool invocations — direct user invocations via `@subagent` are **not blocked** by this permission model. This is a known limitation documented in OpenCode's architecture: `permission.task` is not a security boundary for user-@ direct calls. FlowGuard's strict mode achieves security through enforcement hooks (L1-L4) and mandate binding, not through permission denial.
+
+---
+
+## Required CI Status Checks
+
+For strict Independent Review enforcement in CI, the following checks must be **required** in GitHub Branch Protection or Rulesets:
+
+1. **`independent-review-e2e`** — Targeted strict-review verifier plus real OpenCode runtime install/server smoke. The runtime smoke builds a release tarball, installs FlowGuard into a fresh repo, starts `opencode serve`, and verifies commands/tools/agent/permission surfaces through the real server API.
+2. All other standard checks (`test`, `lint`, `build`, `codeql-sast`, etc.)
+
+### Configuration
+
+1. Go to **Repository Settings → Branches → Branch protection rules**
+2. Create or edit rule for your default branch (e.g., `main`)
+3. Under **Status checks**, require `independent-review-e2e` to pass before merging
+4. Optionally require **branches to be up to date** before merging
+
+> **Note:** The `independent-review-e2e` check is defined in `.github/workflows/ci.yml`. Configuring it as required is done in GitHub settings, not in code. This CI smoke does not execute a provider-backed LLM `/plan` + `/implement` conversation; that remains an operator/runtime acceptance test because it requires configured model credentials.
 
 ---
 
 ## Current Status
 
-**Fully implemented.** The independent review system provides strict, fail-closed assurance with three enforcement layers:
+**Strict code hardening implemented.** The independent review system provides strict, fail-closed assurance with three enforcement layers:
 
 1. **Structural validation** — FlowGuard tools validate ReviewFindings schema, review mode vs. policy, plan-version binding, and iteration binding. Invalid findings are BLOCKED.
 2. **Deterministic invocation** — Plugin programmatically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()`). No LLM decision involved.

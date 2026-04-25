@@ -37,6 +37,99 @@
 
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 
+export const REVIEW_FINDINGS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    iteration: { type: 'integer', minimum: 0 },
+    planVersion: { type: 'integer', minimum: 1 },
+    reviewMode: { type: 'string', enum: ['subagent', 'self'] },
+    overallVerdict: { type: 'string', enum: ['approve', 'changes_requested'] },
+    blockingIssues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          category: {
+            type: 'string',
+            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+          },
+          message: { type: 'string' },
+          location: { type: 'string' },
+        },
+        required: ['severity', 'category', 'message'],
+      },
+    },
+    majorRisks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          severity: { type: 'string', enum: ['critical', 'major', 'minor'] },
+          category: {
+            type: 'string',
+            enum: ['completeness', 'correctness', 'feasibility', 'risk', 'quality'],
+          },
+          message: { type: 'string' },
+          location: { type: 'string' },
+        },
+        required: ['severity', 'category', 'message'],
+      },
+    },
+    missingVerification: { type: 'array', items: { type: 'string' } },
+    scopeCreep: { type: 'array', items: { type: 'string' } },
+    unknowns: { type: 'array', items: { type: 'string' } },
+    reviewedBy: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string' },
+        actorId: { type: 'string' },
+        actorSource: { type: 'string', enum: ['env', 'git', 'claim', 'unknown'] },
+        actorAssurance: {
+          type: 'string',
+          enum: ['best_effort', 'claim_validated', 'idp_verified'],
+        },
+      },
+      required: ['sessionId'],
+    },
+    reviewedAt: { type: 'string' },
+    attestation: {
+      type: 'object',
+      properties: {
+        mandateDigest: { type: 'string' },
+        criteriaVersion: { type: 'string' },
+        toolObligationId: { type: 'string' },
+        iteration: { type: 'integer', minimum: 0 },
+        planVersion: { type: 'integer', minimum: 1 },
+        reviewedBy: { type: 'string', const: 'flowguard-reviewer' },
+      },
+      required: [
+        'mandateDigest',
+        'criteriaVersion',
+        'toolObligationId',
+        'iteration',
+        'planVersion',
+        'reviewedBy',
+      ],
+    },
+  },
+  required: [
+    'iteration',
+    'planVersion',
+    'reviewMode',
+    'overallVerdict',
+    'blockingIssues',
+    'majorRisks',
+    'missingVerification',
+    'scopeCreep',
+    'unknowns',
+    'reviewedBy',
+    'reviewedAt',
+    'attestation',
+  ],
+  additionalProperties: false,
+} as const;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /**
@@ -56,9 +149,21 @@ export interface OrchestratorClient {
       body: {
         agent?: string;
         parts: Array<{ type: string; text: string }>;
+        format?: {
+          type: 'json_schema';
+          schema: Record<string, unknown>;
+        };
       };
     }): Promise<{
-      data?: { parts?: Array<{ type?: string; text?: string }> } | undefined;
+      data?:
+        | {
+            parts?: Array<{ type?: string; text?: string }>;
+            info?: {
+              structured_output?: unknown;
+              error?: { name: string; message: string };
+            };
+          }
+        | undefined;
       error?: unknown;
     }>;
   };
@@ -262,6 +367,7 @@ export async function invokeReviewer(
     body: {
       agent: REVIEWER_SUBAGENT_TYPE,
       parts: [{ type: 'text', text: prompt }],
+      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
     },
   });
 
@@ -269,19 +375,20 @@ export async function invokeReviewer(
     return null;
   }
 
-  // 3. Extract text content from response parts
-  const rawResponse = extractResponseText(promptResult.data.parts);
-  if (!rawResponse) {
+  const info = promptResult.data.info;
+
+  if (info?.error && info.error.name === 'StructuredOutputError') {
     return null;
   }
 
-  // 4. Attempt to parse the ReviewFindings JSON
-  const findings = parseReviewerFindings(rawResponse);
+  if (!info?.structured_output) {
+    return null;
+  }
 
   return {
     sessionId: childSessionId,
-    rawResponse,
-    findings,
+    rawResponse: JSON.stringify(info.structured_output),
+    findings: info.structured_output as Record<string, unknown>,
   };
 }
 

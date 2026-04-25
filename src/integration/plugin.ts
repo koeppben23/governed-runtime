@@ -543,13 +543,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       //
       // On success: output is mutated to INDEPENDENT_REVIEW_COMPLETED with
       // findings injected, and enforcement state is updated.
-      // On failure: original output preserved (graceful degradation to
-      // the probabilistic LLM-driven Task tool path).
+      // On non-strict failure: original output is preserved and the
+      // LLM-driven Task path may continue. On strict failure: orchestration
+      // blocks fail-closed with explicit error output.
       if (toolName === 'flowguard_plan' || toolName === 'flowguard_implement') {
         const rawOutput =
           typeof output?.output === 'string' ? output.output : JSON.stringify(output?.output ?? '');
 
-        if (isReviewRequired(rawOutput)) {
+        let strictEnforcement: boolean | null = null;
+        const inReviewPath = isReviewRequired(rawOutput);
+        if (inReviewPath) {
           try {
             // Resolve workspace + session for state access
             await resolveFingerprint();
@@ -559,7 +562,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               const sessionState = await readState(sessDir);
               const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
               const reviewCtx = extractReviewContext(toolName, parsedOutput);
-              const strictEnforcement =
+              strictEnforcement =
                 sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
               if (sessionState && reviewCtx) {
@@ -717,6 +720,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                           obligationId: reviewCtx.obligationId,
                         });
                       } else if (
+                        parsedFindings.data.reviewMode !== 'subagent' ||
                         att.toolObligationId !== reviewCtx.obligationId ||
                         att.iteration !== reviewCtx.iteration ||
                         att.planVersion !== reviewCtx.planVersion ||
@@ -931,10 +935,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               }
             }
           } catch (err) {
-            // Fire-and-forget: orchestration failure never blocks the workflow.
-            // The original output with INDEPENDENT_REVIEW_REQUIRED is preserved,
-            // and the LLM can still follow the probabilistic path via Task tool.
-            logError('review orchestration failed (fallback to LLM-driven)', err);
+            if (inReviewPath && strictEnforcement !== false) {
+              output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                reason: 'reviewer orchestration threw an exception',
+              });
+              logError('review orchestration failed (strict mode blocked)', err);
+            } else {
+              logError('review orchestration failed (fallback to LLM-driven)', err);
+            }
           }
         }
       }

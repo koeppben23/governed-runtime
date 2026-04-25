@@ -49,6 +49,14 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     unknowns: [],
     reviewedBy: { sessionId: 'child-session-1' },
     reviewedAt: '2026-04-24T12:00:00.000Z',
+    attestation: {
+      mandateDigest: 'test-mandate-digest',
+      criteriaVersion: 'p35-v1',
+      toolObligationId: '11111111-1111-4111-8111-111111111111',
+      iteration: 0,
+      planVersion: 1,
+      reviewedBy: 'flowguard-reviewer',
+    },
     ...overrides,
   });
 }
@@ -58,7 +66,13 @@ function mockClient(
   opts: {
     createResult?: { data?: { id: string }; error?: unknown };
     promptResult?: {
-      data?: { parts?: Array<{ type?: string; text?: string }> };
+      data?: {
+        parts?: Array<{ type?: string; text?: string }>;
+        info?: {
+          structured_output?: unknown;
+          error?: { name: string; message: string };
+        };
+      };
       error?: unknown;
     };
   } = {},
@@ -74,6 +88,7 @@ function mockClient(
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: validFindings() }],
+            info: { structured_output: JSON.parse(validFindings()) as Record<string, unknown> },
           },
           error: undefined,
         },
@@ -404,6 +419,7 @@ describe('invokeReviewer', () => {
 
   // HAPPY: successful invocation
   it('creates child session and invokes reviewer', async () => {
+    const { REVIEW_FINDINGS_JSON_SCHEMA } = await import('./review-orchestrator.js');
     const client = mockClient();
     const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
 
@@ -424,6 +440,7 @@ describe('invokeReviewer', () => {
       body: {
         agent: REVIEWER_SUBAGENT_TYPE,
         parts: [{ type: 'text', text: PROMPT }],
+        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
       },
     });
   });
@@ -464,28 +481,30 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // BAD: prompt returns empty parts
-  it('returns null when prompt returns empty parts', async () => {
+  // BAD: prompt returns no structured output
+  it('returns null when prompt returns no structured output', async () => {
     const client = mockClient({
-      promptResult: { data: { parts: [] }, error: undefined },
+      promptResult: {
+        data: { parts: [{ type: 'text', text: validFindings() }] },
+        error: undefined,
+      },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).toBeNull();
   });
 
-  // EDGE: reviewer returns unparseable response
-  it('returns result with null findings when response is not parseable', async () => {
+  // EDGE: structured output validation failed
+  it('returns null when structured output validation failed', async () => {
     const client = mockClient({
       promptResult: {
-        data: { parts: [{ type: 'text', text: 'I cannot review this plan.' }] },
+        data: {
+          info: { error: { name: 'StructuredOutputError', message: 'schema mismatch' } },
+        },
         error: undefined,
       },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
-    expect(result).not.toBeNull();
-    expect(result!.sessionId).toBe('child-session-1');
-    expect(result!.rawResponse).toBe('I cannot review this plan.');
-    expect(result!.findings).toBeNull();
+    expect(result).toBeNull();
   });
 
   // CORNER: reviewer returns valid findings with session ID
@@ -493,7 +512,7 @@ describe('invokeReviewer', () => {
     const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-ses-42' } });
     const client = mockClient({
       promptResult: {
-        data: { parts: [{ type: 'text', text: findingsJson }] },
+        data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
         error: undefined,
       },
     });
@@ -772,8 +791,8 @@ describe('end-to-end orchestration flow', () => {
     expect(isReviewRequired(original)).toBe(true);
   });
 
-  // CORNER: reviewer returns unparseable findings — fail-closed, no COMPLETED
-  it('preserves INDEPENDENT_REVIEW_REQUIRED when findings are unparseable', async () => {
+  // CORNER: reviewer returns no structured output — fail-closed, no COMPLETED
+  it('preserves INDEPENDENT_REVIEW_REQUIRED when structured output is missing', async () => {
     const original = modeAOutput();
 
     const client = mockClient({
@@ -783,15 +802,8 @@ describe('end-to-end orchestration flow', () => {
       },
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent');
-    expect(result).not.toBeNull();
-    expect(result!.findings).toBeNull();
-    expect(result!.rawResponse).toBe('Sorry, I could not review.');
+    expect(result).toBeNull();
 
-    // buildMutatedOutput returns null for unparseable findings (fail-closed)
-    const mutated = buildMutatedOutput(original, result!);
-    expect(mutated).toBeNull();
-
-    // Original output is preserved — LLM follows fallback Path A2
     expect(isReviewRequired(original)).toBe(true);
   });
 });
