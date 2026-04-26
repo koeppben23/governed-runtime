@@ -105,6 +105,7 @@ import {
   trackTaskEnforcement,
 } from './plugin-enforcement-tracking.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
+import { updateObligation, blockObligation } from './plugin-review-state.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
@@ -447,17 +448,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
               if (sessionState && reviewCtx) {
-                await updateReviewAssurance(sessDir, (s, now) => {
-                  const assurance = ensureReviewAssurance(s.reviewAssurance);
-                  assurance.obligations = assurance.obligations.map((item) => {
-                    if (item.obligationId !== reviewCtx.obligationId) return item;
-                    return {
-                      ...item,
-                      pluginHandshakeAt: now,
-                    };
-                  });
-                  return { ...s, reviewAssurance: assurance };
-                });
+                await updateReviewAssurance(sessDir, (s, now) =>
+                  updateObligation(s, reviewCtx.obligationId, (item) => ({
+                    ...item,
+                    pluginHandshakeAt: now,
+                  })),
+                );
                 await appendReviewAuditEvent(
                   sessDir,
                   sessionId,
@@ -537,18 +533,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     // Original INDEPENDENT_REVIEW_REQUIRED is preserved.
                     // LLM follows fallback Path A2 (Task tool to reviewer).
                     if (strictEnforcement) {
-                      await updateReviewAssurance(sessDir, (s) => {
-                        const assurance = ensureReviewAssurance(s.reviewAssurance);
-                        assurance.obligations = assurance.obligations.map((item) => {
-                          if (item.obligationId !== reviewCtx.obligationId) return item;
-                          return {
-                            ...item,
-                            status: 'blocked',
-                            blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
-                          };
-                        });
-                        return { ...s, reviewAssurance: assurance };
-                      });
+                      await updateReviewAssurance(sessDir, (s) =>
+                        blockObligation(s, reviewCtx.obligationId, 'STRICT_REVIEW_ORCHESTRATION_FAILED'),
+                      );
                       await appendReviewAuditEvent(
                         sessDir,
                         sessionId,
@@ -574,18 +561,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     if (strictEnforcement && parsedFindings.success) {
                       const att = parsedFindings.data.attestation;
                       if (!att) {
-                        await updateReviewAssurance(sessDir, (s) => {
-                          const assurance = ensureReviewAssurance(s.reviewAssurance);
-                          assurance.obligations = assurance.obligations.map((item) => {
-                            if (item.obligationId !== reviewCtx.obligationId) return item;
-                            return {
-                              ...item,
-                              status: 'blocked',
-                              blockedCode: 'SUBAGENT_MANDATE_MISSING',
-                            };
-                          });
-                          return { ...s, reviewAssurance: assurance };
-                        });
+                        await updateReviewAssurance(sessDir, (s) =>
+                          blockObligation(s, reviewCtx.obligationId, 'SUBAGENT_MANDATE_MISSING'),
+                        );
                         await appendReviewAuditEvent(
                           sessDir,
                           sessionId,
@@ -607,18 +585,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                         att.criteriaVersion !== REVIEW_CRITERIA_VERSION ||
                         att.mandateDigest !== REVIEW_MANDATE_DIGEST
                       ) {
-                        await updateReviewAssurance(sessDir, (s) => {
-                          const assurance = ensureReviewAssurance(s.reviewAssurance);
-                          assurance.obligations = assurance.obligations.map((item) => {
-                            if (item.obligationId !== reviewCtx.obligationId) return item;
-                            return {
-                              ...item,
-                              status: 'blocked',
-                              blockedCode: 'SUBAGENT_MANDATE_MISMATCH',
-                            };
-                          });
-                          return { ...s, reviewAssurance: assurance };
-                        });
+                        await updateReviewAssurance(sessDir, (s) =>
+                          blockObligation(s, reviewCtx.obligationId, 'SUBAGENT_MANDATE_MISMATCH'),
+                        );
                         await appendReviewAuditEvent(
                           sessDir,
                           sessionId,
@@ -660,15 +629,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                             )
                           ) {
                             reusedEvidence = true;
-                            assurance.obligations = assurance.obligations.map((item) => {
-                              if (item.obligationId !== reviewCtx.obligationId) return item;
-                              return {
-                                ...item,
-                                status: 'blocked',
-                                blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-                              };
-                            });
-                            return { ...s, reviewAssurance: assurance };
+                            return updateObligation(s, reviewCtx.obligationId, (item) => ({
+                              ...item,
+                              status: 'blocked',
+                              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+                            }));
                           }
 
                           const invocation = buildInvocationEvidence({
@@ -682,16 +647,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                             fulfilledAt: now,
                           });
                           assurance.invocations.push(invocation);
-                          assurance.obligations = assurance.obligations.map((item) => {
-                            if (item.obligationId !== reviewCtx.obligationId) return item;
-                            return {
-                              ...item,
-                              status: 'fulfilled',
-                              invocationId: invocation.invocationId,
-                              fulfilledAt: now,
-                            };
-                          });
-                          return { ...s, reviewAssurance: assurance };
+                          return updateObligation(s, reviewCtx.obligationId, (item) => ({
+                            ...item,
+                            status: 'fulfilled',
+                            invocationId: invocation.invocationId,
+                            fulfilledAt: now,
+                          }));
                         });
                         await appendReviewAuditEvent(
                           sessDir,
@@ -781,18 +742,9 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     sessionId,
                   });
                   if (strictEnforcement) {
-                    await updateReviewAssurance(sessDir, (s) => {
-                      const assurance = ensureReviewAssurance(s.reviewAssurance);
-                      assurance.obligations = assurance.obligations.map((item) => {
-                        if (item.obligationId !== reviewCtx.obligationId) return item;
-                        return {
-                          ...item,
-                          status: 'blocked',
-                          blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
-                        };
-                      });
-                      return { ...s, reviewAssurance: assurance };
-                    });
+                    await updateReviewAssurance(sessDir, (s) =>
+                      blockObligation(s, reviewCtx.obligationId, 'STRICT_REVIEW_ORCHESTRATION_FAILED'),
+                    );
                     await appendReviewAuditEvent(
                       sessDir,
                       sessionId,
