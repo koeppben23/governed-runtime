@@ -57,6 +57,8 @@ export interface AuditDeps {
   };
   logError(message: string, err: unknown): void;
   cachedFingerprint: string | null;
+  /** Policy mode — 'regulated' audit failures are blocking. */
+  mode: string;
 }
 
 const LIFECYCLE_TOOLS: Record<string, string> = {
@@ -73,7 +75,7 @@ export async function runAudit(
   input: unknown,
   output: unknown,
   sessionId: string,
-): Promise<void> {
+): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
   try {
     await deps.resolveFingerprint();
     const sessDir = deps.getSessionDir(sessionId);
@@ -347,5 +349,16 @@ export async function runAudit(
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
+    // P35: In regulated mode, audit persistence failures are blocking.
+    if (deps.mode === 'regulated') {
+      return {
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_PERSISTENCE_FAILED',
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
+    // solo/team: warn only, non-blocking
   }
+  return undefined;
 }

@@ -235,6 +235,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     log,
     logError,
     cachedFingerprint,
+    mode: config.policy.defaultMode ?? 'solo',
   };
 
   /**
@@ -351,7 +352,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     input: unknown,
     output: unknown,
     sessionId: string,
-  ): Promise<void> {
+  ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
     return runAuditModule(auditDeps, toolName, input, output, sessionId);
   }
 
@@ -505,7 +506,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       // ── Audit event emission (only FlowGuard tools) ─────────────────────
       if (!toolName.startsWith(FG_PREFIX)) return;
 
-      await runSerializedForSession(sessionId, () => runAudit(toolName, input, output, sessionId));
+      await runSerializedForSession(sessionId, async () => {
+        const auditResult = await runAudit(toolName, input, output, sessionId);
+        if (auditResult?.block) {
+          output.output = strictBlockedOutput(auditResult.code!, {
+            reason: auditResult.reason ?? 'audit persistence failed',
+          });
+        }
+      });
     },
   };
 };
