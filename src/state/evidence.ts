@@ -92,7 +92,7 @@ export const BindingInfo = z.object({
   worktree: z.string().min(1),
   fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
   resolvedAt: z.string().datetime(),
-});
+}).readonly();
 export type BindingInfo = z.infer<typeof BindingInfo>;
 
 // ─── Ticket ───────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ export const TicketEvidence = z.object({
   digest: z.string().min(1),
   source: z.enum(['user', 'external']),
   createdAt: z.string().datetime(),
-});
+}).readonly();
 export type TicketEvidence = z.infer<typeof TicketEvidence>;
 
 // ─── Independent Review Findings ──────────────────────────────────────────
@@ -116,7 +116,7 @@ export const Finding = z.object({
   category: z.enum(['completeness', 'correctness', 'feasibility', 'risk', 'quality']),
   message: z.string(),
   location: z.string().optional(),
-});
+}).readonly();
 export type Finding = z.infer<typeof Finding>;
 
 /**
@@ -128,7 +128,7 @@ export const ReviewActorInfo = z.object({
   actorId: z.string().optional(),
   actorSource: z.enum(['env', 'git', 'claim', 'unknown']).optional(),
   actorAssurance: assuranceSchema().optional(),
-});
+}).readonly();
 export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 
 /**
@@ -142,7 +142,7 @@ export const ReviewAttestation = z.object({
   iteration: z.number().int().nonnegative(),
   planVersion: z.number().int().positive(),
   reviewedBy: z.literal('flowguard-reviewer'),
-});
+}).readonly();
 export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
 
 /**
@@ -209,7 +209,7 @@ export const ReviewInvocationEvidence = z.object({
   invokedAt: z.string().datetime(),
   fulfilledAt: z.string().datetime(),
   consumedByObligationId: z.string().uuid().nullable(),
-});
+}).readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
 
 /** Persistent strict review assurance state. */
@@ -245,7 +245,7 @@ export const PlanRecord = z.object({
   current: PlanEvidence,
   history: z.array(PlanEvidence),
   reviewFindings: z.array(ReviewFindings).optional(),
-});
+}).readonly();
 export type PlanRecord = z.infer<typeof PlanRecord>;
 
 // ─── Self-Review Loop ─────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ export const ValidationResult = z.object({
   passed: z.boolean(),
   detail: z.string(),
   executedAt: z.string().datetime(),
-});
+}).readonly();
 export type ValidationResult = z.infer<typeof ValidationResult>;
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ export const ImplEvidence = z.object({
   domainFiles: z.array(z.string()),
   digest: z.string().min(1),
   executedAt: z.string().datetime(),
-});
+}).readonly();
 export type ImplEvidence = z.infer<typeof ImplEvidence>;
 
 // ─── Implementation Review ────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ export const ImplReviewResult = z.object({
   revisionDelta: RevisionDelta,
   verdict: LoopVerdict,
   executedAt: z.string().datetime(),
-});
+}).readonly();
 export type ImplReviewResult = z.infer<typeof ImplReviewResult>;
 
 // ─── Architecture Decision Record ─────────────────────────────────────────────
@@ -346,7 +346,7 @@ export const ArchitectureDecision = z.object({
   createdAt: z.string().datetime(),
   /** SHA-256 digest of the adrText for integrity verification. */
   digest: z.string().min(1),
-});
+}).readonly();
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
 
 // ─── Decision Identity ────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ export const DecisionIdentity = z.object({
   actorDisplayName: z.string().nullable().optional(),
   actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
   actorAssurance: assuranceSchema().default('best_effort'),
-});
+}).readonly();
 export type DecisionIdentity = z.infer<typeof DecisionIdentity>;
 
 // ─── Review Decision ──────────────────────────────────────────────────────────
@@ -386,7 +386,7 @@ export const ReviewDecision = z.object({
   decidedAt: z.string().datetime(),
   decidedBy: z.string().min(1),
   decisionIdentity: DecisionIdentity.optional(),
-});
+}).readonly();
 export type ReviewDecision = z.infer<typeof ReviewDecision>;
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ export const ErrorInfo = z.object({
   message: z.string().min(1),
   recoveryHint: z.string(),
   occurredAt: z.string().datetime(),
-});
+}).readonly();
 export type ErrorInfo = z.infer<typeof ErrorInfo>;
 
 // ─── Policy Snapshot ──────────────────────────────────────────────────────────
@@ -535,7 +535,7 @@ export const ActorInfoSchema = z.object({
   source: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
   assurance: assuranceSchema().default('best_effort'),
   verificationMeta: ActorVerificationMetaSchema.optional(),
-});
+}).readonly();
 export type ActorInfo = z.infer<typeof ActorInfoSchema>;
 
 /**
