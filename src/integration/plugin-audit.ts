@@ -78,7 +78,8 @@ export async function runAudit(
   output: unknown,
   sessionId: string,
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
-  let effectiveMode: string = deps.mode; // config default, overridden by resolved policy
+  let policyResolved = false;
+  let effectiveMode: string = deps.mode;
   try {
     await deps.resolveFingerprint();
     const sessDir = deps.getSessionDir(sessionId);
@@ -87,6 +88,7 @@ export async function runAudit(
     const { policy, state } = await deps.resolveSessionPolicy(sessDir);
     const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
     effectiveMode = policy.mode;
+    policyResolved = true;
 
     deps.log.debug('audit', 'processing tool call', {
       tool: toolName,
@@ -358,9 +360,8 @@ export async function runAudit(
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
-    // P35: Block on regulated or unresolvable policy mode.
-    if (effectiveMode === 'regulated' || effectiveMode === deps.mode) {
-      // deps.mode === config default — policy was never resolved; block conservatively
+    const shouldBlock = effectiveMode === 'regulated' || !policyResolved;
+    if (shouldBlock) {
       return {
         auditOk: false,
         block: true,

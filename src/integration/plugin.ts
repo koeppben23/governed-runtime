@@ -110,9 +110,6 @@ import {
   type SessionEnforcementState,
 } from './review-enforcement.js';
 
-// Review orchestrator — deterministic subagent invocation via SDK
-import {} from './review-orchestrator.js';
-import {} from './review-assurance.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
@@ -246,27 +243,24 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   /**
    * Initialize the chain hash for a session by reading the existing trail.
    * Chain state is per-session — each session maintains an independent audit chain.
+   *
+   * Returns GENESIS_HASH when no trail exists yet. Throws on corrupt/unreadable
+   * trails so that regulated audit failure policy can block accordingly.
    */
   async function initChain(sessDir: string | null, sessionId: string): Promise<string> {
     const cs = getChainState(sessionId);
     if (cs.initialized && cs.lastHash !== null) return cs.lastHash;
 
-    try {
-      if (!sessDir) {
-        cs.lastHash = GENESIS_HASH;
-        cs.initialized = true;
-        return cs.lastHash;
-      }
-
-      const { events } = await readAuditTrail(sessDir);
-      cs.lastHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
-      cs.initialized = true;
-      return cs.lastHash;
-    } catch {
+    if (!sessDir) {
       cs.lastHash = GENESIS_HASH;
       cs.initialized = true;
       return cs.lastHash;
     }
+
+    const { events } = await readAuditTrail(sessDir);
+    cs.lastHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
+    cs.initialized = true;
+    return cs.lastHash;
   }
 
   /**
