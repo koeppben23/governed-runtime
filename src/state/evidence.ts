@@ -162,7 +162,7 @@ export const ReviewFindings = z.object({
   reviewedBy: ReviewActorInfo,
   reviewedAt: z.string().datetime(),
   attestation: ReviewAttestation.optional(),
-});
+}).readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 /** Independent review obligation type. */
@@ -495,7 +495,7 @@ export const PolicySnapshotSchema = z.object({
    * Tools not listed default to "system" at runtime.
    */
   actorClassification: z.record(z.string(), z.string()),
-});
+}).readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
 
 // ─── Actor Identity ───────────────────────────────────────────────────────────
@@ -576,7 +576,7 @@ export const AuditEvent = z.object({
   prevHash: z.string().optional(),
   /** SHA-256(prevHash + canonical JSON of this event). Tamper-evident chain link. */
   chainHash: z.string().optional(),
-});
+}).readonly();
 export type AuditEvent = z.infer<typeof AuditEvent>;
 
 // ─── Review Report (Standalone Compliance Artifact) ───────────────────────────
