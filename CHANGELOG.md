@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Review audit event extraction**: Extracted `appendReviewAuditEvent` into `src/integration/plugin-review-audit.ts`. Removes `crypto` import from plugin.ts.
 - **Review state helper extraction**: Extracted `updateObligation` and `blockObligation` into `src/integration/plugin-review-state.ts`. Replaces 6× copy-paste `updateReviewAssurance` callback patterns.
 - **Block review outcome consolidation**: Consolidated 4× 3-step pattern (`updateReviewAssurance` + `appendReviewAuditEvent` + `strictBlockedOutput`) into `blockReviewOutcome` local helper.
-- **Zod evidence schema hardening**: All 24 `z.object()` schemas in `src/state/evidence.ts` now use `.readonly()`. Marks parsed evidence artifacts as readonly at the TypeScript boundary. No runtime behavior change.
+- **Zod evidence schema hardening**: All 24 `z.object()` schemas in `src/state/evidence.ts` now use `.readonly()`. Marks parsed evidence artifacts as readonly at the schema/type boundary to discourage accidental mutation.
 - **Plugin hook type interfaces**: Added `ToolHookInput` and `ToolHookOutput` in `src/integration/types.ts` for typed access at the OpenCode plugin boundary.
 - AGENTS v3 hard invariants were refined to action-oriented wording with explicit `Red Lines`, while preserving fail-closed and single-authority constraints.
 - Review guidance verdict wording is now exactly aligned with root AGENTS contract (`approve` / `changes_requested`) to prevent enum drift.

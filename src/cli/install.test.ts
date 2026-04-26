@@ -30,6 +30,7 @@ import {
   doctor,
   sha256,
   computeMandatesDigest,
+  mergeReviewerTaskPermission,
   formatResult,
   formatDoctor,
   main,
@@ -1060,6 +1061,72 @@ describe('cli/install', () => {
       expect(parsed.model).toBe('claude-4-opus');
       // instructions added with correct entry
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
+    });
+
+    it('mergeReviewerTaskPermission enforces *.deny + flowguard-reviewer.allow (P35)', () => {
+      const parsed: Record<string, unknown> = {
+        agent: {
+          build: {
+            permission: {
+              task: {
+                'some-other-agent': 'allow',
+              },
+            },
+          },
+        },
+      };
+      mergeReviewerTaskPermission(parsed);
+
+      const task = (
+        (parsed as Record<string, unknown>).agent as Record<string, unknown>
+      ).build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      // P35: Must have wildcard deny
+      expect(t['*']).toBe('deny');
+      // Must have reviewer allow
+      expect(t['flowguard-reviewer']).toBe('allow');
+      // Existing entries preserved
+      expect(t['some-other-agent']).toBe('allow');
+    });
+
+    it('mergeReviewerTaskPermission preserves existing *.deny if already set', () => {
+      const parsed: Record<string, unknown> = {
+        agent: {
+          build: {
+            permission: {
+              task: {
+                '*': 'deny',
+              },
+            },
+          },
+        },
+      };
+      mergeReviewerTaskPermission(parsed);
+
+      const task = (
+        (parsed as Record<string, unknown>).agent as Record<string, unknown>
+      ).build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      expect(t['*']).toBe('deny');
+      expect(t['flowguard-reviewer']).toBe('allow');
+    });
+
+    it('mergeReviewerTaskPermission handles empty config', () => {
+      const parsed: Record<string, unknown> = {};
+      mergeReviewerTaskPermission(parsed);
+
+      const task = (
+        (parsed as Record<string, unknown>).agent as Record<string, unknown>
+      ).build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      expect(t['*']).toBe('deny');
+      expect(t['flowguard-reviewer']).toBe('allow');
     });
 
     it('AGENTS.md in project root is never touched even with --force', async () => {

@@ -58,7 +58,7 @@ import {
 
 // ─── Re-exports for backward compatibility ─────────────────────────────────
 export { type InstallScope, type PolicyMode, type CliAction, type CliArgs, type FileOp, type CliResult, type DoctorStatus, type DoctorCheck } from './install-helpers.js';
-export { resolveTarget, sha256, computeMandatesDigest } from './install-helpers.js';
+export { resolveTarget, sha256, computeMandatesDigest, mergeReviewerTaskPermission } from './install-helpers.js';
 
 // ─── Install ──────────────────────────────────────────────────────────────────
 // ─── Install ──────────────────────────────────────────────────────────────────

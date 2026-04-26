@@ -267,10 +267,15 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
   }
   const task = permission['task'] as AnyObj;
 
-  // Only set if not already configured (preserve user overrides)
-  if (!('flowguard-reviewer' in task)) {
-    task['flowguard-reviewer'] = 'allow';
-  }
+  // P35: Enforce default-deny wildcard to restrict the build agent to only
+  // the flowguard-reviewer subagent. Existing allow entries are preserved
+  // but always gated behind the wildcard deny.
+  // flowguard-reviewer must appear after * because OpenCode uses last-matching-rule.
+  permission['task'] = {
+    '*': task['*'] ?? 'deny',
+    ...task,
+    'flowguard-reviewer': 'allow',
+  };
 }
 
 /**
