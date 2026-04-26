@@ -329,6 +329,344 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     output.output = strictBlockedOutput(code, detail);
   }
 
+  /**
+   * Deterministic review orchestration — the core P34/P35 subagent invocation flow.
+   *
+   * Extracted from the tool.execute.after handler to reduce nesting depth.
+   * Called only for flowguard_plan and flowguard_implement tools.
+   *
+   * On success: output is mutated, audit events emitted, enforcement tracked.
+   * On failure: strict mode blocks, non-strict falls back to LLM-driven path.
+   */
+  async function runReviewOrchestration(
+    toolName: string,
+    input: unknown,
+    output: { output: string },
+    sessionId: string,
+    now: string,
+  ): Promise<void> {
+    const rawOutput = getToolOutput(output);
+    let strictEnforcement: boolean | null = null;
+    const inReviewPath = isReviewRequired(rawOutput);
+    if (!inReviewPath) return;
+
+    try {
+      // Resolve workspace + session for state access
+      await resolveFingerprint();
+      const sessDir = getSessionDir(sessionId);
+
+      if (!sessDir) return;
+      const sessionState = await readState(sessDir);
+      if (!sessionState) return;
+
+      const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
+      const reviewCtx = extractReviewContext(toolName, parsedOutput);
+      if (!reviewCtx) {
+        strictEnforcement =
+          sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+        if (strictEnforcement) {
+          output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+            reason: 'review context missing for strict orchestration',
+          });
+        }
+        return;
+      }
+
+      strictEnforcement =
+        sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+
+      await updateReviewAssurance(sessDir, (s, now) =>
+        updateObligation(s, reviewCtx.obligationId, (item) => ({
+          ...item,
+          pluginHandshakeAt: now,
+        })),
+      );
+      await appendReviewAuditEvent(
+        sessDir,
+        sessionId,
+        String(parsedOutput.phase ?? sessionState.phase),
+        'review:obligation_created',
+        {
+          obligationId: reviewCtx.obligationId,
+          obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+          iteration: reviewCtx.iteration,
+          planVersion: reviewCtx.planVersion,
+          criteriaVersion: reviewCtx.criteriaVersion,
+          mandateDigest: reviewCtx.mandateDigest,
+        },
+      );
+
+      // Build the review prompt with session context
+      const ticketText = sessionState.ticket?.text ?? '';
+      const planText = sessionState.plan?.current?.body ?? '';
+      const toolArgs = getToolArgs(input);
+
+      const prompt =
+        toolName === TOOL_FLOWGUARD_PLAN
+          ? buildPlanReviewPrompt({
+              planText:
+                typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+              ticketText,
+              iteration: reviewCtx.iteration,
+              planVersion: reviewCtx.planVersion,
+              obligationId: reviewCtx.obligationId,
+              criteriaVersion: reviewCtx.criteriaVersion,
+              mandateDigest: reviewCtx.mandateDigest,
+            })
+          : buildImplReviewPrompt({
+              changedFiles: Array.isArray(parsedOutput.changedFiles)
+                ? (parsedOutput.changedFiles as string[])
+                : (sessionState.implementation?.changedFiles ?? []),
+              planText,
+              ticketText,
+              iteration: reviewCtx.iteration,
+              planVersion: reviewCtx.planVersion,
+              obligationId: reviewCtx.obligationId,
+              criteriaVersion: reviewCtx.criteriaVersion,
+              mandateDigest: reviewCtx.mandateDigest,
+            });
+
+      // Invoke the reviewer subagent via SDK client
+      log.info('orchestrator', 'invoking reviewer subagent', {
+        tool: toolName,
+        sessionId,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+      });
+
+      const reviewerResult = await invokeReviewer(
+        client as unknown as OrchestratorClient,
+        prompt,
+        sessionId,
+      );
+
+      if (reviewerResult) {
+        // Fail-closed: only proceed to COMPLETED path when structured
+        // ReviewFindings were successfully parsed. Unparseable reviewer
+        // responses must NOT produce INDEPENDENT_REVIEW_COMPLETED —
+        // that would violate P34 contract (completed ≠ unparseable).
+        if (!reviewerResult.findings) {
+          log.warn(
+            'orchestrator',
+            'reviewer returned unparseable response — fallback to LLM-driven path',
+            {
+              tool: toolName,
+              sessionId,
+              childSessionId: reviewerResult.sessionId,
+              rawResponseLength: reviewerResult.rawResponse.length,
+            },
+          );
+          // Do NOT mutate output, do NOT call recordPluginReview.
+          // Original INDEPENDENT_REVIEW_REQUIRED is preserved.
+          // LLM follows fallback Path A2 (Task tool to reviewer).
+          if (strictEnforcement) {
+            await blockReviewOutcome(
+              sessDir, sessionId,
+              String(parsedOutput.phase ?? sessionState.phase),
+              reviewCtx.obligationId,
+              'STRICT_REVIEW_ORCHESTRATION_FAILED',
+              { reason: 'reviewer response was not parseable as ReviewFindings' },
+              output,
+            );
+          }
+        } else {
+          const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
+          if (!parsedFindings.success && strictEnforcement) {
+            output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+              reason: 'reviewer response did not match ReviewFindings schema',
+            });
+          }
+
+          if (strictEnforcement && parsedFindings.success) {
+            const att = parsedFindings.data.attestation;
+            if (!att) {
+              await blockReviewOutcome(
+                sessDir, sessionId,
+                String(parsedOutput.phase ?? sessionState.phase),
+                reviewCtx.obligationId,
+                'SUBAGENT_MANDATE_MISSING',
+                { obligationId: reviewCtx.obligationId },
+                output,
+              );
+            } else if (
+              parsedFindings.data.reviewMode !== 'subagent' ||
+              att.toolObligationId !== reviewCtx.obligationId ||
+              att.iteration !== reviewCtx.iteration ||
+              att.planVersion !== reviewCtx.planVersion ||
+              att.criteriaVersion !== REVIEW_CRITERIA_VERSION ||
+              att.mandateDigest !== REVIEW_MANDATE_DIGEST
+            ) {
+              await blockReviewOutcome(
+                sessDir, sessionId,
+                String(parsedOutput.phase ?? sessionState.phase),
+                reviewCtx.obligationId,
+                'SUBAGENT_MANDATE_MISMATCH',
+                { obligationId: reviewCtx.obligationId },
+                output,
+              );
+            }
+          }
+
+          const strictGateResult = parseToolResult(output.output);
+          if (strictEnforcement && strictGateResult?.error === true) {
+            // Strict gate already produced a blocked output.
+            // Do not proceed with mutation or evidence recording.
+            return;
+          }
+
+          // Structured findings available — proceed with deterministic path
+          const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+
+          if (mutated) {
+            if (strictEnforcement && parsedFindings.success) {
+              const promptHash = hashText(prompt);
+              const findingsHash = hashFindings(reviewerResult.findings);
+              let reusedEvidence = false;
+              await updateReviewAssurance(sessDir, (s, now) => {
+                const assurance = ensureReviewAssurance(s.reviewAssurance);
+                if (
+                  hasEvidenceReuse(
+                    assurance.invocations,
+                    reviewerResult.sessionId,
+                    findingsHash,
+                  )
+                ) {
+                  reusedEvidence = true;
+                  return updateObligation(s, reviewCtx.obligationId, (item) => ({
+                    ...item,
+                    status: 'blocked',
+                    blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+                  }));
+                }
+
+                const invocation = buildInvocationEvidence({
+                  obligationId: reviewCtx.obligationId,
+                  obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                  parentSessionId: sessionId,
+                  childSessionId: reviewerResult.sessionId,
+                  promptHash,
+                  findingsHash,
+                  invokedAt: now,
+                  fulfilledAt: now,
+                });
+                assurance.invocations.push(invocation);
+                return updateObligation(s, reviewCtx.obligationId, (item) => ({
+                  ...item,
+                  status: 'fulfilled',
+                  invocationId: invocation.invocationId,
+                  fulfilledAt: now,
+                }));
+              });
+              await appendReviewAuditEvent(
+                sessDir,
+                sessionId,
+                String(parsedOutput.phase ?? sessionState.phase),
+                reusedEvidence ? 'review:obligation_blocked' : 'review:subagent_invoked',
+                reusedEvidence
+                  ? {
+                      obligationId: reviewCtx.obligationId,
+                      code: 'SUBAGENT_EVIDENCE_REUSED',
+                    }
+                  : {
+                      obligationId: reviewCtx.obligationId,
+                      obligationType:
+                        toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                      parentSessionId: sessionId,
+                      childSessionId: reviewerResult.sessionId,
+                      agentType: REVIEWER_SUBAGENT_TYPE,
+                      promptHash,
+                      mandateDigest: REVIEW_MANDATE_DIGEST,
+                      criteriaVersion: REVIEW_CRITERIA_VERSION,
+                      findingsHash,
+                    },
+              );
+              if (!reusedEvidence) {
+                await appendReviewAuditEvent(
+                  sessDir,
+                  sessionId,
+                  String(parsedOutput.phase ?? sessionState.phase),
+                  'review:obligation_fulfilled',
+                  {
+                    obligationId: reviewCtx.obligationId,
+                    childSessionId: reviewerResult.sessionId,
+                  },
+                );
+              }
+              if (reusedEvidence) {
+                output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+                  obligationId: reviewCtx.obligationId,
+                });
+                return;
+              }
+            }
+
+            // Update enforcement state to satisfy L1/L2/L4
+            const eState = getEnforcementState(sessionId);
+            const captured: CapturedFindings = {
+              overallVerdict:
+                typeof reviewerResult.findings.overallVerdict === 'string'
+                  ? reviewerResult.findings.overallVerdict
+                  : 'unknown',
+              blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
+                ? reviewerResult.findings.blockingIssues.length
+                : 0,
+              sessionId: reviewerResult.sessionId,
+            };
+
+            recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
+
+            // Mutate the output — the LLM will see the modified response.
+            // VERIFIED: output.output mutation in after-hook is effective
+            // (confirmed via OpenCode source: prompt.ts passes output by
+            // reference through plugin.trigger, same object returned to AI SDK)
+            output.output = mutated;
+
+            log.info('orchestrator', 'reviewer invocation succeeded', {
+              tool: toolName,
+              sessionId,
+              childSessionId: reviewerResult.sessionId,
+              verdict: reviewerResult.findings.overallVerdict,
+            });
+          } else {
+            log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
+              tool: toolName,
+              sessionId,
+            });
+            if (strictEnforcement) {
+              output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+                reason: 'output mutation failed',
+              });
+            }
+          }
+        }
+      } else {
+        log.warn('orchestrator', 'reviewer invocation failed (fallback to LLM-driven)', {
+          tool: toolName,
+          sessionId,
+        });
+        if (strictEnforcement) {
+          await blockReviewOutcome(
+            sessDir, sessionId,
+            String(parsedOutput.phase ?? sessionState.phase),
+            reviewCtx.obligationId,
+            'STRICT_REVIEW_ORCHESTRATION_FAILED',
+            { reason: 'reviewer invocation failed' },
+            output,
+          );
+        }
+      }
+    } catch (err) {
+      if (inReviewPath && strictEnforcement !== false) {
+        output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+          reason: 'reviewer orchestration threw an exception',
+        });
+        logError('review orchestration failed (strict mode blocked)', err);
+      } else {
+        logError('review orchestration failed (fallback to LLM-driven)', err);
+      }
+    }
+  }
+
   async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
     const cached = decisionSequenceCache.get(sessionId);
     if (cached !== undefined) {
@@ -446,332 +784,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         }
       }
 
-      // ── Deterministic review orchestration (plugin-initiated) ────────────
-      // When a FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED,
-      // the plugin programmatically invokes the reviewer subagent via the
-      // SDK client. This is deterministic — no LLM decision involved.
-      //
-      // On success: output is mutated to INDEPENDENT_REVIEW_COMPLETED with
-      // findings injected, and enforcement state is updated.
-      // On non-strict failure: original output is preserved and the
-      // LLM-driven Task path may continue. On strict failure: orchestration
-      // blocks fail-closed with explicit error output.
-      if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
-        const rawOutput = getToolOutput(output);
-        let strictEnforcement: boolean | null = null;
-        const inReviewPath = isReviewRequired(rawOutput);
-        if (inReviewPath) {
-          try {
-            // Resolve workspace + session for state access
-            await resolveFingerprint();
-            const sessDir = getSessionDir(sessionId);
-
-            if (sessDir) {
-              const sessionState = await readState(sessDir);
-              const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
-              const reviewCtx = extractReviewContext(toolName, parsedOutput);
-              strictEnforcement =
-                sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
-
-              if (sessionState && reviewCtx) {
-                await updateReviewAssurance(sessDir, (s, now) =>
-                  updateObligation(s, reviewCtx.obligationId, (item) => ({
-                    ...item,
-                    pluginHandshakeAt: now,
-                  })),
-                );
-                await appendReviewAuditEvent(
-                  sessDir,
-                  sessionId,
-                  String(parsedOutput.phase ?? sessionState.phase),
-                  'review:obligation_created',
-                  {
-                    obligationId: reviewCtx.obligationId,
-                    obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
-                    iteration: reviewCtx.iteration,
-                    planVersion: reviewCtx.planVersion,
-                    criteriaVersion: reviewCtx.criteriaVersion,
-                    mandateDigest: reviewCtx.mandateDigest,
-                  },
-                );
-
-                // Build the review prompt with session context
-                const ticketText = sessionState.ticket?.text ?? '';
-                const planText = sessionState.plan?.current?.body ?? '';
-                const toolArgs = getToolArgs(input);
-
-                const prompt =
-                  toolName === TOOL_FLOWGUARD_PLAN
-                    ? buildPlanReviewPrompt({
-                        planText:
-                          typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
-                        ticketText,
-                        iteration: reviewCtx.iteration,
-                        planVersion: reviewCtx.planVersion,
-                        obligationId: reviewCtx.obligationId,
-                        criteriaVersion: reviewCtx.criteriaVersion,
-                        mandateDigest: reviewCtx.mandateDigest,
-                      })
-                    : buildImplReviewPrompt({
-                        changedFiles: Array.isArray(parsedOutput.changedFiles)
-                          ? (parsedOutput.changedFiles as string[])
-                          : (sessionState.implementation?.changedFiles ?? []),
-                        planText,
-                        ticketText,
-                        iteration: reviewCtx.iteration,
-                        planVersion: reviewCtx.planVersion,
-                        obligationId: reviewCtx.obligationId,
-                        criteriaVersion: reviewCtx.criteriaVersion,
-                        mandateDigest: reviewCtx.mandateDigest,
-                      });
-
-                // Invoke the reviewer subagent via SDK client
-                log.info('orchestrator', 'invoking reviewer subagent', {
-                  tool: toolName,
-                  sessionId,
-                  iteration: reviewCtx.iteration,
-                  planVersion: reviewCtx.planVersion,
-                });
-
-                const reviewerResult = await invokeReviewer(
-                  client as unknown as OrchestratorClient,
-                  prompt,
-                  sessionId,
-                );
-
-                if (reviewerResult) {
-                  // Fail-closed: only proceed to COMPLETED path when structured
-                  // ReviewFindings were successfully parsed. Unparseable reviewer
-                  // responses must NOT produce INDEPENDENT_REVIEW_COMPLETED —
-                  // that would violate P34 contract (completed ≠ unparseable).
-                  if (!reviewerResult.findings) {
-                    log.warn(
-                      'orchestrator',
-                      'reviewer returned unparseable response — fallback to LLM-driven path',
-                      {
-                        tool: toolName,
-                        sessionId,
-                        childSessionId: reviewerResult.sessionId,
-                        rawResponseLength: reviewerResult.rawResponse.length,
-                      },
-                    );
-                    // Do NOT mutate output, do NOT call recordPluginReview.
-                    // Original INDEPENDENT_REVIEW_REQUIRED is preserved.
-                    // LLM follows fallback Path A2 (Task tool to reviewer).
-                    if (strictEnforcement) {
-                      await blockReviewOutcome(
-                        sessDir, sessionId,
-                        String(parsedOutput.phase ?? sessionState.phase),
-                        reviewCtx.obligationId,
-                        'STRICT_REVIEW_ORCHESTRATION_FAILED',
-                        { reason: 'reviewer response was not parseable as ReviewFindings' },
-                        output as { output: string },
-                      );
-                    }
-                  } else {
-                    const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
-                    if (!parsedFindings.success && strictEnforcement) {
-                      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-                        reason: 'reviewer response did not match ReviewFindings schema',
-                      });
-                    }
-
-                    if (strictEnforcement && parsedFindings.success) {
-                      const att = parsedFindings.data.attestation;
-                      if (!att) {
-                        await blockReviewOutcome(
-                          sessDir, sessionId,
-                          String(parsedOutput.phase ?? sessionState.phase),
-                          reviewCtx.obligationId,
-                          'SUBAGENT_MANDATE_MISSING',
-                          { obligationId: reviewCtx.obligationId },
-                          output as { output: string },
-                        );
-                      } else if (
-                        parsedFindings.data.reviewMode !== 'subagent' ||
-                        att.toolObligationId !== reviewCtx.obligationId ||
-                        att.iteration !== reviewCtx.iteration ||
-                        att.planVersion !== reviewCtx.planVersion ||
-                        att.criteriaVersion !== REVIEW_CRITERIA_VERSION ||
-                        att.mandateDigest !== REVIEW_MANDATE_DIGEST
-                      ) {
-                        await blockReviewOutcome(
-                          sessDir, sessionId,
-                          String(parsedOutput.phase ?? sessionState.phase),
-                          reviewCtx.obligationId,
-                          'SUBAGENT_MANDATE_MISMATCH',
-                          { obligationId: reviewCtx.obligationId },
-                          output as { output: string },
-                        );
-                      }
-                    }
-
-                    const strictGateResult = parseToolResult(output.output);
-                    if (strictEnforcement && strictGateResult?.error === true) {
-                      // Strict gate already produced a blocked output.
-                      // Do not proceed with mutation or evidence recording.
-                      return;
-                    }
-
-                    // Structured findings available — proceed with deterministic path
-                    const mutated = buildMutatedOutput(rawOutput, reviewerResult);
-
-                    if (mutated) {
-                      if (strictEnforcement && parsedFindings.success) {
-                        const promptHash = hashText(prompt);
-                        const findingsHash = hashFindings(reviewerResult.findings);
-                        let reusedEvidence = false;
-                        await updateReviewAssurance(sessDir, (s, now) => {
-                          const assurance = ensureReviewAssurance(s.reviewAssurance);
-                          if (
-                            hasEvidenceReuse(
-                              assurance.invocations,
-                              reviewerResult.sessionId,
-                              findingsHash,
-                            )
-                          ) {
-                            reusedEvidence = true;
-                            return updateObligation(s, reviewCtx.obligationId, (item) => ({
-                              ...item,
-                              status: 'blocked',
-                              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-                            }));
-                          }
-
-                          const invocation = buildInvocationEvidence({
-                            obligationId: reviewCtx.obligationId,
-                            obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
-                            parentSessionId: sessionId,
-                            childSessionId: reviewerResult.sessionId,
-                            promptHash,
-                            findingsHash,
-                            invokedAt: now,
-                            fulfilledAt: now,
-                          });
-                          assurance.invocations.push(invocation);
-                          return updateObligation(s, reviewCtx.obligationId, (item) => ({
-                            ...item,
-                            status: 'fulfilled',
-                            invocationId: invocation.invocationId,
-                            fulfilledAt: now,
-                          }));
-                        });
-                        await appendReviewAuditEvent(
-                          sessDir,
-                          sessionId,
-                          String(parsedOutput.phase ?? sessionState.phase),
-                          reusedEvidence ? 'review:obligation_blocked' : 'review:subagent_invoked',
-                          reusedEvidence
-                            ? {
-                                obligationId: reviewCtx.obligationId,
-                                code: 'SUBAGENT_EVIDENCE_REUSED',
-                              }
-                            : {
-                                obligationId: reviewCtx.obligationId,
-                                obligationType:
-                                  toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
-                                parentSessionId: sessionId,
-                                childSessionId: reviewerResult.sessionId,
-                                agentType: REVIEWER_SUBAGENT_TYPE,
-                                promptHash,
-                                mandateDigest: REVIEW_MANDATE_DIGEST,
-                                criteriaVersion: REVIEW_CRITERIA_VERSION,
-                                findingsHash,
-                              },
-                        );
-                        if (!reusedEvidence) {
-                          await appendReviewAuditEvent(
-                            sessDir,
-                            sessionId,
-                            String(parsedOutput.phase ?? sessionState.phase),
-                            'review:obligation_fulfilled',
-                            {
-                              obligationId: reviewCtx.obligationId,
-                              childSessionId: reviewerResult.sessionId,
-                            },
-                          );
-                        }
-                        if (reusedEvidence) {
-                          output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-                            obligationId: reviewCtx.obligationId,
-                          });
-                          return;
-                        }
-                      }
-
-                      // Update enforcement state to satisfy L1/L2/L4
-                      const eState = getEnforcementState(sessionId);
-                      const captured: CapturedFindings = {
-                        overallVerdict:
-                          typeof reviewerResult.findings.overallVerdict === 'string'
-                            ? reviewerResult.findings.overallVerdict
-                            : 'unknown',
-                        blockingIssuesCount: Array.isArray(reviewerResult.findings.blockingIssues)
-                          ? reviewerResult.findings.blockingIssues.length
-                          : 0,
-                        sessionId: reviewerResult.sessionId,
-                      };
-
-                      recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);
-
-                      // Mutate the output — the LLM will see the modified response.
-                      // VERIFIED: output.output mutation in after-hook is effective
-                      // (confirmed via OpenCode source: prompt.ts passes output by
-                      // reference through plugin.trigger, same object returned to AI SDK)
-                      output.output = mutated;
-
-                      log.info('orchestrator', 'reviewer invocation succeeded', {
-                        tool: toolName,
-                        sessionId,
-                        childSessionId: reviewerResult.sessionId,
-                        verdict: reviewerResult.findings.overallVerdict,
-                      });
-                    } else {
-                      log.warn('orchestrator', 'output mutation failed (fallback to LLM-driven)', {
-                        tool: toolName,
-                        sessionId,
-                      });
-                      if (strictEnforcement) {
-                        output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-                          reason: 'output mutation failed',
-                        });
-                      }
-                    }
-                  }
-                } else {
-                  log.warn('orchestrator', 'reviewer invocation failed (fallback to LLM-driven)', {
-                    tool: toolName,
-                    sessionId,
-                  });
-                  if (strictEnforcement) {
-                    await blockReviewOutcome(
-                      sessDir, sessionId,
-                      String(parsedOutput.phase ?? sessionState.phase),
-                      reviewCtx.obligationId,
-                      'STRICT_REVIEW_ORCHESTRATION_FAILED',
-                      { reason: 'reviewer invocation failed' },
-                      output as { output: string },
-                    );
-                  }
-                }
-              } else if (strictEnforcement) {
-                output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-                  reason: 'review context missing for strict orchestration',
-                });
-              }
-            }
-          } catch (err) {
-            if (inReviewPath && strictEnforcement !== false) {
-              output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-                reason: 'reviewer orchestration threw an exception',
-              });
-              logError('review orchestration failed (strict mode blocked)', err);
-            } else {
-              logError('review orchestration failed (fallback to LLM-driven)', err);
-            }
-          }
-        }
-      }
+      await runReviewOrchestration(toolName, input, output as { output: string }, sessionId, now);
 
       // ── Audit event emission (only FlowGuard tools) ─────────────────────
       if (!toolName.startsWith(FG_PREFIX)) return;
