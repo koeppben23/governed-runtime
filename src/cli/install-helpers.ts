@@ -242,7 +242,6 @@ export async function mergePackageJson(filePath: string, version: string): Promi
 }
 
 /**
-/**
  * Enforce strict P35 Task permission for the build agent.
  *
  * Replaces parsed.agent.build.permission.task with a wildcard deny baseline
