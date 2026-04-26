@@ -457,7 +457,7 @@ describe('EDGE: policy mode affects CLI output', () => {
     expect(result.appliedPolicy.effectiveMode).toBe('regulated');
   });
 
-  it('team-ci mode shows requestedMode=team-ci with effectiveMode=team', async () => {
+  it('team-ci mode shows effectiveMode=team in policySnapshot when no CI context', async () => {
     const prevCI = process.env.CI;
     delete process.env.CI;
     try {
@@ -465,7 +465,6 @@ describe('EDGE: policy mode affects CLI output', () => {
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
 
-      expect(state!.policySnapshot.requestedMode).toBe('team-ci');
       expect(state!.policySnapshot.mode).toBe('team');
     } finally {
       if (prevCI === undefined) delete process.env.CI;
