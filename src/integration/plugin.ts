@@ -101,6 +101,10 @@ import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
 import { parseToolResult, strictBlockedOutput, getToolOutput, getToolArgs } from './plugin-helpers.js';
+import {
+  trackFlowGuardEnforcement,
+  trackTaskEnforcement,
+} from './plugin-enforcement-tracking.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
@@ -109,8 +113,6 @@ import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
 // Review enforcement — runtime gate for subagent invocation
 import {
   createSessionState as createEnforcementState,
-  onFlowGuardToolAfter as enforcementOnToolAfter,
-  onTaskToolAfter as enforcementOnTaskAfter,
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
   recordPluginReview,
@@ -422,18 +424,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
         try {
           const eState = getEnforcementState(sessionId);
-          const args = getToolArgs(input);
-          const rawOutput = getToolOutput(output);
-          enforcementOnToolAfter(eState, toolName, args, rawOutput, now);
+          trackFlowGuardEnforcement(eState, toolName, input, output, now);
         } catch (err) {
           logError('enforcement tracking failed (non-blocking)', err);
         }
       } else if (toolName === 'task') {
         try {
           const eState = getEnforcementState(sessionId);
-          const args = getToolArgs(input);
-          const rawOutput = getToolOutput(output);
-          enforcementOnTaskAfter(eState, args, rawOutput, now);
+          trackTaskEnforcement(eState, input, output, now);
         } catch (err) {
           logError('enforcement tracking failed (non-blocking)', err);
         }
