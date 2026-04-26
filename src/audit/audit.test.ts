@@ -270,19 +270,19 @@ describe('audit types', () => {
     });
 
     it('createToolCallEvent produces valid chained event', () => {
-      const event = createToolCallEvent(
-        SESSION_ID,
-        'PLAN',
-        {
+      const event = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
           tool: 'flowguard_plan',
           argsSummary: { text: 'fix auth' },
           success: true,
           transitionCount: 1,
         },
-        TS1,
-        'user-1',
-        GENESIS_HASH,
-      );
+        timestamp: TS1,
+        actor: 'user-1',
+        prevHash: GENESIS_HASH,
+      });
       expect(event.event).toBe('tool_call:flowguard_plan');
       expect(event.actor).toBe('user-1');
       expect(event.detail.kind).toBe('tool_call');
@@ -315,10 +315,10 @@ describe('audit types', () => {
     });
 
     it('createDecisionEvent produces valid chained event', () => {
-      const event = createDecisionEvent(
-        SESSION_ID,
-        'PLAN_REVIEW',
-        {
+      const event = createDecisionEvent({
+        sessionId: SESSION_ID,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
           decisionId: 'DEC-001',
           decisionSequence: 1,
           verdict: 'approve',
@@ -330,10 +330,10 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        TS1,
-        'human',
-        GENESIS_HASH,
-      );
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
       expect(event.event).toBe('decision:DEC-001');
       expect(event.phase).toBe('PLAN_REVIEW');
       expect(event.detail.kind).toBe('decision');
@@ -358,25 +358,25 @@ describe('audit types', () => {
 
     it('tool_call event contains actorInfo when provided', () => {
       const actor: ActorInfo = { id: 'ci-bot', email: null, source: 'env' };
-      const event = createToolCallEvent(
-        SESSION_ID,
-        'PLAN',
-        { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
-        TS1,
-        'user',
-        GENESIS_HASH,
-        actor,
-      );
+      const event = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: { tool: 'flowguard_plan', argsSummary: {}, success: true, transitionCount: 1 },
+        timestamp: TS1,
+        actor: 'user',
+        prevHash: GENESIS_HASH,
+        actorInfo: actor,
+      });
       expect(event.actorInfo).toEqual(actor);
       expect(event.actor).toBe('user');
     });
 
     it('decision event contains actorInfo when provided', () => {
       const actor: ActorInfo = { id: 'reviewer', email: 'rev@co.com', source: 'env' };
-      const event = createDecisionEvent(
-        SESSION_ID,
-        'PLAN_REVIEW',
-        {
+      const event = createDecisionEvent({
+        sessionId: SESSION_ID,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
           decisionId: 'DEC-002',
           decisionSequence: 1,
           verdict: 'approve',
@@ -388,11 +388,11 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        TS1,
-        'human',
-        GENESIS_HASH,
-        actor,
-      );
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+        actorInfo: actor,
+      });
       expect(event.actorInfo).toEqual(actor);
     });
 
@@ -513,14 +513,14 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      const tc = createToolCallEvent(
-        SESSION_ID,
-        'PLAN',
-        { tool: 'test', argsSummary: {}, success: true, transitionCount: 0 },
-        TS1,
-        'user',
-        GENESIS_HASH,
-      );
+      const tc = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: { tool: 'test', argsSummary: {}, success: true, transitionCount: 0 },
+        timestamp: TS1,
+        actor: 'user',
+        prevHash: GENESIS_HASH,
+      });
       const e = createErrorEvent(
         SESSION_ID,
         { code: 'ERR', message: 'msg', recoveryHint: 'fix', errorPhase: 'PLAN' },
@@ -534,10 +534,10 @@ describe('audit types', () => {
         'system',
         GENESIS_HASH,
       );
-      const d = createDecisionEvent(
-        SESSION_ID,
-        'PLAN_REVIEW',
-        {
+      const d = createDecisionEvent({
+        sessionId: SESSION_ID,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
           decisionId: 'DEC-001',
           decisionSequence: 1,
           verdict: 'approve',
@@ -549,10 +549,10 @@ describe('audit types', () => {
           transitionEvent: 'APPROVE',
           policyMode: 'team',
         },
-        TS1,
-        'human',
-        GENESIS_HASH,
-      );
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
 
       expect(t.event).toMatch(/^transition:/);
       expect(tc.event).toMatch(/^tool_call:/);

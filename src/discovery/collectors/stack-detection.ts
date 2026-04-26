@@ -348,8 +348,8 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
 
     // Version extraction post-pass (requires readFile capability)
     if (input.readFile) {
-      await extractVersions(
-        input.readFile,
+      await extractVersions({
+        readFile: input.readFile,
         languages,
         frameworks,
         runtimes,
@@ -357,9 +357,9 @@ export async function collectStack(input: CollectorInput): Promise<CollectorOutp
         tools,
         qualityTools,
         databases,
-        input.allFiles,
+        allFiles: input.allFiles,
         buildTools,
-      );
+      });
     }
 
     return {
@@ -577,17 +577,20 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  * Same applies to artifact detection: pom.xml artifacts are authoritative.
  */
 async function extractVersions(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  frameworks: DetectedItem[],
-  runtimes: DetectedItem[],
-  testFrameworks: DetectedItem[],
-  tools: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-  allFiles: readonly string[],
-  buildTools: DetectedItem[],
+  ctx: {
+    readonly readFile: ReadFileFn;
+    readonly languages: DetectedItem[];
+    readonly frameworks: DetectedItem[];
+    readonly runtimes: DetectedItem[];
+    readonly testFrameworks: DetectedItem[];
+    readonly tools: DetectedItem[];
+    readonly qualityTools: DetectedItem[];
+    readonly databases: DetectedItem[];
+    readonly allFiles: readonly string[];
+    readonly buildTools: DetectedItem[];
+  },
 ): Promise<void> {
+  const { readFile, languages, frameworks, runtimes, testFrameworks, tools, qualityTools, databases, allFiles, buildTools } = ctx;
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
   await extractFromNodeVersionFiles(readFile, runtimes);

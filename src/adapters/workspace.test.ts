@@ -709,10 +709,10 @@ describe('archiveSession', () => {
     const ts = '2026-04-17T00:00:00.000Z';
 
     await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    const event = createDecisionEvent({
+        sessionId: sessionId,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
         decisionId: 'DEC-NONE-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -724,10 +724,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'alice',
-      GENESIS_HASH,
-    );
+        timestamp: ts,
+        actor: 'alice',
+        prevHash: GENESIS_HASH,
+      });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
     await fs.writeFile(
       path.join(wsDir, 'config.json'),
@@ -769,10 +769,10 @@ describe('archiveSession', () => {
     const ts = '2026-04-17T00:00:00.000Z';
 
     await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    const event = createDecisionEvent({
+        sessionId: sessionId,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
         decisionId: 'DEC-STRICT-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -784,10 +784,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'bob',
-      GENESIS_HASH,
-    );
+        timestamp: ts,
+        actor: 'bob',
+        prevHash: GENESIS_HASH,
+      });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
     await fs.writeFile(
       path.join(wsDir, 'config.json'),
@@ -825,10 +825,10 @@ describe('archiveSession', () => {
     const ts = '2026-04-17T00:00:00.000Z';
 
     await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    const event = createDecisionEvent({
+        sessionId: sessionId,
+        gatePhase: 'PLAN_REVIEW',
+        detail: {
         decisionId: 'DEC-E2E-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -840,10 +840,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'carol',
-      GENESIS_HASH,
-    );
+        timestamp: ts,
+        actor: 'carol',
+        prevHash: GENESIS_HASH,
+      });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
 
     await archiveSession(fingerprint, sessionId);

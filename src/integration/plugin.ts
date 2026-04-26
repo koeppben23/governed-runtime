@@ -870,21 +870,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // ── 1. Emit tool_call event (conditional on policy) ─────────────
           if (emitToolCalls) {
             const argsSummary = summarizeArgs((input as Record<string, unknown>) ?? {});
-            const toolCallEvt = createToolCallEvent(
+            const toolCallEvt = createToolCallEvent({
               sessionId,
               phase,
-              {
+              detail: {
                 tool: toolName,
                 argsSummary,
                 success,
                 errorMessage,
                 transitionCount: transitions.length,
               },
-              now,
+              timestamp: now,
               actor,
               prevHash,
-              state?.actorInfo,
-            );
+              actorInfo: state?.actorInfo,
+            });
             await appendAndTrack(toolCallEvt, sessDir, enableChainHash);
             if (enableChainHash) prevHash = toolCallEvt.chainHash;
             log.debug('audit', 'emitted tool_call event', { tool: toolName, phase });
@@ -974,10 +974,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 await appendAndTrack(missingActorEvt, sessDir, enableChainHash);
                 if (enableChainHash) prevHash = missingActorEvt.chainHash;
               } else {
-                const decisionEvt = createDecisionEvent(
+                const decisionEvt = createDecisionEvent({
                   sessionId,
-                  firstTransition.from,
-                  {
+                  gatePhase: firstTransition.from,
+                  detail: {
                     decisionId,
                     decisionSequence: sequence,
                     verdict: inferredVerdict,
@@ -989,11 +989,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     transitionEvent: firstTransition.event,
                     policyMode: state?.policySnapshot.mode ?? policy.mode,
                   },
-                  now,
+                  timestamp: now,
                   actor,
                   prevHash,
-                  state?.actorInfo,
-                );
+                  actorInfo: state?.actorInfo,
+                });
                 await appendAndTrack(decisionEvt, sessDir, enableChainHash);
                 if (enableChainHash) prevHash = decisionEvt.chainHash;
               }

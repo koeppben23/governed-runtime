@@ -247,18 +247,24 @@ export function createTransitionEvent(
 }
 
 /**
+ * Input object for createToolCallEvent.
+ */
+export interface ToolCallEventInput {
+  readonly sessionId: string;
+  readonly phase: string;
+  readonly detail: Omit<ToolCallDetail, 'kind'>;
+  readonly timestamp: string;
+  readonly actor: string;
+  readonly prevHash: string;
+  readonly actorInfo?: ActorInfo;
+}
+
+/**
  * Create a tool call audit event.
  * One event per FlowGuard tool invocation.
  */
-export function createToolCallEvent(
-  sessionId: string,
-  phase: string,
-  detail: Omit<ToolCallDetail, 'kind'>,
-  timestamp: string,
-  actor: string,
-  prevHash: string,
-  actorInfo?: ActorInfo,
-): ChainedAuditEvent {
+export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEvent {
+  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo } = input;
   const eventName = `tool_call:${detail.tool}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
@@ -326,18 +332,24 @@ export function createLifecycleEvent(
 }
 
 /**
+ * Input object for createDecisionEvent.
+ */
+export interface DecisionEventInput {
+  readonly sessionId: string;
+  readonly gatePhase: Phase;
+  readonly detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>;
+  readonly timestamp: string;
+  readonly actor: string;
+  readonly prevHash: string;
+  readonly actorInfo?: ActorInfo;
+}
+
+/**
  * Create a decision receipt audit event.
  * One event per successful /review-decision execution.
  */
-export function createDecisionEvent(
-  sessionId: string,
-  gatePhase: Phase,
-  detail: Omit<DecisionDetail, 'kind' | 'gatePhase'>,
-  timestamp: string,
-  actor: string,
-  prevHash: string,
-  actorInfo?: ActorInfo,
-): ChainedAuditEvent {
+export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEvent {
+  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
   const eventName = `decision:${detail.decisionId}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
