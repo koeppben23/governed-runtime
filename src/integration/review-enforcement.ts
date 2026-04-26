@@ -207,6 +207,7 @@ export function onFlowGuardToolAfter(
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
+  strictEnforcement = false,
 ): EnforcementResult {
   const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
@@ -239,7 +240,17 @@ export function enforceBeforeSubagentCall(
 
   for (const pending of pendingReviews) {
     if (!pending.contentMeta) {
-      // Content meta extraction failed — cannot validate, allow defensively
+      // Content meta extraction failed — strict enforcement requires verifiable context
+      if (strictEnforcement) {
+        return {
+          allowed: false,
+          code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
+          reason:
+            'Content meta extraction failed — cannot validate subagent context in strict mode. ' +
+            'The FlowGuard tool response must include structured review obligation metadata.',
+        };
+      }
+      // Non-strict: allow with explicit degradation
       hasMatchingContext = true;
       break;
     }

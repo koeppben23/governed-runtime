@@ -291,7 +291,8 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
  * 3. Order of existing user entries is preserved
  * 4. All other fields in opencode.json are preserved
  * 5. $schema is set if missing
- * 6. build agent has task permission for flowguard-reviewer subagent
+ * 6. build agent has task permission for flowguard-reviewer subagent (standard merge path;
+ *    desktop-owned configs are out of installer enforcement scope for task permissions)
  *
  * @param filePath - Path to opencode.json
  * @param scope    - Install scope (determines the instruction entry path)

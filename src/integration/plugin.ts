@@ -403,7 +403,20 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
         if (subagentType === REVIEWER_SUBAGENT_TYPE) {
           const eState = getEnforcementState(sessionId);
-          const result = enforceBeforeSubagentCall(eState, args);
+          // Read strict enforcement from session policy (P35)
+          let strictEnforcement = false;
+          try {
+            await resolveFingerprint();
+            const sessDir = getSessionDir(sessionId);
+            if (sessDir) {
+              const sessionState = await readState(sessDir);
+              strictEnforcement =
+                sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+            }
+          } catch {
+            // Policy unreadable — treat as non-strict
+          }
+          const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
 
           if (!result.allowed) {
             log.warn('enforcement', 'blocked subagent call with invalid prompt', {
