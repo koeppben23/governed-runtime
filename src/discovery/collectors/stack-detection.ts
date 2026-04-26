@@ -48,6 +48,11 @@ import {
   extractArtifactsFromGradle,
   extractDatabasesFromDockerCompose,
 } from './languages/java.js';
+import { refineFromPackageManagerField, refineBuildToolFromLockfiles, extractFromPackageJson, extractFromTsConfig } from './languages/js-ecosystem.js';
+import { extractFromNodeVersionFiles } from './languages/node.js';
+import { extractFromGoMod } from './languages/go.js';
+import { extractFromPythonRootFiles, hasRequirementEntry } from './languages/python.js';
+import { extractFromRustRootFiles } from './languages/rust.js';
 
 /**
  * Refine the npm build tool from the `packageManager` field in package.json.
@@ -63,55 +68,6 @@ import {
  *
  * Mutates buildTools in place.
  */
-export async function refineFromPackageManagerField(
-  readFile: ReadFileFn,
-  buildTools: DetectedItem[],
-): Promise<boolean> {
-  const npmIndex = buildTools.findIndex((t) => t.id === 'npm');
-  if (npmIndex === -1) return false; // No npm build tool to refine
-
-  const content = await safeRead(readFile, 'package.json');
-  if (!content) return false;
-
-  let pkg: Record<string, unknown>;
-  try {
-    pkg = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    return false;
-  }
-
-  const pmField = pkg.packageManager;
-  if (typeof pmField !== 'string') return false;
-
-  const match = pmField.match(PACKAGE_MANAGER_RE);
-  if (!match) return false;
-
-  const managerId = match[1]!;
-  const version = match[2]!;
-  const evidence = 'package.json:packageManager';
-
-  if (managerId === 'npm') {
-    // npm is already the default — just add version
-    const npmItem = buildTools[npmIndex]!;
-    npmItem.version = version;
-    npmItem.versionEvidence = evidence;
-    if (!npmItem.evidence.includes(evidence)) {
-      npmItem.evidence.push(evidence);
-    }
-  } else {
-    // Replace npm with the declared manager
-    buildTools[npmIndex] = {
-      id: managerId,
-      confidence: 0.95,
-      classification: 'fact',
-      evidence: [evidence],
-      version,
-      versionEvidence: evidence,
-    };
-  }
-
-  return true;
-}
 
 // ─── Lockfile Detection ───────────────────────────────────────────────────────
 
@@ -149,42 +105,6 @@ export const LOCKFILE_RULES: ReadonlyArray<{
  * Mutates buildTools in place. Only acts when 'npm' is already in buildTools
  * (i.e., package.json was detected).
  */
-export function refineBuildToolFromLockfiles(
-  allFiles: readonly string[],
-  buildTools: DetectedItem[],
-): void {
-  const npmIndex = buildTools.findIndex((t) => t.id === 'npm');
-  if (npmIndex === -1) return; // No npm build tool to refine
-
-  // Root-level files only (normalized, cross-platform)
-  const rootFiles = new Set<string>();
-  for (const filePath of allFiles) {
-    const rootBase = getRootBasename(filePath);
-    if (rootBase) rootFiles.add(rootBase);
-  }
-
-  // Check for non-npm lockfiles at root (first match wins)
-  for (const rule of LOCKFILE_RULES) {
-    if (!rootFiles.has(rule.basename)) continue;
-
-    // Replace npm with the actual package manager
-    buildTools[npmIndex] = {
-      id: rule.id,
-      confidence: 0.9,
-      classification: 'fact',
-      evidence: [rule.basename],
-    };
-    return; // First lockfile match wins
-  }
-
-  // If package-lock.json is present at root, enrich npm evidence
-  if (rootFiles.has('package-lock.json')) {
-    const npmItem = buildTools[npmIndex]!;
-    if (!npmItem.evidence.includes('package-lock.json')) {
-      npmItem.evidence.push('package-lock.json');
-    }
-  }
-}
 
 /** Collect root-level basenames from repo signal paths. */
 export function collectRootBasenames(allFiles: readonly string[]): Set<string> {
@@ -664,23 +584,6 @@ async function extractVersions(ctx: {
  * Format: plain text, single line with version string.
  * Always writes to runtimes.node — never to language items.
  */
-export async function extractFromNodeVersionFiles(
-  readFile: ReadFileFn,
-  runtimes: DetectedItem[],
-): Promise<void> {
-  for (const file of ['.nvmrc', '.node-version']) {
-    const content = await safeRead(readFile, file);
-    if (!content) continue;
-
-    // Strip leading 'v', whitespace, and take first line
-    const firstLine = content.trim().split('\n')[0] ?? '';
-    const version = firstLine.replace(/^v/i, '').trim();
-    if (!version || !/^\d/.test(version)) continue;
-
-    enrichRuntimeVersion(runtimes, 'node', version, file);
-    return; // First match wins
-  }
-}
 
 /**
  * Extract versions from package.json: engines.node, framework dependencies,
@@ -690,109 +593,11 @@ export async function extractFromNodeVersionFiles(
  * to detect and version-enrich frameworks, test frameworks, and quality tools.
  * Config-detected items get version enrichment; new items are created.
  */
-export async function extractFromPackageJson(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  frameworks: DetectedItem[],
-  runtimes: DetectedItem[],
-  testFrameworks: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): Promise<void> {
-  const content = await safeRead(readFile, 'package.json');
-  if (!content) return;
-
-  let pkg: Record<string, unknown>;
-  try {
-    pkg = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-
-  // engines.node → node runtime version (never to language items)
-  const engines = pkg.engines as Record<string, string> | undefined;
-  if (engines?.node) {
-    const ver = captureGroup(engines.node.match(/(\d+(?:\.\d+)*)/));
-    if (ver) {
-      enrichRuntimeVersion(runtimes, 'node', ver, 'package.json:engines.node');
-    }
-  }
-
-  // Combined deps + devDeps for JS ecosystem scanning
-  const deps = pkg.dependencies as Record<string, string> | undefined;
-  const devDeps = pkg.devDependencies as Record<string, string> | undefined;
-
-  // ── JS/TS ecosystem scanning ──────────────────────────────────────────
-  // Scan both deps and devDeps against JS_ECOSYSTEM_DEPS.
-  // For each matched package, resolve the target array from category,
-  // then enrich or create the item with its version.
-  const seenIds = new Set<string>();
-  for (const rule of JS_ECOSYSTEM_DEPS) {
-    if (seenIds.has(rule.id)) continue; // First matching package per id wins
-
-    const range = deps?.[rule.pkg] ?? devDeps?.[rule.pkg];
-    if (!range) continue;
-
-    seenIds.add(rule.id);
-    const ver = captureGroup(range.match(/(\d+(?:\.\d+)*)/));
-    const evidenceKey = `package.json:${deps?.[rule.pkg] ? 'dependencies' : 'devDependencies'}.${rule.pkg}`;
-
-    let targetArray: DetectedItem[];
-    switch (rule.category) {
-      case 'framework':
-        targetArray = frameworks;
-        break;
-      case 'testFramework':
-        targetArray = testFrameworks;
-        break;
-      case 'qualityTool':
-        targetArray = qualityTools;
-        break;
-    }
-
-    enrichOrCreateItem(targetArray, rule.id, evidenceKey, ver);
-  }
-
-  // devDependencies.typescript → typescript version
-  const tsRange = devDeps?.typescript ?? deps?.typescript;
-  if (tsRange) {
-    const tsItem = findItem(languages, 'typescript');
-    if (tsItem && !tsItem.version) {
-      const ver = captureGroup(tsRange.match(/(\d+(?:\.\d+)*)/));
-      if (ver) {
-        setVersion(tsItem, ver, 'package.json:devDependencies.typescript');
-      }
-    }
-  }
-
-  // Database engine detection from dependencies/devDependencies (version intentionally omitted).
-  for (const rule of JS_DATABASE_DEPS) {
-    const inDeps = deps?.[rule.pkg] !== undefined;
-    const inDevDeps = devDeps?.[rule.pkg] !== undefined;
-    if (!inDeps && !inDevDeps) continue;
-
-    const sourceKey = inDeps ? 'dependencies' : 'devDependencies';
-    enrichDatabaseItem(databases, rule.id, `package.json:${sourceKey}.${rule.pkg}`);
-  }
-}
 
 /**
  * Extract TypeScript compiler target from tsconfig.json compilerOptions.target.
  * Stored as compilerTarget, not version — ES2022 is not a TypeScript version.
  */
-export async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem[]): Promise<void> {
-  const content = await safeRead(readFile, 'tsconfig.json');
-  if (!content) return;
-
-  // tsconfig may have comments (JSONC) — use regex instead of JSON.parse
-  const target = captureGroup(content.match(/"target"\s*:\s*"([^"]+)"/i));
-  if (!target) return;
-
-  const tsItem = findItem(languages, 'typescript');
-  if (tsItem && !tsItem.compilerTarget) {
-    setCompilerTarget(tsItem, target, 'tsconfig.json:compilerOptions.target');
-  }
-}
 
 /**
  * Extract Java and Spring Boot versions from pom.xml.
@@ -813,166 +618,12 @@ export async function extractFromTsConfig(readFile: ReadFileFn, languages: Detec
  * Extract Go version from go.mod directive.
  * Format: `go 1.22` or `go 1.22.1`.
  */
-export async function extractFromGoMod(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  allFiles: readonly string[],
-): Promise<void> {
-  const rootFiles = collectRootBasenames(allFiles);
-  if (!rootFiles.has('go.mod')) return;
-
-  const content = await safeRead(readFile, 'go.mod');
-  if (!content) return;
-
-  const goVer = captureGroup(content.match(/^go\s+(\d+\.\d+(?:\.\d+)?)/m));
-  if (!goVer) return;
-
-  const goItem = findItem(languages, 'go');
-  if (goItem && !goItem.version) {
-    setVersion(goItem, goVer, 'go.mod:go');
-  }
-}
 
 /** Extract Python ecosystem facts from root-level manifests and requirements files. */
-export async function extractFromPythonRootFiles(
-  readFile: ReadFileFn,
-  allFiles: readonly string[],
-  languages: DetectedItem[],
-  testFrameworks: DetectedItem[],
-  qualityTools: DetectedItem[],
-  buildTools: DetectedItem[],
-): Promise<void> {
-  const rootFiles = collectRootBasenames(allFiles);
-
-  if (rootFiles.has('.python-version')) {
-    const content = await safeRead(readFile, '.python-version');
-    const line = content?.trim().split('\n')[0]?.trim() ?? '';
-    const version = captureGroup(line.match(/^(?:python-)?(\d+(?:\.\d+){0,2})/));
-    if (version) {
-      const python = findItem(languages, 'python');
-      if (python && !python.version) {
-        setVersion(python, version, '.python-version');
-      }
-    }
-  }
-
-  if (rootFiles.has('pyproject.toml')) {
-    const content = await safeRead(readFile, 'pyproject.toml');
-    if (content) {
-      const requiresPython = captureGroup(content.match(/requires-python\s*=\s*['"]([^'"]+)['"]/i));
-      const pyVersion = captureGroup(requiresPython?.match(/(\d+(?:\.\d+){0,2})/) ?? null);
-      if (pyVersion) {
-        const python = findItem(languages, 'python');
-        if (python && !python.version) {
-          setVersion(python, pyVersion, 'pyproject.toml:requires-python');
-        }
-      }
-
-      for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
-        const toolTable = new RegExp(`\\[tool\\.${rule.pkg}(?:\\.|\\]|$)`, 'i').test(content);
-        const dependencyEntry = new RegExp(`["']${rule.pkg}[>=<~!:]+[^"']*["']`, 'i').test(content);
-        if (!toolTable && !dependencyEntry) continue;
-
-        const targetArray = rule.category === 'testFramework' ? testFrameworks : qualityTools;
-        enrichOrCreateItem(targetArray, rule.id, `pyproject.toml:${rule.pkg}`);
-      }
-    }
-  }
-
-  for (const file of PYTHON_REQUIREMENTS_FILES) {
-    if (!rootFiles.has(file)) continue;
-    const content = await safeRead(readFile, file);
-    if (!content) continue;
-
-    for (const rule of PYTHON_ECOSYSTEM_PACKAGES) {
-      if (!hasRequirementEntry(content, rule.pkg)) continue;
-      const targetArray = rule.category === 'testFramework' ? testFrameworks : qualityTools;
-      enrichOrCreateItem(targetArray, rule.id, `${file}:${rule.pkg}`);
-    }
-  }
-
-  if (rootFiles.has('pyproject.toml')) {
-    const pyprojectContent = await safeRead(readFile, 'pyproject.toml');
-    if (pyprojectContent?.includes('[tool.poetry]')) {
-      enrichOrCreateItem(buildTools, 'poetry', 'pyproject.toml:[tool.poetry]');
-    }
-  }
-}
 
 /** Extract Rust ecosystem facts from root-level Cargo/toolchain manifests. */
-export async function extractFromRustRootFiles(
-  readFile: ReadFileFn,
-  allFiles: readonly string[],
-  languages: DetectedItem[],
-  qualityTools: DetectedItem[],
-  buildTools: DetectedItem[],
-): Promise<void> {
-  const rootFiles = collectRootBasenames(allFiles);
-
-  if (rootFiles.has('Cargo.toml')) {
-    const content = await safeRead(readFile, 'Cargo.toml');
-    if (content) {
-      const edition = captureGroup(content.match(/edition\s*=\s*['"](\d{4})['"]/));
-      if (edition) {
-        const rust = findItem(languages, 'rust');
-        if (rust && !rust.compilerTarget) {
-          setCompilerTarget(rust, edition, 'Cargo.toml:edition');
-        }
-      }
-    }
-  }
-
-  if (rootFiles.has('rust-toolchain.toml')) {
-    const content = await safeRead(readFile, 'rust-toolchain.toml');
-    if (content) {
-      const rustVersion = captureGroup(content.match(/channel\s*=\s*['"](\d+(?:\.\d+){1,2})['"]/));
-      if (rustVersion) {
-        const rust = findItem(languages, 'rust');
-        if (rust && !rust.version) {
-          setVersion(rust, rustVersion, 'rust-toolchain.toml:channel');
-        }
-      }
-
-      const components = captureGroup(content.match(/components\s*=\s*\[([^\]]+)\]/s));
-      if (components?.match(/['"]clippy['"]/)) {
-        enrichOrCreateItem(qualityTools, 'clippy', 'rust-toolchain.toml:components.clippy');
-      }
-      if (components?.match(/['"]rustfmt['"]/)) {
-        enrichOrCreateItem(qualityTools, 'rustfmt', 'rust-toolchain.toml:components.rustfmt');
-      }
-    }
-  }
-
-  if (rootFiles.has('rust-toolchain')) {
-    const content = await safeRead(readFile, 'rust-toolchain');
-    if (content) {
-      const firstLine = content
-        .split('\n')
-        .map((line) => line.trim())
-        .find((line) => line.length > 0 && !line.startsWith('#'));
-      const rustVersion = captureGroup(firstLine?.match(/^(\d+(?:\.\d+){1,2})/) ?? null);
-      if (rustVersion) {
-        const rust = findItem(languages, 'rust');
-        if (rust && !rust.version) {
-          setVersion(rust, rustVersion, 'rust-toolchain');
-        }
-      }
-    }
-  }
-
-  // Keep cargo root-first: if Cargo.toml does not exist at root, cargo must be absent.
-  if (!rootFiles.has('Cargo.toml')) {
-    const cargoIndex = buildTools.findIndex((item) => item.id === 'cargo');
-    if (cargoIndex !== -1) buildTools.splice(cargoIndex, 1);
-  }
-}
 
 /** Check if a requirements file declares a package at line start (ignore comments/options). */
-export function hasRequirementEntry(requirementsContent: string, packageName: string): boolean {
-  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`^\\s*${escaped}(?:\\[[^\\]]+\\])?(?:\\s*(?:[=~!<>].*)?)?$`, 'im');
-  return re.test(requirementsContent);
-}
 
 // ─── Artifact Detection (pom.xml / build.gradle) ─────────────────────────────
 

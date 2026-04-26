@@ -161,3 +161,35 @@ export function extractComposeTagVersion(
   const version = captureGroup(tag.match(/^(\d+(?:\.\d+)*)/));
   return version;
 }
+
+export function setCompilerTarget(item: DetectedItem, target: string, evidence: string): void {
+  item.compilerTarget = target;
+  item.compilerTargetEvidence = evidence;
+}
+
+export function enrichOrCreateItem(
+  items: DetectedItem[],
+  id: string,
+  evidence: string,
+  version?: string,
+): void {
+  const existing = findItem(items, id);
+  if (existing) {
+    // Enrich version if the existing item lacks one
+    if (!existing.version && version) {
+      setVersion(existing, version, evidence);
+    }
+    return;
+  }
+  const item: DetectedItem = {
+    id,
+    confidence: 0.85,
+    classification: 'derived_signal',
+    evidence: [evidence],
+  };
+  if (version) {
+    item.version = version;
+    item.versionEvidence = evidence;
+  }
+  items.push(item);
+}
