@@ -9,7 +9,12 @@ const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
 const testFiles = [
   'src/integration/plugin.test.ts',
-  'src/integration/tools-execute.test.ts',
+  'src/integration/tools-execute-session.test.ts',
+  'src/integration/tools-execute-planning.test.ts',
+  'src/integration/tools-execute-review.test.ts',
+  'src/integration/tools-execute-p26.test.ts',
+  'src/integration/tools-execute-execution.test.ts',
+  'src/integration/tools-execute-archive.test.ts',
   'src/integration/tools/review-validation.test.ts',
 ];
 
