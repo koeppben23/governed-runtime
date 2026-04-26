@@ -33,6 +33,7 @@ import {
   runConvergenceLoop,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
+  buildSelfReviewState,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
 
@@ -137,14 +138,7 @@ export async function executePlan(
   const nextState: SessionState = {
     ...state,
     plan: { current: loop.artifact, history },
-    selfReview: {
-      iteration: loop.iteration,
-      maxIterations: loop.maxIterations,
-      prevDigest: loop.prevDigest,
-      currDigest: loop.currDigest,
-      revisionDelta: loop.revisionDelta,
-      verdict: loop.verdict,
-    },
+    selfReview: buildSelfReviewState(loop),
     error: null,
   };
 
