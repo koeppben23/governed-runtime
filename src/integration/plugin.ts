@@ -83,23 +83,13 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
-  archiveSession,
 } from '../adapters/workspace/index.js';
-import {
-  createToolCallEvent,
-  createTransitionEvent,
-  createLifecycleEvent,
-  createErrorEvent,
-  createDecisionEvent,
-  summarizeArgs,
-  GENESIS_HASH,
-  type ChainedAuditEvent,
-} from '../audit/types.js';
+import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { parseToolResult, strictBlockedOutput, getToolArgs } from './plugin-helpers.js';
+import { strictBlockedOutput, getToolArgs } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { blockObligation } from './plugin-review-state.js';
@@ -107,8 +97,8 @@ import {
   runReviewOrchestration as runOrchestrator,
   type OrchestratorDeps,
 } from './plugin-orchestrator.js';
+import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
-import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
 
 // Review enforcement — runtime gate for subagent invocation
@@ -123,25 +113,10 @@ import {
 // Review orchestrator — deterministic subagent invocation via SDK
 import {} from './review-orchestrator.js';
 import {} from './review-assurance.js';
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_DECISION,
-  TOOL_FLOWGUARD_HYDRATE,
-  TOOL_FLOWGUARD_ABORT,
-} from './tool-names.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
-
-/**
- * Map tool names to lifecycle actions.
- * Tools that produce lifecycle events beyond the regular tool_call event.
- */
-const LIFECYCLE_TOOLS: Record<string, string> = {
-  [TOOL_FLOWGUARD_HYDRATE]: 'session_created',
-  [TOOL_FLOWGUARD_ABORT]: 'session_aborted',
-};
 
 /**
  * FlowGuard Audit Plugin.
@@ -232,6 +207,19 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getEnforcementState,
     log,
     client,
+  };
+
+  // ── Audit dependencies (injected into plugin-audit module) ──
+  const auditDeps: AuditDeps = {
+    resolveFingerprint,
+    getSessionDir,
+    resolveSessionPolicy,
+    initChain,
+    appendAndTrack,
+    nextDecisionSequence,
+    log,
+    logError,
+    cachedFingerprint,
   };
 
   /**
@@ -340,296 +328,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   ): Promise<void> {
     return runOrchestrator(orchestratorDeps, toolName, input, output, sessionId, now);
   }
+  /**
+   * Emit audit events — delegates to plugin-audit module.
+   */
   async function runAudit(
     toolName: string,
     input: unknown,
     output: unknown,
     sessionId: string,
   ): Promise<void> {
-    try {
-      await resolveFingerprint();
-      const sessDir = getSessionDir(sessionId);
-      if (!sessDir) return;
-
-      const { policy, state } = await resolveSessionPolicy(sessDir);
-      const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
-
-      log.debug('audit', 'processing tool call', {
-        tool: toolName,
-        emitToolCalls,
-        emitTransitions,
-        enableChainHash,
-      });
-
-      const actor = policy.actorClassification[toolName] ?? 'system';
-      const now = new Date().toISOString();
-
-      let prevHash: string;
-      if (enableChainHash) {
-        if (state?.archiveStatus) {
-          chainInitialized = false;
-          lastHash = null;
-        }
-        prevHash = await initChain(sessDir);
-      } else {
-        prevHash = GENESIS_HASH;
-      }
-
-      let phase = 'unknown';
-      let transitions: Array<{
-        from: Phase;
-        to: Phase;
-        event: Event;
-        at: string;
-      }> = [];
-      let success = true;
-      let errorMessage: string | undefined;
-      const parsed = parseToolResult(
-        typeof output === 'object' && output !== null && 'output' in output
-          ? (output as { output: unknown }).output
-          : output,
-      );
-      if (parsed) {
-        phase = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
-        success = parsed.error !== true;
-        errorMessage = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
-
-        const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)
-          ?.transitions;
-        if (Array.isArray(rawTransitions)) {
-          transitions = rawTransitions as Array<{
-            from: Phase;
-            to: Phase;
-            event: Event;
-            at: string;
-          }>;
-        }
-      }
-
-      // ── 1. Emit tool_call event ──────────────────────────────────────────
-      if (emitToolCalls) {
-        const argsSummary = summarizeArgs((input as Record<string, unknown>) ?? {});
-        const toolCallEvt = createToolCallEvent({
-          sessionId,
-          phase,
-          detail: {
-            tool: toolName,
-            argsSummary,
-            success,
-            errorMessage,
-            transitionCount: transitions.length,
-          },
-          timestamp: now,
-          actor,
-          prevHash,
-          actorInfo: state?.actorInfo,
-        });
-        await appendAndTrack(toolCallEvt, sessDir, enableChainHash);
-        if (enableChainHash) prevHash = toolCallEvt.chainHash;
-        log.debug('audit', 'emitted tool_call event', { tool: toolName, phase });
-      }
-
-      // ── 2. Emit transition events ───────────────────────────────────────
-      if (emitTransitions && transitions.length > 0) {
-        log.debug('audit', 'emitting transition events', { count: transitions.length });
-        for (let i = 0; i < transitions.length; i++) {
-          const t = transitions[i]!;
-          const transEvt = createTransitionEvent(
-            sessionId,
-            t.to,
-            {
-              from: t.from,
-              to: t.to,
-              event: t.event,
-              autoAdvanced: i > 0,
-              chainIndex: i,
-            },
-            t.at,
-            prevHash,
-          );
-          await appendAndTrack(transEvt, sessDir, enableChainHash);
-          if (enableChainHash) prevHash = transEvt.chainHash;
-        }
-      }
-
-      // ── 3. Emit decision receipt ────────────────────────────────────────
-      if (toolName === TOOL_FLOWGUARD_DECISION && success && transitions.length > 0) {
-        const firstTransition = transitions[0]!;
-        const inferredVerdict =
-          firstTransition.event === 'APPROVE'
-            ? 'approve'
-            : firstTransition.event === 'CHANGES_REQUESTED'
-              ? 'changes_requested'
-              : firstTransition.event === 'REJECT'
-                ? 'reject'
-                : null;
-
-        if (inferredVerdict !== null) {
-          const sequence = await nextDecisionSequence(sessDir, sessionId);
-          const decisionId = `DEC-${String(sequence).padStart(3, '0')}`;
-          const parsedDecision =
-            typeof parsed?.reviewDecision === 'object' && parsed.reviewDecision !== null
-              ? (parsed.reviewDecision as Record<string, unknown>)
-              : null;
-          const stateDecision = state?.reviewDecision;
-          const rationale =
-            (typeof parsedDecision?.rationale === 'string'
-              ? parsedDecision.rationale
-              : undefined) ??
-            stateDecision?.rationale ??
-            (typeof (input as { args?: { rationale?: unknown } })?.args?.rationale === 'string'
-              ? String((input as { args?: { rationale?: unknown } })?.args?.rationale)
-              : '');
-          const decidedBy =
-            (typeof parsedDecision?.decidedBy === 'string'
-              ? parsedDecision.decidedBy
-              : undefined) ??
-            stateDecision?.decidedBy ??
-            undefined;
-          const decidedAt =
-            (typeof parsedDecision?.decidedAt === 'string'
-              ? parsedDecision.decidedAt
-              : undefined) ??
-            stateDecision?.decidedAt ??
-            firstTransition.at;
-
-          if (!decidedBy || !decidedBy.trim()) {
-            log.warn('audit', 'skipping decision receipt: missing decidedBy', {
-              tool: toolName,
-              sessionId,
-            });
-            const missingActorEvt = createErrorEvent(
-              sessionId,
-              {
-                code: 'DECISION_RECEIPT_ACTOR_MISSING',
-                message: 'Decision receipt skipped because decidedBy is missing',
-                recoveryHint: 'Ensure /review-decision output includes reviewDecision.decidedBy',
-                errorPhase: firstTransition.from,
-              },
-              now,
-              prevHash,
-            );
-            await appendAndTrack(missingActorEvt, sessDir, enableChainHash);
-            if (enableChainHash) prevHash = missingActorEvt.chainHash;
-          } else {
-            const decisionEvt = createDecisionEvent({
-              sessionId,
-              gatePhase: firstTransition.from,
-              detail: {
-                decisionId,
-                decisionSequence: sequence,
-                verdict: inferredVerdict,
-                rationale,
-                decidedBy,
-                decidedAt,
-                fromPhase: firstTransition.from,
-                toPhase: firstTransition.to,
-                transitionEvent: firstTransition.event,
-                policyMode: state?.policySnapshot.mode ?? policy.mode,
-              },
-              timestamp: now,
-              actor,
-              prevHash,
-              actorInfo: state?.actorInfo,
-            });
-            await appendAndTrack(decisionEvt, sessDir, enableChainHash);
-            if (enableChainHash) prevHash = decisionEvt.chainHash;
-          }
-        }
-      }
-
-      // ── 4. Emit lifecycle events ────────────────────────────────────────
-      const lifecycleAction = LIFECYCLE_TOOLS[toolName];
-      if (lifecycleAction) {
-        log.info('audit', 'lifecycle event', { action: lifecycleAction, tool: toolName });
-        const finalPhase =
-          transitions.length > 0 ? transitions[transitions.length - 1]!.to : (phase as Phase);
-
-        const lifecycleReason =
-          lifecycleAction === 'session_created'
-            ? `${
-                typeof parsed?.policyResolution === 'object'
-                  ? `requested_mode:${String((parsed.policyResolution as Record<string, unknown>).requestedMode ?? 'unknown')};effective_mode:${String((parsed.policyResolution as Record<string, unknown>).effectiveMode ?? state?.policySnapshot.mode ?? policy.mode)};source:${String((parsed.policyResolution as Record<string, unknown>).source ?? state?.policySnapshot.source ?? 'unknown')};effective_gate_behavior:${String((parsed.policyResolution as Record<string, unknown>).effectiveGateBehavior ?? state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'))};reason:${String((parsed.policyResolution as Record<string, unknown>).reason ?? state?.policySnapshot.degradedReason ?? 'none')};resolution_reason:${String((parsed.policyResolution as Record<string, unknown>).resolutionReason ?? state?.policySnapshot.resolutionReason ?? 'none')};central_minimum_mode:${String((parsed.policyResolution as Record<string, unknown>).centralMinimumMode ?? state?.policySnapshot.centralMinimumMode ?? 'none')};central_policy_digest:${String((parsed.policyResolution as Record<string, unknown>).centralPolicyDigest ?? state?.policySnapshot.policyDigest ?? 'none')}`
-                  : `requested_mode:${state?.policySnapshot.requestedMode ?? policy.mode};effective_mode:${state?.policySnapshot.mode ?? policy.mode};source:${state?.policySnapshot.source ?? 'unknown'};effective_gate_behavior:${state?.policySnapshot.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve')};reason:${state?.policySnapshot.degradedReason ?? 'none'};resolution_reason:${state?.policySnapshot.resolutionReason ?? 'none'};central_minimum_mode:${state?.policySnapshot.centralMinimumMode ?? 'none'};central_policy_digest:${state?.policySnapshot.policyDigest ?? 'none'}`
-              }`
-            : undefined;
-
-        const lifecycleEvt = createLifecycleEvent(
-          sessionId,
-          {
-            action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
-            finalPhase,
-            ...(lifecycleReason ? { reason: lifecycleReason } : {}),
-          },
-          now,
-          actor,
-          prevHash,
-          state?.actorInfo,
-        );
-        await appendAndTrack(lifecycleEvt, sessDir, enableChainHash);
-        if (enableChainHash) prevHash = lifecycleEvt.chainHash;
-      }
-
-      // ── 5. Detect session completion + auto-archive ──────────────────────
-      const completionTransition = transitions.find((t) => t.to === 'COMPLETE');
-      if (completionTransition && !LIFECYCLE_TOOLS[toolName]) {
-        const freshState = cachedFingerprint ? await readState(sessDir) : null;
-        const toolLayerHandled = !!freshState?.archiveStatus;
-
-        if (!toolLayerHandled) {
-          const completionEvt = createLifecycleEvent(
-            sessionId,
-            {
-              action: 'session_completed',
-              finalPhase: 'COMPLETE' as Phase,
-            },
-            now,
-            'machine',
-            prevHash,
-            state?.actorInfo,
-          );
-          await appendAndTrack(completionEvt, sessDir, enableChainHash);
-          if (enableChainHash) prevHash = completionEvt.chainHash;
-        } else {
-          log.debug('audit', 'session_completed handled by tool layer', {
-            archiveStatus: freshState.archiveStatus,
-          });
-        }
-
-        if (cachedFingerprint) {
-          if (toolLayerHandled) {
-            log.debug('audit', 'archive handled by tool layer', {
-              archiveStatus: freshState.archiveStatus,
-            });
-          } else {
-            archiveSession(cachedFingerprint, sessionId).catch((err) => {
-              log.warn('audit', 'auto-archive failed', {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            });
-          }
-        }
-      }
-
-      // ── 6. Emit error event ─────────────────────────────────────────────
-      if (!success && errorMessage) {
-        log.warn('audit', 'tool reported error', { tool: toolName, errorMessage });
-        const errorEvt = createErrorEvent(
-          sessionId,
-          {
-            code: 'TOOL_ERROR',
-            message: errorMessage,
-            recoveryHint: 'Check tool output for details',
-            errorPhase: phase as Phase,
-          },
-          now,
-          prevHash,
-        );
-        await appendAndTrack(errorEvt, sessDir, enableChainHash);
-      }
-    } catch (err) {
-      logError(`Failed to write audit events for ${toolName}`, err);
-    }
+    return runAuditModule(auditDeps, toolName, input, output, sessionId);
   }
 
   async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
