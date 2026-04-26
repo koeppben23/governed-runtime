@@ -464,7 +464,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         // Policy unreadable — non-strict default
       }
       const result = enforceBeforeVerdict(
-        eState, toolName, args, sessionStateForEnforcement, strictEnforcementForVerdict,
+        eState,
+        toolName,
+        args,
+        sessionStateForEnforcement,
+        strictEnforcementForVerdict,
       );
 
       if (!result.allowed) {

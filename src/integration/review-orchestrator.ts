@@ -544,19 +544,21 @@ export function extractReviewContext(
 
   // Prefer structured obligation fields (P1a). Fall back to regex extraction
   // from the next text for backward compatibility with non-structured outputs.
-  const iteration = typeof toolOutput.reviewObligationIteration === 'number'
-    ? toolOutput.reviewObligationIteration
-    : (() => {
-        const match = next.match(/iteration[=:\s]+(\d+)/i);
-        return match ? parseInt(match[1]!, 10) : null;
-      })();
+  const iteration =
+    typeof toolOutput.reviewObligationIteration === 'number'
+      ? toolOutput.reviewObligationIteration
+      : (() => {
+          const match = next.match(/iteration[=:\s]+(\d+)/i);
+          return match ? parseInt(match[1]!, 10) : null;
+        })();
 
-  const planVersion = typeof toolOutput.reviewObligationPlanVersion === 'number'
-    ? toolOutput.reviewObligationPlanVersion
-    : (() => {
-        const match = next.match(/planVersion[=:\s]+(\d+)/i);
-        return match ? parseInt(match[1]!, 10) : null;
-      })();
+  const planVersion =
+    typeof toolOutput.reviewObligationPlanVersion === 'number'
+      ? toolOutput.reviewObligationPlanVersion
+      : (() => {
+          const match = next.match(/planVersion[=:\s]+(\d+)/i);
+          return match ? parseInt(match[1]!, 10) : null;
+        })();
 
   if (iteration === null || planVersion === null) return null;
 
