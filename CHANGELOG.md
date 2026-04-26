@@ -73,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Block review outcome consolidation**: Consolidated 4× 3-step pattern (`updateReviewAssurance` + `appendReviewAuditEvent` + `strictBlockedOutput`) into `blockReviewOutcome` local helper.
 - **Zod evidence schema hardening**: All 24 `z.object()` schemas in `src/state/evidence.ts` now use `.readonly()`. Marks parsed evidence artifacts as readonly at the schema/type boundary to discourage accidental mutation.
 - **Plugin hook type interfaces**: Added `ToolHookInput` and `ToolHookOutput` in `src/integration/types.ts` for typed access at the OpenCode plugin boundary.
+- **Loop-state builder helpers**: Extracted `buildSelfReviewState` and `buildImplReviewState` into `src/rails/types.ts`. Eliminates 4× duplicated 6-field object literal pattern across `continue.ts` and `plan.ts`.
+- **Profile template deduplication**: Extracted `DETECTED_STACK_INSTRUCTION` and `buildNegativeTestMatrix` into `src/config/profiles/content/shared.ts`. Eliminates 4× duplicated templates across baseline, angular, typescript, and java profiles.
+- **Parameter object consolidation**: Replaced 10 positional parameters in `extractVersions()` with a single `ExtractionContext` object. Replaced 7 positional parameters in `createToolCallEvent()` and `createDecisionEvent()` with `ToolCallEventInput` / `DecisionEventInput`. Improves API readability and prevents argument-ordering bugs.
 - AGENTS v3 hard invariants were refined to action-oriented wording with explicit `Red Lines`, while preserving fail-closed and single-authority constraints.
 - Review guidance verdict wording is now exactly aligned with root AGENTS contract (`approve` / `changes_requested`) to prevent enum drift.
 

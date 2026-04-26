@@ -341,9 +341,9 @@ async def fetch_all(urls):
 
 const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
   '| Function/Module | null/empty input, invalid type at boundary, thrown error path |\n' +
-  '| API Boundary | malformed request, missing required fields, unauthorized access, error response shape |\n' +
-  '| Config/Environment | missing config, malformed values, invalid defaults |\n' +
-  '| State/Lifecycle | initial state correctness, invalid transition, concurrent mutation |',
+    '| API Boundary | malformed request, missing required fields, unauthorized access, error response shape |\n' +
+    '| Config/Environment | missing config, malformed values, invalid defaults |\n' +
+    '| State/Lifecycle | initial state correctness, invalid transition, concurrent mutation |',
 );
 
 const REVIEW_CHECKLIST = `\

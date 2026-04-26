@@ -458,10 +458,10 @@ export class DashboardComponent {
 
 const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
   '| Container Component | facade method called with wrong args, error state displayed, loading state handled |\n' +
-  '| Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |\n' +
-  '| Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |\n' +
-  '| Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |\n' +
-  '| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |',
+    '| Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |\n' +
+    '| Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |\n' +
+    '| Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |\n' +
+    '| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |',
 );
 
 const REVIEW_CHECKLIST = `\
@@ -479,7 +479,6 @@ When reviewing Angular changes, MUST verify:
 | Leaked DTOs | Backend response interfaces used directly in component templates |
 | Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
 | A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |`;
-
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

@@ -422,10 +422,10 @@ const config = AppConfigSchema.parse(JSON.parse(raw));  // schema-validated
 
 const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
   "| Function/Module | null/undefined input, empty input ([] / '' / {}), invalid type at boundary, thrown error path |\n" +
-  '| Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |\n' +
-  '| API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |\n' +
-  '| Config/Environment | missing env var, malformed config file, invalid values |\n' +
-  '| State Management | initial state correctness, invalid state transition, concurrent mutation |',
+    '| Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |\n' +
+    '| API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |\n' +
+    '| Config/Environment | missing env var, malformed config file, invalid values |\n' +
+    '| State Management | initial state correctness, invalid state transition, concurrent mutation |',
 );
 
 const REVIEW_CHECKLIST = `\
@@ -443,7 +443,6 @@ When reviewing TypeScript changes, MUST verify:
 | Type Assertions | \`as T\` without prior narrowing, especially \`as any\` chains |
 | Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
 | Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |`;
-
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

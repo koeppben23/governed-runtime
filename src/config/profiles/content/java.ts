@@ -486,10 +486,10 @@ const EVIDENCE_BY_CHANGE_TYPE = `\
 
 const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
   '| Controller/API | invalid input -> 400, missing/invalid auth -> 401/403, resource not found -> 404, constraint violation -> 409 |\n' +
-  '| Service | null/empty input, business rule violation, concurrent modification (if applicable) |\n' +
-  '| Repository | unique constraint violation, empty result set, orphan reference (FK violation) |\n' +
-  '| Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |\n' +
-  '| Migration | rollback script executes without error, data integrity preserved after up+down |',
+    '| Service | null/empty input, business rule violation, concurrent modification (if applicable) |\n' +
+    '| Repository | unique constraint violation, empty result set, orphan reference (FK violation) |\n' +
+    '| Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |\n' +
+    '| Migration | rollback script executes without error, data integrity preserved after up+down |',
 );
 
 const REVIEW_CHECKLIST = `\
@@ -507,7 +507,6 @@ When reviewing Java changes, MUST verify:
 | Exception Handling | Empty catch blocks, catching \`Exception\` instead of specific types, log-only handling |
 | Concurrency | Missing \`@Version\` on aggregates with concurrent writes, shared mutable state in singletons |
 | Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |`;
-
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

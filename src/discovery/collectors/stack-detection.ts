@@ -576,21 +576,30 @@ function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
  * first-write-wins on languages.java.version and frameworks.spring-boot.version.
  * Same applies to artifact detection: pom.xml artifacts are authoritative.
  */
-async function extractVersions(
-  ctx: {
-    readonly readFile: ReadFileFn;
-    readonly languages: DetectedItem[];
-    readonly frameworks: DetectedItem[];
-    readonly runtimes: DetectedItem[];
-    readonly testFrameworks: DetectedItem[];
-    readonly tools: DetectedItem[];
-    readonly qualityTools: DetectedItem[];
-    readonly databases: DetectedItem[];
-    readonly allFiles: readonly string[];
-    readonly buildTools: DetectedItem[];
-  },
-): Promise<void> {
-  const { readFile, languages, frameworks, runtimes, testFrameworks, tools, qualityTools, databases, allFiles, buildTools } = ctx;
+async function extractVersions(ctx: {
+  readonly readFile: ReadFileFn;
+  readonly languages: DetectedItem[];
+  readonly frameworks: DetectedItem[];
+  readonly runtimes: DetectedItem[];
+  readonly testFrameworks: DetectedItem[];
+  readonly tools: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+  readonly allFiles: readonly string[];
+  readonly buildTools: DetectedItem[];
+}): Promise<void> {
+  const {
+    readFile,
+    languages,
+    frameworks,
+    runtimes,
+    testFrameworks,
+    tools,
+    qualityTools,
+    databases,
+    allFiles,
+    buildTools,
+  } = ctx;
   // Fully sequential: deterministic first-write-wins priority.
   // .nvmrc / .node-version > package.json engines.node
   await extractFromNodeVersionFiles(readFile, runtimes);
