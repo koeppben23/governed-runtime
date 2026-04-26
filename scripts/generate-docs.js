@@ -63,10 +63,7 @@ function replaceVersion(content) {
     `FlowGuard Version: ${version}`,
   );
   // Second: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
-  content = content.replace(
-    /([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g,
-    '$1',
-  );
+  content = content.replace(/([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g, '$1');
   // Now apply normal replacements with the correct version
   content = content.replace(
     new RegExp(`FlowGuard Version: [\\d.]+(?:-[a-zA-Z0-9.]+)?`, 'g'),
@@ -76,7 +73,10 @@ function replaceVersion(content) {
     /\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?(\s*\|\s*TypeScript)/g,
     `**Version:** ${version}$1`,
   );
-  content = content.replace(/^\*Version: [\d.]+(?:-[a-zA-Z0-9.]+)?\*$/gm, `**Version:** ${version}`);
+  content = content.replace(
+    /^\*Version: [\d.]+(?:-[a-zA-Z0-9.]+)?\*$/gm,
+    `**Version:** ${version}`,
+  );
   content = content.replace(
     new RegExp(`flowguard-core-[\\d.]+(?:-[a-zA-Z0-9.]+)?\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,
