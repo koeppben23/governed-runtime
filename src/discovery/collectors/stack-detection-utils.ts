@@ -6,6 +6,7 @@
  */
 
 import type { DetectedItem } from '../types.js';
+import { getRootBasename } from '../repo-paths.js';
 import { type ArtifactCategory, DOCKER_IMAGE_DATABASES } from './stack-detection-rules.js';
 
 export type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
@@ -191,4 +192,13 @@ export function enrichOrCreateItem(
     item.versionEvidence = evidence;
   }
   items.push(item);
+}
+
+export function collectRootBasenames(allFiles: readonly string[]): Set<string> {
+  const rootFiles = new Set<string>();
+  for (const filePath of allFiles) {
+    const base = getRootBasename(filePath);
+    if (base) rootFiles.add(base);
+  }
+  return rootFiles;
 }

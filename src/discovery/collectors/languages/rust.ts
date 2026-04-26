@@ -14,7 +14,7 @@ import {
   enrichOrCreateItem,
   setCompilerTarget,
 } from '../stack-detection-utils.js';
-import { collectRootBasenames } from '../stack-detection.js';
+import { collectRootBasenames } from '../stack-detection-utils.js';
 
 export async function extractFromRustRootFiles(
   readFile: ReadFileFn,

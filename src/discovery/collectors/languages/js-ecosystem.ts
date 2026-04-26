@@ -13,7 +13,7 @@ import {
   captureGroup,
   enrichOrCreateItem,
 } from '../stack-detection-utils.js';
-import { enrichDatabaseItem, setCompilerTarget } from '../stack-detection.js';
+import { enrichDatabaseItem, setCompilerTarget } from '../stack-detection-utils.js';
 import { enrichRuntimeVersion } from './java.js';
 import { getRootBasename } from '../../repo-paths.js';
 import {
@@ -21,7 +21,7 @@ import {
   JS_ECOSYSTEM_DEPS,
   JS_DATABASE_DEPS,
 } from '../stack-detection-rules.js';
-import { LOCKFILE_RULES } from '../stack-detection.js';
+import { LOCKFILE_RULES } from '../stack-detection-rules.js';
 
 export async function refineFromPackageManagerField(
   readFile: ReadFileFn,

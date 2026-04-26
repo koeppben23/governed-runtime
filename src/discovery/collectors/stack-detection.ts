@@ -9,7 +9,6 @@
 
 import * as path from 'node:path';
 import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types.js';
-import { getRootBasename } from '../repo-paths.js';
 
 /**
  * Extraction context — bundles all detection results for version extraction.
@@ -26,6 +25,8 @@ export interface ExtractionContext {
   readonly allFiles: readonly string[];
   readonly buildTools: DetectedItem[];
 }
+
+import { collectRootBasenames } from './stack-detection-utils.js';
 
 import {
   LANGUAGE_EXTENSIONS,
@@ -80,15 +81,6 @@ import { extractFromRustRootFiles } from './languages/rust.js';
  *
  * package-lock.json confirms npm — no replacement needed.
  */
-export const LOCKFILE_RULES: ReadonlyArray<{
-  basename: string;
-  id: string;
-}> = [
-  { basename: 'pnpm-lock.yaml', id: 'pnpm' },
-  { basename: 'yarn.lock', id: 'yarn' },
-  { basename: 'bun.lockb', id: 'bun' },
-  { basename: 'bun.lock', id: 'bun' },
-];
 
 /**
  * Refine the npm build tool to the actual package manager based on root-level lockfiles.
@@ -104,16 +96,6 @@ export const LOCKFILE_RULES: ReadonlyArray<{
  * Mutates buildTools in place. Only acts when 'npm' is already in buildTools
  * (i.e., package.json was detected).
  */
-
-/** Collect root-level basenames from repo signal paths. */
-export function collectRootBasenames(allFiles: readonly string[]): Set<string> {
-  const rootFiles = new Set<string>();
-  for (const filePath of allFiles) {
-    const base = getRootBasename(filePath);
-    if (base) rootFiles.add(base);
-  }
-  return rootFiles;
-}
 
 /**
  * Enforce root-first authority for selected build tools.
@@ -481,10 +463,6 @@ export function setVersion(item: DetectedItem, version: string, evidence: string
 }
 
 /** Set compilerTarget + compilerTargetEvidence on a DetectedItem. */
-export function setCompilerTarget(item: DetectedItem, target: string, evidence: string): void {
-  item.compilerTarget = target;
-  item.compilerTargetEvidence = evidence;
-}
 
 /** Extract the first capture group from a regex match, or undefined. */
 export function captureGroup(

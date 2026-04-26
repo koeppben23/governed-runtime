@@ -7,7 +7,7 @@
 import type { DetectedItem } from '../../types.js';
 import type { ReadFileFn } from '../stack-detection-utils.js';
 import { captureGroup, findItem, safeRead, setVersion } from '../stack-detection-utils.js';
-import { collectRootBasenames } from '../stack-detection.js';
+import { collectRootBasenames } from '../stack-detection-utils.js';
 
 export async function extractFromGoMod(
   readFile: ReadFileFn,

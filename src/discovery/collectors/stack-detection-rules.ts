@@ -436,3 +436,13 @@ export const JS_ECOSYSTEM_DEPS: ReadonlyArray<{
  * Captures: [1] = manager name (npm|pnpm|yarn|bun), [2] = version digits.
  */
 export const PACKAGE_MANAGER_RE = /^(npm|pnpm|yarn|bun)@(\d+(?:\.\d+)*)/;
+
+export const LOCKFILE_RULES: ReadonlyArray<{
+  basename: string;
+  id: string;
+}> = [
+  { basename: 'pnpm-lock.yaml', id: 'pnpm' },
+  { basename: 'yarn.lock', id: 'yarn' },
+  { basename: 'bun.lockb', id: 'bun' },
+  { basename: 'bun.lock', id: 'bun' },
+];

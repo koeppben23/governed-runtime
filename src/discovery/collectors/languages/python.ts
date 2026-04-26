@@ -13,7 +13,7 @@ import {
   setVersion,
   enrichOrCreateItem,
 } from '../stack-detection-utils.js';
-import { collectRootBasenames } from '../stack-detection.js';
+import { collectRootBasenames } from '../stack-detection-utils.js';
 import { PYTHON_REQUIREMENTS_FILES, PYTHON_ECOSYSTEM_PACKAGES } from '../stack-detection-rules.js';
 
 export async function extractFromPythonRootFiles(
