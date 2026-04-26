@@ -54,25 +54,32 @@ const filesToUpdate = [
 
 function replaceVersion(content) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // First: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
+  // This must run BEFORE the normal replacements
   content = content.replace(
-    new RegExp(`FlowGuard Version: [\\d.]+`, 'g'),
+    /([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g,
+    '$1',
+  );
+  // Now apply normal replacements with the correct version
+  content = content.replace(
+    new RegExp(`FlowGuard Version: [\\d.]+(?:-[a-zA-Z0-9.]+)?`, 'g'),
     `FlowGuard Version: ${version}`,
   );
   content = content.replace(
-    /\*\*Version:\*\* [\d.]+(\s*\|\s*TypeScript)/g,
+    /\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?(\s*\|\s*TypeScript)/g,
     `**Version:** ${version}$1`,
   );
-  content = content.replace(/^\*Version: [\d.]+\*$/gm, `**Version:** ${version}`);
+  content = content.replace(/^\*Version: [\d.]+(?:-[a-zA-Z0-9.]+)?\*$/gm, `**Version:** ${version}`);
   content = content.replace(
-    new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
+    new RegExp(`flowguard-core-[\\d.]+(?:-[a-zA-Z0-9.]+)?\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,
   );
   content = content.replace(
-    /^Current snapshot: v[\d.]+$/gm,
+    /^Current snapshot: v[\d.]+(?:-[a-zA-Z0-9.]+)?$/gm,
     `Current snapshot: ${version}`,
   );
   content = content.replace(
-    /^\*\*Current snapshot: v[\d.]+\*\*$/gm,
+    /^\*\*Current snapshot: v[\d.]+(?:-[a-zA-Z0-9.]+)?\*\*$/gm,
     `**Current snapshot: ${version}**`,
   );
   return content;

@@ -150,9 +150,9 @@ flowguard doctor
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0-rc.1.tgz
-├── flowguard-core-1.2.0-rc.1.tgz
-├── flowguard-core-1.2.0-rc.1.tgz
+├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0
 └── checksums.sha256
 ```
 
