@@ -1077,9 +1077,8 @@ describe('cli/install', () => {
       };
       mergeReviewerTaskPermission(parsed);
 
-      const task = (
-        (parsed as Record<string, unknown>).agent as Record<string, unknown>
-      ).build as Record<string, unknown>;
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
 
@@ -1087,8 +1086,8 @@ describe('cli/install', () => {
       expect(t['*']).toBe('deny');
       // Must have reviewer allow
       expect(t['flowguard-reviewer']).toBe('allow');
-      // Existing entries preserved
-      expect(t['some-other-agent']).toBe('allow');
+      // P35 strict: other allow entries are removed
+      expect(t['some-other-agent']).toBeUndefined();
     });
 
     it('mergeReviewerTaskPermission preserves existing *.deny if already set', () => {
@@ -1105,9 +1104,8 @@ describe('cli/install', () => {
       };
       mergeReviewerTaskPermission(parsed);
 
-      const task = (
-        (parsed as Record<string, unknown>).agent as Record<string, unknown>
-      ).build as Record<string, unknown>;
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
 
@@ -1119,9 +1117,8 @@ describe('cli/install', () => {
       const parsed: Record<string, unknown> = {};
       mergeReviewerTaskPermission(parsed);
 
-      const task = (
-        (parsed as Record<string, unknown>).agent as Record<string, unknown>
-      ).build as Record<string, unknown>;
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
       const perm = task.permission as Record<string, unknown>;
       const t = perm.task as Record<string, unknown>;
 

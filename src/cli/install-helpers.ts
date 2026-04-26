@@ -190,7 +190,11 @@ export function vendorDependency(version: string): string {
  * Used for hard-managed artifacts OTHER than flowguard-mandates.md
  * (which is always replaced).
  */
-export async function writeIfAbsent(filePath: string, content: string, force: boolean): Promise<FileOp> {
+export async function writeIfAbsent(
+  filePath: string,
+  content: string,
+  force: boolean,
+): Promise<FileOp> {
   if (!force && existsSync(filePath)) {
     return { path: filePath, action: 'skipped', reason: 'already exists' };
   }
@@ -265,15 +269,13 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
   if (!permission['task'] || typeof permission['task'] !== 'object') {
     permission['task'] = {};
   }
-  const task = permission['task'] as AnyObj;
 
-  // P35: Enforce default-deny wildcard to restrict the build agent to only
-  // the flowguard-reviewer subagent. Existing allow entries are preserved
-  // but always gated behind the wildcard deny.
+  // P35: Strict assurance — the build agent may only invoke flowguard-reviewer
+  // via the Task tool. Any pre-existing allow entries are removed and replaced
+  // with a wildcard deny baseline plus the explicit reviewer allow.
   // flowguard-reviewer must appear after * because OpenCode uses last-matching-rule.
   permission['task'] = {
-    '*': task['*'] ?? 'deny',
-    ...task,
+    '*': 'deny',
     'flowguard-reviewer': 'allow',
   };
 }
@@ -361,7 +363,10 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
  * Remove FlowGuard instruction entries from opencode.json during uninstall.
  * Removes both current and legacy entries. Preserves everything else.
  */
-export async function removeFromOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
+export async function removeFromOpencodeJson(
+  filePath: string,
+  scope: InstallScope,
+): Promise<FileOp> {
   const existing = await safeRead(filePath);
   if (!existing) {
     return { path: filePath, action: 'not_found' };

@@ -48,7 +48,11 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  REVIEWER_SUBAGENT_TYPE,
+} from './tool-names.js';
 
 /** Tools that can trigger independent review. */
 export type ReviewableTool = typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT;

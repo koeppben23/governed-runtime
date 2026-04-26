@@ -75,10 +75,12 @@ export function buildLogSinks(
  * @returns Logger instance and resolved config
  */
 export async function createPluginLogger(
-  client: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    app?: { log: (msg: any) => Promise<unknown> };
-  } | undefined,
+  client:
+    | {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        app?: { log: (msg: any) => Promise<unknown> };
+      }
+    | undefined,
   workspaceDir: string | null,
   worktree: string | undefined,
   fingerprint: string | null,

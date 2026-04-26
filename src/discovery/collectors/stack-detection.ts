@@ -1,5 +1,5 @@
 /**
- * @module discovery/collectors/stack-detection  
+ * @module discovery/collectors/stack-detection
  * @description Collector: technology stack detection — logic functions.
  *
  * Detection rules and constants extracted to stack-detection-rules.ts.

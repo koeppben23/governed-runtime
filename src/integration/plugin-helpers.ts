@@ -80,7 +80,5 @@ export function getToolOutput(output: unknown): string {
  * @returns The args as a record, or empty object if unavailable
  */
 export function getToolArgs(input: unknown): Record<string, unknown> {
-  return (
-    ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {}
-  );
+  return ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
 }

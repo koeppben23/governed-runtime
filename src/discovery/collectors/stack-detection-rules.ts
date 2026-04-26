@@ -73,7 +73,10 @@ export const ROOT_FIRST_BUILD_TOOLS: ReadonlyArray<{ id: string; evidence: reado
 ];
 
 /** Root-level Python requirements files used for ecosystem signal extraction. */
-export const PYTHON_REQUIREMENTS_FILES: readonly string[] = ['requirements.txt', 'requirements-dev.txt'];
+export const PYTHON_REQUIREMENTS_FILES: readonly string[] = [
+  'requirements.txt',
+  'requirements-dev.txt',
+];
 
 /** Python package hints mapped to test/quality categories. */
 export const PYTHON_ECOSYSTEM_PACKAGES: ReadonlyArray<{
@@ -433,4 +436,3 @@ export const JS_ECOSYSTEM_DEPS: ReadonlyArray<{
  * Captures: [1] = manager name (npm|pnpm|yarn|bun), [2] = version digits.
  */
 export const PACKAGE_MANAGER_RE = /^(npm|pnpm|yarn|bun)@(\d+(?:\.\d+)*)/;
-

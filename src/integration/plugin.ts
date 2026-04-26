@@ -99,11 +99,13 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { parseToolResult, strictBlockedOutput, getToolOutput, getToolArgs } from './plugin-helpers.js';
 import {
-  trackFlowGuardEnforcement,
-  trackTaskEnforcement,
-} from './plugin-enforcement-tracking.js';
+  parseToolResult,
+  strictBlockedOutput,
+  getToolOutput,
+  getToolArgs,
+} from './plugin-helpers.js';
+import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { updateObligation, blockObligation } from './plugin-review-state.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
@@ -212,7 +214,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   } catch {
     // logging init fallback only; do not block plugin startup
   }
-  const { log, config } = await createPluginLogger(client, cachedWsDir, auditWorktree, cachedFingerprint);
+  const { log, config } = await createPluginLogger(
+    client,
+    cachedWsDir,
+    auditWorktree,
+    cachedFingerprint,
+  );
 
   // Hash chain state — cached in closure, initialized on first audit call.
   // Only updated when policy.audit.enableChainHash is true.
@@ -362,8 +369,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
       const reviewCtx = extractReviewContext(toolName, parsedOutput);
       if (!reviewCtx) {
-        strictEnforcement =
-          sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+        strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
         if (strictEnforcement) {
           output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
             reason: 'review context missing for strict orchestration',
@@ -372,8 +378,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         return;
       }
 
-      strictEnforcement =
-        sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
       await updateReviewAssurance(sessDir, (s, now) =>
         updateObligation(s, reviewCtx.obligationId, (item) => ({
@@ -404,8 +409,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       const prompt =
         toolName === TOOL_FLOWGUARD_PLAN
           ? buildPlanReviewPrompt({
-              planText:
-                typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+              planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
               ticketText,
               iteration: reviewCtx.iteration,
               planVersion: reviewCtx.planVersion,
@@ -461,7 +465,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // LLM follows fallback Path A2 (Task tool to reviewer).
           if (strictEnforcement) {
             await blockReviewOutcome(
-              sessDir, sessionId,
+              sessDir,
+              sessionId,
               String(parsedOutput.phase ?? sessionState.phase),
               reviewCtx.obligationId,
               'STRICT_REVIEW_ORCHESTRATION_FAILED',
@@ -481,7 +486,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
             const att = parsedFindings.data.attestation;
             if (!att) {
               await blockReviewOutcome(
-                sessDir, sessionId,
+                sessDir,
+                sessionId,
                 String(parsedOutput.phase ?? sessionState.phase),
                 reviewCtx.obligationId,
                 'SUBAGENT_MANDATE_MISSING',
@@ -497,7 +503,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               att.mandateDigest !== REVIEW_MANDATE_DIGEST
             ) {
               await blockReviewOutcome(
-                sessDir, sessionId,
+                sessDir,
+                sessionId,
                 String(parsedOutput.phase ?? sessionState.phase),
                 reviewCtx.obligationId,
                 'SUBAGENT_MANDATE_MISMATCH',
@@ -525,11 +532,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               await updateReviewAssurance(sessDir, (s, now) => {
                 const assurance = ensureReviewAssurance(s.reviewAssurance);
                 if (
-                  hasEvidenceReuse(
-                    assurance.invocations,
-                    reviewerResult.sessionId,
-                    findingsHash,
-                  )
+                  hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)
                 ) {
                   reusedEvidence = true;
                   return updateObligation(s, reviewCtx.obligationId, (item) => ({
@@ -569,8 +572,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                     }
                   : {
                       obligationId: reviewCtx.obligationId,
-                      obligationType:
-                        toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                      obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                       parentSessionId: sessionId,
                       childSessionId: reviewerResult.sessionId,
                       agentType: REVIEWER_SUBAGENT_TYPE,
@@ -646,7 +648,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         });
         if (strictEnforcement) {
           await blockReviewOutcome(
-            sessDir, sessionId,
+            sessDir,
+            sessionId,
             String(parsedOutput.phase ?? sessionState.phase),
             reviewCtx.obligationId,
             'STRICT_REVIEW_ORCHESTRATION_FAILED',
