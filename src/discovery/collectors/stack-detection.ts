@@ -46,7 +46,7 @@ import {
  *
  * Mutates buildTools in place.
  */
-async function refineFromPackageManagerField(
+export async function refineFromPackageManagerField(
   readFile: ReadFileFn,
   buildTools: DetectedItem[],
 ): Promise<boolean> {
@@ -108,7 +108,7 @@ async function refineFromPackageManagerField(
  *
  * package-lock.json confirms npm — no replacement needed.
  */
-const LOCKFILE_RULES: ReadonlyArray<{
+export const LOCKFILE_RULES: ReadonlyArray<{
   basename: string;
   id: string;
 }> = [
@@ -132,7 +132,7 @@ const LOCKFILE_RULES: ReadonlyArray<{
  * Mutates buildTools in place. Only acts when 'npm' is already in buildTools
  * (i.e., package.json was detected).
  */
-function refineBuildToolFromLockfiles(
+export function refineBuildToolFromLockfiles(
   allFiles: readonly string[],
   buildTools: DetectedItem[],
 ): void {
@@ -170,7 +170,7 @@ function refineBuildToolFromLockfiles(
 }
 
 /** Collect root-level basenames from repo signal paths. */
-function collectRootBasenames(allFiles: readonly string[]): Set<string> {
+export function collectRootBasenames(allFiles: readonly string[]): Set<string> {
   const rootFiles = new Set<string>();
   for (const filePath of allFiles) {
     const base = getRootBasename(filePath);
@@ -202,7 +202,7 @@ function enforceRootFirstBuildTools(
 }
 
 /** Add root-level build tools derived from lock/manifests not covered by packageFiles. */
-function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
+export function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
   if (rootFiles.has('uv.lock') && !findItem(buildTools, 'uv')) {
     buildTools.push({
       id: 'uv',
@@ -223,7 +223,7 @@ function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlyS
 }
 
 /** Return the first root-level file that exists from a list of candidates, or null. */
-function firstRootEvidence(
+export function firstRootEvidence(
   rootFiles: ReadonlySet<string>,
   candidates: readonly string[],
 ): string | null {
@@ -234,7 +234,7 @@ function firstRootEvidence(
 }
 
 /** Ensure root-level manifest facts for Python/Rust/Go languages and quality tools. */
-function addRootFirstLanguageAndLintFacts(
+export function addRootFirstLanguageAndLintFacts(
   rootFiles: ReadonlySet<string>,
   languages: DetectedItem[],
   qualityTools: DetectedItem[],
@@ -542,7 +542,7 @@ export function setVersion(item: DetectedItem, version: string, evidence: string
 }
 
 /** Set compilerTarget + compilerTargetEvidence on a DetectedItem. */
-function setCompilerTarget(item: DetectedItem, target: string, evidence: string): void {
+export function setCompilerTarget(item: DetectedItem, target: string, evidence: string): void {
   item.compilerTarget = target;
   item.compilerTargetEvidence = evidence;
 }
@@ -647,7 +647,7 @@ async function extractVersions(ctx: {
  * Format: plain text, single line with version string.
  * Always writes to runtimes.node — never to language items.
  */
-async function extractFromNodeVersionFiles(
+export async function extractFromNodeVersionFiles(
   readFile: ReadFileFn,
   runtimes: DetectedItem[],
 ): Promise<void> {
@@ -673,7 +673,7 @@ async function extractFromNodeVersionFiles(
  * to detect and version-enrich frameworks, test frameworks, and quality tools.
  * Config-detected items get version enrichment; new items are created.
  */
-async function extractFromPackageJson(
+export async function extractFromPackageJson(
   readFile: ReadFileFn,
   languages: DetectedItem[],
   frameworks: DetectedItem[],
@@ -763,7 +763,7 @@ async function extractFromPackageJson(
  * Extract TypeScript compiler target from tsconfig.json compilerOptions.target.
  * Stored as compilerTarget, not version — ES2022 is not a TypeScript version.
  */
-async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem[]): Promise<void> {
+export async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem[]): Promise<void> {
   const content = await safeRead(readFile, 'tsconfig.json');
   if (!content) return;
 
@@ -796,7 +796,7 @@ async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem
  * Extract Go version from go.mod directive.
  * Format: `go 1.22` or `go 1.22.1`.
  */
-async function extractFromGoMod(
+export async function extractFromGoMod(
   readFile: ReadFileFn,
   languages: DetectedItem[],
   allFiles: readonly string[],
@@ -817,7 +817,7 @@ async function extractFromGoMod(
 }
 
 /** Extract Python ecosystem facts from root-level manifests and requirements files. */
-async function extractFromPythonRootFiles(
+export async function extractFromPythonRootFiles(
   readFile: ReadFileFn,
   allFiles: readonly string[],
   languages: DetectedItem[],
@@ -883,7 +883,7 @@ async function extractFromPythonRootFiles(
 }
 
 /** Extract Rust ecosystem facts from root-level Cargo/toolchain manifests. */
-async function extractFromRustRootFiles(
+export async function extractFromRustRootFiles(
   readFile: ReadFileFn,
   allFiles: readonly string[],
   languages: DetectedItem[],
@@ -951,7 +951,7 @@ async function extractFromRustRootFiles(
 }
 
 /** Check if a requirements file declares a package at line start (ignore comments/options). */
-function hasRequirementEntry(requirementsContent: string, packageName: string): boolean {
+export function hasRequirementEntry(requirementsContent: string, packageName: string): boolean {
   const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`^\\s*${escaped}(?:\\[[^\\]]+\\])?(?:\\s*(?:[=~!<>].*)?)?$`, 'im');
   return re.test(requirementsContent);
