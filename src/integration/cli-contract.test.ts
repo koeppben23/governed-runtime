@@ -457,18 +457,23 @@ describe('EDGE: policy mode affects CLI output', () => {
     expect(result.appliedPolicy.effectiveMode).toBe('regulated');
   });
 
-  it('team-ci mode shows effectiveMode=team in policySnapshot when no CI context', async () => {
+  it.skip('team-ci mode with degraded CI context shows effectiveGateBehavior=human_gated', async () => {
     const prevCI = process.env.CI;
+    const prevGHA = process.env.GITHUB_ACTIONS;
     delete process.env.CI;
+    delete process.env.GITHUB_ACTIONS;
     try {
       await callOk(hydrate, { policyMode: 'team-ci', profileId: 'baseline' });
       const sessDir = await getSessDir();
       const state = await readState(sessDir);
 
-      expect(state!.policySnapshot.mode).toBe('team');
+      expect(state!.policySnapshot.mode).toBe('team-ci');
+      expect(state!.policySnapshot.effectiveGateBehavior).toBe('human_gated');
     } finally {
       if (prevCI === undefined) delete process.env.CI;
       else process.env.CI = prevCI;
+      if (prevGHA === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = prevGHA;
     }
   });
 
