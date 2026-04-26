@@ -94,9 +94,19 @@ export async function runReviewOrchestration(
     await deps.resolveFingerprint();
     const sessDir = deps.getSessionDir(sessionId);
 
-    if (!sessDir) return;
+    if (!sessDir) {
+      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        reason: 'session directory unavailable for strict review orchestration',
+      });
+      return;
+    }
     const sessionState = await readState(sessDir);
-    if (!sessionState) return;
+    if (!sessionState) {
+      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        reason: 'session state unavailable for strict review orchestration',
+      });
+      return;
+    }
 
     const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
     const reviewCtx = extractReviewContext(toolName, parsedOutput);

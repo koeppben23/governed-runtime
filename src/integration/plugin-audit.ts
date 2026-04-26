@@ -10,7 +10,8 @@
  * - session completion detection + auto-archive
  * - error events (always emitted)
  *
- * Wrapped in try/catch — audit failures never block the workflow.
+ * Wrapped in try/catch — solo/team audit failures warn only;
+ * regulated audit failures return a blocking result.
  *
  * @version v1
  */
@@ -77,7 +78,7 @@ export async function runAudit(
   output: unknown,
   sessionId: string,
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
-  let effectiveMode = deps.mode;
+  let effectiveMode: string = deps.mode; // config default, overridden by resolved policy
   try {
     await deps.resolveFingerprint();
     const sessDir = deps.getSessionDir(sessionId);
@@ -357,8 +358,9 @@ export async function runAudit(
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
-    // P35: In regulated mode, audit persistence failures are blocking.
-    if (effectiveMode === 'regulated') {
+    // P35: Block on regulated or unresolvable policy mode.
+    if (effectiveMode === 'regulated' || effectiveMode === deps.mode) {
+      // deps.mode === config default — policy was never resolved; block conservatively
       return {
         auditOk: false,
         block: true,

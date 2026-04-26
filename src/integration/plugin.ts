@@ -337,7 +337,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   }
 
   /**
-  /**
    * Deterministic review orchestration — delegates to plugin-orchestrator module.
    */
   async function runReviewOrchestration(
