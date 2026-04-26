@@ -242,10 +242,13 @@ export async function mergePackageJson(filePath: string, version: string): Promi
 }
 
 /**
- * Ensure the build agent has task permission for the flowguard-reviewer subagent.
+/**
+ * Enforce strict P35 Task permission for the build agent.
  *
- * Deep-merges into parsed.agent.build.permission.task without overwriting
- * existing user-defined task permissions. Idempotent: no-op if already set.
+ * Replaces parsed.agent.build.permission.task with a wildcard deny baseline
+ * plus an explicit flowguard-reviewer allow. Existing task allow entries are
+ * intentionally removed so the build agent can only invoke the reviewer
+ * subagent via the Task tool.
  */
 export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
