@@ -449,7 +449,22 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
 
       const eState = getEnforcementState(sessionId);
-      const result = enforceBeforeVerdict(eState, toolName, args);
+      // Read session state for enforcement recovery (P35)
+      let sessionStateForEnforcement: SessionState | null = null;
+      let strictEnforcementForVerdict = false;
+      try {
+        const sessDir = getSessionDir(sessionId);
+        if (sessDir) {
+          sessionStateForEnforcement = await readState(sessDir);
+          strictEnforcementForVerdict =
+            sessionStateForEnforcement?.policySnapshot?.selfReview?.strictEnforcement === true;
+        }
+      } catch {
+        // Policy unreadable — non-strict default
+      }
+      const result = enforceBeforeVerdict(
+        eState, toolName, args, sessionStateForEnforcement, strictEnforcementForVerdict,
+      );
 
       if (!result.allowed) {
         log.warn('enforcement', 'blocked verdict submission', {

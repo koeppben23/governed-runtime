@@ -53,6 +53,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   REVIEWER_SUBAGENT_TYPE,
 } from './tool-names.js';
+import type { SessionState } from '../state/schema.js';
 
 /** Tools that can trigger independent review. */
 export type ReviewableTool = typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT;
@@ -395,6 +396,8 @@ export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
+  sessionState?: SessionState | null,
+  strictEnforcement = false,
 ): EnforcementResult {
   if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) {
     return { allowed: true };
@@ -408,7 +411,42 @@ export function enforceBeforeVerdict(
 
   // Check if there's a pending review for this tool
   const pending = state.pendingReviews.get(reviewTool);
-  if (!pending) return { allowed: true }; // No pending review = no enforcement
+  if (!pending) {
+    // P35 Recovery: Reconstruct from session-state.json when transient cache miss
+    if (sessionState?.reviewAssurance?.obligations) {
+      const pendingObligation = sessionState.reviewAssurance.obligations.find(
+        (o) =>
+          o.status === 'pending' &&
+          ((reviewTool === TOOL_FLOWGUARD_PLAN && o.obligationType === 'plan') ||
+            (reviewTool === TOOL_FLOWGUARD_IMPLEMENT && o.obligationType === 'implement')),
+      );
+      if (pendingObligation) {
+        return {
+          allowed: false,
+          code: 'SUBAGENT_REVIEW_NOT_INVOKED',
+          reason:
+            `FlowGuard enforcement: recovered from session state — obligation ` +
+            `${pendingObligation.obligationId} is pending but no subagent call was recorded ` +
+            `in the transient enforcement state. A ${REVIEWER_SUBAGENT_TYPE} subagent call via the ` +
+            `Task tool is required to fulfill this P35 obligation.`,
+        };
+      }
+      // No pending obligations — genuinely no requirement
+      return { allowed: true };
+    }
+    // Strict: state unreadable → fail-closed
+    if (strictEnforcement) {
+      return {
+        allowed: false,
+        code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+        reason:
+          'Cannot verify review obligation fulfillment in strict mode — ' +
+          'enforcement state is unavailable and session state cannot be read. ' +
+          'Re-hydrate the session or run /continue before submitting a verdict.',
+      };
+    }
+    return { allowed: true };
+  }
 
   // ── Level 1: Binary gate — subagent must have been called ──────────────
   if (!pending.subagentCalled) {
