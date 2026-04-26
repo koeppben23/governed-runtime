@@ -15,6 +15,7 @@
  */
 
 import type { PhaseInstructions } from '../../profile.js';
+import { DETECTED_STACK_INSTRUCTION, buildNegativeTestMatrix } from './shared.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 
@@ -419,18 +420,13 @@ const config = AppConfigSchema.parse(JSON.parse(raw));  // schema-validated
 </example>
 </examples>`;
 
-const NEGATIVE_TEST_MATRIX = `\
-## Minimum Negative Tests per Change Type
-
-For every change, the following negative-path tests MUST exist:
-
-| Change Type | MUST Test (negative path) |
-|---|---|
-| Function/Module | null/undefined input, empty input ([] / '' / {}), invalid type at boundary, thrown error path |
-| Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |
-| API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |
-| Config/Environment | missing env var, malformed config file, invalid values |
-| State Management | initial state correctness, invalid state transition, concurrent mutation |`;
+const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
+  "| Function/Module | null/undefined input, empty input ([] / '' / {}), invalid type at boundary, thrown error path |\n" +
+  '| Async Function | rejection/error propagation, timeout behavior (if applicable), concurrent call safety |\n' +
+  '| API Boundary | malformed request body, missing required fields, unauthorized access, error response shape |\n' +
+  '| Config/Environment | missing env var, malformed config file, invalid values |\n' +
+  '| State Management | initial state correctness, invalid state transition, concurrent mutation |',
+);
 
 const REVIEW_CHECKLIST = `\
 ## Stack-Specific Review Checklist
@@ -448,18 +444,6 @@ When reviewing TypeScript changes, MUST verify:
 | Mutable Shared State | Module-level \`let\` variables, objects mutated from multiple call sites |
 | Test Determinism | \`Date.now()\` / \`Math.random()\` in assertions, real timers, real filesystem I/O |`;
 
-// ─── Detected Stack Instruction ──────────────────────────────────────────────
-
-const DETECTED_STACK_INSTRUCTION = `\
-## Detected Stack
-
-Use flowguard_status.detectedStack when present. Prefer detected tools,
-frameworks, runtimes, and versions over generic defaults.
-When choosing verification commands, prefer
-flowguard_status.verificationCandidates when present. They are advisory
-planning hints, not executed checks.
-Do not make version-specific claims without repository evidence; mark
-unsupported claims as NOT_VERIFIED.`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

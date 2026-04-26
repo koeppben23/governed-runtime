@@ -16,6 +16,7 @@
  */
 
 import type { PhaseInstructions } from '../../profile.js';
+import { DETECTED_STACK_INSTRUCTION, buildNegativeTestMatrix } from './shared.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 
@@ -338,17 +339,12 @@ async def fetch_all(urls):
 </example>
 </examples>`;
 
-const NEGATIVE_TEST_MATRIX = `\
-## Minimum Negative Tests per Change Type
-
-For every change, the following negative-path tests MUST exist:
-
-| Change Type | MUST Test (negative path) |
-|---|---|
-| Function/Module | null/empty input, invalid type at boundary, thrown error path |
-| API Boundary | malformed request, missing required fields, unauthorized access, error response shape |
-| Config/Environment | missing config, malformed values, invalid defaults |
-| State/Lifecycle | initial state correctness, invalid transition, concurrent mutation |`;
+const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
+  '| Function/Module | null/empty input, invalid type at boundary, thrown error path |\n' +
+  '| API Boundary | malformed request, missing required fields, unauthorized access, error response shape |\n' +
+  '| Config/Environment | missing config, malformed values, invalid defaults |\n' +
+  '| State/Lifecycle | initial state correctness, invalid transition, concurrent mutation |',
+);
 
 const REVIEW_CHECKLIST = `\
 ## Review Checklist
@@ -363,19 +359,6 @@ When reviewing changes, MUST verify:
 | Test Quality | Nondeterministic tests, implementation coupling, missing edge cases |
 | Security | Secrets in code/logs, unsanitized inputs, widened trust boundaries |
 | Architecture | Circular dependencies, boundary violations, responsibility bleed |`;
-
-// ─── Detected Stack Instruction ──────────────────────────────────────────────
-
-const DETECTED_STACK_INSTRUCTION = `\
-## Detected Stack
-
-Use flowguard_status.detectedStack when present. Prefer detected tools,
-frameworks, runtimes, and versions over generic defaults.
-When choosing verification commands, prefer
-flowguard_status.verificationCandidates when present. They are advisory
-planning hints, not executed checks.
-Do not make version-specific claims without repository evidence; mark
-unsupported claims as NOT_VERIFIED.`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 
