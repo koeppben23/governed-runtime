@@ -43,6 +43,7 @@ export interface AuditDeps {
     state: SessionState | null;
   }>;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
+  invalidateChainState(sessionId: string): void;
   appendAndTrack(
     event: { chainHash?: string },
     sessDir: string,
@@ -76,6 +77,7 @@ export async function runAudit(
   output: unknown,
   sessionId: string,
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string } | undefined> {
+  let effectiveMode = deps.mode;
   try {
     await deps.resolveFingerprint();
     const sessDir = deps.getSessionDir(sessionId);
@@ -83,6 +85,7 @@ export async function runAudit(
 
     const { policy, state } = await deps.resolveSessionPolicy(sessDir);
     const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
+    effectiveMode = policy.mode;
 
     deps.log.debug('audit', 'processing tool call', {
       tool: toolName,
@@ -96,6 +99,11 @@ export async function runAudit(
 
     let prevHash: string;
     if (enableChainHash) {
+      // P26: Invalidate chain cache when tool layer may have written
+      // audit events directly (regulated completion path).
+      if (state?.archiveStatus) {
+        deps.invalidateChainState(sessionId);
+      }
       prevHash = await deps.initChain(sessDir, sessionId);
     } else {
       prevHash = GENESIS_HASH;
@@ -350,7 +358,7 @@ export async function runAudit(
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
     // P35: In regulated mode, audit persistence failures are blocking.
-    if (deps.mode === 'regulated') {
+    if (effectiveMode === 'regulated') {
       return {
         auditOk: false,
         block: true,

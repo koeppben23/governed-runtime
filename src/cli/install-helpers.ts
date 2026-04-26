@@ -331,7 +331,11 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
       parsed['instructions'] = instructions;
 
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-      return { path: filePath, action: 'merged' };
+      return {
+        path: filePath,
+        action: 'merged',
+        reason: 'desktop-owned config: task permission not enforced',
+      };
     }
 
     // Standard merge for FlowGuard-only configs

@@ -195,6 +195,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     return state;
   }
 
+  function invalidateChainState(sessionId: string): void {
+    chainStates.delete(sessionId);
+  }
+
   const sessionQueues = new Map<string, Promise<void>>();
   const decisionSequenceCache = new Map<string, number>();
 
@@ -230,6 +234,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getSessionDir,
     resolveSessionPolicy,
     initChain,
+    invalidateChainState,
     appendAndTrack,
     nextDecisionSequence,
     log,
@@ -452,16 +457,18 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       const eState = getEnforcementState(sessionId);
       // Read session state for enforcement recovery (P35)
       let sessionStateForEnforcement: SessionState | null = null;
-      let strictEnforcementForVerdict = false;
+      let strictEnforcementForVerdict = true; // P35: fail-closed default
       try {
         const sessDir = getSessionDir(sessionId);
         if (sessDir) {
           sessionStateForEnforcement = await readState(sessDir);
-          strictEnforcementForVerdict =
-            sessionStateForEnforcement?.policySnapshot?.selfReview?.strictEnforcement === true;
+          if (sessionStateForEnforcement) {
+            strictEnforcementForVerdict =
+              sessionStateForEnforcement.policySnapshot?.selfReview?.strictEnforcement === true;
+          }
         }
       } catch {
-        // Policy unreadable — non-strict default
+        // State unreadable — strictEnforcementForVerdict stays true (fail-closed)
       }
       const result = enforceBeforeVerdict(
         eState,
