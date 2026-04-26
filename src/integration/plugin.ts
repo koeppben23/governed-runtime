@@ -73,7 +73,6 @@
  */
 
 import type { Plugin } from '@opencode-ai/plugin';
-import * as crypto from 'node:crypto';
 import {
   readState,
   writeState,
@@ -105,6 +104,7 @@ import {
   trackFlowGuardEnforcement,
   trackTaskEnforcement,
 } from './plugin-enforcement-tracking.js';
+import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
@@ -300,24 +300,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     const now = new Date().toISOString();
     const next = update(current, now);
     await writeState(sessDir, next);
-  }
-
-  async function appendReviewAuditEvent(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
-    event: string,
-    detail: Record<string, unknown>,
-  ): Promise<void> {
-    await appendAuditEvent(sessDir, {
-      id: crypto.randomUUID(),
-      sessionId,
-      phase,
-      event,
-      timestamp: new Date().toISOString(),
-      actor: 'machine',
-      detail,
-    });
   }
 
   async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
