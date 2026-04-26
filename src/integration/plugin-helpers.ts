@@ -53,3 +53,34 @@ export function strictBlockedOutput(code: string, detail: Record<string, string>
     recovery: [],
   });
 }
+
+/**
+ * Extract the raw output string from a tool output object.
+ *
+ * The OpenCode plugin `output` object can contain output as either
+ * a string (direct output) or a structured object to serialize.
+ * This replicates exactly the inline ternary that was previously
+ * duplicated at multiple call sites.
+ *
+ * @param output - The tool output object from plugin hooks
+ * @returns The output as a string
+ */
+export function getToolOutput(output: unknown): string {
+  const inner = (output as { output?: unknown } | null | undefined)?.output;
+  return typeof inner === 'string' ? inner : JSON.stringify(inner ?? '');
+}
+
+/**
+ * Extract the args object from a tool input with appropriate type casting.
+ *
+ * The OpenCode plugin `input` object is untyped at the hook boundary.
+ * This helper extracts the `args` field with correct null/default handling.
+ *
+ * @param input - The tool input object from plugin hooks
+ * @returns The args as a record, or empty object if unavailable
+ */
+export function getToolArgs(input: unknown): Record<string, unknown> {
+  return (
+    ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {}
+  );
+}

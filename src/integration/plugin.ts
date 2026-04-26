@@ -100,7 +100,7 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { parseToolResult, strictBlockedOutput } from './plugin-helpers.js';
+import { parseToolResult, strictBlockedOutput, getToolOutput, getToolArgs } from './plugin-helpers.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
@@ -374,7 +374,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     'tool.execute.before': async (input, _output) => {
       const toolName: string = input?.tool ?? '';
       const sessionId: string = input?.sessionID ?? 'unknown';
-      const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+      const args = getToolArgs(input);
 
       // Level 3: Prompt integrity enforcement for Task calls to flowguard-reviewer
       if (toolName === 'task') {
@@ -422,11 +422,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
         try {
           const eState = getEnforcementState(sessionId);
-          const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
-          const rawOutput =
-            typeof output?.output === 'string'
-              ? output.output
-              : JSON.stringify(output?.output ?? '');
+          const args = getToolArgs(input);
+          const rawOutput = getToolOutput(output);
           enforcementOnToolAfter(eState, toolName, args, rawOutput, now);
         } catch (err) {
           logError('enforcement tracking failed (non-blocking)', err);
@@ -434,11 +431,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       } else if (toolName === 'task') {
         try {
           const eState = getEnforcementState(sessionId);
-          const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
-          const rawOutput =
-            typeof output?.output === 'string'
-              ? output.output
-              : JSON.stringify(output?.output ?? '');
+          const args = getToolArgs(input);
+          const rawOutput = getToolOutput(output);
           enforcementOnTaskAfter(eState, args, rawOutput, now);
         } catch (err) {
           logError('enforcement tracking failed (non-blocking)', err);
@@ -456,9 +450,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       // LLM-driven Task path may continue. On strict failure: orchestration
       // blocks fail-closed with explicit error output.
       if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
-        const rawOutput =
-          typeof output?.output === 'string' ? output.output : JSON.stringify(output?.output ?? '');
-
+        const rawOutput = getToolOutput(output);
         let strictEnforcement: boolean | null = null;
         const inReviewPath = isReviewRequired(rawOutput);
         if (inReviewPath) {
@@ -504,8 +496,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 // Build the review prompt with session context
                 const ticketText = sessionState.ticket?.text ?? '';
                 const planText = sessionState.plan?.current?.body ?? '';
-                const toolArgs =
-                  ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
+                const toolArgs = getToolArgs(input);
 
                 const prompt =
                   toolName === TOOL_FLOWGUARD_PLAN
