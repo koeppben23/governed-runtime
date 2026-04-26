@@ -7,22 +7,16 @@
  * This module contains only CLI entry-point logic.
  */
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { readFile as fsReadFile, writeFile, copyFile, rm, mkdir } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
+import { writeFile, copyFile, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
-import { spawn } from 'node:child_process';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
   COMMANDS,
   REVIEWER_AGENT,
   REVIEWER_AGENT_FILENAME,
-  FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
-  OPENCODE_JSON_TEMPLATE,
-  PACKAGE_JSON_TEMPLATE,
   buildMandatesContent,
   extractManagedDigest,
   extractManagedVersion,

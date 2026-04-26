@@ -10,25 +10,17 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  TOOL_WRAPPER,
-  PLUGIN_WRAPPER,
   COMMANDS,
-  REVIEWER_AGENT,
   REVIEWER_AGENT_FILENAME,
   FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
-  buildMandatesContent,
-  extractManagedDigest,
-  extractManagedVersion,
-  extractManagedBody,
-  isManagedArtifact,
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
 } from './templates.js';
