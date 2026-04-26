@@ -54,7 +54,7 @@ describe('config/policy', () => {
     it('resolvePolicy vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
       expect(resolvePolicy('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
-      expect(withContext.policy).toBe(TEAM_POLICY);
+      expect(withContext.policy.mode).toBe('team-ci');
       expect(withContext.effectiveMode).toBe('team');
       expect(withContext.degradedReason).toBe('ci_context_missing');
     });
@@ -70,7 +70,7 @@ describe('config/policy', () => {
 
     it('resolvePolicyWithContext degrades team-ci to team without CI context', () => {
       const result = resolvePolicyWithContext('team-ci', false);
-      expect(result.policy).toBe(TEAM_POLICY);
+      expect(result.policy.mode).toBe('team-ci');
       expect(result.requestedMode).toBe('team-ci');
       expect(result.effectiveMode).toBe('team');
       expect(result.effectiveGateBehavior).toBe('human_gated');

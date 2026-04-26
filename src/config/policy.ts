@@ -708,12 +708,17 @@ export function resolvePolicyWithContext(
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
+    const degradedPolicy = {
+      ...TEAM_CI_POLICY,
+      requireHumanGates: true,
+      effectiveModeOverride: 'team',
+    } as FlowGuardPolicy & { effectiveModeOverride?: string };
     return {
       requestedMode,
       effectiveMode: 'team',
       effectiveGateBehavior: 'human_gated',
       degradedReason: 'ci_context_missing',
-      policy: TEAM_POLICY,
+      policy: degradedPolicy,
     };
   }
 
