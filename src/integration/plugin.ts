@@ -100,6 +100,7 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
+import { parseToolResult, strictBlockedOutput } from './plugin-helpers.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
@@ -285,35 +286,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   function logError(message: string, err: unknown): void {
     log.error('audit', message, {
       error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  /**
-   * Parse tool output JSON with fallback for NextAction footer lines.
-   */
-  function parseToolResult(rawOutput: unknown): Record<string, unknown> | null {
-    try {
-      const resultStr = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
-      return JSON.parse(resultStr);
-    } catch {
-      try {
-        const resultStr = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
-        const firstLine = resultStr.split('\n')[0] ?? '';
-        if (!firstLine.trim()) return null;
-        return JSON.parse(firstLine);
-      } catch {
-        return null;
-      }
-    }
-  }
-
-  function strictBlockedOutput(code: string, detail: Record<string, string>): string {
-    return JSON.stringify({
-      error: true,
-      code,
-      message: `Blocked: ${code}`,
-      detail,
-      recovery: [],
     });
   }
 
