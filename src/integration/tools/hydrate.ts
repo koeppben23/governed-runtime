@@ -456,72 +456,73 @@ export const hydrate: ToolDefinition = {
       const result = executeHydrate(
         existingWithCentralEvidence,
         {
-          sessionId: context.sessionID,
-          worktree,
-          fingerprint,
-          policyMode: existing ? existing.policySnapshot.mode : policyResolution.effectiveMode,
-          requestedPolicyMode: existing
-            ? (existing.policySnapshot.requestedMode as 'solo' | 'team' | 'team-ci' | 'regulated')
-            : policyResolution.requestedMode,
-          policySource: existing
-            ? (existing.policySnapshot.source ?? 'default')
-            : policyResolution.effectiveSource,
-          effectiveGateBehavior: existing
-            ? existing.policySnapshot.effectiveGateBehavior
-            : policyResolution.effectiveGateBehavior,
-          policyDegradedReason: existing
-            ? (existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined)
-            : policyResolution.degradedReason,
-          policyResolutionReason: existing
-            ? (existing.policySnapshot.resolutionReason as
-                | 'repo_weaker_than_central'
-                | 'default_weaker_than_central'
-                | 'explicit_stronger_than_central'
-                | undefined)
-            : policyResolution.resolutionReason,
-          centralMinimumMode: existing
-            ? (centralEvidenceForExisting?.minimumMode ??
-              existing.policySnapshot.centralMinimumMode)
-            : policyResolution.centralEvidence?.minimumMode,
-          policyDigest: existing
-            ? (centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest)
-            : policyResolution.centralEvidence?.digest,
-          policyVersion: existing
-            ? centralEvidenceForExisting
-              ? centralEvidenceForExisting.version
-              : existing.policySnapshot.policyVersion
-            : policyResolution.centralEvidence?.version,
-          policyPathHint: existing
-            ? (centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint)
-            : policyResolution.centralEvidence?.pathHint,
-          // P31: Existing sessions preserve snapshot profile. New sessions get resolved profile.
-          profileId: existing
-            ? existing.activeProfile?.id
-            : (profileResolution?.primary?.id ?? 'baseline'),
-          // P31: pass config-provided activeChecks into rails when explicitly configured.
-          // Otherwise keep existing rails profile-driven behavior.
-          activeChecks: existing ? undefined : config.profile.activeChecks,
-          repoSignals,
-          // P31: Only apply config iteration limits to NEW sessions
-          // Existing sessions preserve their snapshot values
-          maxSelfReviewIterations: existing ? undefined : config.policy.maxSelfReviewIterations,
-          maxImplReviewIterations: existing ? undefined : config.policy.maxImplReviewIterations,
-          requireVerifiedActorsForApproval: existing
-            ? undefined
-            : config.policy.requireVerifiedActorsForApproval,
-          initiatedBy: actorInfo.id,
-          initiatedByIdentity: {
-            actorId: actorInfo.id,
-            actorEmail: actorInfo.email,
-            actorSource: actorInfo.source,
-            actorAssurance: actorInfo.assurance,
+          session: {
+            sessionId: context.sessionID,
+            worktree,
+            fingerprint,
+            discoveryDigest,
+            discoverySummary,
+            detectedStack,
+            verificationCandidates,
           },
-          actorInfo,
-          discoveryResult,
-          discoveryDigest,
-          discoverySummary,
-          detectedStack,
-          verificationCandidates,
+          policy: {
+            policyMode: existing ? existing.policySnapshot.mode : policyResolution.effectiveMode,
+            requestedPolicyMode: existing
+              ? (existing.policySnapshot.requestedMode as 'solo' | 'team' | 'team-ci' | 'regulated')
+              : policyResolution.requestedMode,
+            policySource: existing
+              ? (existing.policySnapshot.source ?? 'default')
+              : policyResolution.effectiveSource,
+            effectiveGateBehavior: existing
+              ? existing.policySnapshot.effectiveGateBehavior
+              : policyResolution.effectiveGateBehavior,
+            policyDegradedReason: existing
+              ? (existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined)
+              : policyResolution.degradedReason,
+            policyResolutionReason: existing
+              ? (existing.policySnapshot.resolutionReason as
+                  | 'repo_weaker_than_central'
+                  | 'default_weaker_than_central'
+                  | 'explicit_stronger_than_central'
+                  | undefined)
+              : policyResolution.resolutionReason,
+            centralMinimumMode: existing
+              ? (centralEvidenceForExisting?.minimumMode ??
+                existing.policySnapshot.centralMinimumMode)
+              : policyResolution.centralEvidence?.minimumMode,
+            policyDigest: existing
+              ? (centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest)
+              : policyResolution.centralEvidence?.digest,
+            policyVersion: existing
+              ? centralEvidenceForExisting
+                ? centralEvidenceForExisting.version
+                : existing.policySnapshot.policyVersion
+              : policyResolution.centralEvidence?.version,
+            policyPathHint: existing
+              ? (centralEvidenceForExisting?.pathHint ?? existing.policySnapshot.policyPathHint)
+              : policyResolution.centralEvidence?.pathHint,
+            maxSelfReviewIterations: existing ? undefined : config.policy.maxSelfReviewIterations,
+            maxImplReviewIterations: existing ? undefined : config.policy.maxImplReviewIterations,
+            requireVerifiedActorsForApproval: existing
+              ? undefined
+              : config.policy.requireVerifiedActorsForApproval,
+          },
+          profile: {
+            profileId: existing
+              ? existing.activeProfile?.id
+              : (profileResolution?.primary?.id ?? 'baseline'),
+            activeChecks: existing ? undefined : config.profile.activeChecks,
+            repoSignals,
+            discoveryResult,
+            initiatedBy: actorInfo.id,
+            initiatedByIdentity: {
+              actorId: actorInfo.id,
+              actorEmail: actorInfo.email,
+              actorSource: actorInfo.source,
+              actorAssurance: actorInfo.assurance,
+            },
+            actorInfo,
+          },
         },
         ctx,
       );

@@ -28,9 +28,13 @@ const ctx = createTestContext();
 
 /** Default hydrate input with all required fields. */
 const HYDRATE_INPUT = {
-  sessionId: FIXED_SESSION_UUID,
-  worktree: '/tmp/test',
-  fingerprint: FIXED_FINGERPRINT,
+  session: {
+    sessionId: FIXED_SESSION_UUID,
+    worktree: '/tmp/test',
+    fingerprint: FIXED_FINGERPRINT,
+  },
+  policy: {},
+  profile: {},
 } as const;
 
 describe('hydrate rail', () => {
@@ -62,7 +66,7 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          sessionId: 'ses_260740c65ffe77OjxRP7z40yH8',
+          session: { ...HYDRATE_INPUT.session, sessionId: 'ses_260740c65ffe77OjxRP7z40yH8' },
         },
         ctx,
       );
@@ -77,7 +81,7 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          policyMode: 'regulated',
+          policy: { ...HYDRATE_INPUT.policy, policyMode: 'regulated' },
         },
         ctx,
       );
@@ -92,7 +96,7 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          initiatedBy: 'alice',
+          profile: { ...HYDRATE_INPUT.profile, initiatedBy: 'alice' },
         },
         ctx,
       );
@@ -106,7 +110,7 @@ describe('hydrate rail', () => {
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
     it('blocks on empty sessionId', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, sessionId: '' }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '' } }, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('MISSING_SESSION_ID');
@@ -114,7 +118,7 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on empty worktree', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, worktree: '' }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, worktree: '' } }, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('MISSING_WORKTREE');
@@ -122,12 +126,12 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on whitespace-only sessionId', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, sessionId: '   ' }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '   ' } }, ctx);
       expect(result.kind).toBe('blocked');
     });
 
     it('blocks on invalid fingerprint', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, fingerprint: 'not-valid-hex!' }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: 'not-valid-hex!' } }, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('INVALID_FINGERPRINT');
@@ -135,7 +139,7 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on empty fingerprint', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, fingerprint: '' }, ctx);
+      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: '' } }, ctx);
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('INVALID_FINGERPRINT');
@@ -166,7 +170,7 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+          profile: { ...HYDRATE_INPUT.profile, repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] } },
         },
         ctx,
       );
@@ -184,8 +188,11 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          profileId: 'typescript',
-          repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+          profile: {
+            ...HYDRATE_INPUT.profile,
+            profileId: 'typescript',
+            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+          },
         },
         ctx,
       );
@@ -198,9 +205,8 @@ describe('hydrate rail', () => {
     it('custom activeChecks override profile defaults', () => {
       const result = executeHydrate(
         null,
-        {
-          ...HYDRATE_INPUT,
-          activeChecks: ['custom_check'],
+        { ...HYDRATE_INPUT,
+          profile: { ...HYDRATE_INPUT.profile, activeChecks: ['custom_check'] },
         },
         ctx,
       );

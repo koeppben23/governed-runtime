@@ -45,107 +45,65 @@ import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '.
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
-export interface HydrateInput {
-  /** OpenCode session ID (from context.sessionID). */
+/**
+ * Session binding and discovery evidence.
+ *
+ * Fields required to establish a session and the discovery artifacts
+ * derived by the tool layer before calling executeHydrate.
+ */
+export interface HydrateSessionInput {
   readonly sessionId: string;
-  /** Git worktree path (from context.worktree). */
   readonly worktree: string;
-  /**
-   * Repository fingerprint (24 hex chars).
-   * Computed by workspace.ts from the canonical remote URL or local path.
-   */
   readonly fingerprint: string;
-  /**
-   * Active validation checks.
-   * If provided, overrides the profile's default checks.
-   * If omitted, resolved from the profile.
-   */
-  readonly activeChecks?: string[];
-  /**
-   * Profile ID to use (e.g., "baseline", "backend-java").
-   * If omitted, auto-detect from repoSignals (falls back to "baseline").
-   */
-  readonly profileId?: string;
-  /**
-   * Repository signals for automatic profile detection.
-   * Used only when profileId is not provided.
-   * If omitted, profile falls back to the explicit profileId or "baseline".
-   */
-  readonly repoSignals?: RepoSignals;
-  /**
-   * Policy mode ("solo" | "team" | "regulated").
-   * Defaults to "team" if not provided.
-   */
-  readonly policyMode?: string;
-  /** Requested policy mode before CI/context resolution. */
-  readonly requestedPolicyMode?: PolicyMode;
-  /** Effective gate behavior for the resolved policy mode. */
-  readonly effectiveGateBehavior?: EffectiveGateBehavior;
-  /** Optional reason why requested mode was degraded. */
-  readonly policyDegradedReason?: PolicyDegradedReason;
-  /** Applied policy source (P29). */
-  readonly policySource?: PolicySource;
-  /** Why source precedence selected/overrode a mode (P29). */
-  readonly policyResolutionReason?: PolicyResolutionReason;
-  /** Central minimum mode used during precedence resolution (P29). */
-  readonly centralMinimumMode?: CentralMinimumMode;
-  /** Digest of central policy bundle used during hydrate (P29). */
-  readonly policyDigest?: string;
-  /** Version from central policy bundle (P29). */
-  readonly policyVersion?: string;
-  /** Redacted path hint for central policy bundle (P29). */
-  readonly policyPathHint?: string;
-  /** P31: Override maxSelfReviewIterations from config.policy */
-  readonly maxSelfReviewIterations?: number;
-  /** P31: Override maxImplReviewIterations from config.policy */
-  readonly maxImplReviewIterations?: number;
-  /** Override verified actor requirement from config.policy for new sessions. */
-  readonly requireVerifiedActorsForApproval?: boolean;
-  /**
-   * Identity of the session initiator (author).
-   * Used for four-eyes principle enforcement.
-   * Tool layer should pass actor identity (not OpenCode sessionId).
-   * Defaults to sessionId only as a backward-compatible fallback.
-   */
-  readonly initiatedBy?: string;
-  /**
-   * Structured initiator identity for regulated approval (P30).
-   * Persists actor identity at session creation for four-eyes proof.
-   */
-  readonly initiatedByIdentity?: DecisionIdentity;
-  /**
-   * Resolved actor identity (P27).
-   * Best-effort operator identity resolved at hydrate time.
-   * Absent for pre-P27 sessions.
-   */
-  readonly actorInfo?: ActorInfo;
-  /**
-   * Discovery result from the orchestrator.
-   * Used for profile detection when available (Phase 5+).
-   * The rail does NOT run discovery — the tool layer does.
-   */
-  readonly discoveryResult?: DiscoveryResult;
-  /**
-   * SHA-256 digest of the DiscoveryResult.
-   * Computed by the tool layer and embedded in SessionState.
-   */
   readonly discoveryDigest?: string;
-  /**
-   * Lightweight discovery summary for SessionState.
-   * Extracted from DiscoveryResult by the tool layer.
-   */
   readonly discoverySummary?: DiscoverySummary;
-  /**
-   * Compact detected stack versions for SessionState.
-   * Extracted from DiscoveryResult by the tool layer.
-   * Derived evidence — NOT SSOT.
-   */
   readonly detectedStack?: DetectedStack | null;
-  /**
-   * Advisory verification command candidates derived from stack + manifest evidence.
-   * Derived evidence — NOT SSOT.
-   */
   readonly verificationCandidates?: VerificationCandidates;
+}
+
+/**
+ * Policy resolution context.
+ *
+ * All fields that influence how the governance policy is resolved
+ * and snapshot-frozen at session creation time.
+ */
+export interface HydratePolicyInput {
+  readonly policyMode?: string;
+  readonly requestedPolicyMode?: PolicyMode;
+  readonly effectiveGateBehavior?: EffectiveGateBehavior;
+  readonly policyDegradedReason?: PolicyDegradedReason;
+  readonly policySource?: PolicySource;
+  readonly policyResolutionReason?: PolicyResolutionReason;
+  readonly centralMinimumMode?: CentralMinimumMode;
+  readonly policyDigest?: string;
+  readonly policyVersion?: string;
+  readonly policyPathHint?: string;
+  readonly maxSelfReviewIterations?: number;
+  readonly maxImplReviewIterations?: number;
+  readonly requireVerifiedActorsForApproval?: boolean;
+}
+
+/**
+ * Profile resolution and actor identity.
+ *
+ * Fields that drive profile selection and track the session initiator
+ * for regulated four-eyes principle enforcement.
+ */
+export interface HydrateProfileInput {
+  readonly profileId?: string;
+  readonly activeChecks?: string[];
+  readonly repoSignals?: RepoSignals;
+  readonly discoveryResult?: DiscoveryResult;
+  readonly initiatedBy?: string;
+  readonly initiatedByIdentity?: DecisionIdentity;
+  readonly actorInfo?: ActorInfo;
+}
+
+/** Composite input for executeHydrate — three cohesive sub-interfaces. */
+export interface HydrateInput {
+  readonly session: HydrateSessionInput;
+  readonly policy: HydratePolicyInput;
+  readonly profile: HydrateProfileInput;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -163,14 +121,19 @@ export function executeHydrate(
   input: HydrateInput,
   ctx: RailContext,
 ): RailResult {
+  const { session: s, policy: p, profile: pr } = input;
+  const sessionId = s.sessionId;
+  const worktree = s.worktree;
+  const fingerprint = s.fingerprint;
+
   // 1. Validate input
-  if (!input.sessionId.trim()) {
+  if (!sessionId.trim()) {
     return blocked('MISSING_SESSION_ID');
   }
-  if (!input.worktree.trim()) {
+  if (!worktree.trim()) {
     return blocked('MISSING_WORKTREE');
   }
-  if (!input.fingerprint || !/^[0-9a-f]{24}$/.test(input.fingerprint)) {
+  if (!fingerprint || !/^[0-9a-f]{24}$/.test(fingerprint)) {
     return blocked('INVALID_FINGERPRINT');
   }
 
@@ -186,12 +149,12 @@ export function executeHydrate(
   // P31: explicit > config > detected > baseline
   // profileId === undefined → auto-detect
   // profileId set (including "baseline") → explicit profile
-  if (input.profileId !== undefined) {
-    profile = defaultProfileRegistry.get(input.profileId);
-  } else if (input.repoSignals) {
+  if (pr.profileId !== undefined) {
+    profile = defaultProfileRegistry.get(pr.profileId);
+  } else if (pr.repoSignals) {
     profile = defaultProfileRegistry.detect({
-      repoSignals: input.repoSignals,
-      discovery: input.discoveryResult,
+      repoSignals: pr.repoSignals,
+      discovery: pr.discoveryResult,
     });
   }
 
@@ -199,7 +162,7 @@ export function executeHydrate(
     profile = defaultProfileRegistry.get('baseline');
   }
 
-  const activeChecks = input.activeChecks ??
+  const activeChecks = pr.activeChecks ??
     profile?.activeChecks?.slice() ?? ['test_quality', 'rollback_safety'];
 
   const activeProfile = profile
@@ -214,41 +177,41 @@ export function executeHydrate(
     : null;
 
   // 4. Resolve policy → immutable snapshot
-  const policyMode = input.policyMode ?? 'solo';
+  const policyMode = p.policyMode ?? 'solo';
   let policy = resolvePolicy(policyMode);
   // P31: Apply config iteration limit overrides
   if (
-    input.maxSelfReviewIterations !== undefined ||
-    input.maxImplReviewIterations !== undefined ||
-    input.requireVerifiedActorsForApproval !== undefined
+    p.maxSelfReviewIterations !== undefined ||
+    p.maxImplReviewIterations !== undefined ||
+    p.requireVerifiedActorsForApproval !== undefined
   ) {
     policy = {
       ...policy,
-      maxSelfReviewIterations: input.maxSelfReviewIterations ?? policy.maxSelfReviewIterations,
-      maxImplReviewIterations: input.maxImplReviewIterations ?? policy.maxImplReviewIterations,
+      maxSelfReviewIterations: p.maxSelfReviewIterations ?? policy.maxSelfReviewIterations,
+      maxImplReviewIterations: p.maxImplReviewIterations ?? policy.maxImplReviewIterations,
       requireVerifiedActorsForApproval:
-        input.requireVerifiedActorsForApproval ?? policy.requireVerifiedActorsForApproval,
+        p.requireVerifiedActorsForApproval ?? policy.requireVerifiedActorsForApproval,
     };
   }
   const now = ctx.now();
   const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
-    requestedMode: input.requestedPolicyMode ?? policy.mode,
-    source: input.policySource ?? 'default',
+    requestedMode: p.requestedPolicyMode ?? policy.mode,
+    source: p.policySource ?? 'default',
     effectiveGateBehavior:
-      input.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    degradedReason: input.policyDegradedReason,
-    resolutionReason: input.policyResolutionReason,
-    centralMinimumMode: input.centralMinimumMode,
-    policyDigest: input.policyDigest,
-    policyVersion: input.policyVersion,
-    policyPathHint: input.policyPathHint,
+      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    degradedReason: p.policyDegradedReason,
+    resolutionReason: p.policyResolutionReason,
+    centralMinimumMode: p.centralMinimumMode,
+    policyDigest: p.policyDigest,
+    policyVersion: p.policyVersion,
+    policyPathHint: p.policyPathHint,
   });
 
   // 5. Create binding
   const binding: BindingInfo = {
-    sessionId: input.sessionId,
-    worktree: input.worktree,
-    fingerprint: input.fingerprint,
+    sessionId: sessionId,
+    worktree: worktree,
+    fingerprint: fingerprint,
     resolvedAt: now,
   };
 
@@ -275,15 +238,15 @@ export function executeHydrate(
     activeProfile,
     activeChecks,
     policySnapshot: snapshotWithContext,
-    initiatedBy: input.initiatedBy ?? input.sessionId,
-    ...(input.initiatedByIdentity ? { initiatedByIdentity: input.initiatedByIdentity } : {}),
-    ...(input.actorInfo ? { actorInfo: input.actorInfo } : {}),
+    initiatedBy: pr.initiatedBy ?? sessionId,
+    ...(pr.initiatedByIdentity ? { initiatedByIdentity: pr.initiatedByIdentity } : {}),
+    ...(pr.actorInfo ? { actorInfo: pr.actorInfo } : {}),
 
     // Discovery
-    discoveryDigest: input.discoveryDigest ?? null,
-    discoverySummary: input.discoverySummary ?? null,
-    detectedStack: input.detectedStack ?? null,
-    verificationCandidates: input.verificationCandidates ?? [],
+    discoveryDigest: s.discoveryDigest ?? null,
+    discoverySummary: s.discoverySummary ?? null,
+    detectedStack: s.detectedStack ?? null,
+    verificationCandidates: s.verificationCandidates ?? [],
 
     // Metadata
     transition: null,
