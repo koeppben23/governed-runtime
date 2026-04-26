@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance mapping filename corrected to `docs/marisk-mapping.md` and documentation index now links all compliance mappings and agent-guidance docs.
 - **Tool name constants**: Extracted all FlowGuard tool names and reviewer agent identifier into a canonical `src/integration/tool-names.ts` SSOT module. Plugin, enforcement, orchestrator, and assurance modules now import tool name constants instead of using inline string literals. No semantics change. `REVIEWER_SUBAGENT_TYPE` is defined once in `tool-names.ts` and re-exported by `review-enforcement.ts` for backward compatibility.
 - **Plugin logging extraction**: Extracted `buildLogSinks` and config-init/logger-creation logic from `plugin.ts` into a new `src/integration/plugin-logging.ts` module. Exported `createPluginLogger` for streamlined initialization. `plugin.ts` reduced by ~85 lines. No log messages, levels, or paths changed.
+- **Plugin helper extraction**: Extracted `parseToolResult`, `strictBlockedOutput`, `getToolOutput`, and `getToolArgs` into `src/integration/plugin-helpers.ts`. Pure stateless functions — no closure dependencies.
+- **Enforcement tracking extraction**: Extracted `trackFlowGuardEnforcement` and `trackTaskEnforcement` into `src/integration/plugin-enforcement-tracking.ts`. Consolidates duplicate args/output extraction patterns.
+- **Review audit event extraction**: Extracted `appendReviewAuditEvent` into `src/integration/plugin-review-audit.ts`. Removes `crypto` import from plugin.ts.
+- **Review state helper extraction**: Extracted `updateObligation` and `blockObligation` into `src/integration/plugin-review-state.ts`. Replaces 6× copy-paste `updateReviewAssurance` callback patterns.
+- **Block review outcome consolidation**: Consolidated 4× 3-step pattern (`updateReviewAssurance` + `appendReviewAuditEvent` + `strictBlockedOutput`) into `blockReviewOutcome` local helper.
+- **Zod evidence schema hardening**: All 24 `z.object()` schemas in `src/state/evidence.ts` now use `.readonly()`. Marks parsed evidence artifacts as readonly at the TypeScript boundary. No runtime behavior change.
+- **Plugin hook type interfaces**: Added `ToolHookInput` and `ToolHookOutput` in `src/integration/types.ts` for typed access at the OpenCode plugin boundary.
 - AGENTS v3 hard invariants were refined to action-oriented wording with explicit `Red Lines`, while preserving fail-closed and single-authority constraints.
 - Review guidance verdict wording is now exactly aligned with root AGENTS contract (`approve` / `changes_requested`) to prevent enum drift.
 
