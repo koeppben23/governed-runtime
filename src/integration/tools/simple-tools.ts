@@ -17,10 +17,9 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
+  withMutableSession,
+  withReadOnlySession,
   resolveWorkspacePaths,
-  requireStateForMutation,
-  resolvePolicyFromState,
-  createPolicyContext,
   formatEval,
   formatBlocked,
   formatError,
@@ -100,8 +99,7 @@ export const status: ToolDefinition = {
   },
   async execute(_args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
+      const { state, policy } = await withReadOnlySession(context);
 
       if (!state) {
         return JSON.stringify({
@@ -111,7 +109,6 @@ export const status: ToolDefinition = {
         });
       }
 
-      const policy = resolvePolicyFromState(state);
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
       const args = _args as {
@@ -291,10 +288,7 @@ export const ticket: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       const result = executeTicket(
         state,
@@ -337,10 +331,7 @@ export const decision: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { fingerprint, sessDir, state, ctx } = await withMutableSession(context);
       const actorInfo = await resolveActor(context.worktree || context.directory);
 
       // P30/P34: Build structured decision identity directly from resolved actor info
@@ -465,10 +456,7 @@ export const validate: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       // Admissibility
       if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
@@ -511,7 +499,7 @@ export const validate: ToolDefinition = {
       };
 
       // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
-      const evalFn = (s: SessionState) => evaluate(s, policy);
+      const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
       const {
         state: finalState,
         evalResult: ev,
@@ -558,10 +546,7 @@ export const review: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
       const result = executeReviewFlow(state, ctx);
@@ -625,10 +610,7 @@ export const abort_session: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       const result = executeAbort(
         state,

@@ -295,3 +295,41 @@ export function extractSections(body: string): string[] {
     .filter((line) => /^#{1,3}\s/.test(line))
     .map((line) => line.replace(/^#+\s*/, '').trim());
 }
+
+// ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
+
+/**
+ * Bootstrap a mutable session context for tools that modify state.
+ *
+ * Eliminates the 5× repeated boilerplate:
+ *   resolveWorkspacePaths → requireStateForMutation → resolvePolicyFromState → createPolicyContext
+ *
+ * Used by: ticket, decision, validate, review, abort_session.
+ */
+export async function withMutableSession(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}) {
+  const { worktree, fingerprint, sessDir, wsDir } = await resolveWorkspacePaths(context);
+  const state = await requireStateForMutation(sessDir);
+  const policy = resolvePolicyFromState(state);
+  const ctx = createPolicyContext(policy);
+  return { worktree, fingerprint, sessDir, wsDir, state, policy, ctx };
+}
+
+/**
+ * Bootstrap a read-only session context for tools that only inspect state.
+ *
+ * Used by: status.
+ */
+export async function withReadOnlySession(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}) {
+  const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
+  const state = await readState(sessDir);
+  const policy = resolvePolicyFromState(state);
+  return { fingerprint, sessDir, state, policy };
+}
