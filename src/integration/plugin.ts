@@ -141,6 +141,13 @@ import {
   hashText,
   hasEvidenceReuse,
 } from './review-assurance.js';
+import {
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_ABORT,
+} from './tool-names.js';
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
@@ -192,8 +199,8 @@ export function buildLogSinks(
  * Tools that produce lifecycle events beyond the regular tool_call event.
  */
 const LIFECYCLE_TOOLS: Record<string, string> = {
-  flowguard_hydrate: 'session_created',
-  flowguard_abort_session: 'session_aborted',
+  [TOOL_FLOWGUARD_HYDRATE]: 'session_created',
+  [TOOL_FLOWGUARD_ABORT]: 'session_aborted',
 };
 
 /**
@@ -487,7 +494,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       }
 
       // Level 1+2+4: Enforcement for FlowGuard plan/implement verdict calls
-      if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return;
+      if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
 
       const eState = getEnforcementState(sessionId);
       const result = enforceBeforeVerdict(eState, toolName, args);
@@ -510,7 +517,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       // ── Review enforcement tracking (all tools) ─────────────────────────
       // Track FlowGuard tool responses for INDEPENDENT_REVIEW_REQUIRED signals
       // and Task calls to flowguard-reviewer subagent.
-      if (toolName === 'flowguard_plan' || toolName === 'flowguard_implement') {
+      if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
         try {
           const eState = getEnforcementState(sessionId);
           const args = ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
@@ -546,7 +553,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       // On non-strict failure: original output is preserved and the
       // LLM-driven Task path may continue. On strict failure: orchestration
       // blocks fail-closed with explicit error output.
-      if (toolName === 'flowguard_plan' || toolName === 'flowguard_implement') {
+      if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
         const rawOutput =
           typeof output?.output === 'string' ? output.output : JSON.stringify(output?.output ?? '');
 
@@ -584,7 +591,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                   'review:obligation_created',
                   {
                     obligationId: reviewCtx.obligationId,
-                    obligationType: toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                    obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                     iteration: reviewCtx.iteration,
                     planVersion: reviewCtx.planVersion,
                     criteriaVersion: reviewCtx.criteriaVersion,
@@ -599,7 +606,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                   ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
 
                 const prompt =
-                  toolName === 'flowguard_plan'
+                  toolName === TOOL_FLOWGUARD_PLAN
                     ? buildPlanReviewPrompt({
                         planText:
                           typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
@@ -793,7 +800,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
                           const invocation = buildInvocationEvidence({
                             obligationId: reviewCtx.obligationId,
-                            obligationType: toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                            obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                             parentSessionId: sessionId,
                             childSessionId: reviewerResult.sessionId,
                             promptHash,
@@ -826,10 +833,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                             : {
                                 obligationId: reviewCtx.obligationId,
                                 obligationType:
-                                  toolName === 'flowguard_plan' ? 'plan' : 'implement',
+                                  toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                                 parentSessionId: sessionId,
                                 childSessionId: reviewerResult.sessionId,
-                                agentType: 'flowguard-reviewer',
+                                agentType: REVIEWER_SUBAGENT_TYPE,
                                 promptHash,
                                 mandateDigest: REVIEW_MANDATE_DIGEST,
                                 criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -1072,7 +1079,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           }
 
           // ── 3. Emit decision receipt (successful /review-decision only) ──
-          if (toolName === 'flowguard_decision' && success && transitions.length > 0) {
+          if (toolName === TOOL_FLOWGUARD_DECISION && success && transitions.length > 0) {
             const firstTransition = transitions[0]!;
             const inferredVerdict =
               firstTransition.event === 'APPROVE'

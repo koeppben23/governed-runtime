@@ -36,6 +36,7 @@
  */
 
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
@@ -101,7 +102,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
         toolObligationId: { type: 'string' },
         iteration: { type: 'integer', minimum: 0 },
         planVersion: { type: 'integer', minimum: 1 },
-        reviewedBy: { type: 'string', const: 'flowguard-reviewer' },
+        reviewedBy: { type: 'string', const: REVIEWER_SUBAGENT_TYPE },
       },
       required: [
         'mandateDigest',
@@ -562,7 +563,7 @@ export function extractReviewContext(
   }
 
   // Validate against the tool response fields for consistency
-  if (toolName === 'flowguard_plan') {
+  if (toolName === TOOL_FLOWGUARD_PLAN) {
     const selfReviewIteration = toolOutput.selfReviewIteration;
     if (typeof selfReviewIteration === 'number' && selfReviewIteration !== iteration) {
       return null; // Inconsistent — fail-closed

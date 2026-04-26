@@ -48,8 +48,10 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+
 /** Tools that can trigger independent review. */
-export type ReviewableTool = 'flowguard_plan' | 'flowguard_implement';
+export type ReviewableTool = typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT;
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
@@ -116,7 +118,7 @@ export type EnforcementResult =
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
 
 /** The subagent type name for the FlowGuard reviewer. */
-export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+export { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
 
 /**
  * Minimum prompt length for subagent calls (Level 3).
@@ -157,7 +159,7 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return;
+  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
 
   const reviewTool = toolName as ReviewableTool;
   const parsed = safeParse(output);
@@ -379,7 +381,7 @@ export function enforceBeforeVerdict(
   toolName: string,
   args: Record<string, unknown>,
 ): EnforcementResult {
-  if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') {
+  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) {
     return { allowed: true };
   }
 
@@ -495,7 +497,7 @@ export function recordPluginReview(
   capturedFindings: CapturedFindings | null,
   now: string,
 ): boolean {
-  if (toolName !== 'flowguard_plan' && toolName !== 'flowguard_implement') return false;
+  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return false;
 
   const reviewTool = toolName as ReviewableTool;
   const pending = state.pendingReviews.get(reviewTool);

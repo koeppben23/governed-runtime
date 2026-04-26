@@ -12,6 +12,7 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../state/evidence.js';
+import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
 
 export const REVIEW_CRITERIA_VERSION = 'p35-v1';
 
@@ -99,7 +100,7 @@ export function buildInvocationEvidence(input: {
     obligationType: input.obligationType,
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
-    agentType: 'flowguard-reviewer',
+    agentType: REVIEWER_SUBAGENT_TYPE,
     promptHash: input.promptHash,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -137,7 +138,7 @@ export function validateStrictAttestation(
     att.toolObligationId !== expected.obligationId ||
     att.iteration !== expected.iteration ||
     att.planVersion !== expected.planVersion ||
-    att.reviewedBy !== 'flowguard-reviewer'
+    att.reviewedBy !== REVIEWER_SUBAGENT_TYPE
   ) {
     return 'SUBAGENT_MANDATE_MISMATCH';
   }
