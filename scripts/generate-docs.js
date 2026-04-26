@@ -23,6 +23,7 @@ const version = readFileSync(versionFile, 'utf-8').trim();
 const filesToUpdate = [
   'README.md',
   'PRODUCT_IDENTITY.md',
+  'PRODUCT_ONE_PAGER.md',
   'CHANGELOG.md',
   'docs/installation.md',
   'docs/air-gapped-guide.md',
@@ -65,6 +66,14 @@ function replaceVersion(content) {
   content = content.replace(
     new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,
+  );
+  content = content.replace(
+    /^Current snapshot: v[\d.]+$/gm,
+    `Current snapshot: ${version}`,
+  );
+  content = content.replace(
+    /^\*\*Current snapshot: v[\d.]+\*\*$/gm,
+    `**Current snapshot: ${version}**`,
   );
   return content;
 }
