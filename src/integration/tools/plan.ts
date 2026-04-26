@@ -247,6 +247,15 @@ export const plan: ToolDefinition = {
           reviewMode: subagentEnabled ? 'subagent' : 'self',
           ...(nextObligation
             ? {
+                reviewObligation: {
+                  obligationId: nextObligation.obligationId,
+                  obligationType: 'plan' as const,
+                  iteration: nextObligation.iteration,
+                  planVersion: nextObligation.planVersion,
+                  criteriaVersion: nextObligation.criteriaVersion,
+                  mandateDigest: nextObligation.mandateDigest,
+                },
+                // Backward-compat flat fields
                 reviewObligationId: nextObligation.obligationId,
                 reviewObligationIteration: nextObligation.iteration,
                 reviewObligationPlanVersion: nextObligation.planVersion,
@@ -450,6 +459,14 @@ export const plan: ToolDefinition = {
             reviewMode: subagentEnabled ? 'subagent' : 'self',
             ...(nextObligation
               ? {
+                  reviewObligation: {
+                    obligationId: nextObligation.obligationId,
+                    obligationType: 'plan' as const,
+                    iteration: nextObligation.iteration,
+                    planVersion: nextObligation.planVersion,
+                    criteriaVersion: nextObligation.criteriaVersion,
+                    mandateDigest: nextObligation.mandateDigest,
+                  },
                   reviewObligationId: nextObligation.obligationId,
                   reviewObligationIteration: nextObligation.iteration,
                   reviewObligationPlanVersion: nextObligation.planVersion,

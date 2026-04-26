@@ -540,37 +540,57 @@ export function extractReviewContext(
   criteriaVersion: string;
   mandateDigest: string;
 } | null {
-  const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
-
-  // Prefer structured obligation fields (P1a). Fall back to regex extraction
-  // from the next text for backward compatibility with non-structured outputs.
-  const iteration =
-    typeof toolOutput.reviewObligationIteration === 'number'
-      ? toolOutput.reviewObligationIteration
-      : (() => {
-          const match = next.match(/iteration[=:\s]+(\d+)/i);
-          return match ? parseInt(match[1]!, 10) : null;
-        })();
-
-  const planVersion =
-    typeof toolOutput.reviewObligationPlanVersion === 'number'
-      ? toolOutput.reviewObligationPlanVersion
-      : (() => {
-          const match = next.match(/planVersion[=:\s]+(\d+)/i);
-          return match ? parseInt(match[1]!, 10) : null;
-        })();
-
-  if (iteration === null || planVersion === null) return null;
+  // P1a: Prefer structured reviewObligation object, fall back to flat fields,
+  // then to regex extraction from next text for backward compatibility.
+  const obl = toolOutput.reviewObligation as
+    | {
+        obligationId?: unknown;
+        obligationType?: unknown;
+        iteration?: unknown;
+        planVersion?: unknown;
+        criteriaVersion?: unknown;
+        mandateDigest?: unknown;
+      }
+    | undefined;
 
   const obligationId =
-    typeof toolOutput.reviewObligationId === 'string' ? toolOutput.reviewObligationId : null;
+    (obl?.obligationId as string | undefined) ??
+    (typeof toolOutput.reviewObligationId === 'string' ? toolOutput.reviewObligationId : null);
   const criteriaVersion =
-    typeof toolOutput.reviewCriteriaVersion === 'string' ? toolOutput.reviewCriteriaVersion : null;
+    (obl?.criteriaVersion as string | undefined) ??
+    (typeof toolOutput.reviewCriteriaVersion === 'string'
+      ? toolOutput.reviewCriteriaVersion
+      : null);
   const mandateDigest =
-    typeof toolOutput.reviewMandateDigest === 'string' ? toolOutput.reviewMandateDigest : null;
-  if (!obligationId || !criteriaVersion || !mandateDigest) {
-    return null;
+    (obl?.mandateDigest as string | undefined) ??
+    (typeof toolOutput.reviewMandateDigest === 'string' ? toolOutput.reviewMandateDigest : null);
+
+  let iteration: number | null =
+    (obl?.iteration as number | undefined) ??
+    (typeof toolOutput.reviewObligationIteration === 'number'
+      ? toolOutput.reviewObligationIteration
+      : null);
+  let planVersion: number | null =
+    (obl?.planVersion as number | undefined) ??
+    (typeof toolOutput.reviewObligationPlanVersion === 'number'
+      ? toolOutput.reviewObligationPlanVersion
+      : null);
+
+  const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
+
+  // Regex fallback for iteration/planVersion (deprecated, non-structured outputs only)
+  if (iteration === null) {
+    const match = next.match(/iteration[=:\s]+(\d+)/i);
+    if (!match) return null;
+    iteration = parseInt(match[1]!, 10);
   }
+  if (planVersion === null) {
+    const match = next.match(/planVersion[=:\s]+(\d+)/i);
+    if (!match) return null;
+    planVersion = parseInt(match[1]!, 10);
+  }
+
+  if (!obligationId || !criteriaVersion || !mandateDigest) return null;
 
   // Validate against the tool response fields for consistency
   if (toolName === TOOL_FLOWGUARD_PLAN) {

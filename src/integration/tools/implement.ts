@@ -238,6 +238,14 @@ export const implement: ToolDefinition = {
           reviewMode: subagentEnabled ? 'subagent' : 'self',
           ...(nextObligation
             ? {
+                reviewObligation: {
+                  obligationId: nextObligation.obligationId,
+                  obligationType: 'implement' as const,
+                  iteration: nextObligation.iteration,
+                  planVersion: nextObligation.planVersion,
+                  criteriaVersion: nextObligation.criteriaVersion,
+                  mandateDigest: nextObligation.mandateDigest,
+                },
                 reviewObligationId: nextObligation.obligationId,
                 reviewObligationIteration: nextObligation.iteration,
                 reviewObligationPlanVersion: nextObligation.planVersion,
