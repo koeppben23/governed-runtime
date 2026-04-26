@@ -43,6 +43,8 @@ const filesToUpdate = [
   'docs/security-hardening.md',
   'docs/deployment-model.md',
   'docs/distribution-model.md',
+  'docs/independent-review.md',
+  'docs/experimental-acp.md',
   'docs/phases.md',
   'docs/profiles.md',
   'docs/commands.md',
@@ -54,8 +56,13 @@ const filesToUpdate = [
 
 function replaceVersion(content) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // First: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
-  // This must run BEFORE the normal replacements
+  // First: repair trailing underscore pattern: "_FlowGuard Version: 1.2.0-rc.1_" → "FlowGuard Version: 1.2.0-rc.1"
+  // This must run before the multi-suffix repair
+  content = content.replace(
+    /_FlowGuard Version: [\d.]+(?:-[a-zA-Z0-9.]+)?_/g,
+    `FlowGuard Version: ${version}`,
+  );
+  // Second: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
   content = content.replace(
     /([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g,
     '$1',

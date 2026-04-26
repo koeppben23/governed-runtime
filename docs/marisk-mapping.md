@@ -192,4 +192,4 @@ FlowGuard integrates with enterprise compliance programs through:
 
 _Last Updated: 2026-04-19_
 
-_FlowGuard Version: 1.2.0-rc.1_
+FlowGuard Version: 1.2.0-rc.1
