@@ -79,7 +79,6 @@ import {
   writeState,
   appendAuditEvent,
   readAuditTrail,
-  readConfig,
 } from '../adapters/persistence.js';
 import {
   computeFingerprint,
@@ -100,11 +99,8 @@ import {
 import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { createPluginLogger } from './plugin-logging.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
-import type { FlowGuardConfig } from '../config/flowguard-config.js';
-import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
-import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
-import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { SessionState } from '../state/schema.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
@@ -151,48 +147,6 @@ import {
 
 /** FlowGuard tool name prefix. Only tools with this prefix are audited. */
 const FG_PREFIX = 'flowguard_';
-
-/**
- * Build logging sinks based on config mode, client, and workspace.
- *
- * @param config - FlowGuard config with logging.mode, logging.level, logging.retentionDays
- * @param client - OpenCode client (optional, for UI logging)
- * @param workspaceDir - Absolute workspace directory (optional, for file logging)
- * @returns Array of LogSink functions
- */
-export function buildLogSinks(
-  config: { logging: { mode: 'file' | 'ui' | 'both'; level: string; retentionDays: number } },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: { app?: { log: (msg: any) => Promise<unknown> } } | undefined,
-  workspaceDir: string | null,
-): LogSink[] {
-  const sinks: LogSink[] = [];
-  const mode = config.logging.mode;
-
-  if (mode === 'file' || mode === 'both') {
-    if (workspaceDir) {
-      sinks.push(createFileSink(workspaceDir, config.logging.retentionDays));
-    }
-  }
-
-  if (mode === 'ui' || mode === 'both') {
-    if (client?.app?.log) {
-      const clientLog = client.app.log.bind(client.app);
-      sinks.push((entry: LogEntry) => {
-        clientLog({
-          body: {
-            service: entry.service,
-            level: entry.level,
-            message: entry.message,
-            ...(entry.extra ? { extra: entry.extra } : {}),
-          },
-        }).catch(() => {});
-      });
-    }
-  }
-
-  return sinks;
-}
 
 /**
  * Map tool names to lifecycle actions.
@@ -247,38 +201,14 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   }
 
   // ── Config + Logger initialization ──────────────────────────────────────
-  // Read config once at plugin init. Failures fall back to defaults — never block.
-  let config: FlowGuardConfig;
+  // Resolved via plugin-logging.ts from workspace config. Falls back to defaults.
+  // resolveFingerprint may fail — do not block plugin startup.
   try {
-    // Resolve workspace to read config from workspace dir
-    const fp = await resolveFingerprint();
-    if (fp && cachedWsDir) {
-      config = await readConfig(cachedWsDir);
-    } else {
-      config = DEFAULT_CONFIG;
-    }
+    await resolveFingerprint();
   } catch {
-    // Config fallback for logging only - runtime behavior uses validated config
-    config = DEFAULT_CONFIG;
+    // logging init fallback only; do not block plugin startup
   }
-
-  // Create logger: supports file, ui, or both modes, filtered by config level.
-  // File sink: {workspace}/.opencode/logs/flowguard-{date}.log (JSONL)
-  // UI sink: delegates to client.app.log() (OpenCode UI)
-  // Non-blocking: logging errors never block the plugin
-  const sinks = buildLogSinks(config, client, cachedWsDir);
-
-  const log = sinks.length > 0 ? createLogger(config.logging.level, sinks) : createNoopLogger();
-
-  log.info('plugin', 'initialized', {
-    worktree: auditWorktree ?? 'none',
-    logMode: config.logging.mode,
-    logLevel: config.logging.level,
-    logRetentionDays: config.logging.retentionDays,
-    logDir: cachedWsDir ? getLogDir(cachedWsDir) : null,
-    hasConfigFile: config !== DEFAULT_CONFIG,
-    fingerprint: cachedFingerprint ?? 'unknown',
-  });
+  const { log, config } = await createPluginLogger(client, cachedWsDir, auditWorktree, cachedFingerprint);
 
   // Hash chain state — cached in closure, initialized on first audit call.
   // Only updated when policy.audit.enableChainHash is true.
