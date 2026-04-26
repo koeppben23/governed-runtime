@@ -110,7 +110,11 @@ describe('hydrate rail', () => {
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
     it('blocks on empty sessionId', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '' } }, ctx);
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '' } },
+        ctx,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('MISSING_SESSION_ID');
@@ -118,7 +122,11 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on empty worktree', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, worktree: '' } }, ctx);
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, worktree: '' } },
+        ctx,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('MISSING_WORKTREE');
@@ -126,12 +134,20 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on whitespace-only sessionId', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '   ' } }, ctx);
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, sessionId: '   ' } },
+        ctx,
+      );
       expect(result.kind).toBe('blocked');
     });
 
     it('blocks on invalid fingerprint', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: 'not-valid-hex!' } }, ctx);
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: 'not-valid-hex!' } },
+        ctx,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('INVALID_FINGERPRINT');
@@ -139,7 +155,11 @@ describe('hydrate rail', () => {
     });
 
     it('blocks on empty fingerprint', () => {
-      const result = executeHydrate(null, { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: '' } }, ctx);
+      const result = executeHydrate(
+        null,
+        { ...HYDRATE_INPUT, session: { ...HYDRATE_INPUT.session, fingerprint: '' } },
+        ctx,
+      );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('INVALID_FINGERPRINT');
@@ -170,7 +190,10 @@ describe('hydrate rail', () => {
         null,
         {
           ...HYDRATE_INPUT,
-          profile: { ...HYDRATE_INPUT.profile, repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] } },
+          profile: {
+            ...HYDRATE_INPUT.profile,
+            repoSignals: { files: [], packageFiles: ['pom.xml'], configFiles: [] },
+          },
         },
         ctx,
       );
@@ -205,9 +228,7 @@ describe('hydrate rail', () => {
     it('custom activeChecks override profile defaults', () => {
       const result = executeHydrate(
         null,
-        { ...HYDRATE_INPUT,
-          profile: { ...HYDRATE_INPUT.profile, activeChecks: ['custom_check'] },
-        },
+        { ...HYDRATE_INPUT, profile: { ...HYDRATE_INPUT.profile, activeChecks: ['custom_check'] } },
         ctx,
       );
       expect(result.kind).toBe('ok');

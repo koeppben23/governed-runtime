@@ -721,12 +721,15 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       }> = [];
       let success = true;
       let errorMessage: string | undefined;
-      const parsed = parseToolResult(typeof output === 'object' && output !== null && 'output' in output ? (output as { output: unknown }).output : output);
+      const parsed = parseToolResult(
+        typeof output === 'object' && output !== null && 'output' in output
+          ? (output as { output: unknown }).output
+          : output,
+      );
       if (parsed) {
         phase = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
         success = parsed.error !== true;
-        errorMessage =
-          typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
+        errorMessage = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
 
         const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)
           ?.transitions;
@@ -837,8 +840,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               {
                 code: 'DECISION_RECEIPT_ACTOR_MISSING',
                 message: 'Decision receipt skipped because decidedBy is missing',
-                recoveryHint:
-                  'Ensure /review-decision output includes reviewDecision.decidedBy',
+                recoveryHint: 'Ensure /review-decision output includes reviewDecision.decidedBy',
                 errorPhase: firstTransition.from,
               },
               now,
@@ -892,10 +894,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const lifecycleEvt = createLifecycleEvent(
           sessionId,
           {
-            action: lifecycleAction as
-              | 'session_created'
-              | 'session_completed'
-              | 'session_aborted',
+            action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
             finalPhase,
             ...(lifecycleReason ? { reason: lifecycleReason } : {}),
           },
