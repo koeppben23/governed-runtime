@@ -17,7 +17,7 @@ import {
   enrichDetectedItem,
   enrichDatabaseItem,
   mapComposeImageToDatabase,
-} from '../stack-detection.js';
+} from '../stack-detection-utils.js';
 import {
   POM_ARTIFACT_RULES,
   GRADLE_PLUGIN_RULES,
