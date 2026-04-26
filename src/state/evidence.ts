@@ -216,7 +216,7 @@ export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
 export const ReviewAssuranceState = z.object({
   obligations: z.array(ReviewObligation),
   invocations: z.array(ReviewInvocationEvidence),
-});
+}).readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────
