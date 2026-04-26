@@ -31,27 +31,26 @@ import {
   LANGUAGE_EXTENSIONS,
   BUILD_TOOL_RULES,
   ROOT_FIRST_BUILD_TOOLS,
-  PYTHON_REQUIREMENTS_FILES,
-  PYTHON_ECOSYSTEM_PACKAGES,
   type ArtifactCategory,
-  JS_DATABASE_DEPS,
   DOCKER_IMAGE_DATABASES,
   FRAMEWORK_CONFIG_RULES,
-  JS_ECOSYSTEM_DEPS,
-  PACKAGE_MANAGER_RE,
 } from './stack-detection-rules.js';
 import {
   extractFromPomXml,
-  enrichRuntimeVersion,
   extractFromGradleBuild,
   extractArtifactsFromPomXml,
   extractArtifactsFromGradle,
   extractDatabasesFromDockerCompose,
 } from './languages/java.js';
-import { refineFromPackageManagerField, refineBuildToolFromLockfiles, extractFromPackageJson, extractFromTsConfig } from './languages/js-ecosystem.js';
+import {
+  refineFromPackageManagerField,
+  refineBuildToolFromLockfiles,
+  extractFromPackageJson,
+  extractFromTsConfig,
+} from './languages/js-ecosystem.js';
 import { extractFromNodeVersionFiles } from './languages/node.js';
 import { extractFromGoMod } from './languages/go.js';
-import { extractFromPythonRootFiles, hasRequirementEntry } from './languages/python.js';
+import { extractFromPythonRootFiles } from './languages/python.js';
 import { extractFromRustRootFiles } from './languages/rust.js';
 
 /**
@@ -139,7 +138,10 @@ function enforceRootFirstBuildTools(
 }
 
 /** Add root-level build tools derived from lock/manifests not covered by packageFiles. */
-export function addRootFirstBuildTools(buildTools: DetectedItem[], rootFiles: ReadonlySet<string>): void {
+export function addRootFirstBuildTools(
+  buildTools: DetectedItem[],
+  rootFiles: ReadonlySet<string>,
+): void {
   if (rootFiles.has('uv.lock') && !findItem(buildTools, 'uv')) {
     buildTools.push({
       id: 'uv',

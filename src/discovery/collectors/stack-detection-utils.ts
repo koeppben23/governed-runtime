@@ -37,7 +37,6 @@ export function findItem(items: DetectedItem[], id: string): DetectedItem | unde
   return items.find((i) => i.id === id);
 }
 
-
 export function resolveTargetArray(
   category: ArtifactCategory,
   testFrameworks: DetectedItem[],

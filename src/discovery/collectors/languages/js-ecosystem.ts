@@ -6,11 +6,21 @@
 
 import type { DetectedItem } from '../../types.js';
 import type { ReadFileFn } from '../stack-detection-utils.js';
-import { safeRead, findItem, setVersion, captureGroup, enrichOrCreateItem } from '../stack-detection-utils.js';
+import {
+  safeRead,
+  findItem,
+  setVersion,
+  captureGroup,
+  enrichOrCreateItem,
+} from '../stack-detection-utils.js';
 import { enrichDatabaseItem, setCompilerTarget } from '../stack-detection.js';
 import { enrichRuntimeVersion } from './java.js';
 import { getRootBasename } from '../../repo-paths.js';
-import { PACKAGE_MANAGER_RE, BUILD_TOOL_RULES, JS_ECOSYSTEM_DEPS, JS_DATABASE_DEPS } from '../stack-detection-rules.js';
+import {
+  PACKAGE_MANAGER_RE,
+  JS_ECOSYSTEM_DEPS,
+  JS_DATABASE_DEPS,
+} from '../stack-detection-rules.js';
 import { LOCKFILE_RULES } from '../stack-detection.js';
 
 export async function refineFromPackageManagerField(
@@ -183,7 +193,10 @@ export async function extractFromPackageJson(
     enrichDatabaseItem(databases, rule.id, `package.json:${sourceKey}.${rule.pkg}`);
   }
 }
-export async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem[]): Promise<void> {
+export async function extractFromTsConfig(
+  readFile: ReadFileFn,
+  languages: DetectedItem[],
+): Promise<void> {
   const content = await safeRead(readFile, 'tsconfig.json');
   if (!content) return;
 

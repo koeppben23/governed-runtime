@@ -6,7 +6,14 @@
 
 import type { DetectedItem } from '../../types.js';
 import type { ReadFileFn } from '../stack-detection-utils.js';
-import { captureGroup, findItem, safeRead, setVersion, enrichOrCreateItem, setCompilerTarget } from '../stack-detection-utils.js';
+import {
+  captureGroup,
+  findItem,
+  safeRead,
+  setVersion,
+  enrichOrCreateItem,
+  setCompilerTarget,
+} from '../stack-detection-utils.js';
 import { collectRootBasenames } from '../stack-detection.js';
 
 export async function extractFromRustRootFiles(

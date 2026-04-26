@@ -6,7 +6,13 @@
 
 import type { DetectedItem } from '../../types.js';
 import type { ReadFileFn } from '../stack-detection-utils.js';
-import { captureGroup, findItem, safeRead, setVersion, enrichOrCreateItem } from '../stack-detection-utils.js';
+import {
+  captureGroup,
+  findItem,
+  safeRead,
+  setVersion,
+  enrichOrCreateItem,
+} from '../stack-detection-utils.js';
 import { collectRootBasenames } from '../stack-detection.js';
 import { PYTHON_REQUIREMENTS_FILES, PYTHON_ECOSYSTEM_PACKAGES } from '../stack-detection-rules.js';
 

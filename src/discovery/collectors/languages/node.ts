@@ -6,7 +6,7 @@
 
 import type { DetectedItem } from '../../types.js';
 import type { ReadFileFn } from '../stack-detection-utils.js';
-import { findItem, safeRead, setVersion } from '../stack-detection-utils.js';
+import { safeRead } from '../stack-detection-utils.js';
 import { enrichRuntimeVersion } from './java.js';
 
 export async function extractFromNodeVersionFiles(
