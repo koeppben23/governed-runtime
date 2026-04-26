@@ -39,9 +39,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   const auditWorktree = worktree || directory;
 
   // ── Workspace + Logger ──────────────────────────────────────────────────
-  const config = {
-    policy: { defaultMode: undefined as 'solo' | 'team' | 'team-ci' | 'regulated' | undefined },
-  };
   const ws = createWorkspace({ auditWorktree });
 
   try {
@@ -50,7 +47,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     /* non-blocking */
   }
 
-  const { log } = await createPluginLogger(
+  const { log, config } = await createPluginLogger(
     client,
     ws.cachedWsDir,
     auditWorktree,
@@ -108,7 +105,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
         if (st === REVIEWER_SUBAGENT_TYPE) {
           const eState = ws.getEnforcementState(sessionId);
-          let strictEnforcement = false;
+          let strictEnforcement = true;
           try {
             const sessDir = ws.getSessionDir(sessionId);
             if (sessDir) {
@@ -116,7 +113,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 (await readState(sessDir))?.policySnapshot?.selfReview?.strictEnforcement === true;
             }
           } catch {
-            /* non-strict */
+            /* fail-closed */
           }
           const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
           if (!result.allowed) {

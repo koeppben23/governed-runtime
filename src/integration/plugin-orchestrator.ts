@@ -45,6 +45,7 @@ import {
 import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import type { SessionState } from '../state/schema.js';
 
 /**
@@ -303,7 +304,7 @@ export async function runReviewOrchestration(
                     obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                     parentSessionId: sessionId,
                     childSessionId: reviewerResult.sessionId,
-                    agentType: 'flowguard-reviewer',
+                    agentType: REVIEWER_SUBAGENT_TYPE,
                     promptHash,
                     mandateDigest: REVIEW_MANDATE_DIGEST,
                     criteriaVersion: REVIEW_CRITERIA_VERSION,
