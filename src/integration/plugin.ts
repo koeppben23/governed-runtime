@@ -109,8 +109,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           try {
             const sessDir = ws.getSessionDir(sessionId);
             if (sessDir) {
-              strictEnforcement =
-                (await readState(sessDir))?.policySnapshot?.selfReview?.strictEnforcement === true;
+              const state = await readState(sessDir);
+              if (state) {
+                strictEnforcement = state.policySnapshot?.selfReview?.strictEnforcement === true;
+              }
             }
           } catch {
             /* fail-closed */
