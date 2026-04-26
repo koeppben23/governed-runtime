@@ -330,6 +330,11 @@ export async function withReadOnlySession(context: {
 }) {
   const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
   const state = await readState(sessDir);
+
+  if (!state) {
+    return { fingerprint, sessDir, state: null, policy: null };
+  }
+
   const policy = resolvePolicyFromState(state);
   return { fingerprint, sessDir, state, policy };
 }
