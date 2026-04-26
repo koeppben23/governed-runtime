@@ -176,10 +176,25 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     cachedFingerprint,
   );
 
-  // Hash chain state — cached in closure, initialized on first audit call.
-  // Only updated when policy.audit.enableChainHash is true.
-  let lastHash: string | null = null;
-  let chainInitialized = false;
+  // Hash chain state — per-session, not global.
+  // Each session maintains an independent audit chain. The previous global
+  // lastHash/chainInitialized caused cross-session chain contamination.
+  type MutableChainState = {
+    initialized: boolean;
+    lastHash: string | null;
+  };
+
+  const chainStates = new Map<string, MutableChainState>();
+
+  function getChainState(sessionId: string): MutableChainState {
+    let state = chainStates.get(sessionId);
+    if (!state) {
+      state = { initialized: false, lastHash: null };
+      chainStates.set(sessionId, state);
+    }
+    return state;
+  }
+
   const sessionQueues = new Map<string, Promise<void>>();
   const decisionSequenceCache = new Map<string, number>();
 
@@ -223,29 +238,28 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   };
 
   /**
-   * Initialize the chain hash by reading the existing trail.
-   * Called once on first audit event, then cached.
+   * Initialize the chain hash for a session by reading the existing trail.
+   * Chain state is per-session — each session maintains an independent audit chain.
    */
-  async function initChain(sessDir: string | null): Promise<string> {
-    if (chainInitialized && lastHash !== null) return lastHash;
+  async function initChain(sessDir: string | null, sessionId: string): Promise<string> {
+    const cs = getChainState(sessionId);
+    if (cs.initialized && cs.lastHash !== null) return cs.lastHash;
 
     try {
       if (!sessDir) {
-        lastHash = GENESIS_HASH;
-        chainInitialized = true;
-        return lastHash;
+        cs.lastHash = GENESIS_HASH;
+        cs.initialized = true;
+        return cs.lastHash;
       }
 
       const { events } = await readAuditTrail(sessDir);
-      // readAuditTrail returns AuditEvent objects — cast to raw records for getLastChainHash
-      lastHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
-      chainInitialized = true;
-      return lastHash;
+      cs.lastHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
+      cs.initialized = true;
+      return cs.lastHash;
     } catch {
-      // Trail might not exist yet — start fresh
-      lastHash = GENESIS_HASH;
-      chainInitialized = true;
-      return lastHash;
+      cs.lastHash = GENESIS_HASH;
+      cs.initialized = true;
+      return cs.lastHash;
     }
   }
 
@@ -262,10 +276,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     event: ChainedAuditEvent,
     sessDir: string,
     trackChain: boolean,
+    sessionId: string,
   ): Promise<void> {
     await appendAuditEvent(sessDir, event);
     if (trackChain) {
-      lastHash = event.chainHash;
+      getChainState(sessionId).lastHash = event.chainHash;
     }
   }
 

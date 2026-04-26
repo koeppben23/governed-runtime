@@ -42,11 +42,12 @@ export interface AuditDeps {
     };
     state: SessionState | null;
   }>;
-  initChain(sessDir: string | null): Promise<string>;
+  initChain(sessDir: string | null, sessionId: string): Promise<string>;
   appendAndTrack(
     event: { chainHash?: string },
     sessDir: string,
     enableChainHash: boolean,
+    sessionId: string,
   ): Promise<void>;
   nextDecisionSequence(sessDir: string, sessionId: string): Promise<number>;
   log: {
@@ -93,7 +94,7 @@ export async function runAudit(
 
     let prevHash: string;
     if (enableChainHash) {
-      prevHash = await deps.initChain(sessDir);
+      prevHash = await deps.initChain(sessDir, sessionId);
     } else {
       prevHash = GENESIS_HASH;
     }
@@ -146,7 +147,7 @@ export async function runAudit(
         prevHash,
         actorInfo: state?.actorInfo,
       });
-      await deps.appendAndTrack(toolCallEvt, sessDir, enableChainHash);
+      await deps.appendAndTrack(toolCallEvt, sessDir, enableChainHash, sessionId);
       if (enableChainHash) prevHash = toolCallEvt.chainHash!;
       deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase });
     }
@@ -169,7 +170,7 @@ export async function runAudit(
           t.at,
           prevHash,
         );
-        await deps.appendAndTrack(transEvt, sessDir, enableChainHash);
+        await deps.appendAndTrack(transEvt, sessDir, enableChainHash, sessionId);
         if (enableChainHash) prevHash = transEvt.chainHash!;
       }
     }
@@ -226,7 +227,7 @@ export async function runAudit(
             now,
             prevHash,
           );
-          await deps.appendAndTrack(missingActorEvt, sessDir, enableChainHash);
+          await deps.appendAndTrack(missingActorEvt, sessDir, enableChainHash, sessionId);
           if (enableChainHash) prevHash = missingActorEvt.chainHash!;
         } else {
           const decisionEvt = createDecisionEvent({
@@ -249,7 +250,7 @@ export async function runAudit(
             prevHash,
             actorInfo: state?.actorInfo,
           });
-          await deps.appendAndTrack(decisionEvt, sessDir, enableChainHash);
+          await deps.appendAndTrack(decisionEvt, sessDir, enableChainHash, sessionId);
           if (enableChainHash) prevHash = decisionEvt.chainHash!;
         }
       }
@@ -283,7 +284,7 @@ export async function runAudit(
         prevHash,
         state?.actorInfo,
       );
-      await deps.appendAndTrack(lifecycleEvt, sessDir, enableChainHash);
+      await deps.appendAndTrack(lifecycleEvt, sessDir, enableChainHash, sessionId);
       if (enableChainHash) prevHash = lifecycleEvt.chainHash!;
     }
 
@@ -305,7 +306,7 @@ export async function runAudit(
           prevHash,
           state?.actorInfo,
         );
-        await deps.appendAndTrack(completionEvt, sessDir, enableChainHash);
+        await deps.appendAndTrack(completionEvt, sessDir, enableChainHash, sessionId);
         if (enableChainHash) prevHash = completionEvt.chainHash!;
       } else {
         deps.log.debug('audit', 'session_completed handled by tool layer', {
@@ -342,7 +343,7 @@ export async function runAudit(
         now,
         prevHash,
       );
-      await deps.appendAndTrack(errorEvt, sessDir, enableChainHash);
+      await deps.appendAndTrack(errorEvt, sessDir, enableChainHash, sessionId);
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
