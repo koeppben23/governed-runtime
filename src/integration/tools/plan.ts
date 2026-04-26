@@ -248,6 +248,8 @@ export const plan: ToolDefinition = {
           ...(nextObligation
             ? {
                 reviewObligationId: nextObligation.obligationId,
+                reviewObligationIteration: nextObligation.iteration,
+                reviewObligationPlanVersion: nextObligation.planVersion,
                 reviewCriteriaVersion: nextObligation.criteriaVersion,
                 reviewMandateDigest: nextObligation.mandateDigest,
               }
@@ -449,6 +451,8 @@ export const plan: ToolDefinition = {
             ...(nextObligation
               ? {
                   reviewObligationId: nextObligation.obligationId,
+                  reviewObligationIteration: nextObligation.iteration,
+                  reviewObligationPlanVersion: nextObligation.planVersion,
                   reviewCriteriaVersion: nextObligation.criteriaVersion,
                   reviewMandateDigest: nextObligation.mandateDigest,
                 }
