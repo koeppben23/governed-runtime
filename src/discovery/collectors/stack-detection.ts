@@ -10,6 +10,23 @@
 import * as path from 'node:path';
 import type { CollectorInput, CollectorOutput, StackInfo, DetectedItem } from '../types.js';
 import { getRootBasename } from '../repo-paths.js';
+
+/**
+ * Extraction context — bundles all detection results for version extraction.
+ */
+export interface ExtractionContext {
+  readonly readFile: ReadFileFn;
+  readonly languages: DetectedItem[];
+  readonly frameworks: DetectedItem[];
+  readonly runtimes: DetectedItem[];
+  readonly testFrameworks: DetectedItem[];
+  readonly tools: DetectedItem[];
+  readonly qualityTools: DetectedItem[];
+  readonly databases: DetectedItem[];
+  readonly allFiles: readonly string[];
+  readonly buildTools: DetectedItem[];
+}
+
 import {
   LANGUAGE_EXTENSIONS,
   BUILD_TOOL_RULES,
