@@ -99,11 +99,7 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { createPluginLogger } from './plugin-logging.js';
-import {
-  parseToolResult,
-  strictBlockedOutput,
-  getToolArgs,
-} from './plugin-helpers.js';
+import { parseToolResult, strictBlockedOutput, getToolArgs } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { blockObligation } from './plugin-review-state.js';
@@ -125,10 +121,8 @@ import {
 } from './review-enforcement.js';
 
 // Review orchestrator — deterministic subagent invocation via SDK
-import {
-} from './review-orchestrator.js';
-import {
-} from './review-assurance.js';
+import {} from './review-orchestrator.js';
+import {} from './review-assurance.js';
 import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_IMPLEMENT,

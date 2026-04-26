@@ -101,8 +101,7 @@ export async function runReviewOrchestration(
     const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
     const reviewCtx = extractReviewContext(toolName, parsedOutput);
     if (!reviewCtx) {
-      strictEnforcement =
-        sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
       if (strictEnforcement) {
         output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
           reason: 'review context missing for strict orchestration',
@@ -111,8 +110,7 @@ export async function runReviewOrchestration(
       return;
     }
 
-    strictEnforcement =
-      sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+    strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
     await deps.updateReviewAssurance(sessDir, (s, now2) =>
       updateObligation(s, reviewCtx.obligationId, (item) => ({
@@ -142,8 +140,7 @@ export async function runReviewOrchestration(
     const prompt =
       toolName === TOOL_FLOWGUARD_PLAN
         ? buildPlanReviewPrompt({
-            planText:
-              typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+            planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
             ticketText,
             iteration: reviewCtx.iteration,
             planVersion: reviewCtx.planVersion,
@@ -191,7 +188,8 @@ export async function runReviewOrchestration(
         );
         if (strictEnforcement) {
           await deps.blockReviewOutcome(
-            sessDir, sessionId,
+            sessDir,
+            sessionId,
             String(parsedOutput.phase ?? sessionState.phase),
             reviewCtx.obligationId,
             'STRICT_REVIEW_ORCHESTRATION_FAILED',
@@ -211,7 +209,8 @@ export async function runReviewOrchestration(
           const att = parsedFindings.data.attestation;
           if (!att) {
             await deps.blockReviewOutcome(
-              sessDir, sessionId,
+              sessDir,
+              sessionId,
               String(parsedOutput.phase ?? sessionState.phase),
               reviewCtx.obligationId,
               'SUBAGENT_MANDATE_MISSING',
@@ -227,7 +226,8 @@ export async function runReviewOrchestration(
             att.mandateDigest !== REVIEW_MANDATE_DIGEST
           ) {
             await deps.blockReviewOutcome(
-              sessDir, sessionId,
+              sessDir,
+              sessionId,
               String(parsedOutput.phase ?? sessionState.phase),
               reviewCtx.obligationId,
               'SUBAGENT_MANDATE_MISMATCH',
@@ -251,13 +251,7 @@ export async function runReviewOrchestration(
             let reusedEvidence = false;
             await deps.updateReviewAssurance(sessDir, (s, now2) => {
               const assurance = ensureReviewAssurance(s.reviewAssurance);
-              if (
-                hasEvidenceReuse(
-                  assurance.invocations,
-                  reviewerResult.sessionId,
-                  findingsHash,
-                )
-              ) {
+              if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
                 reusedEvidence = true;
                 return updateObligation(s, reviewCtx.obligationId, (item) => ({
                   ...item,
@@ -296,8 +290,7 @@ export async function runReviewOrchestration(
                   }
                 : {
                     obligationId: reviewCtx.obligationId,
-                    obligationType:
-                      toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                    obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
                     parentSessionId: sessionId,
                     childSessionId: reviewerResult.sessionId,
                     agentType: 'flowguard-reviewer',
@@ -368,7 +361,8 @@ export async function runReviewOrchestration(
       });
       if (strictEnforcement) {
         await deps.blockReviewOutcome(
-          sessDir, sessionId,
+          sessDir,
+          sessionId,
           String(parsedOutput.phase ?? sessionState.phase),
           reviewCtx.obligationId,
           'STRICT_REVIEW_ORCHESTRATION_FAILED',
