@@ -17,15 +17,20 @@ import {
   PYTHON_REQUIREMENTS_FILES,
   PYTHON_ECOSYSTEM_PACKAGES,
   type ArtifactCategory,
-  POM_ARTIFACT_RULES,
-  GRADLE_PLUGIN_RULES,
-  GRADLE_DEPENDENCY_RULES,
   JS_DATABASE_DEPS,
   DOCKER_IMAGE_DATABASES,
   FRAMEWORK_CONFIG_RULES,
   JS_ECOSYSTEM_DEPS,
   PACKAGE_MANAGER_RE,
 } from './stack-detection-rules.js';
+import {
+  extractFromPomXml,
+  enrichRuntimeVersion,
+  extractFromGradleBuild,
+  extractArtifactsFromPomXml,
+  extractArtifactsFromGradle,
+  extractDatabasesFromDockerCompose,
+} from './languages/java.js';
 
 /**
  * Refine the npm build tool from the `packageManager` field in package.json.
@@ -513,13 +518,16 @@ function detectFromConfigs(configFiles: readonly string[]): {
 // ─── Version Extraction ───────────────────────────────────────────────────────
 
 /** Type alias for the readFile function from CollectorInput. */
-type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
+export type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
 /**
  * Safely read a file, returning undefined on any error.
  * Wraps the readFile function to guarantee fail-soft behavior.
  */
-async function safeRead(readFile: ReadFileFn, relativePath: string): Promise<string | undefined> {
+export async function safeRead(
+  readFile: ReadFileFn,
+  relativePath: string,
+): Promise<string | undefined> {
   try {
     return await readFile(relativePath);
   } catch {
@@ -528,7 +536,7 @@ async function safeRead(readFile: ReadFileFn, relativePath: string): Promise<str
 }
 
 /** Set version + versionEvidence on a DetectedItem. */
-function setVersion(item: DetectedItem, version: string, evidence: string): void {
+export function setVersion(item: DetectedItem, version: string, evidence: string): void {
   item.version = version;
   item.versionEvidence = evidence;
 }
@@ -540,12 +548,15 @@ function setCompilerTarget(item: DetectedItem, target: string, evidence: string)
 }
 
 /** Extract the first capture group from a regex match, or undefined. */
-function captureGroup(match: RegExpMatchArray | null, group: number = 1): string | undefined {
+export function captureGroup(
+  match: RegExpMatchArray | null,
+  group: number = 1,
+): string | undefined {
   return match?.[group] ?? undefined;
 }
 
 /** Find an item by id in a DetectedItem array. */
-function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
+export function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
   return items.find((i) => i.id === id);
 }
 
@@ -770,163 +781,16 @@ async function extractFromTsConfig(readFile: ReadFileFn, languages: DetectedItem
  * Extract Java and Spring Boot versions from pom.xml.
  * Conservative regex: only matches `<property>value</property>` patterns.
  */
-async function extractFromPomXml(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  frameworks: DetectedItem[],
-): Promise<void> {
-  const content = await safeRead(readFile, 'pom.xml');
-  if (!content) return;
-
-  // <java.version>21</java.version>
-  const javaVer = captureGroup(
-    content.match(/<java\.version>\s*(\d+(?:\.\d+)*)\s*<\/java\.version>/),
-  );
-  if (javaVer) {
-    const javaItem = findItem(languages, 'java');
-    if (javaItem && !javaItem.version) {
-      setVersion(javaItem, javaVer, 'pom.xml:<java.version>');
-    }
-  }
-
-  // <maven.compiler.source>21</maven.compiler.source> (alternative Java version)
-  if (!javaVer) {
-    const compilerVer = captureGroup(
-      content.match(/<maven\.compiler\.source>\s*(\d+(?:\.\d+)*)\s*<\/maven\.compiler\.source>/),
-    );
-    if (compilerVer) {
-      const javaItem = findItem(languages, 'java');
-      if (javaItem && !javaItem.version) {
-        setVersion(javaItem, compilerVer, 'pom.xml:<maven.compiler.source>');
-      }
-    }
-  }
-
-  // Spring Boot version from <spring-boot.version> or parent artifact version
-  const sbVer = captureGroup(
-    content.match(
-      /<spring-boot\.version>\s*(\d+(?:\.\d+)*(?:[.-][A-Za-z0-9]+)*)\s*<\/spring-boot\.version>/,
-    ),
-  );
-  if (sbVer) {
-    enrichFrameworkVersion(frameworks, 'spring-boot', sbVer, 'pom.xml:<spring-boot.version>');
-    return;
-  }
-
-  // Fallback: Spring Boot parent version
-  const parentVer = captureGroup(
-    content.match(
-      /<parent>[\s\S]*?<artifactId>\s*spring-boot-starter-parent\s*<\/artifactId>[\s\S]*?<version>\s*(\d+(?:\.\d+)*(?:[.-][A-Za-z0-9]+)*)\s*<\/version>[\s\S]*?<\/parent>/,
-    ),
-  );
-  if (parentVer) {
-    enrichFrameworkVersion(frameworks, 'spring-boot', parentVer, 'pom.xml:parent.version');
-  }
-}
 
 /** Add or enrich a framework item with version info. */
-function enrichFrameworkVersion(
-  frameworks: DetectedItem[],
-  id: string,
-  version: string,
-  evidence: string,
-): void {
-  let item = findItem(frameworks, id);
-  if (!item) {
-    // Spring Boot may not have been detected via config files — add it
-    item = {
-      id,
-      confidence: 0.85,
-      classification: 'derived_signal',
-      evidence: [evidence],
-    };
-    frameworks.push(item);
-  }
-  if (!item.version) {
-    setVersion(item, version, evidence);
-  }
-}
 
 /** Add or enrich a runtime item with version info. */
-function enrichRuntimeVersion(
-  runtimes: DetectedItem[],
-  id: string,
-  version: string,
-  evidence: string,
-): void {
-  let item = findItem(runtimes, id);
-  if (!item) {
-    item = {
-      id,
-      confidence: 0.85,
-      classification: 'derived_signal',
-      evidence: [evidence],
-    };
-    runtimes.push(item);
-  }
-  if (!item.version) {
-    setVersion(item, version, evidence);
-  }
-}
 
 /**
  * Extract Java and Spring Boot versions from build.gradle or build.gradle.kts.
  * Conservative: only matches sourceCompatibility, JavaLanguageVersion.of(),
  * and Spring Boot plugin declarations.
  */
-async function extractFromGradleBuild(
-  readFile: ReadFileFn,
-  languages: DetectedItem[],
-  frameworks: DetectedItem[],
-): Promise<void> {
-  for (const file of ['build.gradle.kts', 'build.gradle']) {
-    const content = await safeRead(readFile, file);
-    if (!content) continue;
-
-    // ── Java version ──────────────────────────────────────────────────────
-    const javaItem = findItem(languages, 'java');
-    if (javaItem && !javaItem.version) {
-      // JavaLanguageVersion.of(21) — Gradle Kotlin DSL / Groovy toolchain API
-      const toolchainVer = captureGroup(content.match(/JavaLanguageVersion\.of\(\s*(\d+)\s*\)/));
-      if (toolchainVer) {
-        setVersion(javaItem, toolchainVer, `${file}:JavaLanguageVersion.of`);
-      } else {
-        // sourceCompatibility = JavaVersion.VERSION_21 or sourceCompatibility = '21'
-        const srcCompatMatch = content.match(
-          /sourceCompatibility\s*=\s*(?:JavaVersion\.VERSION_(\d+)|['"](\d+)['"]|(\d+))/,
-        );
-        if (srcCompatMatch) {
-          const ver = srcCompatMatch[1] ?? srcCompatMatch[2] ?? srcCompatMatch[3];
-          if (ver) {
-            setVersion(javaItem, ver, `${file}:sourceCompatibility`);
-          }
-        }
-      }
-    }
-
-    // ── Spring Boot version from plugin declaration ───────────────────────
-    // id("org.springframework.boot") version "4.0.1" (Kotlin DSL)
-    // id 'org.springframework.boot' version '4.0.1' (Groovy DSL)
-    const sbPluginVer = captureGroup(
-      content.match(
-        /id\s*\(?['"]org\.springframework\.boot['"]\)?\s+version\s+['"](\d+(?:\.\d+)*(?:[.-][A-Za-z0-9]+)*)['"]/,
-      ),
-    );
-    if (sbPluginVer) {
-      enrichFrameworkVersion(frameworks, 'spring-boot', sbPluginVer, `${file}:plugin.spring-boot`);
-    } else {
-      // springBootVersion = "4.0.1" or springBootVersion = '4.0.1'
-      const sbVarVer = captureGroup(
-        content.match(/springBootVersion\s*=\s*['"](\d+(?:\.\d+)*(?:[.-][A-Za-z0-9]+)*)['"]/),
-      );
-      if (sbVarVer) {
-        enrichFrameworkVersion(frameworks, 'spring-boot', sbVarVer, `${file}:springBootVersion`);
-      }
-    }
-
-    return; // First file with content wins (build.gradle.kts preferred)
-  }
-}
 
 /**
  * Extract Go version from go.mod directive.
@@ -1099,7 +963,7 @@ function hasRequirementEntry(requirementsContent: string, packageName: string): 
  * Add or create a detected item. First-match-wins per id.
  * If the item already exists in the array, it is not modified.
  */
-function enrichDetectedItem(
+export function enrichDetectedItem(
   items: DetectedItem[],
   id: string,
   evidence: string,
@@ -1127,7 +991,7 @@ function enrichDetectedItem(
  * is found — enabling config-detected items to be enriched from package.json.
  * If the item already has a version, the existing version is preserved.
  */
-function enrichOrCreateItem(
+export function enrichOrCreateItem(
   items: DetectedItem[],
   id: string,
   evidence: string,
@@ -1162,7 +1026,7 @@ function enrichOrCreateItem(
  * - Version is set only when an unambiguous source provides one and the item
  *   does not yet carry a version
  */
-function enrichDatabaseItem(
+export function enrichDatabaseItem(
   databases: DetectedItem[],
   id: string,
   evidence: string,
@@ -1195,7 +1059,7 @@ function enrichDatabaseItem(
 }
 
 /** Resolve the target array for an artifact category. */
-function resolveTargetArray(
+export function resolveTargetArray(
   category: ArtifactCategory,
   testFrameworks: DetectedItem[],
   tools: DetectedItem[],
@@ -1222,57 +1086,6 @@ function resolveTargetArray(
  * same block it is captured; BOM-managed dependencies without explicit
  * versions are still detected (without version).
  */
-async function extractArtifactsFromPomXml(
-  readFile: ReadFileFn,
-  testFrameworks: DetectedItem[],
-  tools: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): Promise<void> {
-  const content = await safeRead(readFile, 'pom.xml');
-  if (!content) return;
-
-  // Extract all <dependency>...</dependency> and <plugin>...</plugin> blocks
-  const blocks = [
-    ...content.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g),
-    ...content.matchAll(/<plugin>([\s\S]*?)<\/plugin>/g),
-  ];
-
-  const detected = new Set<string>();
-
-  for (const rule of POM_ARTIFACT_RULES) {
-    if (detected.has(rule.id)) continue;
-
-    for (const [, blockContent] of blocks) {
-      if (!blockContent) continue;
-      if (!new RegExp(`<artifactId>\\s*${rule.artifactId}\\s*</artifactId>`).test(blockContent)) {
-        continue;
-      }
-
-      // Found artifact — try to extract version from same block
-      const versionMatch = blockContent.match(
-        /<version>\s*(\d+(?:\.\d+)*(?:[.-][A-Za-z0-9+]*)*)\s*<\/version>/,
-      );
-      const version = versionMatch?.[1];
-      const evidence = `pom.xml:${rule.evidenceType}.${rule.artifactId}`;
-      const targetArray = resolveTargetArray(
-        rule.category,
-        testFrameworks,
-        tools,
-        qualityTools,
-        databases,
-      );
-
-      if (rule.category === 'database') {
-        enrichDatabaseItem(targetArray, rule.id, evidence);
-      } else {
-        enrichDetectedItem(targetArray, rule.id, evidence, version);
-      }
-      detected.add(rule.id);
-      break; // Found in a block, move to next rule
-    }
-  }
-}
 
 /**
  * Extract tool/testFramework/qualityTool artifacts from build.gradle(.kts).
@@ -1281,83 +1094,6 @@ async function extractArtifactsFromPomXml(
  * Runs AFTER pom.xml extraction — Maven is authoritative; Gradle values are
  * only added for IDs not already detected (first-write-wins across files).
  */
-async function extractArtifactsFromGradle(
-  readFile: ReadFileFn,
-  testFrameworks: DetectedItem[],
-  tools: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): Promise<void> {
-  let content: string | undefined;
-  let file: string | undefined;
-
-  for (const candidate of ['build.gradle.kts', 'build.gradle']) {
-    content = await safeRead(readFile, candidate);
-    if (content) {
-      file = candidate;
-      break;
-    }
-  }
-  if (!content || !file) return;
-
-  // ── Plugin declarations with explicit version ──────────────────────────
-  for (const rule of GRADLE_PLUGIN_RULES) {
-    const targetArray = resolveTargetArray(
-      rule.category,
-      testFrameworks,
-      tools,
-      qualityTools,
-      databases,
-    );
-    if (findItem(targetArray, rule.id)) continue; // first-match-wins
-
-    const escapedId = rule.pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    // id("plugin.id") version "1.2.3" or id 'plugin.id' version '1.2.3'
-    const pluginMatch = content.match(
-      new RegExp(
-        `id\\s*\\(?['"]${escapedId}['"]\\)?\\s+version\\s+['"](\\d+(?:\\.\\d+)*(?:[.-][A-Za-z0-9+]*)*)['"]`,
-      ),
-    );
-    if (pluginMatch) {
-      enrichDetectedItem(targetArray, rule.id, `${file}:plugin.${rule.id}`, pluginMatch[1]);
-      continue;
-    }
-
-    // Built-in plugins: bare name on own line or apply plugin: 'name'
-    if (rule.builtin) {
-      const applied =
-        new RegExp(`apply\\s+plugin:\\s*['"]${escapedId}['"]`).test(content) ||
-        new RegExp(`^\\s*${escapedId}\\s*$`, 'm').test(content);
-      if (applied) {
-        enrichDetectedItem(targetArray, rule.id, `${file}:plugin.${rule.id}`);
-      }
-    }
-  }
-
-  // ── Dependency declarations: "group:artifact:version" or "group:artifact" ──
-  for (const rule of GRADLE_DEPENDENCY_RULES) {
-    const targetArray = resolveTargetArray(
-      rule.category,
-      testFrameworks,
-      tools,
-      qualityTools,
-      databases,
-    );
-    if (findItem(targetArray, rule.id)) continue; // first-match-wins
-
-    const depMatch = content.match(
-      new RegExp(`['"][\\w.-]+:${rule.artifact}(?::(\\d+(?:\\.\\d+)*(?:[.-][A-Za-z0-9+]*)*))?['"]`),
-    );
-    if (!depMatch) continue;
-
-    if (rule.category === 'database') {
-      enrichDatabaseItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`);
-    } else {
-      enrichDetectedItem(targetArray, rule.id, `${file}:dependency.${rule.artifact}`, depMatch[1]);
-    }
-  }
-}
 
 /**
  * Extract database engines from docker-compose image declarations.
@@ -1368,35 +1104,10 @@ async function extractArtifactsFromGradle(
  * - Maps known image names to engines
  * - Extracts version only when tag is unambiguous and starts with digits
  */
-async function extractDatabasesFromDockerCompose(
-  readFile: ReadFileFn,
-  allFiles: readonly string[],
-  databases: DetectedItem[],
-): Promise<void> {
-  const composeFiles = allFiles.filter((filePath) => {
-    const base = getRootBasename(filePath)?.toLowerCase();
-    if (!base) return false;
-    return /^docker-compose(?:[.-][a-z0-9_.-]+)?\.ya?ml$/.test(base);
-  });
 
-  for (const file of composeFiles) {
-    const content = await safeRead(readFile, file);
-    if (!content) continue;
-
-    for (const match of content.matchAll(/^\s*image\s*:\s*['"]?([^'"\s]+)['"]?/gm)) {
-      const imageRef = match[1]?.trim();
-      if (!imageRef) continue;
-
-      const mapped = mapComposeImageToDatabase(imageRef);
-      if (!mapped) continue;
-
-      const evidence = `${file}:image ${imageRef}`;
-      enrichDatabaseItem(databases, mapped.id, evidence, mapped.version);
-    }
-  }
-}
-
-function mapComposeImageToDatabase(imageRef: string): { id: string; version?: string } | null {
+export function mapComposeImageToDatabase(
+  imageRef: string,
+): { id: string; version?: string } | null {
   const normalized = imageRef.toLowerCase();
 
   // Conservative: skip interpolated tags/references
@@ -1429,7 +1140,7 @@ function mapComposeImageToDatabase(imageRef: string): { id: string; version?: st
   };
 }
 
-function extractComposeTagVersion(
+export function extractComposeTagVersion(
   imageRef: string,
   options: { allowRegistryVersion: boolean },
 ): string | undefined {
