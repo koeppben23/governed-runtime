@@ -43,6 +43,7 @@
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
     "check:esm": "node scripts/check-esm-imports.js",
     "check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
     "check:format": "prettier --check \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
