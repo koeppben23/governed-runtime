@@ -67,20 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Governance commands now fail-closed when required derived ticket/plan artifacts are missing, malformed, or content/hash-inconsistent with ticket/plan evidence digests (`EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`).
 - State + artifact persistence now performs best-effort rollback semantics (state rollback + cleanup of newly created artifact files) on materialization failures.
 - Compliance mapping filename corrected to `docs/marisk-mapping.md` and documentation index now links all compliance mappings and agent-guidance docs.
-- **Tool name constants**: Extracted all FlowGuard tool names and reviewer agent identifier into a canonical `src/integration/tool-names.ts` SSOT module. Plugin, enforcement, orchestrator, and assurance modules now import tool name constants instead of using inline string literals. No semantics change. `REVIEWER_SUBAGENT_TYPE` is defined once in `tool-names.ts` and re-exported by `review-enforcement.ts` for backward compatibility.
-- **Plugin logging extraction**: Extracted `buildLogSinks` and config-init/logger-creation logic from `plugin.ts` into a new `src/integration/plugin-logging.ts` module. Exported `createPluginLogger` for streamlined initialization. `plugin.ts` reduced by ~85 lines. No log messages, levels, or paths changed.
-- **Plugin helper extraction**: Extracted `parseToolResult`, `strictBlockedOutput`, `getToolOutput`, and `getToolArgs` into `src/integration/plugin-helpers.ts`. Pure stateless functions — no closure dependencies.
-- **Enforcement tracking extraction**: Extracted `trackFlowGuardEnforcement` and `trackTaskEnforcement` into `src/integration/plugin-enforcement-tracking.ts`. Consolidates duplicate args/output extraction patterns.
-- **Review audit event extraction**: Extracted `appendReviewAuditEvent` into `src/integration/plugin-review-audit.ts`. Removes `crypto` import from plugin.ts.
-- **Review state helper extraction**: Extracted `updateObligation` and `blockObligation` into `src/integration/plugin-review-state.ts`. Replaces 6× copy-paste `updateReviewAssurance` callback patterns.
-- **Block review outcome consolidation**: Consolidated 4× 3-step pattern (`updateReviewAssurance` + `appendReviewAuditEvent` + `strictBlockedOutput`) into `blockReviewOutcome` local helper.
-- **Zod evidence schema hardening**: All 24 `z.object()` schemas in `src/state/evidence.ts` now use `.readonly()`. Marks parsed evidence artifacts as readonly at the schema/type boundary to discourage accidental mutation.
-- **Plugin hook type interfaces**: Added `ToolHookInput` and `ToolHookOutput` in `src/integration/types.ts` for typed access at the OpenCode plugin boundary.
-- **Loop-state builder helpers**: Extracted `buildSelfReviewState` and `buildImplReviewState` into `src/rails/types.ts`. Eliminates 4× duplicated 6-field object literal pattern across `continue.ts` and `plan.ts`.
-- **Profile template deduplication**: Extracted `DETECTED_STACK_INSTRUCTION` and `buildNegativeTestMatrix` into `src/config/profiles/content/shared.ts`. Eliminates 4× duplicated templates across baseline, angular, typescript, and java profiles.
-- **Parameter object consolidation**: Replaced 10 positional parameters in `extractVersions()` with a single `ExtractionContext` object. Replaced 7 positional parameters in `createToolCallEvent()` and `createDecisionEvent()` with `ToolCallEventInput` / `DecisionEventInput`. Improves API readability and prevents argument-ordering bugs.
-- AGENTS v3 hard invariants were refined to action-oriented wording with explicit `Red Lines`, while preserving fail-closed and single-authority constraints.
-- Review guidance verdict wording is now exactly aligned with root AGENTS contract (`approve` / `changes_requested`) to prevent enum drift.
+- **Codebase restructuring**: Extracted the monolithic plugin into dedicated modules (logging, helpers, enforcement tracking, review audit, review state, workspace). Centralized tool name constants into a single SSOT module. Hardened all evidence schemas with readonly annotations. Consolidated duplicated patterns: parameter objects, loop-state builders, profile templates, and review-outcome blocking.
+- AGENTS v3 mandate hardened with explicit Red Lines, action-oriented invariants, and review verdict alignment (`approve` / `changes_requested`).
 
 ### Fixed
 
@@ -182,7 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conventional commits validation (`.github/workflows/conventional-commits.yml`)
 - Architecture dependency boundary tests
 - CONTRIBUTING.md with development guidelines
-- **1182 Tests bestanden**
+- **1182 tests passing**
 
 ## [0.9.0] - 2026-04-15
 
