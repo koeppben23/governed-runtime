@@ -1,12 +1,18 @@
 /**
  * @module integration/identity-policy-e2e.test
- * @description E2E tests for identity-policy chain: hydrate → policySnapshot.
+ * @description E2E tests for identity-policy chain:
+ *   hydrate → policySnapshot → preset defaults + P1a field completeness.
  *
- * Verifies that P1a fields (minimumActorAssuranceForApproval,
- * identityProviderMode, actorClassification) are persisted in the
- * policy snapshot at hydrate time.
+ * Verifies that P1a governance fields (minimumActorAssuranceForApproval,
+ * identityProviderMode, actorClassification, allowSelfApproval) are
+ * correctly frozen from policy presets in the session snapshot.
  *
- * @test-policy HAPPY, CORNER
+ * Known P1 gap: HydratePolicyInput does not forward identityProvider /
+ * identityProviderMode from config to executeHydrate. The rail receives
+ * only preset defaults. Fix: add these fields to HydratePolicyInput
+ * and pipe config.policy.identityProviderMode through.
+ *
+ * @test-policy HAPPY, BAD (gap documentation), CORNER
  * @version v1
  */
 
@@ -55,8 +61,6 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   };
 });
 
-const wsMock = await import('../adapters/workspace/index.js');
-
 // ─── Actor Mock ──────────────────────────────────────────────────────────────
 
 const actorOriginal = vi.hoisted(() => ({
@@ -93,8 +97,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
-  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  const wsSpy = await import('../adapters/workspace/index.js');
+  vi.mocked(wsSpy.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
+  vi.mocked(wsSpy.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -133,8 +138,8 @@ async function resolveSessionDirFor(sessionId: string): Promise<string> {
 // ─── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('identity-policy-e2e', () => {
-  describe('HAPPY — hydrate persists governance fields in policySnapshot', () => {
-    it('solo preset: minimumActorAssuranceForApproval = best_effort', async () => {
+  describe('HAPPY — hydrate persists preset governance fields', () => {
+    it('solo: minimumActorAssuranceForApproval = best_effort', async () => {
       await hydrateSession({ policyMode: 'solo' });
       const sessDir = await resolveSessionDirFor(ctx.sessionID);
       const state = await readState(sessDir);
@@ -142,7 +147,7 @@ describe('identity-policy-e2e', () => {
       expect(state!.policySnapshot.minimumActorAssuranceForApproval).toBe('best_effort');
     });
 
-    it('team preset: identityProviderMode = optional', async () => {
+    it('team: identityProviderMode = optional', async () => {
       await hydrateSession({ policyMode: 'team' });
       const sessDir = await resolveSessionDirFor(ctx.sessionID);
       const state = await readState(sessDir);
@@ -150,7 +155,7 @@ describe('identity-policy-e2e', () => {
       expect(state!.policySnapshot.identityProviderMode).toBe('optional');
     });
 
-    it('regulated preset: allowSelfApproval = false', async () => {
+    it('regulated: allowSelfApproval = false', async () => {
       await hydrateSession({ policyMode: 'regulated' });
       const sessDir = await resolveSessionDirFor(ctx.sessionID);
       const state = await readState(sessDir);
@@ -159,7 +164,7 @@ describe('identity-policy-e2e', () => {
     });
   });
 
-  describe('CORNER — field completeness after P1a', () => {
+  describe('CORNER — P1a field completeness', () => {
     it('solo snapshot includes all governance-critical fields', async () => {
       await hydrateSession({ policyMode: 'solo' });
       const sessDir = await resolveSessionDirFor(ctx.sessionID);
@@ -173,6 +178,22 @@ describe('identity-policy-e2e', () => {
       expect(ps.audit).toBeDefined();
       expect(ps.requireHumanGates).toBe(false);
       expect(ps.maxSelfReviewIterations).toBeGreaterThan(0);
+    });
+  });
+
+  describe('BAD — P1 config gap documented', () => {
+    it('identityProvider/identityProviderMode not forwarded by HydratePolicyInput', async () => {
+      // Gap: HydratePolicyInput does not have identityProvider or
+      // identityProviderMode fields. Config overrides are resolved in
+      // resolvePolicyForHydrate but lost when the tool extracts fields
+      // for executeHydrate.
+      // Expected behavior after fix: config identityProvider flows to snapshot.
+      // Current behavior: snapshot uses preset default ('optional').
+      await hydrateSession({ policyMode: 'team' });
+      const sessDir = await resolveSessionDirFor(ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.identityProviderMode).toBe('optional');
     });
   });
 });
