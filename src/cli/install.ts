@@ -345,11 +345,13 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
  * @param args - Parsed CLI arguments.
  * @returns Array of check results.
  */
-export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
-  const target = resolveTarget(args.installScope);
+// ─── Doctor Phase Helpers ─────────────────────────────────────────────────────
+
+/** Check managed artifacts: mandates.md, tool wrapper, plugin wrapper, commands. */
+async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
 
-  // 1. Check flowguard-mandates.md (digest verification)
+  // 1. flowguard-mandates.md (digest verification)
   const mandatesPath = join(target, MANDATES_FILENAME);
   const mandatesContent = await safeRead(mandatesPath);
   if (!mandatesContent) {
@@ -369,14 +371,12 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
         detail: 'managed header found but no digest',
       });
     } else if (fileDigest !== expectedDigest) {
-      // Header claims a different digest than the canonical body — version/content drift
       checks.push({
         file: mandatesPath,
         status: 'modified',
         detail: 'content-digest mismatch — file was locally edited',
       });
     } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
-      // Header digest matches canonical, but actual body was modified (e.g. appended)
       checks.push({
         file: mandatesPath,
         status: 'modified',
@@ -393,7 +393,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // 2. Check tool wrapper
+  // 2. Tool wrapper
   const toolPath = join(target, 'tools', 'flowguard.ts');
   const toolContent = await safeRead(toolPath);
   if (!toolContent) {
@@ -404,7 +404,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     checks.push({ file: toolPath, status: 'ok' });
   }
 
-  // 3. Check plugin wrapper
+  // 3. Plugin wrapper
   const pluginPath = join(target, 'plugins', 'flowguard-audit.ts');
   const pluginContent = await safeRead(pluginPath);
   if (!pluginContent) {
@@ -415,7 +415,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     checks.push({ file: pluginPath, status: 'ok' });
   }
 
-  // 4. Check command files
+  // 4. Command files
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
     const cmdPath = join(target, 'commands', name);
     const cmdContent = await safeRead(cmdPath);
@@ -428,7 +428,14 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // 5. Check package.json (A1 model validation)
+  return checks;
+}
+
+/** Check package.json A1 model + vendor tarball. */
+async function checkDependencies(target: string): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
+  // 5. package.json (A1 model validation)
   const pkgPath = join(target, 'package.json');
   const pkgContent = await safeRead(pkgPath);
   if (!pkgContent) {
@@ -460,7 +467,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     }
   }
 
-  // 5b. Check vendor tarball exists (A1 model validation)
+  // Vendor tarball
   const vendorTarballPath = join(target, 'vendor', `flowguard-core-${PACKAGE_VERSION()}.tgz`);
   if (existsSync(vendorTarballPath)) {
     checks.push({ file: vendorTarballPath, status: 'ok' });
@@ -472,54 +479,63 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     });
   }
 
-  // 6. Check opencode.json instruction entries
+  return checks;
+}
+
+/** Check opencode.json instruction entries. */
+async function checkOpencodeInstructions(
+  target: string,
+  scope: InstallScope,
+): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
   const opencodeJsonPath =
-    args.installScope === 'global'
-      ? join(target, 'opencode.json')
-      : join(resolve('.'), 'opencode.json');
+    scope === 'global' ? join(target, 'opencode.json') : join(resolve('.'), 'opencode.json');
   const opencodeContent = await safeRead(opencodeJsonPath);
-  if (opencodeContent) {
-    try {
-      const parsed = JSON.parse(opencodeContent) as Record<string, unknown>;
-      const instructions = Array.isArray(parsed['instructions'])
-        ? (parsed['instructions'] as string[])
-        : [];
-      const entry = mandatesInstructionEntry(args.installScope);
+  if (!opencodeContent) return checks;
 
-      if (!instructions.includes(entry)) {
-        checks.push({
-          file: opencodeJsonPath,
-          status: 'instruction_missing',
-          detail: `instructions array does not contain "${entry}"`,
-        });
-      }
+  try {
+    const parsed = JSON.parse(opencodeContent) as Record<string, unknown>;
+    const instructions = Array.isArray(parsed['instructions'])
+      ? (parsed['instructions'] as string[])
+      : [];
+    const entry = mandatesInstructionEntry(scope);
 
-      if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
-        checks.push({
-          file: opencodeJsonPath,
-          status: 'instruction_stale',
-          detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
-        });
-      }
-
-      // If both checks passed (no missing, no stale), report ok
-      const hasInstructionIssue = checks.some(
-        (c) =>
-          c.file === opencodeJsonPath &&
-          (c.status === 'instruction_missing' || c.status === 'instruction_stale'),
-      );
-      if (!hasInstructionIssue) {
-        checks.push({ file: opencodeJsonPath, status: 'ok' });
-      }
-    } catch {
-      checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
+    if (!instructions.includes(entry)) {
+      checks.push({
+        file: opencodeJsonPath,
+        status: 'instruction_missing',
+        detail: `instructions array does not contain "${entry}"`,
+      });
     }
+
+    if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
+      checks.push({
+        file: opencodeJsonPath,
+        status: 'instruction_stale',
+        detail: `legacy "${LEGACY_INSTRUCTION_ENTRY}" entry still in instructions — run install to migrate`,
+      });
+    }
+
+    const hasIssue = checks.some(
+      (c) =>
+        c.file === opencodeJsonPath &&
+        (c.status === 'instruction_missing' || c.status === 'instruction_stale'),
+    );
+    if (!hasIssue) {
+      checks.push({ file: opencodeJsonPath, status: 'ok' });
+    }
+  } catch {
+    checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
   }
 
-  // 7. Check workspace config.json
-  //    Config is required: install/hydrate must materialize it.
-  //    Missing config is an error because users must be able to edit it explicitly.
-  //    Config lives at ~/.config/opencode/workspaces/{fingerprint}/config.json
+  return checks;
+}
+
+/** Check workspace config.json. */
+async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
   try {
     const fpResult = await computeFingerprint(resolve('.'));
     const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
@@ -535,7 +551,6 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
             'WORKSPACE_CONFIG_MISSING: workspace config is required; run /hydrate or reinstall',
         });
       } else {
-        // File exists and parsed successfully — check if any fields differ from defaults
         const hasCustom =
           config.logging.level !== 'info' ||
           config.policy.defaultMode !== undefined ||
@@ -569,7 +584,6 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
       }
     }
   } catch (err) {
-    // Fingerprint computation failed (e.g., git not available)
     checks.push({
       file: 'config.json',
       status: 'error',
@@ -577,6 +591,16 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     });
   }
 
+  return checks;
+}
+
+export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
+  const target = resolveTarget(args.installScope);
+  const checks: DoctorCheck[] = [];
+  checks.push(...(await checkManagedArtifacts(target)));
+  checks.push(...(await checkDependencies(target)));
+  checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
+  checks.push(...(await checkWorkspaceConfig()));
   return checks;
 }
 

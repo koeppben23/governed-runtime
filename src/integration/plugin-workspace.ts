@@ -84,35 +84,49 @@ export interface PluginWorkspace {
   readonly cachedWsDir: string | null;
 }
 
-export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
-  const { auditWorktree } = deps;
-  let cachedFingerprint: string | null = null;
-  let cachedWsDir: string | null = null;
+/**
+ * Workspace service implementation.
+ *
+ * Owns mutable per-session state (chain states, queues, caches, enforcement states).
+ * Each method is self-contained and testable in isolation.
+ */
+export class PluginWorkspaceImpl implements PluginWorkspace {
+  private _cachedFingerprint: string | null = null;
+  private _cachedWsDir: string | null = null;
+  private readonly _chainStates = new Map<string, MutableChainState>();
+  private readonly _sessionQueues = new Map<string, Promise<void>>();
+  private readonly _decisionSequenceCache = new Map<string, number>();
+  private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
 
-  const chainStates = new Map<string, MutableChainState>();
-  const sessionQueues = new Map<string, Promise<void>>();
-  const decisionSequenceCache = new Map<string, number>();
-  const enforcementStates = new Map<string, SessionEnforcementState>();
+  constructor(private readonly _deps: WorkspaceDeps) {}
+
+  get cachedFingerprint(): string | null {
+    return this._cachedFingerprint;
+  }
+
+  get cachedWsDir(): string | null {
+    return this._cachedWsDir;
+  }
 
   // ── Workspace resolution ────────────────────────────────────────────────
 
-  async function resolveFingerprint(): Promise<string | null> {
-    if (cachedFingerprint) return cachedFingerprint;
-    if (!auditWorktree) return null;
+  async resolveFingerprint(): Promise<string | null> {
+    if (this._cachedFingerprint) return this._cachedFingerprint;
+    if (!this._deps.auditWorktree) return null;
     try {
-      const result = await computeFingerprint(auditWorktree);
-      cachedFingerprint = result.fingerprint;
-      cachedWsDir = resolveWorkspaceDir(result.fingerprint);
-      return cachedFingerprint;
+      const result = await computeFingerprint(this._deps.auditWorktree);
+      this._cachedFingerprint = result.fingerprint;
+      this._cachedWsDir = resolveWorkspaceDir(result.fingerprint);
+      return this._cachedFingerprint;
     } catch {
       return null;
     }
   }
 
-  function getSessionDir(sessionId: string): string | null {
-    if (!cachedFingerprint) return null;
+  getSessionDir(sessionId: string): string | null {
+    if (!this._cachedFingerprint) return null;
     try {
-      return resolveSessionDir(cachedFingerprint, sessionId);
+      return resolveSessionDir(this._cachedFingerprint, sessionId);
     } catch {
       return null;
     }
@@ -120,23 +134,23 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
 
   // ── Chain state ─────────────────────────────────────────────────────────
 
-  function getChainState(sessionId: string): MutableChainState {
-    let state = chainStates.get(sessionId);
+  getChainState(sessionId: string): MutableChainState {
+    let state = this._chainStates.get(sessionId);
     if (!state) {
       state = { initialized: false, lastHash: null };
-      chainStates.set(sessionId, state);
+      this._chainStates.set(sessionId, state);
     }
     return state;
   }
 
-  function invalidateChainState(sessionId: string): void {
-    chainStates.delete(sessionId);
+  invalidateChainState(sessionId: string): void {
+    this._chainStates.delete(sessionId);
   }
 
   // ── Audit helpers ───────────────────────────────────────────────────────
 
-  async function initChain(sessDir: string | null, sessionId: string): Promise<string> {
-    const cs = getChainState(sessionId);
+  async initChain(sessDir: string | null, sessionId: string): Promise<string> {
+    const cs = this.getChainState(sessionId);
     if (cs.initialized && cs.lastHash !== null) return cs.lastHash;
     if (!sessDir) {
       cs.lastHash = GENESIS_HASH;
@@ -149,7 +163,7 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     return cs.lastHash;
   }
 
-  async function appendAndTrack(
+  async appendAndTrack(
     event: ChainedAuditEvent,
     sessDir: string,
     trackChain: boolean,
@@ -157,13 +171,13 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
   ): Promise<void> {
     await appendAuditEvent(sessDir, event);
     if (trackChain) {
-      getChainState(sessionId).lastHash = event.chainHash;
+      this.getChainState(sessionId).lastHash = event.chainHash;
     }
   }
 
   // ── State persistence ───────────────────────────────────────────────────
 
-  async function updateReviewAssurance(
+  async updateReviewAssurance(
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
   ): Promise<void> {
@@ -174,87 +188,85 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     await writeState(sessDir, next);
   }
 
-  async function blockReviewOutcome(
+  async blockReviewOutcome(
     ctx: ReviewSessionContext,
     obligationId: string,
     code: string,
     detail: Record<string, string>,
     output: { output: string },
   ): Promise<void> {
-    await updateReviewAssurance(ctx.sessDir, (s) => blockObligation(s, obligationId, code));
+    await this.updateReviewAssurance(ctx.sessDir, (s) => blockObligation(s, obligationId, code));
     await appendReviewAuditEvent(
       ctx.sessDir,
       ctx.sessionId,
       ctx.phase,
       'review:obligation_blocked',
-      {
-        obligationId,
-        code,
-      },
+      { obligationId, code },
     );
     output.output = strictBlockedOutput(code, detail);
   }
 
   // ── Session helpers ─────────────────────────────────────────────────────
 
-  async function nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
-    const cached = decisionSequenceCache.get(sessionId);
+  async nextDecisionSequence(sessDir: string, sessionId: string): Promise<number> {
+    const cached = this._decisionSequenceCache.get(sessionId);
     if (cached !== undefined) {
       const next = cached + 1;
-      decisionSequenceCache.set(sessionId, next);
+      this._decisionSequenceCache.set(sessionId, next);
       return next;
     }
     const { events } = await readAuditTrail(sessDir);
     const receipts = decisionReceipts(events).filter((r) => r.sessionId === sessionId);
     const maxSequence = receipts.reduce((max, r) => Math.max(max, r.decisionSequence), 0);
     const next = maxSequence + 1;
-    decisionSequenceCache.set(sessionId, next);
+    this._decisionSequenceCache.set(sessionId, next);
     return next;
   }
 
-  async function runSerializedForSession(
-    sessionId: string,
-    task: () => Promise<void>,
-  ): Promise<void> {
-    const previous = sessionQueues.get(sessionId) ?? Promise.resolve();
+  async runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void> {
+    const previous = this._sessionQueues.get(sessionId) ?? Promise.resolve();
     const current = previous
       .catch(() => undefined)
       .then(task)
       .finally(() => {
-        if (sessionQueues.get(sessionId) === current) sessionQueues.delete(sessionId);
+        if (this._sessionQueues.get(sessionId) === current) this._sessionQueues.delete(sessionId);
       });
-    sessionQueues.set(sessionId, current);
+    this._sessionQueues.set(sessionId, current);
     await current;
   }
 
   // ── Enforcement ─────────────────────────────────────────────────────────
 
-  function getEnforcementState(sessionId: string): SessionEnforcementState {
-    let state = enforcementStates.get(sessionId);
+  getEnforcementState(sessionId: string): SessionEnforcementState {
+    let state = this._enforcementStates.get(sessionId);
     if (!state) {
       state = createEnforcementState();
-      enforcementStates.set(sessionId, state);
+      this._enforcementStates.set(sessionId, state);
     }
     return state;
   }
+}
 
+export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
+  const impl = new PluginWorkspaceImpl(deps);
   return {
-    resolveFingerprint,
-    getSessionDir,
-    getChainState,
-    invalidateChainState,
-    initChain,
-    appendAndTrack,
-    updateReviewAssurance,
-    blockReviewOutcome,
-    nextDecisionSequence,
-    runSerializedForSession,
-    getEnforcementState,
+    resolveFingerprint: () => impl.resolveFingerprint(),
+    getSessionDir: (sid) => impl.getSessionDir(sid),
+    getChainState: (sid) => impl.getChainState(sid),
+    invalidateChainState: (sid) => impl.invalidateChainState(sid),
+    initChain: (sd, sid) => impl.initChain(sd, sid),
+    appendAndTrack: (e, sd, tc, sid) => impl.appendAndTrack(e, sd, tc, sid),
+    updateReviewAssurance: (sd, u) => impl.updateReviewAssurance(sd, u),
+    blockReviewOutcome: (ctx, oid, code, detail, out) =>
+      impl.blockReviewOutcome(ctx, oid, code, detail, out),
+    nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),
+    runSerializedForSession: (sid, t) => impl.runSerializedForSession(sid, t),
+    getEnforcementState: (sid) => impl.getEnforcementState(sid),
     get cachedFingerprint() {
-      return cachedFingerprint;
+      return impl.cachedFingerprint;
     },
     get cachedWsDir() {
-      return cachedWsDir;
+      return impl.cachedWsDir;
     },
   };
 }
