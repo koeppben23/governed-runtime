@@ -1,58 +1,22 @@
 /**
- * @module integration/tools-execute.test
- * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ * @module integration/tools-execute-status.test
+ * @description Execution tests for the status tool.
  *
- * Tests each tool's execute() against real filesystem persistence with
- * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
- * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
- * all other I/O (workspace init, state read/write, config) runs for real.
- *
- * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
- * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
-import * as fs from 'node:fs/promises';
 import {
   createToolContext,
   createTestWorkspace,
-  isTarAvailable,
   parseToolResult,
-  isBlockedResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import {
-  status,
-  hydrate,
-  ticket,
-  plan,
-  decision,
-  implement,
-  validate,
-  review,
-  abort_session,
-  archive,
-} from './tools/index.js';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
-import * as persistence from '../adapters/persistence.js';
-import {
-  makeState,
-  makeProgressedState,
-  TICKET,
-  PLAN_RECORD,
-  SELF_REVIEW_CONVERGED,
-  REVIEW_APPROVE,
-  VALIDATION_PASSED,
-  IMPL_EVIDENCE,
-  IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
-import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
-import { TEAM_POLICY } from '../config/policy.js';
+import { status, hydrate, ticket } from './tools/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -67,14 +31,6 @@ vi.mock('../adapters/git', async (importOriginal) => {
 });
 
 // ─── Workspace Mock (P26) ────────────────────────────────────────────────────
-// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
-// default to the real implementations. P26 tests override them per-test.
-// All other workspace exports (computeFingerprint, initWorkspace, etc.)
-// remain real for full integration fidelity.
-//
-// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
-// can fully reset the once-queues (vi.clearAllMocks does NOT clear
-// mockResolvedValueOnce queues — unconsumed values leak across tests).
 
 const wsOriginals = vi.hoisted(() => ({
   archiveSession:
@@ -95,8 +51,6 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
 });
 
 // ─── Actor Mock (P27) ────────────────────────────────────────────────────────
-// Mock resolveActor to return a deterministic actor for integration tests.
-// Prevents dependency on real env vars or git config.
 
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
@@ -115,14 +69,8 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Lazy import for per-test overrides
-const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
-
-// ─── Capability Gates ────────────────────────────────────────────────────────
-
-const tarOk = await isTarAvailable();
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
@@ -139,13 +87,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Reset workspace mock once-queues to prevent cross-test leaks.
-  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
-  // queues. If a P26 test fails before consuming its once-mocks, the stale
-  // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -160,9 +103,8 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Hydrate a session and return parsed result. Convenience for setup. */
 async function hydrateSession(
   overrides: { policyMode?: string; profileId?: string } = {},
 ): Promise<Record<string, unknown>> {
@@ -176,14 +118,13 @@ async function hydrateSession(
   return parseToolResult(raw);
 }
 
-/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
   await hydrateSession();
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
 // =============================================================================
-// Tool 1: status
+// Tool: status
 // =============================================================================
 
 describe('status', () => {
@@ -228,21 +169,16 @@ describe('status', () => {
     it('returns detectedStack with unversioned items when no versions detected', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({}, ctx));
-      // Temp workspace has no manifest files on disk — but default mock signals
-      // include .ts files and package.json, so stack detection finds unversioned
-      // items (typescript, npm). P10: unversioned items are surfaced.
       expect(result.detectedStack).not.toBeNull();
       const ds = result.detectedStack as Record<string, unknown>;
       expect(Array.isArray(ds.items)).toBe(true);
       expect((ds.items as unknown[]).length).toBeGreaterThan(0);
-      // No versions detected — versions[] should be empty
       expect(Array.isArray(ds.versions)).toBe(true);
       expect((ds.versions as unknown[]).length).toBe(0);
     });
 
     it('returns full detectedStack object with summary and versions', async () => {
       await hydrateSession();
-      // Resolve session dir and inject detectedStack into persisted state
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
         '../adapters/workspace/index.js'
       );
@@ -266,7 +202,6 @@ describe('status', () => {
       });
       const result = parseToolResult(await status.execute({}, ctx));
 
-      // Full object — not just the summary string
       expect(result.detectedStack).not.toBeNull();
       expect(typeof result.detectedStack).toBe('object');
       const ds = result.detectedStack as Record<string, unknown>;
@@ -301,7 +236,6 @@ describe('status', () => {
         version: '3.4.1',
         target: 'framework',
       });
-      // evidence absent on second entry — must not be fabricated
       expect(versions[1].evidence).toBeUndefined();
     });
 
@@ -399,7 +333,6 @@ describe('status', () => {
         directory: '',
         sessionID: ctx.sessionID,
       });
-      // Should not throw — returns error or no-session
       const raw = await status.execute({}, badCtx);
       const result = parseToolResult(raw);
       expect(result.phase === null || result.error === true).toBe(true);
@@ -430,5 +363,3 @@ describe('status', () => {
     });
   });
 });
-
-// =============================================================================

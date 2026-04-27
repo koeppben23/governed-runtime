@@ -1,14 +1,6 @@
 /**
- * @module integration/tools-execute.test
- * @description Execution tests for all 10 FlowGuard tool execute() functions.
- *
- * Tests each tool's execute() against real filesystem persistence with
- * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
- * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
- * all other I/O (workspace init, state read/write, config) runs for real.
- *
- * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
- * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
+ * @module integration/tools-execute-hydrate.test
+ * @description Execution tests for the hydrate tool (session creation, P31 Config, P27 Actor).
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
@@ -183,10 +175,7 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 }
 
 // =============================================================================
-// Tool 1: status
-// =============================================================================
-
-// Tool 2: hydrate
+// Tool: hydrate
 // =============================================================================
 
 describe('hydrate', () => {
