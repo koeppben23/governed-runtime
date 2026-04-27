@@ -16,7 +16,7 @@ export default defineConfig({
         'src/cli/run.ts',
       ],
       thresholds: {
-        branches: 79,
+        branches: 79.75,
         lines: 80,
         functions: 80,
         statements: 80,

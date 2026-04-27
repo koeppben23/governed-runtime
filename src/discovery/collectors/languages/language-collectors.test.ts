@@ -290,6 +290,19 @@ describe('languages/python', () => {
       expect(languages[0].version).toBe('3.11.9');
     });
 
+    it('handles .python-version with trailing whitespace', async () => {
+      const languages: DetectedItem[] = [makeItem('python')];
+      await extractFromPythonRootFiles(
+        mockReadFile({ '.python-version': '3.10.8  \n' }),
+        ['.python-version'],
+        languages,
+        [],
+        [],
+        [],
+      );
+      expect(languages[0].version).toBe('3.10.8');
+    });
+
     it('does nothing when .python-version has no recognizable version', async () => {
       // Covers line 35: version match returns null (non-numeric content)
       const languages: DetectedItem[] = [makeItem('python')];
