@@ -9,6 +9,7 @@
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
  *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/
+ *    - state/ may import from shared/ (neutral constants with zero dependencies)
  *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
@@ -292,7 +293,7 @@ describe('Layer Dependency Rules', () => {
       'logging',
       'cli',
     ]);
-    const allowedForState = new Set(['discovery']);
+    const allowedForState = new Set(['discovery', 'shared']);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {

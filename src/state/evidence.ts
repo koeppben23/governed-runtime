@@ -10,9 +10,7 @@
 
 import { z } from 'zod';
 import { IdpConfigSchema } from '../identity/types.js';
-
-/** Canonical subagent type used by the FlowGuard reviewer. SSOT — state layer. */
-export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 /**
  * P34: Coerce P33 v0 'verified' to 'claim_validated'.
