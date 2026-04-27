@@ -650,6 +650,7 @@ describe('identity-policy-e2e', () => {
       );
       const result = parseToolResult(raw);
       expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
     });
   });
 });
