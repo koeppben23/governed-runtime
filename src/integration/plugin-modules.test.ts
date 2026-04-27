@@ -7,6 +7,9 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { createPluginLogger } from './plugin-logging.js';
 import {
   parseToolResult,
@@ -212,7 +215,6 @@ describe('plugin-logging', () => {
     });
 
     it('falls back to DEFAULT_CONFIG when workspaceDir points to non-existent dir', async () => {
-      // Covers the catch block when readConfig fails for a real path
       const { config } = await createPluginLogger(
         undefined,
         '/tmp/__flowguard_nonexistent_42__',
@@ -220,6 +222,22 @@ describe('plugin-logging', () => {
         null,
       );
       expect(config).toBeDefined();
+    });
+
+    it('falls back to DEFAULT_CONFIG when config file is invalid', async () => {
+      // Create temp dir with broken config to trigger readConfig throw
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-log-test-'));
+      try {
+        // Write invalid JSON config (missing required fields)
+        await fs.writeFile(
+          path.join(tmpDir, 'config.json'),
+          JSON.stringify({ schemaVersion: 'invalid' }),
+        );
+        const { config } = await createPluginLogger(undefined, tmpDir, undefined, null);
+        expect(config).toBeDefined();
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('creates noop logger when no sinks available', async () => {

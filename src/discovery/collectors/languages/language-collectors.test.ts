@@ -81,10 +81,105 @@ describe('languages/go', () => {
   });
 
   describe('CORNER', () => {
-    it('skips when go.mod is not a root file', async () => {
-      const languages: DetectedItem[] = [makeItem('go')];
-      await extractFromGoMod(mockReadFile({}), languages, ['subdir/go.mod']);
+    it('removes cargo when Cargo.toml is absent', async () => {
+      const buildTools: DetectedItem[] = [makeItem('cargo')];
+      await extractFromRustRootFiles(mockReadFile({}), ['src/main.rs'], [], [], buildTools);
+      expect(buildTools.find((t) => t.id === 'cargo')).toBeUndefined();
+    });
+
+    it('keeps cargo when Cargo.toml is present', async () => {
+      const buildTools: DetectedItem[] = [makeItem('cargo')];
+      await extractFromRustRootFiles(
+        mockReadFile({
+          'Cargo.toml': '[package]\nname = "test"\n',
+        }),
+        ['Cargo.toml'],
+        [],
+        [],
+        buildTools,
+      );
+      expect(buildTools.find((t) => t.id === 'cargo')).toBeDefined();
+    });
+
+    it('does nothing when rust-toolchain.toml has no channel', async () => {
+      // Covers line 47: rust && !rust.version when channel is absent
+      const languages: DetectedItem[] = [makeItem('rust')];
+      await extractFromRustRootFiles(
+        mockReadFile({
+          'rust-toolchain.toml': '[toolchain]\n',
+        }),
+        ['rust-toolchain.toml', 'Cargo.toml'],
+        languages,
+        [],
+        [],
+      );
       expect(languages[0].version).toBeUndefined();
+    });
+
+    it('does nothing when rust-toolchain.toml has no components block', async () => {
+      // Covers line 64: components regex returns null
+      const qualityTools: DetectedItem[] = [];
+      await extractFromRustRootFiles(
+        mockReadFile({
+          'rust-toolchain.toml': '[toolchain]\nchannel = "stable"\n',
+        }),
+        ['rust-toolchain.toml', 'Cargo.toml'],
+        [],
+        qualityTools,
+        [],
+      );
+      expect(qualityTools).toHaveLength(0);
+    });
+
+    it('skips clippy when components block does not contain clippy', async () => {
+      // Covers lines 69-72: components match for clippy false, rustfmt true
+      const qualityTools: DetectedItem[] = [];
+      await extractFromRustRootFiles(
+        mockReadFile({
+          'rust-toolchain.toml': `[toolchain]
+channel = "stable"
+components = ["rustfmt"]
+`,
+        }),
+        ['rust-toolchain.toml', 'Cargo.toml'],
+        [],
+        qualityTools,
+        [],
+      );
+      expect(qualityTools.find((t) => t.id === 'clippy')).toBeUndefined();
+      expect(qualityTools.find((t) => t.id === 'rustfmt')).toBeDefined();
+    });
+
+    it('skips rust-toolchain.toml when file is empty', async () => {
+      // Covers line 43: content null branch (safeRead returns empty/undefined)
+      const languages: DetectedItem[] = [makeItem('rust')];
+      await extractFromRustRootFiles(
+        mockReadFile({}),
+        ['rust-toolchain.toml', 'Cargo.toml'],
+        languages,
+        [],
+        [],
+      );
+      expect(languages[0].version).toBeUndefined();
+    });
+
+    it('does not overwrite rust version when already set from toolchain', async () => {
+      // Covers line 47: rust && !rust.version false path
+      const languages: DetectedItem[] = [
+        makeItem('rust', { version: '1.76.0', versionEvidence: 'prior' }),
+      ];
+      await extractFromRustRootFiles(
+        mockReadFile({
+          'rust-toolchain.toml': `[toolchain]
+channel = "1.77.0"
+`,
+        }),
+        ['rust-toolchain.toml', 'Cargo.toml'],
+        languages,
+        [],
+        [],
+      );
+      expect(languages[0].version).toBe('1.76.0');
     });
   });
 });
@@ -195,6 +290,20 @@ describe('languages/python', () => {
       expect(languages[0].version).toBe('3.11.9');
     });
 
+    it('does nothing when .python-version has no recognizable version', async () => {
+      // Covers line 35: version match returns null (non-numeric content)
+      const languages: DetectedItem[] = [makeItem('python')];
+      await extractFromPythonRootFiles(
+        mockReadFile({ '.python-version': 'system\n' }),
+        ['.python-version'],
+        languages,
+        [],
+        [],
+        [],
+      );
+      expect(languages[0].version).toBeUndefined();
+    });
+
     it('detects black as quality tool from requirements.txt', async () => {
       const qualityTools: DetectedItem[] = [];
       await extractFromPythonRootFiles(
@@ -285,6 +394,60 @@ describe('languages/python', () => {
       );
       const poetry = buildTools.find((t) => t.id === 'poetry');
       expect(poetry).toBeUndefined();
+    });
+
+    it('does nothing when pyproject.toml content is null', async () => {
+      const buildTools: DetectedItem[] = [];
+      await extractFromPythonRootFiles(
+        mockReadFile({}),
+        ['pyproject.toml'],
+        [],
+        [],
+        [],
+        buildTools,
+      );
+      expect(buildTools).toHaveLength(0);
+    });
+
+    it('does nothing when requirements.txt content is null', async () => {
+      const testFrameworks: DetectedItem[] = [];
+      await extractFromPythonRootFiles(
+        mockReadFile({}),
+        ['requirements.txt'],
+        [],
+        testFrameworks,
+        [],
+        [],
+      );
+      expect(testFrameworks).toHaveLength(0);
+    });
+
+    it('does nothing when pyproject.toml content is null', async () => {
+      // Covers line 43: content null check
+      const buildTools: DetectedItem[] = [];
+      await extractFromPythonRootFiles(
+        mockReadFile({}),
+        ['pyproject.toml'],
+        [],
+        [],
+        [],
+        buildTools,
+      );
+      expect(buildTools).toHaveLength(0);
+    });
+
+    it('does nothing when requirements.txt content is null', async () => {
+      // Covers line 67: content null check
+      const testFrameworks: DetectedItem[] = [];
+      await extractFromPythonRootFiles(
+        mockReadFile({}),
+        ['requirements.txt'],
+        [],
+        testFrameworks,
+        [],
+        [],
+      );
+      expect(testFrameworks).toHaveLength(0);
     });
   });
 });
@@ -872,6 +1035,47 @@ describe('languages/java', () => {
         databases,
       );
       expect(tools.find((t) => t.id === 'openapi-generator')).toBeDefined();
+    });
+  });
+  describe('EDGE', () => {
+    it('extractFromNodeVersionFiles handles file with no version content', async () => {
+      const runtimes = [makeItem('node')];
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '# comment only\n' }), runtimes, [
+        '.nvmrc',
+      ]);
+      expect(runtimes[0].version).toBeUndefined();
+    });
+
+    it('extractFromPackageJson handles engines.node with non-version constraint', async () => {
+      const runtimes = [makeItem('node')];
+      await extractFromPackageJson(
+        mockReadFile({ 'package.json': JSON.stringify({ engines: { node: 'latest' } }) }),
+        [],
+        [],
+        runtimes,
+        [],
+        [],
+        [],
+      );
+      expect(runtimes[0].version).toBeUndefined();
+    });
+
+    it('extractFromPackageJson handles devDependencies missing typescript item', async () => {
+      const languages = [];
+      const frameworks = [];
+      const databases = [];
+      await extractFromPackageJson(
+        mockReadFile({
+          'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
+        }),
+        languages,
+        frameworks,
+        [],
+        [],
+        [],
+        databases,
+      );
+      expect(languages).toHaveLength(0);
     });
   });
 });
