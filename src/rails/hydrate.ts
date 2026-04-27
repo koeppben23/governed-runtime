@@ -40,7 +40,7 @@ import { defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
-import { getPolicyPreset, createPolicySnapshot } from '../config/policy.js';
+import { getPolicyPreset, createPolicySnapshot, type FlowGuardPolicy } from '../config/policy.js';
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 
@@ -120,6 +120,34 @@ export interface HydrateInput {
  * @param ctx - Rail context (now, digest, policy).
  * @returns RailOk with the (possibly new) session state.
  */
+/**
+ * Apply config overrides from HydratePolicyInput onto a base FlowGuardPolicy.
+ *
+ * Centralizes the field-by-field override mapping. When a new governance
+ * field is added to FlowGuardPolicy, it only needs to be added here.
+ */
+function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): FlowGuardPolicy {
+  return {
+    ...base,
+    ...(p.maxSelfReviewIterations !== undefined
+      ? { maxSelfReviewIterations: p.maxSelfReviewIterations }
+      : {}),
+    ...(p.maxImplReviewIterations !== undefined
+      ? { maxImplReviewIterations: p.maxImplReviewIterations }
+      : {}),
+    ...(p.requireVerifiedActorsForApproval !== undefined
+      ? { requireVerifiedActorsForApproval: p.requireVerifiedActorsForApproval }
+      : {}),
+    ...(p.identityProvider !== undefined ? { identityProvider: p.identityProvider } : {}),
+    ...(p.identityProviderMode !== undefined
+      ? { identityProviderMode: p.identityProviderMode }
+      : {}),
+    ...(p.minimumActorAssuranceForApproval !== undefined
+      ? { minimumActorAssuranceForApproval: p.minimumActorAssuranceForApproval }
+      : {}),
+  };
+}
+
 export function executeHydrate(
   existingState: SessionState | null,
   input: HydrateInput,
@@ -182,28 +210,8 @@ export function executeHydrate(
 
   // 4. Resolve policy → immutable snapshot
   const policyMode = p.policyMode ?? 'solo';
-  let policy = getPolicyPreset(policyMode);
-  // P31: Apply config overrides
-  if (
-    p.maxSelfReviewIterations !== undefined ||
-    p.maxImplReviewIterations !== undefined ||
-    p.requireVerifiedActorsForApproval !== undefined ||
-    p.identityProvider !== undefined ||
-    p.identityProviderMode !== undefined ||
-    p.minimumActorAssuranceForApproval !== undefined
-  ) {
-    policy = {
-      ...policy,
-      maxSelfReviewIterations: p.maxSelfReviewIterations ?? policy.maxSelfReviewIterations,
-      maxImplReviewIterations: p.maxImplReviewIterations ?? policy.maxImplReviewIterations,
-      requireVerifiedActorsForApproval:
-        p.requireVerifiedActorsForApproval ?? policy.requireVerifiedActorsForApproval,
-      identityProvider: p.identityProvider ?? policy.identityProvider,
-      identityProviderMode: p.identityProviderMode ?? policy.identityProviderMode,
-      minimumActorAssuranceForApproval:
-        p.minimumActorAssuranceForApproval ?? policy.minimumActorAssuranceForApproval,
-    };
-  }
+  const basePolicy = getPolicyPreset(policyMode);
+  const policy = applyHydrateOverrides(basePolicy, p);
   const now = ctx.now();
   const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
     requestedMode: p.requestedPolicyMode ?? policy.mode,
