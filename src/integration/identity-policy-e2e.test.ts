@@ -1,15 +1,21 @@
 /**
  * @module integration/identity-policy-e2e.test
  * @description E2E tests for identity-policy chain:
- *   config → hydrate → policySnapshot → preset defaults + config overrides.
+ *   P1a: config → hydrate → policySnapshot → preset defaults + config overrides.
+ *   P1c: config → policySnapshot → decision enforcement → actor assurance gate.
  *
- * Verifies that P1a governance fields (minimumActorAssuranceForApproval,
+ * P1a verifies that governance fields (minimumActorAssuranceForApproval,
  * identityProviderMode, actorClassification, allowSelfApproval) are
  * correctly frozen from policy presets AND config overrides in the
  * session snapshot.
  *
+ * P1c verifies the full governance chain: when a policy requires idp_verified
+ * assurance, decisions with weaker actor assurance are BLOCKED, and decisions
+ * with sufficient assurance are ALLOWED. Also proves that runtime enforcement
+ * uses the persisted policySnapshot — not reconstructed defaults.
+ *
  * @test-policy HAPPY, BAD, CORNER
- * @version v1
+ * @version v2
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -22,8 +28,8 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { hydrate } from './tools/index.js';
-import { readState } from '../adapters/persistence.js';
+import { hydrate, ticket, plan, decision, status } from './tools/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -225,6 +231,223 @@ describe('identity-policy-e2e', () => {
       // Config fields flow through to snapshot
       expect(state!.policySnapshot.identityProviderMode).toBe('required');
       expect(state!.policySnapshot.identityProvider).toBeDefined();
+    });
+  });
+
+  // ─── P1c: Identity-Policy Decision Enforcement ───────────────────────────────
+  // Proves the full governance chain:
+  //   Config/Policy → PolicySnapshot in State → Decision reads policy from snapshot
+  //   → Actor is policy-aware resolved → Approval correctly allowed or blocked.
+
+  describe('P1c — identity-policy decision enforcement', () => {
+    /**
+     * Write config with identity-policy overrides before hydrate.
+     * Uses the first-hydrate-writes-config-dir pattern: hydrate once (solo)
+     * to bootstrap workspace, then mutate config, then hydrate a fresh session.
+     */
+    async function writeIdentityPolicyConfig(overrides: {
+      identityProviderMode?: 'optional' | 'required';
+      minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+    }): Promise<void> {
+      // Bootstrap workspace config directory
+      await hydrateSession({ policyMode: 'solo' });
+
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+
+      if (overrides.identityProviderMode !== undefined) {
+        config.policy.identityProviderMode = overrides.identityProviderMode;
+      }
+      if (overrides.minimumActorAssuranceForApproval !== undefined) {
+        config.policy.minimumActorAssuranceForApproval = overrides.minimumActorAssuranceForApproval;
+      }
+      await writeConfig(wsDir, config);
+    }
+
+    /**
+     * Advance a hydrated session to PLAN_REVIEW via ticket → plan → self-review convergence.
+     * Uses team mode (allowSelfApproval: true) to avoid four-eyes interference.
+     * Requires: session already hydrated with team mode.
+     */
+    async function advanceToPlanReview(): Promise<void> {
+      await ticket.execute({ text: 'Implement identity-gated feature', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Implement feature' }, ctx);
+      // Self-review loop: converge to PLAN_REVIEW (team mode auto-approves)
+      for (let i = 0; i < 5; i++) {
+        const s = parseToolResult(await status.execute({}, ctx));
+        if (s.phase === 'PLAN_REVIEW') break;
+        await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      }
+      // Verify we actually reached PLAN_REVIEW
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).toBe('PLAN_REVIEW');
+    }
+
+    /**
+     * Full setup: write identity-policy config → hydrate fresh session (team) → advance to PLAN_REVIEW.
+     * Returns the session directory for post-decision assertions.
+     */
+    async function reachPlanReviewWithIdpPolicy(overrides: {
+      identityProviderMode?: 'optional' | 'required';
+      minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+    }): Promise<string> {
+      await writeIdentityPolicyConfig(overrides);
+
+      // Fresh session picks up mutated config
+      ctx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      await hydrateSession({ policyMode: 'team' });
+      await advanceToPlanReview();
+
+      return resolveSessionDirFor(ctx.sessionID);
+    }
+
+    // ── Test 1: hydrate succeeds with required IdP and persists policy snapshot ──
+
+    it('hydrate succeeds with identityProviderMode=required and persists snapshot', async () => {
+      await writeIdentityPolicyConfig({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Fresh session with team mode
+      ctx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBeUndefined();
+
+      const sessDir = await resolveSessionDirFor(ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.identityProviderMode).toBe('required');
+      expect(state!.policySnapshot.minimumActorAssuranceForApproval).toBe('idp_verified');
+    });
+
+    // ── Test 2: decision blocks without verified actor when IdP is required ──
+
+    it('decision blocks best_effort actor when idp_verified is required', async () => {
+      const sessDir = await reachPlanReviewWithIdpPolicy({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Actor mock default is best_effort — should be blocked
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+
+      // State must NOT have advanced
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe('PLAN_REVIEW');
+    });
+
+    // ── Test 3: claim_validated actor is rejected when idp_verified is required ──
+
+    it('claim_validated actor is rejected when idp_verified is required', async () => {
+      await reachPlanReviewWithIdpPolicy({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Override actor to claim_validated — still below idp_verified threshold
+      vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
+        id: 'test-operator',
+        email: 'test@flowguard.dev',
+        displayName: null,
+        source: 'env' as const,
+        assurance: 'claim_validated' as const,
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      // minimum/current are interpolated into the message by the reason registry
+      expect(result.message).toContain('idp_verified');
+      expect(result.message).toContain('claim_validated');
+    });
+
+    // ── Test 4: idp_verified actor can approve when idp_verified is required ──
+
+    it('idp_verified actor can approve when idp_verified is required', async () => {
+      const sessDir = await reachPlanReviewWithIdpPolicy({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Override actor to idp_verified — meets threshold
+      vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
+        id: 'verified-operator',
+        email: 'verified@flowguard.dev',
+        displayName: 'Verified Operator',
+        source: 'env' as const,
+        assurance: 'idp_verified' as const,
+      });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
+
+      // State must have advanced
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe('VALIDATION');
+
+      // Decision evidence persisted in state
+      expect(state!.reviewDecision).toBeDefined();
+      expect(state!.reviewDecision!.verdict).toBe('approve');
+      expect(state!.reviewDecision!.decidedBy).toBe('verified-operator');
+    });
+
+    // ── Test 5: enforcement uses policySnapshot, not reconstructed defaults ──
+
+    it('enforcement uses policySnapshot, not reconstructed policyMode defaults', async () => {
+      // Hydrate with team mode (default: minimumActorAssuranceForApproval = 'best_effort')
+      await hydrateSession({ policyMode: 'team' });
+      await advanceToPlanReview();
+
+      const sessDir = await resolveSessionDirFor(ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+
+      // Verify team defaults first
+      expect(state!.policySnapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+
+      // Patch policySnapshot directly to require idp_verified
+      // This simulates a scenario where the snapshot differs from mode defaults
+      const patchedState = {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot,
+          minimumActorAssuranceForApproval: 'idp_verified' as const,
+        },
+      };
+      await writeState(sessDir, patchedState);
+
+      // Verify patch persisted
+      const reread = await readState(sessDir);
+      expect(reread!.policySnapshot.minimumActorAssuranceForApproval).toBe('idp_verified');
+
+      // Decision with best_effort actor → should be BLOCKED by snapshot, not by team defaults
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      // Message must reflect the snapshot's idp_verified threshold, not team default best_effort
+      expect(result.message).toContain('idp_verified');
+      expect(result.message).toContain('best_effort');
     });
   });
 });
