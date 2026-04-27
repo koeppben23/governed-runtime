@@ -332,9 +332,9 @@ describe('identity-policy-e2e', () => {
       expect(state!.policySnapshot.minimumActorAssuranceForApproval).toBe('idp_verified');
     });
 
-    // ── Test 2: decision blocks without verified actor when IdP is required ──
+    // ── Test 2: blocks actor below idp_verified assurance threshold ──
 
-    it('decision blocks best_effort actor when idp_verified is required', async () => {
+    it('blocks best_effort actor below idp_verified assurance threshold', async () => {
       const sessDir = await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
@@ -352,9 +352,9 @@ describe('identity-policy-e2e', () => {
       expect(state!.phase).toBe('PLAN_REVIEW');
     });
 
-    // ── Test 3: claim_validated actor is rejected when idp_verified is required ──
+    // ── Test 3: claim_validated is below idp_verified in ordinal comparison ──
 
-    it('claim_validated actor is rejected when idp_verified is required', async () => {
+    it('blocks claim_validated actor below idp_verified assurance threshold', async () => {
       await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
@@ -378,9 +378,9 @@ describe('identity-policy-e2e', () => {
       expect(result.message).toContain('claim_validated');
     });
 
-    // ── Test 4: idp_verified actor can approve when idp_verified is required ──
+    // ── Test 4: idp_verified actor meets threshold and advances state ──
 
-    it('idp_verified actor can approve when idp_verified is required', async () => {
+    it('allows idp_verified actor when idp_verified assurance is required', async () => {
       const sessDir = await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
@@ -448,6 +448,60 @@ describe('identity-policy-e2e', () => {
       // Message must reflect the snapshot's idp_verified threshold, not team default best_effort
       expect(result.message).toContain('idp_verified');
       expect(result.message).toContain('best_effort');
+    });
+
+    // ── Test 6: ActorIdentityError at decision when IdP is required but no token ──
+
+    it('decision blocks with ACTOR_IDP_MODE_REQUIRED when actor resolution fails', async () => {
+      const sessDir = await reachPlanReviewWithIdpPolicy({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Simulate: resolveActor throws because IdP mode is required but no token
+      const { ActorIdentityError } = actorMock;
+      vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
+        new ActorIdentityError(
+          'ACTOR_IDP_MODE_REQUIRED',
+          'IdP mode is required but FLOWGUARD_ACTOR_TOKEN_PATH is not set',
+        ),
+      );
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
+
+      // State must NOT have advanced — fail-closed
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe('PLAN_REVIEW');
+    });
+
+    // ── Test 7: hydrate succeeds despite IdP-required (Option B) ──
+
+    it('hydrate succeeds with idpMode=required even without IdP token (Option B)', async () => {
+      await writeIdentityPolicyConfig({
+        identityProviderMode: 'required',
+        minimumActorAssuranceForApproval: 'idp_verified',
+      });
+
+      // Fresh session — hydrate does NOT pass IdP config to resolveActor
+      // so it never triggers ACTOR_IDP_MODE_REQUIRED
+      ctx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.error).toBeUndefined();
+
+      // Session is created, policy snapshot has required mode
+      const sessDir = await resolveSessionDirFor(ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe('READY');
+      expect(state!.policySnapshot.identityProviderMode).toBe('required');
     });
   });
 });
