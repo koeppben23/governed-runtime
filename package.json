@@ -37,7 +37,7 @@
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --exclude 'src/cli/install-verify.test.ts'",
-    "test:coverage:ci": "vitest run --silent --coverage --coverage.reporter=json-summary --exclude 'src/cli/install-verify.test.ts' --exclude 'src/cli/cli-contract-smoke.test.ts'",
+    "test:coverage:ci": "vitest run --silent --coverage --coverage.reporter=json-summary --exclude 'src/cli/install-verify.test.ts' --exclude 'src/cli/cli-contract-smoke.test.ts' --coverage.thresholds.branches=79.78 --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.statements=80",
     "test:watch": "vitest",
     "test:install-verify": "vitest run src/cli/install-verify.test.ts",
     "test:acp": "vitest run src/cli/run-acp-smoke.test.ts",
