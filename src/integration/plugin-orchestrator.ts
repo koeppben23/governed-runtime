@@ -75,16 +75,28 @@ export interface OrchestratorDeps {
 }
 
 /**
+ * Tool invocation captured by the plugin hook.
+ *
+ * Bundles the input and output from tool.execute.after
+ * into a single object for cleaner function signatures.
+ */
+export interface ToolCallEvent {
+  readonly toolName: string;
+  readonly input: unknown;
+  readonly output: { output: string };
+  readonly sessionId: string;
+  readonly now: string;
+}
+
+/**
  * Run the review orchestrator for a single tool invocation.
  */
 export async function runReviewOrchestration(
   deps: OrchestratorDeps,
-  toolName: string,
-  input: unknown,
-  output: { output: string },
-  sessionId: string,
-  now: string,
+  event: ToolCallEvent,
 ): Promise<void> {
+  const { toolName, input, output, sessionId, now } = event;
+
   const rawOutput = getToolOutput(output);
   let strictEnforcement: boolean | null = null;
   const inReviewPath = isReviewRequired(rawOutput);

@@ -5,6 +5,9 @@
  * Single source of truth for all FlowGuard tool names and agent identifiers.
  * Every module that compares or routes on tool names MUST import from here.
  *
+ * REVIEWER_SUBAGENT_TYPE is imported from state/evidence.ts (SSOT in state layer)
+ * and re-exported for backward compatibility in integration consumers.
+ *
  * @version v1
  */
 
@@ -19,4 +22,4 @@ export const TOOL_FLOWGUARD_REVIEW = 'flowguard_review';
 export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 
-export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+export { REVIEWER_SUBAGENT_TYPE } from '../state/evidence.js';

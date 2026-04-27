@@ -182,14 +182,13 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         }
       }
 
-      await runOrchestrator(
-        orchestratorDeps,
+      await runOrchestrator(orchestratorDeps, {
         toolName,
         input,
-        output as { output: string },
+        output: output as { output: string },
         sessionId,
         now,
-      );
+      });
 
       if (!toolName.startsWith(FG_PREFIX)) return;
 

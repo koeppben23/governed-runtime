@@ -11,6 +11,9 @@
 import { z } from 'zod';
 import { IdpConfigSchema } from '../identity/types.js';
 
+/** Canonical subagent type used by the FlowGuard reviewer. SSOT — state layer. */
+export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
+
 /**
  * P34: Coerce P33 v0 'verified' to 'claim_validated'.
  * Any unknown value falls through to 'best_effort' (safe default for backward compat).
@@ -150,7 +153,7 @@ export const ReviewAttestation = z
     toolObligationId: z.string().uuid(),
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
-    reviewedBy: z.literal('flowguard-reviewer'),
+    reviewedBy: z.literal(REVIEWER_SUBAGENT_TYPE),
   })
   .readonly();
 export type ReviewAttestation = z.infer<typeof ReviewAttestation>;
@@ -214,7 +217,7 @@ export const ReviewInvocationEvidence = z
     obligationType: ReviewObligationType,
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
-    agentType: z.literal('flowguard-reviewer'),
+    agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
     promptHash: z.string().min(1),
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
