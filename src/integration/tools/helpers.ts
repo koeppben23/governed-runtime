@@ -28,7 +28,7 @@ import { readState, writeState } from '../../adapters/persistence.js';
 import {
   materializeEvidenceArtifacts,
   verifyEvidenceArtifacts,
-} from '../artifacts/evidence-artifacts.js';
+} from '../../adapters/workspace/evidence-artifacts.js';
 
 // Workspace
 import {

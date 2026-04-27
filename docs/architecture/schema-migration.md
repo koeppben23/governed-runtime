@@ -28,20 +28,20 @@ change lands.
 
 ### 2.1 Schema Version Points (10 unique version constants)
 
-| Schema                              | File                                             | Lock Mechanism                                                |
-| ----------------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
-| `SessionState.schemaVersion`        | `state/schema.ts:164`                            | `z.literal('v1')`                                             |
-| `FlowGuardConfig.schemaVersion`     | `config/flowguard-config.ts:26`                  | `z.literal('v1')`                                             |
-| `PolicySnapshot` (embedded)         | `state/evidence.ts:449`                          | Inherited from SessionState                                   |
-| `CentralPolicyBundle.schemaVersion` | `config/policy.ts:187`                           | `readonly schemaVersion: 'v1'`                                |
-| `ActorClaim.schemaVersion`          | `adapters/actor.ts:46`                           | `z.literal('v1')`                                             |
-| `DiscoveryResult`                   | `discovery/types.ts:22`                          | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
-| `ProfileResolution`                 | `discovery/types.ts:23`                          | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
-| `ArchiveManifest`                   | `archive/types.ts:23`                            | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1'`     |
-| `WorkspacePointer`                  | `adapters/workspace/types.ts:26`                 | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
-| `ReviewReport`                      | `state/evidence.ts:628`                          | `flowguard-review-report.v1`                                  |
-| `EvidenceArtifact`                  | `integration/artifacts/evidence-artifacts.ts:17` | `flowguard-evidence-artifact.v1`                              |
-| `MADR Artifact`                     | `integration/artifacts/madr-writer.ts:22`        | `madr-artifact.v1`                                            |
+| Schema                              | File                                          | Lock Mechanism                                                |
+| ----------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
+| `SessionState.schemaVersion`        | `state/schema.ts:164`                         | `z.literal('v1')`                                             |
+| `FlowGuardConfig.schemaVersion`     | `config/flowguard-config.ts:26`               | `z.literal('v1')`                                             |
+| `PolicySnapshot` (embedded)         | `state/evidence.ts:449`                       | Inherited from SessionState                                   |
+| `CentralPolicyBundle.schemaVersion` | `config/policy.ts:187`                        | `readonly schemaVersion: 'v1'`                                |
+| `ActorClaim.schemaVersion`          | `adapters/actor.ts:46`                        | `z.literal('v1')`                                             |
+| `DiscoveryResult`                   | `discovery/types.ts:22`                       | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
+| `ProfileResolution`                 | `discovery/types.ts:23`                       | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
+| `ArchiveManifest`                   | `archive/types.ts:23`                         | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1'`     |
+| `WorkspacePointer`                  | `adapters/workspace/types.ts:26`              | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
+| `ReviewReport`                      | `state/evidence.ts:628`                       | `flowguard-review-report.v1`                                  |
+| `EvidenceArtifact`                  | `adapters/workspace/evidence-artifacts.ts:17` | `flowguard-evidence-artifact.v1`                              |
+| `MADR Artifact`                     | `integration/artifacts/madr-writer.ts:22`     | `madr-artifact.v1`                                            |
 
 ### 2.2 Existing Backward-Compat Mechanisms
 

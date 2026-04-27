@@ -656,7 +656,7 @@ describe('identity-policy-e2e', () => {
     // ── Test 9: empty identityProvider blocks with ACTOR_IDP_CONFIG_REQUIRED ──
 
     it('resolveActorForPolicy rejects empty identityProvider with required mode', async () => {
-      const { resolveActorForPolicy } = await import('../identity/actor-context.js');
+      const { resolveActorForPolicy } = await import('../adapters/actor-context.js');
       const { ActorIdentityError } = await import('../adapters/actor.js');
 
       await expect(

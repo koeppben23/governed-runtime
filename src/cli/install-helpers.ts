@@ -25,11 +25,13 @@ import {
   LEGACY_INSTRUCTION_ENTRY,
 } from './templates.js';
 
+import type { PolicyMode } from '../config/policy-types.js';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InstallScope = 'global' | 'repo';
 
-/** FlowGuard policy mode (runtime behavior, NOT install location). */
-export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
+/** Re-export canonical PolicyMode from config/policy-types. */
+export type { PolicyMode };
 
 /** CLI action. */
 export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve';

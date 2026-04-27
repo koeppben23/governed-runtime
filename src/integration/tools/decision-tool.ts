@@ -28,7 +28,7 @@ import {
 import { executeReviewDecision } from '../../rails/review-decision.js';
 
 // Identity
-import { resolveActorForPolicy } from '../../identity/actor-context.js';
+import { resolveActorForPolicy } from '../../adapters/actor-context.js';
 import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service

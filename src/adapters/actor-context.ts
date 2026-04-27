@@ -1,16 +1,19 @@
 /**
- * @module identity/actor-context
+ * @module adapters/actor-context
  * @description Policy-aware actor resolution for FlowGuard decision paths.
  *
  * Wraps resolveActor with IdP/policy context from the session's policy snapshot.
  * Centralizes the actor resolution pattern so Hydrate and Decision use the same
  * code path with full policy context.
  *
- * @version v1
+ * Moved from identity/ to adapters/ (P4b) because this is glue code bridging
+ * adapters/actor and config/policy — not identity-layer logic.
+ *
+ * @version v2
  */
 
-import { resolveActor, ActorIdentityError } from '../adapters/actor.js';
-import { isIdpConfigured } from './index.js';
+import { resolveActor, ActorIdentityError } from './actor.js';
+import { isIdpConfigured } from '../identity/index.js';
 import type { ActorInfo } from '../audit/types.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 

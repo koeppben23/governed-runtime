@@ -209,9 +209,12 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 }
 
 function resolvedAlgorithm(key: crypto.KeyObject): string {
+  // Node crypto.verify/sign derive the signature scheme (RSA-PKCS1/ECDSA)
+  // from the key type; we only need to specify the hash algorithm.
   const keyType = key.asymmetricKeyType;
   if (keyType === 'rsa' || keyType === 'rsa-pss') {
-    return 'RSA-SHA256';
+    return 'sha256';
   }
-  return 'ECDSA-SHA256';
+  // EC keys (P-256 / ES256)
+  return 'sha256';
 }

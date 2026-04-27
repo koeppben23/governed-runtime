@@ -1,12 +1,16 @@
 /**
- * @module integration/artifacts/evidence-artifacts
+ * @module adapters/workspace/evidence-artifacts
  * @description Materialize and verify derived ticket/plan evidence artifacts.
  *
  * SSOT rule:
  * - `session-state.json` is authoritative.
  * - Files in `artifacts/` are derived, append-only evidence surfaces.
  *
- * @version v1
+ * Moved from integration/artifacts/ to adapters/workspace/ (P4b) because
+ * this module's only dependencies are Node built-ins + state/schema —
+ * it belongs in the adapters layer, not the integration layer.
+ *
+ * @version v2
  */
 
 import * as crypto from 'node:crypto';
@@ -40,7 +44,7 @@ interface ArtifactFile {
   readonly jsonAbsPath: string;
 }
 
-class EvidenceArtifactError extends Error {
+export class EvidenceArtifactError extends Error {
   readonly code: string;
 
   constructor(code: string, message: string) {

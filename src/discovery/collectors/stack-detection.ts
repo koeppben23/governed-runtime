@@ -3,8 +3,10 @@
  * @description Collector: technology stack detection — logic functions.
  *
  * Detection rules and constants extracted to stack-detection-rules.ts.
+ * Shared utilities (ReadFileFn, safeRead, findItem, etc.) canonical in
+ * stack-detection-utils.ts — imported here, no local duplicates (P4c).
  *
- * @version v4
+ * @version v5
  */
 
 import * as path from 'node:path';
@@ -26,14 +28,25 @@ export interface ExtractionContext {
   readonly buildTools: DetectedItem[];
 }
 
-import { collectRootBasenames } from './stack-detection-utils.js';
+import {
+  collectRootBasenames,
+  type ReadFileFn,
+  safeRead,
+  setVersion,
+  captureGroup,
+  findItem,
+  resolveTargetArray,
+  extractComposeTagVersion,
+  enrichDetectedItem,
+  enrichOrCreateItem,
+  enrichDatabaseItem,
+  mapComposeImageToDatabase,
+} from './stack-detection-utils.js';
 
 import {
   LANGUAGE_EXTENSIONS,
   BUILD_TOOL_RULES,
   ROOT_FIRST_BUILD_TOOLS,
-  type ArtifactCategory,
-  DOCKER_IMAGE_DATABASES,
   FRAMEWORK_CONFIG_RULES,
 } from './stack-detection-rules.js';
 import {
@@ -438,44 +451,7 @@ function detectFromConfigs(configFiles: readonly string[]): {
 
 // ─── Version Extraction ───────────────────────────────────────────────────────
 
-/** Type alias for the readFile function from CollectorInput. */
-export type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
-
-/**
- * Safely read a file, returning undefined on any error.
- * Wraps the readFile function to guarantee fail-soft behavior.
- */
-export async function safeRead(
-  readFile: ReadFileFn,
-  relativePath: string,
-): Promise<string | undefined> {
-  try {
-    return await readFile(relativePath);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Set version + versionEvidence on a DetectedItem. */
-export function setVersion(item: DetectedItem, version: string, evidence: string): void {
-  item.version = version;
-  item.versionEvidence = evidence;
-}
-
 /** Set compilerTarget + compilerTargetEvidence on a DetectedItem. */
-
-/** Extract the first capture group from a regex match, or undefined. */
-export function captureGroup(
-  match: RegExpMatchArray | null,
-  group: number = 1,
-): string | undefined {
-  return match?.[group] ?? undefined;
-}
-
-/** Find an item by id in a DetectedItem array. */
-export function findItem(items: DetectedItem[], id: string): DetectedItem | undefined {
-  return items.find((i) => i.id === id);
-}
 
 /**
  * Extract version information from manifest file contents.
@@ -608,125 +584,6 @@ async function extractVersions(ctx: {
 // ─── Artifact Detection (pom.xml / build.gradle) ─────────────────────────────
 
 /**
- * Add or create a detected item. First-match-wins per id.
- * If the item already exists in the array, it is not modified.
- */
-export function enrichDetectedItem(
-  items: DetectedItem[],
-  id: string,
-  evidence: string,
-  version?: string,
-): void {
-  if (findItem(items, id)) return; // Already detected — first-match-wins
-  const item: DetectedItem = {
-    id,
-    confidence: 0.85,
-    classification: 'derived_signal',
-    evidence: [evidence],
-  };
-  if (version) {
-    item.version = version;
-    item.versionEvidence = evidence;
-  }
-  items.push(item);
-}
-
-/**
- * Enrich version on an existing item, or create a new item with version.
- *
- * Unlike enrichDetectedItem (first-match-wins, no version enrichment),
- * this function ADDS a version to an existing versionless item when one
- * is found — enabling config-detected items to be enriched from package.json.
- * If the item already has a version, the existing version is preserved.
- */
-export function enrichOrCreateItem(
-  items: DetectedItem[],
-  id: string,
-  evidence: string,
-  version?: string,
-): void {
-  const existing = findItem(items, id);
-  if (existing) {
-    // Enrich version if the existing item lacks one
-    if (!existing.version && version) {
-      setVersion(existing, version, evidence);
-    }
-    return;
-  }
-  const item: DetectedItem = {
-    id,
-    confidence: 0.85,
-    classification: 'derived_signal',
-    evidence: [evidence],
-  };
-  if (version) {
-    item.version = version;
-    item.versionEvidence = evidence;
-  }
-  items.push(item);
-}
-
-/**
- * Add or enrich a database detected item.
- *
- * - One item per engine ID (dedupe by id)
- * - Evidence entries are merged (no duplicates)
- * - Version is set only when an unambiguous source provides one and the item
- *   does not yet carry a version
- */
-export function enrichDatabaseItem(
-  databases: DetectedItem[],
-  id: string,
-  evidence: string,
-  version?: string,
-): void {
-  const existing = findItem(databases, id);
-  if (!existing) {
-    const item: DetectedItem = {
-      id,
-      confidence: 0.85,
-      classification: 'derived_signal',
-      evidence: [evidence],
-    };
-    if (version) {
-      item.version = version;
-      item.versionEvidence = evidence;
-    }
-    databases.push(item);
-    return;
-  }
-
-  if (!existing.evidence.includes(evidence)) {
-    existing.evidence.push(evidence);
-  }
-
-  if (!existing.version && version) {
-    existing.version = version;
-    existing.versionEvidence = evidence;
-  }
-}
-
-/** Resolve the target array for an artifact category. */
-export function resolveTargetArray(
-  category: ArtifactCategory,
-  testFrameworks: DetectedItem[],
-  tools: DetectedItem[],
-  qualityTools: DetectedItem[],
-  databases: DetectedItem[],
-): DetectedItem[] {
-  switch (category) {
-    case 'tool':
-      return tools;
-    case 'testFramework':
-      return testFrameworks;
-    case 'qualityTool':
-      return qualityTools;
-    case 'database':
-      return databases;
-  }
-}
-
-/**
  * Extract tool/testFramework/qualityTool artifacts from pom.xml.
  *
  * Scans <dependency> and <plugin> blocks for known artifact IDs.
@@ -752,56 +609,3 @@ export function resolveTargetArray(
  * - Maps known image names to engines
  * - Extracts version only when tag is unambiguous and starts with digits
  */
-
-export function mapComposeImageToDatabase(
-  imageRef: string,
-): { id: string; version?: string } | null {
-  const normalized = imageRef.toLowerCase();
-
-  // Conservative: skip interpolated tags/references
-  if (normalized.includes('${')) {
-    return null;
-  }
-
-  // SQL Server images often use mcr.microsoft.com/mssql/server:...
-  if (normalized.includes('mssql/server')) {
-    const version = extractComposeTagVersion(imageRef, { allowRegistryVersion: false });
-    return {
-      id: 'sqlserver',
-      ...(version ? { version } : {}),
-    };
-  }
-
-  const withoutDigest = imageRef.split('@')[0] ?? imageRef;
-  const hadRegistryPath = withoutDigest.includes('/');
-  const lastSegment = (withoutDigest.split('/').pop() ?? '').toLowerCase();
-  if (!lastSegment) return null;
-
-  const [imageName] = lastSegment.split(':');
-  const mapped = DOCKER_IMAGE_DATABASES.find((rule) => rule.image === imageName);
-  if (!mapped) return null;
-
-  const version = extractComposeTagVersion(imageRef, { allowRegistryVersion: !hadRegistryPath });
-  return {
-    id: mapped.id,
-    ...(version ? { version } : {}),
-  };
-}
-
-export function extractComposeTagVersion(
-  imageRef: string,
-  options: { allowRegistryVersion: boolean },
-): string | undefined {
-  const withoutDigest = imageRef.split('@')[0] ?? imageRef;
-  const lastSegment = withoutDigest.split('/').pop() ?? '';
-  const tag = lastSegment.includes(':') ? (lastSegment.split(':')[1] ?? '') : '';
-  if (!tag || tag === 'latest' || tag.includes('${')) return undefined;
-
-  // Conservative: for registry-prefixed images, do not trust tag version.
-  if (!options.allowRegistryVersion && withoutDigest.includes('/')) {
-    return undefined;
-  }
-
-  const version = captureGroup(tag.match(/^(\d+(?:\.\d+)*)/));
-  return version;
-}
