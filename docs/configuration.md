@@ -108,7 +108,10 @@ Configures IdP-based actor verification for `idp_verified` assurance.
 
 Runtime token input for both modes is provided via `FLOWGUARD_ACTOR_TOKEN_PATH` (JWT file path).
 If `policy.identityProvider` is set and `identityProviderMode` is `required`, missing or invalid
-token input blocks `/hydrate` fail-closed.
+token input blocks mutating decision paths (`/review-decision approve`) fail-closed.
+Hydrate remains diagnostic/best-effort and does not block on IdP failures.
+Schema validation rejects empty or structurally invalid identity provider configurations
+(including missing mode, issuer, or signing keys).
 
 `mode: "static"` (local key bundle):
 

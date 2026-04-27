@@ -1,7 +1,7 @@
 # Actor Assurance Architecture
 
 **Design Version:** 1.2
-**Status:** Final — P35b2
+**Status:** Implemented — Three-tier assurance model with policy-snapshot authority, schema-hardened identity provider validation, and decision-path enforcement.
 **Last Updated:** 2026-04-23
 **Owner:** FlowGuard Core
 **Audience:** Enterprise engineers, product, security review
