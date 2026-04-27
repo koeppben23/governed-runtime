@@ -181,7 +181,10 @@ describe('createFileSink', () => {
 
   describe('cleanup error paths', () => {
     it('handles stat failure gracefully (non-blocking)', async () => {
-      const testDir = join(tmpdir(), 'fg-log-sink-stat-' + Date.now());
+      const testDir = join(
+        tmpdir(),
+        'fg-log-sink-stat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      );
       try {
         // Create fake old log file
         const logDir = join(testDir, '.opencode', 'logs');
@@ -210,7 +213,10 @@ describe('createFileSink', () => {
     });
 
     it('handles unlink failure gracefully', async () => {
-      const testDir = join(tmpdir(), 'fg-log-sink-unlink-' + Date.now());
+      const testDir = join(
+        tmpdir(),
+        'fg-log-sink-unlink-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      );
       try {
         const logDir = join(testDir, '.opencode', 'logs');
         await mkdir(logDir, { recursive: true });
