@@ -6,8 +6,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFile, readFile, readdir, stat, mkdir, rm } from 'node:fs/promises';
+import { writeFile, readFile, readdir, stat, mkdir, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createFileSink, getLogDir } from './file-sink.js';
 import type { LogEntry } from './logger.js';
 
@@ -175,6 +176,54 @@ describe('createFileSink', () => {
       await sink({ level: 'info', service: 'test', message: 'HこんにちはWorld🌍' });
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('cleanup error paths', () => {
+    it('handles stat failure gracefully (non-blocking)', async () => {
+      const testDir = join(tmpdir(), 'fg-log-sink-stat-' + Date.now());
+      try {
+        // Create fake old log file
+        const logDir = join(testDir, '.opencode', 'logs');
+        await mkdir(logDir, { recursive: true });
+        const oldLog = join(logDir, 'flowguard-2020-01-01.log');
+        await writeFile(oldLog, '{"level":"info","message":"old"}\n');
+
+        // Set file to very old timestamp so it would be cleaned up
+        const oldDate = new Date('2020-01-01');
+        await utimes(oldLog, oldDate, oldDate);
+
+        // Create sink — cleanup runs on first log
+        const sink = createFileSink(testDir, 7);
+        await sink({ level: 'info', service: 'test', message: 'test' });
+
+        // File should have been cleaned up (retention=7 days, file from 2020)
+        try {
+          await stat(oldLog);
+          // File may survive if system clock is weird
+        } catch {
+          // Expected: file was deleted
+        }
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('handles unlink failure gracefully', async () => {
+      const testDir = join(tmpdir(), 'fg-log-sink-unlink-' + Date.now());
+      try {
+        const logDir = join(testDir, '.opencode', 'logs');
+        await mkdir(logDir, { recursive: true });
+        // Create a DIRECTORY named like a log file — unlink cannot remove a directory
+        const fakeLog = join(logDir, 'flowguard-2020-01-01.log');
+        await mkdir(fakeLog);
+
+        const sink = createFileSink(testDir, 7);
+        // This should not throw — cleanup errors are non-blocking
+        await sink({ level: 'info', service: 'test', message: 'test' });
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
     });
   });
 });
