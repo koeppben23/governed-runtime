@@ -652,5 +652,33 @@ describe('identity-policy-e2e', () => {
       expect(isBlockedResult(result)).toBe(true);
       expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
     });
+
+    // ── Test 9: empty identityProvider blocks with ACTOR_IDP_CONFIG_REQUIRED ──
+
+    it('resolveActorForPolicy rejects empty identityProvider with required mode', async () => {
+      const { resolveActorForPolicy } = await import('../identity/actor-context.js');
+      const { ActorIdentityError } = await import('../adapters/actor.js');
+
+      await expect(
+        resolveActorForPolicy('/fake/worktree', {
+          mode: 'team',
+          requireHumanGates: true,
+          maxSelfReviewIterations: 3,
+          maxImplReviewIterations: 3,
+          allowSelfApproval: true,
+          selfReview: { subagentEnabled: false, fallbackToSelf: false },
+          audit: {
+            emitTransitions: true,
+            emitToolCalls: true,
+            enableChainHash: true,
+          },
+          actorClassification: {},
+          minimumActorAssuranceForApproval: 'best_effort',
+          requireVerifiedActorsForApproval: false,
+          identityProvider: {} as unknown as undefined,
+          identityProviderMode: 'required',
+        }),
+      ).rejects.toThrow(ActorIdentityError);
+    });
   });
 });

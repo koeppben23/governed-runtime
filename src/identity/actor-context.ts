@@ -29,12 +29,16 @@ export async function resolveActorForPolicy(
   policy: FlowGuardPolicy,
 ): Promise<ActorInfo> {
   // Guard: required IdP mode without a valid identityProvider is a configuration error.
-  // Uses the canonical isIdpConfigured() so empty/incomplete configs are also rejected.
-  if (policy.identityProviderMode === 'required' && !isIdpConfigured(policy.identityProvider)) {
-    throw new ActorIdentityError(
-      'ACTOR_IDP_CONFIG_REQUIRED',
-      'identityProviderMode is required but no valid identityProvider is configured',
-    );
+  // Uses the canonical isIdpConfigured() plus a structural check for empty/incomplete configs.
+  if (policy.identityProviderMode === 'required') {
+    const config = policy.identityProvider;
+    const isEmptyOrMissing = !isIdpConfigured(config) || !config?.mode;
+    if (isEmptyOrMissing) {
+      throw new ActorIdentityError(
+        'ACTOR_IDP_CONFIG_REQUIRED',
+        'identityProviderMode is required but no valid identityProvider is configured',
+      );
+    }
   }
 
   return resolveActor(worktree, {
