@@ -50,6 +50,7 @@ export {
   createPolicySnapshot,
   freezePolicySnapshot,
   normalizePolicySnapshot,
+  normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
   policyFromSnapshot,
 } from './policy-snapshot.js';

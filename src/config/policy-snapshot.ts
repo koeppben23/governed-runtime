@@ -11,9 +11,8 @@
  * The snapshot is the sole runtime authority for all governance-critical checks.
  * No runtime path should reconstruct policy from policyMode alone.
  *
- * Dependency: imports PolicySnapshot from state layer (inner → outer is correct).
- *
- * @version v1
+ * Dependency: imports PolicySnapshot type from state layer. This is an existing
+ * dependency that predates this module — config depends on state schema types. * @version v1
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
