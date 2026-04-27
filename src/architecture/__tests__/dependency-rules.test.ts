@@ -280,7 +280,7 @@ describe('Layer Dependency Rules', () => {
     }
   });
 
-  describe('Rule 1: state/ is a leaf module (with exception for discovery/types)', () => {
+  describe('Rule 1: state/ is a leaf module (strict — only shared/ allowed)', () => {
     const stateViolations: ImportViolation[] = [];
     const forbiddenFromState = new Set([
       'machine',
@@ -292,8 +292,12 @@ describe('Layer Dependency Rules', () => {
       'archive',
       'logging',
       'cli',
+      'discovery',
+      'identity',
+      'logging',
+      'telemetry',
     ]);
-    const allowedForState = new Set(['discovery', 'shared']);
+    const allowedForState = new Set(['shared']);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {

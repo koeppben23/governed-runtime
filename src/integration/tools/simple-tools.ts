@@ -16,7 +16,6 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSession,
-  resolveWorkspacePaths,
   formatBlocked,
   formatError,
   formatRailResult,
@@ -24,20 +23,14 @@ import {
   appendNextAction,
 } from './helpers.js';
 
-// State & Machine
-import { TERMINAL } from '../../machine/topology.js';
-
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
 import { executeReview, executeReviewFlow } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
 // Adapters
-import { readState, writeReport } from '../../adapters/persistence.js';
+import { writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
-
-// Workspace
-import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
 
@@ -176,57 +169,5 @@ export const abort_session: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_archive — Archive Completed Session
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const archive: ToolDefinition = {
-  description:
-    'Archive a completed FlowGuard session as a tar.gz file. ' +
-    "Creates a compressed archive in the workspace's sessions/archive/ directory. " +
-    'Only works on terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE). ' +
-    'Uses system tar (available on Windows 10+, macOS, Linux).',
-  args: {},
-  async execute(_args, context) {
-    try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
-
-      if (!state) {
-        return formatBlocked('NO_SESSION');
-      }
-
-      if (!TERMINAL.has(state.phase)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/archive',
-          phase: state.phase,
-        });
-      }
-
-      const archivePath = await archiveSession(fingerprint, context.sessionID);
-
-      // P2e: Track archiveStatus for consistency with regulated completion path.
-      // Verify archive integrity and persist status on state.
-      let archiveStatus: 'verified' | 'failed' = 'failed';
-      try {
-        const verification = await verifyArchive(fingerprint, context.sessionID);
-        archiveStatus = verification.passed ? 'verified' : 'failed';
-      } catch {
-        // Verification failure is non-fatal for manual archive — status stays 'failed'.
-      }
-      const archivedState = { ...state, archiveStatus };
-      await writeStateWithArtifacts(sessDir, archivedState);
-
-      return appendNextAction(
-        JSON.stringify({
-          phase: state.phase,
-          status: 'Session archived successfully.',
-          archivePath,
-          archiveStatus,
-        }),
-        archivedState,
-      );
-    } catch (err) {
-      return formatError(err);
-    }
-  },
-};
+// archive — extracted to archive-tool.ts (P2b)
+export { archive } from './archive-tool.js';

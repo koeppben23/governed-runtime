@@ -409,7 +409,8 @@ async function verifyArchiveImpl(
   if (!checksumExists) {
     findings.push({
       code: 'archive_checksum_missing',
-      severity: 'warning',
+      // P2e: regulated mode treats missing sidecar as error (consistent with creation)
+      severity: manifest?.policyMode === 'regulated' ? 'error' : 'warning',
       message: 'Archive checksum sidecar (.sha256) not found',
     });
   } else {
