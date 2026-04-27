@@ -32,6 +32,7 @@ import type { DecisionIdentity } from '../state/evidence.js';
 import type { DiscoverySummary } from '../discovery/types.js';
 import type { DetectedStack } from '../discovery/types.js';
 import type { VerificationCandidates } from '../discovery/types.js';
+import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -81,6 +82,9 @@ export interface HydratePolicyInput {
   readonly maxSelfReviewIterations?: number;
   readonly maxImplReviewIterations?: number;
   readonly requireVerifiedActorsForApproval?: boolean;
+  readonly identityProvider?: IdpConfig;
+  readonly identityProviderMode?: IdentityProviderMode;
+  readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
 }
 
 /**
@@ -179,11 +183,14 @@ export function executeHydrate(
   // 4. Resolve policy → immutable snapshot
   const policyMode = p.policyMode ?? 'solo';
   let policy = resolvePolicy(policyMode);
-  // P31: Apply config iteration limit overrides
+  // P31: Apply config overrides
   if (
     p.maxSelfReviewIterations !== undefined ||
     p.maxImplReviewIterations !== undefined ||
-    p.requireVerifiedActorsForApproval !== undefined
+    p.requireVerifiedActorsForApproval !== undefined ||
+    p.identityProvider !== undefined ||
+    p.identityProviderMode !== undefined ||
+    p.minimumActorAssuranceForApproval !== undefined
   ) {
     policy = {
       ...policy,
@@ -191,6 +198,10 @@ export function executeHydrate(
       maxImplReviewIterations: p.maxImplReviewIterations ?? policy.maxImplReviewIterations,
       requireVerifiedActorsForApproval:
         p.requireVerifiedActorsForApproval ?? policy.requireVerifiedActorsForApproval,
+      identityProvider: p.identityProvider ?? policy.identityProvider,
+      identityProviderMode: p.identityProviderMode ?? policy.identityProviderMode,
+      minimumActorAssuranceForApproval:
+        p.minimumActorAssuranceForApproval ?? policy.minimumActorAssuranceForApproval,
     };
   }
   const now = ctx.now();

@@ -507,6 +507,11 @@ export const hydrate: ToolDefinition = {
             requireVerifiedActorsForApproval: existing
               ? undefined
               : config.policy.requireVerifiedActorsForApproval,
+            identityProvider: existing ? undefined : config.policy.identityProvider,
+            identityProviderMode: existing ? undefined : config.policy.identityProviderMode,
+            minimumActorAssuranceForApproval: existing
+              ? undefined
+              : config.policy.minimumActorAssuranceForApproval,
           },
           profile: {
             profileId: existing

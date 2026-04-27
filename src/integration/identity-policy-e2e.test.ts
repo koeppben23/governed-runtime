@@ -1,18 +1,14 @@
 /**
  * @module integration/identity-policy-e2e.test
  * @description E2E tests for identity-policy chain:
- *   hydrate → policySnapshot → preset defaults + P1a field completeness.
+ *   config → hydrate → policySnapshot → preset defaults + config overrides.
  *
  * Verifies that P1a governance fields (minimumActorAssuranceForApproval,
  * identityProviderMode, actorClassification, allowSelfApproval) are
- * correctly frozen from policy presets in the session snapshot.
+ * correctly frozen from policy presets AND config overrides in the
+ * session snapshot.
  *
- * Known P1 gap: HydratePolicyInput does not forward identityProvider /
- * identityProviderMode from config to executeHydrate. The rail receives
- * only preset defaults. Fix: add these fields to HydratePolicyInput
- * and pipe config.policy.identityProviderMode through.
- *
- * @test-policy HAPPY, BAD (gap documentation), CORNER
+ * @test-policy HAPPY, BAD, CORNER
  * @version v1
  */
 
@@ -181,19 +177,54 @@ describe('identity-policy-e2e', () => {
     });
   });
 
-  describe('BAD — P1 config gap documented', () => {
-    it('identityProvider/identityProviderMode not forwarded by HydratePolicyInput', async () => {
-      // Gap: HydratePolicyInput does not have identityProvider or
-      // identityProviderMode fields. Config overrides are resolved in
-      // resolvePolicyForHydrate but lost when the tool extracts fields
-      // for executeHydrate.
-      // Expected behavior after fix: config identityProvider flows to snapshot.
-      // Current behavior: snapshot uses preset default ('optional').
-      await hydrateSession({ policyMode: 'team' });
-      const sessDir = await resolveSessionDirFor(ctx.sessionID);
-      const state = await readState(sessDir);
+  describe('BAD — config identityProvider flows to snapshot', () => {
+    it('identityProviderMode=required from config persists in policySnapshot', async () => {
+      // First hydrate creates workspace config
+      await hydrateSession({ policyMode: 'solo' });
+
+      // Write config with idpMode=required + identityProvider
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const config = await readConfig(wsDir);
+      config.policy.identityProviderMode = 'required';
+      config.policy.identityProvider = {
+        mode: 'static',
+        issuer: 'https://idp.example.com',
+        audience: 'flowguard',
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+        signingKeys: [
+          {
+            kind: 'jwk' as const,
+            kid: 'key-1',
+            alg: 'RS256' as const,
+            jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+          },
+        ],
+      } as unknown as typeof config.policy.identityProvider;
+      await writeConfig(wsDir, config);
+
+      // Verify config write succeeded
+      const verifyConfig = await readConfig(wsDir);
+      expect(verifyConfig.policy.identityProviderMode).toBe('required');
+
+      // New session picks up config
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ policyMode: 'team', profileId: 'baseline' }, ctx2);
+      const hydrateResult = parseToolResult(raw);
+      expect(hydrateResult.error).toBeUndefined();
+
+      const sessDir2 = await resolveSessionDirFor(ctx2.sessionID);
+      const state = await readState(sessDir2);
       expect(state).not.toBeNull();
-      expect(state!.policySnapshot.identityProviderMode).toBe('optional');
+      // Config fields flow through to snapshot
+      expect(state!.policySnapshot.identityProviderMode).toBe('required');
+      expect(state!.policySnapshot.identityProvider).toBeDefined();
     });
   });
 });
