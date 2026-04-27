@@ -183,7 +183,7 @@ Or remote JWKS with cache TTL:
 
 Authority rule: no mixed mode. `static` accepts `signingKeys` only; `jwks` accepts exactly one of `jwksPath` or `jwksUri`.
 
-`jwksUri` policy: HTTPS only, cached for `cacheTtlSeconds` (default 300s), fail-closed on fetch/parse/validation errors when refresh is required. P35b2 intentionally has no stale-on-error and no last-known-good fallback after TTL expiry.
+`jwksUri` policy: HTTPS only, cached for `cacheTtlSeconds` (default 300s), fail-closed on fetch/parse/validation errors when refresh is required. This implementation intentionally has no stale-on-error and no last-known-good fallback after TTL expiry.
 
 ### policy.identityProviderMode
 

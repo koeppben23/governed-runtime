@@ -135,7 +135,7 @@ flowguard_plan (Mode B)     →  L1: subagent called?
                                 ↳ ANY FAIL → throw → tool call physically blocked
 ```
 
-Each Task call to `flowguard-reviewer` satisfies exactly **one** pending review obligation (P34 1:1 contract). P34a (plan review) and P34b (implement review) are independent governance obligations. When both are pending, the prompt's `iteration`/`planVersion` values are matched against each obligation's content metadata to determine assignment. If no match is found, no obligation is satisfied (fail-closed).
+Each Task call to `flowguard-reviewer` satisfies exactly **one** pending review obligation (1:1 contract). Plan review and implement review are independent governance obligations. When both are pending, the prompt's `iteration`/`planVersion` values are matched against each obligation's content metadata to determine assignment. If no match is found, no obligation is satisfied (fail-closed).
 
 State is session-scoped and cleared after successful verdict submission. Tracking errors (in `tool.execute.after`) are fire-and-forget and never block governance flow. Enforcement errors (in `tool.execute.before`) are strict and physically prevent the tool call.
 
@@ -330,8 +330,8 @@ For strict Independent Review enforcement in CI, the following checks must be **
    - L2: Session ID match — submitted session ID must match actual subagent session
    - L3: Prompt integrity — subagent prompt must contain expected iteration/planVersion and meet minimum length
    - L4: Findings integrity — submitted overallVerdict and blockingIssues count must match actual subagent response
-4. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. P34a (plan) and P34b (implement) are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
-5. **Strict evidence contract (P35)** — With `strictEnforcement=true`, verdicts are accepted only when obligation, invocation evidence, and reviewer attestation are all present, mandate-bound, and single-use. No fallback to probabilistic review.
+4. **1:1 obligation matching** — Each subagent call satisfies exactly one pending review obligation. Plan and implement are independent; if both are pending, each requires its own subagent invocation. Matching uses content metadata (iteration/planVersion) from the Task prompt. No match = fail-closed.
+5. **Strict evidence contract ** — With `strictEnforcement=true`, verdicts are accepted only when obligation, invocation evidence, and reviewer attestation are all present, mandate-bound, and single-use. No fallback to probabilistic review.
 
 **Backward-compatible.** Default policy (`subagentEnabled: false`) preserves existing self-review behavior. Deterministic invocation and enforcement hooks only activate when `INDEPENDENT_REVIEW_REQUIRED` is detected in tool responses. No existing workflows are affected.
 

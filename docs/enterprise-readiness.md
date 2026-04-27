@@ -69,7 +69,7 @@ In regulated mode, FlowGuard currently guarantees:
   archive contains completion evidence.
 - Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `oidc`, `unknown`).
 - Actor assurance tiers: `best_effort` (env/git/unknown), `claim_validated` (validated claim file), `idp_verified` (IdP token verification via static keys, local pinned JWKS, or remote JWKS with TTL cache and fail-closed refresh).
-- P35 scope boundary: no OIDC discovery and no stale-on-error/last-known-good JWKS fallback.
+- Scope boundary: no OIDC discovery and no stale-on-error/last-known-good JWKS fallback.
 - `identityProviderMode: 'required'` blocks fail-closed on IdP configuration/token/verification errors.
 - `identityProviderMode: 'optional'` degrades to claim/env/git/unknown only for typed IdP errors.
 

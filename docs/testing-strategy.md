@@ -30,7 +30,7 @@ Integration and smoke tests are organized into tiers of decreasing governance cr
 | **T4** | Tool/Handler Contract        | `integration/cli-contract.test.ts`            | Every tool call returns expected shape, errors are structured        |
 | **T5** | CLI Smoke                    | `cli/cli-contract-smoke.test.ts`              | Built CLI entry point starts, routes commands, exits cleanly         |
 
-Additionally, `integration/identity-policy-e2e.test.ts` proves the P1 identity-policy
+Additionally, `integration/identity-policy-e2e.test.ts` proves the identity-policy
 enforcement chain (actor resolution, assurance tiers, policy snapshot flow-through).
 
 ## CI Job Mapping
