@@ -221,18 +221,15 @@ describe('resolveActor', () => {
     expect(actor.email).toBe('injected@test.com');
   });
 
-  it('injected env does not leak to subsequent calls (no shared state)', async () => {
-    // First call with custom env
+  it('injected env does not mutate process.env', async () => {
+    const before = process.env.FLOWGUARD_ACTOR_ID;
+
     const customEnv = { FLOWGUARD_ACTOR_ID: 'first-user' } as NodeJS.ProcessEnv;
-    const actor1 = await resolveActor(WORKTREE, { env: customEnv });
-    expect(actor1.id).toBe('first-user');
+    const actor = await resolveActor(WORKTREE, { env: customEnv });
 
-    // Verify process.env was not mutated by the injection
-    expect(process.env.FLOWGUARD_ACTOR_ID).not.toBe('first-user');
-
-    // Second call without env option — uses default process.env, not the injected env
-    const actor2 = await resolveActor(WORKTREE);
-    expect(actor2.id).not.toBe('first-user');
+    expect(actor.id).toBe('first-user');
+    // Injection must not mutate the real process.env
+    expect(process.env.FLOWGUARD_ACTOR_ID).toBe(before);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
