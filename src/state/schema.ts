@@ -36,7 +36,7 @@ import {
   DiscoverySummarySchema,
   DetectedStackSchema,
   VerificationCandidatesSchema,
-} from '../discovery/types.js';
+} from './discovery-schemas.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 

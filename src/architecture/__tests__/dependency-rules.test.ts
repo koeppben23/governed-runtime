@@ -396,6 +396,9 @@ describe('Layer Dependency Rules', () => {
 
   describe('Rule 3: discovery/types is a leaf module', () => {
     const violations: ImportViolation[] = [];
+    // P2d: discovery/types now re-exports schemas from state/discovery-schemas.
+    // state/ is the bottom layer — discovery depending on state is architecturally
+    // correct. All other FlowGuard modules remain forbidden.
     const forbiddenFromDiscovery = new Set([
       'machine',
       'rails',
@@ -404,7 +407,6 @@ describe('Layer Dependency Rules', () => {
       'config',
       'audit',
       'archive',
-      'state',
     ]);
 
     beforeAll(() => {

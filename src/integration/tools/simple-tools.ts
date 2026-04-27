@@ -37,7 +37,7 @@ import { readState, writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
 
 // Workspace
-import { archiveSession } from '../../adapters/workspace/index.js';
+import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
 
@@ -204,13 +204,26 @@ export const archive: ToolDefinition = {
 
       const archivePath = await archiveSession(fingerprint, context.sessionID);
 
+      // P2e: Track archiveStatus for consistency with regulated completion path.
+      // Verify archive integrity and persist status on state.
+      let archiveStatus: 'verified' | 'failed' = 'failed';
+      try {
+        const verification = await verifyArchive(fingerprint, context.sessionID);
+        archiveStatus = verification.passed ? 'verified' : 'failed';
+      } catch {
+        // Verification failure is non-fatal for manual archive — status stays 'failed'.
+      }
+      const archivedState = { ...state, archiveStatus };
+      await writeStateWithArtifacts(sessDir, archivedState);
+
       return appendNextAction(
         JSON.stringify({
           phase: state.phase,
           status: 'Session archived successfully.',
           archivePath,
+          archiveStatus,
         }),
-        state,
+        archivedState,
       );
     } catch (err) {
       return formatError(err);

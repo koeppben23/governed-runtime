@@ -542,13 +542,15 @@ export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;
  * - Which key was used for signature verification
  * - When the verification occurred
  */
-export const ActorVerificationMetaSchema = z.object({
-  issuer: z.string(),
-  audience: z.array(z.string()),
-  keyId: z.string(),
-  algorithm: z.string(),
-  verifiedAt: z.string().datetime(),
-});
+export const ActorVerificationMetaSchema = z
+  .object({
+    issuer: z.string(),
+    audience: z.array(z.string()),
+    keyId: z.string(),
+    algorithm: z.string(),
+    verifiedAt: z.string().datetime(),
+  })
+  .readonly();
 export type ActorVerificationMeta = z.infer<typeof ActorVerificationMetaSchema>;
 
 /**

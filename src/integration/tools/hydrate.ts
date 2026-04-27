@@ -260,7 +260,7 @@ export const hydrate: ToolDefinition = {
             configIdentityProviderMode: config.policy.identityProviderMode,
           });
       const policy = existing
-        ? resolvePolicyFromState(existingWithCentralEvidence)
+        ? resolvePolicyFromState(existingWithCentralEvidence ?? existing)
         : policyResolution.policy;
       const ctx = createPolicyContext(policy);
 

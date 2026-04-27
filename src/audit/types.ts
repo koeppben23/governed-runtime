@@ -26,6 +26,15 @@ import * as crypto from 'node:crypto';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict } from '../state/evidence.js';
 
+// P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
+// Re-exported here for backward compatibility — all existing consumers continue to work.
+import type {
+  ActorInfo as _ActorInfo,
+  ActorVerificationMeta as _ActorVerificationMeta,
+} from '../state/evidence.js';
+export type ActorInfo = _ActorInfo;
+export type ActorVerificationMeta = _ActorVerificationMeta;
+
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
 /**
@@ -107,43 +116,10 @@ export type TypedDetail =
   | DecisionDetail;
 
 // ─── Actor Identity ──────────────────────────────────────────────────────────
-
-/**
- * Resolved operator identity for audit attribution.
- *
- * P27/P34: Identity with source and assurance tier.
- * The `source` field tells WHERE the identity came from.
- * The `assurance` field tells HOW STRONG the verification is.
- *
- * Source → Assurance mapping (authoritative):
- * - `env`     → `best_effort` (operator-provided, no third-party verification)
- * - `git`     → `best_effort` (derived from git config)
- * - `unknown` → `best_effort` (no identity available)
- * - `claim`   → `claim_validated` (schema + expiry validated from local claim file)
- * - `oidc`    → `idp_verified` (cryptographic IdP verification, future P35)
- *
- * P34 design doc: docs/actor-assurance-architecture.md
- *
- * Resolved once at hydrate time, immutable for the session lifecycle.
- * Changing FLOWGUARD_ACTOR_* or git config after hydrate does not affect
- * the current session. Re-run /hydrate to resolve a new actor.
- */
-export interface ActorVerificationMeta {
-  readonly issuer: string;
-  readonly audience: string[];
-  readonly keyId: string;
-  readonly algorithm: string;
-  readonly verifiedAt: string;
-}
-
-export interface ActorInfo {
-  readonly id: string;
-  readonly email: string | null;
-  readonly displayName?: string | null;
-  readonly source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
-  readonly assurance: 'best_effort' | 'claim_validated' | 'idp_verified';
-  readonly verificationMeta?: ActorVerificationMeta;
-}
+// P2b: ActorInfo and ActorVerificationMeta are canonically defined in
+// state/evidence.ts (Zod schema SSOT). Imported and re-exported above.
+// All factory functions, ChainedAuditEvent, and external consumers use
+// the same canonical type — no drift possible.
 
 // ─── Audit Event with Chain Hash ─────────────────────────────────────────────
 

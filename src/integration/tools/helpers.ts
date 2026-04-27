@@ -38,7 +38,7 @@ import {
 } from '../../adapters/workspace/index.js';
 
 // Config
-import { policyFromSnapshot, resolvePolicy } from '../../config/policy.js';
+import { policyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
@@ -237,17 +237,28 @@ export async function writeStateWithArtifacts(
 }
 
 /**
- * Resolve policy from session state (existing session)
- * or default to TEAM_POLICY (no session yet — conservative fallback).
+ * Resolve policy from session state's frozen snapshot.
+ *
+ * P2c: Accepts only non-null SessionState. All callers guard null before calling.
+ * Fail-closed: if policySnapshot is missing (corrupt state), throws instead of
+ * silently falling back to a reconstructed policy from a mode string.
  *
  * This is the helper/plugin fallback path. Hydrate owns its own
  * developer-friendly solo fallback via the P21 config chain.
  */
-export function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
-  if (state?.policySnapshot) {
+export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
+  if (state.policySnapshot) {
     return policyFromSnapshot(state.policySnapshot);
   }
-  return resolvePolicy('team');
+  // Fail-closed: a hydrated session must always have a policySnapshot.
+  // If missing, this is a data integrity error — not a recoverable fallback.
+  throw Object.assign(
+    new Error(
+      'Session state is missing policySnapshot. This indicates data corruption — ' +
+        'every hydrated session must have a frozen policy snapshot.',
+    ),
+    { code: 'POLICY_SNAPSHOT_MISSING' },
+  );
 }
 
 /**
