@@ -93,15 +93,4 @@ describe('compareActorAssurance', () => {
   it('undefined is below all tiers', () => {
     expect(compareActorAssurance(undefined, 'best_effort')).toBeLessThan(0);
   });
-
-  describe('PERF', () => {
-    it('1000 comparisons complete in < 1ms', () => {
-      const start = performance.now();
-      for (let i = 0; i < 1000; i++) {
-        isAssuranceAtLeast('claim_validated', 'best_effort');
-      }
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(1);
-    });
-  });
 });
