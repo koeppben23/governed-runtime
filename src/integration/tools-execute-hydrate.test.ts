@@ -243,8 +243,9 @@ describe('hydrate', () => {
     it('persists state to session directory on disk', async () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -394,8 +395,9 @@ describe('hydrate', () => {
       await hydrateSession();
 
       // 2. Locate session dir on disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -460,8 +462,9 @@ describe('hydrate', () => {
     it('idempotent hydrate preserves workspace metadata', async () => {
       await hydrateSession();
       await hydrateSession();
-      const { computeFingerprint, readWorkspaceInfo } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, readWorkspaceInfo } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const info = await readWorkspaceInfo(fp.fingerprint);
       expect(info).not.toBeNull();
@@ -471,8 +474,9 @@ describe('hydrate', () => {
     it('existing regulated session remains allowed when central minimum is team', async () => {
       await hydrateSession({ policyMode: 'regulated' });
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
 
       const centralPath = `${ws.tmpDir}/central-policy.json`;
@@ -502,8 +506,9 @@ describe('hydrate', () => {
     it('existing session clears stale central policyVersion when current central policy has no version', async () => {
       await hydrateSession({ policyMode: 'regulated' });
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const stateBefore = await readState(sessDir);
@@ -1204,8 +1209,9 @@ describe('hydrate', () => {
       const result = await hydrateSession();
       expect(result.phase).toBe('READY');
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1222,8 +1228,9 @@ describe('hydrate', () => {
     it('actorInfo persisted at hydrate is reused even if env changes', async () => {
       // First hydrate with default mock actor
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state1 = await readState(sessDir);
@@ -1262,8 +1269,9 @@ describe('hydrate', () => {
       // which the plugin uses: state.actorInfo is passed to createLifecycleEvent.
       // Factory-level audit event tests are in audit.test.ts (P27 section).
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -1276,8 +1284,9 @@ describe('hydrate', () => {
 
     it('sessionID is still present separately from actorInfo in state', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } =
-        await import('../adapters/workspace/index.js');
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
