@@ -336,10 +336,7 @@ export const decision: ToolDefinition = {
     try {
       const { fingerprint, sessDir, state, ctx } = await withMutableSession(context);
       const policy = resolvePolicyFromState(state);
-      const actorInfo = await resolveActorForPolicy(
-        context.worktree || context.directory,
-        policy,
-      );
+      const actorInfo = await resolveActorForPolicy(context.worktree || context.directory, policy);
 
       // P30/P34: Build structured decision identity directly from resolved actor info
       // actorAssurance comes from the canonical ActorInfo — not re-derived from source
