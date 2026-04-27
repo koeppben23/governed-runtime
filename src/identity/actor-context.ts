@@ -9,7 +9,7 @@
  * @version v1
  */
 
-import { resolveActor } from '../adapters/actor.js';
+import { resolveActor, ActorIdentityError } from '../adapters/actor.js';
 import type { ActorInfo } from '../audit/types.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
@@ -27,6 +27,14 @@ export async function resolveActorForPolicy(
   worktree: string,
   policy: FlowGuardPolicy,
 ): Promise<ActorInfo> {
+  // Guard: required IdP mode without configured IdP is a configuration error
+  if (policy.identityProviderMode === 'required' && !policy.identityProvider) {
+    throw new ActorIdentityError(
+      'ACTOR_IDP_CONFIG_REQUIRED',
+      'identityProviderMode is required but no identityProvider is configured',
+    );
+  }
+
   return resolveActor(worktree, {
     idpConfig: policy.identityProvider,
     idpMode: policy.identityProviderMode,

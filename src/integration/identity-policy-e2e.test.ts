@@ -24,6 +24,7 @@ import {
   createToolContext,
   createTestWorkspace,
   parseToolResult,
+  isBlockedResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -88,6 +89,8 @@ const actorMock = await import('../adapters/actor.js');
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
+let _prevPolicyPath: string | undefined;
+let _prevTokenPath: string | undefined;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
@@ -96,6 +99,10 @@ beforeEach(async () => {
     directory: ws.tmpDir,
     sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
+  _prevPolicyPath = process.env.FLOWGUARD_POLICY_PATH;
+  _prevTokenPath = process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  delete process.env.FLOWGUARD_POLICY_PATH;
+  delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
 });
 
 afterEach(async () => {
@@ -111,7 +118,17 @@ afterEach(async () => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     });
-  delete process.env.FLOWGUARD_POLICY_PATH;
+  // Restore env vars to their previous state
+  if (_prevPolicyPath === undefined) {
+    delete process.env.FLOWGUARD_POLICY_PATH;
+  } else {
+    process.env.FLOWGUARD_POLICY_PATH = _prevPolicyPath;
+  }
+  if (_prevTokenPath === undefined) {
+    delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  } else {
+    process.env.FLOWGUARD_ACTOR_TOKEN_PATH = _prevTokenPath;
+  }
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -247,6 +264,7 @@ describe('identity-policy-e2e', () => {
      */
     async function writeIdentityPolicyConfig(overrides: {
       identityProviderMode?: 'optional' | 'required';
+      identityProvider?: Record<string, unknown>;
       minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
     }): Promise<void> {
       // Bootstrap workspace config directory
@@ -263,6 +281,10 @@ describe('identity-policy-e2e', () => {
       }
       if (overrides.minimumActorAssuranceForApproval !== undefined) {
         config.policy.minimumActorAssuranceForApproval = overrides.minimumActorAssuranceForApproval;
+      }
+      if (overrides.identityProvider !== undefined) {
+        config.policy.identityProvider =
+          overrides.identityProvider as typeof config.policy.identityProvider;
       }
       await writeConfig(wsDir, config);
     }
@@ -292,6 +314,7 @@ describe('identity-policy-e2e', () => {
      */
     async function reachPlanReviewWithIdpPolicy(overrides: {
       identityProviderMode?: 'optional' | 'required';
+      identityProvider?: Record<string, unknown>;
       minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
     }): Promise<string> {
       await writeIdentityPolicyConfig(overrides);
@@ -314,6 +337,20 @@ describe('identity-policy-e2e', () => {
       await writeIdentityPolicyConfig({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Fresh session with team mode
@@ -338,6 +375,20 @@ describe('identity-policy-e2e', () => {
       const sessDir = await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Actor mock default is best_effort — should be blocked
@@ -358,6 +409,20 @@ describe('identity-policy-e2e', () => {
       await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Override actor to claim_validated — still below idp_verified threshold
@@ -384,6 +449,20 @@ describe('identity-policy-e2e', () => {
       const sessDir = await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Override actor to idp_verified — meets threshold
@@ -456,6 +535,20 @@ describe('identity-policy-e2e', () => {
       const sessDir = await reachPlanReviewWithIdpPolicy({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Simulate: resolveActor throws because IdP mode is required but no token
@@ -484,6 +577,20 @@ describe('identity-policy-e2e', () => {
       await writeIdentityPolicyConfig({
         identityProviderMode: 'required',
         minimumActorAssuranceForApproval: 'idp_verified',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk' as const,
+              kid: 'key-1',
+              alg: 'RS256' as const,
+              jwk: { kty: 'RSA' as const, n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        } as unknown as Record<string, unknown>,
       });
 
       // Fresh session — hydrate does NOT pass IdP config to resolveActor
@@ -502,6 +609,47 @@ describe('identity-policy-e2e', () => {
       expect(state).not.toBeNull();
       expect(state!.phase).toBe('READY');
       expect(state!.policySnapshot.identityProviderMode).toBe('required');
+    });
+
+    // ── Test 8: decision blocks with ACTOR_IDP_MODE_REQUIRED (real runtime, no mock) ──
+
+    it('decision blocks when idpMode=required, idpConfig set, but no token', async () => {
+      // Use the helper which sets identityProviderMode: 'required' + identityProvider
+      await reachPlanReviewWithIdpPolicy({
+        identityProviderMode: 'required',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk',
+              kid: 'key-1',
+              alg: 'RS256',
+              jwk: { kty: 'RSA', n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        },
+      } as unknown as {
+        identityProviderMode: 'required';
+        identityProvider: Record<string, unknown>;
+      });
+
+      // No token path
+      delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+
+      // Use real resolveActor — not mocked
+      vi.mocked(actorMock.resolveActor).mockImplementation(
+        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
+      );
+
+      const raw = await decision.execute(
+        { verdict: 'approve', rationale: 'runtime idp test' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(isBlockedResult(result)).toBe(true);
     });
   });
 });

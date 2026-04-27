@@ -246,7 +246,7 @@ Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT
 
 ### Fail-Closed Identity Behavior
 
-- `identityProviderMode: 'required'` blocks session hydration on IdP failures (no implicit fallback).
+- `identityProviderMode: 'required'` enforces IdP verification at mutating decision paths (approve/reject). Hydrate remains diagnostic/best-effort and does not block on IdP failures.
 - `identityProviderMode: 'optional'` degrades only on typed IdP errors; claim/env/git/unknown resolution remains bounded by priority rules.
 - Remote JWKS refresh failures after TTL expiry fail closed (`IDP_JWKS_FETCH_FAILED`).
 

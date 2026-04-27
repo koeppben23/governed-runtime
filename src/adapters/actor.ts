@@ -11,7 +11,8 @@
  *
  * P35a: IdP verification via static keys in policy.identityProvider.
  * If identityProvider is configured and TOKEN_PATH is set, JWT is verified against static keys.
- * If identityProviderMode is 'required', session creation fails when verification fails.
+ * If identityProviderMode is 'required', mutating decision paths fail when
+ * verification fails (fail-closed). Hydrate remains diagnostic/best-effort.
  *
  * P34: Source and assurance are orthogonal. A given source always produces a fixed
  * assurance tier. The source tells WHERE, assurance tells HOW STRONG.
@@ -77,6 +78,7 @@ export class ActorIdentityError extends Error {
     public readonly code:
       | 'ACTOR_IDENTITY_UNAVAILABLE'
       | 'ACTOR_IDP_MODE_REQUIRED'
+      | 'ACTOR_IDP_CONFIG_REQUIRED'
       | 'ACTOR_IDP_INVALID',
     message: string,
   ) {
