@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFile, readFile, readdir, stat, mkdir, rm, utimes } from 'node:fs/promises';
+import { writeFile, readFile, readdir, stat, mkdir, rm, utimes, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink, getLogDir } from './file-sink.js';
@@ -181,10 +181,7 @@ describe('createFileSink', () => {
 
   describe('cleanup error paths', () => {
     it('handles stat failure gracefully (non-blocking)', async () => {
-      const testDir = join(
-        tmpdir(),
-        'fg-log-sink-stat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      );
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-stat-'));
       try {
         // Create fake old log file
         const logDir = join(testDir, '.opencode', 'logs');
@@ -213,10 +210,7 @@ describe('createFileSink', () => {
     });
 
     it('handles unlink failure gracefully', async () => {
-      const testDir = join(
-        tmpdir(),
-        'fg-log-sink-unlink-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      );
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-unlink-'));
       try {
         const logDir = join(testDir, '.opencode', 'logs');
         await mkdir(logDir, { recursive: true });
