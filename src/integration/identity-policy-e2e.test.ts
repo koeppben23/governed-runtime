@@ -680,5 +680,63 @@ describe('identity-policy-e2e', () => {
         }),
       ).rejects.toThrow(ActorIdentityError);
     });
+
+    // ── Test 10: full ticket flow with idpMode=required blocks decision ──
+
+    it('full ticket flow blocks decision when idpMode=required and no token', async () => {
+      // 1. Config with IdP-required + identityProvider — hydrate picks it up (Option B)
+      await writeIdentityPolicyConfig({
+        identityProviderMode: 'required',
+        identityProvider: {
+          mode: 'static',
+          issuer: 'https://idp.example.com',
+          audience: 'flowguard',
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          signingKeys: [
+            {
+              kind: 'jwk',
+              kid: 'key-1',
+              alg: 'RS256',
+              jwk: { kty: 'RSA', n: 'dGVzdA', e: 'AQAB' },
+            },
+          ],
+        },
+      });
+
+      // 2. Fresh session — hydrate succeeds (Option B)
+      ctx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const hydrateResult = await hydrateSession({ policyMode: 'team' });
+      expect(hydrateResult.error).toBeUndefined();
+
+      // 3. Verify snapshot has IdP config
+      const sessDir = await resolveSessionDirFor(ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      expect(state!.policySnapshot.identityProviderMode).toBe('required');
+
+      // 4. Full ticket flow: ticket → plan → self-review → PLAN_REVIEW
+      await advanceToPlanReview();
+
+      // 5. No token path set — decision must block
+      delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+
+      // 6. Use real resolveActor (not mocked) for the decision call
+      vi.mocked(actorMock.resolveActor).mockImplementation(
+        actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
+      );
+
+      // 7. Decision should block — idpMode=required, idpConfig set, but no token
+      const raw = await decision.execute(
+        { verdict: 'approve', rationale: 'e2e enforcement test' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(isBlockedResult(result)).toBe(true);
+      expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
+    });
   });
 });
