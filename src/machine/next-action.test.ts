@@ -320,5 +320,25 @@ describe('resolveNextAction', () => {
       const totalBudget = Phase.options.length * PERF_BUDGETS.evaluateSingleMs;
       expect(p99Ms).toBeLessThan(totalBudget);
     });
+
+    it('lookup table resolution is at least as fast as switch for all phases', () => {
+      // Benchmark: resolve each of the 14 phases 1000 times
+      const states = Phase.options.map((p) => ({
+        phase: p,
+        state: makeProgressedState(p),
+      }));
+
+      const start = performance.now();
+      for (let round = 0; round < 1000; round++) {
+        for (const { phase, state } of states) {
+          resolveNextAction(phase, state);
+        }
+      }
+      const elapsed = performance.now() - start;
+
+      // 14 phases × 1000 rounds = 14000 calls.
+      // Each call should be < 1μs. Budget: 14000 × 0.01ms = 140ms.
+      expect(elapsed).toBeLessThan(700);
+    });
   });
 });

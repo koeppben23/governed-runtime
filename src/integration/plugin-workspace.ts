@@ -47,6 +47,13 @@ export interface WorkspaceDeps {
 }
 
 /** All helpers returned by the workspace factory. */
+/** Session identity context bundled for audit operations. */
+export interface ReviewSessionContext {
+  readonly sessDir: string;
+  readonly sessionId: string;
+  readonly phase: string;
+}
+
 export interface PluginWorkspace {
   resolveFingerprint(): Promise<string | null>;
   getSessionDir(sessionId: string): string | null;
@@ -64,9 +71,7 @@ export interface PluginWorkspace {
     update: (state: SessionState, now: string) => SessionState,
   ): Promise<void>;
   blockReviewOutcome(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
+    ctx: ReviewSessionContext,
     obligationId: string,
     code: string,
     detail: Record<string, string>,
@@ -170,19 +175,23 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
   }
 
   async function blockReviewOutcome(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
+    ctx: ReviewSessionContext,
     obligationId: string,
     code: string,
     detail: Record<string, string>,
     output: { output: string },
   ): Promise<void> {
-    await updateReviewAssurance(sessDir, (s) => blockObligation(s, obligationId, code));
-    await appendReviewAuditEvent(sessDir, sessionId, phase, 'review:obligation_blocked', {
-      obligationId,
-      code,
-    });
+    await updateReviewAssurance(ctx.sessDir, (s) => blockObligation(s, obligationId, code));
+    await appendReviewAuditEvent(
+      ctx.sessDir,
+      ctx.sessionId,
+      ctx.phase,
+      'review:obligation_blocked',
+      {
+        obligationId,
+        code,
+      },
+    );
     output.output = strictBlockedOutput(code, detail);
   }
 

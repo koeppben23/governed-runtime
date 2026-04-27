@@ -46,6 +46,7 @@ import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
 
 /**
@@ -59,9 +60,7 @@ export interface OrchestratorDeps {
     update: (state: SessionState, now: string) => SessionState,
   ): Promise<void>;
   blockReviewOutcome(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
+    ctx: ReviewSessionContext,
     obligationId: string,
     code: string,
     detail: Record<string, string>,
@@ -199,9 +198,7 @@ export async function runReviewOrchestration(
         );
         if (strictEnforcement) {
           await deps.blockReviewOutcome(
-            sessDir,
-            sessionId,
-            String(parsedOutput.phase ?? sessionState.phase),
+            { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
             reviewCtx.obligationId,
             'STRICT_REVIEW_ORCHESTRATION_FAILED',
             { reason: 'reviewer response was not parseable as ReviewFindings' },
@@ -220,9 +217,7 @@ export async function runReviewOrchestration(
           const att = parsedFindings.data.attestation;
           if (!att) {
             await deps.blockReviewOutcome(
-              sessDir,
-              sessionId,
-              String(parsedOutput.phase ?? sessionState.phase),
+              { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
               reviewCtx.obligationId,
               'SUBAGENT_MANDATE_MISSING',
               { obligationId: reviewCtx.obligationId },
@@ -237,9 +232,7 @@ export async function runReviewOrchestration(
             att.mandateDigest !== REVIEW_MANDATE_DIGEST
           ) {
             await deps.blockReviewOutcome(
-              sessDir,
-              sessionId,
-              String(parsedOutput.phase ?? sessionState.phase),
+              { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
               reviewCtx.obligationId,
               'SUBAGENT_MANDATE_MISMATCH',
               { obligationId: reviewCtx.obligationId },
@@ -372,9 +365,7 @@ export async function runReviewOrchestration(
       });
       if (strictEnforcement) {
         await deps.blockReviewOutcome(
-          sessDir,
-          sessionId,
-          String(parsedOutput.phase ?? sessionState.phase),
+          { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
           reviewCtx.obligationId,
           'STRICT_REVIEW_ORCHESTRATION_FAILED',
           { reason: 'reviewer invocation failed' },

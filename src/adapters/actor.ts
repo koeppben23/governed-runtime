@@ -155,6 +155,8 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
 export interface ResolveActorOptions {
   idpConfig?: IdpConfig | null;
   idpMode?: 'optional' | 'required';
+  /** Inject environment for testability. Defaults to process.env. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -179,9 +181,9 @@ export async function resolveActor(
   worktree: string,
   options?: ResolveActorOptions,
 ): Promise<ActorInfo> {
-  const { idpConfig, idpMode = 'optional' } = options ?? {};
+  const { idpConfig, idpMode = 'optional', env = process.env } = options ?? {};
 
-  const tokenPath = process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  const tokenPath = env.FLOWGUARD_ACTOR_TOKEN_PATH;
   if (isIdpConfigured(idpConfig)) {
     if (!tokenPath) {
       if (idpMode === 'required') {
@@ -217,7 +219,7 @@ export async function resolveActor(
     }
   }
 
-  const rawClaimsPath = process.env.FLOWGUARD_ACTOR_CLAIMS_PATH;
+  const rawClaimsPath = env.FLOWGUARD_ACTOR_CLAIMS_PATH;
   if (rawClaimsPath !== undefined) {
     const claimsPath = rawClaimsPath.trim();
     if (!claimsPath) {
@@ -236,10 +238,10 @@ export async function resolveActor(
     };
   }
 
-  const envId = process.env.FLOWGUARD_ACTOR_ID?.trim();
+  const envId = env.FLOWGUARD_ACTOR_ID?.trim();
   if (envId) {
-    const envEmail = process.env.FLOWGUARD_ACTOR_EMAIL?.trim() || null;
-    const envDisplayName = process.env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null;
+    const envEmail = env.FLOWGUARD_ACTOR_EMAIL?.trim() || null;
+    const envDisplayName = env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null;
     return {
       id: envId,
       email: envEmail,

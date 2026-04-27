@@ -207,6 +207,31 @@ describe('resolveActor', () => {
     });
   });
 
+  it('uses injected env instead of process.env', async () => {
+    // Verifies env DI: custom env is used, process.env is NOT touched
+    const customEnv = {
+      FLOWGUARD_ACTOR_ID: 'injected-user',
+      FLOWGUARD_ACTOR_EMAIL: 'injected@test.com',
+    } as NodeJS.ProcessEnv;
+
+    const actor = await resolveActor(WORKTREE, { env: customEnv });
+
+    expect(actor.source).toBe('env');
+    expect(actor.id).toBe('injected-user');
+    expect(actor.email).toBe('injected@test.com');
+  });
+
+  it('injected env does not leak to subsequent calls (no shared state)', async () => {
+    // First call with custom env
+    const customEnv = { FLOWGUARD_ACTOR_ID: 'first-user' } as NodeJS.ProcessEnv;
+    const actor1 = await resolveActor(WORKTREE, { env: customEnv });
+    expect(actor1.id).toBe('first-user');
+
+    // Second call without env — falls through because process.env is clean
+    const actor2 = await resolveActor(WORKTREE);
+    expect(actor2.id).not.toBe('first-user');
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // P33: Actor Claim Tests
   // ═══════════════════════════════════════════════════════════════════════════════
