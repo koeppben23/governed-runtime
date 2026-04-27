@@ -25,6 +25,7 @@ import {
 } from './key-resolver.js';
 import { JwtStaticTokenVerifier, type TokenVerifier } from './token-verifier.js';
 import type { IdpConfig, ResolvedIdpActor } from './types.js';
+import { IdpConfigSchema } from './types.js';
 
 export { IdpError, type IdpErrorCode } from './errors.js';
 export {
@@ -128,6 +129,6 @@ export async function resolveIdpToken(
  * @param config - IdP configuration (nullable).
  * @returns true if IdP is configured with at least one signing key.
  */
-export function isIdpConfigured(config: IdpConfig | undefined | null): config is IdpConfig {
-  return config !== undefined && config !== null;
+export function isIdpConfigured(config: unknown): config is IdpConfig {
+  return IdpConfigSchema.safeParse(config).success;
 }

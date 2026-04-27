@@ -193,6 +193,8 @@ const FF_MODULES = new Set([
   'archive',
   'logging',
   'cli',
+  'identity',
+  'telemetry',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -293,11 +295,12 @@ describe('Layer Dependency Rules', () => {
       'logging',
       'cli',
       'discovery',
-      'identity',
-      'logging',
       'telemetry',
     ]);
-    const allowedForState = new Set(['shared']);
+    // Intentional exception: state/evidence.ts imports IdpConfigSchema from
+    // identity/types.js for policy snapshot validation. Do not expand this
+    // to actor resolution or runtime identity services.
+    const allowedForState = new Set(['shared', 'identity']);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
