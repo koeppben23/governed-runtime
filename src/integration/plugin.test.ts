@@ -704,4 +704,63 @@ describe('integration/plugin', () => {
       }
     });
   });
+
+  describe('normal FlowGuard tool operation', () => {
+    it('handles flowguard_status without session state gracefully', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const output = {
+          title: 'status',
+          output: JSON.stringify({ phase: 'TICKET' }),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_status', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        // Should not throw or modify output with error
+        const parsed = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(parsed.error).toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('handles flowguard_plan without review obligations', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const output = {
+          title: 'plan',
+          output: JSON.stringify({ phase: 'PLAN', next: 'continue' }),
+          metadata: {},
+        };
+        await hooks['tool.execute.after']!(
+          { tool: 'flowguard_plan', sessionID, callID: 'c1', args: {} },
+          output,
+        );
+
+        const parsed = JSON.parse(String(output.output)) as Record<string, unknown>;
+        expect(parsed.error).toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+  });
 });
