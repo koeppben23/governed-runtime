@@ -56,7 +56,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
 - **Compliance summary generation** — automated 7-check compliance assessment from audit trail
-- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks; `optional` degrades only on typed IdP errors). OIDC discovery and stale/last-known-good fallback are out of scope for P35.
+- **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. All modes default to `best_effort`; stronger assurance requires explicit configuration (`minimumActorAssuranceForApproval: idp_verified`, `identityProviderMode: required`). IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks mutating decisions; `optional` degrades only on typed IdP errors). Identity enforcement follows Option B: `/hydrate` resolves actor best-effort (diagnostic, always succeeds), while `/review-decision` enforces the policy snapshot threshold (fail-closed). OIDC discovery and stale/last-known-good fallback are out of scope for P35.
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
 ### Enterprise Integration
@@ -350,7 +350,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Operational Tools:** 1 (archive — session export with integrity verification)
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
-- **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; regulated approvals enforce `minimumActorAssuranceForApproval` threshold
+- **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; all modes default to `best_effort` — stronger thresholds require explicit `minimumActorAssuranceForApproval` config; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic
 - **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
@@ -375,4 +375,4 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 **Version:** 1.2.0-rc.1
 _Architecture: TypeScript, OpenCode-native, Zero-Bridge_
 _Distribution: Pre-built proprietary artifact (GitHub Releases)_
-_Last Updated: 2026-04-19_
+_Last Updated: 2026-04-27_
