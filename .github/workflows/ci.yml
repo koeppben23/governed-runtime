@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test
+  unit:
+    name: unit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,8 +24,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run tests with coverage
-        run: npm run test:coverage:ci
+      - name: Run unit tests with coverage
+        run: npm run test:unit -- --coverage --coverage.reporter=json-summary
         env:
           FORCE_COLOR: 0
       - name: Upload coverage report
@@ -35,6 +35,24 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 3
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          FORCE_COLOR: 0
 
   typecheck:
     name: typecheck
@@ -143,8 +161,8 @@ jobs:
         env:
           FORCE_COLOR: 0
 
-  acp-smoke:
-    name: acp-smoke
+  smoke:
+    name: smoke
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -159,19 +177,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build package
+        run: npm run build
+        env:
+          FORCE_COLOR: 0
+
       - name: Install OpenCode CLI
         run: npm install -g opencode-ai
 
       - name: Verify OpenCode CLI availability
         run: |
           if ! command -v opencode >/dev/null 2>&1; then
-            echo "::error::opencode CLI not found on runner. ACP smoke tests are mandatory."
+            echo "::error::opencode CLI not found on runner. Smoke tests require it."
             exit 1
           fi
           opencode --version
 
-      - name: Run ACP smoke tests
-        run: npm run test:acp
+      - name: Run smoke tests
+        run: npm run test:smoke
         env:
           FORCE_COLOR: 0
           RUN_OPENCODE_ACP_TESTS: '1'

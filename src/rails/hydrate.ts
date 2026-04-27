@@ -40,7 +40,7 @@ import { defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
-import { resolvePolicy, createPolicySnapshot } from '../config/policy.js';
+import { getPolicyPreset, createPolicySnapshot } from '../config/policy.js';
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
 
@@ -182,7 +182,7 @@ export function executeHydrate(
 
   // 4. Resolve policy → immutable snapshot
   const policyMode = p.policyMode ?? 'solo';
-  let policy = resolvePolicy(policyMode);
+  let policy = getPolicyPreset(policyMode);
   // P31: Apply config overrides
   if (
     p.maxSelfReviewIterations !== undefined ||

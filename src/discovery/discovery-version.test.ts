@@ -17,7 +17,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Discovery types
+// Discovery types & schemas (direct imports — not via root barrel)
 import {
   DiscoveryResultSchema,
   ProfileResolutionSchema,
@@ -27,16 +27,18 @@ import {
   DetectedStackVersionSchema,
   DetectedStackTargetSchema,
   StackInfoSchema,
+  DISCOVERY_SCHEMA_VERSION,
+  PROFILE_RESOLUTION_SCHEMA_VERSION,
+  type CollectorInput,
+  type DiscoveryResult,
+} from './types.js';
+import {
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
   ArchiveFindingSchema,
   ArchiveFindingCodeSchema,
-  DISCOVERY_SCHEMA_VERSION,
-  PROFILE_RESOLUTION_SCHEMA_VERSION,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
-  type CollectorInput,
-  type DiscoveryResult,
-} from '../index.js';
+} from '../archive/types.js';
 
 // Collectors
 import { collectStack } from './collectors/stack-detection.js';

@@ -10,14 +10,6 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./discovery/orchestrator": {
-      "import": "./dist/discovery/orchestrator.js",
-      "types": "./dist/discovery/orchestrator.d.ts"
-    },
-    "./telemetry": {
-      "import": "./dist/telemetry/index.js",
-      "types": "./dist/telemetry/index.d.ts"
-    },
     "./integration": {
       "import": "./dist/integration/index.js",
       "types": "./dist/integration/index.d.ts"
@@ -29,10 +21,6 @@
     "./integration/plugin": {
       "import": "./dist/integration/plugin.js",
       "types": "./dist/integration/plugin.d.ts"
-    },
-    "./integration/tools/index": {
-      "import": "./dist/integration/tools/index.js",
-      "types": "./dist/integration/tools/index.d.ts"
     }
   },
   "bin": {
@@ -43,7 +31,6 @@
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
     "check:esm": "node scripts/check-esm-imports.js",
     "check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
     "check:format": "prettier --check \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
@@ -56,7 +43,7 @@
     "test:acp": "vitest run src/cli/run-acp-smoke.test.ts",
     "test:unit": "vitest run \"src/**/*.test.ts\" --exclude \"src/integration/**/*.test.ts\" --exclude \"src/cli/install-verify.test.ts\" --exclude \"src/cli/run-acp-smoke.test.ts\" --exclude \"src/cli/cli-contract-smoke.test.ts\"",
     "test:integration": "vitest run src/integration/",
-    "test:smoke": "vitest run src/cli/install-verify.test.ts src/cli/run-acp-smoke.test.ts src/cli/cli-contract-smoke.test.ts",
+    "test:smoke": "vitest run src/cli/run-acp-smoke.test.ts src/cli/cli-contract-smoke.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "sync-version": "node scripts/sync-version.js",
     "generate-docs": "node scripts/generate-docs.js",

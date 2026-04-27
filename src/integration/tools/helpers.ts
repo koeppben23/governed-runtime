@@ -38,7 +38,7 @@ import {
 } from '../../adapters/workspace/index.js';
 
 // Config
-import { policyFromSnapshot } from '../../config/policy.js';
+import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
@@ -248,7 +248,7 @@ export async function writeStateWithArtifacts(
  */
 export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
   if (state.policySnapshot) {
-    return policyFromSnapshot(state.policySnapshot);
+    return resolvePolicyFromSnapshot(state.policySnapshot);
   }
   // Fail-closed: a hydrated session must always have a policySnapshot.
   // If missing, this is a data integrity error — not a recoverable fallback.

@@ -187,6 +187,7 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 | [Enterprise Readiness](./docs/enterprise-readiness.md) | Consolidated threat model and control boundaries |
 | [Configuration](./docs/configuration.md)               | Configuration reference                          |
 | [Troubleshooting](./docs/troubleshooting.md)           | FAQ and error handling                           |
+| [Testing Strategy](./docs/testing-strategy.md)         | Test tiers, CI jobs, performance budgets         |
 
 ---
 
@@ -220,6 +221,33 @@ npm run test:coverage
 # Build
 npm run build
 ```
+
+### CI Jobs
+
+| Job                | Script                                         | What It Proves                            |
+| ------------------ | ---------------------------------------------- | ----------------------------------------- |
+| **unit**           | `npm run test:unit`                            | Pure logic correctness                    |
+| **integration**    | `npm run test:integration`                     | Governance chain fidelity                 |
+| **smoke**          | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works               |
+| **install-verify** | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform) |
+
+See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
+
+### Release Checklist
+
+1. `npm run check` — type check clean
+2. `npm run lint` — no lint errors
+3. `npm test` — all tests pass (pre-existing PERF flakes acceptable)
+4. `npm run build` — build succeeds
+5. `npm run check:esm` — ESM imports valid
+6. `npm run test:install-verify` — tarball pack/install/doctor passes
+7. `npm version <patch|minor|major>` — bumps version, syncs VERSION/docs
+8. `git push --follow-tags` — triggers release workflow
+9. Verify GitHub Release artifact and SBOM attachment
+
+The `release.yml` workflow handles: build, pack, naming validation, install-verify on
+tarball, SHA-256 checksums, CycloneDX SBOM generation, build provenance attestation,
+and GitHub Release creation with `--verify-tag`.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
