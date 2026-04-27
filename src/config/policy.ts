@@ -913,3 +913,90 @@ export function resolveRuntimePolicyMode(opts: {
   }
   return opts.configDefaultMode ?? 'solo';
 }
+
+// ─── Policy Snapshot Normalization ────────────────────────────────────────────
+
+/**
+ * Normalize a potentially incomplete or legacy policy snapshot.
+ *
+ * Fills missing governance-critical fields with safe defaults.
+ * Does NOT throw on incomplete snapshots — instead enriches and marks
+ * resolvedAt with the current time if missing.
+ *
+ * This is essential for backward compatibility: sessions created under
+ * earlier schema versions may lack fields like minimumActorAssuranceForApproval
+ * or identityProviderMode. Normalization ensures these snapshots are usable
+ * with current runtime checks.
+ *
+ * @param snapshot — The snapshot from session state (may be partial).
+ * @returns A complete, normalized PolicySnapshot.
+ */
+export function normalizePolicySnapshot(
+  snapshot: Record<string, unknown> | null | undefined,
+): PolicySnapshot {
+  const s = snapshot ?? {};
+  return {
+    mode: (s.mode as string) ?? 'solo',
+    hash: (s.hash as string) ?? 'UNKNOWN_LEGACY',
+    resolvedAt: (s.resolvedAt as string) ?? new Date('2026-01-01T00:00:00.000Z').toISOString(),
+    requestedMode: (s.requestedMode as string) ?? (s.mode as string) ?? 'solo',
+    source: s.source as 'explicit' | 'central' | 'repo' | 'default' | undefined,
+    effectiveGateBehavior:
+      (s.effectiveGateBehavior as 'auto_approve' | 'human_gated') ?? 'human_gated',
+    degradedReason: s.degradedReason as PolicyDegradedReason | undefined,
+    resolutionReason: s.resolutionReason as PolicyResolutionReason | undefined,
+    centralMinimumMode: s.centralMinimumMode as CentralMinimumMode | undefined,
+    policyDigest: s.policyDigest as string | undefined,
+    policyVersion: s.policyVersion as string | undefined,
+    policyPathHint: s.policyPathHint as string | undefined,
+    requireHumanGates: (s.requireHumanGates as boolean) ?? true,
+    maxSelfReviewIterations: (s.maxSelfReviewIterations as number) ?? 3,
+    maxImplReviewIterations: (s.maxImplReviewIterations as number) ?? 3,
+    allowSelfApproval: (s.allowSelfApproval as boolean) ?? true,
+    requireVerifiedActorsForApproval: (s.requireVerifiedActorsForApproval as boolean) ?? false,
+    audit: {
+      emitTransitions:
+        ((s.audit as Record<string, unknown> | null)?.emitTransitions as boolean) ?? true,
+      emitToolCalls:
+        ((s.audit as Record<string, unknown> | null)?.emitToolCalls as boolean) ?? true,
+      enableChainHash:
+        ((s.audit as Record<string, unknown> | null)?.enableChainHash as boolean) ?? true,
+    },
+    actorClassification: (s.actorClassification as Record<string, string>) ?? {},
+    minimumActorAssuranceForApproval:
+      (s.minimumActorAssuranceForApproval as
+        | 'best_effort'
+        | 'claim_validated'
+        | 'idp_verified'
+        | undefined) ??
+      ((s.requireVerifiedActorsForApproval as boolean) ? 'claim_validated' : 'best_effort'),
+    identityProvider: s.identityProvider as IdpConfig | undefined,
+    identityProviderMode: (s.identityProviderMode as IdentityProviderMode) ?? 'optional',
+    selfReview: s.selfReview as SelfReviewConfig | undefined,
+  };
+}
+
+/**
+ * Freeze a full PolicyResolution into an immutable PolicySnapshot.
+ *
+ * Convenience wrapper around createPolicySnapshot that extracts
+ * the FlowGuardPolicy from PolicyResolution. All governance-critical
+ * fields (actorClassification, minimumActorAssuranceForApproval,
+ * identityProvider, identityProviderMode, selfReview) are frozen
+ * from the resolved policy.
+ *
+ * @param resolution — Fully resolved policy with metadata.
+ * @param resolvedAt — ISO-8601 timestamp.
+ * @param digestFn — SHA-256 digest function.
+ */
+export function freezePolicySnapshot(
+  resolution: PolicyResolution,
+  resolvedAt: string,
+  digestFn: (text: string) => string,
+): PolicySnapshot {
+  return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
+    requestedMode: resolution.requestedMode,
+    effectiveGateBehavior: resolution.effectiveGateBehavior,
+    degradedReason: resolution.degradedReason,
+  });
+}
