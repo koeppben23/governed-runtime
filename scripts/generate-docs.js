@@ -74,6 +74,14 @@ function replaceVersion(content) {
     `**Version:** ${version}$1`,
   );
   content = content.replace(
+    /^-\s*\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?\s*$/gm,
+    `- **Version:** ${version}`,
+  );
+  content = content.replace(
+    /^\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?\s*$/gm,
+    `**Version:** ${version}`,
+  );
+  content = content.replace(
     /^\*Version: [\d.]+(?:-[a-zA-Z0-9.]+)?\*$/gm,
     `**Version:** ${version}`,
   );
@@ -82,12 +90,12 @@ function replaceVersion(content) {
     `flowguard-core-${version}.tgz`,
   );
   content = content.replace(
-    /^Current snapshot: v[\d.]+(?:-[a-zA-Z0-9.]+)?$/gm,
-    `Current snapshot: ${version}`,
+    /^\*\*Current snapshot: v?[\d.]+(?:-[a-zA-Z0-9.]+)?\*\*$/gm,
+    `**Current snapshot: ${version}**`,
   );
   content = content.replace(
-    /^\*\*Current snapshot: v[\d.]+(?:-[a-zA-Z0-9.]+)?\*\*$/gm,
-    `**Current snapshot: ${version}**`,
+    /^Current snapshot: v?[\d.]+(?:-[a-zA-Z0-9.]+)?$/gm,
+    `Current snapshot: ${version}`,
   );
   return content;
 }

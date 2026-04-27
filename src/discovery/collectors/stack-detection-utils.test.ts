@@ -146,6 +146,10 @@ describe('mapComposeImageToDatabase', () => {
     expect(mapComposeImageToDatabase('')).toBeNull();
   });
 
+  it('returns null for image with only colon and no name', () => {
+    expect(mapComposeImageToDatabase(':latest')).toBeNull();
+  });
+
   it('handles images with registry and digest', () => {
     const result = mapComposeImageToDatabase('docker.io/postgres:15@sha256:abc123');
     expect(result).toBeDefined();

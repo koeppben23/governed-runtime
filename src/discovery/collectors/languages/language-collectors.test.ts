@@ -1078,4 +1078,25 @@ describe('languages/java', () => {
       expect(languages).toHaveLength(0);
     });
   });
+
+  describe('java artifact edge cases', () => {
+    it('extractArtifactsFromPomXml skips when pom.xml has no content', async () => {
+      const testFrameworks = [];
+      const tools = [];
+      const qualityTools = [];
+      const databases = [];
+      await extractArtifactsFromPomXml(
+        mockReadFile({}),
+        testFrameworks,
+        tools,
+        qualityTools,
+        databases,
+      );
+      expect(tools).toHaveLength(0);
+    });
+
+    it('extractFromPomXml skips when pom.xml is missing', async () => {
+      await extractFromPomXml(mockReadFile({}), [], []);
+    });
+  });
 });
