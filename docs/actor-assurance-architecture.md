@@ -289,7 +289,7 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.1 Schema Changes
 
-| The original                                      | Current                                                                                      |
+| The original                                | Current                                                                                  |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `actorInfo.source: 'claim'`                 | `actorInfo.source: 'claim'` (unchanged)                                                  |
 | `actorAssurance: 'verified'`                | `actorAssurance: 'claim_validated'`                                                      |
@@ -298,7 +298,7 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.2 Migration Mapping
 
-| Original Config                                          | Current Behavior                                                            |
+| Original Config                                     | Current Behavior                                                        |
 | --------------------------------------------------- | ----------------------------------------------------------------------- |
 | `FLOWGUARD_ACTOR_CLAIMS_PATH` not set               | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
 | `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim      | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
