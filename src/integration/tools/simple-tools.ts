@@ -2,15 +2,13 @@
  * @module integration/tools/simple-tools
  * @description Simple FlowGuard tools that delegate directly to rails.
  *
- * Contains: status, ticket, decision, validate, review, abort_session, archive.
+ * Contains: ticket, review, abort_session, archive.
  * These tools follow the pattern: resolve workspace -> read state -> call rail -> persist.
  *
- * P26: decision tool now owns regulated archive lifecycle (archive + verify)
- * for clean regulated completions (EVIDENCE_REVIEW + APPROVE → COMPLETE).
- * Emits session_completed audit event before archiveSession() so the archive
- * contains the terminal lifecycle event.
+ * The more complex tools (status, decision, validate) have been extracted to
+ * their own modules: status-tool.ts, decision-tool.ts, validate-tool.ts.
  *
- * @version v5
+ * @version v6
  */
 
 import { z } from 'zod';
@@ -18,260 +16,30 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSession,
-  withReadOnlySession,
   resolveWorkspacePaths,
-  resolvePolicyFromState,
-  formatEval,
   formatBlocked,
   formatError,
   formatRailResult,
   persistAndFormat,
   appendNextAction,
-  writeStateWithArtifacts,
 } from './helpers.js';
 
 // State & Machine
-import type { SessionState } from '../../state/schema.js';
-import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { TERMINAL } from '../../machine/topology.js';
 
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
-import { executeReviewDecision } from '../../rails/review-decision.js';
 import { executeReview, executeReviewFlow } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
-// Rail helpers
-import { autoAdvance } from '../../rails/types.js';
-
 // Adapters
-import {
-  readState,
-  writeReport,
-  appendAuditEvent,
-  readAuditTrail,
-} from '../../adapters/persistence.js';
+import { readState, writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
-import { resolveActorForPolicy } from '../../identity/actor-context.js';
-import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Workspace
-import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
+import { archiveSession } from '../../adapters/workspace/index.js';
 
-// Audit types + integrity (P26: tool-layer audit emission for regulated completions)
-import { createLifecycleEvent } from '../../audit/types.js';
-import { getLastChainHash } from '../../audit/integrity.js';
-
-// Artifacts
-import { writeMadrArtifact } from '../artifacts/madr-writer.js';
-
-// Evidence types
-import type { ValidationResult } from '../../state/evidence.js';
-
-// Config
-import { evaluateCompleteness } from '../../audit/completeness.js';
-import {
-  buildStatusProjection,
-  buildEvidenceDetailProjection,
-  buildBlockedProjection,
-  buildContextProjection,
-  buildReadinessProjection,
-} from '../status.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_status — Read-Only State Check
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const status: ToolDefinition = {
-  description:
-    'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
-    'policy info, completeness matrix, and next action. ' +
-    'Does NOT mutate state. Use this to understand where the workflow is before taking action.',
-  args: {
-    whyBlocked: z
-      .boolean()
-      .optional()
-      .describe('Return focused blocker surface from canonical evaluator/completeness truth.'),
-    evidence: z
-      .boolean()
-      .optional()
-      .describe('Return per-slot evidence detail from canonical completeness truth.'),
-    context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
-    readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
-  },
-  async execute(_args, context) {
-    try {
-      const { state, policy } = await withReadOnlySession(context);
-
-      if (!state) {
-        return JSON.stringify({
-          phase: null,
-          status: 'No FlowGuard session found.',
-          next: 'Run /hydrate to bootstrap a session.',
-        });
-      }
-
-      const ev = evaluate(state, policy);
-      const completeness = evaluateCompleteness(state);
-      const args = _args as {
-        whyBlocked?: boolean;
-        evidence?: boolean;
-        context?: boolean;
-        readiness?: boolean;
-      };
-
-      if (args.whyBlocked === true) {
-        const blocked = buildBlockedProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            whyBlocked: blocked,
-          }),
-          state,
-        );
-      }
-
-      if (args.evidence === true) {
-        const evidenceDetail = buildEvidenceDetailProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            evidence: evidenceDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.context === true) {
-        const contextDetail = buildContextProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            context: contextDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.readiness === true) {
-        const readinessDetail = buildReadinessProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            readiness: readinessDetail,
-          }),
-          state,
-        );
-      }
-
-      const projection = buildStatusProjection(state, policy);
-
-      return appendNextAction(
-        JSON.stringify({
-          status: projection,
-          phase: state.phase,
-          sessionId: state.id,
-          policyMode: state.policySnapshot?.mode ?? 'unknown',
-          archiveStatus: state.archiveStatus ?? null,
-          appliedPolicy: {
-            source: state.policySnapshot?.source ?? 'unknown',
-            requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
-            effectiveMode: state.policySnapshot?.mode ?? 'unknown',
-            effectiveGateBehavior: state.policySnapshot?.effectiveGateBehavior ?? 'unknown',
-            degradedReason: state.policySnapshot?.degradedReason ?? null,
-            resolutionReason: state.policySnapshot?.resolutionReason ?? null,
-            centralMinimumMode: state.policySnapshot?.centralMinimumMode ?? null,
-            centralPolicyDigest: state.policySnapshot?.policyDigest ?? null,
-            centralPolicyVersion: state.policySnapshot?.policyVersion ?? null,
-            centralPolicyPathHint: state.policySnapshot?.policyPathHint ?? null,
-          },
-          initiatedBy: state.initiatedBy,
-          profileId: state.activeProfile?.id ?? 'none',
-          profileName: state.activeProfile?.name ?? 'None',
-          profileRules: (() => {
-            const base = state.activeProfile?.ruleContent ?? '';
-            const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
-            return phaseExtra ? base + '\n\n' + phaseExtra : base;
-          })(),
-          detectedStack: state.detectedStack ?? null,
-          verificationCandidates: state.verificationCandidates ?? [],
-          hasTicket: state.ticket !== null,
-          hasPlan: state.plan !== null,
-          planVersion: state.plan ? state.plan.history.length + 1 : 0,
-          selfReviewIteration: state.selfReview?.iteration ?? null,
-          selfReviewConverged: state.selfReview
-            ? state.selfReview.iteration >= state.selfReview.maxIterations ||
-              (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
-            : null,
-          // Latest independent plan review summary
-          latestReview: (() => {
-            const findings = state.plan?.reviewFindings;
-            if (!findings || findings.length === 0) return null;
-            const latest = findings[findings.length - 1];
-            if (!latest) return null;
-            return {
-              iteration: latest.iteration,
-              planVersion: latest.planVersion,
-              overallVerdict: latest.overallVerdict,
-              blockingIssueCount: latest.blockingIssues.length,
-              majorRiskCount: latest.majorRisks.length,
-              missingVerificationCount: latest.missingVerification.length,
-              reviewMode: latest.reviewMode,
-              reviewedAt: latest.reviewedAt,
-            };
-          })(),
-          validationResults: state.validation.map((v) => ({
-            checkId: v.checkId,
-            passed: v.passed,
-          })),
-          hasImplementation: state.implementation !== null,
-          implReviewIteration: state.implReview?.iteration ?? null,
-          implReviewConverged: state.implReview
-            ? state.implReview.iteration >= state.implReview.maxIterations ||
-              (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
-            : null,
-          // Latest independent implementation review summary
-          latestImplementationReview: (() => {
-            const findings = state.implReviewFindings;
-            if (!findings || findings.length === 0) return null;
-            const latest = findings[findings.length - 1];
-            if (!latest) return null;
-            return {
-              iteration: latest.iteration,
-              overallVerdict: latest.overallVerdict,
-              blockingIssueCount: latest.blockingIssues.length,
-              majorRiskCount: latest.majorRisks.length,
-              missingVerificationCount: latest.missingVerification.length,
-              reviewMode: latest.reviewMode,
-              reviewedAt: latest.reviewedAt,
-            };
-          })(),
-          hasReviewDecision: state.reviewDecision !== null,
-          reviewVerdict: state.reviewDecision?.verdict ?? null,
-          error: state.error,
-          evalKind: ev.kind,
-          next: formatEval(ev),
-          completeness: {
-            overallComplete: completeness.overallComplete,
-            fourEyes: completeness.fourEyes,
-            summary: completeness.summary,
-          },
-        }),
-        state,
-      );
-    } catch (err) {
-      if (err instanceof ActorClaimError) {
-        return formatBlocked(err.code);
-      }
-      return formatError(err);
-    }
-  },
-};
+import { writeStateWithArtifacts } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_ticket — Record Task
@@ -307,234 +75,6 @@ export const ticket: ToolDefinition = {
       if (err instanceof ActorClaimError) {
         return formatBlocked(err.code);
       }
-      return formatError(err);
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_decision — Human Verdict at User Gates
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const decision: ToolDefinition = {
-  description:
-    'Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). ' +
-    "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
-    'This tool ONLY works at PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW phases. ' +
-    'In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.',
-  args: {
-    verdict: z
-      .enum(['approve', 'changes_requested', 'reject'])
-      .describe(
-        "Review verdict. 'approve' advances the workflow. " +
-          "'changes_requested' returns to revision. " +
-          "'reject' restarts from TICKET (or READY for architecture flow).",
-      ),
-    rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
-  },
-  async execute(args, context) {
-    try {
-      const { fingerprint, sessDir, state, ctx } = await withMutableSession(context);
-      const policy = resolvePolicyFromState(state);
-      const actorInfo = await resolveActorForPolicy(context.worktree || context.directory, policy);
-
-      // P30/P34: Build structured decision identity directly from resolved actor info
-      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-      const decisionIdentity = {
-        actorId: actorInfo.id,
-        actorEmail: actorInfo.email,
-        actorDisplayName: actorInfo.displayName,
-        actorSource: actorInfo.source,
-        actorAssurance: actorInfo.assurance,
-      };
-
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: args.verdict,
-          rationale: args.rationale,
-          decidedBy: actorInfo.id,
-          decisionIdentity,
-        },
-        ctx,
-      );
-
-      // Write MADR artifact when architecture flow completes
-      if (
-        result.kind === 'ok' &&
-        result.state.phase === 'ARCH_COMPLETE' &&
-        result.state.architecture
-      ) {
-        await writeMadrArtifact(sessDir, result.state.architecture);
-      }
-
-      // ── P26: Regulated clean completion requires archive + verification ──
-      // Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
-      // Pre-condition guard: only triggers for the exact clean completion path
-      // (EVIDENCE_REVIEW → APPROVE → COMPLETE). Excludes abort, non-regulated,
-      // and future rails that may also produce COMPLETE.
-      //
-      // Fail-closed: the entire finalization chain (audit emit → archive →
-      // verify) runs in a single try/catch. Any failure at any step produces
-      // archiveStatus: 'failed'. This guarantees no "verified archive without
-      // session_completed audit event" can exist.
-      //
-      // The response must reflect the final archiveStatus so the agent/user
-      // sees degraded completion when archive fails (not a stale clean COMPLETE).
-      if (
-        result.kind === 'ok' &&
-        state.phase === 'EVIDENCE_REVIEW' &&
-        args.verdict === 'approve' &&
-        result.state.phase === 'COMPLETE' &&
-        result.state.policySnapshot.mode === 'regulated' &&
-        !result.state.error
-      ) {
-        const pendingState = { ...result.state, archiveStatus: 'pending' as const };
-        await writeStateWithArtifacts(sessDir, pendingState);
-
-        let finalState;
-        try {
-          // 1. Emit session_completed audit event BEFORE archive.
-          //    Reads the trail to get correct prevHash (independent of plugin cache).
-          //    Failure here is fatal — no archive without terminal audit event.
-          const { events } = await readAuditTrail(sessDir);
-          const prevHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
-          const completionEvt = createLifecycleEvent(
-            context.sessionID,
-            { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-            new Date().toISOString(),
-            'machine',
-            prevHash,
-            result.state.actorInfo,
-          );
-          await appendAuditEvent(sessDir, completionEvt);
-
-          // 2. Archive session (synchronous, not fire-and-forget).
-          await archiveSession(fingerprint, context.sessionID);
-          const createdState = { ...result.state, archiveStatus: 'created' as const };
-          await writeStateWithArtifacts(sessDir, createdState);
-
-          // 3. Verify archive integrity.
-          const verification = await verifyArchive(fingerprint, context.sessionID);
-          finalState = {
-            ...result.state,
-            archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-          };
-        } catch {
-          finalState = { ...result.state, archiveStatus: 'failed' as const };
-        }
-
-        return await persistAndFormat(sessDir, { ...result, state: finalState });
-      }
-
-      return await persistAndFormat(sessDir, result);
-    } catch (err) {
-      if (err instanceof ActorIdentityError) {
-        return formatBlocked(err.code, { reason: err.message });
-      }
-      return formatError(err);
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_validate — Record Validation Check Results
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const validate: ToolDefinition = {
-  description:
-    'Record validation check results. The LLM executes the checks (test analysis, ' +
-    'rollback safety analysis, etc.) and reports results here. ' +
-    "Provide an array of check results. Check IDs must match the session's activeChecks. " +
-    'After recording: ALL_PASSED -> advance to IMPLEMENTATION, CHECK_FAILED -> return to PLAN.',
-  args: {
-    results: z
-      .array(
-        z.object({
-          checkId: z
-            .string()
-            .min(1)
-            .describe('Which validation check this result is for (must match activeChecks).'),
-          passed: z.boolean().describe('Whether the check passed.'),
-          detail: z.string().describe('Detailed explanation of the check result.'),
-        }),
-      )
-      .describe('Array of validation check results. Must cover all activeChecks for the session.'),
-  },
-  async execute(args, context) {
-    try {
-      const { sessDir, state, ctx } = await withMutableSession(context);
-
-      // Admissibility
-      if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/validate',
-          phase: state.phase,
-        });
-      }
-
-      if (state.activeChecks.length === 0) {
-        return formatBlocked('NO_ACTIVE_CHECKS');
-      }
-
-      // Validate that all active checks are covered
-      const submittedIds = new Set(
-        args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId),
-      );
-      const missing = state.activeChecks.filter((id) => !submittedIds.has(id));
-      if (missing.length > 0) {
-        return formatBlocked('MISSING_CHECKS', {
-          checks: missing.join(', '),
-        });
-      }
-
-      // Record results with timestamps
-      const now = ctx.now();
-      const validationResults = args.results.map(
-        (r: { checkId: string; passed: boolean; detail: string }) => ({
-          checkId: r.checkId,
-          passed: r.passed,
-          detail: r.detail,
-          executedAt: now,
-        }),
-      );
-
-      const nextState: SessionState = {
-        ...state,
-        validation: validationResults,
-        error: null,
-      };
-
-      // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
-      const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-      const {
-        state: finalState,
-        evalResult: ev,
-        transitions,
-      } = autoAdvance(nextState, evalFn, ctx);
-      await writeStateWithArtifacts(sessDir, finalState);
-
-      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
-      const failedChecks = validationResults
-        .filter((r: ValidationResult) => !r.passed)
-        .map((r: ValidationResult) => r.checkId);
-
-      return appendNextAction(
-        JSON.stringify({
-          phase: finalState.phase,
-          status: allPassed
-            ? 'All validation checks passed.'
-            : `Validation failed: ${failedChecks.join(', ')}.`,
-          results: validationResults.map((r: ValidationResult) => ({
-            checkId: r.checkId,
-            passed: r.passed,
-          })),
-          next: formatEval(ev),
-          _audit: { transitions },
-        }),
-        finalState,
-      );
-    } catch (err) {
       return formatError(err);
     }
   },
