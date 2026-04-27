@@ -60,6 +60,7 @@ export type {
   CentralPolicyBundle,
   CentralPolicyEvidence,
   HydratePolicyResolution,
+  PolicyResolutionReason,
 } from './policy-types.js';
 export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
