@@ -1020,11 +1020,8 @@ describe('archiveSession failure paths', () => {
       const sessionId = '550e8400-e29b-41d4-a716-446655440105';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-      await fs.writeFile(
-        path.join(sessDir, 'session-state.json'),
-        '{"phase": "COMPLETE"}',
-        'utf-8',
-      );
+      // Write a VALID state (passes Zod validation) but make the review report unreadable
+      await writeState(sessDir, makeState('COMPLETE'));
 
       const reviewPath = path.join(sessDir, 'review-report.json');
       await fs.writeFile(
