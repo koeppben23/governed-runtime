@@ -20,6 +20,7 @@ import {
   withMutableSession,
   withReadOnlySession,
   resolveWorkspacePaths,
+  resolvePolicyFromState,
   formatEval,
   formatBlocked,
   formatError,
@@ -51,7 +52,9 @@ import {
   appendAuditEvent,
   readAuditTrail,
 } from '../../adapters/persistence.js';
-import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
+import { ActorClaimError } from '../../adapters/actor.js';
+import { resolveActorForPolicy } from '../../identity/actor-context.js';
+import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Workspace
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
@@ -332,7 +335,11 @@ export const decision: ToolDefinition = {
   async execute(args, context) {
     try {
       const { fingerprint, sessDir, state, ctx } = await withMutableSession(context);
-      const actorInfo = await resolveActor(context.worktree || context.directory);
+      const policy = resolvePolicyFromState(state);
+      const actorInfo = await resolveActorForPolicy(
+        context.worktree || context.directory,
+        policy,
+      );
 
       // P30/P34: Build structured decision identity directly from resolved actor info
       // actorAssurance comes from the canonical ActorInfo — not re-derived from source
@@ -425,6 +432,9 @@ export const decision: ToolDefinition = {
 
       return await persistAndFormat(sessDir, result);
     } catch (err) {
+      if (err instanceof ActorIdentityError) {
+        return formatBlocked(err.code, { reason: err.message });
+      }
       return formatError(err);
     }
   },

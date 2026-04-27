@@ -451,6 +451,7 @@ export const hydrate: ToolDefinition = {
       }
 
       // P27: Resolve actor identity (env → git → unknown)
+      // Hydrate stays best-effort; Decision paths enforce IdP policy
       const actorInfo = await resolveActor(worktree);
 
       const result = executeHydrate(
