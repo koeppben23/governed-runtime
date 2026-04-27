@@ -28,11 +28,7 @@ export interface ExtractionContext {
   readonly buildTools: DetectedItem[];
 }
 
-import {
-  collectRootBasenames,
-  findItem,
-  type ReadFileFn,
-} from './stack-detection-utils.js';
+import { collectRootBasenames, findItem, type ReadFileFn } from './stack-detection-utils.js';
 
 import {
   LANGUAGE_EXTENSIONS,
