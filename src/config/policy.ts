@@ -29,7 +29,6 @@
  * @version v1
  */
 
-import type { PolicySnapshot } from '../state/evidence.js';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';

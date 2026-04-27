@@ -28,7 +28,6 @@ import type {
   PolicyResolutionReason,
   CentralMinimumMode,
   PolicyResolution,
-  AuditPolicy,
   SelfReviewConfig,
 } from './policy.js';
 import type { HydratePolicyResolution } from './policy.js';
