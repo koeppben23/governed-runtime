@@ -46,7 +46,6 @@ export interface WorkspaceDeps {
   auditWorktree: string | undefined;
 }
 
-/** All helpers returned by the workspace factory. */
 /** Session identity context bundled for audit operations. */
 export interface ReviewSessionContext {
   readonly sessDir: string;
@@ -54,6 +53,7 @@ export interface ReviewSessionContext {
   readonly phase: string;
 }
 
+/** All helpers returned by the workspace factory. */
 export interface PluginWorkspace {
   resolveFingerprint(): Promise<string | null>;
   getSessionDir(sessionId: string): string | null;

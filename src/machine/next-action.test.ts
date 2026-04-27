@@ -321,7 +321,7 @@ describe('resolveNextAction', () => {
       expect(p99Ms).toBeLessThan(totalBudget);
     });
 
-    it('lookup table resolution is at least as fast as switch for all phases', () => {
+    it('resolves all phases within performance budget', () => {
       // Benchmark: resolve each of the 14 phases 1000 times
       const states = Phase.options.map((p) => ({
         phase: p,

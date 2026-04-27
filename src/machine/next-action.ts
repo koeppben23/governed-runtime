@@ -59,30 +59,24 @@ export const ACTION_CODES = {
  */
 type NextActionFn = (state: SessionState) => NextAction;
 
-/** Shared — plan/architecture converged action. */
-function convergedAction(label: string): NextAction {
-  return {
-    code: ACTION_CODES.RUN_CONTINUE,
-    text: `${label} converged. Run /continue to advance to review`,
-    commands: ['/continue'],
-  };
-}
-
-/** Shared — plan/architecture self-review in-progress fallback. */
-function selfReviewPendingAction(label: string): NextAction {
-  return {
-    code: ACTION_CODES.RUN_CONTINUE,
-    text: `${label} self-review in progress. Run /continue to iterate`,
-    commands: ['/continue'],
-  };
-}
-
 /** Resolver for phases that have self-review (PLAN, ARCHITECTURE). */
-function selfReviewAction(label: string, state: SessionState): NextAction {
-  if (state.selfReview !== null) {
-    return isConverged(state.selfReview) ? convergedAction(label) : selfReviewPendingAction(label);
+function selfReviewAction(
+  state: SessionState,
+  convergedLabel: string,
+  pendingLabel: string,
+): NextAction {
+  if (state.selfReview !== null && isConverged(state.selfReview)) {
+    return {
+      code: ACTION_CODES.RUN_CONTINUE,
+      text: `${convergedLabel} converged. Run /continue to advance to review`,
+      commands: ['/continue'],
+    };
   }
-  return selfReviewPendingAction(label);
+  return {
+    code: ACTION_CODES.RUN_CONTINUE,
+    text: `${pendingLabel} self-review in progress. Run /continue to iterate`,
+    commands: ['/continue'],
+  };
 }
 
 /**
@@ -118,7 +112,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           commands: ['/ticket'],
         },
 
-  PLAN: (state) => selfReviewAction('Plan', state),
+  PLAN: (state) => selfReviewAction(state, 'Plan', 'Plan'),
 
   PLAN_REVIEW: () => ({
     code: ACTION_CODES.RUN_REVIEW_DECISION,
@@ -178,7 +172,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           text: 'Submit your ADR with /architecture',
           commands: ['/architecture'],
         }
-      : selfReviewAction('ADR', state),
+      : selfReviewAction(state, 'ADR self-review', 'ADR'),
 
   ARCH_REVIEW: () => ({
     code: ACTION_CODES.RUN_REVIEW_DECISION,

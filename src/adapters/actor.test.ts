@@ -227,7 +227,10 @@ describe('resolveActor', () => {
     const actor1 = await resolveActor(WORKTREE, { env: customEnv });
     expect(actor1.id).toBe('first-user');
 
-    // Second call without env — falls through because process.env is clean
+    // Verify process.env was not mutated by the injection
+    expect(process.env.FLOWGUARD_ACTOR_ID).not.toBe('first-user');
+
+    // Second call without env option — uses default process.env, not the injected env
     const actor2 = await resolveActor(WORKTREE);
     expect(actor2.id).not.toBe('first-user');
   });
