@@ -30,17 +30,8 @@ export interface ExtractionContext {
 
 import {
   collectRootBasenames,
-  type ReadFileFn,
-  safeRead,
-  setVersion,
-  captureGroup,
   findItem,
-  resolveTargetArray,
-  extractComposeTagVersion,
-  enrichDetectedItem,
-  enrichOrCreateItem,
-  enrichDatabaseItem,
-  mapComposeImageToDatabase,
+  type ReadFileFn,
 } from './stack-detection-utils.js';
 
 import {
