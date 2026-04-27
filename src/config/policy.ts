@@ -127,7 +127,7 @@ export interface FlowGuardPolicy {
    * with reason ACTOR_ASSURANCE_INSUFFICIENT.
    *
    * Migration from P33 v0:
-   *   requireVerifiedActorsForApproval: true  ��� minimumActorAssuranceForApproval: 'claim_validated'
+   *   requireVerifiedActorsForApproval: true  → minimumActorAssuranceForApproval: 'claim_validated'
    *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
    *
    * P34 design doc: docs/actor-assurance-architecture.md
@@ -781,106 +781,15 @@ export function policyModes(): string[] {
 
 // ─── Snapshot Factory ─────────────────────────────────────────────────────────
 
-/**
- * Create an immutable policy snapshot for embedding in SessionState.
- *
- * The snapshot freezes all FlowGuard-critical fields. The hash provides
- * non-repudiation: given the hash and the policy registry, an auditor
- * can verify which exact policy governed a session.
- *
- * @param policy - The resolved FlowGuard policy.
- * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
- * @param digestFn - SHA-256 digest function (injected for testability).
- */
-export function createPolicySnapshot(
-  policy: FlowGuardPolicy,
-  resolvedAt: string,
-  digestFn: (text: string) => string,
-  resolution?: {
-    requestedMode: PolicyMode;
-    effectiveGateBehavior: EffectiveGateBehavior;
-    degradedReason?: PolicyDegradedReason;
-    source?: PolicySource;
-    resolutionReason?: PolicyResolutionReason;
-    centralMinimumMode?: CentralMinimumMode;
-    policyDigest?: string;
-    policyVersion?: string;
-    policyPathHint?: string;
-  },
-): PolicySnapshot {
-  // Canonical JSON: sorted keys for deterministic hashing.
-  // This ensures the same policy always produces the same hash,
-  // regardless of object key insertion order in different JS engines.
-  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
-
-  return {
-    mode: policy.mode,
-    hash: digestFn(canonical),
-    resolvedAt,
-    requestedMode: resolution?.requestedMode ?? policy.mode,
-    ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior:
-      resolution?.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
-    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
-    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
-    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
-    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
-    requireHumanGates: policy.requireHumanGates,
-    maxSelfReviewIterations: policy.maxSelfReviewIterations,
-    maxImplReviewIterations: policy.maxImplReviewIterations,
-    allowSelfApproval: policy.allowSelfApproval,
-    requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
-    audit: {
-      emitTransitions: policy.audit.emitTransitions,
-      emitToolCalls: policy.audit.emitToolCalls,
-      enableChainHash: policy.audit.enableChainHash,
-    },
-    actorClassification: { ...policy.actorClassification },
-    minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
-    ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
-    identityProviderMode: policy.identityProviderMode,
-    ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
-  };
-}
-
-/**
- * Reconstruct an executable policy from a frozen policy snapshot.
- *
- * Snapshot fields are the sole authority. No preset fallback.
- * All governance-critical fields including actorClassification
- * are read exclusively from the snapshot.
- */
-export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
-  return {
-    mode: snapshot.mode as PolicyMode,
-    requireHumanGates: snapshot.requireHumanGates,
-    maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
-    maxImplReviewIterations: snapshot.maxImplReviewIterations,
-    allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: snapshot.selfReview ?? DEFAULT_SELF_REVIEW_CONFIG,
-    minimumActorAssuranceForApproval:
-      (snapshot.minimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified'
-        | undefined) ??
-      (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
-    requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
-    audit: {
-      emitTransitions: snapshot.audit.emitTransitions,
-      emitToolCalls: snapshot.audit.emitToolCalls,
-      enableChainHash: snapshot.audit.enableChainHash,
-    },
-    actorClassification: { ...snapshot.actorClassification },
-    identityProvider: snapshot.identityProvider,
-    identityProviderMode: snapshot.identityProviderMode ?? 'optional',
-  };
-}
+// ── Policy Snapshot Authority ───────────────────────────────────────────────
+// Delegated to policy-snapshot.ts (SSOT for snapshot lifecycle).
+export {
+  createPolicySnapshot,
+  freezePolicySnapshot,
+  normalizePolicySnapshot,
+  resolvePolicyFromSnapshot,
+  policyFromSnapshot,
+} from './policy-snapshot.js';
 
 /**
  * P32: Resolve Runtime Policy Mode — unified fallback for runtime surfaces.
@@ -915,88 +824,3 @@ export function resolveRuntimePolicyMode(opts: {
 }
 
 // ─── Policy Snapshot Normalization ────────────────────────────────────────────
-
-/**
- * Normalize a potentially incomplete or legacy policy snapshot.
- *
- * Fills missing governance-critical fields with safe defaults.
- * Does NOT throw on incomplete snapshots — instead enriches and marks
- * resolvedAt with the current time if missing.
- *
- * This is essential for backward compatibility: sessions created under
- * earlier schema versions may lack fields like minimumActorAssuranceForApproval
- * or identityProviderMode. Normalization ensures these snapshots are usable
- * with current runtime checks.
- *
- * @param snapshot — The snapshot from session state (may be partial).
- * @returns A complete, normalized PolicySnapshot.
- */
-export function normalizePolicySnapshot(
-  snapshot: Record<string, unknown> | null | undefined,
-): PolicySnapshot {
-  const s = snapshot ?? {};
-  return {
-    mode: (s.mode as string) ?? 'solo',
-    hash: (s.hash as string) ?? 'UNKNOWN_LEGACY',
-    resolvedAt: (s.resolvedAt as string) ?? new Date('2026-01-01T00:00:00.000Z').toISOString(),
-    requestedMode: (s.requestedMode as string) ?? (s.mode as string) ?? 'solo',
-    source: s.source as 'explicit' | 'central' | 'repo' | 'default' | undefined,
-    effectiveGateBehavior:
-      (s.effectiveGateBehavior as 'auto_approve' | 'human_gated') ?? 'human_gated',
-    degradedReason: s.degradedReason as PolicyDegradedReason | undefined,
-    resolutionReason: s.resolutionReason as PolicyResolutionReason | undefined,
-    centralMinimumMode: s.centralMinimumMode as CentralMinimumMode | undefined,
-    policyDigest: s.policyDigest as string | undefined,
-    policyVersion: s.policyVersion as string | undefined,
-    policyPathHint: s.policyPathHint as string | undefined,
-    requireHumanGates: (s.requireHumanGates as boolean) ?? true,
-    maxSelfReviewIterations: (s.maxSelfReviewIterations as number) ?? 3,
-    maxImplReviewIterations: (s.maxImplReviewIterations as number) ?? 3,
-    allowSelfApproval: (s.allowSelfApproval as boolean) ?? true,
-    requireVerifiedActorsForApproval: (s.requireVerifiedActorsForApproval as boolean) ?? false,
-    audit: {
-      emitTransitions:
-        ((s.audit as Record<string, unknown> | null)?.emitTransitions as boolean) ?? true,
-      emitToolCalls:
-        ((s.audit as Record<string, unknown> | null)?.emitToolCalls as boolean) ?? true,
-      enableChainHash:
-        ((s.audit as Record<string, unknown> | null)?.enableChainHash as boolean) ?? true,
-    },
-    actorClassification: (s.actorClassification as Record<string, string>) ?? {},
-    minimumActorAssuranceForApproval:
-      (s.minimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified'
-        | undefined) ??
-      ((s.requireVerifiedActorsForApproval as boolean) ? 'claim_validated' : 'best_effort'),
-    identityProvider: s.identityProvider as IdpConfig | undefined,
-    identityProviderMode: (s.identityProviderMode as IdentityProviderMode) ?? 'optional',
-    selfReview: s.selfReview as SelfReviewConfig | undefined,
-  };
-}
-
-/**
- * Freeze a full PolicyResolution into an immutable PolicySnapshot.
- *
- * Convenience wrapper around createPolicySnapshot that extracts
- * the FlowGuardPolicy from PolicyResolution. All governance-critical
- * fields (actorClassification, minimumActorAssuranceForApproval,
- * identityProvider, identityProviderMode, selfReview) are frozen
- * from the resolved policy.
- *
- * @param resolution — Fully resolved policy with metadata.
- * @param resolvedAt — ISO-8601 timestamp.
- * @param digestFn — SHA-256 digest function.
- */
-export function freezePolicySnapshot(
-  resolution: PolicyResolution,
-  resolvedAt: string,
-  digestFn: (text: string) => string,
-): PolicySnapshot {
-  return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
-    requestedMode: resolution.requestedMode,
-    effectiveGateBehavior: resolution.effectiveGateBehavior,
-    degradedReason: resolution.degradedReason,
-  });
-}

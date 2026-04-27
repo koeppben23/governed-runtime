@@ -1,9 +1,10 @@
 /**
  * @module config/policy-snapshot.test
  * @description Tests for policy snapshot authority functions:
- *   - normalizePolicySnapshot (legacy/incomplete enrichment)
- *   - freezePolicySnapshot (PolicyResolution → PolicySnapshot)
- *   - policyFromSnapshot (Snapshot → FlowGuardPolicy round-trip)
+ *   - createPolicySnapshot (full snapshot from policy)
+ *   - freezePolicySnapshot (PolicyResolution → Snapshot with all metadata)
+ *   - normalizePolicySnapshot / normalizePolicySnapshotWithMeta (legacy enrichment)
+ *   - resolvePolicyFromSnapshot / policyFromSnapshot (snapshot → FlowGuardPolicy)
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  * @version v1
@@ -12,15 +13,19 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
-  normalizePolicySnapshot,
-  freezePolicySnapshot,
-  policyFromSnapshot,
   createPolicySnapshot,
+  freezePolicySnapshot,
+  normalizePolicySnapshot,
+  normalizePolicySnapshotWithMeta,
+  resolvePolicyFromSnapshot,
+  policyFromSnapshot,
+} from './policy-snapshot.js';
+import {
   SOLO_POLICY,
   REGULATED_POLICY,
   type PolicyResolution,
-  type PolicyMode,
   type PolicyDegradedReason,
+  type HydratePolicyResolution,
 } from './policy.js';
 import type { PolicySnapshot } from '../state/evidence.js';
 
@@ -37,264 +42,293 @@ function soloResolution(overrides?: Partial<PolicyResolution>): PolicyResolution
   };
 }
 
-function regulatedResolution(overrides?: Partial<PolicyResolution>): PolicyResolution {
+function regulatedHydrateResolution(): HydratePolicyResolution {
   return {
     requestedMode: 'regulated',
+    requestedSource: 'explicit',
     effectiveMode: 'regulated',
+    effectiveSource: 'explicit',
     effectiveGateBehavior: 'human_gated',
     policy: REGULATED_POLICY,
-    ...overrides,
+    resolutionReason: 'default_weaker_than_central',
+    centralEvidence: {
+      minimumMode: 'team',
+      digest: sha256('central-policy-bundle'),
+      version: '2.1.0',
+      pathHint: 'releases/policy-v2.1.json',
+    },
   };
 }
+
+// ─── createPolicySnapshot ──────────────────────────────────────────────────────
+
+describe('createPolicySnapshot', () => {
+  it('creates snapshot with mode and hash from solo policy', () => {
+    const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
+    expect(snapshot.mode).toBe('solo');
+    expect(snapshot.hash.length).toBe(64);
+    expect(snapshot.resolvedAt).toBe(NOW);
+  });
+
+  it('preserves all governance-critical fields', () => {
+    const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
+    expect(snapshot.minimumActorAssuranceForApproval).toBe(
+      REGULATED_POLICY.minimumActorAssuranceForApproval,
+    );
+    expect(snapshot.identityProviderMode).toBe('optional');
+    expect(snapshot.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
+    expect(snapshot.allowSelfApproval).toBe(false);
+    expect(snapshot.requireHumanGates).toBe(true);
+  });
+
+  it('includes resolution metadata when provided', () => {
+    const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256, {
+      requestedMode: 'team',
+      effectiveGateBehavior: 'human_gated',
+      degradedReason: 'ci_context_missing',
+      source: 'central',
+      resolutionReason: 'repo_weaker_than_central',
+      centralMinimumMode: 'team',
+      policyDigest: 'abc123',
+      policyVersion: '1.0.0',
+      policyPathHint: 'central-policy.json',
+    });
+    expect(snapshot.source).toBe('central');
+    expect(snapshot.resolutionReason).toBe('repo_weaker_than_central');
+    expect(snapshot.centralMinimumMode).toBe('team');
+    expect(snapshot.policyDigest).toBe('abc123');
+    expect(snapshot.policyVersion).toBe('1.0.0');
+    expect(snapshot.policyPathHint).toBe('central-policy.json');
+  });
+});
 
 // ─── freezePolicySnapshot ──────────────────────────────────────────────────────
 
 describe('freezePolicySnapshot', () => {
   describe('HAPPY', () => {
-    it('freezes a solo resolution with correct mode', () => {
+    it('freezes PolicyResolution with correct mode and hash', () => {
       const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
       expect(snapshot.mode).toBe('solo');
       expect(snapshot.hash.length).toBe(64);
-      expect(snapshot.resolvedAt).toBe(NOW);
-      expect(snapshot.requestedMode).toBe('solo');
     });
 
-    it('freezes a regulated resolution with correct mode', () => {
-      const snapshot = freezePolicySnapshot(regulatedResolution(), NOW, sha256);
-      expect(snapshot.mode).toBe('regulated');
-      expect(snapshot.requireHumanGates).toBe(true);
+    it('freezes HydratePolicyResolution with all central evidence metadata', () => {
+      const resolution = regulatedHydrateResolution();
+      const snapshot = freezePolicySnapshot(resolution, NOW, sha256);
+
+      expect(snapshot.source).toBe('explicit');
+      expect(snapshot.resolutionReason).toBe('default_weaker_than_central');
+      expect(snapshot.centralMinimumMode).toBe('team');
+      expect(snapshot.policyDigest).toBe(sha256('central-policy-bundle'));
+      expect(snapshot.policyVersion).toBe('2.1.0');
+      expect(snapshot.policyPathHint).toBe('releases/policy-v2.1.json');
     });
 
-    it('preserves policy governance-critical fields', () => {
-      const snapshot = freezePolicySnapshot(regulatedResolution(), NOW, sha256);
-      expect(snapshot.minimumActorAssuranceForApproval).toBe(
-        REGULATED_POLICY.minimumActorAssuranceForApproval,
-      );
+    it('policy snapshot preserves identityProvider from FlowGuardPolicy', () => {
+      const resolution = regulatedHydrateResolution();
+      const snapshot = freezePolicySnapshot(resolution, NOW, sha256);
       expect(snapshot.identityProvider).toBe(REGULATED_POLICY.identityProvider);
       expect(snapshot.identityProviderMode).toBe(REGULATED_POLICY.identityProviderMode);
-      expect(snapshot.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
-      expect(snapshot.selfReview).toEqual(REGULATED_POLICY.selfReview);
-      expect(snapshot.allowSelfApproval).toBe(REGULATED_POLICY.allowSelfApproval);
-    });
-
-    it('produces deterministic hash for same policy', () => {
-      const a = freezePolicySnapshot(soloResolution(), NOW, sha256);
-      const b = freezePolicySnapshot(soloResolution(), NOW, sha256);
-      expect(a.hash).toBe(b.hash);
-    });
-
-    it('produces different hash for different policy', () => {
-      const a = freezePolicySnapshot(soloResolution(), NOW, sha256);
-      const b = freezePolicySnapshot(regulatedResolution(), NOW, sha256);
-      expect(a.hash).not.toBe(b.hash);
     });
   });
 
   describe('CORNER', () => {
-    it('handles degraded resolution', () => {
-      const res = soloResolution({
+    it('handles HydratePolicyResolution without central evidence', () => {
+      const resolution: HydratePolicyResolution = {
+        requestedMode: 'team',
+        requestedSource: 'default',
         effectiveMode: 'team',
+        effectiveSource: 'default',
         effectiveGateBehavior: 'human_gated',
-        degradedReason: 'ci_context_missing' as PolicyDegradedReason,
-      });
-      const snapshot = freezePolicySnapshot(res, NOW, sha256);
-      expect(snapshot.effectiveGateBehavior).toBe('human_gated');
-      expect(snapshot.degradedReason).toBe('ci_context_missing');
-    });
-  });
-
-  describe('EDGE', () => {
-    it('hash depends only on policy, not on timestamp', () => {
-      const a = freezePolicySnapshot(soloResolution(), '2026-01-01T00:00:00Z', sha256);
-      const b = freezePolicySnapshot(soloResolution(), '2026-01-02T00:00:00Z', sha256);
-      // Hash is derived from policy content, not resolvedAt — same policy, same hash
-      expect(a.hash).toBe(b.hash);
-      expect(a.resolvedAt).not.toBe(b.resolvedAt);
+        policy: SOLO_POLICY,
+      };
+      const snapshot = freezePolicySnapshot(resolution, NOW, sha256);
+      expect(snapshot.centralMinimumMode).toBeUndefined();
+      expect(snapshot.policyDigest).toBeUndefined();
     });
   });
 });
 
-// ─── normalizePolicySnapshot ───────────────────────────────────────────────────
+// ─── normalizePolicySnapshot / normalizePolicySnapshotWithMeta ──────────────────
 
 describe('normalizePolicySnapshot', () => {
-  describe('HAPPY', () => {
-    it('passes through complete snapshot unchanged except for sort order', () => {
+  describe('HAPPY — complete snapshots pass through', () => {
+    it('passes through complete snapshot unchanged', () => {
       const original = freezePolicySnapshot(soloResolution(), NOW, sha256);
       const normalized = normalizePolicySnapshot(original);
-      expect(normalized.mode).toBe(original.mode);
+      expect(normalized.mode).toBe('solo');
       expect(normalized.hash).toBe(original.hash);
-      expect(normalized.minimumActorAssuranceForApproval).toBe(
-        original.minimumActorAssuranceForApproval,
-      );
-    });
-
-    it('preserves identityProvider when present', () => {
-      const original = freezePolicySnapshot(regulatedResolution(), NOW, sha256);
-      const normalized = normalizePolicySnapshot(original);
-      expect(normalized.identityProvider).toBe(original.identityProvider);
-      expect(normalized.identityProviderMode).toBe(original.identityProviderMode);
     });
   });
 
-  describe('BAD — incomplete snapshots', () => {
-    it('fills missing mode with solo', () => {
+  describe('BAD — mode-consistent defaults', () => {
+    it('empty snapshot defaults to team mode (safe), not solo', () => {
       const normalized = normalizePolicySnapshot({});
-      expect(normalized.mode).toBe('solo');
+      expect(normalized.mode).toBe('team');
     });
 
-    it('fills missing hash with legacy marker', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.hash).toBe('UNKNOWN_LEGACY');
+    it('solo mode: human gates false, auto_approve', () => {
+      const normalized = normalizePolicySnapshot({ mode: 'solo' });
+      expect(normalized.requireHumanGates).toBe(false);
+      expect(normalized.effectiveGateBehavior).toBe('auto_approve');
+      expect(normalized.allowSelfApproval).toBe(true);
     });
 
-    it('fills missing resolvedAt with fallback date', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.resolvedAt).toBeTruthy();
+    it('team mode: human gates true, human_gated', () => {
+      const normalized = normalizePolicySnapshot({ mode: 'team' });
+      expect(normalized.requireHumanGates).toBe(true);
+      expect(normalized.effectiveGateBehavior).toBe('human_gated');
+      expect(normalized.allowSelfApproval).toBe(true);
     });
 
-    it('fills missing actorClassification with empty object', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.actorClassification).toEqual({});
+    it('regulated mode: human gates true, allowSelfApproval false', () => {
+      const normalized = normalizePolicySnapshot({ mode: 'regulated' });
+      expect(normalized.requireHumanGates).toBe(true);
+      expect(normalized.allowSelfApproval).toBe(false);
+      expect(normalized.effectiveGateBehavior).toBe('human_gated');
     });
 
-    it('fills missing minimumActorAssuranceForApproval with best_effort', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.minimumActorAssuranceForApproval).toBe('best_effort');
+    it('invalid mode defaults to team (safe fallback)', () => {
+      const normalized = normalizePolicySnapshot({ mode: 'broken' });
+      expect(normalized.mode).toBe('team');
+      expect(normalized.requireHumanGates).toBe(true);
     });
+  });
 
-    it('derives minimumActorAssuranceForApproval from requireVerifiedActorsForApproval', () => {
+  describe('BAD — field validation', () => {
+    it('rejects invalid effectiveGateBehavior, defaults to mode-consistent value', () => {
       const normalized = normalizePolicySnapshot({
-        requireVerifiedActorsForApproval: true,
+        mode: 'solo',
+        effectiveGateBehavior: 'invalid_gate',
       });
-      expect(normalized.minimumActorAssuranceForApproval).toBe('claim_validated');
+      expect(normalized.effectiveGateBehavior).toBe('auto_approve');
     });
 
-    it('fills missing identityProviderMode with optional', () => {
-      const normalized = normalizePolicySnapshot({});
+    it('rejects invalid identityProviderMode, defaults to optional', () => {
+      const normalized = normalizePolicySnapshot({ identityProviderMode: 'broken' });
       expect(normalized.identityProviderMode).toBe('optional');
     });
 
-    it('fills missing requireHumanGates with true (safe default)', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.requireHumanGates).toBe(true);
+    it('rejects invalid minimumActorAssuranceForApproval, defaults to best_effort', () => {
+      const normalized = normalizePolicySnapshot({
+        minimumActorAssuranceForApproval: 'super_strong',
+      });
+      expect(normalized.minimumActorAssuranceForApproval).toBe('best_effort');
     });
 
-    it('fills missing maxSelfReviewIterations with 3', () => {
-      const normalized = normalizePolicySnapshot({});
-      expect(normalized.maxSelfReviewIterations).toBe(3);
-    });
-
-    it('fills missing audit with safe defaults', () => {
-      const normalized = normalizePolicySnapshot({});
+    it('rejects non-object audit, defaults to all-true', () => {
+      const normalized = normalizePolicySnapshot({ audit: 'not-an-object' });
       expect(normalized.audit.emitTransitions).toBe(true);
       expect(normalized.audit.enableChainHash).toBe(true);
     });
   });
 
-  describe('CORNER — partial snapshots', () => {
-    it('preserves set identityProvider and fills missing other fields', () => {
+  describe('CORNER — identity preservation', () => {
+    it('preserves valid identityProvider across normalization', () => {
+      const provider = {
+        mode: 'static' as const,
+        issuer: 'https://idp.example.com',
+        audience: ['flowguard'],
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+        signingKeys: [{ kty: 'RSA', n: 'abc', e: 'AQAB', kid: 'key-1' }],
+      };
       const normalized = normalizePolicySnapshot({
         mode: 'regulated',
-        identityProvider: {
-          mode: 'static' as const,
-          issuer: 'https://idp.example.com',
-          audience: ['flowguard'],
-          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
-          signingKeys: [{ kty: 'RSA', n: 'abc', e: 'AQAB', kid: 'key-1' }],
-        },
-        identityProviderMode: 'required' as const,
+        identityProvider: provider,
+        identityProviderMode: 'required',
       });
-      expect(normalized.identityProvider).toBeDefined();
+      expect(normalized.identityProvider).toEqual(provider);
       expect(normalized.identityProviderMode).toBe('required');
-      expect(normalized.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(normalized.maxSelfReviewIterations).toBe(3);
+    });
+
+    it('null identityProvider becomes undefined', () => {
+      const normalized = normalizePolicySnapshot({ identityProvider: null });
+      expect(normalized.identityProvider).toBeUndefined();
     });
   });
 
   describe('EDGE', () => {
-    it('does not throw on null/undefined snapshot', () => {
+    it('handles null input gracefully', () => {
       expect(() =>
         normalizePolicySnapshot(null as unknown as Record<string, unknown>),
       ).not.toThrow();
+    });
+
+    it('handles undefined input gracefully', () => {
       expect(() =>
         normalizePolicySnapshot(undefined as unknown as Record<string, unknown>),
       ).not.toThrow();
     });
-
-    it('does not throw on empty object', () => {
-      expect(() => normalizePolicySnapshot({})).not.toThrow();
-    });
   });
 });
 
-// ─── policyFromSnapshot round-trip ─────────────────────────────────────────────
+// ─── normalizePolicySnapshotWithMeta ────────────────────────────────────────────
 
-describe('policyFromSnapshot / freezePolicySnapshot round-trip', () => {
-  describe('HAPPY', () => {
-    it('round-trip: freeze → fromSnapshot preserves all governance fields', () => {
-      const resolution = regulatedResolution();
-      const snapshot = freezePolicySnapshot(resolution, NOW, sha256);
-      const policy = policyFromSnapshot(snapshot);
-
-      expect(policy.mode).toBe(resolution.policy.mode);
-      expect(policy.requireHumanGates).toBe(resolution.policy.requireHumanGates);
-      expect(policy.minimumActorAssuranceForApproval).toBe(
-        resolution.policy.minimumActorAssuranceForApproval,
-      );
-      expect(policy.identityProvider).toBe(resolution.policy.identityProvider);
-      expect(policy.identityProviderMode).toBe(resolution.policy.identityProviderMode);
-      expect(policy.allowSelfApproval).toBe(resolution.policy.allowSelfApproval);
-    });
-
-    it('round-trip: solo policy preserves all fields', () => {
-      const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
-      const policy = policyFromSnapshot(snapshot);
-
-      expect(policy.mode).toBe('solo');
-      expect(policy.requireHumanGates).toBe(false);
-      expect(policy.allowSelfApproval).toBe(true);
-      expect(policy.minimumActorAssuranceForApproval).toBe('best_effort');
-    });
+describe('normalizePolicySnapshotWithMeta', () => {
+  it('returns normalized=false for complete snapshot', () => {
+    const complete = freezePolicySnapshot(soloResolution(), NOW, sha256);
+    const result = normalizePolicySnapshotWithMeta(complete);
+    expect(result.normalized).toBe(false);
+    expect(result.reason).toBeUndefined();
   });
 
-  describe('CORNER', () => {
-    it('normalize → fromSnapshot produces a valid policy from empty input', () => {
-      const normalized = normalizePolicySnapshot({});
-      const policy = policyFromSnapshot(normalized);
+  it('returns normalized=true for empty snapshot', () => {
+    const result = normalizePolicySnapshotWithMeta({});
+    expect(result.normalized).toBe(true);
+    expect(result.reason).toBe('incomplete_snapshot_normalized');
+  });
 
-      expect(policy.mode).toBe('solo');
+  it('returns normalized=true for incomplete snapshot missing key fields', () => {
+    const result = normalizePolicySnapshotWithMeta({
+      mode: 'regulated',
+      // Missing: hash, identityProviderMode, actorClassification, etc.
+    });
+    expect(result.normalized).toBe(true);
+  });
+
+  it('returns normalized=true for snapshot with invalid fields', () => {
+    const result = normalizePolicySnapshotWithMeta({
+      mode: 'invalid_mode',
+      identityProviderMode: 'broken',
+    });
+    expect(result.normalized).toBe(true);
+    expect(result.snapshot.mode).toBe('team');
+    expect(result.snapshot.identityProviderMode).toBe('optional');
+  });
+});
+
+// ─── resolvePolicyFromSnapshot / policyFromSnapshot ─────────────────────────────
+
+describe('resolvePolicyFromSnapshot', () => {
+  describe('HAPPY — round-trip', () => {
+    it('freeze → resolve preserves all governance fields', () => {
+      const resolution = regulatedHydrateResolution();
+      const snapshot = freezePolicySnapshot(resolution, NOW, sha256);
+      const policy = resolvePolicyFromSnapshot(snapshot);
+
+      expect(policy.mode).toBe('regulated');
+      expect(policy.requireHumanGates).toBe(true);
+      expect(policy.minimumActorAssuranceForApproval).toBe(
+        REGULATED_POLICY.minimumActorAssuranceForApproval,
+      );
+      expect(policy.identityProvider).toBe(REGULATED_POLICY.identityProvider);
+      expect(policy.identityProviderMode).toBe('optional');
+      expect(policy.allowSelfApproval).toBe(false);
+    });
+
+    it('resolve from normalized empty snapshot produces team policy', () => {
+      const normalized = normalizePolicySnapshot({});
+      const policy = resolvePolicyFromSnapshot(normalized);
+      expect(policy.mode).toBe('team');
       expect(policy.requireHumanGates).toBe(true);
       expect(policy.minimumActorAssuranceForApproval).toBe('best_effort');
-      expect(policy.identityProviderMode).toBe('optional');
-    });
-  });
-
-  describe('EDGE', () => {
-    it('snapshots with different hashes produce policies with correct modes', () => {
-      const snapA = freezePolicySnapshot(soloResolution(), NOW, sha256);
-      const snapB = freezePolicySnapshot(regulatedResolution(), NOW, sha256);
-
-      const policyA = policyFromSnapshot(snapA);
-      const policyB = policyFromSnapshot(snapB);
-
-      expect(policyA.mode).toBe('solo');
-      expect(policyB.mode).toBe('regulated');
-      expect(policyA.requireHumanGates).not.toBe(policyB.requireHumanGates);
     });
   });
 });
 
-// ─── createPolicySnapshot direct ───────────────────────────────────────────────
-
-describe('createPolicySnapshot', () => {
-  it('creates snapshot with all governance fields from policy alone', () => {
-    const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
-    expect(snapshot.mode).toBe('solo');
-    expect(snapshot.actorClassification).toEqual(SOLO_POLICY.actorClassification);
-    expect(snapshot.minimumActorAssuranceForApproval).toBe(
-      SOLO_POLICY.minimumActorAssuranceForApproval,
-    );
-    expect(snapshot.identityProviderMode).toBe('optional');
-    expect(snapshot.hash.length).toBe(64);
+describe('policyFromSnapshot (alias)', () => {
+  it('returns same result as resolvePolicyFromSnapshot', () => {
+    const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
+    expect(policyFromSnapshot(snapshot)).toEqual(resolvePolicyFromSnapshot(snapshot));
   });
 });

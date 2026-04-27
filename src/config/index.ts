@@ -44,8 +44,15 @@ export {
   loadCentralPolicyEvidence,
   validateExistingPolicyAgainstCentral,
   policyModes,
-  createPolicySnapshot,
 } from './policy.js';
+
+export {
+  createPolicySnapshot,
+  freezePolicySnapshot,
+  normalizePolicySnapshot,
+  resolvePolicyFromSnapshot,
+  policyFromSnapshot,
+} from './policy-snapshot.js';
 
 // ── Reasons ──────────────────────────────────────────────────────────────────
 export {
