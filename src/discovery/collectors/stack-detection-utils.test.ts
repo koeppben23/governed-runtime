@@ -152,6 +152,17 @@ describe('mapComposeImageToDatabase', () => {
     expect(result!.id).toBe('postgresql');
   });
 
+  it('returns version for images with digest and tag', () => {
+    const result = mapComposeImageToDatabase('postgres:15.4@sha256:abc123');
+    expect(result).toBeDefined();
+    expect(result!.version).toBe('15.4');
+  });
+
+  it('returns null for empty segment after split', () => {
+    // Edge case: image with trailing slash has empty last segment
+    expect(mapComposeImageToDatabase('registry.example.com/')).toBeNull();
+  });
+
   it('returns null for interpolated tags', () => {
     expect(mapComposeImageToDatabase('postgres:${VERSION}')).toBeNull();
   });
@@ -192,6 +203,16 @@ describe('extractComposeTagVersion', () => {
     expect(
       extractComposeTagVersion('docker.io/library/postgres:15', { allowRegistryVersion: true }),
     ).toBe('15');
+  });
+
+  it('extracts version from image with digest', () => {
+    expect(
+      extractComposeTagVersion('postgres:15.2@sha256:abc', { allowRegistryVersion: false }),
+    ).toBe('15.2');
+  });
+
+  it('returns undefined for image without version tag', () => {
+    expect(extractComposeTagVersion('postgres', { allowRegistryVersion: false })).toBeUndefined();
   });
 });
 

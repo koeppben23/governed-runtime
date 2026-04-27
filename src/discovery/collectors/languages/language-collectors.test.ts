@@ -27,6 +27,7 @@ import {
   enrichFrameworkVersion,
   enrichRuntimeVersion,
   extractDatabasesFromDockerCompose,
+  extractArtifactsFromPomXml,
 } from './java.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -541,6 +542,23 @@ describe('languages/js-ecosystem', () => {
       expect(mysql?.evidence).toContain('package.json:dependencies.mysql2');
     });
 
+    it('detects node version from engines.node field', async () => {
+      // Covers line 134: engines.node version detection
+      const runtimes: DetectedItem[] = [makeItem('node')];
+      await extractFromPackageJson(
+        mockReadFile({
+          'package.json': JSON.stringify({ engines: { node: '>=20.0.0' } }),
+        }),
+        [],
+        [],
+        runtimes,
+        [],
+        [],
+        [],
+      );
+      expect(runtimes[0].version).toBe('20.0.0');
+    });
+
     it('detects react framework with version from dependencies', async () => {
       const frameworks: DetectedItem[] = [];
       await extractFromPackageJson(
@@ -580,6 +598,34 @@ describe('languages/js-ecosystem', () => {
       );
       expect(result).toBe(false);
     });
+
+    it('enriches npm evidence from packageManager field', async () => {
+      // Covers line 58: npmItem.evidence.includes check
+      const buildTools: DetectedItem[] = [makeItem('npm', { evidence: [] })];
+      await refineFromPackageManagerField(
+        mockReadFile({
+          'package.json': JSON.stringify({ packageManager: 'npm@10.0.0' }),
+        }),
+        buildTools,
+      );
+      expect(buildTools[0].version).toBe('10.0.0');
+      expect(buildTools[0].evidence.length).toBeGreaterThan(0);
+    });
+
+    it('skips duplicate evidence when npm already has packageManager evidence', async () => {
+      // Covers line 58 true branch: npmItem.evidence already contains the evidence
+      const buildTools: DetectedItem[] = [
+        makeItem('npm', { evidence: ['package.json:packageManager'] }),
+      ];
+      await refineFromPackageManagerField(
+        mockReadFile({
+          'package.json': JSON.stringify({ packageManager: 'npm@10.0.0' }),
+        }),
+        buildTools,
+      );
+      expect(buildTools[0].evidence).toHaveLength(1);
+      expect(buildTools[0].version).toBe('10.0.0');
+    });
   });
 
   describe('refineBuildToolFromLockfiles', () => {
@@ -606,6 +652,13 @@ describe('languages/js-ecosystem', () => {
       refineBuildToolFromLockfiles(['package-lock.json'], buildTools);
       expect(buildTools[0].id).toBe('npm');
       expect(buildTools[0].evidence).toContain('package-lock.json');
+    });
+
+    it('skips duplicate package-lock.json evidence', () => {
+      // Covers line 106: npmItem.evidence already contains package-lock.json
+      const buildTools: DetectedItem[] = [makeItem('npm', { evidence: ['package-lock.json'] })];
+      refineBuildToolFromLockfiles(['package-lock.json'], buildTools);
+      expect(buildTools[0].evidence).toHaveLength(1);
     });
   });
 });
@@ -745,6 +798,38 @@ describe('languages/java', () => {
       expect(pg?.version).toBe('15');
     });
 
+    it('detects database from docker-compose.override.yml', async () => {
+      const databases: DetectedItem[] = [];
+      await extractDatabasesFromDockerCompose(
+        mockReadFile({
+          'docker-compose.override.yml': `services:
+  redis:
+    image: redis:7-alpine
+`,
+        }),
+        ['docker-compose.override.yml'],
+        databases,
+      );
+      const redis = databases.find((d) => d.id === 'redis');
+      expect(redis).toBeDefined();
+      expect(redis?.version).toBe('7');
+    });
+
+    it('skips compose files without image fields', async () => {
+      const databases: DetectedItem[] = [];
+      await extractDatabasesFromDockerCompose(
+        mockReadFile({
+          'docker-compose.yml': `services:
+  web:
+    build: .
+`,
+        }),
+        ['docker-compose.yml'],
+        databases,
+      );
+      expect(databases).toHaveLength(0);
+    });
+
     it('handles docker-compose files without database images', async () => {
       const databases: DetectedItem[] = [];
       await extractDatabasesFromDockerCompose(
@@ -758,6 +843,35 @@ describe('languages/java', () => {
         databases,
       );
       expect(databases).toHaveLength(0);
+    });
+  });
+
+  describe('extractArtifactsFromPomXml', () => {
+    it('detects openapi-generator plugin from pom.xml', async () => {
+      const testFrameworks: DetectedItem[] = [];
+      const tools: DetectedItem[] = [];
+      const qualityTools: DetectedItem[] = [];
+      const databases: DetectedItem[] = [];
+      await extractArtifactsFromPomXml(
+        mockReadFile({
+          'pom.xml': `<project>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>7.2.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>`,
+        }),
+        testFrameworks,
+        tools,
+        qualityTools,
+        databases,
+      );
+      expect(tools.find((t) => t.id === 'openapi-generator')).toBeDefined();
     });
   });
 });

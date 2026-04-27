@@ -762,5 +762,65 @@ describe('integration/plugin', () => {
         await ws.cleanup();
       }
     });
+
+    it('tool.execute.before hook exists and accepts input args', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        // The before hook should exist and not throw for any tool
+        const beforeHook = hooks['tool.execute.before'];
+        expect(typeof beforeHook).toBe('function');
+
+        // Verify it handles flowguard tools without error
+        await expect(
+          beforeHook!({
+            tool: 'flowguard_status',
+            sessionID: crypto.randomUUID(),
+            callID: 'c1',
+            args: {},
+          }),
+        ).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('tool.execute.after handles task tool events via enforcement tracking', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        // Task tool events should be tracked by task enforcement
+        await expect(
+          hooks['tool.execute.after']!(
+            {
+              tool: 'task',
+              sessionID,
+              callID: 'c1',
+              args: { subagent_type: 'flowguard-reviewer' },
+            },
+            {
+              title: 'task',
+              output: '{}',
+              metadata: {},
+            },
+          ),
+        ).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
   });
 });

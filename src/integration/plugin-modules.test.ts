@@ -211,6 +211,17 @@ describe('plugin-logging', () => {
       expect(typeof log.info).toBe('function');
     });
 
+    it('falls back to DEFAULT_CONFIG when workspaceDir points to non-existent dir', async () => {
+      // Covers the catch block when readConfig fails for a real path
+      const { config } = await createPluginLogger(
+        undefined,
+        '/tmp/__flowguard_nonexistent_42__',
+        undefined,
+        null,
+      );
+      expect(config).toBeDefined();
+    });
+
     it('creates noop logger when no sinks available', async () => {
       // Covers line 107: noop logger path (mode=file but no workspace, mode=ui but no client)
       const { log } = await createPluginLogger(undefined, null, undefined, null);
