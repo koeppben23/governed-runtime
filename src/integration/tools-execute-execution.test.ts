@@ -673,6 +673,50 @@ describe('review', () => {
       const s = parseToolResult(await status.execute({}, ctx));
       expect(s.phase).toBe('REVIEW_COMPLETE');
     });
+
+    it('review with references stores them in report and on disk', async () => {
+      await hydrateSession();
+      const raw = await review.execute(
+        {
+          inputOrigin: 'pr',
+          references: [
+            {
+              ref: 'https://github.com/org/repo/pull/42',
+              type: 'pr',
+              title: 'PR #42: Fix auth',
+              source: 'github',
+              extractedAt: '2026-01-15T10:00:00.000Z',
+            },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.inputOrigin).toBe('pr');
+      expect(result.references).toBeDefined();
+      expect(Array.isArray(result.references)).toBe(true);
+      expect((result.references as unknown[]).length).toBe(1);
+      expect((result.references as Record<string, unknown>[])[0]!.ref).toBe(
+        'https://github.com/org/repo/pull/42',
+      );
+
+      // Also verify the persisted report file contains references
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const { readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const reportRaw = await readFile(join(sessDir, 'review-report.json'), 'utf-8');
+      const report = JSON.parse(reportRaw);
+      expect(report.inputOrigin).toBe('pr');
+      expect(report.references).toHaveLength(1);
+      expect(report.references[0].ref).toBe('https://github.com/org/repo/pull/42');
+      expect(report.references[0].type).toBe('pr');
+      expect(report.references[0].source).toBe('github');
+    });
   });
 });
 

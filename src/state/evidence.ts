@@ -98,6 +98,49 @@ export const BindingInfo = z
   .readonly();
 export type BindingInfo = z.infer<typeof BindingInfo>;
 
+// ─── Input Origin ──────────────────────────────────────────────────────────────
+
+/**
+ * Where the content of a ticket or review originated.
+ * Tracks whether text was manually entered, extracted from an external reference,
+ * or derived from the workspace/branch/PR context.
+ */
+export const InputOriginSchema = z.enum([
+  'manual_text',
+  'external_reference',
+  'mixed',
+  'workspace',
+  'branch',
+  'pr',
+  'unknown',
+]);
+export type InputOrigin = z.infer<typeof InputOriginSchema>;
+
+// ─── External Reference ────────────────────────────────────────────────────────
+
+/**
+ * Audit-grade external reference (URL, ticket ID, branch, commit, etc.).
+ * Provides full provenance for the source of ticket/review content.
+ *
+ * - ref: the raw reference string (URL, ID, branch name)
+ * - type: kind of reference (ticket, issue, pr, branch, commit, url, doc, other)
+ * - title: human-readable title extracted from the reference
+ * - source: platform identifier (jira, ados, github, gitlab, confluence)
+ * - extractedAt: ISO timestamp when content was extracted (only set when extraction succeeded)
+ */
+export const ExternalReferenceSchema = z
+  .object({
+    ref: z.string().min(1),
+    type: z
+      .enum(['ticket', 'issue', 'pr', 'branch', 'commit', 'url', 'doc', 'other'])
+      .optional(),
+    title: z.string().optional(),
+    source: z.string().optional(),
+    extractedAt: z.string().datetime().optional(),
+  })
+  .readonly();
+export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
+
 // ─── Ticket ───────────────────────────────────────────────────────────────────
 
 /** Evidence produced by /ticket — the user's task description. */
@@ -107,6 +150,8 @@ export const TicketEvidence = z
     digest: z.string().min(1),
     source: z.enum(['user', 'external']),
     createdAt: z.string().datetime(),
+    inputOrigin: InputOriginSchema.optional(),
+    references: z.array(ExternalReferenceSchema).optional(),
   })
   .readonly();
 export type TicketEvidence = z.infer<typeof TicketEvidence>;
@@ -649,5 +694,7 @@ export const ReviewReport = z.object({
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),
+  inputOrigin: InputOriginSchema.optional(),
+  references: z.array(ExternalReferenceSchema).optional(),
 });
 export type ReviewReport = z.infer<typeof ReviewReport>;

@@ -88,6 +88,18 @@ export function redactReviewReport(
     }
   }
 
+  const references = Array.isArray(report.references)
+    ? (report.references as Array<Record<string, unknown>>)
+    : [];
+  for (const ref of references) {
+    if (typeof ref.ref === 'string') {
+      ref.ref = stableMask(ref.ref, mode);
+    }
+    if (typeof ref.title === 'string') {
+      ref.title = stableMask(ref.title, mode);
+    }
+  }
+
   return out;
 }
 

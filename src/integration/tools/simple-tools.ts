@@ -28,6 +28,12 @@ import { executeTicket } from '../../rails/ticket.js';
 import { executeReview, executeReviewFlow } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
+// Evidence schemas for external reference handling
+import {
+  InputOriginSchema,
+  ExternalReferenceSchema,
+} from '../../state/evidence.js';
+
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
@@ -49,6 +55,18 @@ export const ticket: ToolDefinition = {
       .enum(['user', 'external'])
       .default('user')
       .describe("Source of the ticket: 'user' (typed in chat) or 'external' (from issue tracker)."),
+    inputOrigin: InputOriginSchema.optional().describe(
+      'Where the text content originated. Set to "external_reference" when text was extracted ' +
+        'from a URL, "manual_text" when typed, "mixed" when both manual and external.',
+    ),
+    references: z
+      .array(ExternalReferenceSchema)
+      .optional()
+      .describe(
+        'External references for this ticket (Jira URL, GitHub issue, Confluence doc, etc.). ' +
+          'Each reference has ref (URL/ID), type (ticket/issue/pr/branch/commit/url/doc/other), ' +
+          'optional title, source platform, and extractedAt timestamp.',
+      ),
   },
   async execute(args, context) {
     try {
@@ -59,6 +77,8 @@ export const ticket: ToolDefinition = {
         {
           text: args.text,
           source: args.source,
+          inputOrigin: args.inputOrigin,
+          references: args.references,
         },
         ctx,
       );
@@ -83,8 +103,22 @@ export const review: ToolDefinition = {
     'Generates a compliance review report with evidence completeness matrix ' +
     'and four-eyes principle status. Produces a flowguard-review-report.v1 artifact ' +
     'written to the session directory. Only allowed in READY phase.',
-  args: {},
-  async execute(_args, context) {
+  args: {
+    inputOrigin: InputOriginSchema.optional().describe(
+      'Where the review content originated. Set to "pr" when reviewing a pull request, ' +
+        '"branch" for branch review, "external_reference" for URL-based review, ' +
+        '"manual_text" for text-only review.',
+    ),
+    references: z
+      .array(ExternalReferenceSchema)
+      .optional()
+      .describe(
+        'External references for this review (PR URL, branch name, commit SHA, etc.). ' +
+          'Each reference has ref (URL/ID), type (ticket/issue/pr/branch/commit/url/doc/other), ' +
+          'optional title, source platform, and extractedAt timestamp.',
+      ),
+  },
+  async execute(args, context) {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
 
@@ -97,7 +131,14 @@ export const review: ToolDefinition = {
 
       // 2. Generate the compliance report using the final state
       const now = new Date().toISOString();
-      const report = await executeReview(result.state, now);
+      const refInput =
+        args.inputOrigin || args.references
+          ? {
+              inputOrigin: args.inputOrigin,
+              references: args.references,
+            }
+          : undefined;
+      const report = await executeReview(result.state, now, undefined, refInput);
 
       // 3. Persist state + write report artifact
       await writeStateWithArtifacts(sessDir, result.state);
@@ -123,6 +164,8 @@ export const review: ToolDefinition = {
           findingsCount: report.findings.length,
           findings: report.findings,
           validationSummary: report.validationSummary,
+          references: report.references,
+          inputOrigin: report.inputOrigin,
           _audit: { transitions: result.transitions },
         }),
         result.state,

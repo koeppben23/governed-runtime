@@ -17,7 +17,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { ReviewReport } from '../state/evidence.js';
+import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate } from '../machine/evaluate.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -38,6 +38,17 @@ export interface ReviewExecutors {
   ) => Promise<
     Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>
   >;
+}
+
+// ─── Review Reference Input ───────────────────────────────────────────────────
+
+/**
+ * Optional external references and input origin for the review report.
+ * Passed through to the generated report for audit provenance.
+ */
+export interface ReviewReferenceInput {
+  readonly inputOrigin?: InputOrigin;
+  readonly references?: ExternalReference[];
 }
 
 // ─── Extended Review Report ───────────────────────────────────────────────────
@@ -65,6 +76,7 @@ export async function executeReview(
   state: SessionState,
   now: string,
   executors?: ReviewExecutors,
+  refInput?: ReviewReferenceInput,
 ): Promise<ExtendedReviewReport> {
   // 1. Collect validation summary from state
   const validationSummary = state.validation.map((v) => ({
@@ -152,6 +164,9 @@ export async function executeReview(
   const overallStatus = hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
 
   // 5. Build report
+  const refs =
+    refInput?.references && refInput.references.length > 0 ? refInput.references : undefined;
+
   return {
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
@@ -163,6 +178,8 @@ export async function executeReview(
     findings,
     overallStatus,
     completeness,
+    ...(refInput?.inputOrigin !== undefined && { inputOrigin: refInput.inputOrigin }),
+    ...(refs !== undefined && { references: refs }),
   };
 }
 

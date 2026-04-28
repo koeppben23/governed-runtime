@@ -261,6 +261,95 @@ describe('ticket', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
     });
+
+    it('stores references with Jira URL and extractedAt', async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        {
+          text: 'Fix login redirect after token expiry',
+          source: 'external',
+          inputOrigin: 'external_reference',
+          references: [
+            {
+              ref: 'https://jira.example.com/browse/PROJ-123',
+              type: 'ticket',
+              title: 'PROJ-123: Fix login redirect',
+              source: 'jira',
+              extractedAt: '2026-01-15T10:00:00.000Z',
+            },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket!.references).toHaveLength(1);
+      expect(state!.ticket!.references![0]!.ref).toBe('https://jira.example.com/browse/PROJ-123');
+      expect(state!.ticket!.references![0]!.type).toBe('ticket');
+      expect(state!.ticket!.references![0]!.source).toBe('jira');
+      expect(state!.ticket!.references![0]!.extractedAt).toBe('2026-01-15T10:00:00.000Z');
+      expect(state!.ticket!.inputOrigin).toBe('external_reference');
+    });
+
+    it('stores multiple references across platforms', async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        {
+          text: 'Implement feature X with spec alignment',
+          source: 'external',
+          inputOrigin: 'mixed',
+          references: [
+            { ref: 'https://jira.example.com/PROJ-42', type: 'ticket', source: 'jira' },
+            { ref: 'https://confluence.example.com/SPEC-1', type: 'doc', source: 'confluence' },
+            { ref: 'https://github.com/org/repo/issues/7', type: 'issue', source: 'github' },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('sets inputOrigin=manual_text for user-typed tickets', async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        { text: 'Fix the auth bug in login.ts', source: 'user', inputOrigin: 'manual_text' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket!.inputOrigin).toBe('manual_text');
+      expect(state!.ticket!.references).toBeUndefined();
+    });
+
+    it('normalizes empty references array (not persisted)', async () => {
+      await hydrateSession();
+      const raw = await ticket.execute(
+        { text: 'Just a task', source: 'user', references: [] },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.ticket!.references).toBeUndefined();
+    });
   });
 });
 

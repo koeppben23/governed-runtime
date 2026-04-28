@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { executeReview, type ReviewExecutors } from './review.js';
+import { executeReview, type ReviewExecutors, type ReviewReferenceInput } from './review.js';
 import {
   makeState,
   makeProgressedState,
@@ -194,6 +194,29 @@ describe('review rail', () => {
       const report = await executeReview(state, NOW);
       expect(report.overallStatus).toBe('clean');
     });
+
+    it('report includes references when provided via refInput', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = {
+        inputOrigin: 'pr',
+        references: [
+          { ref: 'https://github.com/org/repo/pull/42', type: 'pr', title: 'PR #42: Add auth', source: 'github', extractedAt: '2026-01-15T10:00:00.000Z' },
+          { ref: 'https://jira.example.com/PROJ-123', type: 'ticket', title: 'PROJ-123', source: 'jira' },
+        ],
+      };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report.inputOrigin).toBe('pr');
+      expect(report.references).toHaveLength(2);
+      expect(report.references![0]!.type).toBe('pr');
+      expect(report.references![1]!.type).toBe('ticket');
+    });
+
+    it('report normalizes away empty references array', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = { references: [] };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report.references).toBeUndefined();
+    });
   });
 
   // ─── EDGE ───────────────────────────────────────────────────
@@ -249,6 +272,48 @@ describe('review rail', () => {
       const original = JSON.stringify(state);
       await executeReview(state, NOW);
       expect(JSON.stringify(state)).toBe(original);
+    });
+
+    it('report without refInput has no inputOrigin or references', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = await executeReview(state, NOW);
+      expect(report.inputOrigin).toBeUndefined();
+      expect(report.references).toBeUndefined();
+    });
+
+    it('report with branch reference stores type=branch', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = {
+        inputOrigin: 'branch',
+        references: [{ ref: 'feature/login-fix', type: 'branch', source: 'local' }],
+      };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report.inputOrigin).toBe('branch');
+      expect(report.references![0]!.type).toBe('branch');
+    });
+
+    it('report with commit reference stores type=commit', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = {
+        references: [{ ref: 'abc123def456', type: 'commit', source: 'local' }],
+      };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report.references![0]!.type).toBe('commit');
+      expect(report.inputOrigin).toBeUndefined();
+    });
+
+    it('report with mixed inputOrigin and manual+external refs', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = {
+        inputOrigin: 'mixed',
+        references: [
+          { ref: 'https://github.com/org/repo/pull/1', type: 'pr', source: 'github', title: 'PR #1' },
+          { ref: 'https://jira.example.com/PROJ-2', type: 'ticket', source: 'jira', title: 'PROJ-2' },
+        ],
+      };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report.inputOrigin).toBe('mixed');
+      expect(report.references).toHaveLength(2);
     });
   });
 

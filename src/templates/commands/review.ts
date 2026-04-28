@@ -15,16 +15,42 @@ Start the compliance review flow for the current FlowGuard session.
    - If no session exists, report this and stop.
    - If the session is not in READY phase, report the current phase and stop.
 
-2. Call \`flowguard_review\` with no arguments.
-   - The tool transitions the session from READY → REVIEW → REVIEW_COMPLETE and generates a compliance report.
+2. **External Reference Resolution (PR URLs, branches, commits, etc.)**:
+   If the user provides a PR URL, branch name, commit SHA, or other reference:
+   - **PR URL** (e.g. \`https://github.com/org/repo/pull/42\`):
+     - Use \`webfetch\` to extract the PR title and description.
+     - Add an \`ExternalReference\` with \`ref\`: URL, \`type\`: \`"pr"\`, \`title\`: extracted title, \`source\`: platform (github, gitlab, etc.).
+     - Set \`extractedAt\` if content was actually extracted.
+     - Set \`inputOrigin\` to \`"pr"\`.
+   - **Branch name** (e.g. \`feature/my-fix\`):
+     - Add an \`ExternalReference\` with \`ref\`: branch name, \`type\`: \`"branch"\`, \`source\`: \`"local"\`.
+     - Set \`inputOrigin\` to \`"branch"\`. Do NOT set \`extractedAt\` (no content extraction for bare branch names).
+   - **Commit SHA** (e.g. \`abc123def\`):
+     - Add an \`ExternalReference\` with \`ref\`: commit SHA, \`type\`: \`"commit"\`, \`source\`: \`"local"\`.
+     - Set \`inputOrigin\` to \`"external_reference"\`.
+   - **Generic URL or document**:
+     - Use \`webfetch\` if available.
+     - Add \`ExternalReference\` with appropriate \`type\` and \`source\`.
+   - **Multiple references**: Include all references in the array.
+   - If the user provides BOTH text/instructions AND a reference:
+     - Set \`inputOrigin\` to \`"mixed"\`.
+   - If the user provides no reference: proceed as before — do NOT include \`references\` or \`inputOrigin\`.
+   Always preserve the original URL/reference — never lose the source.
 
-3. Read the response and present the report to the user:
+3. Call \`flowguard_review\` with:
+   - \`inputOrigin\` (optional): \`"pr"\`, \`"branch"\`, \`"external_reference"\`, \`"mixed"\`, \`"manual_text"\`, etc.
+   - \`references\` (optional): Array of \`ExternalReference\` objects as described above (omit if no references).
+
+4. The tool transitions the session from READY → REVIEW → REVIEW_COMPLETE and generates a compliance report.
+
+5. Read the response and present the report to the user:
    - **Overall status**: clean, warnings, or issues.
    - **Findings**: List each finding with severity (info/warning/error), category, and message.
    - **Validation summary**: Show which checks passed or failed.
+   - **External references** (if any): List the references that were used.
    - **Current phase**: Should be REVIEW_COMPLETE.
 
-4. If there are warnings or issues, explain what actions could address them.
+6. If there are warnings or issues, explain what actions could address them.
 
 ## Verification Review Check
 
@@ -36,6 +62,15 @@ When reviewing implementation evidence or plan verification, check:
 - Are unexecuted checks marked as NOT_VERIFIED?
 
 If generic commands are used when specific candidates exist, flag this as a defect in the report.
+
+## ExternalReference Format
+
+Each reference in the \`references\` array has:
+- \`ref\` (required): URL, branch name, commit SHA, or reference string
+- \`type\` (optional): \`ticket\` | \`issue\` | \`pr\` | \`branch\` | \`commit\` | \`url\` | \`doc\` | \`other\`
+- \`title\` (optional): Human-readable title extracted from the reference
+- \`source\` (optional): Platform identifier (jira, github, gitlab, confluence, local, etc.)
+- \`extractedAt\` (optional): ISO timestamp — ONLY set if content was actually extracted from the URL
 
 ## Constraints
 
@@ -52,6 +87,7 @@ If generic commands are used when specific candidates exist, flag this as a defe
 ## Done-when
 
 - Compliance report is generated and presented to the user.
+- External references are captured with full audit provenance.
 - Verification review checked for repo-native candidates vs generic command mismatches.
 - Findings and actionable recommendations are shown.
 - Phase has reached REVIEW_COMPLETE.
