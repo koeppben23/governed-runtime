@@ -55,18 +55,19 @@ See [docs/commands.md](./docs/commands.md) for the complete command reference.
 
 ## Documentation
 
-| Document                                               | Description                                      |
-| ------------------------------------------------------ | ------------------------------------------------ |
-| [Installation](./docs/installation.md)                 | Install and configure FlowGuard                  |
-| [Commands](./docs/commands.md)                         | Command reference                                |
-| [Phases](./docs/phases.md)                             | Workflow phases and gates                        |
-| [Policies](./docs/policies.md)                         | Solo, Team, Regulated modes                      |
-| [Profiles](./docs/profiles.md)                         | Tech stack profiles                              |
-| [Archive](./docs/archive.md)                           | Session archiving                                |
-| [Enterprise Readiness](./docs/enterprise-readiness.md) | Consolidated threat model and control boundaries |
-| [Configuration](./docs/configuration.md)               | Configuration reference                          |
-| [Troubleshooting](./docs/troubleshooting.md)           | FAQ and error handling                           |
-| [Testing Strategy](./docs/testing-strategy.md)         | Test tiers, CI jobs, performance budgets         |
+| Document                                                        | Description                                      |
+| --------------------------------------------------------------- | ------------------------------------------------ |
+| [Installation](./docs/installation.md)                          | Install and configure FlowGuard                  |
+| [Commands](./docs/commands.md)                                  | Command reference                                |
+| [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
+| [Policies](./docs/policies.md)                                  | Solo, Team, Regulated modes                      |
+| [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
+| [Archive](./docs/archive.md)                                    | Session archiving                                |
+| [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |
+| [Configuration](./docs/configuration.md)                        | Configuration reference                          |
+| [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                           |
+| [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets         |
+| [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages) |
 
 ---
 
@@ -103,12 +104,13 @@ npm run build
 
 ### CI Jobs
 
-| Job                | Script                                         | What It Proves                            |
-| ------------------ | ---------------------------------------------- | ----------------------------------------- |
-| **unit**           | `npm run test:unit`                            | Pure logic correctness                    |
-| **integration**    | `npm run test:integration`                     | Governance chain fidelity                 |
-| **smoke**          | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works               |
-| **install-verify** | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform) |
+| Job                | Script                                         | What It Proves                                         |
+| ------------------ | ---------------------------------------------- | ------------------------------------------------------ |
+| **unit**           | `npm run test:unit`                            | Pure logic correctness                                 |
+| **integration**    | `npm run test:integration`                     | Governance chain fidelity                              |
+| **smoke**          | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
+| **install-verify** | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
+| **mutation**       | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
 
 See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
 
