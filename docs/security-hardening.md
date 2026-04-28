@@ -231,6 +231,7 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 - `mode: 'static'` with pinned signing keys (`jwk` or `pem`)
 - `mode: 'jwks'` with pinned local `jwksPath`
 - `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
+- JWT verification path uses `jose` `jwtVerify`; key resolution remains FlowGuard-owned (no `createRemoteJWKSet` in verifier path)
 
 This implementation explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
 

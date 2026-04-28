@@ -49,6 +49,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Strict independent review uses a hidden `flowguard-reviewer` subagent, SDK `json_schema` structured output, mandate-bound attestation, and fail-closed orchestration in strict mode
 - Minimum actor assurance is policy-bound via `minimumActorAssuranceForApproval` across `best_effort`, `claim_validated`, and `idp_verified`
 - `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification
+- JWT verification is implemented via `jose` `jwtVerify` with FlowGuard-owned key resolution (no remote JWK set in verifier path)
 - `identityProviderMode: required` blocks fail-closed; `identityProviderMode: optional` degrades only for typed IdP errors
 - P35 excludes OIDC discovery and stale/last-known-good JWKS fallback
 - Team and Regulated modes require explicit human decisions at gates
