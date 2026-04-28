@@ -286,8 +286,7 @@ jobs:
   mutation:
     name: mutation
     runs-on: ubuntu-latest
-    # Phase 1 PoC - blocking will be enabled in Phase 2.
-    continue-on-error: true
+    continue-on-error: false
     timeout-minutes: 60
     steps:
       - name: Checkout
