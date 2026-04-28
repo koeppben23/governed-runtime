@@ -13,7 +13,7 @@ import {
   resolveRuntimePolicyMode,
   policyModes,
   createPolicySnapshot,
-  policyFromSnapshot,
+  resolvePolicyFromSnapshot,
 } from '../config/policy.js';
 import { COMMANDS } from '../cli/templates.js';
 import {
@@ -347,7 +347,7 @@ describe('config/policy', () => {
       expect(snap.identityProviderMode).toBe('optional');
     });
 
-    it('policyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
+    it('resolvePolicyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
       const digest = (s: string) => `hash-${s.length}`;
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
@@ -361,7 +361,7 @@ describe('config/policy', () => {
         identityProviderMode: 'required' as const,
       };
 
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.identityProvider).toEqual(snap.identityProvider);
       expect(reconstructed.identityProviderMode).toBe('required');
     });
@@ -373,22 +373,22 @@ describe('config/policy', () => {
       expect(solo.hash).not.toBe(team.hash);
     });
 
-    it('policyFromSnapshot reconstructs actorClassification from snapshot only', () => {
+    it('resolvePolicyFromSnapshot reconstructs actorClassification from snapshot only', () => {
       const digest = (s: string) => `hash-${s.length}`;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
       expect(reconstructed.actorClassification).toEqual(snap.actorClassification);
     });
 
-    it('policyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
+    it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
       const digest = (s: string) => `hash-${s.length}`;
       // Create a snapshot with modified actorClassification
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         actorClassification: { custom_tool: 'auditor' },
       };
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       // Must use snapshot value, not preset
       expect(reconstructed.actorClassification).toEqual({ custom_tool: 'auditor' });
     });
