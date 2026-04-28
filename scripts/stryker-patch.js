@@ -9,7 +9,7 @@
  * It is NOT a postinstall hook — it only runs in the mutation testing context.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,15 +22,21 @@ const TARGET = resolve(
 const SEARCH = "pool: 'threads'";
 const REPLACE = "pool: 'forks'";
 
-if (!existsSync(TARGET)) {
-  console.error(
-    `[stryker-patch] ERROR: vitest-test-runner.js not found at ${TARGET}. ` +
-      'Is @stryker-mutator/vitest-runner installed?',
-  );
+let original;
+try {
+  original = readFileSync(TARGET, 'utf-8');
+} catch (err) {
+  const code = err?.code;
+  if (code === 'ENOENT') {
+    console.error(
+      `[stryker-patch] ERROR: vitest-test-runner.js not found at ${TARGET}. ` +
+        'Is @stryker-mutator/vitest-runner installed?',
+    );
+    process.exit(1);
+  }
+  console.error(`[stryker-patch] ERROR: Cannot read ${TARGET}: ${err?.message ?? err}`);
   process.exit(1);
 }
-
-const original = readFileSync(TARGET, 'utf-8');
 
 if (original.includes(REPLACE)) {
   // Already patched from a previous mutation run.
@@ -46,6 +52,10 @@ if (!original.includes(SEARCH)) {
   process.exit(0);
 }
 
-const patched = original.replace(SEARCH, REPLACE);
-writeFileSync(TARGET, patched, 'utf-8');
+try {
+  writeFileSync(TARGET, original.replace(SEARCH, REPLACE), 'utf-8');
+} catch (err) {
+  console.error(`[stryker-patch] ERROR: Cannot write ${TARGET}: ${err?.message ?? err}`);
+  process.exit(1);
+}
 console.log('[stryker-patch] Patched Stryker vitest-runner: pool=threads → pool=forks');
