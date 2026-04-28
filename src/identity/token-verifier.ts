@@ -86,9 +86,10 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
         ? [verifiedPayload.aud]
         : [];
 
-    const exp = typeof verifiedPayload.exp === 'number'
-      ? verifiedPayload.exp
-      : Math.floor(Date.now() / 1000) + 3600;
+    const exp =
+      typeof verifiedPayload.exp === 'number'
+        ? verifiedPayload.exp
+        : Math.floor(Date.now() / 1000) + 3600;
 
     return {
       subject,
@@ -96,7 +97,8 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       displayName,
       issuer: typeof verifiedPayload.iss === 'string' ? verifiedPayload.iss : this.config.issuer,
       audience,
-      issuedAt: typeof verifiedPayload.iat === 'number' ? new Date(verifiedPayload.iat * 1000) : null,
+      issuedAt:
+        typeof verifiedPayload.iat === 'number' ? new Date(verifiedPayload.iat * 1000) : null,
       notBefore:
         typeof verifiedPayload.nbf === 'number' ? new Date(verifiedPayload.nbf * 1000) : null,
       expiresAt: new Date(exp * 1000),
@@ -182,12 +184,18 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 
     if (err instanceof JOSEError) {
       if (err.code === 'ERR_JOSE_ALG_NOT_ALLOWED') {
-        return new IdpError('IDP_ALGORITHM_NOT_ALLOWED', `Token algorithm not allowed: ${err.message}`);
+        return new IdpError(
+          'IDP_ALGORITHM_NOT_ALLOWED',
+          `Token algorithm not allowed: ${err.message}`,
+        );
       }
       return new IdpError('IDP_TOKEN_INVALID', `Token verification failed: ${err.message}`);
     }
 
-    return new IdpError('IDP_SIGNATURE_INVALID', `Signature verification error: ${(err as Error).message}`);
+    return new IdpError(
+      'IDP_SIGNATURE_INVALID',
+      `Signature verification error: ${(err as Error).message}`,
+    );
   }
 
   private extractClaim(payload: JwtPayload, claimName: string): string | null {
