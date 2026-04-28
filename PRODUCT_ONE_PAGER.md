@@ -27,6 +27,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
+- External references for `/ticket` and `/review`: link Jira, ADO, GitHub Issues, PRs, branches, commits, and Confluence docs with full audit provenance (type, source, extractedAt)
 
 ### Policy Enforcement
 
@@ -40,6 +41,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Decision receipts for every approval
 - Policy snapshots frozen at session creation
 - Session archives with redaction support
+- Mutation testing on security-critical paths (StrykerJS, 85.71% baseline)
 
 ### Four-Eyes Governance
 
@@ -88,3 +90,4 @@ FlowGuard is an OpenCode-native governance runtime. It runs locally within the A
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
 **Current snapshot: 1.2.0-rc.1**
+**API Reference:** [TypeDoc-generated](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
