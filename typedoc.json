@@ -1,0 +1,25 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts", "src/integration/index.ts", "src/integration/tools/index.ts"],
+  "entryPointStrategy": "resolve",
+  "out": "docs/api",
+  "name": "FlowGuard API",
+  "includeVersion": true,
+  "readme": "none",
+  "exclude": [
+    "**/__tests__/**",
+    "**/__fixtures__/**",
+    "src/testing.ts",
+    "src/cli/**",
+    "src/templates/**"
+  ],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "categorizeByGroup": true,
+  "sort": ["source-order"],
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  }
+}

@@ -28,4 +28,5 @@ Thumbs.db
 .env.*
 
 
-*.tgz
+# TypeDoc API reference (generated, deployed via CI)
+docs/api/

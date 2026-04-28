@@ -1,4 +1,41 @@
 /**
+ * @packageDocumentation
+ *
+ * # FlowGuard API
+ *
+ * Deterministic, fail-closed workflow engine for AI-assisted software delivery
+ * within OpenCode. FlowGuard enforces governed development workflows with
+ * hash-chained audit trails, policy-bound decision enforcement, and
+ * evidence-first compliance.
+ *
+ * ## Package Structure
+ *
+ * | Entry Point | Purpose |
+ * |-------------|---------|
+ * | `@flowguard/core` | Types, config, policy, audit, archive — the core API |
+ * | `@flowguard/core/integration` | OpenCode tool definitions + audit plugin |
+ * | `@flowguard/core/integration/tools` | Individual tool definitions |
+ *
+ * ## Quick Start
+ *
+ * ```ts
+ * import { executeTicket, FlowGuardPolicy, REGULATED_POLICY } from '@flowguard/core';
+ * ```
+ *
+ * ## Policy Modes
+ *
+ * - **solo** — automatic approval, no human gates
+ * - **team** — human-gated at review points
+ * - **team-ci** — CI auto-approve, degrades to team without CI context
+ * - **regulated** — mandatory four-eyes, evidence completeness enforcement
+ *
+ * ## Architecture
+ *
+ * Fail-closed: ambiguity blocks, never guesses.
+ * Deterministic: same state + input = same result.
+ * Evidence-first: every phase produces verifiable artifacts.
+ * Policy-bound: every decision traced to a policy version.
+ *
  * @module flowguard
  * @description Public API for the FlowGuard runtime package.
  *
