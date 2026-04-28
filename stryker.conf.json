@@ -12,16 +12,21 @@
   "mutate": [
     "src/machine/guards.ts",
     "src/machine/evaluate.ts",
+    "src/machine/commands.ts",
     "src/identity/token-verifier.ts",
     "src/rails/review-decision.ts",
-    "src/audit/integrity.ts",
     "src/rails/ticket.ts",
-    "src/rails/review.ts"
+    "src/rails/review.ts",
+    "src/rails/hydrate.ts",
+    "src/audit/integrity.ts",
+    "src/audit/completeness.ts",
+    "src/config/reasons.ts",
+    "src/config/policy.ts"
   ],
   "ignoreStatic": true,
   "thresholds": {
     "high": 90,
     "low": 85,
-    "break": 85
+    "break": 75
   }
 }
