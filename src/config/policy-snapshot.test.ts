@@ -296,7 +296,7 @@ describe('normalizePolicySnapshotWithMeta', () => {
   });
 });
 
-// ─── resolvePolicyFromSnapshot / policyFromSnapshot ─────────────────────────────
+// ─── resolvePolicyFromSnapshot ────────────────────────────────────────────
 
 describe('resolvePolicyFromSnapshot', () => {
   describe('HAPPY — round-trip', () => {

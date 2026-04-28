@@ -192,8 +192,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       expect(DEFAULT_SELF_REVIEW_CONFIG.fallbackToSelf).toBe(false);
     });
 
-    it('policyFromSnapshot preserves selfReview from snapshot', async () => {
-      const { policyFromSnapshot } = await import('../../config/policy.js');
+    it('resolvePolicyFromSnapshot preserves selfReview from snapshot', async () => {
+      const { resolvePolicyFromSnapshot } = await import('../../config/policy.js');
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
       const snapshotWithSelfReview = PolicySnapshotSchema.parse({
@@ -221,13 +221,13 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         },
       });
 
-      const policy = policyFromSnapshot(snapshotWithSelfReview);
+      const policy = resolvePolicyFromSnapshot(snapshotWithSelfReview);
       expect(policy.selfReview.subagentEnabled).toBe(true);
       expect(policy.selfReview.fallbackToSelf).toBe(true);
     });
 
-    it('policyFromSnapshot uses default when snapshot lacks selfReview', async () => {
-      const { policyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } = await import(
+    it('resolvePolicyFromSnapshot uses default when snapshot lacks selfReview', async () => {
+      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } = await import(
         '../../config/policy.js'
       );
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
@@ -253,7 +253,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         actorClassification: {},
       });
 
-      const policy = policyFromSnapshot(snapshotWithoutSelfReview);
+      const policy = resolvePolicyFromSnapshot(snapshotWithoutSelfReview);
       expect(policy.selfReview).toEqual(DEFAULT_SELF_REVIEW_CONFIG);
     });
   });
