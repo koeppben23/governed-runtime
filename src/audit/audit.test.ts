@@ -757,6 +757,34 @@ describe('audit integrity', () => {
       expect(getLastChainHash([])).toBe(GENESIS_HASH);
     });
 
+    it('getLastChainHash finds chained event at index 0 when it is the only chained event', () => {
+      const chain = buildChain(1);
+      const events = [chain[0] as unknown as Record<string, unknown>];
+      expect(getLastChainHash(events)).toBe(chain[0]!.chainHash);
+    });
+
+    it('isChainedEvent returns false for empty chainHash string', () => {
+      const event: Record<string, unknown> = {
+        id: 'evt-1',
+        chainHash: '',
+        prevHash: 'abc123',
+      };
+      const chain = buildChain(1);
+      // verifyChain should skip this event (handled internally via isChainedEvent)
+      const result = verifyChain([event]);
+      expect(result.skippedCount).toBe(1);
+    });
+
+    it('isChainedEvent returns false for empty prevHash string', () => {
+      const event: Record<string, unknown> = {
+        id: 'evt-2',
+        chainHash: 'abc123',
+        prevHash: '',
+      };
+      const result = verifyChain([event]);
+      expect(result.skippedCount).toBe(1);
+    });
+
     it('verifyChain skips non-chained (legacy) events', () => {
       const legacyEvent: Record<string, unknown> = {
         id: 'legacy-1',
