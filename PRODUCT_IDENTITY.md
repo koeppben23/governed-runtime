@@ -110,19 +110,19 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 Ten FlowGuard commands map to workflow phases:
 
-| Command            | Purpose                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------ |
-| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy            |
-| `/ticket`          | Record the task description for FlowGuard tracking                                               |
-| `/plan`            | Generate implementation plan with self-review loop                                               |
-| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                        |
-| `/implement`       | Execute implementation, record evidence, run review loop                                         |
-| `/validate`        | Run validation checks (test quality, rollback safety)                                            |
-| `/architecture`    | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated) |
-| `/review`          | Start standalone compliance review flow                                                          |
-| `/continue`        | Universal routing — do the next appropriate action for the current phase                         |
-| `/abort`           | Emergency session termination                                                                    |
-| `/archive`         | Archive a completed session as `.tar.gz`                                                         |
+| Command            | Purpose                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
+| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
+| `/plan`            | Generate implementation plan with self-review loop                                                             |
+| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
+| `/implement`       | Execute implementation, record evidence, run review loop                                                       |
+| `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
+| `/architecture`    | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated)               |
+| `/review`          | Start standalone compliance review flow. Supports PR URLs, branches, and commit references.                    |
+| `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
+| `/abort`           | Emergency session termination                                                                                  |
+| `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
@@ -227,20 +227,20 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 
 ### Layer Architecture
 
-| Layer               | Responsibility                                                                    | Files                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| **1. State Model**  | Zod schemas for all evidence types, phases, events                                | `state/evidence.ts`, `state/schema.ts`                                          |
-| **2. Machine**      | Pure transition table, guards, evaluator                                          | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts`                |
-| **3. Rails**        | Thin orchestrators for each command                                               | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files)                     |
-| **4. Adapters**     | I/O boundary (filesystem, git, workspace registry, OpenCode context)              | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
-| **5. Config**       | Extension points, per-worktree config schema                                      | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts`           |
-| **6. Logging**      | Structured logging (logger interface + factories)                                 | `logging/logger.ts`                                                             |
-| **7. Audit**        | Hash chain, query, summary, completeness matrix                                   | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts`   |
-| **8. Discovery**    | Repo discovery (6 collectors + orchestrator + Zod types)                          | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
-| **9. Archive**      | Archive manifest types, verification                                              | `archive/types.ts`                                                              |
-| **10. Integration** | OpenCode custom tools + plugin (thin wrappers)                                    | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
-| **11. CLI**         | Installer (install/uninstall/doctor)                                                                         | `cli/install.ts`, `cli/templates.ts`                              |
-| **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts` |
+| Layer                      | Responsibility                                                                                                                                           | Files                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **1. State Model**         | Zod schemas for all evidence types, phases, events                                                                                                       | `state/evidence.ts`, `state/schema.ts`                                          |
+| **2. Machine**             | Pure transition table, guards, evaluator                                                                                                                 | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts`                |
+| **3. Rails**               | Thin orchestrators for each command                                                                                                                      | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files)                     |
+| **4. Adapters**            | I/O boundary (filesystem, git, workspace registry, OpenCode context)                                                                                     | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
+| **5. Config**              | Extension points, per-worktree config schema                                                                                                             | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts`           |
+| **6. Logging**             | Structured logging (logger interface + factories)                                                                                                        | `logging/logger.ts`                                                             |
+| **7. Audit**               | Hash chain, query, summary, completeness matrix                                                                                                          | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts`   |
+| **8. Discovery**           | Repo discovery (6 collectors + orchestrator + Zod types)                                                                                                 | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
+| **9. Archive**             | Archive manifest types, verification                                                                                                                     | `archive/types.ts`                                                              |
+| **10. Integration**        | OpenCode custom tools + plugin (thin wrappers)                                                                                                           | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
+| **11. CLI**                | Installer (install/uninstall/doctor)                                                                                                                     | `cli/install.ts`, `cli/templates.ts`                                            |
+| **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts`                                                                    |
 
 Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
@@ -363,6 +363,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
 - **Compliance Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
+- **Mutation Testing:** StrykerJS (v9.6.1) on security-critical paths (guards.ts, evaluate.ts, token-verifier.ts); 85.71% baseline score; CI non-blocking with 85% break threshold
+- **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — zero network calls from FlowGuard itself
 
 ---
