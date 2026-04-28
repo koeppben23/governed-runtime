@@ -212,7 +212,9 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify('!!!.abc.def')).rejects.toMatchObject({
         code: 'IDP_TOKEN_HEADER_INVALID',
       });
-      await expect(verifier.verify('!!!.abc.def')).rejects.toThrow(/Failed to decode base64url segment/);
+      await expect(verifier.verify('!!!.abc.def')).rejects.toThrow(
+        /Failed to decode base64url segment/,
+      );
     });
 
     it('rejects expired token', async () => {
@@ -239,7 +241,9 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_AUDIENCE_MISMATCH',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(/does not match any configured audience/);
+      await expect(verifier.verify(token)).rejects.toThrow(
+        /does not match any configured audience/,
+      );
     });
 
     it('rejects token with tampered payload (signature mismatch)', async () => {
@@ -433,7 +437,9 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_AUDIENCE_MISMATCH',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(/does not match any configured audience/);
+      await expect(verifier.verify(token)).rejects.toThrow(
+        /does not match any configured audience/,
+      );
     });
 
     it('provides default expiresAt when exp claim is missing', async () => {
