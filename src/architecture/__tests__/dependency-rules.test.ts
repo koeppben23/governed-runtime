@@ -282,7 +282,7 @@ describe('Layer Dependency Rules', () => {
     }
   });
 
-  describe('Rule 1: state/ is a leaf module (strict — only shared/ allowed)', () => {
+  describe('Rule 1: state/ is a leaf module with explicit schema-only exceptions', () => {
     const stateViolations: ImportViolation[] = [];
     const forbiddenFromState = new Set([
       'machine',
