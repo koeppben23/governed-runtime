@@ -9,7 +9,15 @@
   "vitest": {
     "configFile": "vitest.config.ts"
   },
-  "mutate": ["src/machine/guards.ts", "src/machine/evaluate.ts", "src/identity/token-verifier.ts"],
+  "mutate": [
+    "src/machine/guards.ts",
+    "src/machine/evaluate.ts",
+    "src/identity/token-verifier.ts",
+    "src/rails/review-decision.ts",
+    "src/audit/integrity.ts",
+    "src/rails/ticket.ts",
+    "src/rails/review.ts"
+  ],
   "ignoreStatic": true,
   "thresholds": {
     "high": 90,
