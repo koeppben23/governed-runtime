@@ -1994,6 +1994,165 @@ describe('audit completeness', () => {
       const valSlot = report.slots.find((s) => s.slot === 'validation');
       expect(valSlot?.detail).toContain('failed: test_quality');
     });
+
+    // ─── MUTATION KILL: arch flow and error conditions ────────
+    it('archReviewDecision slot is NOT present at ARCH_COMPLETE with error', () => {
+      const state = makeState('ARCH_COMPLETE' as any, {
+        ...makeProgressedState('ARCH_COMPLETE'),
+        error: {
+          code: 'ADR_REJECTED',
+          message: 'ADR rejected',
+          recoveryHint: 'revise',
+          occurredAt: FIXED_TIME,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      // At ARCH_COMPLETE but with error → NOT present (topology invariant fails)
+      expect(slot?.present).toBe(false);
+      expect(slot?.status).toBe('missing');
+    });
+
+    it('archReviewDecision slot is present at ARCH_COMPLETE without error', () => {
+      const state = makeProgressedState('ARCH_COMPLETE');
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      expect(slot?.present).toBe(true);
+      expect(slot?.status).toBe('complete');
+    });
+
+    it('archReviewDecision slot is NOT present at ARCH_REVIEW (wrong phase)', () => {
+      const state = makeState('ARCH_REVIEW' as any, {
+        architecture: makeProgressedState('ARCH_COMPLETE').architecture,
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'abc',
+          revisionDelta: 'none',
+          verdict: 'approve',
+        },
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      // At ARCH_REVIEW, archReviewDecision is required (ordinal 2 >= 2) but NOT present
+      // because phase !== ARCH_COMPLETE
+      expect(slot?.present).toBe(false);
+    });
+
+    it('archReviewDecision detail at ARCH_COMPLETE without error says topology invariant', () => {
+      const state = makeProgressedState('ARCH_COMPLETE');
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      expect(slot?.detail).toContain('Approved');
+      expect(slot?.detail).toContain('topology invariant');
+    });
+
+    it('archReviewDecision detail at ARCH_COMPLETE with error is undefined', () => {
+      const state = makeState('ARCH_COMPLETE' as any, {
+        ...makeProgressedState('ARCH_COMPLETE'),
+        error: {
+          code: 'ADR_REJECTED',
+          message: 'rejected',
+          recoveryHint: 'fix',
+          occurredAt: FIXED_TIME,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      // With error, the slot should not be present (or detail should not be "Approved")
+      expect(slot?.detail).toBeUndefined();
+    });
+
+    it('validation detail shows passed/total and failed check IDs', () => {
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: [
+          { checkId: 'sec_scan', passed: false, detail: 'vuln', executedAt: FIXED_TIME },
+          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+        ],
+      });
+      const report = evaluateCompleteness(state);
+      const valSlot = report.slots.find((s) => s.slot === 'validation');
+      expect(valSlot?.detail).toContain('1/2 passed');
+      expect(valSlot?.detail).toContain('failed: sec_scan');
+    });
+
+    it('validation detail shows all passed when no failures', () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = evaluateCompleteness(state);
+      const valSlot = report.slots.find((s) => s.slot === 'validation');
+      expect(valSlot?.detail).toContain('passed');
+      expect(valSlot?.detail).not.toContain('failed:');
+    });
+
+    it('arch flow slots at ARCHITECTURE phase: only architecture required', () => {
+      const state = makeState('ARCHITECTURE' as any, {
+        architecture: null,
+      });
+      const report = evaluateCompleteness(state);
+      const archSlot = report.slots.find((s) => s.slot === 'architecture');
+      const selfReviewSlot = report.slots.find((s) => s.slot === 'selfReview');
+      const archDecisionSlot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      expect(archSlot?.required).toBe(true);
+      expect(archSlot?.status).toBe('missing');
+      expect(selfReviewSlot?.required).toBe(false);
+      expect(selfReviewSlot?.status).toBe('not_yet_required');
+      expect(archDecisionSlot?.required).toBe(false);
+    });
+
+    it('evidenceReviewDecision slot at COMPLETE with error → not present', () => {
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        error: {
+          code: 'REVIEW_FAILED',
+          message: 'review rejected',
+          recoveryHint: 'fix',
+          occurredAt: FIXED_TIME,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'evidenceReviewDecision');
+      expect(slot?.present).toBe(false);
+      expect(slot?.detail).toContain('REVIEW_FAILED');
+    });
+
+    it('evidenceReviewDecision slot at COMPLETE without error → present', () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'evidenceReviewDecision');
+      expect(slot?.present).toBe(true);
+      expect(slot?.detail).toContain('topology invariant');
+    });
+
+    it('validation detail uses comma-space separator with 2+ failed checks (L277 join)', () => {
+      // Kill: failedIds.join(', ') → failedIds.join("")
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: [
+          { checkId: 'chk_alpha', passed: false, detail: 'fail', executedAt: FIXED_TIME },
+          { checkId: 'chk_beta', passed: false, detail: 'fail', executedAt: FIXED_TIME },
+          { checkId: 'chk_gamma', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+        ],
+      });
+      const report = evaluateCompleteness(state);
+      const valSlot = report.slots.find((s) => s.slot === 'validation');
+      expect(valSlot?.detail).toContain('chk_alpha, chk_beta');
+    });
+
+    it('archReviewDecision detail is undefined at ARCHITECTURE phase (L295 phase guard)', () => {
+      // Kill: state.phase === 'ARCH_COMPLETE' → true
+      // At ARCHITECTURE (not ARCH_COMPLETE), detail should NOT be the topology-invariant string
+      const state = makeState('ARCHITECTURE' as any, {
+        architecture: null,
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'archReviewDecision');
+      // At ARCHITECTURE, archReviewDecision is either not present or detail is undefined
+      if (slot) {
+        expect(slot.detail).toBeUndefined();
+      }
+    });
   });
 
   // ─── PERF ───────────────────────────────────────────────────

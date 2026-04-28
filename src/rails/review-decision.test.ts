@@ -229,4 +229,184 @@ describe('review-decision rail', () => {
       expect(result.reason).toBeDefined();
     }
   });
+
+  // ─── MUTATION KILL: blocked detail interpolation ───────────
+  it('COMMAND_NOT_ALLOWED reason includes command and phase', () => {
+    const state = makeState('TICKET');
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'ok', decidedBy: 'r1' },
+      baseCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+      expect(result.reason).toContain('/review-decision');
+      expect(result.reason).toContain('TICKET');
+    }
+  });
+
+  it('REGULATED_ACTOR_UNKNOWN reason includes role for initiator', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: { ...initiatorIdentity, actorSource: 'unknown' as const },
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
+      expect(result.reason).toContain('initiator');
+    }
+  });
+
+  it('REGULATED_ACTOR_UNKNOWN reason includes role for reviewer', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: { ...reviewerIdentity, actorSource: 'unknown' as const },
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
+      expect(result.reason).toContain('reviewer');
+    }
+  });
+
+  it('FOUR_EYES_ACTOR_MATCH reason includes initiator ID', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'initiator-1',
+        decisionIdentity: { ...reviewerIdentity, actorId: 'initiator-1' },
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
+      expect(result.reason).toContain('initiator-1');
+    }
+  });
+
+  it('ACTOR_ASSURANCE_INSUFFICIENT reason includes minimum and current levels', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
+      },
+      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      expect(result.reason).toContain('claim_validated');
+      expect(result.reason).toContain('best_effort');
+    }
+  });
+
+  it('ACTOR_ASSURANCE_INSUFFICIENT via minimumActorAssurance includes levels', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
+      },
+      { ...baseCtx, policy: { minimumActorAssuranceForApproval: 'idp_verified' } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      expect(result.reason).toContain('idp_verified');
+      expect(result.reason).toContain('best_effort');
+    }
+  });
+
+  it('changes_requested at ARCH_REVIEW clears selfReview (not architecture)', () => {
+    const state = makeState('ARCH_REVIEW', {
+      architecture: ARCHITECTURE_DECISION,
+      selfReview: {
+        iteration: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: ARCHITECTURE_DECISION.digest,
+        revisionDelta: 'none',
+        verdict: 'approve',
+      },
+    });
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'r1' },
+      baseCtx,
+    );
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.selfReview).toBeNull();
+    }
+  });
+
+  it('INVALID_VERDICT includes the invalid verdict string', () => {
+    const state = makeState('PLAN_REVIEW');
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'maybe' as never, rationale: 'idk', decidedBy: 'r1' },
+      baseCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('INVALID_VERDICT');
+      expect(result.reason).toContain('maybe');
+    }
+  });
+
+  // ─── MUTATION KILL round 2 ───────────────────────────────────
+  it('idp_verified passes requireVerifiedActorsForApproval (L200)', () => {
+    // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
+      },
+      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
+    );
+    // idp_verified meets the threshold — should NOT be blocked
+    expect(result.kind).toBe('ok');
+  });
 });

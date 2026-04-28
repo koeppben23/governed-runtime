@@ -1121,3 +1121,49 @@ describe('abort rail', () => {
     });
   });
 });
+
+// ─── MUTATION KILL: blocked detail interpolation ─────────────────────────────
+
+describe('MUTATION: ticket blocked reason detail', () => {
+  const mCtx = createTestContext();
+
+  it('ticket COMMAND_NOT_ALLOWED reason contains /ticket and phase', () => {
+    const result = executeTicket(makeState('PLAN'), { text: 'task', source: 'user' }, mCtx);
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+      expect(result.reason).toContain('/ticket');
+      expect(result.reason).toContain('PLAN');
+    }
+  });
+
+  it('ticket COMMAND_NOT_ALLOWED at COMPLETE includes phase', () => {
+    const result = executeTicket(
+      makeProgressedState('COMPLETE'),
+      { text: 'task', source: 'user' },
+      mCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.reason).toContain('/ticket');
+      expect(result.reason).toContain('COMPLETE');
+    }
+  });
+});
+
+describe('MUTATION: review-decision blocked reason detail', () => {
+  const mCtx = createTestContext();
+
+  it('review-decision COMMAND_NOT_ALLOWED contains /review-decision and phase', () => {
+    const result = executeReviewDecision(
+      makeState('TICKET'),
+      { verdict: 'approve', rationale: 'ok', decidedBy: 'r' },
+      mCtx,
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.reason).toContain('/review-decision');
+      expect(result.reason).toContain('TICKET');
+    }
+  });
+});

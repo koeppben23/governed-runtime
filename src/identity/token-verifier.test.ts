@@ -468,4 +468,59 @@ describe('JwtStaticTokenVerifier', () => {
       expect(result.notBefore).toBeNull();
     });
   });
+
+  // ── MUTATION KILL: claim extraction and error messages ────────────────
+  describe('MUTATION: claim and audience detail assertions', () => {
+    it('audience mismatch error includes both token and configured audiences', async () => {
+      const verifier = makeVerifier({
+        audience: ['other-service'],
+      } as Partial<IdpConfig>);
+      const token = validRsaToken({ aud: 'flowguard' });
+      await expect(verifier.verify(token)).rejects.toThrow(/flowguard/);
+      await expect(verifier.verify(token)).rejects.toThrow(/other-service/);
+    });
+
+    it('claim with whitespace-only value returns null (extractClaim trims)', async () => {
+      const verifier = makeVerifier();
+      // sub claim with only whitespace → extractClaim trims → null → verify throws IDP_SUBJECT_MISSING
+      const token = validRsaToken({ sub: '   ' });
+      await expect(verifier.verify(token)).rejects.toThrow(/subject/i);
+    });
+
+    it('claim with padded whitespace is trimmed', async () => {
+      const verifier = makeVerifier();
+      const token = validRsaToken({ sub: '  user-trimmed  ', email: ' trimmed@test.com ' });
+      const result = await verifier.verify(token);
+      expect(result.subject).toBe('user-trimmed');
+      expect(result.email).toBe('trimmed@test.com');
+    });
+
+    it('name claim with whitespace-only returns null (extractClaimOrNull)', async () => {
+      const verifier = makeVerifier();
+      const token = validRsaToken({ name: '  ' });
+      const result = await verifier.verify(token);
+      expect(result.displayName).toBeNull();
+    });
+
+    it('name claim padded with whitespace is trimmed', async () => {
+      const verifier = makeVerifier();
+      const token = validRsaToken({ name: '  Padded Name  ' });
+      const result = await verifier.verify(token);
+      expect(result.displayName).toBe('Padded Name');
+    });
+
+    it('non-IdpError during signature verification is wrapped', async () => {
+      // Create a verifier with a valid key resolver but tamper with the token
+      // so that crypto.verify throws a non-IdpError
+      const verifier = makeVerifier();
+      // Malformed signature that causes crypto.verify to throw
+      const header = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
+      const payload = base64url(validRsaPayload());
+      // Use invalid base64url for signature to trigger a crypto error
+      const token = `${header}.${payload}.!!!invalid-signature!!!`;
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        code: 'IDP_SIGNATURE_INVALID',
+      });
+    });
+  });
 });

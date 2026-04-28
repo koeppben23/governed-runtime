@@ -9,7 +9,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { executeReview, type ReviewExecutors, type ReviewReferenceInput } from './review.js';
+import {
+  executeReview,
+  executeReviewFlow,
+  type ReviewExecutors,
+  type ReviewReferenceInput,
+} from './review.js';
 import {
   makeState,
   makeProgressedState,
@@ -18,6 +23,7 @@ import {
   VALIDATION_FAILED,
 } from '../__fixtures__.js';
 import { benchmarkSync, PERF_BUDGETS, measureAsync } from '../test-policy.js';
+import { createTestContext } from '../testing.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -335,6 +341,207 @@ describe('review rail', () => {
       const report = await executeReview(state, NOW, undefined, refInput);
       expect(report.inputOrigin).toBe('mixed');
       expect(report.references).toHaveLength(2);
+    });
+  });
+
+  // ─── MUTATION KILL ──────────────────────────────────────────
+  describe('MUTATION: review report detail assertions', () => {
+    it('all-passing validation produces no validation finding', async () => {
+      const state = makeProgressedState('COMPLETE');
+      // makeProgressedState COMPLETE has all-passing validation
+      const report = await executeReview(state, NOW);
+      const valFinding = report.findings.find((f) => f.category === 'validation');
+      expect(valFinding).toBeUndefined();
+    });
+
+    it('failed validation finding message includes failed check ID', async () => {
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: VALIDATION_FAILED,
+      });
+      const report = await executeReview(state, NOW);
+      const valFinding = report.findings.find((f) => f.category === 'validation');
+      expect(valFinding).toBeDefined();
+      expect(valFinding!.message).toContain('Failed checks');
+      expect(valFinding!.message).toContain('test_quality');
+    });
+
+    it('four-eyes NOT required when allowSelfApproval=true even if not satisfied', async () => {
+      // four-eyes.required = false, so no four-eyes finding should appear
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        policySnapshot: {
+          ...makeProgressedState('COMPLETE').policySnapshot!,
+          allowSelfApproval: true,
+        },
+        initiatedBy: 'alice',
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'alice', // same person
+        },
+      });
+      const report = await executeReview(state, NOW);
+      const fourEyesFinding = report.findings.find((f) => f.category === 'four-eyes');
+      expect(fourEyesFinding).toBeUndefined();
+    });
+
+    it('four-eyes pending message describes the condition', async () => {
+      const state = makeState('PLAN_REVIEW', {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: {
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          allowSelfApproval: false,
+        },
+        reviewDecision: null,
+      });
+      const report = await executeReview(state, NOW);
+      const fourEyesFinding = report.findings.find((f) => f.category === 'four-eyes');
+      expect(fourEyesFinding).toBeDefined();
+      expect(fourEyesFinding!.message).toContain('no review decision');
+    });
+
+    it('missing slot finding includes slot label', async () => {
+      const state = makeState('PLAN', {
+        ticket: makeProgressedState('PLAN').ticket,
+        plan: null,
+      });
+      const report = await executeReview(state, NOW);
+      const missingFindings = report.findings.filter(
+        (f) => f.category === 'completeness' && f.message.includes('missing'),
+      );
+      expect(missingFindings.length).toBeGreaterThan(0);
+      // At least one finding should mention the label and phase
+      expect(missingFindings.some((f) => f.message.includes('PLAN'))).toBe(true);
+    });
+
+    it('failed slot produces error finding with "has failed"', async () => {
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: VALIDATION_FAILED,
+      });
+      const report = await executeReview(state, NOW);
+      const failedSlotFindings = report.findings.filter(
+        (f) => f.category === 'completeness' && f.message.includes('has failed'),
+      );
+      expect(failedSlotFindings.length).toBeGreaterThan(0);
+      expect(failedSlotFindings.every((f) => f.severity === 'error')).toBe(true);
+    });
+
+    it('overall status is clean when no errors or warnings', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = await executeReview(state, NOW);
+      expect(report.overallStatus).toBe('clean');
+    });
+  });
+
+  // ─── MUTATION KILL: executeReviewFlow ───────────────────────
+  describe('MUTATION: executeReviewFlow', () => {
+    const ctx = createTestContext();
+
+    it('HAPPY: transitions from READY to REVIEW_COMPLETE', () => {
+      const state = makeState('READY');
+      const result = executeReviewFlow(state, ctx);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('REVIEW_COMPLETE');
+        expect(result.transitions.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('BAD: blocks at non-READY phase with command and phase in reason', () => {
+      const state = makeState('TICKET');
+      const result = executeReviewFlow(state, ctx);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toContain('/review');
+        expect(result.reason).toContain('TICKET');
+      }
+    });
+
+    it('BAD: blocks at COMPLETE phase', () => {
+      const state = makeState('COMPLETE');
+      const result = executeReviewFlow(state, ctx);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toContain('/review');
+      }
+    });
+  });
+
+  // ─── MUTATION KILL: round 2 — targeted survivors ────────────
+  describe('MUTATION: round 2 targeted survivors', () => {
+    it('failed checks message uses comma-space separator (L117 join)', async () => {
+      // Kill: join(', ') → join("")
+      // VALIDATION_FAILED has test_quality (failed) + rollback_safety (passed)
+      // We need 2+ failed checks to test the separator
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: [
+          { checkId: 'check_a', passed: false, detail: 'fail', executedAt: FIXED_TIME },
+          { checkId: 'check_b', passed: false, detail: 'fail', executedAt: FIXED_TIME },
+          { checkId: 'check_c', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+        ],
+      });
+      const report = await executeReview(state, NOW);
+      const valFinding = report.findings.find((f) => f.category === 'validation');
+      expect(valFinding).toBeDefined();
+      expect(valFinding!.message).toContain('check_a, check_b');
+    });
+
+    it('failed checks list excludes passed checks (L113 filter)', async () => {
+      // Kill: .filter((v) => !v.passed).map(...) → .map(...) (removing filter)
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: [
+          { checkId: 'failing_one', passed: false, detail: 'fail', executedAt: FIXED_TIME },
+          { checkId: 'passing_one', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+        ],
+      });
+      const report = await executeReview(state, NOW);
+      const valFinding = report.findings.find((f) => f.category === 'validation');
+      expect(valFinding).toBeDefined();
+      expect(valFinding!.message).toContain('failing_one');
+      expect(valFinding!.message).not.toContain('passing_one');
+    });
+
+    it('no four-eyes finding when fourEyes.required=false and not satisfied (L122 && vs ||)', async () => {
+      // Kill: required && !satisfied → required || !satisfied
+      // When required=false, satisfied=false: original=false (no finding), mutant=true (finding)
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        policySnapshot: {
+          ...makeProgressedState('COMPLETE').policySnapshot!,
+          allowSelfApproval: true, // fourEyes.required = false
+        },
+        initiatedBy: 'alice',
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'bob', // different person, but not satisfied because not required
+        },
+      });
+      const report = await executeReview(state, NOW);
+      const fourEyes = report.findings.filter((f) => f.category === 'four-eyes');
+      expect(fourEyes).toHaveLength(0);
+    });
+
+    it('report has no references key when refInput is undefined (L182)', async () => {
+      // Kill: refs !== undefined → true (always spread refs even when undefined)
+      const state = makeProgressedState('COMPLETE');
+      const report = await executeReview(state, NOW);
+      expect(report).not.toHaveProperty('references');
+    });
+
+    it('report has no references key when refInput.references is empty array (L182)', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const refInput: ReviewReferenceInput = { references: [] };
+      const report = await executeReview(state, NOW, undefined, refInput);
+      expect(report).not.toHaveProperty('references');
     });
   });
 
