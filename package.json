@@ -42,6 +42,7 @@
     "test:install-verify": "vitest run src/cli/install-verify.test.ts",
     "test:acp": "vitest run src/cli/run-acp-smoke.test.ts",
     "test:unit": "vitest run --exclude src/integration/ --exclude src/cli/install-verify.test.ts --exclude src/cli/run-acp-smoke.test.ts --exclude src/cli/cli-contract-smoke.test.ts",
+    "test:architecture": "vitest run src/architecture/**/*.test.ts src/architecture-boundary.test.ts",
     "test:integration": "vitest run src/integration/",
     "test:smoke": "vitest run src/cli/run-acp-smoke.test.ts src/cli/cli-contract-smoke.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
