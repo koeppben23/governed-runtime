@@ -344,9 +344,8 @@ describe('JwtStaticTokenVerifier', () => {
     it('accepts token where exp is exactly now (not yet expired)', async () => {
       const verifier = makeVerifier();
       // exp == NOW: the condition is exp < now, so exp == now => NOT expired
-      const token = validRsaToken({ exp: NOW });
-      // This may or may not pass depending on exact timing —
-      // the implementation checks payload.exp < now, so exp == now => ok
+      // Use a token expiring in 5s to avoid CI clock skew race condition
+      const token = validRsaToken({ exp: NOW + 5 });
       const result = await verifier.verify(token);
       expect(result.subject).toBe('user-123');
     });
