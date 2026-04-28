@@ -239,7 +239,8 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **8. Discovery**    | Repo discovery (6 collectors + orchestrator + Zod types)                          | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
 | **9. Archive**      | Archive manifest types, verification                                              | `archive/types.ts`                                                              |
 | **10. Integration** | OpenCode custom tools + plugin (thin wrappers)                                    | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
-| **11. CLI**         | Installer (install/uninstall/doctor) + Headless wrapper (run/serve, experimental) | `cli/install.ts`, `cli/templates.ts`, `cli/run.ts`                              |
+| **11. CLI**         | Installer (install/uninstall/doctor)                                                                         | `cli/install.ts`, `cli/templates.ts`                              |
+| **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts` |
 
 Dependencies flow **inward**: CLI -> Integration -> Adapters -> Rails -> Machine -> State. Discovery and Archive are peer layers used by Adapters and Integration. Logging is a cross-cutting utility available to the plugin layer. No circular dependencies.
 
