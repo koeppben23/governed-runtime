@@ -153,16 +153,19 @@ Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests 
 
 ### Session Data Retention
 
-| Data Type                | Default Retention             | Customer Responsibility |
-| ------------------------ | ----------------------------- | ----------------------- |
-| **Active session state** | Until session complete/abort  | Customer responsibility |
-| **Audit trail**          | Until archived                | Customer responsibility |
-| **Archives**             | Indefinite (customer-managed) | Customer responsibility |
-| **Discovery snapshots**  | Until archived                | Customer responsibility |
+| Data Type                | Runtime Default               | Recommended Minimum Retention (Regulated Context)      | Customer Responsibility |
+| ------------------------ | ----------------------------- | ------------------------------------------------------ | ----------------------- |
+| **Active session state** | Until session complete/abort  | Per internal policy                                    | Customer responsibility |
+| **Audit trail**          | Until archived                | **10 years** when records are accounting/tax-relevant  | Customer responsibility |
+| **Archives**             | Indefinite (customer-managed) | **10 years** when records are accounting/tax-relevant  | Customer responsibility |
+| **Discovery snapshots**  | Until archived                | Align with archive retention if used as audit evidence | Customer responsibility |
+
+For GoBD-relevant deployments (for example DATEV/accounting-adjacent change evidence), organizations should retain audit trail and archive artifacts for at least 10 years and document this in their retention policy.
 
 **Customer Responsibility:**
 
 - Define retention policies
+- Define explicit retention periods per data class and legal basis
 - Implement automated backup
 - Test restore procedures
 - Secure disposal of old archives

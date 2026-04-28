@@ -8,7 +8,9 @@ Responsibilities, contact channels, and expectations for FlowGuard support.
 
 FlowGuard is a proprietary software product maintained by the owner. This document defines what support is available, who is responsible for what, and how to get help.
 
-FlowGuard is a **locally installed development tool**, not a hosted service. There is no SaaS infrastructure, no uptime SLA, and no managed operations. Commercial support contracts are not currently offered.
+FlowGuard is a **locally installed development tool**, not a hosted service. There is no SaaS infrastructure, no uptime SLA, and no managed operations.
+
+Contractual support is not generally available as a public self-service offering today. For regulated or procurement-driven deployments, support terms can be discussed via direct commercial inquiry (see Enterprise Support below).
 
 ---
 
@@ -138,6 +140,16 @@ Organizations deploying FlowGuard in regulated environments should:
 3. **Subscribe to Security Advisories** via GitHub's watch feature on the repository.
 4. **Maintain internal documentation** mapping FlowGuard controls to your specific compliance requirements (see [BSI C5 Mapping](./bsi-c5-mapping.md) for an example framework).
 5. **Test upgrades** in a non-production environment before rolling out to teams.
+
+### Commercial / Contractual Support Path
+
+For organizations that require contractual support terms (for example banks, DATEV ecosystem partners, and other regulated buyers), use the following path:
+
+1. Open a GitHub issue labeled `enterprise-support-request` with non-sensitive context (deployment model, expected scale, regulatory scope).
+2. Request private follow-up for commercial terms.
+3. Align on support scope (security advisories, response targets, patch windows, upgrade guidance) before production rollout.
+
+This creates a documented procurement path even when no public standard support SKU is listed.
 
 ---
 
