@@ -13,7 +13,6 @@ export default defineConfig({
         'src/**/__tests__/**',
         'src/**/__fixtures__*',
         'src/test-policy.ts',
-        'src/cli/run.ts',
       ],
       // Thresholds enforced via test:coverage:ci script (CLI args).
       // NOT enforced per-suite to allow test:unit --coverage to pass.
