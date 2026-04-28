@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "reporters": ["html", "clear-text", "progress", "json"],
+  "coverageAnalysis": "perTest",
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "commandRunner": {
+    "command": "npx vitest run --pool=forks"
+  },
+  "mutate": [
+    "src/machine/guards.ts",
+    "src/machine/evaluate.ts",
+    "src/identity/token-verifier.ts"
+  ],
+  "ignoreStatic": true,
+  "thresholds": {
+    "high": 90,
+    "low": 70,
+    "break": 0
+  }
+}

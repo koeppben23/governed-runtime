@@ -49,6 +49,7 @@
     "generate-docs": "node scripts/generate-docs.js",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
+    "mutation": "stryker run",
     "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
     "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ && git commit -m 'chore: sync version from VERSION to package.json and docs'"
   },
@@ -69,6 +70,9 @@
     "@commitlint/config-conventional": "^19.0.0",
     "@eslint/js": "^9.37.0",
     "@opencode-ai/plugin": "^1.4.3",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/typescript-checker": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.4",
     "conventional-changelog-conventionalcommits": "^9.3.1",
