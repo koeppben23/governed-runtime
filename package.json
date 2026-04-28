@@ -46,6 +46,7 @@
     "test:smoke": "vitest run src/cli/run-acp-smoke.test.ts src/cli/cli-contract-smoke.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "sync-version": "node scripts/sync-version.js",
+    "postinstall": "node scripts/stryker-patch.js",
     "generate-docs": "node scripts/generate-docs.js",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
