@@ -79,7 +79,22 @@ resolution evidence.
 Record the task description. Starts the ticket flow from READY or updates ticket in TICKET phase.
 
 **Allowed in:** READY, TICKET
-**Arguments:** Task description text (required)
+**Arguments:**
+
+- `text` (required): Task description
+- `inputOrigin` (optional): Where the text came from — `manual_text` (typed by user), `external_reference` (extracted from URL/tracker), or `mixed` (both)
+- `references` (optional): Array of external references with audit provenance. Each reference has:
+  - `ref` (required): URL, ticket ID, or reference string
+  - `type` (optional): `ticket` (Jira/ADOS), `issue` (GitHub/GitLab), `pr`, `branch`, `commit`, `url`, `doc` (Confluence/spec), `other`
+  - `title` (optional): Extracted title from the reference
+  - `source` (optional): Platform — `jira`, `ados`, `github`, `gitlab`, `confluence`, etc.
+  - `extractedAt` (optional): ISO timestamp — only set when content was actually extracted
+
+**Examples:**
+
+- `/ticket Fix the auth bug in login.ts`
+- `/ticket https://jira.example.com/browse/PROJ-123` — agent fetches Jira, extracts title+description, stores URL as reference
+- `/ticket PROJ-123 Fix login redirect` — mixed: manual text + ticket ID
 
 **Derived artifacts:** On successful state persistence, FlowGuard materializes append-only evidence artifacts:
 
@@ -155,12 +170,24 @@ ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MA
 Start the standalone review flow. Generates a compliance report.
 
 **Allowed in:** READY
+**Arguments (all optional):**
+
+- `inputOrigin` (optional): Where the review content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
+- `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
+
+**Examples:**
+
+- `/review` — review current workspace (no references)
+- `/review https://github.com/org/repo/pull/42` — agent fetches PR, extracts info, stores URL as reference
+- `/review feature/my-fix` — review based on branch reference
+
 **Produces:**
 
 - Evidence completeness matrix
 - Four-eyes status
 - Validation summary
 - Findings
+- External references (if provided)
 - `flowguard-review-report.v1` artifact
 
 ### /continue
