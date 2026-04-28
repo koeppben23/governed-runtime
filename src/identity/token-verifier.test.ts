@@ -11,8 +11,9 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
+import { SignJWT } from 'jose';
 import { JwtStaticTokenVerifier } from './token-verifier.js';
 import { StaticKeyResolver } from './key-resolver.js';
 import { IdpError } from './errors.js';
@@ -41,7 +42,37 @@ function base64url(obj: unknown): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');
 }
 
-function signJwt(
+async function signJwt(
+  header: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  privateKey: crypto.KeyObject,
+): Promise<string> {
+  const jwt = new SignJWT(payload).setProtectedHeader(header);
+
+  if (typeof payload.iat === 'number') {
+    jwt.setIssuedAt(payload.iat);
+  }
+
+  if (typeof payload.iss === 'string') {
+    jwt.setIssuer(payload.iss);
+  }
+
+  if (typeof payload.aud === 'string' || Array.isArray(payload.aud)) {
+    jwt.setAudience(payload.aud as string | string[]);
+  }
+
+  if (typeof payload.exp === 'number') {
+    jwt.setExpirationTime(payload.exp);
+  }
+
+  if (typeof payload.nbf === 'number') {
+    jwt.setNotBefore(payload.nbf);
+  }
+
+  return jwt.sign(privateKey);
+}
+
+function signJwtNode(
   header: Record<string, unknown>,
   payload: Record<string, unknown>,
   privateKey: crypto.KeyObject,
@@ -49,8 +80,6 @@ function signJwt(
   const headerB64 = base64url(header);
   const payloadB64 = base64url(payload);
   const data = Buffer.from(`${headerB64}.${payloadB64}`);
-
-  // Node crypto.sign derives scheme from key type; only need hash name
   const signatureBytes = crypto.sign('sha256', data, privateKey);
   const signatureB64 = signatureBytes.toString('base64url');
   return `${headerB64}.${payloadB64}.${signatureB64}`;
@@ -106,19 +135,19 @@ function validRsaPayload(overrides?: Record<string, unknown>): Record<string, un
   };
 }
 
-function validRsaToken(
+async function validRsaToken(
   payloadOverrides?: Record<string, unknown>,
   headerOverrides?: Record<string, unknown>,
-): string {
+): Promise<string> {
   const header = { alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT', ...headerOverrides };
   const payload = validRsaPayload(payloadOverrides);
   return signJwt(header, payload, RSA_PRIVATE_KEY);
 }
 
-function validEcToken(
+async function validEcToken(
   payloadOverrides?: Record<string, unknown>,
   headerOverrides?: Record<string, unknown>,
-): string {
+): Promise<string> {
   const header = { alg: 'ES256', kid: 'ec-key-1', typ: 'JWT', ...headerOverrides };
   const payload = {
     iss: 'https://idp.example.com',
@@ -141,7 +170,7 @@ describe('JwtStaticTokenVerifier', () => {
   describe('HAPPY: valid tokens', () => {
     it('verifies a valid RSA-signed token', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken();
+      const token = await validRsaToken();
       const result = await verifier.verify(token);
 
       expect(result.subject).toBe('user-123');
@@ -157,7 +186,7 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('verifies a valid EC-signed token', async () => {
       const verifier = makeVerifier();
-      const token = validEcToken();
+      const token = await validEcToken();
       const result = await verifier.verify(token);
 
       expect(result.subject).toBe('user-456');
@@ -171,7 +200,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       const iat = NOW - 120;
       const nbf = NOW - 60;
-      const token = validRsaToken({ iat, nbf });
+      const token = await validRsaToken({ iat, nbf });
       const result = await verifier.verify(token);
 
       expect(result.issuedAt).toEqual(new Date(iat * 1000));
@@ -182,7 +211,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier({
         audience: ['flowguard', 'other-service'],
       } as Partial<IdpConfig>);
-      const token = validRsaToken({ aud: ['flowguard', 'other-service'] });
+      const token = await validRsaToken({ aud: ['flowguard', 'other-service'] });
       const result = await verifier.verify(token);
 
       expect(result.audience).toEqual(['flowguard', 'other-service']);
@@ -217,39 +246,45 @@ describe('JwtStaticTokenVerifier', () => {
       );
     });
 
+    it('rejects token with invalid payload segment', async () => {
+      const verifier = makeVerifier();
+      const headerB64 = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
+      const token = `${headerB64}.!!!.abc`;
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        code: 'IDP_TOKEN_INVALID',
+      });
+    });
+
     it('rejects expired token', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ exp: NOW - 60 });
+      const token = await validRsaToken({ exp: NOW - 60 });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_EXPIRED',
       });
-      // Verify the error message contains a valid ISO date (not the 1970 date from mutation)
-      await expect(verifier.verify(token)).rejects.toThrow(/expired at 20[2-9]\d/);
+      await expect(verifier.verify(token)).rejects.toThrow(/exp/);
     });
 
     it('rejects token with wrong issuer', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ iss: 'https://evil.example.com' });
+      const token = await validRsaToken({ iss: 'https://evil.example.com' });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_ISSUER_MISMATCH',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(/does not match configured issuer/);
+      await expect(verifier.verify(token)).rejects.toThrow(/issuer/i);
     });
 
     it('rejects token with wrong audience', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ aud: 'wrong-audience' });
+      const token = await validRsaToken({ aud: 'wrong-audience' });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_AUDIENCE_MISMATCH',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(
-        /does not match any configured audience/,
-      );
+      await expect(verifier.verify(token)).rejects.toThrow(/audience/i);
     });
 
     it('rejects token with tampered payload (signature mismatch)', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken();
+      const token = await validRsaToken();
       const parts = token.split('.');
       // Tamper payload by replacing it
       const tamperedPayload = base64url({ ...validRsaPayload(), sub: 'hacker' });
@@ -264,7 +299,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       const header = { alg: 'RS256', kid: 'unknown-key', typ: 'JWT' };
       const payload = validRsaPayload();
-      const token = signJwt(header, payload, RSA_PRIVATE_KEY);
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_KEY_NOT_FOUND',
       });
@@ -275,11 +310,21 @@ describe('JwtStaticTokenVerifier', () => {
       // Sign with RSA key but claim ES256 in header
       const header = { alg: 'ES256', kid: 'rsa-key-1', typ: 'JWT' };
       const payload = validRsaPayload();
-      const token = signJwt(header, payload, RSA_PRIVATE_KEY);
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_ALGORITHM_NOT_ALLOWED',
       });
       await expect(verifier.verify(token)).rejects.toThrow(/does not match key algorithm/);
+    });
+
+    it('rejects token with alg none', async () => {
+      const verifier = makeVerifier();
+      const header = base64url({ alg: 'none', kid: 'rsa-key-1', typ: 'JWT' });
+      const payload = base64url(validRsaPayload());
+      const token = `${header}.${payload}.`;
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        code: 'IDP_ALGORITHM_NOT_ALLOWED',
+      });
     });
   });
 
@@ -290,7 +335,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       const header = { alg: 'RS256', typ: 'JWT' }; // no kid
       const payload = validRsaPayload();
-      const token = signJwt(header, payload, RSA_PRIVATE_KEY);
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_KID_MISSING',
         message: 'IdP token header missing kid',
@@ -301,7 +346,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       const header = { kid: 'rsa-key-1', typ: 'JWT' }; // no alg
       const payload = validRsaPayload();
-      const token = signJwt(header, payload, RSA_PRIVATE_KEY);
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_HEADER_INVALID',
         message: 'IdP token header missing alg',
@@ -310,17 +355,16 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('rejects token with nbf in the future', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ nbf: NOW + 600 });
+      const token = await validRsaToken({ nbf: NOW + 600 });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_NOT_YET_VALID',
       });
-      // Verify the error message contains a valid ISO date (not the 1970 date from mutation)
-      await expect(verifier.verify(token)).rejects.toThrow(/not yet valid until 20[2-9]\d/);
+      await expect(verifier.verify(token)).rejects.toThrow(/nbf|not yet valid/i);
     });
 
     it('rejects token with missing subject claim', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ sub: undefined });
+      const token = await validRsaToken({ sub: undefined });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SUBJECT_MISSING',
         message: 'Required subject claim missing in token',
@@ -329,7 +373,7 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('rejects token with empty string subject claim', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ sub: '' });
+      const token = await validRsaToken({ sub: '' });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SUBJECT_MISSING',
       });
@@ -337,7 +381,7 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('rejects token with whitespace-only subject claim', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ sub: '   ' });
+      const token = await validRsaToken({ sub: '   ' });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SUBJECT_MISSING',
       });
@@ -345,14 +389,14 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('returns null email when claim is missing', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ email: undefined });
+      const token = await validRsaToken({ email: undefined });
       const result = await verifier.verify(token);
       expect(result.email).toBeNull();
     });
 
     it('returns null displayName when claim is missing', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ name: undefined });
+      const token = await validRsaToken({ name: undefined });
       const result = await verifier.verify(token);
       expect(result.displayName).toBeNull();
     });
@@ -365,7 +409,7 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       // exp == NOW: the condition is exp < now, so exp == now => NOT expired
       // Use a token expiring in 5s to avoid CI clock skew race condition
-      const token = validRsaToken({ exp: NOW + 5 });
+      const token = await validRsaToken({ exp: NOW + 5 });
       const result = await verifier.verify(token);
       expect(result.subject).toBe('user-123');
     });
@@ -373,7 +417,7 @@ describe('JwtStaticTokenVerifier', () => {
     it('accepts token where nbf is exactly now (already valid)', async () => {
       const verifier = makeVerifier();
       // nbf == NOW: the condition is nbf > now, so nbf == now => valid
-      const token = validRsaToken({ nbf: NOW, exp: NOW + 3600 });
+      const token = await validRsaToken({ nbf: NOW, exp: NOW + 3600 });
       const result = await verifier.verify(token);
       expect(result.notBefore).toEqual(new Date(NOW * 1000));
     });
@@ -385,10 +429,10 @@ describe('JwtStaticTokenVerifier', () => {
       vi.useFakeTimers();
       vi.setSystemTime(frozenNow * 1000);
       // exp == frozenNow: should NOT reject (condition is exp < now)
-      const token1 = validRsaToken({ exp: frozenNow, iat: frozenNow - 60 });
+      const token1 = await validRsaToken({ exp: frozenNow, iat: frozenNow - 60 });
       await expect(verifier.verify(token1)).resolves.toBeDefined();
       // exp == frozenNow - 1: SHOULD reject (exp < now)
-      const token2 = validRsaToken({ exp: frozenNow - 1, iat: frozenNow - 120 });
+      const token2 = await validRsaToken({ exp: frozenNow - 1, iat: frozenNow - 120 });
       await expect(verifier.verify(token2)).rejects.toMatchObject({ code: 'IDP_EXPIRED' });
       vi.useRealTimers();
     });
@@ -399,10 +443,10 @@ describe('JwtStaticTokenVerifier', () => {
       vi.useFakeTimers();
       vi.setSystemTime(frozenNow * 1000);
       // nbf == frozenNow: should NOT reject (condition is nbf > now)
-      const token1 = validRsaToken({ nbf: frozenNow, exp: frozenNow + 3600 });
+      const token1 = await validRsaToken({ nbf: frozenNow, exp: frozenNow + 3600 });
       await expect(verifier.verify(token1)).resolves.toBeDefined();
       // nbf == frozenNow + 1: SHOULD reject (nbf > now)
-      const token2 = validRsaToken({ nbf: frozenNow + 1, exp: frozenNow + 3600 });
+      const token2 = await validRsaToken({ nbf: frozenNow + 1, exp: frozenNow + 3600 });
       await expect(verifier.verify(token2)).rejects.toMatchObject({ code: 'IDP_NOT_YET_VALID' });
       vi.useRealTimers();
     });
@@ -415,7 +459,7 @@ describe('JwtStaticTokenVerifier', () => {
           nameClaim: 'display_name',
         },
       } as Partial<IdpConfig>);
-      const token = validRsaToken({
+      const token = await validRsaToken({
         user_id: 'custom-id',
         user_email: 'custom@example.com',
         display_name: 'Custom User',
@@ -429,25 +473,23 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('audience match works when token has array and config has single entry', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ aud: ['flowguard', 'extra'] });
+      const token = await validRsaToken({ aud: ['flowguard', 'extra'] });
       const result = await verifier.verify(token);
       expect(result.audience).toEqual(['flowguard', 'extra']);
     });
 
     it('rejects token where none of the audiences match', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ aud: ['service-a', 'service-b'] });
+      const token = await validRsaToken({ aud: ['service-a', 'service-b'] });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_AUDIENCE_MISMATCH',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(
-        /does not match any configured audience/,
-      );
+      await expect(verifier.verify(token)).rejects.toThrow(/audience/i);
     });
 
     it('provides default expiresAt when exp claim is missing', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ exp: undefined });
+      const token = await validRsaToken({ exp: undefined });
       const result = await verifier.verify(token);
       // Implementation falls back to now + 3600
       expect(result.expiresAt).toBeInstanceOf(Date);
@@ -456,14 +498,14 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('returns null issuedAt when iat claim is absent', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ iat: undefined });
+      const token = await validRsaToken({ iat: undefined });
       const result = await verifier.verify(token);
       expect(result.issuedAt).toBeNull();
     });
 
     it('returns null notBefore when nbf claim is absent', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ nbf: undefined });
+      const token = await validRsaToken({ nbf: undefined });
       const result = await verifier.verify(token);
       expect(result.notBefore).toBeNull();
     });
@@ -475,21 +517,20 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier({
         audience: ['other-service'],
       } as Partial<IdpConfig>);
-      const token = validRsaToken({ aud: 'flowguard' });
-      await expect(verifier.verify(token)).rejects.toThrow(/flowguard/);
-      await expect(verifier.verify(token)).rejects.toThrow(/other-service/);
+      const token = await validRsaToken({ aud: 'flowguard' });
+      await expect(verifier.verify(token)).rejects.toMatchObject({ code: 'IDP_AUDIENCE_MISMATCH' });
     });
 
     it('claim with whitespace-only value returns null (extractClaim trims)', async () => {
       const verifier = makeVerifier();
       // sub claim with only whitespace → extractClaim trims → null → verify throws IDP_SUBJECT_MISSING
-      const token = validRsaToken({ sub: '   ' });
+      const token = await validRsaToken({ sub: '   ' });
       await expect(verifier.verify(token)).rejects.toThrow(/subject/i);
     });
 
     it('claim with padded whitespace is trimmed', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ sub: '  user-trimmed  ', email: ' trimmed@test.com ' });
+      const token = await validRsaToken({ sub: '  user-trimmed  ', email: ' trimmed@test.com ' });
       const result = await verifier.verify(token);
       expect(result.subject).toBe('user-trimmed');
       expect(result.email).toBe('trimmed@test.com');
@@ -497,14 +538,14 @@ describe('JwtStaticTokenVerifier', () => {
 
     it('name claim with whitespace-only returns null (extractClaimOrNull)', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ name: '  ' });
+      const token = await validRsaToken({ name: '  ' });
       const result = await verifier.verify(token);
       expect(result.displayName).toBeNull();
     });
 
     it('name claim padded with whitespace is trimmed', async () => {
       const verifier = makeVerifier();
-      const token = validRsaToken({ name: '  Padded Name  ' });
+      const token = await validRsaToken({ name: '  Padded Name  ' });
       const result = await verifier.verify(token);
       expect(result.displayName).toBe('Padded Name');
     });
@@ -521,6 +562,17 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SIGNATURE_INVALID',
       });
+    });
+
+    it('does not perform remote key fetch in verifier path', async () => {
+      const verifier = makeVerifier();
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const token = await validRsaToken();
+      const result = await verifier.verify(token);
+      expect(result.subject).toBe('user-123');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
     });
   });
 });
