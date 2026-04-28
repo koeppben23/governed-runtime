@@ -608,7 +608,10 @@ describe('review-decision rail', () => {
         ctx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toBeDefined();
+      }
     });
 
     it('blocks on invalid verdict', () => {
@@ -623,7 +626,10 @@ describe('review-decision rail', () => {
         ctx,
       );
       expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('INVALID_VERDICT');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('INVALID_VERDICT');
+        expect(result.reason).toBeDefined();
+      }
     });
   });
 

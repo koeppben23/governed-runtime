@@ -137,6 +137,8 @@ describe('review-decision rail', () => {
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
       expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+      expect(result.reason).toBeDefined();
+      expect(result.reason).not.toBe('');
     }
   });
 
@@ -165,6 +167,8 @@ describe('review-decision rail', () => {
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
       expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
+      expect(result.reason).toBeDefined();
+      expect(result.reason).not.toBe('');
     }
   });
 
@@ -193,6 +197,7 @@ describe('review-decision rail', () => {
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      expect(result.reason).toBeDefined();
     }
   });
 
@@ -221,6 +226,7 @@ describe('review-decision rail', () => {
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      expect(result.reason).toBeDefined();
     }
   });
 });
