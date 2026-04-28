@@ -11,7 +11,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import { JwtStaticTokenVerifier } from './token-verifier.js';
 import { StaticKeyResolver } from './key-resolver.js';
@@ -197,6 +197,7 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify('only.two')).rejects.toThrow(IdpError);
       await expect(verifier.verify('only.two')).rejects.toMatchObject({
         code: 'IDP_TOKEN_INVALID',
+        message: 'IdP token is not valid JWT format: expected 3 parts',
       });
     });
 
@@ -216,6 +217,7 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_EXPIRED',
       });
+      await expect(verifier.verify(token)).rejects.toThrow(/expired at/);
     });
 
     it('rejects token with wrong issuer', async () => {
@@ -224,6 +226,7 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_ISSUER_MISMATCH',
       });
+      await expect(verifier.verify(token)).rejects.toThrow(/does not match configured issuer/);
     });
 
     it('rejects token with wrong audience', async () => {
@@ -232,6 +235,7 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_AUDIENCE_MISMATCH',
       });
+      await expect(verifier.verify(token)).rejects.toThrow(/does not match any configured audience/);
     });
 
     it('rejects token with tampered payload (signature mismatch)', async () => {
@@ -243,6 +247,7 @@ describe('JwtStaticTokenVerifier', () => {
       const tampered = `${parts[0]}.${tamperedPayload}.${parts[2]}`;
       await expect(verifier.verify(tampered)).rejects.toMatchObject({
         code: 'IDP_SIGNATURE_INVALID',
+        message: 'IdP token signature verification failed',
       });
     });
 
@@ -265,6 +270,7 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_ALGORITHM_NOT_ALLOWED',
       });
+      await expect(verifier.verify(token)).rejects.toThrow(/does not match key algorithm/);
     });
   });
 
@@ -278,6 +284,7 @@ describe('JwtStaticTokenVerifier', () => {
       const token = signJwt(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_KID_MISSING',
+        message: 'IdP token header missing kid',
       });
     });
 
@@ -288,6 +295,7 @@ describe('JwtStaticTokenVerifier', () => {
       const token = signJwt(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_HEADER_INVALID',
+        message: 'IdP token header missing alg',
       });
     });
 
@@ -304,6 +312,7 @@ describe('JwtStaticTokenVerifier', () => {
       const token = validRsaToken({ sub: undefined });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SUBJECT_MISSING',
+        message: 'Required subject claim missing in token',
       });
     });
 
@@ -348,6 +357,43 @@ describe('JwtStaticTokenVerifier', () => {
       const token = validRsaToken({ exp: NOW + 5 });
       const result = await verifier.verify(token);
       expect(result.subject).toBe('user-123');
+    });
+
+    it('accepts token where nbf is exactly now (already valid)', async () => {
+      const verifier = makeVerifier();
+      // nbf == NOW: the condition is nbf > now, so nbf == now => valid
+      const token = validRsaToken({ nbf: NOW, exp: NOW + 3600 });
+      const result = await verifier.verify(token);
+      expect(result.notBefore).toEqual(new Date(NOW * 1000));
+    });
+
+    it('rejects token when exp is strictly before now (not at boundary)', async () => {
+      const verifier = makeVerifier();
+      // Freeze time to ensure deterministic boundary test
+      const frozenNow = 1700000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(frozenNow * 1000);
+      // exp == frozenNow: should NOT reject (condition is exp < now)
+      const token1 = validRsaToken({ exp: frozenNow, iat: frozenNow - 60 });
+      await expect(verifier.verify(token1)).resolves.toBeDefined();
+      // exp == frozenNow - 1: SHOULD reject (exp < now)
+      const token2 = validRsaToken({ exp: frozenNow - 1, iat: frozenNow - 120 });
+      await expect(verifier.verify(token2)).rejects.toMatchObject({ code: 'IDP_EXPIRED' });
+      vi.useRealTimers();
+    });
+
+    it('rejects token when nbf is strictly after now (not at boundary)', async () => {
+      const verifier = makeVerifier();
+      const frozenNow = 1700000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(frozenNow * 1000);
+      // nbf == frozenNow: should NOT reject (condition is nbf > now)
+      const token1 = validRsaToken({ nbf: frozenNow, exp: frozenNow + 3600 });
+      await expect(verifier.verify(token1)).resolves.toBeDefined();
+      // nbf == frozenNow + 1: SHOULD reject (nbf > now)
+      const token2 = validRsaToken({ nbf: frozenNow + 1, exp: frozenNow + 3600 });
+      await expect(verifier.verify(token2)).rejects.toMatchObject({ code: 'IDP_NOT_YET_VALID' });
+      vi.useRealTimers();
     });
 
     it('uses custom claim mapping', async () => {
