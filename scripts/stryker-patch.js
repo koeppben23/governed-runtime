@@ -32,13 +32,17 @@ if (!existsSync(TARGET)) {
 
 const original = readFileSync(TARGET, 'utf-8');
 
+if (original.includes(REPLACE)) {
+  // Already patched from a previous mutation run.
+  process.exit(0);
+}
+
 if (!original.includes(SEARCH)) {
   console.warn(
     `[stryker-patch] WARNING: Could not find '${SEARCH}' in vitest-test-runner.js. ` +
       'The Stryker vitest-runner version may have changed. ' +
       'Mutation testing may fail if pool=threads is still hardcoded.',
   );
-  // Continue anyway — mutation might still work with newer Stryker.
   process.exit(0);
 }
 
