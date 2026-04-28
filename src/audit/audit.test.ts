@@ -1930,6 +1930,70 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       expect(report.overallComplete).toBe(false);
     });
+
+    it('all phases of ticket flow have correct slot requirements', () => {
+      // Test each phase of the ticket flow and verify required slot counts
+      const phases: Array<{ phase: string; expectedRequired: number; expectedTotal: number }> = [
+        { phase: 'READY', expectedRequired: 0, expectedTotal: 8 },
+        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 8 }, // ticket
+        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 8 }, // ticket, plan
+        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 8 }, // +selfReview
+        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 8 }, // +planReviewDecision
+        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 8 }, // +validation
+        { phase: 'IMPL_REVIEW', expectedRequired: 6, expectedTotal: 8 }, // +implementation
+        { phase: 'EVIDENCE_REVIEW', expectedRequired: 7, expectedTotal: 8 }, // +implReview
+        { phase: 'COMPLETE', expectedRequired: 8, expectedTotal: 8 }, // +evidenceReviewDecision
+      ];
+      for (const { phase, expectedRequired } of phases) {
+        const state =
+          phase === 'READY' || phase === 'TICKET'
+            ? makeState(phase as any)
+            : makeProgressedState(phase as any);
+        const report = evaluateCompleteness(state);
+        const required = report.slots.filter((s) => s.required);
+        expect(required.length).toBe(expectedRequired);
+      }
+    });
+
+    it('slot detail includes digest for ticket evidence', () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = evaluateCompleteness(state);
+      const ticketSlot = report.slots.find((s) => s.slot === 'ticket');
+      expect(ticketSlot?.detail).toContain('source: user');
+    });
+
+    it('slot detail includes status for architecture evidence', () => {
+      const state = makeProgressedState('ARCH_COMPLETE');
+      const report = evaluateCompleteness(state);
+      const archSlot = report.slots.find((s) => s.slot === 'architecture');
+      expect(archSlot?.detail).toContain('status: accepted');
+    });
+
+    it('slot detail includes file count for implementation evidence', () => {
+      const state = makeProgressedState('COMPLETE');
+      const report = evaluateCompleteness(state);
+      const implSlot = report.slots.find((s) => s.slot === 'implementation');
+      expect(implSlot?.detail).toContain('files changed');
+      expect(implSlot?.detail).toContain('digest:');
+    });
+
+    it('slot detail shows failed check ids in validation', () => {
+      const state = makeState('IMPLEMENTATION', {
+        ...makeProgressedState('IMPLEMENTATION'),
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: false,
+            detail: 'Missing tests',
+            executedAt: FIXED_TIME,
+          },
+          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+        ],
+      });
+      const report = evaluateCompleteness(state);
+      const valSlot = report.slots.find((s) => s.slot === 'validation');
+      expect(valSlot?.detail).toContain('failed: test_quality');
+    });
   });
 
   // ─── PERF ───────────────────────────────────────────────────
