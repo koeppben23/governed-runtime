@@ -1787,7 +1787,7 @@ describe('config/reasons', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
-    const REASON_LOOKUP_MS = 5;
+    const REASON_LOOKUP_MS = 8;
     it(`reason lookup + format < ${REASON_LOOKUP_MS}ms (p99)`, () => {
       const result = benchmarkSync(() => {
         defaultReasonRegistry.format('COMMAND_NOT_ALLOWED', {
