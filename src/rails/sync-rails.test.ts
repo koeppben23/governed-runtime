@@ -49,6 +49,9 @@ describe('hydrate rail', () => {
         expect(result.state.binding.worktree).toBe('/tmp/test');
         expect(result.state.schemaVersion).toBe('v1');
         expect(result.transitions.length).toBe(0);
+        // Discovery fields initialize as null in new sessions
+        expect(result.state.discoveryDigest).toBeNull();
+        expect(result.state.discoverySummary).toBeNull();
       }
     });
 
