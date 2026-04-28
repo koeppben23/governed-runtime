@@ -52,7 +52,6 @@ export {
   normalizePolicySnapshot,
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
-  policyFromSnapshot,
 } from './policy-snapshot.js';
 
 // ── Reasons ──────────────────────────────────────────────────────────────────

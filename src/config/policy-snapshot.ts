@@ -411,9 +411,3 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     identityProviderMode: snapshot.identityProviderMode ?? 'optional',
   };
 }
-
-/**
- * @deprecated Use resolvePolicyFromSnapshot() instead.
- * Alias preserved for backward compatibility.
- */
-export const policyFromSnapshot = resolvePolicyFromSnapshot;

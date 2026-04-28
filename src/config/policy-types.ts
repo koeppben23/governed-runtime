@@ -2,7 +2,7 @@
  * @module config/policy-types
  * @description Core policy types, interfaces, and error classes.
  *
- * Extracted from policy.ts (P2f split).
+ * Extracted from policy.ts.
  *
  * @version v1
  */

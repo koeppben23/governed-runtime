@@ -641,7 +641,6 @@ export {
   freezePolicySnapshot,
   normalizePolicySnapshot,
   resolvePolicyFromSnapshot,
-  policyFromSnapshot,
 } from './policy-snapshot.js';
 
 /**

@@ -1,6 +1,6 @@
 /**
  * @module templates/commands
- * @description FlowGuard command templates — one file per command (P2f split).
+ * @description FlowGuard command templates — one file per command.
  *
  * Barrel file that assembles all individual command templates
  * into the COMMANDS registry used by install and runtime.

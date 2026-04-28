@@ -4,7 +4,7 @@
  *   - createPolicySnapshot (full snapshot from policy)
  *   - freezePolicySnapshot (PolicyResolution → Snapshot with all metadata)
  *   - normalizePolicySnapshot / normalizePolicySnapshotWithMeta (legacy enrichment)
- *   - resolvePolicyFromSnapshot / policyFromSnapshot (snapshot → FlowGuardPolicy)
+ *   - resolvePolicyFromSnapshot (snapshot → FlowGuardPolicy)
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  * @version v1
@@ -18,7 +18,6 @@ import {
   normalizePolicySnapshot,
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
-  policyFromSnapshot,
 } from './policy-snapshot.js';
 import {
   SOLO_POLICY,
@@ -323,12 +322,5 @@ describe('resolvePolicyFromSnapshot', () => {
       expect(policy.requireHumanGates).toBe(true);
       expect(policy.minimumActorAssuranceForApproval).toBe('best_effort');
     });
-  });
-});
-
-describe('policyFromSnapshot (alias)', () => {
-  it('returns same result as resolvePolicyFromSnapshot', () => {
-    const snapshot = freezePolicySnapshot(soloResolution(), NOW, sha256);
-    expect(policyFromSnapshot(snapshot)).toEqual(resolvePolicyFromSnapshot(snapshot));
   });
 });
