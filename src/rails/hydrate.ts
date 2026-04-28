@@ -40,9 +40,15 @@ import { defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { extractBaseInstructions, extractByPhaseInstructions } from '../config/profile.js';
-import { getPolicyPreset, createPolicySnapshot, type FlowGuardPolicy } from '../config/policy.js';
+import {
+  freezePolicySnapshot,
+  getPolicyPreset,
+  createPolicySnapshot,
+  type FlowGuardPolicy,
+} from '../config/policy.js';
 import type { EffectiveGateBehavior, PolicyDegradedReason, PolicyMode } from '../config/policy.js';
 import type { PolicySource, PolicyResolutionReason, CentralMinimumMode } from '../config/policy.js';
+import type { HydratePolicyResolution } from '../config/policy.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +91,7 @@ export interface HydratePolicyInput {
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly policyResolution?: HydratePolicyResolution;
 }
 
 /**
@@ -209,22 +216,26 @@ export function executeHydrate(
     : null;
 
   // 4. Resolve policy → immutable snapshot
-  const policyMode = p.policyMode ?? 'solo';
-  const basePolicy = getPolicyPreset(policyMode);
-  const policy = applyHydrateOverrides(basePolicy, p);
   const now = ctx.now();
-  const snapshotWithContext = createPolicySnapshot(policy, now, ctx.digest, {
-    requestedMode: p.requestedPolicyMode ?? policy.mode,
-    source: p.policySource ?? 'default',
-    effectiveGateBehavior:
-      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    degradedReason: p.policyDegradedReason,
-    resolutionReason: p.policyResolutionReason,
-    centralMinimumMode: p.centralMinimumMode,
-    policyDigest: p.policyDigest,
-    policyVersion: p.policyVersion,
-    policyPathHint: p.policyPathHint,
-  });
+  const snapshotWithContext = p.policyResolution
+    ? freezePolicySnapshot(p.policyResolution, now, ctx.digest)
+    : (() => {
+        const policyMode = p.policyMode ?? 'solo';
+        const basePolicy = getPolicyPreset(policyMode);
+        const policy = applyHydrateOverrides(basePolicy, p);
+        return createPolicySnapshot(policy, now, ctx.digest, {
+          requestedMode: p.requestedPolicyMode ?? policy.mode,
+          source: p.policySource ?? 'default',
+          effectiveGateBehavior:
+            p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+          degradedReason: p.policyDegradedReason,
+          resolutionReason: p.policyResolutionReason,
+          centralMinimumMode: p.centralMinimumMode,
+          policyDigest: p.policyDigest,
+          policyVersion: p.policyVersion,
+          policyPathHint: p.policyPathHint,
+        });
+      })();
 
   // 5. Create binding
   const binding: BindingInfo = {

@@ -23,6 +23,7 @@ import {
   DECISION_IDENTITY_VERIFIED_REVIEWER,
 } from '../__fixtures__.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
+import type { HydratePolicyResolution } from '../config/policy.js';
 
 const ctx = createTestContext();
 
@@ -237,6 +238,45 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.activeChecks).toEqual(['custom_check']);
+      }
+    });
+
+    it('freezes snapshot from policyResolution when provided', () => {
+      const policyResolution: HydratePolicyResolution = {
+        requestedMode: 'team-ci',
+        effectiveMode: 'team',
+        effectiveGateBehavior: 'human_gated',
+        degradedReason: 'ci_context_missing',
+        effectiveSource: 'default',
+        policy: TEAM_POLICY,
+        resolutionReason: 'default_weaker_than_central',
+        centralEvidence: {
+          minimumMode: 'team',
+          digest: 'abc123',
+          pathHint: '/etc/flowguard/policy.json',
+        },
+      };
+
+      const result = executeHydrate(
+        null,
+        {
+          ...HYDRATE_INPUT,
+          policy: {
+            ...HYDRATE_INPUT.policy,
+            policyMode: 'solo',
+            policyResolution,
+          },
+        },
+        ctx,
+      );
+
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.policySnapshot.mode).toBe('team');
+        expect(result.state.policySnapshot.requestedMode).toBe('team-ci');
+        expect(result.state.policySnapshot.degradedReason).toBe('ci_context_missing');
+        expect(result.state.policySnapshot.source).toBe('default');
+        expect(result.state.policySnapshot.centralMinimumMode).toBe('team');
       }
     });
   });

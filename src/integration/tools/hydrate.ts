@@ -512,6 +512,7 @@ export const hydrate: ToolDefinition = {
             minimumActorAssuranceForApproval: existing
               ? undefined
               : config.policy.minimumActorAssuranceForApproval,
+            policyResolution: existing ? undefined : policyResolution,
           },
           profile: {
             profileId: existing
