@@ -25,20 +25,31 @@ You will receive an acknowledgment within 72 hours. We aim to provide a fix or m
 
 ## Scope
 
+FlowGuard is a **governance runtime library** — it enforces development workflow policies
+and provides tamper-evident audit trails. It does NOT provide network security, encryption
+at rest, or LLM prompt injection protection.
+
+### In Scope
+
 The following are in scope for security reports:
 
 - Authentication/authorization bypass in governance workflows
-- State manipulation that circumvents workflow gates
-- Audit trail integrity violations (tampering, omission)
-- Path traversal or file system escape in workspace handling
-- Secret exposure through logs, state files, or archive artifacts
-- Trust boundary violations between policy modes (solo/team/regulated)
+- State manipulation that circumvents workflow gates (phase transitions, evidence tampering)
+- Audit trail integrity violations (hash chain breaks, event omission, timestamp forgery)
+- Path traversal or file system escape in workspace or session directory handling
+- Secret exposure through logs, state files, archive artifacts, or export/redaction paths
+- Trust boundary violations between policy modes — e.g., solo-mode actor approving a regulated gate
+- Identity provider configuration bypass — e.g., required IdP mode silently degrading without error
 
-## Out of Scope
+### Out of Scope
 
-- Vulnerabilities in dependencies (report upstream; we monitor via `npm audit`)
+- Vulnerabilities in third-party dependencies (report upstream; we monitor via `npm audit`)
 - Issues requiring physical access to the host machine
-- Social engineering attacks
+- Social engineering or phishing attacks
+- LLM prompt injection, model hallucinations, or AI safety concerns
+- Network-layer attacks (FlowGuard has no open ports)
+- Encryption at rest for state files or audit artifacts (plaintext JSON/JSONL by design,
+  with SHA-256 hash chains for tamper evidence, not confidentiality)
 
 ## Disclosure Policy
 

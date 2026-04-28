@@ -20,12 +20,21 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 ## Get Started
 
+FlowGuard runs as an OpenCode plugin. After installation, start any OpenCode session
+and run `/hydrate` to initialize the governance runtime.
+
+### In 30 Seconds
+
 ```bash
-/hydrate
-/status
+/hydrate               # Bootstrap the session — one-time setup
+/status                # Verify: phase=READY, policyMode=solo
+/ticket Fix the auth   # Describe your task
+/plan                  # Generate and review the plan
 ```
 
-After hydration, choose one of three flows:
+### Three Flows
+
+After hydration, choose one of three workflows:
 
 ### Ticket Flow (Full Development Lifecycle)
 
