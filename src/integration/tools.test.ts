@@ -75,10 +75,11 @@ const TOOLS_WITH_ARGS = [
   'validate',
   'abort_session',
   'architecture',
+  'review',
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['review', 'archive'] as const;
+const TOOLS_WITHOUT_ARGS = ['archive'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

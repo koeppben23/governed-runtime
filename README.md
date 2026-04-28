@@ -26,6 +26,17 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 > The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are experimental.
 > For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).
 
+## In 30 Seconds
+
+Start a FlowGuard workflow from any OpenCode session after install:
+
+1. `/hydrate` — bootstrap the session (creates the READY phase with policy binding)
+2. `/ticket <description>` — record your task
+3. `/plan` — generate an implementation plan
+4. `/implement` — execute the plan
+
+See [docs/commands.md](./docs/commands.md) for the complete command reference.
+
 ## Product Facts
 
 | Feature                           | Description                                                                                                                                                                    |
