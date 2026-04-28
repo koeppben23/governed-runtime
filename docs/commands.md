@@ -235,6 +235,8 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
 If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
 
+External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `session-state.json` (not redacted). References in `review-report.*.json` are redacted in redacted export artifacts.
+
 **Verification:** `verifyArchive()` validates integrity (11 finding codes, including audit chain verification).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers

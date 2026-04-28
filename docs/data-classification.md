@@ -81,6 +81,10 @@ FlowGuard preserves raw runtime and audit state internally; redaction is applied
 - `session-state.json` — raw session state (internal SSOT)
 - `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
 
+External references recorded on `/ticket` are stored in `session-state.json` and remain raw for authority/traceability reasons. This includes ticket URLs, tracker IDs, branch names, and similar reference metadata.
+
+Review-report export references are redacted in redacted export artifacts.
+
 Default archive behavior:
 
 - `archive.redaction.mode = basic`

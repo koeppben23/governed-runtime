@@ -233,6 +233,8 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 - `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
 - JWT verification path uses `jose` `jwtVerify`; key resolution remains FlowGuard-owned (no `createRemoteJWKSet` in verifier path)
 
+Current token-expiry compatibility behavior: `exp` is recommended but not strictly required. If `exp` is missing, FlowGuard derives a bounded default `expiresAt` value in verified-token metadata. For high-assurance deployments, require `exp` in IdP-issued tokens by policy/process.
+
 This implementation explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
 
 ### Policy Gate
