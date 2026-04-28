@@ -131,9 +131,7 @@ export type InputOrigin = z.infer<typeof InputOriginSchema>;
 export const ExternalReferenceSchema = z
   .object({
     ref: z.string().min(1),
-    type: z
-      .enum(['ticket', 'issue', 'pr', 'branch', 'commit', 'url', 'doc', 'other'])
-      .optional(),
+    type: z.enum(['ticket', 'issue', 'pr', 'branch', 'commit', 'url', 'doc', 'other']).optional(),
     title: z.string().optional(),
     source: z.string().optional(),
     extractedAt: z.string().datetime().optional(),

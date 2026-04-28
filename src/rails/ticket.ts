@@ -53,8 +53,7 @@ export function executeTicket(
   }
 
   // 3. Create evidence
-  const references =
-    input.references && input.references.length > 0 ? input.references : undefined;
+  const references = input.references && input.references.length > 0 ? input.references : undefined;
 
   const ticket: TicketEvidence = {
     text: input.text,

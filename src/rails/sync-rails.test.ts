@@ -357,9 +357,24 @@ describe('ticket rail', () => {
 
     it('stores multiple references (Jira + Confluence + GitHub)', () => {
       const refs = [
-        { ref: 'https://jira.example.com/PROJ-42', type: 'ticket' as const, source: 'jira', title: 'PROJ-42' },
-        { ref: 'https://confluence.example.com/SPEC-1', type: 'doc' as const, source: 'confluence', title: 'Spec v2' },
-        { ref: 'https://github.com/org/repo/issues/7', type: 'issue' as const, source: 'github', title: 'Issue #7' },
+        {
+          ref: 'https://jira.example.com/PROJ-42',
+          type: 'ticket' as const,
+          source: 'jira',
+          title: 'PROJ-42',
+        },
+        {
+          ref: 'https://confluence.example.com/SPEC-1',
+          type: 'doc' as const,
+          source: 'confluence',
+          title: 'Spec v2',
+        },
+        {
+          ref: 'https://github.com/org/repo/issues/7',
+          type: 'issue' as const,
+          source: 'github',
+          title: 'Issue #7',
+        },
       ];
       const result = executeTicket(
         makeState('TICKET'),
@@ -400,18 +415,16 @@ describe('ticket rail', () => {
 
     it('digest only covers text, not references or inputOrigin', () => {
       const text = 'Fix the auth bug';
-      const result1 = executeTicket(
-        makeState('TICKET'),
-        { text, source: 'user' },
-        ctx,
-      );
+      const result1 = executeTicket(makeState('TICKET'), { text, source: 'user' }, ctx);
       const result2 = executeTicket(
         makeState('TICKET'),
         {
           text,
           source: 'external',
           inputOrigin: 'external_reference',
-          references: [{ ref: 'https://jira.example.com/PROJ-123', type: 'ticket' as const, source: 'jira' }],
+          references: [
+            { ref: 'https://jira.example.com/PROJ-123', type: 'ticket' as const, source: 'jira' },
+          ],
         },
         ctx,
       );
@@ -445,7 +458,9 @@ describe('ticket rail', () => {
           text: 'Content could not be extracted from: https://jira.example.com/PROJ-999',
           source: 'external',
           inputOrigin: 'external_reference',
-          references: [{ ref: 'https://jira.example.com/PROJ-999', type: 'ticket' as const, source: 'jira' }],
+          references: [
+            { ref: 'https://jira.example.com/PROJ-999', type: 'ticket' as const, source: 'jira' },
+          ],
         },
         ctx,
       );

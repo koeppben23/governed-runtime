@@ -200,8 +200,19 @@ describe('review rail', () => {
       const refInput: ReviewReferenceInput = {
         inputOrigin: 'pr',
         references: [
-          { ref: 'https://github.com/org/repo/pull/42', type: 'pr', title: 'PR #42: Add auth', source: 'github', extractedAt: '2026-01-15T10:00:00.000Z' },
-          { ref: 'https://jira.example.com/PROJ-123', type: 'ticket', title: 'PROJ-123', source: 'jira' },
+          {
+            ref: 'https://github.com/org/repo/pull/42',
+            type: 'pr',
+            title: 'PR #42: Add auth',
+            source: 'github',
+            extractedAt: '2026-01-15T10:00:00.000Z',
+          },
+          {
+            ref: 'https://jira.example.com/PROJ-123',
+            type: 'ticket',
+            title: 'PROJ-123',
+            source: 'jira',
+          },
         ],
       };
       const report = await executeReview(state, NOW, undefined, refInput);
@@ -307,8 +318,18 @@ describe('review rail', () => {
       const refInput: ReviewReferenceInput = {
         inputOrigin: 'mixed',
         references: [
-          { ref: 'https://github.com/org/repo/pull/1', type: 'pr', source: 'github', title: 'PR #1' },
-          { ref: 'https://jira.example.com/PROJ-2', type: 'ticket', source: 'jira', title: 'PROJ-2' },
+          {
+            ref: 'https://github.com/org/repo/pull/1',
+            type: 'pr',
+            source: 'github',
+            title: 'PR #1',
+          },
+          {
+            ref: 'https://jira.example.com/PROJ-2',
+            type: 'ticket',
+            source: 'jira',
+            title: 'PROJ-2',
+          },
         ],
       };
       const report = await executeReview(state, NOW, undefined, refInput);

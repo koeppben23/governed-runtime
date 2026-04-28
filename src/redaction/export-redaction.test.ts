@@ -89,8 +89,18 @@ describe('redaction/export-redaction', () => {
     it('redacts references in review report basic mode', () => {
       const input = {
         references: [
-          { ref: 'https://jira.internal.example.com/browse/SEC-123', type: 'ticket', source: 'jira', title: 'SEC-123: Fix credential leak' },
-          { ref: 'https://github.com/private-org/secret-repo/pull/42', type: 'pr', source: 'github', title: 'PR #42: Update auth keys' },
+          {
+            ref: 'https://jira.internal.example.com/browse/SEC-123',
+            type: 'ticket',
+            source: 'jira',
+            title: 'SEC-123: Fix credential leak',
+          },
+          {
+            ref: 'https://github.com/private-org/secret-repo/pull/42',
+            type: 'pr',
+            source: 'github',
+            title: 'PR #42: Update auth keys',
+          },
         ],
       };
       const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
@@ -118,7 +128,13 @@ describe('redaction/export-redaction', () => {
     it('preserves reference type, source, and extractedAt during redaction', () => {
       const input = {
         references: [
-          { ref: 'https://ado.internal.example.com/WI-5', type: 'ticket', source: 'ados', title: 'WI-5', extractedAt: '2026-01-15T10:00:00.000Z' },
+          {
+            ref: 'https://ado.internal.example.com/WI-5',
+            type: 'ticket',
+            source: 'ados',
+            title: 'WI-5',
+            extractedAt: '2026-01-15T10:00:00.000Z',
+          },
         ],
       };
       const output = redactReviewReport(input, 'basic') as Record<string, unknown>;

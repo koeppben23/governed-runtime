@@ -20,8 +20,7 @@ See [docs/installation.md](./docs/installation.md) for full instructions.
 
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
-> [!NOTE]
-> **Headless operation is separate from the interactive plugin:**
+> [!NOTE] > **Headless operation is separate from the interactive plugin:**
 > The interactive plugin (`flowguard_*` tools inside OpenCode) is stable.
 > The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are experimental.
 > For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).

@@ -29,10 +29,7 @@ import { executeReview, executeReviewFlow } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
 // Evidence schemas for external reference handling
-import {
-  InputOriginSchema,
-  ExternalReferenceSchema,
-} from '../../state/evidence.js';
+import { InputOriginSchema, ExternalReferenceSchema } from '../../state/evidence.js';
 
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
