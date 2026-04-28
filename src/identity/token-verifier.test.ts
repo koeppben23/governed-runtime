@@ -223,7 +223,8 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_EXPIRED',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(/expired at/);
+      // Verify the error message contains a valid ISO date (not the 1970 date from mutation)
+      await expect(verifier.verify(token)).rejects.toThrow(/expired at 20[2-9]\d/);
     });
 
     it('rejects token with wrong issuer', async () => {
@@ -313,6 +314,8 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_NOT_YET_VALID',
       });
+      // Verify the error message contains a valid ISO date (not the 1970 date from mutation)
+      await expect(verifier.verify(token)).rejects.toThrow(/not yet valid until 20[2-9]\d/);
     });
 
     it('rejects token with missing subject claim', async () => {
