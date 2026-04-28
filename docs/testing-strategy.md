@@ -120,14 +120,31 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 ### Scope
 
-Three files are mutated, selected for their role in fail-closed governance:
+Twelve files are mutated, covering the fail-closed governance core:
 
-| File                             | Role                                             | Baseline Score |
-| -------------------------------- | ------------------------------------------------ | :------------: |
-| `src/machine/guards.ts`          | Guard predicates — first match wins, ERROR first |      100%      |
-| `src/machine/evaluate.ts`        | State evaluator — pure function, no side effects |     93.33%     |
-| `src/identity/token-verifier.ts` | JWT token verification (P35a)                    |     74.42%     |
-| **Overall**                      |                                                  |   **85.71%**   |
+| Area                                             | Files  |  Score   |
+| ------------------------------------------------ | ------ | :------: |
+| Machine (guards, evaluate, commands)             | 3      |  98.77%  |
+| Rails (hydrate, review-decision, review, ticket) | 4      |  94.59%  |
+| Audit (integrity, completeness)                  | 2      |  95.19%  |
+| Config (reasons, policy)                         | 2      |  71.81%  |
+| Identity (token-verifier)                        | 1      |  81.40%  |
+| **Overall**                                      | **12** | **~89%** |
+
+### CI Enforcement (Phase 1)
+
+The `mutation` CI job runs with `continue-on-error: true` — mutation score below the
+`break` threshold (90) does not block PRs. This is a **Phase 1 PoC** decision:
+
+| Phase                 | Threshold   | Blocking?                | Rationale                                         |
+| --------------------- | ----------- | ------------------------ | ------------------------------------------------- |
+| **Phase 1 (current)** | `break: 85` | No (`continue-on-error`) | Baseline establishment, CI stability verification |
+| **Phase 2**           | `break: 80` | No                       | Score ratchet + survivor analysis complete        |
+| **Phase 3**           | `break: 85` | **Yes**                  | Proven stability, blocking enforcement            |
+
+Phase 3 activation requires: ≥10 stable CI mutation runs without flaky failures,
+policy.ts survivors analyzed and either killed or documented as equivalent, and
+`break` threshold upheld across ≥5 consecutive PRs.
 
 ### Interpreting Results
 
