@@ -1860,6 +1860,76 @@ describe('audit completeness', () => {
       expect(complete + missing + notYetRequired + failed).toBe(report.summary.total);
       expect(report.summary.total).toBe(8);
     });
+
+    it('architecture flow evaluates arch-specific slots', () => {
+      const state = makeState('ARCHITECTURE', { architecture: null });
+      const report = evaluateCompleteness(state);
+      expect(report.phase).toBe('ARCHITECTURE');
+      const archSlot = report.slots.find((s) => s.slot === 'architecture');
+      expect(archSlot?.required).toBe(true);
+      expect(archSlot?.status).toBe('missing');
+    });
+
+    it('review flow has no evidence slots (standalone artifact)', () => {
+      const state = makeState('REVIEW');
+      const report = evaluateCompleteness(state);
+      expect(report.slots).toHaveLength(0);
+      // 0 slots → missing=0, failed=0, phase !== READY → overallComplete is vacuously true
+      expect(report.overallComplete).toBe(true);
+    });
+
+    it('architecture flow at ARCH_COMPLETE with accepted ADR — all complete', () => {
+      const state = makeProgressedState('ARCH_COMPLETE');
+      const report = evaluateCompleteness(state);
+      expect(report.phase).toBe('ARCH_COMPLETE');
+      expect(report.overallComplete).toBe(true);
+    });
+
+    it('four-eyes pending when no review decision recorded', () => {
+      const state = makeState('PLAN_REVIEW', {
+        ...makeProgressedState('PLAN_REVIEW'),
+        policySnapshot: {
+          ...makeProgressedState('PLAN_REVIEW').policySnapshot!,
+          allowSelfApproval: false,
+        },
+        reviewDecision: null,
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.fourEyes.required).toBe(true);
+      expect(report.fourEyes.satisfied).toBe(false);
+      expect(report.fourEyes.detail).toContain('pending');
+    });
+
+    it('evidenceReviewDecision slot is not_yet_required at PLAN phase', () => {
+      const state = makeState('PLAN', {
+        error: {
+          code: 'TOOL_ERROR',
+          message: 'broke',
+          recoveryHint: 'retry',
+          occurredAt: FIXED_TIME,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'evidenceReviewDecision');
+      // Required from COMPLETE (ordinal 7), PLAN is ordinal 1 → not yet required
+      expect(slot?.required).toBe(false);
+      expect(slot?.status).toBe('not_yet_required');
+    });
+
+    it('planReviewDecision slot is complete at VALIDATION phase', () => {
+      const state = makeProgressedState('VALIDATION');
+      const report = evaluateCompleteness(state);
+      const slot = report.slots.find((s) => s.slot === 'planReviewDecision');
+      expect(slot?.required).toBe(true);
+      expect(slot?.status).toBe('complete');
+      expect(slot?.detail).toContain('topology invariant');
+    });
+
+    it('overallComplete is false at READY phase', () => {
+      const state = makeState('READY');
+      const report = evaluateCompleteness(state);
+      expect(report.overallComplete).toBe(false);
+    });
   });
 
   // ─── PERF ───────────────────────────────────────────────────

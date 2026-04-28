@@ -120,24 +120,47 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
       expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
+      expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
+      expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
+      expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
+      expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(SOLO_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('TEAM has human gates and 3 iterations', () => {
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
       expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('REGULATED has four-eyes enforcement', () => {
       expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
+      expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
       expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
       expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {
@@ -154,6 +177,66 @@ describe('config/policy', () => {
       expect(modes).toContain('team-ci');
       expect(modes).toContain('regulated');
       expect(modes.length).toBe(4);
+    });
+
+    it('all SOLO_POLICY fields match expected values', () => {
+      expect(SOLO_POLICY.mode).toBe('solo');
+      expect(SOLO_POLICY.requireHumanGates).toBe(false);
+      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
+      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.allowSelfApproval).toBe(true);
+      expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
+      expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
+      expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
+      expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(SOLO_POLICY.identityProviderMode).toBe('optional');
+      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all TEAM_POLICY fields match expected values', () => {
+      expect(TEAM_POLICY.mode).toBe('team');
+      expect(TEAM_POLICY.requireHumanGates).toBe(true);
+      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_POLICY.identityProviderMode).toBe('optional');
+      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all REGULATED_POLICY fields match expected values', () => {
+      expect(REGULATED_POLICY.mode).toBe('regulated');
+      expect(REGULATED_POLICY.requireHumanGates).toBe(true);
+      expect(REGULATED_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.maxImplReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
+      expect(REGULATED_POLICY.audit.emitTransitions).toBe(true);
+      expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
+      expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
+      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all TEAM_CI_POLICY fields match expected values', () => {
+      expect(TEAM_CI_POLICY.mode).toBe('team-ci');
+      expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
+      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
+      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(false);
     });
 
     it('detectCiContext recognizes common CI signals', () => {
