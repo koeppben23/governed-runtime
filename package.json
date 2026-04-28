@@ -46,11 +46,10 @@
     "test:smoke": "vitest run src/cli/run-acp-smoke.test.ts src/cli/cli-contract-smoke.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "sync-version": "node scripts/sync-version.js",
-    "postinstall": "node scripts/stryker-patch.js",
     "generate-docs": "node scripts/generate-docs.js",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
-    "mutation": "stryker run",
+    "mutation": "node scripts/stryker-patch.js && stryker run",
     "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
     "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ && git commit -m 'chore: sync version from VERSION to package.json and docs'"
   },
