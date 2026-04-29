@@ -1,7 +1,7 @@
 /**
  * @test-policy
  * HAPPY: renders full plan body with phase label, version, policy, task.
- * HAPPY: PLAN_REVIEW footer includes /approve, /request-changes, /reject.
+ * HAPPY: PLAN_REVIEW footer includes /approve, /request-changes, /reject with explanations.
  * CORNER: omits version/policy/task sections when absent.
  * CORNER: footer adapts to available product commands.
  * EDGE: plan body is preserved verbatim (no markdown corruption).
@@ -112,7 +112,7 @@ describe('buildPlanReviewCard', () => {
       expect(card).toContain('> **Task:** Implement payment validation');
     });
 
-    it('renders /approve, /request-changes, /reject when all three are available', () => {
+    it('renders /approve, /request-changes, /reject with explanations when all three are available', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
         phase: 'PLAN_REVIEW',
@@ -120,9 +120,9 @@ describe('buildPlanReviewCard', () => {
         productNextAction,
       });
 
-      expect(card).toContain('- `/approve`');
-      expect(card).toContain('- `/request-changes`');
-      expect(card).toContain('- `/reject`');
+      expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
+      expect(card).toContain('- `/request-changes` — send the plan back for revision');
+      expect(card).toContain('- `/reject` — stop this task');
     });
   });
 
@@ -168,9 +168,23 @@ describe('buildPlanReviewCard', () => {
         productNextAction: productNextActionPartial,
       });
 
-      expect(card).toContain('- `/approve`');
+      expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
       expect(card).not.toContain('`/request-changes`');
       expect(card).not.toContain('`/reject`');
+    });
+
+    it('omits decision bullets when no product commands are available', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction: { text: 'Review the plan manually.', commands: [] },
+      });
+
+      expect(card).toContain('Review the plan manually.');
+      expect(card).not.toContain('- `/approve`');
+      expect(card).not.toContain('- `/request-changes`');
+      expect(card).not.toContain('- `/reject`');
     });
 
     it('renders correctly with all optional fields set', () => {

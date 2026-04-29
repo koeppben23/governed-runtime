@@ -33,8 +33,8 @@ Start a governed FlowGuard workflow from any OpenCode session after install usin
 2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan
 4. `/approve` — approve the plan (or `/request-changes` to revise)
-5. `/implement` — execute the approved plan
-6. `/check` — run validation checks
+5. `/check` — run validation checks
+6. `/implement` — execute the approved plan
 7. `/export` — create a verifiable audit package
 
 **Diagnostic commands:** `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
