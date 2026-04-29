@@ -63,7 +63,11 @@ async function currentPhase(): Promise<string> {
   return parseToolResult(await status.execute({}, ctx)).phase as string;
 }
 
-async function getSessionPaths(): Promise<{ fingerprint: string; sessDir: string; archiveSidecar: string }> {
+async function getSessionPaths(): Promise<{
+  fingerprint: string;
+  sessDir: string;
+  archiveSidecar: string;
+}> {
   const fp = await computeFingerprint(ctx.worktree);
   const sessDir = sessionDir(fp.fingerprint, ctx.sessionID);
   const archiveSidecar = path.join(
@@ -77,7 +81,11 @@ async function getSessionPaths(): Promise<{ fingerprint: string; sessDir: string
   return { fingerprint: fp.fingerprint, sessDir, archiveSidecar };
 }
 
-async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDir: string; archiveSidecar: string }> {
+async function completeRegulatedSession(): Promise<{
+  fingerprint: string;
+  sessDir: string;
+  archiveSidecar: string;
+}> {
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Tamper matrix ticket', source: 'user' });
   await callOk(plan, { planText: '## Plan\n1. Build\n2. Verify' });
@@ -216,7 +224,11 @@ describe('audit/archive tamper matrix', () => {
       actor: 'legacy',
       detail: { source: 'test' },
     };
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), `${JSON.stringify(legacyEvent)}\n`, 'utf-8');
+    await fs.appendFile(
+      path.join(ids.sessDir, 'audit.jsonl'),
+      `${JSON.stringify(legacyEvent)}\n`,
+      'utf-8',
+    );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -235,7 +247,10 @@ describe('audit/archive tamper matrix', () => {
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {
     const ids = await completeRegulatedSession();
     const manifestPath = path.join(ids.sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<string, unknown>;
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+      string,
+      unknown
+    >;
     manifest.contentDigest = '0'.repeat(64);
     await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
 
@@ -246,7 +261,11 @@ describe('audit/archive tamper matrix', () => {
 
   it.skipIf(!tarOk)('evidence file tamper after archive -> verify fail', async () => {
     const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'session-state.json'), '\n{"tampered":true}\n', 'utf-8');
+    await fs.appendFile(
+      path.join(ids.sessDir, 'session-state.json'),
+      '\n{"tampered":true}\n',
+      'utf-8',
+    );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -267,16 +286,16 @@ describe('audit/archive tamper matrix', () => {
   it.skipIf(!tarOk)(
     'regulated tamper verification fails while persisted workflow phase remains complete',
     async () => {
-    const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
+      const ids = await completeRegulatedSession();
+      await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
 
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
-    const state = await readState(ids.sessDir);
+      const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+      const state = await readState(ids.sessDir);
 
-    expect(verification.passed).toBe(false);
-    expect(verification.findings.length).toBeGreaterThan(0);
-    expect(state).not.toBeNull();
-    expect(state!.phase).toBe('COMPLETE');
+      expect(verification.passed).toBe(false);
+      expect(verification.findings.length).toBeGreaterThan(0);
+      expect(state).not.toBeNull();
+      expect(state!.phase).toBe('COMPLETE');
     },
   );
 });

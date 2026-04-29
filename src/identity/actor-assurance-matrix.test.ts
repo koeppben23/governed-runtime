@@ -62,20 +62,16 @@ describe('actor assurance matrix', () => {
       for (const actual of actualTiers) {
         it(`required=${required}, actual=${actual} -> ${expected[required][actual]}`, () => {
           const state = makeProgressedState('PLAN_REVIEW');
-          const result = executeReviewDecision(
-            state,
-            makeDecisionInput(actual),
-            {
-              now: () => NOW,
-              digest: (text) => text,
-              policy: {
-                ...resolvePolicy('regulated'),
-                allowSelfApproval: false,
-                minimumActorAssuranceForApproval: required,
-                requireVerifiedActorsForApproval: false,
-              },
+          const result = executeReviewDecision(state, makeDecisionInput(actual), {
+            now: () => NOW,
+            digest: (text) => text,
+            policy: {
+              ...resolvePolicy('regulated'),
+              allowSelfApproval: false,
+              minimumActorAssuranceForApproval: required,
+              requireVerifiedActorsForApproval: false,
             },
-          );
+          });
 
           if (expected[required][actual] === 'allow') {
             expect(result.kind).toBe('ok');
@@ -95,7 +91,11 @@ describe('actor assurance matrix', () => {
 
   describe('EDGE/E2E-SMOKE — policy-aware actor resolution (IdP mode)', () => {
     const envBackup: Record<string, string | undefined> = {};
-    const ENV_KEYS = ['FLOWGUARD_ACTOR_TOKEN_PATH', 'FLOWGUARD_ACTOR_ID', 'FLOWGUARD_ACTOR_CLAIMS_PATH'];
+    const ENV_KEYS = [
+      'FLOWGUARD_ACTOR_TOKEN_PATH',
+      'FLOWGUARD_ACTOR_ID',
+      'FLOWGUARD_ACTOR_CLAIMS_PATH',
+    ];
 
     beforeEach(() => {
       for (const key of ENV_KEYS) {
@@ -201,7 +201,11 @@ describe('actor assurance matrix', () => {
       const issuer = 'https://issuer.example.com';
       const audience = 'flowguard';
       const now = Math.floor(Date.now() / 1000);
-      const token = await new SignJWT({ sub: 'idp-user-1', email: 'idp@example.com', name: 'IdP User' })
+      const token = await new SignJWT({
+        sub: 'idp-user-1',
+        email: 'idp@example.com',
+        name: 'IdP User',
+      })
         .setProtectedHeader({ alg: 'RS256', kid })
         .setIssuer(issuer)
         .setAudience(audience)
