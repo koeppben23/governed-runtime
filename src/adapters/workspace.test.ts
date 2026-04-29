@@ -426,7 +426,7 @@ describe('initWorkspace', () => {
 
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('creates workspace and session directories', async () => {
+    it('creates workspace, session, and discovery directories', async () => {
       // Use a mock worktree that points to this test's git repo
       const worktree = path.resolve('.');
       const sessionId = 'test-session-001';
@@ -447,9 +447,6 @@ describe('initWorkspace', () => {
       expect(sessStats.isDirectory()).toBe(true);
 
       // Subdirectories should exist
-      const logsStats = await fs.stat(path.join(wsDir, 'logs'));
-      expect(logsStats.isDirectory()).toBe(true);
-
       const discoveryStats = await fs.stat(path.join(wsDir, 'discovery'));
       expect(discoveryStats.isDirectory()).toBe(true);
 

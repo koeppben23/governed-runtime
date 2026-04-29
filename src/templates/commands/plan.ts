@@ -1,6 +1,6 @@
 export const PLAN_COMMAND = `
 ---
-description: Generate a plan with self-review loop for the current ticket.
+description: Generate a plan with self-review loop for the current task.
 ---
 
 You are managing a FlowGuard-controlled development workflow.

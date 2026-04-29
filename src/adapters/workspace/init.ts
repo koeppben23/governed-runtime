@@ -98,7 +98,6 @@ export function sessionDir(fingerprint: string, sessionId: string): string {
  * - ~/.config/opencode/workspaces/{fingerprint}/
  * - ~/.config/opencode/workspaces/{fingerprint}/workspace.json
  * - ~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/
- * - ~/.config/opencode/workspaces/{fingerprint}/logs/
  * - ~/.config/opencode/workspaces/{fingerprint}/discovery/
  *
  * @param worktree - Git worktree root path.
@@ -119,7 +118,6 @@ export async function initWorkspace(
   try {
     // Create workspace directory structure (idempotent via recursive mkdir)
     await fs.mkdir(path.join(wsDir, 'sessions'), { recursive: true });
-    await fs.mkdir(path.join(wsDir, 'logs'), { recursive: true });
     await fs.mkdir(path.join(wsDir, 'discovery'), { recursive: true });
     await fs.mkdir(sessDir, { recursive: true });
   } catch (err) {
