@@ -37,7 +37,7 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
   if (value === null || typeof value !== 'object') {
     console.warn(
       '[FlowGuard] Legacy selfReview config (null/undefined) normalized to mandatory strict. ' +
-      'Ensure flowguard-reviewer plugin is active.'
+        'Ensure flowguard-reviewer plugin is active.',
     );
     return DEFAULT_SELF_REVIEW_CONFIG;
   }
@@ -53,10 +53,10 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
 
   console.warn(
     '[FlowGuard] Legacy/weakened selfReview config normalized to mandatory strict. ' +
-    `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
-    `fallbackToSelf=${candidate.fallbackToSelf}, ` +
-    `strictEnforcement=${candidate.strictEnforcement}. ` +
-    'Ensure flowguard-reviewer plugin is active.'
+      `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
+      `fallbackToSelf=${candidate.fallbackToSelf}, ` +
+      `strictEnforcement=${candidate.strictEnforcement}. ` +
+      'Ensure flowguard-reviewer plugin is active.',
   );
   return DEFAULT_SELF_REVIEW_CONFIG;
 }

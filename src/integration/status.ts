@@ -356,7 +356,7 @@ export function buildReadinessProjection(
     ) {
       warnings.push(
         'Legacy selfReview config detected and normalized to mandatory strict. ' +
-        'Ensure flowguard-reviewer plugin is active.'
+          'Ensure flowguard-reviewer plugin is active.',
       );
     }
   }

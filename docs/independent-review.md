@@ -233,18 +233,18 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 
 **Structural validation (`review-validation.ts`):**
 
-| Rule                 | Condition                            | BLOCKED Code                           |
-| -------------------- | ------------------------------------ | -------------------------------------- |
-| Self mode gating     | `reviewMode=self`                    | `REVIEW_MODE_SELF_NOT_ALLOWED`         |
-| Plan version binding | `findings.planVersion !== expected`  | `REVIEW_PLAN_VERSION_MISMATCH`         |
-| Iteration binding    | `findings.iteration !== expected`    | `REVIEW_ITERATION_MISMATCH`            |
-| Mandatory findings   | verdict + no findings                 | `REVIEW_FINDINGS_REQUIRED`            |
-| Strict enforcement   | plugin assurance unavailable         | `PLUGIN_ENFORCEMENT_UNAVAILABLE`       |
-| Strict enforcement   | orchestration obligation blocked     | `STRICT_REVIEW_ORCHESTRATION_FAILED`   |
-| Strict enforcement   | subagent evidence missing            | `SUBAGENT_EVIDENCE_MISSING`            |
-| Strict enforcement   | attestation missing                  | `SUBAGENT_MANDATE_MISSING`             |
-| Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`            |
-| Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`             |
+| Rule                 | Condition                            | BLOCKED Code                         |
+| -------------------- | ------------------------------------ | ------------------------------------ |
+| Self mode gating     | `reviewMode=self`                    | `REVIEW_MODE_SELF_NOT_ALLOWED`       |
+| Plan version binding | `findings.planVersion !== expected`  | `REVIEW_PLAN_VERSION_MISMATCH`       |
+| Iteration binding    | `findings.iteration !== expected`    | `REVIEW_ITERATION_MISMATCH`          |
+| Mandatory findings   | verdict + no findings                | `REVIEW_FINDINGS_REQUIRED`           |
+| Strict enforcement   | plugin assurance unavailable         | `PLUGIN_ENFORCEMENT_UNAVAILABLE`     |
+| Strict enforcement   | orchestration obligation blocked     | `STRICT_REVIEW_ORCHESTRATION_FAILED` |
+| Strict enforcement   | subagent evidence missing            | `SUBAGENT_EVIDENCE_MISSING`          |
+| Strict enforcement   | attestation missing                  | `SUBAGENT_MANDATE_MISSING`           |
+| Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`          |
+| Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by both `/plan` and `/implement` tools.
 

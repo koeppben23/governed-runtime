@@ -457,8 +457,12 @@ const SEED_REASONS: readonly BlockedReason[] = [
   {
     code: 'REVIEW_FINDINGS_REQUIRED',
     category: 'precondition',
-    messageTemplate: 'Review findings are required for all review verdicts in mandatory review mode.',
-    recoverySteps: ['Obtain structured ReviewFindings from flowguard-reviewer subagent', 'Submit verdict with reviewFindings parameter'],
+    messageTemplate:
+      'Review findings are required for all review verdicts in mandatory review mode.',
+    recoverySteps: [
+      'Obtain structured ReviewFindings from flowguard-reviewer subagent',
+      'Submit verdict with reviewFindings parameter',
+    ],
   },
   {
     code: 'NO_SELF_REVIEW',
