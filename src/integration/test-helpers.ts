@@ -27,7 +27,43 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// ─── TestToolContext ─────────────────────────────────────────────────────────
+// ─── Safety Guards ───────────────────────────────────────────────────────────
+
+/**
+ * Assert that OPENCODE_CONFIG_DIR is set and points to a temporary directory.
+ *
+ * Tests that mutate workspace state MUST run with an isolated config root.
+ * This guard prevents accidental writes to the production workspace registry
+ * (~/.config/opencode/workspaces/) during test execution.
+ *
+ * Uses path.relative against the resolved OS temp root, not a substring check.
+ *
+ * Called automatically by createTestWorkspace() after redirecting the env var.
+ * Can also be called explicitly in tests that spawn child processes.
+ *
+ * @throws Error if OPENCODE_CONFIG_DIR is unset or not under os.tmpdir().
+ */
+export function assertTestConfigDir(): void {
+  const dir = process.env.OPENCODE_CONFIG_DIR;
+  if (!dir) {
+    throw new Error(
+      `Unsafe OPENCODE_CONFIG_DIR for test: <unset>. ` +
+        `Tests must redirect workspace operations via createTestWorkspace().`,
+    );
+  }
+  const tmpRoot = path.resolve(os.tmpdir());
+  const resolvedDir = path.resolve(dir);
+  if (resolvedDir === tmpRoot) return;
+  const rel = path.relative(tmpRoot, resolvedDir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `Unsafe OPENCODE_CONFIG_DIR for test: ${resolvedDir} must be under temp directory ${tmpRoot}. ` +
+        `Tests must redirect workspace operations via createTestWorkspace().`,
+    );
+  }
+}
+
+// ─── Tool Context ────────────────────────────────────────────────────────────
 
 /**
  * Structural type matching the internal ToolContext in tools.ts.
@@ -93,8 +129,11 @@ export interface TestWorkspace {
  */
 export async function createTestWorkspace(): Promise<TestWorkspace> {
   const originalEnv = process.env.OPENCODE_CONFIG_DIR;
+  const originalGuard = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-integ-'));
   process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+  assertTestConfigDir();
 
   return {
     tmpDir,
@@ -104,6 +143,11 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
         process.env.OPENCODE_CONFIG_DIR = originalEnv;
       } else {
         delete process.env.OPENCODE_CONFIG_DIR;
+      }
+      if (originalGuard !== undefined) {
+        process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalGuard;
+      } else {
+        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
       }
       // Best-effort removal (Windows file locks may prevent full cleanup)
       try {

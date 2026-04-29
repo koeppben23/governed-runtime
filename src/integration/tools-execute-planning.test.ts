@@ -22,6 +22,7 @@ import {
   isTarAvailable,
   parseToolResult,
   isBlockedResult,
+  assertTestConfigDir,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -635,6 +636,35 @@ describe('plan', () => {
       // Solo auto-advances through VALIDATION; if phase is not PLAN_REVIEW, no card
       if (result.phase !== 'PLAN_REVIEW') {
         expect(result.reviewCard).toBeUndefined();
+      }
+    });
+  });
+
+  describe('assertTestConfigDir (test safety guard)', () => {
+    it('HAPPY: passes when OPENCODE_CONFIG_DIR is set to a temp directory', async () => {
+      const ws = await createTestWorkspace();
+      expect(() => assertTestConfigDir()).not.toThrow();
+      await ws.cleanup();
+    });
+
+    it('BAD: throws when OPENCODE_CONFIG_DIR is not set', () => {
+      const original = process.env.OPENCODE_CONFIG_DIR;
+      delete process.env.OPENCODE_CONFIG_DIR;
+      try {
+        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
+      } finally {
+        if (original) process.env.OPENCODE_CONFIG_DIR = original;
+      }
+    });
+
+    it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
+      const original = process.env.OPENCODE_CONFIG_DIR;
+      process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+      try {
+        expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
+      } finally {
+        if (original) process.env.OPENCODE_CONFIG_DIR = original;
+        else delete process.env.OPENCODE_CONFIG_DIR;
       }
     });
   });

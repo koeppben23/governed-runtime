@@ -368,12 +368,38 @@ describe('path resolution', () => {
     }
   });
 
-  it('workspacesHome defaults to ~/.config/opencode/workspaces', () => {
+  it('workspacesHome blocks when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active and OPENCODE_CONFIG_DIR unset', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
     delete process.env.OPENCODE_CONFIG_DIR;
-    const home = workspacesHome();
-    expect(home).toContain('workspaces');
-    expect(home).toContain('.config');
-    expect(home).toContain('opencode');
+    try {
+      expect(() => workspacesHome()).toThrow('OPENCODE_CONFIG_DIR is not set');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    }
+  });
+
+  it('workspacesHome blocks when OPENCODE_CONFIG_DIR is outside tmpdir', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+    try {
+      expect(() => workspacesHome()).toThrow('must be under the OS temp directory');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      delete process.env.OPENCODE_CONFIG_DIR;
+    }
+  });
+
+  it('workspacesHome allows OPENCODE_CONFIG_DIR under tmpdir', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    const testDir = path.join(os.tmpdir(), 'fg-workspace-test-' + Date.now());
+    process.env.OPENCODE_CONFIG_DIR = testDir;
+    try {
+      const home = workspacesHome();
+      expect(home).toContain('workspaces');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      delete process.env.OPENCODE_CONFIG_DIR;
+    }
   });
 
   it('workspacesHome respects OPENCODE_CONFIG_DIR', () => {

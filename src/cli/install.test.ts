@@ -74,6 +74,8 @@ const VERSION = readFileSync(path.join(REPO_ROOT, 'VERSION'), 'utf-8').trim();
 
 let tmpDir: string;
 let originalCwd: string;
+let originalConfigDir: string | undefined;
+let originalRequireTestConfigDir: string | undefined;
 
 /** Create a fresh temp directory for each test. */
 async function createTmpDir(): Promise<string> {
@@ -116,11 +118,25 @@ function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
 beforeEach(async () => {
   tmpDir = await createTmpDir();
   originalCwd = process.cwd();
+  originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
+  originalRequireTestConfigDir = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
   process.chdir(tmpDir);
+  process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
 });
 
 afterEach(async () => {
   process.chdir(originalCwd);
+  if (originalConfigDir !== undefined) {
+    process.env.OPENCODE_CONFIG_DIR = originalConfigDir;
+  } else {
+    delete process.env.OPENCODE_CONFIG_DIR;
+  }
+  if (originalRequireTestConfigDir !== undefined) {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalRequireTestConfigDir;
+  } else {
+    delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+  }
   await cleanTmpDir(tmpDir);
 });
 

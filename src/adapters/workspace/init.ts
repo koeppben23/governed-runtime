@@ -38,11 +38,44 @@ import { computeFingerprint } from './fingerprint.js';
  *
  * Uses OPENCODE_CONFIG_DIR if set (for testing/custom setups),
  * otherwise defaults to ~/.config/opencode.
+ *
+ * Safety guard: when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is set,
+ * OPENCODE_CONFIG_DIR is mandatory.  This prevents accidental writes
+ * to the production workspace registry during tests, E2E, and CI.
  */
 export function workspacesHome(): string {
+  if (process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR) {
+    if (!process.env.OPENCODE_CONFIG_DIR) {
+      throw new Error(
+        `OPENCODE_CONFIG_DIR is not set but FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active. ` +
+          `Test environments must set OPENCODE_CONFIG_DIR to an isolated temporary directory.`,
+      );
+    }
+    assertSafeConfigDir(process.env.OPENCODE_CONFIG_DIR);
+  }
   const configRoot =
     process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
   return path.join(configRoot, 'workspaces');
+}
+
+/**
+ * Assert that a config directory path is a safe temporary location.
+ *
+ * Uses path.resolve + path.relative to verify the directory is under
+ * the OS temp root, not a substring-based heuristic.
+ */
+function assertSafeConfigDir(dir: string): void {
+  const tmpRoot = path.resolve(os.tmpdir());
+  const resolvedDir = path.resolve(dir);
+  // Shortest path: if resolvedDir IS tmpRoot, ok too
+  if (resolvedDir === tmpRoot) return;
+  const rel = path.relative(tmpRoot, resolvedDir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `OPENCODE_CONFIG_DIR (${resolvedDir}) must be under the OS temp directory (${tmpRoot}) ` +
+        `when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active.`,
+    );
+  }
 }
 
 /**
