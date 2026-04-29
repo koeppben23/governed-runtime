@@ -421,7 +421,7 @@ describe('DEV_REPO_INVARIANTS', () => {
 
     it('COMMANDS template covers all slash commands', () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(12);
+      expect(commandNames).toHaveLength(20);
       // Verify all expected commands are present
       for (const expected of [
         'hydrate.md',
@@ -436,6 +436,14 @@ describe('DEV_REPO_INVARIANTS', () => {
         'architecture.md',
         'abort.md',
         'archive.md',
+        'start.md',
+        'task.md',
+        'approve.md',
+        'request-changes.md',
+        'reject.md',
+        'check.md',
+        'export.md',
+        'why.md',
       ]) {
         expect(commandNames).toContain(expected);
       }

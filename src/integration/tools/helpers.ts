@@ -42,6 +42,8 @@ import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -108,13 +110,16 @@ export function formatRailResult(result: RailResult): string {
     });
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
+  const productNext = buildProductNextAction(nextAction, result.state.phase);
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
   const json = JSON.stringify({
     phase: result.state.phase,
+    phaseLabel: PHASE_LABELS[result.state.phase],
     status: 'ok',
     next: formatEval(result.evalResult),
     nextAction,
+    productNextAction: productNext,
     ...(reviewDecision
       ? {
           reviewDecision: {
@@ -128,7 +133,7 @@ export function formatRailResult(result: RailResult): string {
     ...(archiveStatus ? { archiveStatus } : {}),
     _audit: { transitions: result.transitions },
   });
-  return json + `\nNext action: ${nextAction.text}`;
+  return json + `\nNext action: ${productNext.text}`;
 }
 
 /**
@@ -292,9 +297,12 @@ export async function persistAndFormat(sessDir: string, result: RailResult): Pro
  */
 export function appendNextAction(jsonStr: string, state: SessionState): string {
   const nextAction = resolveNextAction(state.phase, state);
+  const productNext = buildProductNextAction(nextAction, state.phase);
   const parsed = JSON.parse(jsonStr);
   parsed.nextAction = nextAction;
-  return JSON.stringify(parsed) + `\nNext action: ${nextAction.text}`;
+  parsed.phaseLabel = PHASE_LABELS[state.phase];
+  parsed.productNextAction = productNext;
+  return JSON.stringify(parsed) + `\nNext action: ${productNext.text}`;
 }
 
 // ─── Plan Parsing ─────────────────────────────────────────────────────────────

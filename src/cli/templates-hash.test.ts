@@ -66,25 +66,33 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('COMMANDS matches compiled output hash', () => {
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e0537b2dfa01de651ad472423c24cbf0b3a380c6e1cada529706ee6a419a735d',
+      '69fa412e1d1cf094d20c4213d7e486f834e9dce50f42afec6b4fe49b527df25d',
     );
   });
 
-  it('all 12 commands present', () => {
+  it('all 20 commands present', () => {
     const expected = [
-      'hydrate.md',
-      'status.md',
-      'ticket.md',
-      'plan.md',
+      'abort.md',
+      'approve.md',
+      'architecture.md',
+      'archive.md',
+      'check.md',
       'continue.md',
+      'export.md',
+      'hydrate.md',
       'implement.md',
-      'validate.md',
+      'plan.md',
+      'reject.md',
+      'request-changes.md',
       'review-decision.md',
       'review.md',
-      'architecture.md',
-      'abort.md',
-      'archive.md',
+      'start.md',
+      'status.md',
+      'task.md',
+      'ticket.md',
+      'validate.md',
+      'why.md',
     ];
-    expect(Object.keys(COMMANDS)).toEqual(expected);
+    expect(Object.keys(COMMANDS).sort()).toEqual(expected);
   });
 });
