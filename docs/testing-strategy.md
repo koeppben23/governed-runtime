@@ -18,17 +18,17 @@ Every test file should cover five categories where applicable:
 Performance budgets are defined in `src/test-policy.ts` with CI-aware multipliers
 (2x compute, 3x I/O-bound) to account for shared runner variability.
 
-## Integration Tiers (T1–T5)
+## Test Tiers (T1–T5)
 
-Integration and smoke tests are organized into tiers of decreasing governance criticality:
+Unit, integration, and smoke tests are organized into tiers of decreasing governance criticality:
 
-| Tier   | Name                         | File                                          | What It Proves                                                       |
-| ------ | ---------------------------- | --------------------------------------------- | -------------------------------------------------------------------- |
-| **T1** | Regulated Mode Critical Path | `integration/regulated-e2e.test.ts`           | Full READY→DONE chain in regulated mode with human gates             |
-| **T2** | Policy Mode Matrix           | `integration/policy-matrix.test.ts`           | All policy modes (solo/team/regulated) produce correct gate behavior |
-| **T3** | Audit & Archive Integrity    | `integration/audit-archive-integrity.test.ts` | Hash-chain integrity, archive verify, completeness scoring           |
-| **T4** | Tool/Handler Contract        | `integration/cli-contract.test.ts`            | Every tool call returns expected shape, errors are structured        |
-| **T5** | CLI Smoke                    | `cli/cli-contract-smoke.test.ts`              | Built CLI entry point starts, routes commands, exits cleanly         |
+| Tier   | Name                        | File                                              | What It Proves                                                             |
+| ------ | --------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------- |
+| **T1** | State Machine Invariants    | `machine/state-machine-invariants.test.ts`        | Terminal phase blocks, determinism, command-policy subset, policy variance |
+| **T2** | Actor Assurance Matrix      | `identity/actor-assurance-matrix.test.ts`         | Assurance tiers, identity-provider mode cases, fail-closed unknown actors  |
+| **T3** | Policy Snapshot Regression  | `integration/policy-snapshot-regression.test.ts`  | Snapshot authority, legacy normalization, hydrate persistence              |
+| **T4** | Audit/Archive Tamper Matrix | `integration/audit-archive-tamper-matrix.test.ts` | Archive tamper cases, regulated strict checks, archive integrity           |
+| **T5** | Session State Upgrade       | `integration/session-state-upgrade.test.ts`       | Legacy session-state fixtures and policy snapshot normalization            |
 
 Additionally, `integration/identity-policy-e2e.test.ts` proves the identity-policy
 enforcement chain (actor resolution, assurance tiers, policy snapshot flow-through).
@@ -37,13 +37,13 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to exactly one npm script for clear diagnosis:
 
-| CI Job             | npm Script                    | Scope                                                   | Requires Build |
-| ------------------ | ----------------------------- | ------------------------------------------------------- | -------------- |
-| **unit**           | `npm run test:unit`           | All `*.test.ts` outside `integration/` and CLI smoke    | No             |
-| **integration**    | `npm run test:integration`    | All `src/integration/**/*.test.ts` (T1–T4 + tool tests) | No             |
-| **smoke**          | `npm run test:smoke`          | CLI contract smoke (T5) + ACP smoke                     | Yes            |
-| **install-verify** | `npm run test:install-verify` | Tarball pack/install/doctor verification                | Yes            |
-| **mutation**       | `npm run mutation`            | StrykerJS mutation testing for security-critical paths  | No             |
+| CI Job             | npm Script                    | Scope                                                        | Requires Build |
+| ------------------ | ----------------------------- | ------------------------------------------------------------ | -------------- |
+| **unit**           | `npm run test:unit`           | All `*.test.ts` outside `integration/`, including T1 and T2  | No             |
+| **integration**    | `npm run test:integration`    | All `src/integration/**/*.test.ts`, including T3, T4, and T5 | No             |
+| **smoke**          | `npm run test:smoke`          | Built CLI contract smoke and ACP smoke                       | Yes            |
+| **install-verify** | `npm run test:install-verify` | Tarball pack/install/doctor verification                     | Yes            |
+| **mutation**       | `npm run mutation`            | StrykerJS mutation testing for security-critical paths       | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
@@ -58,20 +58,21 @@ with a `break: 85` threshold enforced by `stryker.conf.json`.
 
 ## Test Organization by Layer
 
-| Directory           | What It Tests                                                 | Count |
-| ------------------- | ------------------------------------------------------------- | ----- |
-| `src/machine/`      | State transitions, guards, evaluate, next-action              | 5     |
-| `src/rails/`        | Rail executors (hydrate, plan, review, implement, etc.)       | 6     |
-| `src/state/`        | Schema validation, evidence structures                        | 1     |
-| `src/config/`       | Policy resolution, profiles, policy snapshots                 | 3     |
-| `src/adapters/`     | Persistence, workspace, git, actor resolution                 | 3     |
-| `src/audit/`        | Hash-chain, integrity, completeness, query, summary           | 1     |
-| `src/discovery/`    | Collectors (stack, topology, surfaces, signals), orchestrator | 13    |
-| `src/identity/`     | Actor context resolution                                      | 1     |
-| `src/logging/`      | File sink, structured logging                                 | 1     |
-| `src/cli/`          | CLI install, doctor, templates, smoke                         | 7     |
-| `src/integration/`  | Tool handlers, governance chains, plugin, tiers T1–T4         | 31    |
-| `src/architecture/` | Dependency boundary rules, import analysis                    | 1     |
+| Directory            | What It Tests                                                 |
+| -------------------- | ------------------------------------------------------------- |
+| `src/machine/`       | State transitions, guards, evaluate, next-action, invariants  |
+| `src/rails/`         | Rail executors (hydrate, plan, review, implement, etc.)       |
+| `src/state/`         | Schema validation, evidence structures                        |
+| `src/config/`        | Policy resolution, profiles, policy snapshots                 |
+| `src/adapters/`      | Persistence, workspace, git, actor resolution                 |
+| `src/audit/`         | Hash-chain, integrity, completeness, query, summary           |
+| `src/discovery/`     | Collectors (stack, topology, surfaces, signals), orchestrator |
+| `src/identity/`      | Actor context resolution and assurance enforcement            |
+| `src/logging/`       | File sink, structured logging                                 |
+| `src/cli/`           | CLI install, doctor, templates, smoke                         |
+| `src/integration/`   | Tool handlers, governance chains, plugin, archive, migration  |
+| `src/architecture/`  | Dependency boundary rules, import analysis                    |
+| `src/documentation/` | Documentation contract checks                                 |
 
 ## Running Tests Locally
 
@@ -131,18 +132,18 @@ Twelve files are mutated, covering the fail-closed governance core:
 | Identity (token-verifier)                        | 1      |  81.40%  |
 | **Overall**                                      | **12** | **~89%** |
 
-### CI Enforcement (Phase 1)
+### CI Enforcement
 
 The `mutation` CI job runs with `continue-on-error: true` — mutation score below the
-`break` threshold (90) does not block PRs. This is a **Phase 1 PoC** decision:
+configured `break` threshold does not block PRs while the score baseline is stabilized:
 
-| Phase                 | Threshold   | Blocking?                | Rationale                                         |
-| --------------------- | ----------- | ------------------------ | ------------------------------------------------- |
-| **Phase 1 (current)** | `break: 85` | No (`continue-on-error`) | Baseline establishment, CI stability verification |
-| **Phase 2**           | `break: 80` | No                       | Score ratchet + survivor analysis complete        |
-| **Phase 3**           | `break: 85` | **Yes**                  | Proven stability, blocking enforcement            |
+| Stage       | Threshold   | Blocking?                | Rationale                                         |
+| ----------- | ----------- | ------------------------ | ------------------------------------------------- |
+| **Current** | `break: 85` | No (`continue-on-error`) | Baseline establishment, CI stability verification |
+| **Next**    | `break: 80` | No                       | Score ratchet and survivor analysis complete      |
+| **Target**  | `break: 85` | **Yes**                  | Proven stability, blocking enforcement            |
 
-Phase 3 activation requires: ≥10 stable CI mutation runs without flaky failures,
+Blocking enforcement requires: ≥10 stable CI mutation runs without flaky failures,
 policy.ts survivors analyzed and either killed or documented as equivalent, and
 `break` threshold upheld across ≥5 consecutive PRs.
 

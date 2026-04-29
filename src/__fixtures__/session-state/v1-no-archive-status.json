@@ -1,0 +1,99 @@
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "schemaVersion": "v1",
+  "phase": "COMPLETE",
+  "binding": {
+    "sessionId": "ses_legacy_no_archive_status",
+    "worktree": "/tmp/legacy-repo",
+    "fingerprint": "dddddddddddddddddddddddd",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": {
+    "text": "Completed legacy ticket",
+    "digest": "digest-legacy-complete",
+    "source": "user",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  "architecture": null,
+  "plan": {
+    "current": {
+      "body": "## Plan\n1. Done",
+      "digest": "plan-digest-legacy-complete",
+      "sections": ["Plan"],
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    "history": []
+  },
+  "selfReview": {
+    "iteration": 1,
+    "maxIterations": 3,
+    "prevDigest": null,
+    "currDigest": "plan-digest-legacy-complete",
+    "revisionDelta": "none",
+    "verdict": "approve"
+  },
+  "validation": [
+    {
+      "checkId": "test_quality",
+      "passed": true,
+      "detail": "OK",
+      "executedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "implementation": {
+    "changedFiles": ["src/a.ts"],
+    "domainFiles": ["src/a.ts"],
+    "digest": "impl-digest-legacy-complete",
+    "executedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "implReview": {
+    "iteration": 1,
+    "maxIterations": 3,
+    "prevDigest": null,
+    "currDigest": "impl-digest-legacy-complete",
+    "revisionDelta": "none",
+    "verdict": "approve",
+    "executedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "reviewDecision": {
+    "verdict": "approve",
+    "rationale": "legacy complete",
+    "decidedAt": "2026-01-01T00:00:00.000Z",
+    "decidedBy": "reviewer"
+  },
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": ["test_quality", "rollback_safety"],
+  "policySnapshot": {
+    "mode": "regulated",
+    "hash": "legacy-hash-no-archive-status",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "regulated",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "maxSelfReviewIterations": 3,
+    "maxImplReviewIterations": 3,
+    "allowSelfApproval": false,
+    "minimumActorAssuranceForApproval": "best_effort",
+    "requireVerifiedActorsForApproval": false,
+    "identityProviderMode": "optional",
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    }
+  },
+  "initiatedBy": "legacy-initiator",
+  "initiatedByIdentity": {
+    "actorId": "legacy-initiator",
+    "actorEmail": "legacy@example.com",
+    "actorSource": "claim",
+    "actorAssurance": "claim_validated"
+  },
+  "transition": null,
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z"
+}

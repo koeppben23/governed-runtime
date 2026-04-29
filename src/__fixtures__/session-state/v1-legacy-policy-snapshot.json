@@ -1,0 +1,72 @@
+{
+  "id": "55555555-5555-4555-8555-555555555555",
+  "schemaVersion": "v1",
+  "phase": "PLAN_REVIEW",
+  "binding": {
+    "sessionId": "ses_legacy_policy_snapshot",
+    "worktree": "/tmp/legacy-repo",
+    "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeee",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": {
+    "text": "Legacy regulated decision gate",
+    "digest": "digest-legacy-gate",
+    "source": "user",
+    "createdAt": "2026-01-01T00:00:00.000Z"
+  },
+  "architecture": null,
+  "plan": {
+    "current": {
+      "body": "## Plan\n1. Review",
+      "digest": "plan-digest-legacy-gate",
+      "sections": ["Plan"],
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    "history": []
+  },
+  "selfReview": {
+    "iteration": 1,
+    "maxIterations": 3,
+    "prevDigest": null,
+    "currDigest": "plan-digest-legacy-gate",
+    "revisionDelta": "none",
+    "verdict": "approve"
+  },
+  "validation": [],
+  "implementation": null,
+  "implReview": null,
+  "reviewDecision": null,
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": ["test_quality", "rollback_safety"],
+  "policySnapshot": {
+    "mode": "regulated",
+    "hash": "legacy-hash-policy-snapshot",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "regulated",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "maxSelfReviewIterations": 3,
+    "maxImplReviewIterations": 3,
+    "allowSelfApproval": false,
+    "requireVerifiedActorsForApproval": true,
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    }
+  },
+  "initiatedBy": "legacy-initiator",
+  "initiatedByIdentity": {
+    "actorId": "legacy-initiator",
+    "actorEmail": "legacy@example.com",
+    "actorSource": "claim",
+    "actorAssurance": "claim_validated"
+  },
+  "transition": null,
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z"
+}

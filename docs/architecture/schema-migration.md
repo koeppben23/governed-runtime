@@ -3,7 +3,7 @@
 **Status:** Design Proposal  
 **Version:** v1  
 **Author:** FlowGuard Core Team  
-**Governance:** P3 Compliance — Long-term schema evolution contract for audit archive integrity.
+**Governance:** Long-term schema evolution contract for audit archive integrity.
 
 ## 1. Problem Statement
 
@@ -57,7 +57,7 @@ function coerceAssurance(
     raw === 'claim_validated' ||
     raw === 'idp_verified'
   ) {
-    if (raw === 'verified') return 'claim_validated'; // P33 → P34 compat
+    if (raw === 'verified') return 'claim_validated'; // legacy actor claim compatibility
     return raw as 'claim_validated' | 'idp_verified';
   }
   return 'best_effort';
@@ -292,7 +292,7 @@ with new schemas.
 - `src/state/evidence.ts` — PolicySnapshot schema + coerceAssurance example
 - `src/audit/integrity.ts` — Audit chain integrity (legacy tolerance comment)
 - `docs/configuration.md:246-252` — Config immutability note
-- `docs/actor-assurance-architecture.md:288-312` — P33 → P34 field migration example
+- `docs/actor-assurance-architecture.md:288-312` — actor assurance field migration example
 
 ## 8. Decision Log
 

@@ -1,0 +1,60 @@
+{
+  "id": "33333333-3333-4333-8333-333333333333",
+  "schemaVersion": "v1",
+  "phase": "TICKET",
+  "binding": {
+    "sessionId": "ses_legacy_no_refs",
+    "worktree": "/tmp/legacy-repo",
+    "fingerprint": "cccccccccccccccccccccccc",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": {
+    "text": "Legacy ticket without references",
+    "digest": "digest-legacy-ticket",
+    "source": "user",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "inputOrigin": "manual_text"
+  },
+  "architecture": null,
+  "plan": null,
+  "selfReview": null,
+  "validation": [],
+  "implementation": null,
+  "implReview": null,
+  "reviewDecision": null,
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": ["test_quality", "rollback_safety"],
+  "policySnapshot": {
+    "mode": "team",
+    "hash": "legacy-hash-no-refs",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "maxSelfReviewIterations": 3,
+    "maxImplReviewIterations": 3,
+    "allowSelfApproval": true,
+    "minimumActorAssuranceForApproval": "best_effort",
+    "requireVerifiedActorsForApproval": false,
+    "identityProviderMode": "optional",
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    }
+  },
+  "initiatedBy": "legacy-initiator",
+  "initiatedByIdentity": {
+    "actorId": "legacy-initiator",
+    "actorEmail": "legacy@example.com",
+    "actorSource": "claim",
+    "actorAssurance": "claim_validated"
+  },
+  "transition": null,
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z"
+}
