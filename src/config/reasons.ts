@@ -596,6 +596,29 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'ACTOR_IDP_MODE_REQUIRED',
+    category: 'identity',
+    messageTemplate:
+      'IdP verification is required for this decision, but no verified IdP actor could be resolved.',
+    recoverySteps: [
+      'Configure identityProvider in FlowGuard policy',
+      'Set FLOWGUARD_ACTOR_TOKEN_PATH to a valid JWT token file',
+      'Check that the token is valid and not expired',
+      'If idp_verified is not required for this session, set identityProviderMode to optional',
+    ],
+  },
+  {
+    code: 'ACTOR_IDP_CONFIG_REQUIRED',
+    category: 'identity',
+    messageTemplate:
+      'identityProviderMode is required but no identityProvider is configured in the policy.',
+    recoverySteps: [
+      'Add identityProvider configuration to FlowGuardConfig',
+      'Configure signing keys or JWKS authority',
+      'If IdP verification is not needed, set identityProviderMode to optional',
+    ],
+  },
+  {
     code: 'ACTOR_ASSURANCE_INSUFFICIENT',
     category: 'identity',
     messageTemplate:

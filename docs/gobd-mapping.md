@@ -213,8 +213,10 @@ GoBD § 145 (AO) and § 146 (HGB) define retention periods.
 
 - Archive includes complete session state
 - Retention can be based on session metadata
-  -sha-256 hashes for integrity verification
+- SHA-256 hashes for integrity verification
 - 10-year retention alignment through archives
+
+Retention periods are organization-owned and must be enforced in customer storage/archiving operations; see `docs/data-classification.md` for the operational retention matrix.
 
 #### Organization Must Provide
 
@@ -276,4 +278,4 @@ These require specialized accounting/ERP systems.
 
 _Last Updated: 2026-04-19_
 
-_FlowGuard Version: 1.2.0-rc.1-rc.1_
+FlowGuard Version: 1.2.0-rc.1

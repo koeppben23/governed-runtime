@@ -14,6 +14,7 @@
  */
 
 import type { PhaseInstructions } from '../../profile.js';
+import { DETECTED_STACK_INSTRUCTION, buildNegativeTestMatrix } from './shared.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 
@@ -455,18 +456,13 @@ export class DashboardComponent {
 </example>
 </examples>`;
 
-const NEGATIVE_TEST_MATRIX = `\
-## Minimum Negative Tests per Change Type
-
-For every change, the following negative-path tests MUST exist:
-
-| Change Type | MUST Test (negative path) |
-|---|---|
-| Container Component | facade method called with wrong args, error state displayed, loading state handled |
-| Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |
-| Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |
-| Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |
-| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |`;
+const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
+  '| Container Component | facade method called with wrong args, error state displayed, loading state handled |\n' +
+    '| Presentational Component | missing/null inputs render gracefully, events emit correct payload, empty list displayed |\n' +
+    '| Facade/Store | error response -> error state, stale data handling, concurrent request cancellation |\n' +
+    '| Guard | unauthorized user -> redirect, expired token -> redirect, missing route param -> deny |\n' +
+    '| Form Component | required field empty -> validation message, invalid email -> validation message, submit with invalid form -> blocked |',
+);
 
 const REVIEW_CHECKLIST = `\
 ## Stack-Specific Review Checklist
@@ -483,19 +479,6 @@ When reviewing Angular changes, MUST verify:
 | Leaked DTOs | Backend response interfaces used directly in component templates |
 | Fixed Waits | \`setTimeout\`, \`tick(1000)\`, or \`cy.wait()\` in tests instead of deterministic triggers |
 | A11y Regressions | Missing \`aria-label\`, broken keyboard navigation, missing focus management |`;
-
-// ─── Detected Stack Instruction ──────────────────────────────────────────────
-
-const DETECTED_STACK_INSTRUCTION = `\
-## Detected Stack
-
-Use flowguard_status.detectedStack when present. Prefer detected tools,
-frameworks, runtimes, and versions over generic defaults.
-When choosing verification commands, prefer
-flowguard_status.verificationCandidates when present. They are advisory
-planning hints, not executed checks.
-Do not make version-specific claims without repository evidence; mark
-unsupported claims as NOT_VERIFIED.`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

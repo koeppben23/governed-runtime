@@ -14,6 +14,7 @@
  */
 
 import type { PhaseInstructions } from '../../profile.js';
+import { DETECTED_STACK_INSTRUCTION, buildNegativeTestMatrix } from './shared.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 
@@ -483,18 +484,13 @@ const EVIDENCE_BY_CHANGE_TYPE = `\
 | Messaging | consumer idempotency/retry tests + schema validation (if exists) |
 | Pure Service | unit tests proving rules + slice/integration if boundary changed |`;
 
-const NEGATIVE_TEST_MATRIX = `\
-## Minimum Negative Tests per Change Type
-
-For every change, the following negative-path tests MUST exist:
-
-| Change Type | MUST Test (negative path) |
-|---|---|
-| Controller/API | invalid input -> 400, missing/invalid auth -> 401/403, resource not found -> 404, constraint violation -> 409 |
-| Service | null/empty input, business rule violation, concurrent modification (if applicable) |
-| Repository | unique constraint violation, empty result set, orphan reference (FK violation) |
-| Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |
-| Migration | rollback script executes without error, data integrity preserved after up+down |`;
+const NEGATIVE_TEST_MATRIX = buildNegativeTestMatrix(
+  '| Controller/API | invalid input -> 400, missing/invalid auth -> 401/403, resource not found -> 404, constraint violation -> 409 |\n' +
+    '| Service | null/empty input, business rule violation, concurrent modification (if applicable) |\n' +
+    '| Repository | unique constraint violation, empty result set, orphan reference (FK violation) |\n' +
+    '| Domain Entity | invalid construction (missing required fields), illegal state transition, invariant violation |\n' +
+    '| Migration | rollback script executes without error, data integrity preserved after up+down |',
+);
 
 const REVIEW_CHECKLIST = `\
 ## Stack-Specific Review Checklist
@@ -511,19 +507,6 @@ When reviewing Java changes, MUST verify:
 | Exception Handling | Empty catch blocks, catching \`Exception\` instead of specific types, log-only handling |
 | Concurrency | Missing \`@Version\` on aggregates with concurrent writes, shared mutable state in singletons |
 | Test Determinism | \`Instant.now()\` / \`UUID.randomUUID()\` in assertions, \`Thread.sleep()\` in tests |`;
-
-// ─── Detected Stack Instruction ──────────────────────────────────────────────
-
-const DETECTED_STACK_INSTRUCTION = `\
-## Detected Stack
-
-Use flowguard_status.detectedStack when present. Prefer detected tools,
-frameworks, runtimes, and versions over generic defaults.
-When choosing verification commands, prefer
-flowguard_status.verificationCandidates when present. They are advisory
-planning hints, not executed checks.
-Do not make version-specific claims without repository evidence; mark
-unsupported claims as NOT_VERIFIED.`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

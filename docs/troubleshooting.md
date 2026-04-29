@@ -125,6 +125,52 @@ Enable verbose logging via workspace config:
 
 Config file location: `~/.config/opencode/workspaces/{fingerprint}/config.json` or `.opencode/config.json` in the project.
 
+## Test Troubleshooting
+
+### Smoke Tests Fail Locally
+
+**Symptom:** `npm run test:smoke` fails with "Built CLI missing".
+
+**Solution:** Smoke tests require a build first:
+
+```bash
+npm run build && npm run test:smoke
+```
+
+### ACP Smoke Tests Skipped
+
+**Symptom:** ACP tests show as "skipped" in smoke output.
+
+**Cause:** ACP tests require `RUN_OPENCODE_ACP_TESTS=1` and the `opencode` CLI.
+
+**Solution:**
+
+```bash
+npm install -g opencode-ai
+RUN_OPENCODE_ACP_TESTS=1 npm run test:smoke
+```
+
+### PERF Tests Flaky on CI
+
+**Symptom:** Performance tests (e.g., `initWorkspace is fast`, `runDiscovery < 100ms`)
+fail intermittently on CI or under heavy load.
+
+**Cause:** Shared CI runners have variable I/O and CPU performance. Performance budgets
+include CI-aware multipliers (2x compute, 3x I/O), but extreme contention can still
+exceed them.
+
+**Solution:** Re-run the job. These are known flakes and do not indicate regressions.
+See `src/test-policy.ts` for budget definitions.
+
+### EBUSY Errors on Windows
+
+**Symptom:** `EBUSY: resource busy or locked, rmdir` during tests.
+
+**Cause:** Windows file locking prevents cleanup of temp directories while handles
+are still open (common with vitest parallel execution).
+
+**Solution:** Re-run the test. This is a known Windows-specific flake.
+
 ## Getting Help
 
 1. Check `/status` for session status

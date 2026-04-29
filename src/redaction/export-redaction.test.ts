@@ -86,23 +86,76 @@ describe('redaction/export-redaction', () => {
       expect((output.validationSummary[0] as Record<string, unknown>).detail).toBe('[REDACTED]');
     });
 
-    it('redacts completeness slots detail in review report', () => {
+    it('redacts references in review report basic mode', () => {
       const input = {
-        completeness: { slots: [{ slot: 'ticket', detail: 'internal note' }] },
+        references: [
+          {
+            ref: 'https://jira.internal.example.com/browse/SEC-123',
+            type: 'ticket',
+            source: 'jira',
+            title: 'SEC-123: Fix credential leak',
+          },
+          {
+            ref: 'https://github.com/private-org/secret-repo/pull/42',
+            type: 'pr',
+            source: 'github',
+            title: 'PR #42: Update auth keys',
+          },
+        ],
       };
       const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      const slots = (output.completeness as Record<string, unknown>).slots as Array<
-        Record<string, unknown>
-      >;
-      expect(slots[0]!.detail).toBe('[REDACTED]');
+      const refs = output.references as Array<Record<string, unknown>>;
+      expect(refs[0]!.ref).toBe('[REDACTED]');
+      expect(refs[0]!.title).toBe('[REDACTED]');
+      expect(refs[0]!.type).toBe('ticket');
+      expect(refs[0]!.source).toBe('jira');
+      expect(refs[1]!.ref).toBe('[REDACTED]');
+      expect(refs[1]!.title).toBe('[REDACTED]');
     });
 
-    it('mode=none leaves review report unchanged', () => {
+    it('redacts references in review report strict mode', () => {
       const input = {
-        findings: [{ message: 'plain' }],
-        completeness: { fourEyes: { initiatedBy: 'bob', decidedBy: null as unknown } },
+        references: [
+          { ref: 'https://jira.internal.example.com/PROJ-1', title: 'PROJ-1: Internal thing' },
+        ],
+      };
+      const output = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const refs = output.references as Array<Record<string, unknown>>;
+      expect(String(refs[0]!.ref)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(String(refs[0]!.title)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    });
+
+    it('preserves reference type, source, and extractedAt during redaction', () => {
+      const input = {
+        references: [
+          {
+            ref: 'https://ado.internal.example.com/WI-5',
+            type: 'ticket',
+            source: 'ados',
+            title: 'WI-5',
+            extractedAt: '2026-01-15T10:00:00.000Z',
+          },
+        ],
+      };
+      const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const refs = output.references as Array<Record<string, unknown>>;
+      expect(refs[0]!.ref).toBe('[REDACTED]');
+      expect(refs[0]!.title).toBe('[REDACTED]');
+      expect(refs[0]!.type).toBe('ticket');
+      expect(refs[0]!.source).toBe('ados');
+      expect(refs[0]!.extractedAt).toBe('2026-01-15T10:00:00.000Z');
+    });
+
+    it('mode=none leaves references unchanged', () => {
+      const input = {
+        references: [{ ref: 'https://example.com/ticket/1', title: 'Ticket #1' }],
       };
       expect(redactReviewReport(input, 'none')).toEqual(input);
+    });
+
+    it('handles empty references array without throwing', () => {
+      expect(() => redactReviewReport({ references: [] }, 'basic')).not.toThrow();
+      expect(() => redactReviewReport({ references: [] }, 'strict')).not.toThrow();
     });
 
     it('redacts deep copies without mutating original', () => {
@@ -226,6 +279,27 @@ describe('redaction/export-redaction', () => {
         (out.completeness as Record<string, unknown>).slots as Array<Record<string, unknown>>
       )[0]!;
       expect(slot.detail).toBe(true);
+    });
+
+    it('reference with null/undefined ref and title leaves them unchanged', () => {
+      const input = {
+        references: [{ ref: null as unknown, title: undefined as unknown, type: 'url' }],
+      };
+      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const refs = out.references as Array<Record<string, unknown>>;
+      expect(refs[0]!.ref).toBe(null);
+      expect(refs[0]!.title).toBeUndefined();
+      expect(refs[0]!.type).toBe('url');
+    });
+
+    it('reference with non-string ref/title leaves them unchanged', () => {
+      const input = {
+        references: [{ ref: 42 as unknown, title: true as unknown }],
+      };
+      const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
+      const refs = out.references as Array<Record<string, unknown>>;
+      expect(refs[0]!.ref).toBe(42);
+      expect(refs[0]!.title).toBe(true);
     });
   });
 

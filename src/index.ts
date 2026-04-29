@@ -1,20 +1,56 @@
 /**
+ * @packageDocumentation
+ *
+ * # FlowGuard API
+ *
+ * Deterministic, fail-closed workflow engine for AI-assisted software delivery
+ * within OpenCode. FlowGuard enforces governed development workflows with
+ * hash-chained audit trails, policy-bound decision enforcement, and
+ * evidence-first compliance.
+ *
+ * ## Package Structure
+ *
+ * | Entry Point | Purpose |
+ * |-------------|---------|
+ * | `@flowguard/core` | Types, config, policy, audit, archive — the core API |
+ * | `@flowguard/core/integration` | OpenCode tool definitions + audit plugin |
+ * | `@flowguard/core/integration/tools` | Individual tool definitions |
+ *
+ * ## Quick Start
+ *
+ * ```ts
+ * import { executeTicket, FlowGuardPolicy, REGULATED_POLICY } from '@flowguard/core';
+ * ```
+ *
+ * ## Policy Modes
+ *
+ * - **solo** — automatic approval, no human gates
+ * - **team** — human-gated at review points
+ * - **team-ci** — CI auto-approve, degrades to team without CI context
+ * - **regulated** — mandatory four-eyes, evidence completeness enforcement
+ *
+ * ## Architecture
+ *
+ * Fail-closed: ambiguity blocks, never guesses.
+ * Deterministic: same state + input = same result.
+ * Evidence-first: every phase produces verifiable artifacts.
+ * Policy-bound: every decision traced to a policy version.
+ *
  * @module flowguard
- * @description Root barrel export for the FlowGuard runtime package.
+ * @description Public API for the FlowGuard runtime package.
  *
- * Exports organized by layer:
- * - State: Phase, Event, SessionState, evidence types
- * - Machine: topology, guards, commands, evaluator
- * - Rails: all rail executors + types
- * - Adapters: persistence (state, config, audit), git, binding, context
- * - Config: policies, profiles, reasons, FlowGuard config schema
- * - Logging: logger interface + factories
- * - Audit: event types, integrity, query, summary, completeness
+ * This barrel exports the stable public surface. Internal modules
+ * (adapters, individual collectors, machine topology, rail executors)
+ * are available via direct imports for tests and internal tooling.
  *
- * @version v1
+ * Consumer entry points:
+ * - `@flowguard/core`                — this file (types, config, audit, archive)
+ * - `@flowguard/core/integration`    — OpenCode tool definitions + audit plugin
+ *
+ * @version v2
  */
 
-// ─── Layer 1: State Model ────────────────────────────────────────────────────
+// ─── State Model ─────────────────────────────────────────────────────────────
 
 export { Phase, Event, Transition, SessionState } from './state/schema.js';
 
@@ -44,31 +80,15 @@ export {
   validateAdrSections,
 } from './state/evidence.js';
 
-// ─── Layer 2: Machine ────────────────────────────────────────────────────────
+// ─── Machine (High-Level Control Flow) ───────────────────────────────────────
 
-export { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from './machine/topology.js';
-export {
-  type GuardFn,
-  type GuardEntry,
-  hasError,
-  hasPlanReady,
-  selfReviewMet,
-  selfReviewPending,
-  allValidationsPassed,
-  checkFailed,
-  implComplete,
-  implReviewMet,
-  implReviewPending,
-  reviewDone,
-  GUARDS,
-} from './machine/guards.js';
 export { Command, isCommandAllowed } from './machine/commands.js';
 export { evaluate } from './machine/evaluate.js';
 export type { EvalResult } from './machine/evaluate.js';
 export { resolveNextAction, ACTION_CODES } from './machine/next-action.js';
 export type { NextAction } from './machine/next-action.js';
 
-// ─── Layer 3: Rails ──────────────────────────────────────────────────────────
+// ─── Rail Result Types ───────────────────────────────────────────────────────
 
 export type {
   RailResult,
@@ -79,96 +99,8 @@ export type {
   ConvergenceResult,
   IterationResult,
 } from './rails/types.js';
-export {
-  autoAdvance,
-  applyTransition,
-  runConvergenceLoop,
-  runSingleIteration,
-  createPolicyEvalFn,
-  DEFAULT_MAX_REVIEW_ITERATIONS,
-} from './rails/types.js';
-export { executeHydrate } from './rails/hydrate.js';
-export type { HydrateInput } from './rails/hydrate.js';
-export { executeTicket } from './rails/ticket.js';
-export { executePlan } from './rails/plan.js';
-export { executeReviewDecision } from './rails/review-decision.js';
-export { executeValidate } from './rails/validate.js';
-export { executeImplement } from './rails/implement.js';
-export { executeContinue } from './rails/continue.js';
-export { executeReview, executeReviewFlow } from './rails/review.js';
-export { executeArchitecture } from './rails/architecture.js';
-export type { ArchitectureInput } from './rails/architecture.js';
-export { executeAbort } from './rails/abort.js';
 
-// ─── Layer 4: Adapters ──────────────────────────────────────────────────────
-
-export {
-  readState,
-  writeState,
-  writeReport,
-  statePath,
-  reportPath,
-  auditPath,
-  configPath,
-  stateExists,
-  readReport,
-  appendAuditEvent,
-  readAuditTrail,
-  readConfig,
-  writeConfig,
-  writeDefaultConfig,
-  writeDiscovery,
-  readDiscovery,
-  writeProfileResolution,
-  writeDiscoverySnapshot,
-  writeProfileResolutionSnapshot,
-  PersistenceError,
-} from './adapters/persistence.js';
-export {
-  resolveRoot,
-  isGitRepo,
-  currentBranch,
-  defaultBranch,
-  isClean,
-  changedFiles,
-  diffFiles,
-  stagedFiles,
-  headCommit,
-  listRepoSignals,
-  remoteOriginUrl,
-  GitError,
-} from './adapters/git.js';
-export { fromOpenCodeContext } from './adapters/binding.js';
-export { createRailContext } from './adapters/context.js';
-export {
-  canonicalizeOriginUrl,
-  normalizeForFingerprint,
-  computeFingerprint,
-  computeFingerprintFromRemote,
-  computeFingerprintFromPath,
-  validateFingerprint,
-  validateSessionId,
-  workspacesHome,
-  configRoot,
-  workspaceDir,
-  sessionDir,
-  initWorkspace,
-  readWorkspaceInfo,
-  writeSessionPointer,
-  readSessionPointer,
-  archiveSession,
-  WorkspaceError,
-  type MaterialClass,
-  type FingerprintResult,
-  type WorkspaceInfo,
-  type SessionPointer,
-} from './adapters/workspace/index.js';
-
-// ─── Testing Utilities (import separately for test bundles) ──────────────────
-
-export { createTestContext } from './testing.js';
-
-// ─── Layer 5: Config (Extension Points) ──────────────────────────────────────
+// ─── Config ──────────────────────────────────────────────────────────────────
 
 export {
   type RepoSignals,
@@ -211,7 +143,7 @@ export {
   DEFAULT_CONFIG,
 } from './config/flowguard-config.js';
 
-// ─── Layer 5b: Logging ───────────────────────────────────────────────────────
+// ─── Logging ─────────────────────────────────────────────────────────────────
 
 export {
   type FlowGuardLogger,
@@ -221,7 +153,7 @@ export {
   createNoopLogger,
 } from './logging/logger.js';
 
-// ─── Layer 6: Audit ──────────────────────────────────────────────────────────
+// ─── Audit ───────────────────────────────────────────────────────────────────
 
 export {
   type ActorInfo,
@@ -290,85 +222,7 @@ export {
   evaluateCompleteness,
 } from './audit/completeness.js';
 
-// ─── Layer 7: Discovery ──────────────────────────────────────────────────────
-
-export {
-  // Types
-  type EvidenceClass,
-  type CollectorStatus,
-  type DetectedItem,
-  type RepoMetadata,
-  type StackInfo,
-  type TopologyKind,
-  type ModuleInfo,
-  type EntryPointInfo,
-  type TopologyInfo,
-  type SurfaceInfo,
-  type LayerInfo,
-  type SurfacesInfo,
-  type CodeSurfaceSignal,
-  type CodeSurfaceStatus,
-  type CodeSurfaceBudget,
-  type CodeSurfacesInfo,
-  type DomainKeyword,
-  type DomainSignals,
-  type CommandHint,
-  type ValidationHints,
-  type VerificationCandidateKind,
-  type VerificationCandidateConfidence,
-  type VerificationCandidate,
-  type VerificationCandidates,
-  type DiscoveryResult,
-  type ProfileCandidate,
-  type RejectedCandidate,
-  type ProfileResolution,
-  type DiscoverySummary,
-  type DetectedStack,
-  type DetectedStackVersion,
-  type DetectedStackTarget,
-  type DetectedStackItem,
-  type DetectedStackTargetEntry,
-  type CollectorInput,
-  type CollectorOutput,
-  // Schemas
-  EvidenceClassSchema,
-  CollectorStatusSchema,
-  DetectedItemSchema,
-  StackInfoSchema,
-  DiscoveryResultSchema,
-  ProfileResolutionSchema,
-  DiscoverySummarySchema,
-  DetectedStackSchema,
-  DetectedStackVersionSchema,
-  DetectedStackTargetSchema,
-  DetectedStackItemSchema,
-  DetectedStackTargetEntrySchema,
-  VerificationCandidateKindSchema,
-  VerificationCandidateConfidenceSchema,
-  VerificationCandidateSchema,
-  VerificationCandidatesSchema,
-  // Constants
-  DISCOVERY_SCHEMA_VERSION,
-  PROFILE_RESOLUTION_SCHEMA_VERSION,
-} from './discovery/types.js';
-
-export {
-  runDiscovery,
-  extractDiscoverySummary,
-  extractDetectedStack,
-  computeDiscoveryDigest,
-} from './discovery/orchestrator.js';
-
-export { planVerificationCandidates } from './discovery/verification-planner.js';
-
-export { collectRepoMetadata } from './discovery/collectors/repo-metadata.js';
-export { collectStack } from './discovery/collectors/stack-detection.js';
-export { collectTopology } from './discovery/collectors/topology.js';
-export { collectSurfaces } from './discovery/collectors/surface-detection.js';
-export { collectCodeSurfaces } from './discovery/collectors/code-surface-analysis.js';
-export { collectDomainSignals } from './discovery/collectors/domain-signals.js';
-
-// ─── Layer 8: Archive ────────────────────────────────────────────────────────
+// ─── Archive ─────────────────────────────────────────────────────────────────
 
 export {
   type ArchiveFindingCode,
@@ -376,18 +230,16 @@ export {
   type ArchiveFinding,
   type ArchiveManifest,
   type ArchiveVerification,
-  // Schemas
   ArchiveFindingCodeSchema,
   ArchiveManifestSchema,
   ArchiveVerificationSchema,
   ArchiveFindingSchema,
-  // Constants
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
 } from './archive/types.js';
 
 export { verifyArchive } from './adapters/workspace/index.js';
 
-// ─── Layer 9: Integration (OpenCode Tools + Plugin) ──────────────────────────
+// ─── Integration (OpenCode Tools + Plugin) ───────────────────────────────────
 
 export {
   status,
@@ -403,3 +255,7 @@ export {
   architecture,
   FlowGuardAuditPlugin,
 } from './integration/index.js';
+
+// ─── Testing Utilities ───────────────────────────────────────────────────────
+
+export { createTestContext } from './testing.js';

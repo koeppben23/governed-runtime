@@ -29,164 +29,40 @@
  * @version v1
  */
 
-import type { PolicySnapshot } from '../state/evidence.js';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 
-// ─── Audit Policy ─────────────────────────────────────────────────────────────
+// ─── Types (P2f split — imported from policy-types.ts) ────────────────────────
+import type {
+  FlowGuardPolicy,
+  PolicyMode,
+  EffectiveGateBehavior,
+  PolicyDegradedReason,
+  PolicySource,
+  CentralMinimumMode,
+  CentralPolicyBundle,
+  CentralPolicyEvidence,
+  HydratePolicyResolution,
+} from './policy-types.js';
+import { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
-/** Controls which audit events are emitted and how. */
-export interface AuditPolicy {
-  /** Emit per-transition audit events (one per state change). */
-  readonly emitTransitions: boolean;
-  /** Emit per-tool-call audit events. */
-  readonly emitToolCalls: boolean;
-  /** Enable SHA-256 hash chain for tamper detection. */
-  readonly enableChainHash: boolean;
-}
-
-// ─── FlowGuard Policy ─────────────────────────────────────────────────────────
-
-/**
- * Full FlowGuard policy configuration.
- *
- * Determines:
- * - Whether human gates require explicit human decisions
- * - Max iterations for self-review and impl-review loops
- * - Whether the session initiator can approve their own work (four-eyes)
- * - Which audit events are emitted and how
- * - How actors are classified in the audit trail
- */
-export interface FlowGuardPolicy {
-  /** Policy mode identifier. */
-  readonly mode: PolicyMode;
-
-  /**
-   * Whether User Gate phases require explicit human decisions.
-   * false → auto-approve at gates (solo mode).
-   * true → machine waits for /review-decision (team/regulated).
-   */
-  readonly requireHumanGates: boolean;
-
-  /** Max self-review iterations in PLAN phase before force-convergence. */
-  readonly maxSelfReviewIterations: number;
-
-  /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
-  readonly maxImplReviewIterations: number;
-
-  /**
-   * Whether the session initiator can approve at User Gates.
-   * false → four-eyes principle enforced (regulated).
-   *         Session initiator !== review decision maker.
-   * true  → self-approval allowed (solo/team).
-   */
-  readonly allowSelfApproval: boolean;
-
-  /** Audit event emission controls. */
-  readonly audit: AuditPolicy;
-
-  /**
-   * Actor classification per tool name.
-   * Maps FlowGuard tool names to actor labels for the audit trail.
-   * Tools not listed default to "system".
-   */
-  readonly actorClassification: Readonly<Record<string, string>>;
-
-  /**
-   * P34: Minimum required actor assurance for regulated approval decisions.
-   *
-   * - 'best_effort'     → any actor may approve (default, backward-compat with P33 v0)
-   * - 'claim_validated' → only actors with validated local claims may approve
-   * - 'idp_verified'    → only IdP-verified actors may approve (future P35 enterprise target)
-   *
-   * Applies at User Gates in regulated mode. Actors below the threshold are blocked
-   * with reason ACTOR_ASSURANCE_INSUFFICIENT.
-   *
-   * Migration from P33 v0:
-   *   requireVerifiedActorsForApproval: true  ��� minimumActorAssuranceForApproval: 'claim_validated'
-   *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
-   *
-   * P34 design doc: docs/actor-assurance-architecture.md
-   */
-  readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
-
-  /**
-   * P33 (deprecated): Whether regulated approvals require verified actor identity.
-   * Ignored if minimumActorAssuranceForApproval is set.
-   * Translated to minimumActorAssuranceForApproval at resolution time:
-   *   true  → 'claim_validated'
-   *   false → 'best_effort'
-   */
-  readonly requireVerifiedActorsForApproval: boolean;
-
-  /**
-   * P35a/P35b1/P35b2: IdP configuration for static keys or JWKS authority.
-   * Defines issuer, audience, claim mapping, and key source details.
-   * When set, allows idp_verified actors via FLOWGUARD_ACTOR_TOKEN_PATH.
-   */
-  readonly identityProvider?: IdpConfig;
-
-  /**
-   * P35a: Controls IdP verification behavior when identityProvider is set.
-   * - 'optional': Token verification is attempted but failure doesn't block hydration
-   * - 'required': IdP verification must succeed at hydration time
-   *
-   * Note: Approval gates respect minimumActorAssuranceForApproval regardless of this mode.
-   * This mode only controls whether IdP failure blocks session creation.
-   */
-  readonly identityProviderMode: IdentityProviderMode;
-}
-
-/** Supported policy modes. */
-export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
-
-/** Effective gate behavior after policy resolution. */
-export type EffectiveGateBehavior = 'auto_approve' | 'human_gated';
-
-/** Why policy mode was degraded. */
-export type PolicyDegradedReason = 'ci_context_missing';
-
-/** Policy source used for hydrate-time authority resolution. */
-export type PolicySource = 'explicit' | 'central' | 'repo' | 'default';
-
-/** Central policy minimum modes (team-ci is intentionally excluded). */
-export type CentralMinimumMode = 'solo' | 'team' | 'regulated';
-
-/** Why a policy source was selected or overridden. */
-export type PolicyResolutionReason =
-  | 'repo_weaker_than_central'
-  | 'default_weaker_than_central'
-  | 'explicit_stronger_than_central';
-
-/** Central policy bundle schema (P29 local distribution model). */
-export interface CentralPolicyBundle {
-  readonly schemaVersion: 'v1';
-  readonly minimumMode: CentralMinimumMode;
-  readonly policyId?: string;
-  readonly version?: string;
-}
-
-/** Provenance/evidence for a resolved central policy bundle. */
-export interface CentralPolicyEvidence {
-  readonly minimumMode: CentralMinimumMode;
-  readonly digest: string;
-  readonly version?: string;
-  readonly pathHint: string;
-}
-
-/** Hydrate policy authority resolution result (P29). */
-export interface HydratePolicyResolution {
-  readonly requestedMode: PolicyMode;
-  readonly requestedSource: Exclude<PolicySource, 'central'>;
-  readonly effectiveMode: PolicyMode;
-  readonly effectiveSource: PolicySource;
-  readonly effectiveGateBehavior: EffectiveGateBehavior;
-  readonly degradedReason?: PolicyDegradedReason;
-  readonly policy: FlowGuardPolicy;
-  readonly resolutionReason?: PolicyResolutionReason;
-  readonly centralEvidence?: CentralPolicyEvidence;
-}
+// Re-export types for consumers
+export type {
+  AuditPolicy,
+  SelfReviewConfig,
+  FlowGuardPolicy,
+  PolicyMode,
+  EffectiveGateBehavior,
+  PolicyDegradedReason,
+  PolicySource,
+  CentralMinimumMode,
+  CentralPolicyBundle,
+  CentralPolicyEvidence,
+  HydratePolicyResolution,
+  PolicyResolutionReason,
+} from './policy-types.js';
+export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
 /** Validate an existing session mode against optional central minimum (P29). */
 export async function validateExistingPolicyAgainstCentral(opts: {
@@ -258,6 +134,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 2,
   maxImplReviewIterations: 1,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -286,6 +163,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -314,6 +192,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -351,6 +230,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
   allowSelfApproval: false,
+  selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -681,12 +561,17 @@ export function resolvePolicyWithContext(
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
+    const degradedPolicy = {
+      ...TEAM_CI_POLICY,
+      requireHumanGates: true,
+      effectiveModeOverride: 'team',
+    } as FlowGuardPolicy & { effectiveModeOverride?: string };
     return {
       requestedMode,
       effectiveMode: 'team',
       effectiveGateBehavior: 'human_gated',
       degradedReason: 'ci_context_missing',
-      policy: TEAM_POLICY,
+      policy: degradedPolicy,
     };
   }
 
@@ -749,104 +634,14 @@ export function policyModes(): string[] {
 
 // ─── Snapshot Factory ─────────────────────────────────────────────────────────
 
-/**
- * Create an immutable policy snapshot for embedding in SessionState.
- *
- * The snapshot freezes all FlowGuard-critical fields. The hash provides
- * non-repudiation: given the hash and the policy registry, an auditor
- * can verify which exact policy governed a session.
- *
- * @param policy - The resolved FlowGuard policy.
- * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
- * @param digestFn - SHA-256 digest function (injected for testability).
- */
-export function createPolicySnapshot(
-  policy: FlowGuardPolicy,
-  resolvedAt: string,
-  digestFn: (text: string) => string,
-  resolution?: {
-    requestedMode: PolicyMode;
-    effectiveGateBehavior: EffectiveGateBehavior;
-    degradedReason?: PolicyDegradedReason;
-    source?: PolicySource;
-    resolutionReason?: PolicyResolutionReason;
-    centralMinimumMode?: CentralMinimumMode;
-    policyDigest?: string;
-    policyVersion?: string;
-    policyPathHint?: string;
-  },
-): PolicySnapshot {
-  // Canonical JSON: sorted keys for deterministic hashing.
-  // This ensures the same policy always produces the same hash,
-  // regardless of object key insertion order in different JS engines.
-  const canonical = JSON.stringify(policy, Object.keys(policy).sort());
-
-  return {
-    mode: policy.mode,
-    hash: digestFn(canonical),
-    resolvedAt,
-    requestedMode: resolution?.requestedMode ?? policy.mode,
-    ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior:
-      resolution?.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
-    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
-    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
-    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
-    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
-    requireHumanGates: policy.requireHumanGates,
-    maxSelfReviewIterations: policy.maxSelfReviewIterations,
-    maxImplReviewIterations: policy.maxImplReviewIterations,
-    allowSelfApproval: policy.allowSelfApproval,
-    requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
-    audit: {
-      emitTransitions: policy.audit.emitTransitions,
-      emitToolCalls: policy.audit.emitToolCalls,
-      enableChainHash: policy.audit.enableChainHash,
-    },
-    actorClassification: { ...policy.actorClassification },
-    minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
-    ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
-    identityProviderMode: policy.identityProviderMode,
-  };
-}
-
-/**
- * Reconstruct an executable policy from a frozen policy snapshot.
- *
- * Snapshot fields are the sole authority. No preset fallback.
- * All governance-critical fields including actorClassification
- * are read exclusively from the snapshot.
- */
-export function policyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
-  return {
-    mode: snapshot.mode as PolicyMode,
-    requireHumanGates: snapshot.requireHumanGates,
-    maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
-    maxImplReviewIterations: snapshot.maxImplReviewIterations,
-    allowSelfApproval: snapshot.allowSelfApproval,
-    minimumActorAssuranceForApproval:
-      (snapshot.minimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified'
-        | undefined) ??
-      (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
-    requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
-    audit: {
-      emitTransitions: snapshot.audit.emitTransitions,
-      emitToolCalls: snapshot.audit.emitToolCalls,
-      enableChainHash: snapshot.audit.enableChainHash,
-    },
-    actorClassification: { ...snapshot.actorClassification },
-    identityProvider: snapshot.identityProvider,
-    identityProviderMode: snapshot.identityProviderMode ?? 'optional',
-  };
-}
+// ── Policy Snapshot Authority ───────────────────────────────────────────────
+// Delegated to policy-snapshot.ts (SSOT for snapshot lifecycle).
+export {
+  createPolicySnapshot,
+  freezePolicySnapshot,
+  normalizePolicySnapshot,
+  resolvePolicyFromSnapshot,
+} from './policy-snapshot.js';
 
 /**
  * P32: Resolve Runtime Policy Mode — unified fallback for runtime surfaces.
@@ -879,3 +674,5 @@ export function resolveRuntimePolicyMode(opts: {
   }
   return opts.configDefaultMode ?? 'solo';
 }
+
+// ─── Policy Snapshot Normalization ────────────────────────────────────────────

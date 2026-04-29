@@ -41,7 +41,7 @@ import {
 import * as crypto from 'node:crypto';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
-import { writeState } from './persistence.js';
+import { writeState, auditPath, PersistenceError } from './persistence.js';
 import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -630,7 +630,7 @@ describe('archiveSession', () => {
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
     // Write a test file into the session directory
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"test": true}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     const archivePath = await archiveSession(fingerprint, sessionId);
     expect(archivePath).toContain('.tar.gz');
@@ -660,7 +660,7 @@ describe('archiveSession', () => {
     const sessionId = 'archive-test-raw-opt-in';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"test": true}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
     await fs.writeFile(
       path.join(workspaceDir(fingerprint), 'config.json'),
       JSON.stringify({
@@ -685,7 +685,7 @@ describe('archiveSession', () => {
     const sessionId = 'archive-test-review-report-redaction';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"test": true}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
     await fs.writeFile(
       path.join(sessDir, 'review-report.json'),
       JSON.stringify({ findings: [{ message: 'contains secret' }] }),
@@ -708,11 +708,11 @@ describe('archiveSession', () => {
     const wsDir = workspaceDir(fingerprint);
     const ts = '2026-04-17T00:00:00.000Z';
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    await writeState(sessDir, makeState('COMPLETE'));
+    const event = createDecisionEvent({
+      sessionId: sessionId,
+      gatePhase: 'PLAN_REVIEW',
+      detail: {
         decisionId: 'DEC-NONE-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -724,10 +724,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'alice',
-      GENESIS_HASH,
-    );
+      timestamp: ts,
+      actor: 'alice',
+      prevHash: GENESIS_HASH,
+    });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
     await fs.writeFile(
       path.join(wsDir, 'config.json'),
@@ -768,11 +768,11 @@ describe('archiveSession', () => {
     const wsDir = workspaceDir(fingerprint);
     const ts = '2026-04-17T00:00:00.000Z';
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    await writeState(sessDir, makeState('COMPLETE'));
+    const event = createDecisionEvent({
+      sessionId: sessionId,
+      gatePhase: 'PLAN_REVIEW',
+      detail: {
         decisionId: 'DEC-STRICT-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -784,10 +784,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'bob',
-      GENESIS_HASH,
-    );
+      timestamp: ts,
+      actor: 'bob',
+      prevHash: GENESIS_HASH,
+    });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
     await fs.writeFile(
       path.join(wsDir, 'config.json'),
@@ -824,11 +824,11 @@ describe('archiveSession', () => {
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
     const ts = '2026-04-17T00:00:00.000Z';
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
-    const event = createDecisionEvent(
-      sessionId,
-      'PLAN_REVIEW',
-      {
+    await writeState(sessDir, makeState('COMPLETE'));
+    const event = createDecisionEvent({
+      sessionId: sessionId,
+      gatePhase: 'PLAN_REVIEW',
+      detail: {
         decisionId: 'DEC-E2E-01',
         decisionSequence: 1,
         verdict: 'approve',
@@ -840,10 +840,10 @@ describe('archiveSession', () => {
         transitionEvent: 'APPROVE',
         policyMode: 'team',
       },
-      ts,
-      'carol',
-      GENESIS_HASH,
-    );
+      timestamp: ts,
+      actor: 'carol',
+      prevHash: GENESIS_HASH,
+    });
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), JSON.stringify(event) + '\n', 'utf-8');
 
     await archiveSession(fingerprint, sessionId);
@@ -874,7 +874,7 @@ describe('archiveSession', () => {
     const sessionId = 'archive-test-redaction-fail';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"test": true}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
     await fs.writeFile(path.join(sessDir, 'review-report.json'), '{invalid-json', 'utf-8');
 
     await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
@@ -916,7 +916,7 @@ describe('archiveSession failure paths', () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440100';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create
     const originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
@@ -929,7 +929,7 @@ describe('archiveSession failure paths', () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440101';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     const originalPath = process.env.PATH;
     process.env.PATH = '/nonexistent/path/with/no/tar';
@@ -941,7 +941,7 @@ describe('archiveSession failure paths', () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440106';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     const archiveCollisionPath = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
     await fs.writeFile(archiveCollisionPath, 'not-a-directory', 'utf-8');
@@ -953,7 +953,7 @@ describe('archiveSession failure paths', () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440102';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     // Create archive (includes sidecar)
     const archivePath = await archiveSession(fingerprint, sessionId);
@@ -978,7 +978,7 @@ describe('archiveSession failure paths', () => {
     const sessionId = '550e8400-e29b-41d4-a716-446655440103';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
     await fs.mkdir(path.join(sessDir, 'nested', 'deeper'), { recursive: true });
     await fs.writeFile(
       path.join(sessDir, 'nested', 'deeper', 'trace.json'),
@@ -998,7 +998,7 @@ describe('archiveSession failure paths', () => {
     const sessionId = '550e8400-e29b-41d4-a716-446655440104';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{"phase": "COMPLETE"}', 'utf-8');
+    await writeState(sessDir, makeState('COMPLETE'));
 
     const originalStructuredClone = globalThis.structuredClone;
     globalThis.structuredClone = (() => {
@@ -1020,11 +1020,8 @@ describe('archiveSession failure paths', () => {
       const sessionId = '550e8400-e29b-41d4-a716-446655440105';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-      await fs.writeFile(
-        path.join(sessDir, 'session-state.json'),
-        '{"phase": "COMPLETE"}',
-        'utf-8',
-      );
+      // Write a VALID state (passes Zod validation) but make the review report unreadable
+      await writeState(sessDir, makeState('COMPLETE'));
 
       const reviewPath = path.join(sessDir, 'review-report.json');
       await fs.writeFile(
@@ -1095,6 +1092,97 @@ describe('archiveSession failure paths', () => {
     const archivePath = await archiveSession(fingerprint, sessionId);
     expect(archivePath).toContain('.tar.gz');
   });
+
+  // ── P4a: Fail-closed — state and audit trail read failures ──────────────────
+
+  it('BAD: archive fails when session-state.json is corrupt JSON (P4a fail-closed)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440300';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write corrupt JSON to session-state.json
+    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{{invalid json', 'utf-8');
+
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
+  });
+
+  it('BAD: archive fails when audit-trail.jsonl is unreadable (P4a fail-closed)', async () => {
+    // On Windows, fs.chmod has no effect on read permissions.
+    // Simulate unreadable audit trail by writing state + replacing audit file with a directory.
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440301';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write valid state so archive proceeds past state read
+    await writeState(sessDir, makeState('COMPLETE'));
+
+    // Create a directory at the audit trail path — fs.readFile on a directory throws EISDIR
+    const trailPath = auditPath(sessDir);
+    await fs.mkdir(trailPath, { recursive: true });
+
+    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
+  });
+
+  it('CORNER: archive succeeds when session-state.json does not exist (ENOENT is safe)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440302';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // No session-state.json written — readState returns null (ENOENT)
+    // No audit-trail.jsonl — readAuditTrail returns empty (ENOENT)
+    // Archive should still succeed (fresh session with no artifacts)
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain('.tar.gz');
+  });
+
+  it('CORNER: archive succeeds when audit-trail.jsonl does not exist (ENOENT is safe)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440303';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write valid state but no audit trail
+    await writeState(sessDir, makeState('COMPLETE'));
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    expect(archivePath).toContain('.tar.gz');
+  });
+
+  it('EDGE: PersistenceError from corrupt state includes error code', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440304';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await fs.writeFile(path.join(sessDir, 'session-state.json'), '{{corrupt', 'utf-8');
+
+    try {
+      await archiveSession(fingerprint, sessionId);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PersistenceError);
+      expect((err as PersistenceError).code).toBe('PARSE_FAILED');
+    }
+  });
+
+  it('EDGE: PersistenceError from schema-invalid state includes error code', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440305';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Valid JSON but invalid schema (missing required fields)
+    await fs.writeFile(
+      path.join(sessDir, 'session-state.json'),
+      JSON.stringify({ not_a_valid_state: true }),
+      'utf-8',
+    );
+
+    try {
+      await archiveSession(fingerprint, sessionId);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PersistenceError);
+      expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+    }
+  });
 });
 
 // =============================================================================
@@ -1120,12 +1208,8 @@ describe('verifyArchive', () => {
     const worktree = path.resolve('.');
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-    // Write minimal session-state.json so the archive has content
-    await fs.writeFile(
-      path.join(sessDir, 'session-state.json'),
-      JSON.stringify({ phase: 'COMPLETE', sessionId }),
-      'utf-8',
-    );
+    // Write valid session state so the archive has content
+    await writeState(sessDir, makeState('COMPLETE'));
 
     const archivePath = await archiveSession(fingerprint, sessionId);
     return { fingerprint, sessionId, sessDir, archivePath };
@@ -1772,21 +1856,17 @@ describe('EDGE', () => {
   });
 
   describe('EDGE', () => {
-    it('succeeds with corrupted session-state.json (graceful degradation)', async () => {
+    it('fails with corrupted session-state.json (P4a fail-closed)', async () => {
       const worktree = path.resolve('.');
       const sessionId = 'edge-corrupt-state';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
       await fs.writeFile(path.join(sessDir, 'session-state.json'), '{invalid-json{{{', 'utf-8');
 
-      const archivePath = await archiveSession(fingerprint, sessionId);
-      expect(archivePath).toContain('.tar.gz');
-
-      const stats = await fs.stat(archivePath);
-      expect(stats.size).toBeGreaterThan(0);
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
     });
 
-    it('succeeds with schema-invalid session-state.json (Zod validation failure)', async () => {
+    it('fails with schema-invalid session-state.json (P4a fail-closed)', async () => {
       const worktree = path.resolve('.');
       const sessionId = 'edge-invalid-schema';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
@@ -1797,8 +1877,7 @@ describe('EDGE', () => {
         'utf-8',
       );
 
-      const archivePath = await archiveSession(fingerprint, sessionId);
-      expect(archivePath).toContain('.tar.gz');
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
     });
 
     it('succeeds with missing audit.jsonl (no decisions recorded)', async () => {
@@ -1806,11 +1885,7 @@ describe('EDGE', () => {
       const sessionId = 'edge-no-audit';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-      await fs.writeFile(
-        path.join(sessDir, 'session-state.json'),
-        '{"phase": "COMPLETE"}',
-        'utf-8',
-      );
+      await writeState(sessDir, makeState('COMPLETE'));
 
       const archivePath = await archiveSession(fingerprint, sessionId);
       expect(archivePath).toContain('.tar.gz');
@@ -1824,11 +1899,7 @@ describe('EDGE', () => {
       const sessionId = 'edge-corrupt-audit';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
-      await fs.writeFile(
-        path.join(sessDir, 'session-state.json'),
-        '{"phase": "COMPLETE"}',
-        'utf-8',
-      );
+      await writeState(sessDir, makeState('COMPLETE'));
       await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
 
       const archivePath = await archiveSession(fingerprint, sessionId);
@@ -1847,11 +1918,7 @@ describe('EDGE', () => {
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
       const wsDir = workspaceDir(fingerprint);
 
-      await fs.writeFile(
-        path.join(sessDir, 'session-state.json'),
-        '{"phase": "COMPLETE"}',
-        'utf-8',
-      );
+      await writeState(sessDir, makeState('COMPLETE'));
       await fs.writeFile(path.join(wsDir, 'config.json'), '{invalid{{{', 'utf-8');
 
       await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(

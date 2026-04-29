@@ -1,7 +1,7 @@
 # Actor Assurance Architecture
 
 **Design Version:** 1.2
-**Status:** Final — P35b2
+**Status:** Implemented — Three-tier assurance model with policy-snapshot authority, schema-hardened identity provider validation, and decision-path enforcement.
 **Last Updated:** 2026-04-23
 **Owner:** FlowGuard Core
 **Audience:** Enterprise engineers, product, security review
@@ -10,7 +10,7 @@
 
 ## 1) Problem Statement
 
-FlowGuard P33 v0 provides an actor identity bridge via `FLOWGUARD_ACTOR_CLAIMS_PATH`. The current `assurance` model is binary (`best_effort | verified`) and tied directly to the claim source.
+FlowGuard The original provides an actor identity bridge via `FLOWGUARD_ACTOR_CLAIMS_PATH`. The current `assurance` model is binary (`best_effort | verified`) and tied directly to the claim source.
 
 For Bank/DATEV/Adorsys pilots, this is insufficient:
 
@@ -29,10 +29,10 @@ This document defines the canonical target model for actor assurance in FlowGuar
 - **Source/Assurance Separation** — `source` tells WHERE the identity came from; `assurance` tells HOW STRONG it is. These are orthogonal.
 - **Generalized Policy Contract** — policy gates specify minimum required assurance level, not a boolean.
 - **Fail-Closed Semantics** — ambiguous or unverifiable identity always blocks regulated approvals.
-- **Migration Path** — P33 v0 semantics map cleanly into the target model.
+- **Migration Path** — The original semantics map cleanly into the target model.
 - **Extensible** — future tiers (`service_verified`, `ci_verified`) fit the model without breaking changes.
 
-## 2a) P35 Closure Scope
+## 2a) Closure Scope
 
 ### Implemented (product truth)
 
@@ -40,7 +40,7 @@ This document defines the canonical target model for actor assurance in FlowGuar
 - local pinned JWKS (`identityProvider.mode: 'jwks'` + `jwksPath`)
 - remote JWKS (`identityProvider.mode: 'jwks'` + HTTPS `jwksUri`) with TTL cache and fail-closed refresh
 
-### Not in scope for P35
+### Not in scope
 
 - OIDC discovery
 - last-known-good or stale-on-error JWKS fallback
@@ -78,7 +78,7 @@ The following tiers are defined in ascending order of assurance strength:
 
 **Policy behavior:** Satisfies regulated approval gates that require `claim_validated` or lower. Does NOT satisfy gates that require `idp_verified`.
 
-**P33 v0 mapping:** Current `verified` (from valid claim file) maps to `claim_validated`.
+**The original mapping:** Current `verified` (from valid claim file) maps to `claim_validated`.
 
 ### 3.3 `idp_verified`
 
@@ -128,7 +128,7 @@ interface ActorIdentity {
    * - `env`: FLOWGUARD_ACTOR_ID environment variable
    * - `git`: git config user.name
    * - `claim`: Validated local claim file (FLOWGUARD_ACTOR_CLAIMS_PATH)
-   * - `oidc`: Cryptographically verified IdP token (P35a/P35b1/P35b2)
+   * - `oidc`: Cryptographically verified IdP token (IdP token verification)
    * - `unknown`: No identity available
    */
   source: 'env' | 'git' | 'claim' | 'oidc' | 'unknown';
@@ -172,16 +172,16 @@ type MinimumAssurance = 'best_effort' | 'claim_validated' | 'idp_verified';
 interface FlowGuardPolicy {
   // ... existing fields ...
   /**
-   * P34: Minimum required actor assurance for regulated approval decisions.
+   * Minimum required actor assurance for regulated approval decisions.
    *
-   * - 'best_effort'     → any actor may approve (default for Team, backward-compat with P33 v0)
-   * - 'claim_validated' → only claim-validated actors may approve (P33 v0 "verified" equivalent)
-   * - 'idp_verified'    → only IdP-verified actors may approve (implemented in P35)
+   * - 'best_effort'     → any actor may approve (default for Team, backward-compat with The original)
+   * - 'claim_validated' → only claim-validated actors may approve (The original "verified" equivalent)
+   * - 'idp_verified'    → only IdP-verified actors may approve (implemented)
    *
    * Applies at User Gates in regulated mode. Actors below the threshold are blocked
    * with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
    *
-   * For P33 v0 migration:
+   * For The original migration:
    *   requireVerifiedActorsForApproval: true  → minimumActorAssuranceForApproval: 'claim_validated'
    *   requireVerifiedActorsForApproval: false → minimumActorAssuranceForApproval: 'best_effort'
    */
@@ -285,11 +285,11 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ---
 
-## 10) P33 v0 → P34 Migration
+## 10) The original → Current Migration
 
 ### 10.1 Schema Changes
 
-| P33 v0                                      | P34                                                                                      |
+| The original                                | Current                                                                                  |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `actorInfo.source: 'claim'`                 | `actorInfo.source: 'claim'` (unchanged)                                                  |
 | `actorAssurance: 'verified'`                | `actorAssurance: 'claim_validated'`                                                      |
@@ -298,7 +298,7 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.2 Migration Mapping
 
-| P33 Config                                          | P34 Behavior                                                            |
+| Original Config                                     | Current Behavior                                                        |
 | --------------------------------------------------- | ----------------------------------------------------------------------- |
 | `FLOWGUARD_ACTOR_CLAIMS_PATH` not set               | `source: 'env'/'git'/'unknown'`, `assurance: 'best_effort'` — unchanged |
 | `FLOWGUARD_ACTOR_CLAIMS_PATH` set, valid claim      | `source: 'claim'`, `assurance: 'claim_validated'` (was `verified`)      |
@@ -307,13 +307,13 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 
 ### 10.3 Backward Compatibility
 
-- P33 sessions loaded after P34 upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in Zod schema).
+- Original sessions loaded after upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in Zod schema).
 - Policy field: `requireVerifiedActorsForApproval` is ignored if `minimumActorAssuranceForApproval` is set. If only the old field is present and the new is absent, the old field is translated at resolution time.
 - This provides a safe migration window without breaking existing sessions or configs.
 
 ---
 
-## 11) Future Tiers (Out of Scope for P34/P35)
+## 11) Future Tiers (Out of Scope)
 
 ### 11.1 `service_verified`
 
@@ -329,11 +329,11 @@ These tiers do NOT change the current three-tier model. They extend it.
 
 ## 12) Implementation Roadmap
 
-### P34a — Architecture & Design (This Document)
+### Architecture & Design (This Document)
 
 **Deliverable:** This document. Normative decisions on tiers, source/assurance separation, policy contract, state contract, and fail-closed semantics.
 
-### P34b — Claim-Validated Cleanup
+### Claim-Validated Cleanup
 
 **Status:** Complete
 
@@ -349,7 +349,7 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ Add coercion for `verified` → `claim_validated` in Zod parse for backward compatibility
 - ✅ Add test coverage for new threshold logic
 
-### P35b1 — Pinned Local JWKS
+### Pinned Local JWKS
 
 **Status:** Implemented
 
@@ -362,7 +362,7 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ Fail-closed semantics preserved for `identityProviderMode: 'required'`
 - ✅ Typed IdP config frozen in policy snapshot (no `unknown` pass-through)
 
-### P35b2 — Remote JWKS Fetch
+### Remote JWKS Fetch
 
 **Status:** Implemented
 
@@ -373,13 +373,13 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ Fail-closed refresh behavior (no stale-on-error fallback after expiry)
 - ✅ Typed JWKS fetch/URI errors (`IDP_JWKS_URI_INVALID`, `IDP_JWKS_FETCH_FAILED`)
 
-### P35c — OIDC Discovery (Future)
+### OIDC Discovery (Future)
 
 **Status:** Not started
 
 **Deliverable:** OIDC discovery endpoint for dynamic IdP configuration.
 
-### P35a — IdP-Verified Actors (Static Keys)
+### IdP-Verified Actors (Static Keys)
 
 **Status:** Implemented
 
@@ -394,7 +394,7 @@ These tiers do NOT change the current three-tier model. They extend it.
 - ✅ `identityProviderMode: 'optional' | 'required'` for session creation control
 - ✅ Fail-closed behavior with typed error codes
 
-### P35b1 Files Added/Extended
+### Files Added/Extended
 
 - `src/identity/types.ts` — discriminated IdP schema (`static` vs `jwks`) and JWKS schemas
 - `src/identity/key-resolver.ts` — `JwksFileKeyResolver` (local/pinned JWKS)
@@ -423,10 +423,10 @@ These tiers do NOT change the current three-tier model. They extend it.
 
 ## 14) Related Documents
 
-- `src/adapters/actor.ts` — P35a/P35b1 actor resolver with IdP integration
-- `src/identity/` — P35a/P35b1 IdP identity module
+- `src/adapters/actor.ts` — IdP-aware actor resolver with IdP integration
+- `src/identity/` — IdP identity module
 - `src/state/evidence.ts` — `DecisionIdentity` schema with `ActorVerificationMeta`
-- `src/config/policy.ts` — P35a/P35b1 policy schema with typed `identityProvider` and `identityProviderMode`
+- `src/config/policy.ts` — policy schema with typed `identityProvider` and `identityProviderMode`
 - `src/rails/review-decision.ts` — regulated approval gate with `ACTOR_ASSURANCE_INSUFFICIENT`
 - `docs/security-hardening.md` — actor identity hardening guidance
 - `docs/enterprise-readiness.md` — threat model and regulated guarantees

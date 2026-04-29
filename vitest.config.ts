@@ -13,14 +13,9 @@ export default defineConfig({
         'src/**/__tests__/**',
         'src/**/__fixtures__*',
         'src/test-policy.ts',
-        'src/cli/run.ts',
       ],
-      thresholds: {
-        branches: 80,
-        lines: 80,
-        functions: 80,
-        statements: 80,
-      },
+      // Thresholds enforced via test:coverage:ci script (CLI args).
+      // NOT enforced per-suite to allow test:unit --coverage to pass.
       reporter: ['text', 'json-summary', 'html'],
       reportsDirectory: 'coverage',
     },

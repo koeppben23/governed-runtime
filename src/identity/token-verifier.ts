@@ -3,28 +3,27 @@
  * @description JWT token verifier for P35a/P35b1 key verification.
  *
  * Design: TokenVerifier is separated from KeyResolver for future extensibility.
- * P35a/P35b1: JwtStaticTokenVerifier uses KeyResolver with Node.js crypto.
+ * P35a/P35b1: JwtStaticTokenVerifier uses KeyResolver with jose JWT verification.
  * Future (P35b2/c): Could use remote JWKS and OIDC discovery resolvers.
  */
 
-import * as crypto from 'node:crypto';
+import { jwtVerify, type JWTHeaderParameters, type JWTPayload } from 'jose';
+import {
+  JOSEError,
+  JWTClaimValidationFailed,
+  JWTExpired,
+  JWSSignatureVerificationFailed,
+} from 'jose/errors';
+import type { KeyObject } from 'node:crypto';
 import { IdpError, type IdpErrorCode } from './errors.js';
 import type { IdpConfig, VerifiedToken } from './types.js';
 import type { KeyResolver } from './key-resolver.js';
 
-interface JwtHeader {
+interface JwtHeader extends JWTHeaderParameters {
   alg: string;
-  kid?: string;
-  typ?: string;
 }
 
-interface JwtPayload {
-  iss?: string;
-  aud?: string | string[];
-  exp?: number;
-  iat?: number;
-  nbf?: number;
-  sub?: string;
+interface JwtPayload extends JWTPayload {
   [key: string]: unknown;
 }
 
@@ -49,13 +48,10 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 
     const headerB64 = parts[0] ?? '';
     const payloadB64 = parts[1] ?? '';
-    const signatureB64 = parts[2] ?? '';
 
     const header = this.decodeJson<JwtHeader>(headerB64, 'IDP_TOKEN_HEADER_INVALID');
     this.validateHeader(header);
-
-    const payload = this.decodeJson<JwtPayload>(payloadB64, 'IDP_TOKEN_INVALID');
-    this.validateTemporal(payload);
+    this.decodeJson<JwtPayload>(payloadB64, 'IDP_TOKEN_INVALID');
 
     const kid = header.kid;
     if (!kid) {
@@ -71,36 +67,44 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       );
     }
 
-    this.verifySignature(headerB64, payloadB64, signatureB64, resolvedKey.key);
-
-    this.validateIssuer(payload);
-    this.validateAudience(payload);
+    const verifiedPayload = await this.verifyJwt(token, resolvedKey.key, resolvedKey.algorithm);
+    // Preserve FlowGuard's historic boundary semantics after jose verification.
+    this.validateTemporal(verifiedPayload);
 
     const claimMapping = this.config.claimMapping;
-    const subject = this.extractClaim(payload, claimMapping.subjectClaim);
+    const subject = this.extractClaim(verifiedPayload, claimMapping.subjectClaim);
     if (!subject) {
       throw new IdpError('IDP_SUBJECT_MISSING', 'Required subject claim missing in token');
     }
 
-    const email = this.extractClaimOrNull(payload, claimMapping.emailClaim);
-    const displayName = this.extractClaimOrNull(payload, claimMapping.nameClaim);
+    const email = this.extractClaimOrNull(verifiedPayload, claimMapping.emailClaim);
+    const displayName = this.extractClaimOrNull(verifiedPayload, claimMapping.nameClaim);
 
-    const audience = Array.isArray(payload.aud) ? payload.aud : payload.aud ? [payload.aud] : [];
+    const audience = Array.isArray(verifiedPayload.aud)
+      ? verifiedPayload.aud
+      : verifiedPayload.aud
+        ? [verifiedPayload.aud]
+        : [];
 
-    const exp = payload.exp ?? Math.floor(Date.now() / 1000) + 3600;
+    const exp =
+      typeof verifiedPayload.exp === 'number'
+        ? verifiedPayload.exp
+        : Math.floor(Date.now() / 1000) + 3600;
 
     return {
       subject,
       email,
       displayName,
-      issuer: typeof payload.iss === 'string' ? payload.iss : this.config.issuer,
+      issuer: typeof verifiedPayload.iss === 'string' ? verifiedPayload.iss : this.config.issuer,
       audience,
-      issuedAt: payload.iat ? new Date(payload.iat * 1000) : null,
-      notBefore: payload.nbf ? new Date(payload.nbf * 1000) : null,
+      issuedAt:
+        typeof verifiedPayload.iat === 'number' ? new Date(verifiedPayload.iat * 1000) : null,
+      notBefore:
+        typeof verifiedPayload.nbf === 'number' ? new Date(verifiedPayload.nbf * 1000) : null,
       expiresAt: new Date(exp * 1000),
       keyId: kid,
       algorithm: header.alg,
-      rawClaims: payload,
+      rawClaims: verifiedPayload as Record<string, unknown>,
     };
   }
 
@@ -122,14 +126,14 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
   private validateTemporal(payload: JwtPayload): void {
     const now = Math.floor(Date.now() / 1000);
 
-    if (payload.exp !== undefined && payload.exp < now) {
+    if (typeof payload.exp === 'number' && payload.exp < now) {
       throw new IdpError(
         'IDP_EXPIRED',
         `IdP token expired at ${new Date(payload.exp * 1000).toISOString()}`,
       );
     }
 
-    if (payload.nbf !== undefined && payload.nbf > now) {
+    if (typeof payload.nbf === 'number' && payload.nbf > now) {
       throw new IdpError(
         'IDP_NOT_YET_VALID',
         `IdP token not yet valid until ${new Date(payload.nbf * 1000).toISOString()}`,
@@ -137,58 +141,61 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
     }
   }
 
-  private verifySignature(
-    headerB64: string,
-    payloadB64: string,
-    signatureB64: string,
-    key: crypto.KeyObject,
-  ): void {
+  private async verifyJwt(
+    token: string,
+    key: CryptoKey | KeyObject | Uint8Array,
+    algorithm: string,
+  ): Promise<JwtPayload> {
     try {
-      const signatureBytes = Buffer.from(signatureB64, 'base64url');
-      const data = Buffer.from(`${headerB64}.${payloadB64}`);
-
-      const algorithm = resolvedAlgorithm(key);
-
-      const verify = crypto.verify(algorithm, data, key, signatureBytes);
-      if (!verify) {
-        throw new IdpError('IDP_SIGNATURE_INVALID', 'IdP token signature verification failed');
-      }
+      const verified = await jwtVerify(token, key, {
+        algorithms: [algorithm],
+        issuer: this.config.issuer,
+        audience: this.config.audience,
+        clockTolerance: 1,
+      });
+      return verified.payload as JwtPayload;
     } catch (err) {
       if (err instanceof IdpError) throw err;
-      throw new IdpError(
-        'IDP_SIGNATURE_INVALID',
-        `Signature verification error: ${(err as Error).message}`,
-      );
+      throw this.mapJoseError(err);
     }
   }
 
-  private validateIssuer(payload: JwtPayload): void {
-    const tokenIssuer = payload.iss;
-    if (tokenIssuer !== this.config.issuer) {
-      throw new IdpError(
-        'IDP_ISSUER_MISMATCH',
-        `Token issuer '${tokenIssuer}' does not match configured issuer '${this.config.issuer}'`,
-      );
+  private mapJoseError(err: unknown): IdpError {
+    if (err instanceof JWTExpired) {
+      return new IdpError('IDP_EXPIRED', `IdP token expired: ${err.message}`);
     }
-  }
 
-  private validateAudience(payload: JwtPayload): void {
-    const tokenAudience = payload.aud;
-    const configuredAudience = this.config.audience;
-
-    const tokenAudienceList = Array.isArray(tokenAudience)
-      ? tokenAudience
-      : tokenAudience
-        ? [tokenAudience]
-        : [];
-    const hasMatch = tokenAudienceList.some((aud) => configuredAudience.includes(aud));
-
-    if (!hasMatch) {
-      throw new IdpError(
-        'IDP_AUDIENCE_MISMATCH',
-        `Token audience '${tokenAudienceList.join(', ')}' does not match any configured audience '${configuredAudience.join(', ')}'`,
-      );
+    if (err instanceof JWTClaimValidationFailed) {
+      if (err.claim === 'iss') {
+        return new IdpError('IDP_ISSUER_MISMATCH', `Token issuer mismatch: ${err.message}`);
+      }
+      if (err.claim === 'aud') {
+        return new IdpError('IDP_AUDIENCE_MISMATCH', `Token audience mismatch: ${err.message}`);
+      }
+      if (err.claim === 'nbf') {
+        return new IdpError('IDP_NOT_YET_VALID', `IdP token not yet valid: ${err.message}`);
+      }
+      return new IdpError('IDP_TOKEN_INVALID', `Token claim validation failed: ${err.message}`);
     }
+
+    if (err instanceof JWSSignatureVerificationFailed) {
+      return new IdpError('IDP_SIGNATURE_INVALID', 'IdP token signature verification failed');
+    }
+
+    if (err instanceof JOSEError) {
+      if (err.code === 'ERR_JOSE_ALG_NOT_ALLOWED') {
+        return new IdpError(
+          'IDP_ALGORITHM_NOT_ALLOWED',
+          `Token algorithm not allowed: ${err.message}`,
+        );
+      }
+      return new IdpError('IDP_TOKEN_INVALID', `Token verification failed: ${err.message}`);
+    }
+
+    return new IdpError(
+      'IDP_SIGNATURE_INVALID',
+      `Signature verification error: ${(err as Error).message}`,
+    );
   }
 
   private extractClaim(payload: JwtPayload, claimName: string): string | null {
@@ -206,12 +213,4 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
     }
     return null;
   }
-}
-
-function resolvedAlgorithm(key: crypto.KeyObject): string {
-  const keyType = key.asymmetricKeyType;
-  if (keyType === 'rsa' || keyType === 'rsa-pss') {
-    return 'RSA-SHA256';
-  }
-  return 'ECDSA-SHA256';
 }

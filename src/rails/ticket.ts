@@ -16,7 +16,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { TicketEvidence } from '../state/evidence.js';
+import type { TicketEvidence, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
@@ -28,6 +28,8 @@ import { blocked } from '../config/reasons.js';
 export interface TicketInput {
   readonly text: string;
   readonly source: 'user' | 'external';
+  readonly inputOrigin?: InputOrigin;
+  readonly references?: ExternalReference[];
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -51,11 +53,15 @@ export function executeTicket(
   }
 
   // 3. Create evidence
+  const references = input.references && input.references.length > 0 ? input.references : undefined;
+
   const ticket: TicketEvidence = {
     text: input.text,
     digest: ctx.digest(input.text),
     source: input.source,
     createdAt: ctx.now(),
+    ...(input.inputOrigin !== undefined && { inputOrigin: input.inputOrigin }),
+    ...(references !== undefined && { references }),
   };
 
   // 4. Mutate state — clear all downstream evidence (fresh start)

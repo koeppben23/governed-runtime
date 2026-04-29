@@ -18,7 +18,7 @@
 import { resolveRuntimePolicyMode, resolvePolicyWithContext } from '../config/policy.js';
 import type { PolicyMode, FlowGuardPolicy } from '../config/policy.js';
 import type { SessionState } from '../state/schema.js';
-import { policyFromSnapshot } from '../config/policy.js';
+import { resolvePolicyFromSnapshot } from '../config/policy.js';
 import { detectCiContext } from '../config/policy.js';
 
 interface Logger {
@@ -99,7 +99,7 @@ export async function resolvePluginSessionPolicy(
   }
 
   // Case 4: Valid policySnapshot → use authority (no fallback)
-  const policy = policyFromSnapshot(state.policySnapshot);
+  const policy = resolvePolicyFromSnapshot(state.policySnapshot);
   log?.debug('policy', 'resolved session policy', {
     requestedMode: state.policySnapshot.requestedMode,
     effectiveMode: state.policySnapshot.mode,

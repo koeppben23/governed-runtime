@@ -136,3 +136,64 @@ Resolution contract:
 | Self-approval      | Allowed  | Allowed     | Allowed     | **Not Allowed** |
 | Audit trail        | Optional | Recommended | Recommended | **Mandatory**   |
 | Hash chain         | No       | Optional    | **Yes**     | **Yes**         |
+
+## Actor Identity & Assurance
+
+FlowGuard tracks actor identity with a three-tier assurance model. The assurance level determines how strongly the actor's identity has been verified.
+
+### Assurance Tiers
+
+| Tier              | Source      | How Resolved                                                                |
+| ----------------- | ----------- | --------------------------------------------------------------------------- |
+| `best_effort`     | `env`/`git` | `FLOWGUARD_ACTOR_ID` env var, or git config (`user.name`/`user.email`)      |
+| `claim_validated` | `claim`     | `FLOWGUARD_ACTOR_CLAIMS_PATH` — signed claim file, validated at resolution  |
+| `idp_verified`    | `oidc`      | `FLOWGUARD_ACTOR_TOKEN_PATH` + configured `identityProvider` — JWT verified |
+
+Assurance is ordinal: `best_effort` (0) < `claim_validated` (1) < `idp_verified` (2).
+
+### Default Behavior
+
+All policy modes default to `minimumActorAssuranceForApproval: best_effort`. This means any resolved actor identity — even from environment variables or git config — satisfies the approval threshold.
+
+**Stronger assurance requires explicit configuration.** FlowGuard does not silently escalate identity requirements based on policy mode alone.
+
+### Configuring Stronger Assurance
+
+To require verified identity for approvals, set both fields in `config.json`:
+
+```json
+{
+  "policy": {
+    "minimumActorAssuranceForApproval": "idp_verified",
+    "identityProviderMode": "required"
+  }
+}
+```
+
+| Config Field                       | Values                                           | Effect                                                         |
+| ---------------------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| `minimumActorAssuranceForApproval` | `best_effort`, `claim_validated`, `idp_verified` | Minimum assurance tier required for `/review-decision approve` |
+| `identityProviderMode`             | `optional`, `required`                           | Whether IdP verification is mandatory for actor resolution     |
+
+### Option B: Hydrate Diagnostic, Decision Enforces
+
+Identity policy enforcement follows **Option B** semantics:
+
+- **`/hydrate`** resolves actor identity **best-effort** (without IdP context). Even when `identityProviderMode: required`, hydrate succeeds and creates the session. The policy snapshot records the configured identity requirements.
+- **`/review-decision`** resolves actor identity **with full IdP/policy context** from the session's policy snapshot. If the actor's assurance is below the configured `minimumActorAssuranceForApproval` threshold, the decision is **BLOCKED** with `ACTOR_ASSURANCE_INSUFFICIENT`.
+- **If `identityProviderMode: required`** and `resolveActor` cannot verify the actor (no token path, invalid token), the decision is **BLOCKED** with `ACTOR_IDP_MODE_REQUIRED`.
+
+This design separates session creation (diagnostic, always possible) from mutating decisions (enforced, fail-closed).
+
+### Enforcement Flow
+
+```
+Config (identityProviderMode, minimumActorAssuranceForApproval)
+  → PolicySnapshot (frozen at hydrate)
+    → resolvePolicyFromState (reads snapshot, NOT mode defaults)
+      → resolveActorForPolicy (resolves actor with IdP context)
+        → review-decision rail (ordinal comparison: actor level vs required level)
+          → ALLOWED or BLOCKED
+```
+
+The enforcement always reads from the persisted **policy snapshot** — not from reconstructed policy mode defaults. This guarantees that the exact policy active at session creation governs all decisions.

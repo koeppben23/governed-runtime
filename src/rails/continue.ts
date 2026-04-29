@@ -41,6 +41,8 @@ import {
   runSingleIteration,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
+  buildSelfReviewState,
+  buildImplReviewState,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
 
@@ -220,14 +222,7 @@ async function runOneSelfReviewIteration(
   return {
     ...state,
     plan: updatedPlan,
-    selfReview: {
-      iteration: loop.iteration,
-      maxIterations: loop.maxIterations,
-      prevDigest: loop.prevDigest,
-      currDigest: loop.currDigest,
-      revisionDelta: loop.revisionDelta,
-      verdict: loop.verdict,
-    },
+    selfReview: buildSelfReviewState(loop),
   };
 }
 
@@ -264,15 +259,7 @@ async function runOneImplReviewIteration(
   return {
     ...state,
     implementation: loop.artifact,
-    implReview: {
-      iteration: loop.iteration,
-      maxIterations: loop.maxIterations,
-      prevDigest: loop.prevDigest,
-      currDigest: loop.currDigest,
-      revisionDelta: loop.revisionDelta,
-      verdict: loop.verdict,
-      executedAt: ctx.now(),
-    },
+    implReview: buildImplReviewState(loop, ctx.now()),
   };
 }
 
@@ -327,13 +314,6 @@ async function runOneArchitectureReviewIteration(
   return {
     ...state,
     architecture: updatedArchitecture,
-    selfReview: {
-      iteration: loop.iteration,
-      maxIterations: loop.maxIterations,
-      prevDigest: loop.prevDigest,
-      currDigest: loop.currDigest,
-      revisionDelta: loop.revisionDelta,
-      verdict: loop.verdict,
-    },
+    selfReview: buildSelfReviewState(loop),
   };
 }

@@ -29,3 +29,10 @@ Thumbs.db
 
 
 *.tgz
+
+# TypeDoc API reference (generated, deployed via CI)
+docs/api/
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/mutation/

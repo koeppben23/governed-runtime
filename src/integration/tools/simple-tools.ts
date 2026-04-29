@@ -2,243 +2,40 @@
  * @module integration/tools/simple-tools
  * @description Simple FlowGuard tools that delegate directly to rails.
  *
- * Contains: status, ticket, decision, validate, review, abort_session, archive.
+ * Contains: ticket, review, abort_session, archive.
  * These tools follow the pattern: resolve workspace -> read state -> call rail -> persist.
  *
- * P26: decision tool now owns regulated archive lifecycle (archive + verify)
- * for clean regulated completions (EVIDENCE_REVIEW + APPROVE → COMPLETE).
- * Emits session_completed audit event before archiveSession() so the archive
- * contains the terminal lifecycle event.
+ * The more complex tools (status, decision, validate) have been extracted to
+ * their own modules: status-tool.ts, decision-tool.ts, validate-tool.ts.
  *
- * @version v5
+ * @version v6
  */
 
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
-  resolveWorkspacePaths,
-  requireStateForMutation,
-  resolvePolicyFromState,
-  createPolicyContext,
-  formatEval,
+  withMutableSession,
   formatBlocked,
   formatError,
   formatRailResult,
   persistAndFormat,
   appendNextAction,
-  writeStateWithArtifacts,
 } from './helpers.js';
-
-// State & Machine
-import type { SessionState } from '../../state/schema.js';
-import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
-import { TERMINAL } from '../../machine/topology.js';
 
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
-import { executeReviewDecision } from '../../rails/review-decision.js';
 import { executeReview, executeReviewFlow } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
-// Rail helpers
-import { autoAdvance } from '../../rails/types.js';
+// Evidence schemas for external reference handling
+import { InputOriginSchema, ExternalReferenceSchema } from '../../state/evidence.js';
 
 // Adapters
-import {
-  readState,
-  writeReport,
-  appendAuditEvent,
-  readAuditTrail,
-} from '../../adapters/persistence.js';
-import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
+import { writeReport } from '../../adapters/persistence.js';
+import { ActorClaimError } from '../../adapters/actor.js';
 
-// Workspace
-import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
-
-// Audit types + integrity (P26: tool-layer audit emission for regulated completions)
-import { createLifecycleEvent } from '../../audit/types.js';
-import { getLastChainHash } from '../../audit/integrity.js';
-
-// Artifacts
-import { writeMadrArtifact } from '../artifacts/madr-writer.js';
-
-// Evidence types
-import type { ValidationResult } from '../../state/evidence.js';
-
-// Config
-import { evaluateCompleteness } from '../../audit/completeness.js';
-import {
-  buildStatusProjection,
-  buildEvidenceDetailProjection,
-  buildBlockedProjection,
-  buildContextProjection,
-  buildReadinessProjection,
-} from '../status.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_status — Read-Only State Check
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const status: ToolDefinition = {
-  description:
-    'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
-    'policy info, completeness matrix, and next action. ' +
-    'Does NOT mutate state. Use this to understand where the workflow is before taking action.',
-  args: {
-    whyBlocked: z
-      .boolean()
-      .optional()
-      .describe('Return focused blocker surface from canonical evaluator/completeness truth.'),
-    evidence: z
-      .boolean()
-      .optional()
-      .describe('Return per-slot evidence detail from canonical completeness truth.'),
-    context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
-    readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
-  },
-  async execute(_args, context) {
-    try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
-
-      if (!state) {
-        return JSON.stringify({
-          phase: null,
-          status: 'No FlowGuard session found.',
-          next: 'Run /hydrate to bootstrap a session.',
-        });
-      }
-
-      const policy = resolvePolicyFromState(state);
-      const ev = evaluate(state, policy);
-      const completeness = evaluateCompleteness(state);
-      const args = _args as {
-        whyBlocked?: boolean;
-        evidence?: boolean;
-        context?: boolean;
-        readiness?: boolean;
-      };
-
-      if (args.whyBlocked === true) {
-        const blocked = buildBlockedProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            whyBlocked: blocked,
-          }),
-          state,
-        );
-      }
-
-      if (args.evidence === true) {
-        const evidenceDetail = buildEvidenceDetailProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            evidence: evidenceDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.context === true) {
-        const contextDetail = buildContextProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            context: contextDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.readiness === true) {
-        const readinessDetail = buildReadinessProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            readiness: readinessDetail,
-          }),
-          state,
-        );
-      }
-
-      const projection = buildStatusProjection(state, policy);
-
-      return appendNextAction(
-        JSON.stringify({
-          status: projection,
-          phase: state.phase,
-          sessionId: state.id,
-          policyMode: state.policySnapshot?.mode ?? 'unknown',
-          archiveStatus: state.archiveStatus ?? null,
-          appliedPolicy: {
-            source: state.policySnapshot?.source ?? 'unknown',
-            requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
-            effectiveMode: state.policySnapshot?.mode ?? 'unknown',
-            effectiveGateBehavior: state.policySnapshot?.effectiveGateBehavior ?? 'unknown',
-            degradedReason: state.policySnapshot?.degradedReason ?? null,
-            resolutionReason: state.policySnapshot?.resolutionReason ?? null,
-            centralMinimumMode: state.policySnapshot?.centralMinimumMode ?? null,
-            centralPolicyDigest: state.policySnapshot?.policyDigest ?? null,
-            centralPolicyVersion: state.policySnapshot?.policyVersion ?? null,
-            centralPolicyPathHint: state.policySnapshot?.policyPathHint ?? null,
-          },
-          initiatedBy: state.initiatedBy,
-          profileId: state.activeProfile?.id ?? 'none',
-          profileName: state.activeProfile?.name ?? 'None',
-          profileRules: (() => {
-            const base = state.activeProfile?.ruleContent ?? '';
-            const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
-            return phaseExtra ? base + '\n\n' + phaseExtra : base;
-          })(),
-          detectedStack: state.detectedStack ?? null,
-          verificationCandidates: state.verificationCandidates ?? [],
-          hasTicket: state.ticket !== null,
-          hasPlan: state.plan !== null,
-          planVersion: state.plan ? state.plan.history.length + 1 : 0,
-          selfReviewIteration: state.selfReview?.iteration ?? null,
-          selfReviewConverged: state.selfReview
-            ? state.selfReview.iteration >= state.selfReview.maxIterations ||
-              (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
-            : null,
-          validationResults: state.validation.map((v) => ({
-            checkId: v.checkId,
-            passed: v.passed,
-          })),
-          hasImplementation: state.implementation !== null,
-          implReviewIteration: state.implReview?.iteration ?? null,
-          implReviewConverged: state.implReview
-            ? state.implReview.iteration >= state.implReview.maxIterations ||
-              (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
-            : null,
-          hasReviewDecision: state.reviewDecision !== null,
-          reviewVerdict: state.reviewDecision?.verdict ?? null,
-          error: state.error,
-          evalKind: ev.kind,
-          next: formatEval(ev),
-          completeness: {
-            overallComplete: completeness.overallComplete,
-            fourEyes: completeness.fourEyes,
-            summary: completeness.summary,
-          },
-        }),
-        state,
-      );
-    } catch (err) {
-      if (err instanceof ActorClaimError) {
-        return formatBlocked(err.code);
-      }
-      return formatError(err);
-    }
-  },
-};
+import { writeStateWithArtifacts } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_ticket — Record Task
@@ -255,19 +52,30 @@ export const ticket: ToolDefinition = {
       .enum(['user', 'external'])
       .default('user')
       .describe("Source of the ticket: 'user' (typed in chat) or 'external' (from issue tracker)."),
+    inputOrigin: InputOriginSchema.optional().describe(
+      'Where the text content originated. Set to "external_reference" when text was extracted ' +
+        'from a URL, "manual_text" when typed, "mixed" when both manual and external.',
+    ),
+    references: z
+      .array(ExternalReferenceSchema)
+      .optional()
+      .describe(
+        'External references for this ticket (Jira URL, GitHub issue, Confluence doc, etc.). ' +
+          'Each reference has ref (URL/ID), type (ticket/issue/pr/branch/commit/url/doc/other), ' +
+          'optional title, source platform, and extractedAt timestamp.',
+      ),
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       const result = executeTicket(
         state,
         {
           text: args.text,
           source: args.source,
+          inputOrigin: args.inputOrigin,
+          references: args.references,
         },
         ctx,
       );
@@ -283,236 +91,6 @@ export const ticket: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_decision — Human Verdict at User Gates
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const decision: ToolDefinition = {
-  description:
-    'Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW). ' +
-    "Verdicts: 'approve' (proceed), 'changes_requested' (revise), 'reject' (restart from ticket). " +
-    'This tool ONLY works at PLAN_REVIEW, EVIDENCE_REVIEW, and ARCH_REVIEW phases. ' +
-    'In regulated mode, four-eyes principle is enforced: the reviewer must differ from the session initiator.',
-  args: {
-    verdict: z
-      .enum(['approve', 'changes_requested', 'reject'])
-      .describe(
-        "Review verdict. 'approve' advances the workflow. " +
-          "'changes_requested' returns to revision. " +
-          "'reject' restarts from TICKET (or READY for architecture flow).",
-      ),
-    rationale: z.string().default('').describe('Reason for the decision. Recorded in audit trail.'),
-  },
-  async execute(args, context) {
-    try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
-      const actorInfo = await resolveActor(context.worktree || context.directory);
-
-      // P30/P34: Build structured decision identity directly from resolved actor info
-      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-      const decisionIdentity = {
-        actorId: actorInfo.id,
-        actorEmail: actorInfo.email,
-        actorDisplayName: actorInfo.displayName,
-        actorSource: actorInfo.source,
-        actorAssurance: actorInfo.assurance,
-      };
-
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: args.verdict,
-          rationale: args.rationale,
-          decidedBy: actorInfo.id,
-          decisionIdentity,
-        },
-        ctx,
-      );
-
-      // Write MADR artifact when architecture flow completes
-      if (
-        result.kind === 'ok' &&
-        result.state.phase === 'ARCH_COMPLETE' &&
-        result.state.architecture
-      ) {
-        await writeMadrArtifact(sessDir, result.state.architecture);
-      }
-
-      // ── P26: Regulated clean completion requires archive + verification ──
-      // Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
-      // Pre-condition guard: only triggers for the exact clean completion path
-      // (EVIDENCE_REVIEW → APPROVE → COMPLETE). Excludes abort, non-regulated,
-      // and future rails that may also produce COMPLETE.
-      //
-      // Fail-closed: the entire finalization chain (audit emit → archive →
-      // verify) runs in a single try/catch. Any failure at any step produces
-      // archiveStatus: 'failed'. This guarantees no "verified archive without
-      // session_completed audit event" can exist.
-      //
-      // The response must reflect the final archiveStatus so the agent/user
-      // sees degraded completion when archive fails (not a stale clean COMPLETE).
-      if (
-        result.kind === 'ok' &&
-        state.phase === 'EVIDENCE_REVIEW' &&
-        args.verdict === 'approve' &&
-        result.state.phase === 'COMPLETE' &&
-        result.state.policySnapshot.mode === 'regulated' &&
-        !result.state.error
-      ) {
-        const pendingState = { ...result.state, archiveStatus: 'pending' as const };
-        await writeStateWithArtifacts(sessDir, pendingState);
-
-        let finalState;
-        try {
-          // 1. Emit session_completed audit event BEFORE archive.
-          //    Reads the trail to get correct prevHash (independent of plugin cache).
-          //    Failure here is fatal — no archive without terminal audit event.
-          const { events } = await readAuditTrail(sessDir);
-          const prevHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
-          const completionEvt = createLifecycleEvent(
-            context.sessionID,
-            { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-            new Date().toISOString(),
-            'machine',
-            prevHash,
-            result.state.actorInfo,
-          );
-          await appendAuditEvent(sessDir, completionEvt);
-
-          // 2. Archive session (synchronous, not fire-and-forget).
-          await archiveSession(fingerprint, context.sessionID);
-          const createdState = { ...result.state, archiveStatus: 'created' as const };
-          await writeStateWithArtifacts(sessDir, createdState);
-
-          // 3. Verify archive integrity.
-          const verification = await verifyArchive(fingerprint, context.sessionID);
-          finalState = {
-            ...result.state,
-            archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
-          };
-        } catch {
-          finalState = { ...result.state, archiveStatus: 'failed' as const };
-        }
-
-        return await persistAndFormat(sessDir, { ...result, state: finalState });
-      }
-
-      return await persistAndFormat(sessDir, result);
-    } catch (err) {
-      return formatError(err);
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_validate — Record Validation Check Results
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const validate: ToolDefinition = {
-  description:
-    'Record validation check results. The LLM executes the checks (test analysis, ' +
-    'rollback safety analysis, etc.) and reports results here. ' +
-    "Provide an array of check results. Check IDs must match the session's activeChecks. " +
-    'After recording: ALL_PASSED -> advance to IMPLEMENTATION, CHECK_FAILED -> return to PLAN.',
-  args: {
-    results: z
-      .array(
-        z.object({
-          checkId: z
-            .string()
-            .min(1)
-            .describe('Which validation check this result is for (must match activeChecks).'),
-          passed: z.boolean().describe('Whether the check passed.'),
-          detail: z.string().describe('Detailed explanation of the check result.'),
-        }),
-      )
-      .describe('Array of validation check results. Must cover all activeChecks for the session.'),
-  },
-  async execute(args, context) {
-    try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
-
-      // Admissibility
-      if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/validate',
-          phase: state.phase,
-        });
-      }
-
-      if (state.activeChecks.length === 0) {
-        return formatBlocked('NO_ACTIVE_CHECKS');
-      }
-
-      // Validate that all active checks are covered
-      const submittedIds = new Set(
-        args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId),
-      );
-      const missing = state.activeChecks.filter((id) => !submittedIds.has(id));
-      if (missing.length > 0) {
-        return formatBlocked('MISSING_CHECKS', {
-          checks: missing.join(', '),
-        });
-      }
-
-      // Record results with timestamps
-      const now = ctx.now();
-      const validationResults = args.results.map(
-        (r: { checkId: string; passed: boolean; detail: string }) => ({
-          checkId: r.checkId,
-          passed: r.passed,
-          detail: r.detail,
-          executedAt: now,
-        }),
-      );
-
-      const nextState: SessionState = {
-        ...state,
-        validation: validationResults,
-        error: null,
-      };
-
-      // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
-      const evalFn = (s: SessionState) => evaluate(s, policy);
-      const {
-        state: finalState,
-        evalResult: ev,
-        transitions,
-      } = autoAdvance(nextState, evalFn, ctx);
-      await writeStateWithArtifacts(sessDir, finalState);
-
-      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
-      const failedChecks = validationResults
-        .filter((r: ValidationResult) => !r.passed)
-        .map((r: ValidationResult) => r.checkId);
-
-      return appendNextAction(
-        JSON.stringify({
-          phase: finalState.phase,
-          status: allPassed
-            ? 'All validation checks passed.'
-            : `Validation failed: ${failedChecks.join(', ')}.`,
-          results: validationResults.map((r: ValidationResult) => ({
-            checkId: r.checkId,
-            passed: r.passed,
-          })),
-          next: formatEval(ev),
-          _audit: { transitions },
-        }),
-        finalState,
-      );
-    } catch (err) {
-      return formatError(err);
-    }
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_review — Standalone Review Flow (READY → REVIEW → REVIEW_COMPLETE)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -522,13 +100,24 @@ export const review: ToolDefinition = {
     'Generates a compliance review report with evidence completeness matrix ' +
     'and four-eyes principle status. Produces a flowguard-review-report.v1 artifact ' +
     'written to the session directory. Only allowed in READY phase.',
-  args: {},
-  async execute(_args, context) {
+  args: {
+    inputOrigin: InputOriginSchema.optional().describe(
+      'Where the review content originated. Set to "pr" when reviewing a pull request, ' +
+        '"branch" for branch review, "external_reference" for URL-based review, ' +
+        '"manual_text" for text-only review.',
+    ),
+    references: z
+      .array(ExternalReferenceSchema)
+      .optional()
+      .describe(
+        'External references for this review (PR URL, branch name, commit SHA, etc.). ' +
+          'Each reference has ref (URL/ID), type (ticket/issue/pr/branch/commit/url/doc/other), ' +
+          'optional title, source platform, and extractedAt timestamp.',
+      ),
+  },
+  async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
       const result = executeReviewFlow(state, ctx);
@@ -539,7 +128,14 @@ export const review: ToolDefinition = {
 
       // 2. Generate the compliance report using the final state
       const now = new Date().toISOString();
-      const report = await executeReview(result.state, now);
+      const refInput =
+        args.inputOrigin || args.references
+          ? {
+              inputOrigin: args.inputOrigin,
+              references: args.references,
+            }
+          : undefined;
+      const report = await executeReview(result.state, now, undefined, refInput);
 
       // 3. Persist state + write report artifact
       await writeStateWithArtifacts(sessDir, result.state);
@@ -565,6 +161,8 @@ export const review: ToolDefinition = {
           findingsCount: report.findings.length,
           findings: report.findings,
           validationSummary: report.validationSummary,
+          references: report.references,
+          inputOrigin: report.inputOrigin,
           _audit: { transitions: result.transitions },
         }),
         result.state,
@@ -592,10 +190,7 @@ export const abort_session: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
       const result = executeAbort(
         state,
@@ -614,44 +209,5 @@ export const abort_session: ToolDefinition = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_archive — Archive Completed Session
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const archive: ToolDefinition = {
-  description:
-    'Archive a completed FlowGuard session as a tar.gz file. ' +
-    "Creates a compressed archive in the workspace's sessions/archive/ directory. " +
-    'Only works on terminal sessions (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE). ' +
-    'Uses system tar (available on Windows 10+, macOS, Linux).',
-  args: {},
-  async execute(_args, context) {
-    try {
-      const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
-      const state = await readState(sessDir);
-
-      if (!state) {
-        return formatBlocked('NO_SESSION');
-      }
-
-      if (!TERMINAL.has(state.phase)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/archive',
-          phase: state.phase,
-        });
-      }
-
-      const archivePath = await archiveSession(fingerprint, context.sessionID);
-
-      return appendNextAction(
-        JSON.stringify({
-          phase: state.phase,
-          status: 'Session archived successfully.',
-          archivePath,
-        }),
-        state,
-      );
-    } catch (err) {
-      return formatError(err);
-    }
-  },
-};
+// archive — extracted to archive-tool.ts (P2b)
+export { archive } from './archive-tool.js';

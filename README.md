@@ -18,144 +18,23 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 
-## Get Started
-
-```bash
-/hydrate
-/status
-```
-
-After hydration, choose one of three flows:
-
-### Ticket Flow (Full Development Lifecycle)
-
-```
-/ticket <describe the task>
-/plan
-/review-decision approve
-/validate
-/implement
-/review-decision approve
-```
-
-### Architecture Flow (ADR Creation)
-
-```
-/architecture <title, adrText>
-/review-decision approve
-```
-
-### Review Flow (Compliance Report)
-
-```
-/review
-```
-
-### Flow Overview
-
-```
-                         ┌──────────┐
-                         │ /hydrate │
-                         └────┬─────┘
-                              │
-                         ┌────▼────┐
-                         │  READY  │
-                         └┬───┬───┬┘
-              ┌───────────┘   │   └───────────┐
-         /ticket         /architecture     /review
-              │               │               │
-              ▼               ▼               ▼
-         ┌────────┐    ┌─────────────┐   ┌────────┐
-         │ TICKET │    │ARCHITECTURE │   │ REVIEW │
-         └───┬────┘    └──────┬──────┘   └───┬────┘
-             ▼          self- ▼ review        ▼
-         ┌────────┐    ┌─────────────┐   ┌────────────────┐
-         │  PLAN  │◄┐  │ ARCH_REVIEW │   │REVIEW_COMPLETE │ ■
-         └───┬────┘ │  └──┬──┬──┬────┘   └────────────────┘
-   self-     ▼      │     │  │  └──► READY (reject)
-   review┌──────────┤  ◄──┘  └──► ARCHITECTURE
-    loop │PLAN_     │  approve     (changes_requested)
-         │REVIEW    │     ▼
-         └┬──┬──┬───┘  ┌───────────────┐
-          │  │  └──► TICKET (reject)
-          │  │      │  │ ARCH_COMPLETE  │ ■
-   approve│  └──► PLAN └───────────────┘
-          ▼  (changes_requested)
-     ┌────────────┐
-     │ VALIDATION │
-     └──┬─────┬───┘
-        │     └──► PLAN (CHECK_FAILED)
-        ▼
-  ┌────────────────┐
-  │IMPLEMENTATION  │
-  └───────┬────────┘
-          ▼
-  ┌────────────────┐
-  │  IMPL_REVIEW   │ ◄── self-review loop
-  └───────┬────────┘
-          ▼
-  ┌────────────────┐
-  │EVIDENCE_REVIEW │
-  └─┬─────┬────┬───┘
-    │     │    └──► TICKET (reject)
-    │     └──► IMPLEMENTATION (changes_requested)
-    ▼
- ┌──────────┐
- │ COMPLETE │ ■
- └──────────┘
-
-■ = Terminal   ◄ = Backward transition   ► = Reject/revise path
-```
-
-See [docs/phases.md](./docs/phases.md) for full phase details.
-
-### Status Surface
-
-Use `/status` as a read-only orientation command:
-
-- `/status` — compact phase/policy/allowed/next view
-- `/status --why-blocked` — focused blocker analysis
-- `/status --evidence` — slot-by-slot evidence view
-- `/status --context` — actor/policy/archive context
-- `/status --readiness` — compact readiness projection
-
----
-
-## Features
-
-| Feature                          | Description                                                                                                                                                                                                                                                                                                                                                       |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **3 Flows**                      | Ticket (full dev lifecycle), Architecture (ADR), Review (compliance report)                                                                                                                                                                                                                                                                                       |
-| **14 Phases**                    | READY entry point with three independent flow paths                                                                                                                                                                                                                                                                                                               |
-| **Evidence Gates**               | Every phase produces verifiable artifacts                                                                                                                                                                                                                                                                                                                         |
-| **Verification Planner**         | `flowguard_status.verificationCandidates` provides repo-native, evidence-backed verification command candidates (advisory only)                                                                                                                                                                                                                                   |
-| **Verification Output Contract** | `/plan` requires Source citation; `/implement` distinguishes Planned vs Executed; `/review` flags generic command usage as defect                                                                                                                                                                                                                                 |
-| **Module-Scoped Detection**      | Monorepo nested manifests surface as `detectedStack.scopes` without globalizing root facts                                                                                                                                                                                                                                                                        |
-| **Knowledge Pack Policy**        | External documentation authority is advisory-only, provenance-stamped, and non-SSOT                                                                                                                                                                                                                                                                               |
-| **Central Policy Authority**     | Optional central minimum policy via `FLOWGUARD_POLICY_PATH`; explicit weaker mode is blocked, repo/default weaker mode is elevated with auditable resolution evidence                                                                                                                                                                                             |
-| **Actor Assurance**              | Three-tier minimum actor assurance model: `best_effort`, `claim_validated`, `idp_verified`; IdP verification supports static keys, local pinned JWKS (`jwksPath`), and remote JWKS (`jwksUri` + `cacheTtlSeconds`) with fail-closed `identityProviderMode` (`required` blocks; `optional` degrades only for typed IdP errors). OIDC discovery is not part of P35. |
-
----
-
-## CLI Commands
-
-FlowGuard provides these CLI commands:
-
-```bash
-# Installation (stable)
-npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz
-npx --package ./flowguard-core-{version}.tgz flowguard uninstall
-npx --package ./flowguard-core-{version}.tgz flowguard doctor
-
-# Headless operation (EXPERIMENTAL)
-flowguard run -- "Run /hydrate"
-flowguard serve --detach --port 4096
-```
-
-**Note:** Headless features are experimental. For production, use OpenCode directly:
-`opencode run` and `opencode serve`. See [docs/installation.md](./docs/installation.md).
-
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
+
+> [!NOTE] > **Headless operation is separate from the interactive plugin:**
+> The interactive plugin (`flowguard_*` tools inside OpenCode) is stable.
+> The standalone CLI wrappers (`flowguard run`, `flowguard serve`) are experimental.
+> For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).
+
+## In 30 Seconds
+
+Start a FlowGuard workflow from any OpenCode session after install:
+
+1. `/hydrate` — bootstrap the session (creates the READY phase with policy binding)
+2. `/ticket <description>` — record your task
+3. `/plan` — generate an implementation plan
+4. `/implement` — execute the plan
+
+See [docs/commands.md](./docs/commands.md) for the complete command reference.
 
 ## Product Facts
 
@@ -176,17 +55,19 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 
 ## Documentation
 
-| Document                                               | Description                                      |
-| ------------------------------------------------------ | ------------------------------------------------ |
-| [Installation](./docs/installation.md)                 | Install and configure FlowGuard                  |
-| [Commands](./docs/commands.md)                         | Command reference                                |
-| [Phases](./docs/phases.md)                             | Workflow phases and gates                        |
-| [Policies](./docs/policies.md)                         | Solo, Team, Regulated modes                      |
-| [Profiles](./docs/profiles.md)                         | Tech stack profiles                              |
-| [Archive](./docs/archive.md)                           | Session archiving                                |
-| [Enterprise Readiness](./docs/enterprise-readiness.md) | Consolidated threat model and control boundaries |
-| [Configuration](./docs/configuration.md)               | Configuration reference                          |
-| [Troubleshooting](./docs/troubleshooting.md)           | FAQ and error handling                           |
+| Document                                                        | Description                                      |
+| --------------------------------------------------------------- | ------------------------------------------------ |
+| [Installation](./docs/installation.md)                          | Install and configure FlowGuard                  |
+| [Commands](./docs/commands.md)                                  | Command reference                                |
+| [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
+| [Policies](./docs/policies.md)                                  | Solo, Team, Regulated modes                      |
+| [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
+| [Archive](./docs/archive.md)                                    | Session archiving                                |
+| [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |
+| [Configuration](./docs/configuration.md)                        | Configuration reference                          |
+| [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                           |
+| [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets         |
+| [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages) |
 
 ---
 
@@ -220,6 +101,34 @@ npm run test:coverage
 # Build
 npm run build
 ```
+
+### CI Jobs
+
+| Job                | Script                                         | What It Proves                                         |
+| ------------------ | ---------------------------------------------- | ------------------------------------------------------ |
+| **unit**           | `npm run test:unit`                            | Pure logic correctness                                 |
+| **integration**    | `npm run test:integration`                     | Governance chain fidelity                              |
+| **smoke**          | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
+| **install-verify** | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
+| **mutation**       | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
+
+See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
+
+### Release Checklist
+
+1. `npm run check` — type check clean
+2. `npm run lint` — no lint errors
+3. `npm test` — all tests pass (pre-existing PERF flakes acceptable)
+4. `npm run build` — build succeeds
+5. `npm run check:esm` — ESM imports valid
+6. `npm run test:install-verify` — tarball pack/install/doctor passes
+7. `npm version <patch|minor|major>` — bumps version, syncs VERSION/docs
+8. `git push --follow-tags` — triggers release workflow
+9. Verify GitHub Release artifact and SBOM attachment
+
+The `release.yml` workflow handles: build, pack, naming validation, install-verify on
+tarball, SHA-256 checksums, CycloneDX SBOM generation, build provenance attestation,
+and GitHub Release creation with `--verify-tag`.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 

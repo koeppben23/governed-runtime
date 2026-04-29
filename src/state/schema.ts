@@ -25,7 +25,9 @@ import {
   ImplReviewResult,
   PlanRecord,
   PolicySnapshotSchema,
+  ReviewAssuranceState,
   ReviewDecision,
+  ReviewFindings,
   SelfReviewLoop,
   TicketEvidence,
   ValidationResult,
@@ -34,7 +36,7 @@ import {
   DiscoverySummarySchema,
   DetectedStackSchema,
   VerificationCandidatesSchema,
-} from '../discovery/types.js';
+} from './discovery-schemas.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -189,6 +191,12 @@ export const SessionState = z.object({
 
   /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
   implReview: ImplReviewResult.nullable(),
+
+  /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
+  implReviewFindings: z.array(ReviewFindings).optional(),
+
+  /** P35 strict independent-review obligations and invocation evidence. */
+  reviewAssurance: ReviewAssuranceState.optional(),
 
   /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
   reviewDecision: ReviewDecision.nullable(),

@@ -28,7 +28,7 @@ import { readState, writeState } from '../../adapters/persistence.js';
 import {
   materializeEvidenceArtifacts,
   verifyEvidenceArtifacts,
-} from '../artifacts/evidence-artifacts.js';
+} from '../../adapters/workspace/evidence-artifacts.js';
 
 // Workspace
 import {
@@ -38,7 +38,7 @@ import {
 } from '../../adapters/workspace/index.js';
 
 // Config
-import { policyFromSnapshot, resolvePolicy } from '../../config/policy.js';
+import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
@@ -237,17 +237,28 @@ export async function writeStateWithArtifacts(
 }
 
 /**
- * Resolve policy from session state (existing session)
- * or default to TEAM_POLICY (no session yet — conservative fallback).
+ * Resolve policy from session state's frozen snapshot.
+ *
+ * P2c: Accepts only non-null SessionState. All callers guard null before calling.
+ * Fail-closed: if policySnapshot is missing (corrupt state), throws instead of
+ * silently falling back to a reconstructed policy from a mode string.
  *
  * This is the helper/plugin fallback path. Hydrate owns its own
  * developer-friendly solo fallback via the P21 config chain.
  */
-export function resolvePolicyFromState(state: SessionState | null): FlowGuardPolicy {
-  if (state?.policySnapshot) {
-    return policyFromSnapshot(state.policySnapshot);
+export function resolvePolicyFromState(state: SessionState): FlowGuardPolicy {
+  if (state.policySnapshot) {
+    return resolvePolicyFromSnapshot(state.policySnapshot);
   }
-  return resolvePolicy('team');
+  // Fail-closed: a hydrated session must always have a policySnapshot.
+  // If missing, this is a data integrity error — not a recoverable fallback.
+  throw Object.assign(
+    new Error(
+      'Session state is missing policySnapshot. This indicates data corruption — ' +
+        'every hydrated session must have a frozen policy snapshot.',
+    ),
+    { code: 'POLICY_SNAPSHOT_MISSING' },
+  );
 }
 
 /**
@@ -294,4 +305,47 @@ export function extractSections(body: string): string[] {
     .split('\n')
     .filter((line) => /^#{1,3}\s/.test(line))
     .map((line) => line.replace(/^#+\s*/, '').trim());
+}
+
+// ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
+
+/**
+ * Bootstrap a mutable session context for tools that modify state.
+ *
+ * Eliminates the 5× repeated boilerplate:
+ *   resolveWorkspacePaths → requireStateForMutation → resolvePolicyFromState → createPolicyContext
+ *
+ * Used by: ticket, decision, validate, review, abort_session.
+ */
+export async function withMutableSession(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}) {
+  const { worktree, fingerprint, sessDir, wsDir } = await resolveWorkspacePaths(context);
+  const state = await requireStateForMutation(sessDir);
+  const policy = resolvePolicyFromState(state);
+  const ctx = createPolicyContext(policy);
+  return { worktree, fingerprint, sessDir, wsDir, state, policy, ctx };
+}
+
+/**
+ * Bootstrap a read-only session context for tools that only inspect state.
+ *
+ * Used by: status.
+ */
+export async function withReadOnlySession(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}) {
+  const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
+  const state = await readState(sessDir);
+
+  if (!state) {
+    return { fingerprint, sessDir, state: null, policy: null };
+  }
+
+  const policy = resolvePolicyFromState(state);
+  return { fingerprint, sessDir, state, policy };
 }

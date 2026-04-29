@@ -1,5 +1,5 @@
 /**
- * @module integration/artifacts/evidence-artifacts.test
+ * @module adapters/workspace/evidence-artifacts.test
  * @description Tests for derived ticket/plan evidence artifact materialization.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF, E2E-SMOKE
@@ -10,7 +10,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { makeState, PLAN_EVIDENCE, TICKET } from '../../__fixtures__.js';
-import { writeState } from '../../adapters/persistence.js';
+import { writeState } from '../persistence.js';
 import {
   EVIDENCE_ARTIFACTS_DIR,
   materializeEvidenceArtifacts,

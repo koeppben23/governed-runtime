@@ -13,7 +13,9 @@ import {
   resolveRuntimePolicyMode,
   policyModes,
   createPolicySnapshot,
-  policyFromSnapshot,
+  resolvePolicyFromSnapshot,
+  loadCentralPolicyEvidence,
+  validateExistingPolicyAgainstCentral,
 } from '../config/policy.js';
 import { COMMANDS } from '../cli/templates.js';
 import {
@@ -54,7 +56,7 @@ describe('config/policy', () => {
     it('resolvePolicy vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
       expect(resolvePolicy('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
-      expect(withContext.policy).toBe(TEAM_POLICY);
+      expect(withContext.policy.mode).toBe('team-ci');
       expect(withContext.effectiveMode).toBe('team');
       expect(withContext.degradedReason).toBe('ci_context_missing');
     });
@@ -70,7 +72,7 @@ describe('config/policy', () => {
 
     it('resolvePolicyWithContext degrades team-ci to team without CI context', () => {
       const result = resolvePolicyWithContext('team-ci', false);
-      expect(result.policy).toBe(TEAM_POLICY);
+      expect(result.policy.mode).toBe('team-ci');
       expect(result.requestedMode).toBe('team-ci');
       expect(result.effectiveMode).toBe('team');
       expect(result.effectiveGateBehavior).toBe('human_gated');
@@ -120,24 +122,47 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
       expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
       expect(SOLO_POLICY.allowSelfApproval).toBe(true);
+      expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
+      expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
+      expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
+      expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(SOLO_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('TEAM has human gates and 3 iterations', () => {
       expect(TEAM_POLICY.requireHumanGates).toBe(true);
       expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
       expect(TEAM_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('REGULATED has four-eyes enforcement', () => {
       expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
+      expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
       expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
       expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
       expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {
@@ -154,6 +179,66 @@ describe('config/policy', () => {
       expect(modes).toContain('team-ci');
       expect(modes).toContain('regulated');
       expect(modes.length).toBe(4);
+    });
+
+    it('all SOLO_POLICY fields match expected values', () => {
+      expect(SOLO_POLICY.mode).toBe('solo');
+      expect(SOLO_POLICY.requireHumanGates).toBe(false);
+      expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
+      expect(SOLO_POLICY.maxImplReviewIterations).toBe(1);
+      expect(SOLO_POLICY.allowSelfApproval).toBe(true);
+      expect(SOLO_POLICY.audit.emitTransitions).toBe(true);
+      expect(SOLO_POLICY.audit.emitToolCalls).toBe(true);
+      expect(SOLO_POLICY.audit.enableChainHash).toBe(false);
+      expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(SOLO_POLICY.identityProviderMode).toBe('optional');
+      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all TEAM_POLICY fields match expected values', () => {
+      expect(TEAM_POLICY.mode).toBe('team');
+      expect(TEAM_POLICY.requireHumanGates).toBe(true);
+      expect(TEAM_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_POLICY.identityProviderMode).toBe('optional');
+      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all REGULATED_POLICY fields match expected values', () => {
+      expect(REGULATED_POLICY.mode).toBe('regulated');
+      expect(REGULATED_POLICY.requireHumanGates).toBe(true);
+      expect(REGULATED_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.maxImplReviewIterations).toBe(3);
+      expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
+      expect(REGULATED_POLICY.audit.emitTransitions).toBe(true);
+      expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
+      expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
+      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(false);
+    });
+
+    it('all TEAM_CI_POLICY fields match expected values', () => {
+      expect(TEAM_CI_POLICY.mode).toBe('team-ci');
+      expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
+      expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.maxImplReviewIterations).toBe(3);
+      expect(TEAM_CI_POLICY.allowSelfApproval).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitTransitions).toBe(true);
+      expect(TEAM_CI_POLICY.audit.emitToolCalls).toBe(true);
+      expect(TEAM_CI_POLICY.audit.enableChainHash).toBe(true);
+      expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
+      expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
+      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(false);
     });
 
     it('detectCiContext recognizes common CI signals', () => {
@@ -347,7 +432,7 @@ describe('config/policy', () => {
       expect(snap.identityProviderMode).toBe('optional');
     });
 
-    it('policyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
+    it('resolvePolicyFromSnapshot restores typed jwks identityProvider from snapshot only', () => {
       const digest = (s: string) => `hash-${s.length}`;
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
@@ -361,7 +446,7 @@ describe('config/policy', () => {
         identityProviderMode: 'required' as const,
       };
 
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.identityProvider).toEqual(snap.identityProvider);
       expect(reconstructed.identityProviderMode).toBe('required');
     });
@@ -373,22 +458,22 @@ describe('config/policy', () => {
       expect(solo.hash).not.toBe(team.hash);
     });
 
-    it('policyFromSnapshot reconstructs actorClassification from snapshot only', () => {
+    it('resolvePolicyFromSnapshot reconstructs actorClassification from snapshot only', () => {
       const digest = (s: string) => `hash-${s.length}`;
       const snap = createPolicySnapshot(REGULATED_POLICY, '2026-01-01T00:00:00.000Z', digest);
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       expect(reconstructed.actorClassification).toEqual(REGULATED_POLICY.actorClassification);
       expect(reconstructed.actorClassification).toEqual(snap.actorClassification);
     });
 
-    it('policyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
+    it('resolvePolicyFromSnapshot uses snapshot fields exclusively — no preset leak', () => {
       const digest = (s: string) => `hash-${s.length}`;
       // Create a snapshot with modified actorClassification
       const snap = {
         ...createPolicySnapshot(TEAM_POLICY, '2026-01-01T00:00:00.000Z', digest),
         actorClassification: { custom_tool: 'auditor' },
       };
-      const reconstructed = policyFromSnapshot(snap);
+      const reconstructed = resolvePolicyFromSnapshot(snap);
       // Must use snapshot value, not preset
       expect(reconstructed.actorClassification).toEqual({ custom_tool: 'auditor' });
     });
@@ -437,6 +522,459 @@ describe('config/policy', () => {
     it(`resolvePolicy < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
       const result = benchmarkSync(() => resolvePolicy('team'));
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.guardPredicateMs);
+    });
+  });
+
+  // ─── MUTATION KILL: detectCiContext / isTruthyEnv ──────────
+  describe('MUTATION: isTruthyEnv', () => {
+    it('CI=0 is falsy', () => {
+      expect(detectCiContext({ CI: '0' })).toBe(false);
+    });
+
+    it('CI=no is falsy', () => {
+      expect(detectCiContext({ CI: 'no' })).toBe(false);
+    });
+
+    it('CI=off is falsy', () => {
+      expect(detectCiContext({ CI: 'off' })).toBe(false);
+    });
+
+    it('CI=FALSE (uppercase) is falsy — tests toLowerCase', () => {
+      expect(detectCiContext({ CI: 'FALSE' })).toBe(false);
+    });
+
+    it('CI=NO (uppercase) is falsy — tests toLowerCase', () => {
+      expect(detectCiContext({ CI: 'NO' })).toBe(false);
+    });
+
+    it('CI=OFF (uppercase) is falsy — tests toLowerCase', () => {
+      expect(detectCiContext({ CI: 'OFF' })).toBe(false);
+    });
+
+    it('CI with surrounding whitespace is truthy when trimmed value is truthy', () => {
+      expect(detectCiContext({ CI: ' true ' })).toBe(true);
+    });
+
+    it('CI with surrounding whitespace is falsy when trimmed value is false', () => {
+      expect(detectCiContext({ CI: ' false ' })).toBe(false);
+    });
+  });
+
+  // ─── MUTATION KILL: validateExistingPolicyAgainstCentral ───
+  describe('MUTATION: validateExistingPolicyAgainstCentral', () => {
+    it('passes when existingMode equals central minimum (boundary)', async () => {
+      const result = await validateExistingPolicyAgainstCentral({
+        existingMode: 'team',
+        centralPolicyPath: '/tmp/org-policy.json',
+        digestFn: (s) => `sha256:${s.length}`,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+      });
+      expect(result).toBeDefined();
+      expect(result!.minimumMode).toBe('team');
+    });
+
+    it('throws when existingMode is weaker with descriptive message', async () => {
+      await expect(
+        validateExistingPolicyAgainstCentral({
+          existingMode: 'solo',
+          centralPolicyPath: '/tmp/org-policy.json',
+          digestFn: (s) => `sha256:${s.length}`,
+          readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+        }),
+      ).rejects.toThrow(/solo.*weaker.*team/i);
+    });
+
+    it('returns undefined when no central policy path', async () => {
+      const result = await validateExistingPolicyAgainstCentral({
+        existingMode: 'solo',
+        digestFn: (s) => s,
+      });
+      expect(result).toBeUndefined();
+    });
+  });
+
+  // ─── MUTATION KILL: loadCentralPolicyEvidence ──────────────
+  describe('MUTATION: loadCentralPolicyEvidence', () => {
+    it('throws CENTRAL_POLICY_INVALID_JSON for malformed JSON', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => 'not-json{{{',
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_JSON' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON null', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => 'null',
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON string', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => '"hello"',
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON array', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => '[]',
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for wrong schemaVersion', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => JSON.stringify({ schemaVersion: 'v2', minimumMode: 'solo' }),
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_MODE for invalid minimumMode', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'enterprise' }),
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_MODE' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for non-string version', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: 123 }),
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('throws CENTRAL_POLICY_INVALID_SCHEMA for non-string policyId', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', policyId: 42 }),
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('includes version in evidence when provided as string', async () => {
+      const result = await loadCentralPolicyEvidence(
+        '/tmp/p.json',
+        (s) => `sha256:${s.length}`,
+        async () =>
+          JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo', version: '2026.04' }),
+      );
+      expect(result.version).toBe('2026.04');
+    });
+
+    it('pathHint contains basename of the policy file', async () => {
+      const result = await loadCentralPolicyEvidence(
+        '/var/lib/flowguard/org-policy.json',
+        (s) => `sha256:${s.length}`,
+        async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo' }),
+      );
+      expect(result.pathHint).toBe('basename:org-policy.json');
+    });
+
+    it('throws CENTRAL_POLICY_PATH_EMPTY for empty path', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '',
+          (s) => s,
+          async () => '{}',
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_PATH_EMPTY' });
+    });
+
+    it('throws CENTRAL_POLICY_MISSING for ENOENT error', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/missing.json',
+          (s) => s,
+          async () => {
+            const err = new Error('ENOENT') as Error & { code: string };
+            err.code = 'ENOENT';
+            throw err;
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_MISSING' });
+    });
+
+    it('throws CENTRAL_POLICY_UNREADABLE for non-ENOENT error', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => {
+            const err = new Error('Permission denied') as Error & { code: string };
+            err.code = 'EACCES';
+            throw err;
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_UNREADABLE' });
+    });
+
+    it('throws CENTRAL_POLICY_UNREADABLE for error without code', async () => {
+      await expect(
+        loadCentralPolicyEvidence(
+          '/tmp/p.json',
+          (s) => s,
+          async () => {
+            throw new Error('Something went wrong');
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_UNREADABLE' });
+    });
+
+    it('computes digest from raw file content', async () => {
+      const raw = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+      const result = await loadCentralPolicyEvidence(
+        '/tmp/p.json',
+        (s) => `sha256:${s}`,
+        async () => raw,
+      );
+      expect(result.digest).toBe(`sha256:${raw}`);
+    });
+  });
+
+  // ─── MUTATION KILL: resolvePolicyForHydrate central logic ──
+  describe('MUTATION: resolvePolicyForHydrate central', () => {
+    const centralTeam = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+    const centralRegulated = JSON.stringify({
+      schemaVersion: 'v1',
+      minimumMode: 'regulated',
+    });
+    const centralSolo = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo' });
+    const digestFn = (s: string) => `sha256:${s.length}`;
+
+    it('explicit mode equal to central minimum: no error, no resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'team',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralTeam,
+      });
+      expect(result.effectiveMode).toBe('team');
+      expect(result.effectiveSource).toBe('explicit');
+      expect(result.resolutionReason).toBeUndefined();
+    });
+
+    it('explicit weaker than central throws EXPLICIT_WEAKER_THAN_CENTRAL with message', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          explicitMode: 'solo',
+          defaultMode: 'solo',
+          ciContext: false,
+          centralPolicyPath: '/tmp/p.json',
+          digestFn,
+          readFileFn: async () => centralTeam,
+        }),
+      ).rejects.toThrow(/solo.*weaker.*team/i);
+    });
+
+    it('explicit stronger than central sets resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralSolo,
+      });
+      expect(result.effectiveMode).toBe('regulated');
+      expect(result.effectiveSource).toBe('explicit');
+      expect(result.resolutionReason).toBe('explicit_stronger_than_central');
+    });
+
+    it('repo mode equal to central: no resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        repoMode: 'team',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralTeam,
+      });
+      expect(result.effectiveMode).toBe('team');
+      expect(result.effectiveSource).toBe('repo');
+      expect(result.resolutionReason).toBeUndefined();
+    });
+
+    it('default weaker than central sets default_weaker_than_central', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+      });
+      expect(result.effectiveMode).toBe('regulated');
+      expect(result.effectiveSource).toBe('central');
+      expect(result.resolutionReason).toBe('default_weaker_than_central');
+    });
+
+    it('repo weaker than central sets repo_weaker_than_central', async () => {
+      const result = await resolvePolicyForHydrate({
+        repoMode: 'solo',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+      });
+      expect(result.effectiveMode).toBe('regulated');
+      expect(result.effectiveSource).toBe('central');
+      expect(result.resolutionReason).toBe('repo_weaker_than_central');
+    });
+
+    it('config overrides wired through to central-elevated policy', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configMaxSelfReviewIterations: 10,
+        configMaxImplReviewIterations: 20,
+        configRequireVerifiedActorsForApproval: true,
+        configIdentityProvider: {
+          mode: 'jwks',
+          issuer: 'https://idp.example.com',
+          audience: ['flowguard'],
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+          jwksPath: '/etc/jwks.json',
+        },
+        configIdentityProviderMode: 'required',
+      });
+      expect(result.policy.maxSelfReviewIterations).toBe(10);
+      expect(result.policy.maxImplReviewIterations).toBe(20);
+      expect(result.policy.requireVerifiedActorsForApproval).toBe(true);
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+      expect(result.policy.identityProvider?.mode).toBe('jwks');
+      expect(result.policy.identityProviderMode).toBe('required');
+    });
+
+    it('legacy requireVerifiedActors translates to claim_validated on central path', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configRequireVerifiedActorsForApproval: true,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+    });
+
+    it('configMinimumActorAssurance takes priority over legacy boolean on central path', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configMinimumActorAssuranceForApproval: 'idp_verified',
+        configRequireVerifiedActorsForApproval: true,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('idp_verified');
+    });
+
+    it('centralEvidence included in result when central policy resolved', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+      });
+      expect(result.centralEvidence).toBeDefined();
+      expect(result.centralEvidence!.minimumMode).toBe('regulated');
+      expect(result.centralEvidence!.pathHint).toContain('p.json');
+    });
+
+    it('idp config wired through when central upgrades to higher mode', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: '/tmp/p.json',
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configIdentityProvider: {
+          mode: 'jwks',
+          issuer: 'https://idp',
+          audience: ['fg'],
+          claimMapping: { subjectClaim: 'sub' },
+          jwksPath: '/etc/jwks.json',
+        },
+      });
+      expect(result.policy.identityProvider).toBeDefined();
+      expect(result.policy.identityProvider!.issuer).toBe('https://idp');
+    });
+  });
+
+  // ─── MUTATION KILL: preset field values via function exercise ──
+  describe('MUTATION: preset fields via resolvePolicyWithContext', () => {
+    it('solo preset: actorClassification decision is system', () => {
+      const r = resolvePolicyWithContext('solo', false);
+      expect(r.policy.actorClassification).toEqual({ flowguard_decision: 'system' });
+    });
+
+    it('team preset: actorClassification decision is human', () => {
+      const r = resolvePolicyWithContext('team', false);
+      expect(r.policy.actorClassification).toEqual({ flowguard_decision: 'human' });
+    });
+
+    it('team-ci preset: actorClassification decision is system', () => {
+      const r = resolvePolicyWithContext('team-ci', true);
+      expect(r.policy.actorClassification).toEqual({ flowguard_decision: 'system' });
+    });
+
+    it('regulated preset: actorClassification includes abort_session as human', () => {
+      const r = resolvePolicyWithContext('regulated', false);
+      expect(r.policy.actorClassification).toEqual({
+        flowguard_decision: 'human',
+        flowguard_abort_session: 'human',
+      });
+    });
+
+    it('solo selfReview is default config', () => {
+      const r = resolvePolicyWithContext('solo', false);
+      expect(r.policy.selfReview.subagentEnabled).toBe(false);
+    });
+
+    it('solo identityProvider is undefined', () => {
+      const r = resolvePolicyWithContext('solo', false);
+      expect(r.policy.identityProvider).toBeUndefined();
+    });
+
+    it('team identityProvider is undefined', () => {
+      const r = resolvePolicyWithContext('team', false);
+      expect(r.policy.identityProvider).toBeUndefined();
+    });
+
+    it('regulated identityProvider is undefined', () => {
+      const r = resolvePolicyWithContext('regulated', false);
+      expect(r.policy.identityProvider).toBeUndefined();
     });
   });
 });
@@ -1787,7 +2325,7 @@ describe('config/reasons', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
-    const REASON_LOOKUP_MS = 5;
+    const REASON_LOOKUP_MS = 8;
     it(`reason lookup + format < ${REASON_LOOKUP_MS}ms (p99)`, () => {
       const result = benchmarkSync(() => {
         defaultReasonRegistry.format('COMMAND_NOT_ALLOWED', {

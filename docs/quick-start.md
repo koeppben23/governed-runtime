@@ -30,6 +30,12 @@ After hydration, FlowGuard enters the **READY** phase. Choose one of three flows
 /ticket Fix the authentication bug in the login flow
 ```
 
+Or reference an external Jira ticket:
+
+```
+/ticket https://jira.example.com/browse/PROJ-123
+```
+
 ### 2. Generate a Plan
 
 ```
@@ -82,6 +88,12 @@ Generate a compliance review report from READY:
 /review
 ```
 
+Or review a specific GitHub pull request:
+
+```
+/review https://github.com/my-org/my-repo/pull/42
+```
+
 ## Next Steps
 
 - [Learn about Phases](./phases.md)
@@ -90,14 +102,14 @@ Generate a compliance review report from READY:
 
 ## Common Commands
 
-| Command                              | Description                    |
-| ------------------------------------ | ------------------------------ |
-| `/hydrate`                           | Bootstrap session → READY      |
-| `/ticket <text>`                     | Record task, start ticket flow |
-| `/plan`                              | Generate plan                  |
-| `/architecture`                      | Create/revise ADR              |
-| `/review`                            | Start compliance review flow   |
-| `/continue`                          | Auto-advance                   |
-| `/review-decision approve`           | Approve                        |
-| `/review-decision changes_requested` | Request changes                |
-| `/abort`                             | Terminate session              |
+| Command                              | Description                          |
+| ------------------------------------ | ------------------------------------ |
+| `/hydrate`                           | Bootstrap session → READY            |
+| `/ticket <text or URL>`              | Record task (supports external URLs) |
+| `/plan`                              | Generate plan                        |
+| `/architecture`                      | Create/revise ADR                    |
+| `/review <PR-URL or branch>`         | Start compliance review flow         |
+| `/continue`                          | Auto-advance                         |
+| `/review-decision approve`           | Approve                              |
+| `/review-decision changes_requested` | Request changes                      |
+| `/abort`                             | Terminate session                    |

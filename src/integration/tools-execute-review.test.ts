@@ -1,0 +1,657 @@
+/**
+ * @module integration/tools-execute.test
+ * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ *
+ * Tests each tool's execute() against real filesystem persistence with
+ * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
+ * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
+ * all other I/O (workspace init, state read/write, config) runs for real.
+ *
+ * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
+ * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import {
+  createToolContext,
+  createTestWorkspace,
+  isTarAvailable,
+  parseToolResult,
+  isBlockedResult,
+  GIT_MOCK_DEFAULTS,
+  type TestToolContext,
+  type TestWorkspace,
+} from './test-helpers.js';
+import {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  implement,
+  validate,
+  review,
+  abort_session,
+  archive,
+} from './tools/index.js';
+import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import * as persistence from '../adapters/persistence.js';
+import {
+  makeState,
+  makeProgressedState,
+  TICKET,
+  PLAN_RECORD,
+  SELF_REVIEW_CONVERGED,
+  REVIEW_APPROVE,
+  VALIDATION_PASSED,
+  IMPL_EVIDENCE,
+  IMPL_REVIEW_CONVERGED,
+} from '../__fixtures__.js';
+import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { TEAM_POLICY } from '../config/policy.js';
+
+// ─── Git Mock ────────────────────────────────────────────────────────────────
+
+vi.mock('../adapters/git', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
+    changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
+    listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+  };
+});
+
+// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
+// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
+// default to the real implementations. P26 tests override them per-test.
+// All other workspace exports (computeFingerprint, initWorkspace, etc.)
+// remain real for full integration fidelity.
+//
+// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
+// can fully reset the once-queues (vi.clearAllMocks does NOT clear
+// mockResolvedValueOnce queues — unconsumed values leak across tests).
+
+const wsOriginals = vi.hoisted(() => ({
+  archiveSession:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
+  verifyArchive:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
+}));
+
+vi.mock('../adapters/workspace', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
+  wsOriginals.archiveSession = original.archiveSession;
+  wsOriginals.verifyArchive = original.verifyArchive;
+  return {
+    ...original,
+    archiveSession: vi.fn(original.archiveSession),
+    verifyArchive: vi.fn(original.verifyArchive),
+  };
+});
+
+// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
+// Mock resolveActor to return a deterministic actor for integration tests.
+// Prevents dependency on real env vars or git config.
+
+const actorOriginal = vi.hoisted(() => ({
+  resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
+}));
+
+vi.mock('../adapters/actor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/actor.js')>();
+  actorOriginal.resolveActor = original.resolveActor;
+  return {
+    ...original,
+    resolveActor: vi.fn().mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      source: 'env',
+    }),
+  };
+});
+
+// Lazy import for per-test overrides
+const gitMock = await import('../adapters/git.js');
+const wsMock = await import('../adapters/workspace/index.js');
+const actorMock = await import('../adapters/actor.js');
+
+// ─── Capability Gates ────────────────────────────────────────────────────────
+
+const tarOk = await isTarAvailable();
+
+// ─── Test Setup ──────────────────────────────────────────────────────────────
+
+let ws: TestWorkspace;
+let ctx: TestToolContext;
+
+beforeEach(async () => {
+  ws = await createTestWorkspace();
+  ctx = createToolContext({
+    worktree: ws.tmpDir,
+    directory: ws.tmpDir,
+    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+  });
+});
+
+afterEach(async () => {
+  // Reset workspace mock once-queues to prevent cross-test leaks.
+  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
+  // queues. If a P26 test fails before consuming its once-mocks, the stale
+  // values leak into subsequent tests (e.g. archive manifest test).
+  vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
+  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  // Reset actor mock to default deterministic value (P27/P34)
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'best_effort' as const,
+    });
+  delete process.env.FLOWGUARD_POLICY_PATH;
+  vi.clearAllMocks();
+  await ws.cleanup();
+});
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
+
+/** Hydrate a session and return parsed result. Convenience for setup. */
+async function hydrateSession(
+  overrides: { policyMode?: string; profileId?: string } = {},
+): Promise<Record<string, unknown>> {
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
+  if (overrides.profileId !== undefined) {
+    args.profileId = overrides.profileId;
+  }
+  const raw = await hydrate.execute(args, ctx);
+  return parseToolResult(raw);
+}
+
+/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
+async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
+  await hydrateSession();
+  await ticket.execute({ text: ticketText, source: 'user' }, ctx);
+}
+
+describe('P34a: Agent-Orchestrated Review', () => {
+  const validReviewFindingsSubagent = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_test' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSelf = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+  });
+
+  it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.reviewMode).toBe('self');
+  });
+
+  it('planVersion mismatch blocked', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: wrongVersion },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+  });
+
+  it('iteration mismatch blocked in Mode B', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const wrongIteration = { ...validReviewFindingsSelf, iteration: 99 };
+    const raw = await plan.execute(
+      { selfReviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
+  });
+
+  it('persists reviewFindings in state.plan.reviewFindings', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+
+    expect(state.plan).toBeDefined();
+    expect(state.plan?.reviewFindings).toHaveLength(1);
+    expect(state.plan?.reviewFindings?.[0].reviewMode).toBe('self');
+    expect(state.plan?.history).toHaveLength(0);
+  });
+
+  it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+
+    expect(state.plan).toBeDefined();
+    expect(state.plan?.current).toBeDefined();
+    expect(state.plan?.current.body).toContain('## Plan');
+    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_self');
+    expect(state.plan?.history).toHaveLength(0);
+  });
+
+  it('accepts valid reviewFindings with planVersion=1 on initial submission', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.planVersion).toBe(1);
+  });
+
+  it('latestReview summary appears in response', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+
+    expect(result.latestReview).toBeDefined();
+    expect(result.latestReview.iteration).toBe(0);
+    expect(result.latestReview.planVersion).toBe(1);
+    expect(result.latestReview.reviewMode).toBe('self');
+    expect(result.latestReview.overallVerdict).toBe('approve');
+    expect(result.latestReview.blockingIssueCount).toBe(0);
+    expect(result.latestReview.majorRiskCount).toBe(0);
+    expect(result.latestReview.reviewedAt).toBeTruthy();
+  });
+});
+
+describe('P34a: Policy-Driven Branches', () => {
+  const validReviewFindingsSubagent = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSubagentModeB = {
+    iteration: 1,
+    planVersion: 1,
+    reviewMode: 'subagent' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_subagent' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  const validReviewFindingsSelf = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'self' as const,
+    overallVerdict: 'approve' as const,
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_self' },
+    reviewedAt: new Date().toISOString(),
+  };
+
+  it('subagentEnabled=true + reviewMode=subagent → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview).toBeTruthy();
+    expect(result.latestReview.reviewMode).toBe('subagent');
+  });
+
+  it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: true },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview.reviewMode).toBe('self');
+  });
+
+  it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self → BLOCKED', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+  });
+
+  it('approve + subagentEnabled=true + missing reviewFindings → BLOCKED', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    const result = parseToolResult(raw);
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
+  });
+
+  it('approve + subagentEnabled=true + valid reviewFindings → accepted', async () => {
+    await hydrateSession({ policyMode: 'solo' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+
+    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+      '../adapters/workspace/index.js'
+    );
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+    let state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      policySnapshot: {
+        ...state!.policySnapshot,
+        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+      },
+    });
+
+    state = await readState(sessDir);
+    expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
+
+    const validFindings = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'approve' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_actor' },
+      reviewedAt: new Date().toISOString(),
+    };
+
+    const raw = await plan.execute(
+      { planText: '## Plan\n1. Fix', reviewFindings: validFindings },
+      ctx,
+    );
+    const result = parseToolResult(raw);
+    expect(result.error).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Tool 5: decision (review-decision)
+// =============================================================================
+
+describe('decision', () => {
+  /** Helper: get to PLAN_REVIEW phase (solo auto-converges self-review). */
+  async function reachPlanReview(): Promise<void> {
+    await hydrateSession({ policyMode: 'team' });
+    await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    // In team mode, we need to manually approve self-review
+    // Keep approving until convergence
+    for (let i = 0; i < 5; i++) {
+      const s = parseToolResult(await status.execute({}, ctx));
+      if (s.phase === 'PLAN_REVIEW') break;
+      await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    }
+  }
+
+  describe('HAPPY', () => {
+    it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
+    });
+  });
+
+  describe('BAD', () => {
+    it('blocks at wrong phase', async () => {
+      await hydrateSession();
+      const raw = await decision.execute({ verdict: 'approve', rationale: '' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+    });
+
+    it('blocks without session', async () => {
+      const raw = await decision.execute({ verdict: 'approve', rationale: '' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('NO_SESSION');
+    });
+
+    it('fail-closes when derived plan artifacts are missing', async () => {
+      await reachPlanReview();
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+        '../adapters/workspace/index.js'
+      );
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EVIDENCE_ARTIFACT_MISSING');
+    });
+
+    it('maps actor claim expiration to structured decision errors', async () => {
+      const { ActorClaimError } = actorMock;
+      await reachPlanReview();
+      vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
+        new ActorClaimError('ACTOR_CLAIM_EXPIRED', 'claim expired'),
+      );
+
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_CLAIM_EXPIRED');
+    });
+  });
+
+  describe('CORNER', () => {
+    it('reject at PLAN_REVIEW returns to TICKET', async () => {
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('TICKET');
+    });
+
+    it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {
+      await reachPlanReview();
+      const raw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'More detail needed' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('PLAN');
+    });
+
+    it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
+      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
+      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const wsDir = workspaceDir(fp.fingerprint);
+      const baseConfig = await readConfig(wsDir);
+      await writeConfig(wsDir, {
+        ...baseConfig,
+        policy: {
+          ...baseConfig.policy,
+          requireVerifiedActorsForApproval: true,
+        },
+      });
+
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+    });
+  });
+});

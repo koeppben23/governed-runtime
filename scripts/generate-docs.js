@@ -23,6 +23,7 @@ const version = readFileSync(versionFile, 'utf-8').trim();
 const filesToUpdate = [
   'README.md',
   'PRODUCT_IDENTITY.md',
+  'PRODUCT_ONE_PAGER.md',
   'CHANGELOG.md',
   'docs/installation.md',
   'docs/air-gapped-guide.md',
@@ -42,6 +43,8 @@ const filesToUpdate = [
   'docs/security-hardening.md',
   'docs/deployment-model.md',
   'docs/distribution-model.md',
+  'docs/independent-review.md',
+  'docs/experimental-acp.md',
   'docs/phases.md',
   'docs/profiles.md',
   'docs/commands.md',
@@ -53,18 +56,46 @@ const filesToUpdate = [
 
 function replaceVersion(content) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // First: repair trailing underscore pattern: "_FlowGuard Version: 1.2.0-rc.1_" → "FlowGuard Version: 1.2.0-rc.1"
+  // This must run before the multi-suffix repair
   content = content.replace(
-    new RegExp(`FlowGuard Version: [\\d.]+`, 'g'),
+    /_FlowGuard Version: [\d.]+(?:-[a-zA-Z0-9.]+)?_/g,
+    `FlowGuard Version: ${version}`,
+  );
+  // Second: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
+  content = content.replace(/([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g, '$1');
+  // Now apply normal replacements with the correct version
+  content = content.replace(
+    new RegExp(`FlowGuard Version: [\\d.]+(?:-[a-zA-Z0-9.]+)?`, 'g'),
     `FlowGuard Version: ${version}`,
   );
   content = content.replace(
-    /\*\*Version:\*\* [\d.]+(\s*\|\s*TypeScript)/g,
+    /\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?(\s*\|\s*TypeScript)/g,
     `**Version:** ${version}$1`,
   );
-  content = content.replace(/^\*Version: [\d.]+\*$/gm, `**Version:** ${version}`);
   content = content.replace(
-    new RegExp(`flowguard-core-[\\d.]+\\.tgz`, 'g'),
+    /^-\s*\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?\s*$/gm,
+    `- **Version:** ${version}`,
+  );
+  content = content.replace(
+    /^\*\*Version:\*\* [\d.]+(?:-[a-zA-Z0-9.]+)?\s*$/gm,
+    `**Version:** ${version}`,
+  );
+  content = content.replace(
+    /^\*Version: [\d.]+(?:-[a-zA-Z0-9.]+)?\*$/gm,
+    `**Version:** ${version}`,
+  );
+  content = content.replace(
+    new RegExp(`flowguard-core-[\\d.]+(?:-[a-zA-Z0-9.]+)?\\.tgz`, 'g'),
     `flowguard-core-${version}.tgz`,
+  );
+  content = content.replace(
+    /^\*\*Current snapshot: v?[\d.]+(?:-[a-zA-Z0-9.]+)?\*\*$/gm,
+    `**Current snapshot: ${version}**`,
+  );
+  content = content.replace(
+    /^Current snapshot: v?[\d.]+(?:-[a-zA-Z0-9.]+)?$/gm,
+    `Current snapshot: ${version}`,
   );
   return content;
 }

@@ -141,8 +141,8 @@ Organizations should maintain:
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0-rc.1.tgz
-├── flowguard-core-1.2.0-rc.1.tgz
+├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0
 ├── checksums.sha256
 └── release-notes/
     ├── v1.2.0.md
@@ -160,5 +160,5 @@ For release-related questions:
 
 ---
 
-_FlowGuard Version: 1.2.0-rc.1-rc.1_
+FlowGuard Version: 1.2.0-rc.1
 _Last Updated: 2026-04-15_

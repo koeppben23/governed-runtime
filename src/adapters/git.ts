@@ -201,53 +201,6 @@ export async function changedFiles(worktree: string): Promise<string[]> {
 }
 
 /**
- * Get files that differ between a base ref and the current working tree.
- *
- * Useful for comparing the implementation against a known baseline
- * (e.g., the branch point, or the commit before implementation started).
- *
- * @param worktree - Worktree root.
- * @param base - Base ref (commit hash, branch name, tag). Defaults to "HEAD".
- * @returns Sorted array of file paths relative to worktree root.
- *
- * Falls back to changedFiles() if the base ref doesn't exist
- * (e.g., initial repository with no commits).
- */
-export async function diffFiles(worktree: string, base: string = 'HEAD'): Promise<string[]> {
-  try {
-    const output = await git(worktree, ['diff', '--name-only', base]);
-    if (!output) return [];
-    return output
-      .split('\n')
-      .filter((f) => f.trim())
-      .map((f) => path.normalize(f))
-      .sort();
-  } catch {
-    // Base ref doesn't exist (no commits yet) -- fall back to status-based discovery
-    return changedFiles(worktree);
-  }
-}
-
-/**
- * Get files that are currently staged (in the index, ready to commit).
- *
- * @returns Sorted array of staged file paths relative to worktree root.
- */
-export async function stagedFiles(worktree: string): Promise<string[]> {
-  try {
-    const output = await git(worktree, ['diff', '--name-only', '--cached']);
-    if (!output) return [];
-    return output
-      .split('\n')
-      .filter((f) => f.trim())
-      .map((f) => path.normalize(f))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Get the current HEAD commit hash (short form).
  * Returns null if no commits exist.
  */

@@ -1,16 +1,38 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run unit tests with coverage
+        run: npm run test:coverage:ci
+        env:
+          FORCE_COLOR: 0
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 3
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -24,17 +46,46 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run tests with coverage
-        run: npm run test:coverage
+      - name: Run full test suite (excl. build-dependent tests)
+        run: npx vitest run --exclude src/cli/install-verify.test.ts --exclude src/cli/cli-contract-smoke.test.ts --exclude src/cli/run-acp-smoke.test.ts
         env:
           FORCE_COLOR: 0
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 3
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          FORCE_COLOR: 0
+
+  architecture:
+    name: architecture
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run architecture tests
+        run: npm run test:architecture
+        env:
+          FORCE_COLOR: 0
 
   typecheck:
     name: typecheck
@@ -143,8 +194,8 @@ jobs:
         env:
           FORCE_COLOR: 0
 
-  acp-smoke:
-    name: acp-smoke
+  smoke:
+    name: smoke
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -159,22 +210,62 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build package
+        run: npm run build
+        env:
+          FORCE_COLOR: 0
+
       - name: Install OpenCode CLI
         run: npm install -g opencode-ai
 
       - name: Verify OpenCode CLI availability
         run: |
           if ! command -v opencode >/dev/null 2>&1; then
-            echo "::error::opencode CLI not found on runner. ACP smoke tests are mandatory."
+            echo "::error::opencode CLI not found on runner. Smoke tests require it."
             exit 1
           fi
           opencode --version
 
-      - name: Run ACP smoke tests
-        run: npm run test:acp
+      - name: Run smoke tests
+        run: npm run test:smoke
         env:
           FORCE_COLOR: 0
           RUN_OPENCODE_ACP_TESTS: '1'
+
+  independent-review-e2e:
+    name: independent-review-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package for runtime install
+        run: npm run build
+
+      - name: Install OpenCode CLI
+        run: npm install -g opencode-ai
+
+      - name: Verify OpenCode CLI availability
+        run: |
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "::error::opencode CLI not found on runner. Independent-review runtime e2e is mandatory."
+            exit 1
+          fi
+          opencode --version
+
+      - name: Run independent-review e2e verifier
+        run: npm run test:independent-review-e2e
+        env:
+          FORCE_COLOR: 0
 
   audit:
     name: audit
@@ -191,6 +282,31 @@ jobs:
         run: npm ci
       - name: npm audit (high+)
         run: npm audit --audit-level=high
+
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run mutation tests
+        run: npm run mutation
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 7
 
   actionlint:
     name: actionlint

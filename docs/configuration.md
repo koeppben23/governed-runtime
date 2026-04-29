@@ -106,9 +106,14 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 
 Configures IdP-based actor verification for `idp_verified` assurance.
 
+Token-expiry note: `exp` is currently recommended but not strictly required for accepted IdP tokens. When absent, FlowGuard computes a bounded default `expiresAt` in token metadata for compatibility. Organizations with stricter security posture should enforce `exp` issuance in their IdP policy.
+
 Runtime token input for both modes is provided via `FLOWGUARD_ACTOR_TOKEN_PATH` (JWT file path).
 If `policy.identityProvider` is set and `identityProviderMode` is `required`, missing or invalid
-token input blocks `/hydrate` fail-closed.
+token input blocks mutating decision paths (`/review-decision approve`) fail-closed.
+Hydrate remains diagnostic/best-effort and does not block on IdP failures.
+Schema validation rejects empty or structurally invalid identity provider configurations
+(including missing mode, issuer, or signing keys).
 
 `mode: "static"` (local key bundle):
 
@@ -180,7 +185,7 @@ Or remote JWKS with cache TTL:
 
 Authority rule: no mixed mode. `static` accepts `signingKeys` only; `jwks` accepts exactly one of `jwksPath` or `jwksUri`.
 
-`jwksUri` policy: HTTPS only, cached for `cacheTtlSeconds` (default 300s), fail-closed on fetch/parse/validation errors when refresh is required. P35b2 intentionally has no stale-on-error and no last-known-good fallback after TTL expiry.
+`jwksUri` policy: HTTPS only, cached for `cacheTtlSeconds` (default 300s), fail-closed on fetch/parse/validation errors when refresh is required. This implementation intentionally has no stale-on-error and no last-known-good fallback after TTL expiry.
 
 ### policy.identityProviderMode
 

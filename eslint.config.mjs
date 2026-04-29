@@ -58,6 +58,12 @@ export default tseslint.config(
           varsIgnorePattern: "^_",
         },
       ],
+      "max-params": ["warn", { max: 5 }],
+      complexity: ["warn", { max: 12 }],
+      "max-lines-per-function": [
+        "warn",
+        { max: 80, skipBlankLines: true, skipComments: true },
+      ],
       "@typescript-eslint/await-thenable": "error",
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-unnecessary-type-assertion": "error",

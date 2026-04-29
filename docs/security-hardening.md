@@ -226,27 +226,30 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 | `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified |
 | `unknown` | `best_effort`     | No identity available                                                                     |
 
-### IdP Trust Modes (P35)
+### IdP Trust Modes
 
 - `mode: 'static'` with pinned signing keys (`jwk` or `pem`)
 - `mode: 'jwks'` with pinned local `jwksPath`
 - `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
+- JWT verification path uses `jose` `jwtVerify`; key resolution remains FlowGuard-owned (no `createRemoteJWKSet` in verifier path)
 
-P35 explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
+Current token-expiry compatibility behavior: `exp` is recommended but not strictly required. If `exp` is missing, FlowGuard derives a bounded default `expiresAt` value in verified-token metadata. For high-assurance deployments, require `exp` in IdP-issued tokens by policy/process.
+
+This implementation explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
 
 ### Policy Gate
 
 In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum required tier:
 
 - `best_effort` — any actor may approve
-- `claim_validated` — only claim-validated actors may approve (P33 `verified` equivalent)
+- `claim_validated` — only claim-validated actors may approve (verified equivalent)
 - `idp_verified` — only IdP-verified actors may approve
 
 Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
 
 ### Fail-Closed Identity Behavior
 
-- `identityProviderMode: 'required'` blocks session hydration on IdP failures (no implicit fallback).
+- `identityProviderMode: 'required'` enforces IdP verification at mutating decision paths (approve/reject). Hydrate remains diagnostic/best-effort and does not block on IdP failures.
 - `identityProviderMode: 'optional'` degrades only on typed IdP errors; claim/env/git/unknown resolution remains bounded by priority rules.
 - Remote JWKS refresh failures after TTL expiry fail closed (`IDP_JWKS_FETCH_FAILED`).
 
@@ -283,5 +286,5 @@ Representative typed fail-closed IdP errors:
 
 ---
 
-_FlowGuard Version: 1.2.0-rc.1-rc.1_
+FlowGuard Version: 1.2.0-rc.1
 _Last Updated: 2026-04-23_

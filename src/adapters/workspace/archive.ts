@@ -7,7 +7,12 @@
  * - SHA-256 checksum sidecar file (fatal in regulated mode — P26)
  * - Discovery snapshot soft-check
  *
- * @version v2
+ * Fail-closed invariants (P4a):
+ * - State read failure (corrupt/unreadable) blocks archive creation.
+ * - Audit trail read failure blocks archive creation.
+ * - ENOENT (no file yet) is safe — readState returns null, readAuditTrail returns empty.
+ *
+ * @version v3
  */
 
 import * as fs from 'node:fs/promises';
@@ -32,7 +37,7 @@ import {
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir, workspaceDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
-import { verifyEvidenceArtifacts } from '../../integration/artifacts/evidence-artifacts.js';
+import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -85,8 +90,11 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     throw new WorkspaceError('ARCHIVE_FAILED', `Session directory does not exist: ${sessDir}`);
   }
 
-  // ── Soft-check: warn if discovery snapshots are missing ────────
-  const state = await readState(sessDir).catch(() => null);
+  // ── Fail-closed: state must be readable if it exists ────────────
+  // readState returns null for ENOENT (no state file = fresh session),
+  // but throws PersistenceError for corrupt/unreadable state.
+  // An archive without verifiable state cannot prove what was governed.
+  const state = await readState(sessDir);
 
   // Fail-closed: if ticket/plan evidence exists in state, derived artifacts must be present.
   if (state) {
@@ -107,8 +115,13 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   const redactionMode = config.archive.redaction.mode;
   const includeRaw = config.archive.redaction.includeRaw;
 
+  // ── Fail-closed: audit trail must be readable if it exists ─────
+  // readAuditTrail returns { events: [], skipped: 0 } for ENOENT,
+  // but throws PersistenceError for unreadable files.
+  // An archive without its audit chain is governance-worthless.
+  const { events } = await readAuditTrail(sessDir);
+
   // ── Build and write archive manifest ──────────────────────────
-  const { events } = await readAuditTrail(sessDir).catch(() => ({ events: [] }));
   const receipts = decisionReceipts(events).filter((r) => r.sessionId === validSessionId);
   const receiptsPayload = {
     schemaVersion: 'decision-receipts.v1',
@@ -409,7 +422,8 @@ async function verifyArchiveImpl(
   if (!checksumExists) {
     findings.push({
       code: 'archive_checksum_missing',
-      severity: 'warning',
+      // P2e: regulated mode treats missing sidecar as error (consistent with creation)
+      severity: manifest?.policyMode === 'regulated' ? 'error' : 'warning',
       message: 'Archive checksum sidecar (.sha256) not found',
     });
   } else {

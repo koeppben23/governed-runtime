@@ -207,6 +207,31 @@ describe('resolveActor', () => {
     });
   });
 
+  it('uses injected env instead of process.env', async () => {
+    // Verifies env DI: custom env is used, process.env is NOT touched
+    const customEnv = {
+      FLOWGUARD_ACTOR_ID: 'injected-user',
+      FLOWGUARD_ACTOR_EMAIL: 'injected@test.com',
+    } as NodeJS.ProcessEnv;
+
+    const actor = await resolveActor(WORKTREE, { env: customEnv });
+
+    expect(actor.source).toBe('env');
+    expect(actor.id).toBe('injected-user');
+    expect(actor.email).toBe('injected@test.com');
+  });
+
+  it('injected env does not mutate process.env', async () => {
+    const before = process.env.FLOWGUARD_ACTOR_ID;
+
+    const customEnv = { FLOWGUARD_ACTOR_ID: 'first-user' } as NodeJS.ProcessEnv;
+    const actor = await resolveActor(WORKTREE, { env: customEnv });
+
+    expect(actor.id).toBe('first-user');
+    // Injection must not mutate the real process.env
+    expect(process.env.FLOWGUARD_ACTOR_ID).toBe(before);
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // P33: Actor Claim Tests
   // ═══════════════════════════════════════════════════════════════════════════════

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { buildLogSinks } from './plugin.js';
+import { buildLogSinks } from './plugin-logging.js';
 import type { LogEntry, LogSink } from '../logging/logger.js';
 
 const mockConfig = {

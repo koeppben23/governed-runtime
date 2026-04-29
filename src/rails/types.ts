@@ -13,7 +13,7 @@
  */
 
 import type { SessionState, Phase, Event } from '../state/schema.js';
-import type { LoopVerdict, RevisionDelta } from '../state/evidence.js';
+import type { LoopVerdict, RevisionDelta, SelfReviewLoop } from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
@@ -302,5 +302,36 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
     currDigest: processed.artifact.digest,
     revisionDelta: processed.revisionDelta,
     verdict: result.verdict,
+  };
+}
+
+// ─── Loop State Builders ──────────────────────────────────────────────────────
+
+/**
+ * Build a self-review loop state object from a SelfReviewLoop result.
+ *
+ * Eliminates the duplicated 6-field object literal pattern that appears
+ * identically at 4 call sites in continue.ts and plan.ts.
+ */
+export function buildSelfReviewState(loop: SelfReviewLoop) {
+  return {
+    iteration: loop.iteration,
+    maxIterations: loop.maxIterations,
+    prevDigest: loop.prevDigest,
+    currDigest: loop.currDigest,
+    revisionDelta: loop.revisionDelta,
+    verdict: loop.verdict,
+  };
+}
+
+/**
+ * Build an implementation review loop state object from a SelfReviewLoop result.
+ *
+ * Extends buildSelfReviewState with the mandatory executedAt timestamp.
+ */
+export function buildImplReviewState(loop: SelfReviewLoop, executedAt: string) {
+  return {
+    ...buildSelfReviewState(loop),
+    executedAt,
   };
 }

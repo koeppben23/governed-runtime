@@ -9,6 +9,7 @@
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
  *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/
+ *    - state/ may import from shared/ (neutral constants with zero dependencies)
  *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
@@ -192,6 +193,8 @@ const FF_MODULES = new Set([
   'archive',
   'logging',
   'cli',
+  'identity',
+  'telemetry',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -279,7 +282,7 @@ describe('Layer Dependency Rules', () => {
     }
   });
 
-  describe('Rule 1: state/ is a leaf module (with exception for discovery/types)', () => {
+  describe('Rule 1: state/ is a leaf module with explicit schema-only exceptions', () => {
     const stateViolations: ImportViolation[] = [];
     const forbiddenFromState = new Set([
       'machine',
@@ -291,8 +294,13 @@ describe('Layer Dependency Rules', () => {
       'archive',
       'logging',
       'cli',
+      'discovery',
+      'telemetry',
     ]);
-    const allowedForState = new Set(['discovery']);
+    // Intentional exception: state/evidence.ts imports IdpConfigSchema from
+    // identity/types.js for policy snapshot validation. Do not expand this
+    // to actor resolution or runtime identity services.
+    const allowedForState = new Set(['shared', 'identity']);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
@@ -395,6 +403,9 @@ describe('Layer Dependency Rules', () => {
 
   describe('Rule 3: discovery/types is a leaf module', () => {
     const violations: ImportViolation[] = [];
+    // P2d: discovery/types now re-exports schemas from state/discovery-schemas.
+    // state/ is the bottom layer — discovery depending on state is architecturally
+    // correct. All other FlowGuard modules remain forbidden.
     const forbiddenFromDiscovery = new Set([
       'machine',
       'rails',
@@ -403,7 +414,6 @@ describe('Layer Dependency Rules', () => {
       'config',
       'audit',
       'archive',
-      'state',
     ]);
 
     beforeAll(() => {

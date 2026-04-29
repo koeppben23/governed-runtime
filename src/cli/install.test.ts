@@ -30,6 +30,7 @@ import {
   doctor,
   sha256,
   computeMandatesDigest,
+  mergeReviewerTaskPermission,
   formatResult,
   formatDoctor,
   main,
@@ -1062,6 +1063,69 @@ describe('cli/install', () => {
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
 
+    it('mergeReviewerTaskPermission enforces *.deny + flowguard-reviewer.allow (P35)', () => {
+      const parsed: Record<string, unknown> = {
+        agent: {
+          build: {
+            permission: {
+              task: {
+                'some-other-agent': 'allow',
+              },
+            },
+          },
+        },
+      };
+      mergeReviewerTaskPermission(parsed);
+
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      // P35: Must have wildcard deny
+      expect(t['*']).toBe('deny');
+      // Must have reviewer allow
+      expect(t['flowguard-reviewer']).toBe('allow');
+      // P35 strict: other allow entries are removed
+      expect(t['some-other-agent']).toBeUndefined();
+    });
+
+    it('mergeReviewerTaskPermission preserves existing *.deny if already set', () => {
+      const parsed: Record<string, unknown> = {
+        agent: {
+          build: {
+            permission: {
+              task: {
+                '*': 'deny',
+              },
+            },
+          },
+        },
+      };
+      mergeReviewerTaskPermission(parsed);
+
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      expect(t['*']).toBe('deny');
+      expect(t['flowguard-reviewer']).toBe('allow');
+    });
+
+    it('mergeReviewerTaskPermission handles empty config', () => {
+      const parsed: Record<string, unknown> = {};
+      mergeReviewerTaskPermission(parsed);
+
+      const task = ((parsed as Record<string, unknown>).agent as Record<string, unknown>)
+        .build as Record<string, unknown>;
+      const perm = task.permission as Record<string, unknown>;
+      const t = perm.task as Record<string, unknown>;
+
+      expect(t['*']).toBe('deny');
+      expect(t['flowguard-reviewer']).toBe('allow');
+    });
+
     it('AGENTS.md in project root is never touched even with --force', async () => {
       const tarball = await createMockTarball();
       // Create a custom AGENTS.md
@@ -1228,8 +1292,8 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 package.json + 1 opencode.json + 1 config.json
-      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1;
+      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 agent + 1 package.json + 1 opencode.json + 1 config.json
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 

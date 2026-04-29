@@ -11,7 +11,8 @@
  *
  * P35a: IdP verification via static keys in policy.identityProvider.
  * If identityProvider is configured and TOKEN_PATH is set, JWT is verified against static keys.
- * If identityProviderMode is 'required', session creation fails when verification fails.
+ * If identityProviderMode is 'required', mutating decision paths fail when
+ * verification fails (fail-closed). Hydrate remains diagnostic/best-effort.
  *
  * P34: Source and assurance are orthogonal. A given source always produces a fixed
  * assurance tier. The source tells WHERE, assurance tells HOW STRONG.
@@ -77,6 +78,7 @@ export class ActorIdentityError extends Error {
     public readonly code:
       | 'ACTOR_IDENTITY_UNAVAILABLE'
       | 'ACTOR_IDP_MODE_REQUIRED'
+      | 'ACTOR_IDP_CONFIG_REQUIRED'
       | 'ACTOR_IDP_INVALID',
     message: string,
   ) {
@@ -155,6 +157,8 @@ export async function resolveActorFromClaim(claimsPath: string): Promise<ActorCl
 export interface ResolveActorOptions {
   idpConfig?: IdpConfig | null;
   idpMode?: 'optional' | 'required';
+  /** Inject environment for testability. Defaults to process.env. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -179,9 +183,9 @@ export async function resolveActor(
   worktree: string,
   options?: ResolveActorOptions,
 ): Promise<ActorInfo> {
-  const { idpConfig, idpMode = 'optional' } = options ?? {};
+  const { idpConfig, idpMode = 'optional', env = process.env } = options ?? {};
 
-  const tokenPath = process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  const tokenPath = env.FLOWGUARD_ACTOR_TOKEN_PATH;
   if (isIdpConfigured(idpConfig)) {
     if (!tokenPath) {
       if (idpMode === 'required') {
@@ -217,7 +221,7 @@ export async function resolveActor(
     }
   }
 
-  const rawClaimsPath = process.env.FLOWGUARD_ACTOR_CLAIMS_PATH;
+  const rawClaimsPath = env.FLOWGUARD_ACTOR_CLAIMS_PATH;
   if (rawClaimsPath !== undefined) {
     const claimsPath = rawClaimsPath.trim();
     if (!claimsPath) {
@@ -236,10 +240,10 @@ export async function resolveActor(
     };
   }
 
-  const envId = process.env.FLOWGUARD_ACTOR_ID?.trim();
+  const envId = env.FLOWGUARD_ACTOR_ID?.trim();
   if (envId) {
-    const envEmail = process.env.FLOWGUARD_ACTOR_EMAIL?.trim() || null;
-    const envDisplayName = process.env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null;
+    const envEmail = env.FLOWGUARD_ACTOR_EMAIL?.trim() || null;
+    const envDisplayName = env.FLOWGUARD_ACTOR_DISPLAY_NAME?.trim() || null;
     return {
       id: envId,
       email: envEmail,
