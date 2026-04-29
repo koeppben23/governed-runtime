@@ -104,13 +104,14 @@ npm run build
 
 ### CI Jobs
 
-| Job                | Script                                         | What It Proves                                         |
-| ------------------ | ---------------------------------------------- | ------------------------------------------------------ |
-| **unit**           | `npm run test:unit`                            | Pure logic correctness                                 |
-| **integration**    | `npm run test:integration`                     | Governance chain fidelity                              |
-| **smoke**          | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
-| **install-verify** | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
-| **mutation**       | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
+| Job                 | Script                                         | What It Proves                                         |
+| ------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| **unit**            | `npm run test:unit`                            | Pure logic correctness                                 |
+| **integration**     | `npm run test:integration`                     | Governance chain fidelity                              |
+| **smoke**           | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
+| **install-verify**  | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
+| **mutation**        | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
+| **actions-pinning** | `npm run check:actions-pinned`                 | GitHub Actions are pinned to immutable refs            |
 
 See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
 

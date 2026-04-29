@@ -30,6 +30,7 @@
     "clean": "node scripts/clean-dist.js",
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
     "check:esm": "node scripts/check-esm-imports.js",
+    "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",

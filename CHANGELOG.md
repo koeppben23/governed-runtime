@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub Actions supply-chain pinning**: CI workflows now pin external GitHub Actions to immutable commit SHAs, enforce the policy with `npm run check:actions-pinned`, and allow Docker actions only when pinned by digest. Documentation now states the workflow action trust boundary and Dependabot remains the update path for GitHub Actions.
 - **Policy Snapshot Authority**: Centralized policy snapshot lifecycle with dedicated authority functions. Hydrate now freezes all governance-critical fields (actor classification, minimum actor assurance, identity provider configuration, self-review settings) from the resolved policy preset plus config overrides into the immutable session snapshot. Legacy or incomplete snapshots are normalized with safe mode-consistent defaults.
 - **Policy-Aware Actor Resolution**: Decision paths (`/review-decision approve`) resolve actor identity with full identity provider context from the session's policy snapshot. Identity provider configuration hardening via schema-based validation rejects empty or structurally invalid configurations. Added reason codes for missing or invalid identity provider configuration with recovery guidance in the reason registry.
 - **Governance Field Completeness**: The hydration policy input now forwards identity provider configuration, identity provider mode, and minimum actor assurance fields from config through to the policy snapshot, ensuring config-level identity and assurance settings are visible to all runtime enforcement checks.
@@ -55,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TypeDoc API Reference**: Added TypeDoc-based browsable TypeScript API documentation with three entry points (`@flowguard/core`, `@flowguard/core/integration`, `@flowguard/core/integration/tools`). Generated via `npm run docs`, deployed to GitHub Pages via CI (`docs.yml`). Top-level `@packageDocumentation` with package structure, policy mode overview, and architecture principles.
 - **Governance test hardening**: Added deterministic coverage for actor assurance, policy snapshot regression, state machine invariants, audit/archive tampering, and legacy session-state upgrades. The suites cover terminal phase blocks, deterministic replay, policy mode variance, table-driven assurance tiers, identity-provider fail-closed behavior, archive tamper detection, and `normalizePolicySnapshotWithMeta` migration paths.
 
-- **StrykerJS mutation testing**: Introduced mutation testing for security-critical governance code with the Vitest test runner, per-test coverage analysis, and TypeScript checker integration. CI runs mutation testing as a non-blocking job with a configured score threshold and uploads mutation reports for survivor analysis.
+- **StrykerJS mutation testing**: Introduced mutation testing for security-critical governance code with the Vitest test runner, per-test coverage analysis, and TypeScript checker integration. CI runs mutation testing with the configured score threshold and uploads mutation reports for survivor analysis.
 
 ### Changed
 
