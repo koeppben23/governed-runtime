@@ -140,7 +140,7 @@ describe('persistence', () => {
     it('appendAuditEvent + readAuditTrail round-trip', async () => {
       const event1 = makeValidAuditEvent();
       const event2 = makeValidAuditEvent({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         event: 'transition:TICKET_SET',
       });
       await appendAuditEvent(tmpDir, event1);
@@ -242,7 +242,7 @@ describe('persistence', () => {
         JSON.stringify(validEvent),
         'this is not json',
         JSON.stringify({ invalid: 'schema' }),
-        JSON.stringify(makeValidAuditEvent({ id: '22222222-2222-2222-2222-222222222222' })),
+        JSON.stringify(makeValidAuditEvent({ id: '22222222-2222-4222-8222-222222222222' })),
         '',
       ].join('\n');
       await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
@@ -312,7 +312,7 @@ describe('persistence', () => {
 
     it("appendAuditEvent is additive (doesn't overwrite)", async () => {
       for (let i = 0; i < 10; i++) {
-        const id = `${String(i).padStart(8, '0')}-0000-0000-0000-000000000000`;
+        const id = `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`;
         await appendAuditEvent(tmpDir, makeValidAuditEvent({ id }));
       }
       const { events } = await readAuditTrail(tmpDir);

@@ -38,11 +38,44 @@ import { computeFingerprint } from './fingerprint.js';
  *
  * Uses OPENCODE_CONFIG_DIR if set (for testing/custom setups),
  * otherwise defaults to ~/.config/opencode.
+ *
+ * Safety guard: when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is set,
+ * OPENCODE_CONFIG_DIR is mandatory.  This prevents accidental writes
+ * to the production workspace registry during tests, E2E, and CI.
  */
 export function workspacesHome(): string {
+  if (process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR) {
+    if (!process.env.OPENCODE_CONFIG_DIR) {
+      throw new Error(
+        `OPENCODE_CONFIG_DIR is not set but FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active. ` +
+          `Test environments must set OPENCODE_CONFIG_DIR to an isolated temporary directory.`,
+      );
+    }
+    assertSafeConfigDir(process.env.OPENCODE_CONFIG_DIR);
+  }
   const configRoot =
     process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
   return path.join(configRoot, 'workspaces');
+}
+
+/**
+ * Assert that a config directory path is a safe temporary location.
+ *
+ * Uses path.resolve + path.relative to verify the directory is under
+ * the OS temp root, not a substring-based heuristic.
+ */
+function assertSafeConfigDir(dir: string): void {
+  const tmpRoot = path.resolve(os.tmpdir());
+  const resolvedDir = path.resolve(dir);
+  // Shortest path: if resolvedDir IS tmpRoot, ok too
+  if (resolvedDir === tmpRoot) return;
+  const rel = path.relative(tmpRoot, resolvedDir);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `OPENCODE_CONFIG_DIR (${resolvedDir}) must be under the OS temp directory (${tmpRoot}) ` +
+        `when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active.`,
+    );
+  }
 }
 
 /**
@@ -84,44 +117,28 @@ export function sessionDir(fingerprint: string, sessionId: string): string {
 // -- Workspace Initialization -------------------------------------------------
 
 /**
- * Initialize workspace and session directory. Idempotent.
+ * Initialize (or open) a workspace root. Idempotent — does NOT create a session.
  *
- * Invariants:
- * - Multiple calls with same (worktree, sessionId) produce no side effects
- * - Existing workspace.json is validated, not overwritten
- * - Existing session directory is reused
- * - Missing directories are created
- * - Metadata mismatch on canonicalRemote with same fingerprint → fail-closed (hash collision or tampering)
- * - Metadata mismatch on materialClass → warning logged, existing workspace.json preserved
+ * Creates the workspace directory structure (sessions/, discovery/) and
+ * materializes workspace.json if it does not already exist.
  *
- * Creates:
- * - ~/.config/opencode/workspaces/{fingerprint}/
- * - ~/.config/opencode/workspaces/{fingerprint}/workspace.json
- * - ~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/
- * - ~/.config/opencode/workspaces/{fingerprint}/logs/
- * - ~/.config/opencode/workspaces/{fingerprint}/discovery/
+ * This is the SSOT for workspace-root creation. Used by both the installer
+ * and the runtime session bootstrap path.
  *
  * @param worktree - Git worktree root path.
- * @param sessionId - OpenCode session ID.
- * @returns WorkspaceInfo metadata (from existing workspace.json or newly created).
- * @throws WorkspaceError on validation failure, mismatch, or I/O error.
+ * @returns Workspace info, fingerprint, and workspace directory path.
+ * @throws WorkspaceError on fingerprinting failure, metadata mismatch, or I/O error.
  */
-export async function initWorkspace(
+export async function ensureWorkspace(
   worktree: string,
-  sessionId: string,
-): Promise<{ info: WorkspaceInfo; fingerprint: string; sessionDir: string; workspaceDir: string }> {
-  const validSessionId = validateSessionId(sessionId);
+): Promise<{ info: WorkspaceInfo; fingerprint: string; workspaceDir: string }> {
   const fpResult = await computeFingerprint(worktree);
   const fp = fpResult.fingerprint;
   const wsDir = workspaceDir(fp);
-  const sessDir = sessionDir(fp, validSessionId);
 
   try {
-    // Create workspace directory structure (idempotent via recursive mkdir)
     await fs.mkdir(path.join(wsDir, 'sessions'), { recursive: true });
-    await fs.mkdir(path.join(wsDir, 'logs'), { recursive: true });
     await fs.mkdir(path.join(wsDir, 'discovery'), { recursive: true });
-    await fs.mkdir(sessDir, { recursive: true });
   } catch (err) {
     throw new WorkspaceError(
       'INIT_FAILED',
@@ -129,17 +146,14 @@ export async function initWorkspace(
     );
   }
 
-  // Read or create workspace.json
   const wsFilePath = path.join(wsDir, WORKSPACE_FILE);
   const existing = await readWorkspaceFile(wsFilePath);
 
   if (existing) {
-    // Validate metadata consistency
     assertMetadataConsistency(existing, fpResult);
-    return { info: existing, fingerprint: fp, sessionDir: sessDir, workspaceDir: wsDir };
+    return { info: existing, fingerprint: fp, workspaceDir: wsDir };
   }
 
-  // Create new workspace.json
   const info: WorkspaceInfo = {
     schemaVersion: WORKSPACE_SCHEMA_VERSION,
     fingerprint: fp,
@@ -158,7 +172,57 @@ export async function initWorkspace(
     );
   }
 
-  return { info, fingerprint: fp, sessionDir: sessDir, workspaceDir: wsDir };
+  return { info, fingerprint: fp, workspaceDir: wsDir };
+}
+
+/**
+ * Initialize workspace and session directory. Idempotent.
+ *
+ * Calls ensureWorkspace() for the workspace root, then creates the session
+ * subdirectory. This is the canonical runtime bootstrap path used by
+ * /hydrate and /start.
+ *
+ * Invariants:
+ * - Multiple calls with same (worktree, sessionId) produce no side effects
+ * - Existing workspace.json is validated, not overwritten
+ * - Existing session directory is reused
+ * - Missing directories are created
+ * - Metadata mismatch on canonicalRemote with same fingerprint → fail-closed
+ *
+ * Creates:
+ * - ~/.config/opencode/workspaces/{fingerprint}/
+ * - ~/.config/opencode/workspaces/{fingerprint}/workspace.json
+ * - ~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/
+ * - ~/.config/opencode/workspaces/{fingerprint}/discovery/
+ *
+ * @param worktree - Git worktree root path.
+ * @param sessionId - OpenCode session ID.
+ * @returns WorkspaceInfo metadata (from existing workspace.json or newly created).
+ * @throws WorkspaceError on validation failure, mismatch, or I/O error.
+ */
+export async function initWorkspace(
+  worktree: string,
+  sessionId: string,
+): Promise<{ info: WorkspaceInfo; fingerprint: string; sessionDir: string; workspaceDir: string }> {
+  const validSessionId = validateSessionId(sessionId);
+  const ws = await ensureWorkspace(worktree);
+  const sessDir = sessionDir(ws.fingerprint, validSessionId);
+
+  try {
+    await fs.mkdir(sessDir, { recursive: true });
+  } catch (err) {
+    throw new WorkspaceError(
+      'INIT_FAILED',
+      `Failed to create session directory: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  return {
+    info: ws.info,
+    fingerprint: ws.fingerprint,
+    sessionDir: sessDir,
+    workspaceDir: ws.workspaceDir,
+  };
 }
 
 // -- Workspace Info -----------------------------------------------------------

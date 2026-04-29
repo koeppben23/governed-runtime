@@ -15,8 +15,52 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { status, hydrate, ticket } from './tools/index.js';
+import {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  implement,
+  decision,
+  validate,
+  review,
+  abort_session,
+  archive,
+  architecture,
+} from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+
+// ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
+
+describe('tool-schemas-zod-v4', () => {
+  const allTools = {
+    status,
+    hydrate,
+    ticket,
+    plan,
+    implement,
+    decision,
+    validate,
+    review,
+    abort_session,
+    archive,
+    architecture,
+  } as const;
+
+  it('every tool exposes Zod v4 _zod metadata on all args', () => {
+    for (const [name, tool] of Object.entries(allTools)) {
+      for (const [argName, schema] of Object.entries(tool.args)) {
+        const zodMeta = (schema as Record<string, unknown>)?.['_zod'];
+        expect(zodMeta, `${name}.args.${argName} missing _zod`).toBeDefined();
+        expect(typeof zodMeta, `${name}.args.${argName} _zod not object`).toBe('object');
+        expect(
+          (zodMeta as Record<string, unknown>)?.def,
+          `${name}.args.${argName} missing _zod.def`,
+        ).toBeDefined();
+      }
+    }
+  });
+});
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 

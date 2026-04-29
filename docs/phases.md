@@ -191,9 +191,9 @@ Generates an implementation plan with built-in self-review. The AI critically re
 ### PLAN_REVIEW
 
 **Entry:** Automatic from PLAN (self-review converged)
-**Exit:** `/review-decision`
+**Exit:** `/review-decision` (or `/approve`, `/request-changes`, `/reject`)
 
-Human reviews and approves the plan before implementation begins. In regulated mode, a second person must review.
+Human reviews and approves the plan before implementation begins. When self-review converges, a **Plan Review Card** is displayed showing the complete plan body, version, policy mode, task title, and recommended next actions. In regulated mode, a second person must review.
 
 - `approve` → VALIDATION
 - `changes_requested` → back to PLAN

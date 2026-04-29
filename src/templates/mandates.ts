@@ -450,7 +450,7 @@ export const PACKAGE_JSON_TEMPLATE = (version: string): string => `\
   "private": true,
   "dependencies": {
     "@flowguard/core": "file:./vendor/flowguard-core-${version}.tgz",
-    "zod": "^3.23.0"
+    "zod": "^4.0.0"
   }
 }
 `;

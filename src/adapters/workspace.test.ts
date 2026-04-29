@@ -29,6 +29,7 @@ import {
   workspacesHome,
   workspaceDir,
   sessionDir,
+  ensureWorkspace,
   initWorkspace,
   readWorkspaceInfo,
   writeSessionPointer,
@@ -368,12 +369,38 @@ describe('path resolution', () => {
     }
   });
 
-  it('workspacesHome defaults to ~/.config/opencode/workspaces', () => {
+  it('workspacesHome blocks when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active and OPENCODE_CONFIG_DIR unset', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
     delete process.env.OPENCODE_CONFIG_DIR;
-    const home = workspacesHome();
-    expect(home).toContain('workspaces');
-    expect(home).toContain('.config');
-    expect(home).toContain('opencode');
+    try {
+      expect(() => workspacesHome()).toThrow('OPENCODE_CONFIG_DIR is not set');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    }
+  });
+
+  it('workspacesHome blocks when OPENCODE_CONFIG_DIR is outside tmpdir', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+    try {
+      expect(() => workspacesHome()).toThrow('must be under the OS temp directory');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      delete process.env.OPENCODE_CONFIG_DIR;
+    }
+  });
+
+  it('workspacesHome allows OPENCODE_CONFIG_DIR under tmpdir', () => {
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    const testDir = path.join(os.tmpdir(), 'fg-workspace-test-' + Date.now());
+    process.env.OPENCODE_CONFIG_DIR = testDir;
+    try {
+      const home = workspacesHome();
+      expect(home).toContain('workspaces');
+    } finally {
+      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      delete process.env.OPENCODE_CONFIG_DIR;
+    }
   });
 
   it('workspacesHome respects OPENCODE_CONFIG_DIR', () => {
@@ -410,6 +437,46 @@ describe('path resolution', () => {
 });
 
 // =============================================================================
+// ensureWorkspace
+// =============================================================================
+
+describe('ensureWorkspace', () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.OPENCODE_CONFIG_DIR;
+    await cleanTmpDir(tmpDir);
+  });
+
+  it('creates workspace.json and directories', async () => {
+    const { fingerprint, info, workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    expect(fingerprint).toMatch(/^[0-9a-f]{24}$/);
+    expect(info.fingerprint).toBe(fingerprint);
+    expect(info.schemaVersion).toBe('v1');
+
+    const wsJson = JSON.parse(await fs.readFile(path.join(wsDir, 'workspace.json'), 'utf-8'));
+    expect(wsJson.fingerprint).toBe(fingerprint);
+  });
+
+  it('is idempotent — second call returns same workspace', async () => {
+    const first = await ensureWorkspace(path.resolve('.'));
+    const second = await ensureWorkspace(path.resolve('.'));
+    expect(second.fingerprint).toBe(first.fingerprint);
+    expect(second.workspaceDir).toBe(first.workspaceDir);
+  });
+
+  it('does NOT create a session directory', async () => {
+    const { workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    const sessionsDir = path.join(wsDir, 'sessions');
+    const entries = await fs.readdir(sessionsDir);
+    expect(entries).toHaveLength(0);
+  });
+});
+
+// =============================================================================
 // initWorkspace
 // =============================================================================
 
@@ -426,7 +493,7 @@ describe('initWorkspace', () => {
 
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('creates workspace and session directories', async () => {
+    it('creates workspace, session, and discovery directories', async () => {
       // Use a mock worktree that points to this test's git repo
       const worktree = path.resolve('.');
       const sessionId = 'test-session-001';
@@ -447,9 +514,6 @@ describe('initWorkspace', () => {
       expect(sessStats.isDirectory()).toBe(true);
 
       // Subdirectories should exist
-      const logsStats = await fs.stat(path.join(wsDir, 'logs'));
-      expect(logsStats.isDirectory()).toBe(true);
-
       const discoveryStats = await fs.stat(path.join(wsDir, 'discovery'));
       expect(discoveryStats.isDirectory()).toBe(true);
 

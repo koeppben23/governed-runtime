@@ -35,7 +35,7 @@ export const FlowGuardConfigSchema = z.object({
       /** Number of days to retain log files. */
       retentionDays: z.number().int().min(1).max(90).default(7),
     })
-    .default({}),
+    .default({ mode: 'file', level: 'info', retentionDays: 7 }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */
   policy: z
@@ -88,9 +88,9 @@ export const FlowGuardConfigSchema = z.object({
           /** Include raw artifacts in archive alongside redacted artifacts. */
           includeRaw: z.boolean().default(false),
         })
-        .default({}),
+        .default({ mode: 'basic', includeRaw: false }),
     })
-    .default({}),
+    .default({ redaction: { mode: 'basic', includeRaw: false } }),
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────

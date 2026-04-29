@@ -57,6 +57,10 @@ import {
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
@@ -82,6 +86,17 @@ import {
   ensureReviewAssurance,
   findLatestObligation,
 } from '../review-assurance.js';
+
+/** Extract the first non-empty line of text, truncated to 120 characters. */
+function firstLine(text: string | undefined): string | undefined {
+  if (text == null) return undefined;
+  const line =
+    text
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) ?? '';
+  return line.length > 120 ? line.slice(0, 117) + '...' : line;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
@@ -416,11 +431,37 @@ export const plan: ToolDefinition = {
           iteration >= maxSelfReviewIterations ||
           (revisionDelta === 'none' && verdict === 'approve');
 
+        if (converged && finalState.phase === 'PLAN_REVIEW') {
+          const nextAction = resolveNextAction(finalState.phase, finalState);
+          const productNext = buildProductNextAction(nextAction, finalState.phase);
+          const reviewCard = buildPlanReviewCard({
+            planText: currentPlan.body,
+            phase: finalState.phase,
+            phaseLabel: PHASE_LABELS[finalState.phase],
+            productNextAction: productNext,
+            planVersion: history.length + 1,
+            policyMode: finalState.policySnapshot?.mode,
+            taskTitle: firstLine(finalState.ticket?.text),
+          });
+          return appendNextAction(
+            JSON.stringify({
+              phase: finalState.phase,
+              status: `Self-review converged at iteration ${iteration}. Plan ready for approval.`,
+              planDigest: currentPlan.digest,
+              selfReviewIteration: iteration,
+              reviewCard,
+              next: formatEval(ev),
+              _audit: { transitions },
+            }),
+            finalState,
+          );
+        }
+
         if (converged) {
           return appendNextAction(
             JSON.stringify({
               phase: finalState.phase,
-              status: `Self-review converged at iteration ${iteration}. Plan approved.`,
+              status: `Self-review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
               planDigest: currentPlan.digest,
               selfReviewIteration: iteration,
               next: formatEval(ev),

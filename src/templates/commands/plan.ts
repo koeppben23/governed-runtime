@@ -1,6 +1,6 @@
 export const PLAN_COMMAND = `
 ---
-description: Generate a plan with self-review loop for the current ticket.
+description: Generate a plan with self-review loop for the current task.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -49,10 +49,10 @@ Generate a comprehensive implementation plan for the current ticket, then review
       - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_plan\` with \`selfReviewVerdict: "approve"\` and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
       - If \`overallVerdict\` is \`"changes_requested"\`: Review the \`blockingIssues\` and \`majorRisks\` from the findings. Revise the plan to address them. Call \`flowguard_plan\` with \`selfReviewVerdict: "changes_requested"\`, \`planText\` set to the complete revised plan, and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
    c. Read the response:
-      - If self-review converged: Report the final status to the user.
-      - If another iteration is needed: Go back to step 6.
+       - If self-review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
+       - If another iteration is needed: Go back to step 6.
 
-   **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
+    **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
 
    The plugin could not invoke the reviewer automatically. You must call the subagent manually.
 
@@ -64,8 +64,8 @@ Generate a comprehensive implementation plan for the current ticket, then review
       - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_plan\` with \`selfReviewVerdict: "approve"\` and \`reviewFindings\` set to the parsed JSON object.
       - If \`overallVerdict\` is \`"changes_requested"\`: Review the \`blockingIssues\` and \`majorRisks\` from the findings. Revise the plan to address them. Call \`flowguard_plan\` with \`selfReviewVerdict: "changes_requested"\`, \`planText\` set to the complete revised plan, and \`reviewFindings\` set to the parsed JSON object.
    d. Read the response:
-      - If self-review converged: Report the final status to the user.
-      - If another iteration is needed: Go back to step 6.
+       - If self-review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
+       - If another iteration is needed: Go back to step 6.
 
 #### Path B: Self-Review (when \`next\` does NOT start with "INDEPENDENT_REVIEW_REQUIRED")
 
@@ -88,8 +88,8 @@ Generate a comprehensive implementation plan for the current ticket, then review
     - If ANY checklist item fails: Revise the plan to fix all failing items. Call \`flowguard_plan\` with \`selfReviewVerdict\` set to \`"changes_requested"\` AND \`planText\` set to the complete revised plan.
 
    Read the response:
-    - If self-review converged (the response says "converged" or the phase changed to PLAN_REVIEW): Report the final status to the user.
-    - If another iteration is needed: Go back to step 6.
+   - If self-review converged (the response says "converged" or the phase changed to PLAN_REVIEW): Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation. The card contains the complete plan and recommended next actions.
+   - If another iteration is needed: Go back to step 6.
 
 ## Constraints
 

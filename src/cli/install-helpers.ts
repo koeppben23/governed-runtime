@@ -69,7 +69,8 @@ export type DoctorStatus =
   | 'version_mismatch'
   | 'instruction_missing'
   | 'instruction_stale'
-  | 'error';
+  | 'error'
+  | 'warn';
 
 /** Status of a single doctor check. */
 export interface DoctorCheck {
@@ -230,7 +231,7 @@ export async function mergePackageJson(filePath: string, version: string): Promi
     const parsed = JSON.parse(existing) as Record<string, unknown>;
     const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
     deps['@flowguard/core'] = vendorDependency(version);
-    if (!deps['zod']) deps['zod'] = '^3.23.0';
+    if (!deps['zod']) deps['zod'] = '^4.0.0';
     // Remove legacy dependency that is no longer needed
     delete deps['@opencode-ai/plugin'];
     parsed['dependencies'] = deps;

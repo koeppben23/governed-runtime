@@ -45,7 +45,12 @@ const run = spawnSync(
   {
     cwd: workspaceRoot,
     stdio: 'inherit',
-    env: { ...process.env, FORCE_COLOR: '0' },
+    env: {
+      ...process.env,
+      FORCE_COLOR: '0',
+      OPENCODE_CONFIG_DIR: path.join(tmpdir(), 'fg-independent-review-vitest-config'),
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+    },
   },
 );
 
@@ -185,8 +190,10 @@ async function verifyOpenCodeRuntimeE2E() {
   const runtimeDir = mkdtempSync(path.join(tmpdir(), 'fg-independent-review-runtime-'));
   const projectDir = path.join(runtimeDir, 'project');
   const packDir = path.join(runtimeDir, 'pack');
+  const opencodeConfigDir = path.join(runtimeDir, 'opencode-config');
   mkdirSync(projectDir, { recursive: true });
   mkdirSync(packDir, { recursive: true });
+  mkdirSync(opencodeConfigDir, { recursive: true });
 
   let server;
   try {
@@ -216,7 +223,15 @@ async function verifyOpenCodeRuntimeE2E() {
         path.join(packDir, tarballName),
         '--force',
       ],
-      { cwd: projectDir },
+      {
+        cwd: projectDir,
+        env: {
+          ...process.env,
+          FORCE_COLOR: '0',
+          OPENCODE_CONFIG_DIR: opencodeConfigDir,
+          FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+        },
+      },
     );
     runRequired('npm', ['install', '--ignore-scripts', '--silent'], { cwd: projectDir });
 
@@ -239,7 +254,13 @@ async function verifyOpenCodeRuntimeE2E() {
     const serverPassword = 'flowguard-independent-review-e2e';
     server = spawn(command, [...argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`], {
       cwd: projectDir,
-      env: { ...process.env, FORCE_COLOR: '0', OPENCODE_SERVER_PASSWORD: serverPassword },
+      env: {
+        ...process.env,
+        FORCE_COLOR: '0',
+        OPENCODE_SERVER_PASSWORD: serverPassword,
+        OPENCODE_CONFIG_DIR: opencodeConfigDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
     });

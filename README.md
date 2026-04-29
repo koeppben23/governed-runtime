@@ -27,12 +27,19 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 
 ## In 30 Seconds
 
-Start a FlowGuard workflow from any OpenCode session after install:
+Start a governed FlowGuard workflow from any OpenCode session after install using product commands:
 
-1. `/hydrate` — bootstrap the session (creates the READY phase with policy binding)
-2. `/ticket <description>` — record your task
+1. `/start` — bootstrap the session and choose a workflow
+2. `/task "description"` — capture your governed task
 3. `/plan` — generate an implementation plan
-4. `/implement` — execute the plan
+4. `/approve` — approve the plan (or `/request-changes` to revise)
+5. `/implement` — execute the approved plan
+6. `/check` — run validation checks
+7. `/export` — create a verifiable audit package
+
+**Diagnostic commands:** `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
+
+**Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`, `/validate`, `/archive`) remain fully supported for scripts, CI, and power users.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference.
 

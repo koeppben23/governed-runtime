@@ -18,7 +18,6 @@
  * @version v5
  */
 
-import type { ToolDefinition } from './helpers.js';
 import { status as rawStatus } from './status-tool.js';
 import { decision as rawDecision } from './decision-tool.js';
 import { validate as rawValidate } from './validate-tool.js';
@@ -33,35 +32,19 @@ import { plan as rawPlan } from './plan.js';
 import { implement as rawImplement } from './implement.js';
 import { architecture as rawArchitecture } from './architecture.js';
 
-function zodCompat(tool: ToolDefinition): ToolDefinition {
-  for (const schema of Object.values(tool.args)) {
-    if (schema && typeof schema === 'object') {
-      const candidate = schema as { _def?: unknown; _zod?: { def: unknown } };
-      if (!candidate._zod && candidate._def) {
-        Object.defineProperty(candidate, '_zod', {
-          value: { def: candidate._def },
-          enumerable: false,
-          configurable: true,
-        });
-      }
-    }
-  }
-  return tool;
-}
-
 // ── Focused tools ────────────────────────────────────────────────────────────
-export const status = zodCompat(rawStatus);
-export const decision = zodCompat(rawDecision);
-export const validate = zodCompat(rawValidate);
+export const status = rawStatus;
+export const decision = rawDecision;
+export const validate = rawValidate;
 
 // ── Simple tools ─────────────────────────────────────────────────────────────
-export const ticket = zodCompat(rawTicket);
-export const review = zodCompat(rawReview);
-export const abort_session = zodCompat(rawAbortSession);
-export const archive = zodCompat(rawArchive);
+export const ticket = rawTicket;
+export const review = rawReview;
+export const abort_session = rawAbortSession;
+export const archive = rawArchive;
 
 // ── Complex tools ────────────────────────────────────────────────────────────
-export const hydrate = zodCompat(rawHydrate);
-export const plan = zodCompat(rawPlan);
-export const implement = zodCompat(rawImplement);
-export const architecture = zodCompat(rawArchitecture);
+export const hydrate = rawHydrate;
+export const plan = rawPlan;
+export const implement = rawImplement;
+export const architecture = rawArchitecture;

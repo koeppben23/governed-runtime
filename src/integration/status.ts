@@ -32,6 +32,8 @@ import {
   Command,
   type Command as FlowGuardCommand,
 } from '../machine/commands.js';
+import { PHASE_LABELS } from '../presentation/phase-labels.js';
+import { buildProductNextAction } from '../presentation/next-action-copy.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -45,8 +47,10 @@ import { evaluateCompleteness } from '../audit/completeness.js';
  * No new semantics are invented here.
  */
 export interface StatusProjection {
-  /** Current workflow phase. */
+  /** Current workflow phase (canonical enum value). */
   phase: string;
+  /** Human-readable phase label for product display. */
+  phaseLabel: string;
   /** Session identifier. */
   sessionId: string;
   /** Active policy mode (solo, team, team-ci, regulated). */
@@ -64,8 +68,13 @@ export interface StatusProjection {
 
   /** Commands that are currently admissible. */
   allowedCommands: string[];
-  /** Next action guidance from the machine. */
+  /** Next action guidance from the machine (canonical commands). */
   nextAction: {
+    primaryCommand: string | null;
+    summary: string;
+  };
+  /** Product-friendly next action guidance (presentation layer). */
+  productNextAction: {
     primaryCommand: string | null;
     summary: string;
   };
@@ -191,17 +200,12 @@ export function buildStatusProjection(
   const allowed = ALL_COMMANDS.filter((cmd: FlowGuardCommand) =>
     isCommandAllowed(state.phase, cmd),
   );
-  const evalResult = evaluate(
-    state,
-    // evaluate() uses only requireHumanGates from policy. Other policy fields
-    // are not yet consumed by the evaluator — this is intentional and tracked
-    // as a follow-up for when evaluate() needs broader policy context.
-    { requireHumanGates: policy.requireHumanGates },
-  );
+  const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
 
   const blocker = buildBlocker(evalResult);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
+  const productNext = buildProductNextAction(next, state.phase);
 
   const actor = state.actorInfo
     ? {
@@ -213,6 +217,7 @@ export function buildStatusProjection(
 
   return {
     phase: state.phase,
+    phaseLabel: PHASE_LABELS[state.phase],
     sessionId: state.id,
     policyMode,
     profileId,
@@ -222,6 +227,10 @@ export function buildStatusProjection(
     nextAction: {
       primaryCommand: next.commands[0] ?? null,
       summary: next.text,
+    },
+    productNextAction: {
+      primaryCommand: productNext.commands[0] ?? null,
+      summary: productNext.text,
     },
     blocker,
     evidenceSummary: {

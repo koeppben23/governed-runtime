@@ -652,7 +652,7 @@ export const AuditEvent = z
     event: z.string(),
     timestamp: z.string().datetime(),
     actor: z.string(),
-    detail: z.record(z.unknown()),
+    detail: z.record(z.string(), z.unknown()),
     /** Resolved actor identity. Present on human-influenced events, absent on machine-only. */
     actorInfo: ActorInfoSchema.optional(),
     /** Hash of the previous event in the chain (or "genesis" for the first event). */

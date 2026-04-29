@@ -40,6 +40,7 @@ export {
   configRoot,
   workspaceDir,
   sessionDir,
+  ensureWorkspace,
   initWorkspace,
   readWorkspaceInfo,
   writeSessionPointer,
