@@ -28,23 +28,29 @@ From `.github/workflows/conventional-commits.yml`:
 
 From `.github/workflows/ci.yml`:
 
-2. `test`
-3. `typecheck`
-4. `lint`
-5. `format`
-6. `build`
-7. `install-verify (ubuntu-latest)`
-8. `install-verify (macos-latest)`
-9. `install-verify (windows-latest)`
-10. `acp-smoke`
-11. `audit`
-12. `actionlint`
-13. `secrets-scan`
-14. `codeql-sast`
-15. `security-policy`
-16. `install (ubuntu-latest)`
-17. `install (macos-latest)`
-18. `install (windows-latest)`
+2. `unit`
+3. `test`
+4. `integration`
+5. `architecture`
+6. `typecheck`
+7. `lint`
+8. `format`
+9. `actions-pinning`
+10. `build`
+11. `install-verify (ubuntu-latest)`
+12. `install-verify (macos-latest)`
+13. `install-verify (windows-latest)`
+14. `smoke`
+15. `independent-review-e2e`
+16. `audit`
+17. `mutation`
+18. `actionlint`
+19. `secrets-scan`
+20. `codeql-sast`
+21. `security-policy`
+22. `install (ubuntu-latest)`
+23. `install (macos-latest)`
+24. `install (windows-latest)`
 
 `install-verify (...)` and `install (...)` are distinct required jobs and must both stay aligned with CI truth.
 

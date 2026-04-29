@@ -41,7 +41,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Decision receipts for every approval
 - Policy snapshots frozen at session creation
 - Session archives with redaction support
-- Mutation testing on security-critical paths (StrykerJS, 85.71% baseline)
+- Mutation testing on security-critical paths (StrykerJS, blocking 85% break threshold)
 
 ### Four-Eyes Governance
 

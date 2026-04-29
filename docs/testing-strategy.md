@@ -37,24 +37,31 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to exactly one npm script for clear diagnosis:
 
-| CI Job             | npm Script                    | Scope                                                        | Requires Build |
-| ------------------ | ----------------------------- | ------------------------------------------------------------ | -------------- |
-| **unit**           | `npm run test:unit`           | All `*.test.ts` outside `integration/`, including T1 and T2  | No             |
-| **integration**    | `npm run test:integration`    | All `src/integration/**/*.test.ts`, including T3, T4, and T5 | No             |
-| **smoke**          | `npm run test:smoke`          | Built CLI contract smoke and ACP smoke                       | Yes            |
-| **install-verify** | `npm run test:install-verify` | Tarball pack/install/doctor verification                     | Yes            |
-| **mutation**       | `npm run mutation`            | StrykerJS mutation testing for security-critical paths       | No             |
+| CI Job              | npm Script                     | Scope                                                                       | Requires Build |
+| ------------------- | ------------------------------ | --------------------------------------------------------------------------- | -------------- |
+| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2                 | No             |
+| **integration**     | `npm run test:integration`     | All `src/integration/**/*.test.ts`, including T3, T4, and T5                | No             |
+| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                                      | Yes            |
+| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                                    | Yes            |
+| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths                      | No             |
+| **actions-pinning** | `npm run check:actions-pinned` | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
 
 Additional CI jobs (not test-focused): `typecheck`, `lint`, `format`, `build`,
-`audit`, `actionlint`, `secrets-scan`, `codeql-sast`, `security-policy`, `install`.
+`audit`, `actionlint`, `actions-pinning`, `secrets-scan`, `codeql-sast`,
+`security-policy`, `install`.
 
-The `mutation` job runs StrykerJS mutation testing against three security-critical
-files (`guards.ts`, `evaluate.ts`, `token-verifier.ts`) and uploads a mutation
-report artifact (`reports/mutation/`). It is non-blocking (`continue-on-error: true`)
-with a `break: 85` threshold enforced by `stryker.conf.json`.
+The `actions-pinning` job enforces the CI supply-chain contract for workflow and
+local composite-action dependencies: external GitHub Actions must use full
+40-character lowercase commit SHAs, local actions under `./` are allowed, local
+and Docker actions are allowed only when pinned by `sha256` digest.
+
+The `mutation` job runs StrykerJS mutation testing against 12 security-critical
+files across machine, rails, audit, config, and identity paths. It uploads a mutation
+report artifact (`reports/mutation/`) and is blocking with the `break: 85` threshold
+enforced by `stryker.conf.json`.
 
 ## Test Organization by Layer
 
@@ -134,18 +141,9 @@ Twelve files are mutated, covering the fail-closed governance core:
 
 ### CI Enforcement
 
-The `mutation` CI job runs with `continue-on-error: true` — mutation score below the
-configured `break` threshold does not block PRs while the score baseline is stabilized:
-
-| Stage       | Threshold   | Blocking?                | Rationale                                         |
-| ----------- | ----------- | ------------------------ | ------------------------------------------------- |
-| **Current** | `break: 85` | No (`continue-on-error`) | Baseline establishment, CI stability verification |
-| **Next**    | `break: 80` | No                       | Score ratchet and survivor analysis complete      |
-| **Target**  | `break: 85` | **Yes**                  | Proven stability, blocking enforcement            |
-
-Blocking enforcement requires: ≥10 stable CI mutation runs without flaky failures,
-policy.ts survivors analyzed and either killed or documented as equivalent, and
-`break` threshold upheld across ≥5 consecutive PRs.
+The `mutation` CI job is blocking. A mutation score below the configured `break: 85`
+threshold fails the job. Survivor analysis remains part of normal security-critical
+test maintenance.
 
 ### Interpreting Results
 

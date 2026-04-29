@@ -363,7 +363,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
 - **Compliance Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
-- **Mutation Testing:** StrykerJS (v9.6.1) on security-critical paths (guards.ts, evaluate.ts, token-verifier.ts); 85.71% baseline score; CI non-blocking with 85% break threshold
+- **Mutation Testing:** StrykerJS (v9.6.1) on 12 security-critical files across machine, rails, audit, config, and identity paths; CI enforces an 85% break threshold
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — zero network calls from FlowGuard itself
 

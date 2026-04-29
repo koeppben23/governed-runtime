@@ -68,6 +68,34 @@ FlowGuard is designed to run locally with no network access. Security hardening 
 
 ---
 
+## CI Supply-Chain Hardening
+
+FlowGuard CI workflows and local composite actions treat external GitHub Actions as
+supply-chain dependencies. Every external `uses:` reference in `.github/workflows/`
+and `.github/actions/` is pinned to an immutable full-length commit SHA rather than a
+mutable branch or version tag.
+
+### Workflow Action Policy
+
+| Reference type       | Policy                                                          |
+| -------------------- | --------------------------------------------------------------- |
+| External action      | Must use `owner/repo@<40-character lowercase commit SHA>`       |
+| External action path | Must use `owner/repo/path@<40-character lowercase commit SHA>`  |
+| Local action         | Allowed only under `./`; internal `uses:` refs are also checked |
+| Docker action        | Allowed only with `docker://...@sha256:<64-character digest>`   |
+
+Mutable refs such as `@v4`, `@main`, `@master`, semantic version tags, and Docker
+image tags are blocked by `npm run check:actions-pinned` and the CI
+`actions-pinning` job. Local actions are trusted as repository code and must not
+contain unpinned external `uses:` references. Inline comments may carry the
+human-readable upstream version, but they are documentation only and never the
+execution authority.
+
+Dependabot is configured for the `github-actions` ecosystem so pinned action refs can
+be updated through reviewed dependency PRs instead of mutable workflow execution.
+
+---
+
 ## Network Security
 
 ### Air-Gapped Deployment

@@ -25,12 +25,6 @@ updates:
         update-types:
           - minor
           - patch
-      ci-workflows:
-        dependency-type: github-actions
-        update-types:
-          - minor
-          - patch
-
   - package-ecosystem: github-actions
     directory: /
     schedule:
