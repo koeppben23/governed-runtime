@@ -55,7 +55,11 @@ const IdpConfigBaseSchema = z.object({
   audience: z
     .union([z.string().min(1), z.array(z.string().min(1))])
     .transform((val) => (Array.isArray(val) ? val : [val])),
-  claimMapping: ClaimMappingSchema.default({}),
+  claimMapping: ClaimMappingSchema.default({
+    subjectClaim: 'sub',
+    emailClaim: 'email',
+    nameClaim: 'name',
+  }),
 });
 
 export const StaticIdpConfigSchema = IdpConfigBaseSchema.extend({

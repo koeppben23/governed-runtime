@@ -77,7 +77,7 @@ export interface ToolContext {
 
 export type ToolDefinition = {
   description: string;
-  args: Record<string, z.ZodTypeAny>;
+  args: Record<string, z.ZodType>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute(args: any, context: ToolContext): Promise<string>;
 };

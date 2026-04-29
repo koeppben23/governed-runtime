@@ -59,7 +59,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('PACKAGE_JSON_TEMPLATE matches compiled output hash', () => {
     const template = PACKAGE_JSON_TEMPLATE('1.2.3');
     expect(sha256(template)).toBe(
-      'ad74e099d3dc23901df478e8b90bfb92e0627c127aee987e6e4955e8bdeaba22',
+      '9a09254c6abceacb655020b9c03b4a25bf7f5fa60b7e336fb36aa31e093ffc09',
     );
   });
 

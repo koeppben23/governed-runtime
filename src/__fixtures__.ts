@@ -26,8 +26,8 @@ import type {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const FIXED_TIME = '2026-01-01T00:00:00.000Z';
-export const FIXED_UUID = '00000000-0000-0000-0000-000000000001';
-export const FIXED_SESSION_UUID = '00000000-0000-0000-0000-000000000002';
+export const FIXED_UUID = '00000000-0000-4000-8000-000000000001';
+export const FIXED_SESSION_UUID = '00000000-0000-4000-8000-000000000002';
 export const FIXED_DIGEST = 'digest-of-test';
 export const FIXED_FINGERPRINT = 'a1b2c3d4e5f6a1b2c3d4e5f6';
 
