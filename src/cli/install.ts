@@ -7,8 +7,8 @@
  * This module contains only CLI entry-point logic.
  */
 
-import { existsSync, realpathSync } from 'node:fs';
-import { writeFile, copyFile, rm } from 'node:fs/promises';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { writeFile, copyFile, rm, readdir } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import {
   TOOL_WRAPPER,
@@ -29,6 +29,8 @@ import { configPath, readConfig, writeConfig } from '../adapters/persistence.js'
 import { PersistenceError } from '../adapters/persistence.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import {
+  ensureWorkspace,
+  workspacesHome,
   computeFingerprint,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
@@ -204,8 +206,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     // Persists args.policyMode as config.policy.defaultMode so that
     // /hydrate without explicit mode uses the installer's intent.
     // Priority: existing config preserved (unless --force), new config written with policyMode.
-    const fpResult = await computeFingerprint(resolve('.'));
-    const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
+    const { workspaceDir: wsDir } = await ensureWorkspace(resolve('.'));
     const cfgPath = configPath(wsDir);
     if (!existsSync(cfgPath)) {
       const config = {
@@ -537,6 +538,7 @@ async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
 
   try {
+    // Read-only: doctor must not materialize workspace directories.
     const fpResult = await computeFingerprint(resolve('.'));
     const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
     const cfgPath = configPath(wsDir);
@@ -594,6 +596,55 @@ async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
   return checks;
 }
 
+/** Check for config-only workspace directories missing workspace.json. */
+async function checkWorkspaceMetadata(): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
+  try {
+    const wsHome = workspacesHome();
+    let entries: string[];
+    try {
+      entries = await readdir(wsHome);
+    } catch {
+      return checks;
+    }
+
+    for (const entry of entries) {
+      if (!/^[0-9a-f]{24}$/.test(entry)) continue;
+      const wsDir = join(wsHome, entry);
+      const hasConfig = existsSync(join(wsDir, 'config.json'));
+      const hasWorkspaceJson = existsSync(join(wsDir, 'workspace.json'));
+
+      if (hasConfig && !hasWorkspaceJson) {
+        let ageDays: number | undefined;
+        try {
+          const st = statSync(join(wsDir, 'config.json'));
+          ageDays = Math.round((Date.now() - st.mtimeMs) / (24 * 60 * 60 * 1000));
+        } catch {
+          // stat failed — omit age
+        }
+        checks.push({
+          file: join(wsDir, 'config.json'),
+          status: 'warn',
+          detail: [
+            'WORKSPACE_METADATA_MISSING: config.json present but workspace.json missing.',
+            ageDays !== undefined ? `Age: ${ageDays} days.` : '',
+            'This workspace was not fully initialised.',
+            'Repair is not automatic. Reinstall from the intended repository root after the fix,',
+            'or remove stale config-only directories manually after verification.',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        });
+      }
+    }
+  } catch {
+    // Non-critical — if we can't scan, don't fail the doctor
+  }
+
+  return checks;
+}
+
 export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   const target = resolveTarget(args.installScope);
   const checks: DoctorCheck[] = [];
@@ -601,6 +652,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
   checks.push(...(await checkWorkspaceConfig()));
+  checks.push(...(await checkWorkspaceMetadata()));
   return checks;
 }
 
@@ -759,6 +811,7 @@ export function formatDoctor(checks: DoctorCheck[]): string {
     instruction_missing: 'INSTR_MISSING',
     instruction_stale: 'INSTR_STALE',
     error: 'ERROR',
+    warn: 'WARN',
   };
 
   for (const check of checks) {

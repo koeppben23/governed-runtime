@@ -69,7 +69,8 @@ export type DoctorStatus =
   | 'version_mismatch'
   | 'instruction_missing'
   | 'instruction_stale'
-  | 'error';
+  | 'error'
+  | 'warn';
 
 /** Status of a single doctor check. */
 export interface DoctorCheck {

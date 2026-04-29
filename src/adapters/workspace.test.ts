@@ -29,6 +29,7 @@ import {
   workspacesHome,
   workspaceDir,
   sessionDir,
+  ensureWorkspace,
   initWorkspace,
   readWorkspaceInfo,
   writeSessionPointer,
@@ -432,6 +433,46 @@ describe('path resolution', () => {
 
   it('sessionDir rejects invalid sessionId', () => {
     expect(() => sessionDir('a1b2c3d4e5f6a1b2c3d4e5f6', '..')).toThrow(WorkspaceError);
+  });
+});
+
+// =============================================================================
+// ensureWorkspace
+// =============================================================================
+
+describe('ensureWorkspace', () => {
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.OPENCODE_CONFIG_DIR;
+    await cleanTmpDir(tmpDir);
+  });
+
+  it('creates workspace.json and directories', async () => {
+    const { fingerprint, info, workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    expect(fingerprint).toMatch(/^[0-9a-f]{24}$/);
+    expect(info.fingerprint).toBe(fingerprint);
+    expect(info.schemaVersion).toBe('v1');
+
+    const wsJson = JSON.parse(await fs.readFile(path.join(wsDir, 'workspace.json'), 'utf-8'));
+    expect(wsJson.fingerprint).toBe(fingerprint);
+  });
+
+  it('is idempotent — second call returns same workspace', async () => {
+    const first = await ensureWorkspace(path.resolve('.'));
+    const second = await ensureWorkspace(path.resolve('.'));
+    expect(second.fingerprint).toBe(first.fingerprint);
+    expect(second.workspaceDir).toBe(first.workspaceDir);
+  });
+
+  it('does NOT create a session directory', async () => {
+    const { workspaceDir: wsDir } = await ensureWorkspace(path.resolve('.'));
+    const sessionsDir = path.join(wsDir, 'sessions');
+    const entries = await fs.readdir(sessionsDir);
+    expect(entries).toHaveLength(0);
   });
 });
 
