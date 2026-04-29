@@ -51,7 +51,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification
 - JWT verification is implemented via `jose` `jwtVerify` with FlowGuard-owned key resolution (no remote JWK set in verifier path)
 - `identityProviderMode: required` blocks fail-closed; `identityProviderMode: optional` degrades only for typed IdP errors
-- P35 excludes OIDC discovery and stale/last-known-good JWKS fallback
+- OIDC discovery and stale/last-known-good JWKS fallback are not implemented
 - Team and Regulated modes require explicit human decisions at gates
 
 ### Headless Fail-Closed Behavior
