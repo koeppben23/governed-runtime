@@ -1,0 +1,53 @@
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "schemaVersion": "v1",
+  "phase": "READY",
+  "binding": {
+    "sessionId": "ses_legacy_no_idp_mode",
+    "worktree": "/tmp/legacy-repo",
+    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "resolvedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "ticket": null,
+  "architecture": null,
+  "plan": null,
+  "selfReview": null,
+  "validation": [],
+  "implementation": null,
+  "implReview": null,
+  "reviewDecision": null,
+  "nextAdrNumber": 1,
+  "activeProfile": null,
+  "activeChecks": ["test_quality", "rollback_safety"],
+  "policySnapshot": {
+    "mode": "team",
+    "hash": "legacy-hash-no-idp-mode",
+    "resolvedAt": "2026-01-01T00:00:00.000Z",
+    "requestedMode": "team",
+    "effectiveGateBehavior": "human_gated",
+    "requireHumanGates": true,
+    "maxSelfReviewIterations": 3,
+    "maxImplReviewIterations": 3,
+    "allowSelfApproval": true,
+    "minimumActorAssuranceForApproval": "best_effort",
+    "requireVerifiedActorsForApproval": false,
+    "audit": {
+      "emitTransitions": true,
+      "emitToolCalls": true,
+      "enableChainHash": true
+    },
+    "actorClassification": {
+      "flowguard_decision": "human"
+    }
+  },
+  "initiatedBy": "legacy-initiator",
+  "initiatedByIdentity": {
+    "actorId": "legacy-initiator",
+    "actorEmail": "legacy@example.com",
+    "actorSource": "claim",
+    "actorAssurance": "claim_validated"
+  },
+  "transition": null,
+  "error": null,
+  "createdAt": "2026-01-01T00:00:00.000Z"
+}
