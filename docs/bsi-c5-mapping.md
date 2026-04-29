@@ -139,10 +139,10 @@ The DEV domain covers secure development practices, development guidelines, and 
 
 **Structured Development Workflow:**
 
-- Mandatory planning phase before implementation (PLAN with self-review loop)
+- Mandatory planning phase before implementation (PLAN with independent subagent review loop)
 - Human plan approval gate (PLAN_REVIEW) before any code changes
 - Automated validation checks between plan approval and implementation
-- Implementation review loop (IMPL_REVIEW) — LLM self-reviews implementation against the approved plan
+- Implementation review loop (IMPL_REVIEW) — independent subagent reviews implementation against the approved plan
 - Final human evidence review (EVIDENCE_REVIEW) before completion
 
 **Development Guidelines:**

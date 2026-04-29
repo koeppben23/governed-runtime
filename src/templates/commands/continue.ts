@@ -25,11 +25,12 @@ Determine what the FlowGuard workflow needs next and do it.
    ### TICKET (has ticket, needs plan)
    - Tell the user to run /plan to generate a plan.
 
-   ### PLAN (self-review pending)
-   - The plan needs review. Check the tool response's \`next\` field:
-     - If it starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool (subagent_type "flowguard-reviewer") to get ReviewFindings, then submit the verdict with reviewFindings to flowguard_plan.
-     - Otherwise: Review the current plan critically yourself. Call \`flowguard_plan\` with the appropriate selfReviewVerdict.
-   - Follow the review loop as described in /plan.
+   ### PLAN (independent review pending)
+   - The plan needs independent review. Check the tool response's \`next\` field:
+     - If it starts with "INDEPENDENT_REVIEW_COMPLETED": Submit \`_pluginReviewFindings\` with the appropriate verdict to \`flowguard_plan\`.
+     - If it starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool (subagent_type "flowguard-reviewer") to get ReviewFindings, then submit the verdict with reviewFindings to \`flowguard_plan\`.
+     - Otherwise: Report the malformed or blocked review state and stop. Do not substitute self-review.
+   - Follow the independent review loop as described in /plan.
 
    ### PLAN_REVIEW (User Gate)
    - Tell the user this is a human decision point.
@@ -47,9 +48,10 @@ Determine what the FlowGuard workflow needs next and do it.
 
    ### IMPL_REVIEW (review pending)
    - Review the implementation against the plan. Check the tool response's \`next\` field:
-     - If it starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool (subagent_type "flowguard-reviewer") to get ReviewFindings, then submit the verdict with reviewFindings to flowguard_implement.
-     - Otherwise: Review the implementation yourself.
-   - Call \`flowguard_implement\` with the appropriate reviewVerdict.
+     - If it starts with "INDEPENDENT_REVIEW_COMPLETED": Submit \`_pluginReviewFindings\` with the appropriate verdict to \`flowguard_implement\`.
+     - If it starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool (subagent_type "flowguard-reviewer") to get ReviewFindings, then submit the verdict with reviewFindings to \`flowguard_implement\`.
+     - Otherwise: Report the malformed or blocked review state and stop. Do not substitute self-review.
+   - Call \`flowguard_implement\` with the appropriate reviewVerdict and ReviewFindings.
 
    ### EVIDENCE_REVIEW (User Gate)
    - Tell the user this is a human decision point.
@@ -60,10 +62,10 @@ Determine what the FlowGuard workflow needs next and do it.
    - Report that the workflow is complete. No further actions needed.
    - If there is an error with code "ABORTED", note the session was aborted.
 
-   ### ARCHITECTURE (self-review pending)
-   - The ADR needs self-review. Review it critically.
+   ### ARCHITECTURE (ADR review pending)
+   - The ADR needs review. Review it critically against MADR standards.
    - Call \`flowguard_architecture\` with the appropriate selfReviewVerdict.
-   - Follow the self-review loop as described in /architecture.
+   - Follow the ADR review loop as described in /architecture.
 
    ### ARCH_REVIEW (User Gate)
    - Tell the user this is a human decision point.

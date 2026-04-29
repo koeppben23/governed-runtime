@@ -3,7 +3,7 @@
  * @description Pure presentation builder for the Plan Review Card.
  *
  * Builds a markdown card presenting the full plan with context metadata
- * and recommended next actions. Called only when self-review converges
+ * and recommended next actions. Called only when independent review converges
  * (phase PLAN_REVIEW), never during active plan refinement.
  *
  * This is a pure function — no state dependency, no side effects.

@@ -54,13 +54,13 @@ function modeASubagentResponse(
   });
 }
 
-/** Build a Mode A response with self-review next (no subagent). */
-function modeASelfReviewResponse(): string {
+/** Build a Mode A response without an independent-review next marker. */
+function modeANoReviewRequiredResponse(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
-    reviewMode: 'self',
-    next: 'Self-review needed. Review the plan critically against the ticket.',
+    reviewMode: 'subagent',
+    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 
@@ -68,7 +68,7 @@ function modeASelfReviewResponse(): string {
 function modeBSuccessResponse(): string {
   return JSON.stringify({
     phase: 'PLAN',
-    status: 'Self-review iteration 1/3. Verdict: approve.',
+    status: 'Independent review iteration 1/3. Verdict: approve.',
     reviewMode: 'subagent',
   });
 }
@@ -211,14 +211,14 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('no enforcement when self-review mode (no INDEPENDENT_REVIEW_REQUIRED)', () => {
+    it('no enforcement when independent-review marker is absent', () => {
       const state = createSessionState();
 
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASelfReviewResponse(),
+        modeANoReviewRequiredResponse(),
         NOW,
       );
 

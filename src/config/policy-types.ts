@@ -22,23 +22,30 @@ export interface AuditPolicy {
 }
 
 /**
- * Independent self-review configuration.
- * Controls whether a subagent performs independent review.
+ * Mandatory independent review configuration.
+ * Plan and implementation reviews must be performed by the flowguard-reviewer
+ * subagent with mandate-bound evidence. Self-review fallback is not permitted.
+ *
+ * NOTE: These fields are retained for compatibility with existing snapshots.
+ * In the current governance model, only the mandatory strict configuration
+ * (subagentEnabled=true, fallbackToSelf=false, strictEnforcement=true) is valid.
+ * Weaker values are normalized to the mandatory default at snapshot load time.
+ * @see policy-snapshot.ts normalizeSelfReviewConfig
  */
 export interface SelfReviewConfig {
-  /** Enable subagent-based independent review for plan/implement phases. */
+  /** Legacy/compatibility field. Mandatory independent review is always enabled. */
   readonly subagentEnabled: boolean;
-  /** Fallback to self-review (agent reviews own work) on subagent timeout/failure. */
+  /** Legacy/compatibility field. Self-review fallback is always prohibited. */
   readonly fallbackToSelf: boolean;
-  /** Strict assurance mode: fail closed unless mandate-bound subagent evidence exists. */
+  /** Legacy/compatibility field. Strict enforcement is always required. */
   readonly strictEnforcement: boolean;
 }
 
-/** Self-review configuration for FlowGuardPolicy interface. */
+/** Mandatory independent review configuration for FlowGuardPolicy. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
-  subagentEnabled: false,
+  subagentEnabled: true,
   fallbackToSelf: false,
-  strictEnforcement: false,
+  strictEnforcement: true,
 };
 
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
@@ -48,7 +55,7 @@ export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
  *
  * Determines:
  * - Whether human gates require explicit human decisions
- * - Max iterations for self-review and impl-review loops
+ * - Max iterations for independent plan and implementation review loops
  * - Whether the session initiator can approve their own work (four-eyes)
  * - Which audit events are emitted and how
  * - How actors are classified in the audit trail
@@ -64,7 +71,7 @@ export interface FlowGuardPolicy {
    */
   readonly requireHumanGates: boolean;
 
-  /** Max self-review iterations in PLAN phase before force-convergence. */
+  /** Max independent review iterations in PLAN phase before force-convergence. */
   readonly maxSelfReviewIterations: number;
 
   /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
@@ -78,7 +85,7 @@ export interface FlowGuardPolicy {
    */
   readonly allowSelfApproval: boolean;
 
-  /** Independent self-review configuration. */
+  /** Independent review configuration. */
   readonly selfReview: SelfReviewConfig;
 
   /** Audit event emission controls. */

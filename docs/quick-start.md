@@ -94,7 +94,7 @@ Create an Architecture Decision Record:
 /architecture
 ```
 
-The LLM generates the ADR with `## Context`, `## Decision`, and `## Consequences` sections (MADR format). After self-review, approve:
+The LLM generates the ADR with `## Context`, `## Decision`, and `## Consequences` sections (MADR format). After the ADR review loop, approve:
 
 ```
 /review-decision approve

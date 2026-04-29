@@ -17,6 +17,7 @@ import {
   createToolContext,
   createTestWorkspace,
   parseToolResult,
+  withStrictReviewFindings,
   isTarAvailable,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -113,7 +114,9 @@ async function callOk(
   tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
   args: unknown,
 ): Promise<Record<string, unknown>> {
-  const result = parseToolResult(await tool.execute(args, ctx));
+  const { sessDir } = await workspaceIds();
+  const finalArgs = await withStrictReviewFindings(sessDir, args);
+  const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
   }

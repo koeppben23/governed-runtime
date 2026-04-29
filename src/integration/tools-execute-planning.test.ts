@@ -23,6 +23,7 @@ import {
   parseToolResult,
   isBlockedResult,
   assertTestConfigDir,
+  fulfillStrictReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -181,6 +182,26 @@ async function hydrateSession(
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
   await hydrateSession();
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
+}
+
+async function currentSessionDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+    '../adapters/workspace/index.js'
+  );
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
+async function fulfillPlanReview(
+  iteration = 0,
+  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+) {
+  return fulfillStrictReviewObligation(await currentSessionDir(), {
+    obligationType: 'plan',
+    iteration,
+    planVersion: 1,
+    overallVerdict,
+  });
 }
 
 // =============================================================================
@@ -376,7 +397,7 @@ describe('plan', () => {
   const modeBSelfFindings = {
     iteration: 1,
     planVersion: 1,
-    reviewMode: 'self' as const,
+    reviewMode: 'self' as unknown as 'subagent',
     overallVerdict: 'approve' as const,
     blockingIssues: [],
     majorRisks: [],
@@ -397,10 +418,11 @@ describe('plan', () => {
       expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('Mode B: approve converges self-review', async () => {
+    it('Mode B: approve converges after mandatory subagent review', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       // In solo mode, max iterations is 1, so should converge
@@ -414,10 +436,12 @@ describe('plan', () => {
     it('Mode B: changes_requested with revised plan', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Original Plan' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
           selfReviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          reviewFindings,
         },
         ctx,
       );
@@ -429,29 +453,13 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
-      const fp = await computeFingerprint(ws.tmpDir);
-      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
-      const state = await readState(sessDir);
-      await writeState(sessDir, {
-        ...state!,
-        policySnapshot: {
-          ...state!.policySnapshot,
-          selfReview: {
-            subagentEnabled: true,
-            fallbackToSelf: false,
-            strictEnforcement: false,
-          },
-        },
-      });
-
       await plan.execute({ planText: '## Original Plan' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
           selfReviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
+          reviewFindings,
         },
         ctx,
       );
@@ -498,28 +506,32 @@ describe('plan', () => {
     it('Mode B changes_requested requires revised planText', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
-      const raw = await plan.execute({ selfReviewVerdict: 'changes_requested' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'changes_requested', reviewFindings },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVISED_PLAN_REQUIRED');
     });
 
-    it('Mode B blocks subagent findings when subagentEnabled=false', async () => {
+    it('Mode B uses mandatory subagent review even when old snapshots are weakened', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const findings = { ...modeBSubagentFindings };
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
           selfReviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
-          reviewFindings: findings,
+          reviewFindings,
         },
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+      expect(result.error).toBeUndefined();
+      expect(result.reviewMode).toBe('subagent');
     });
 
     it('Mode B blocks self findings when fallbackToSelf=false and subagentEnabled=true', async () => {
@@ -603,7 +615,8 @@ describe('plan', () => {
       const planText =
         '## Plan\n\n### Objective\nImplement payment validation.\n\n### Approach\nUse a validation pipeline.\n\n### Steps\n1. Add `validate.ts`.\n2. Add tests.\n\n### Files to Modify\n- `src/payments/validate.ts`\n\n### Edge Cases\n1. Empty input.\n\n### Validation Criteria\n1. `npm test` passes.\n\n### Verification Plan\n1. `npm test` — Source: package.json:scripts.test';
       await plan.execute({ planText }, ctx);
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -618,7 +631,8 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -630,7 +644,8 @@ describe('plan', () => {
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       // Solo auto-advances through VALIDATION; if phase is not PLAN_REVIEW, no card

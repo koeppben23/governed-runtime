@@ -24,6 +24,7 @@ import {
   createToolContext,
   createTestWorkspace,
   parseToolResult,
+  withStrictReviewFindings,
   isBlockedResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -290,18 +291,22 @@ describe('identity-policy-e2e', () => {
     }
 
     /**
-     * Advance a hydrated session to PLAN_REVIEW via ticket → plan → self-review convergence.
+     * Advance a hydrated session to PLAN_REVIEW via ticket → plan → independent review convergence.
      * Uses team mode (allowSelfApproval: true) to avoid four-eyes interference.
      * Requires: session already hydrated with team mode.
      */
     async function advanceToPlanReview(): Promise<void> {
       await ticket.execute({ text: 'Implement identity-gated feature', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Implement feature' }, ctx);
-      // Self-review loop: converge to PLAN_REVIEW (team mode auto-approves)
+      // Independent review loop: converge to PLAN_REVIEW (team mode auto-approves)
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
-        await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+        const sessDir = await resolveSessionDirFor(ctx.sessionID);
+        await plan.execute(
+          await withStrictReviewFindings(sessDir, { selfReviewVerdict: 'approve' }),
+          ctx,
+        );
       }
       // Verify we actually reached PLAN_REVIEW
       const s = parseToolResult(await status.execute({}, ctx));

@@ -122,13 +122,13 @@ function modeAOutput(
   });
 }
 
-/** Build a Mode A self-review output (no subagent). */
-function selfReviewOutput(): string {
+/** Build a Mode A output with no independent-review next action. */
+function noReviewRequiredOutput(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
-    reviewMode: 'self',
-    next: 'Self-review needed. Review the plan critically against the ticket.',
+    reviewMode: 'subagent',
+    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 
@@ -617,9 +617,9 @@ describe('isReviewRequired', () => {
     expect(isReviewRequired(modeAOutput())).toBe(true);
   });
 
-  // HAPPY: not required for self-review
-  it('returns false for self-review output', () => {
-    expect(isReviewRequired(selfReviewOutput())).toBe(false);
+  // HAPPY: not required without independent-review marker
+  it('returns false when required marker is absent', () => {
+    expect(isReviewRequired(noReviewRequiredOutput())).toBe(false);
   });
 
   // BAD: invalid JSON
