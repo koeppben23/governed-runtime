@@ -177,6 +177,8 @@ export interface ReadinessProjection {
   fourEyesSatisfied: boolean;
   actorKnown: boolean;
   minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified' | null;
+  /** Warnings about configuration normalization or legacy values. */
+  warnings: string[];
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────
@@ -342,6 +344,23 @@ export function buildReadinessProjection(
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
   const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
   const snapshot = state.policySnapshot;
+  const warnings: string[] = [];
+
+  // Check for legacy/weakened selfReview config
+  if (snapshot.selfReview) {
+    const cfg = snapshot.selfReview;
+    if (
+      cfg.subagentEnabled !== true ||
+      cfg.fallbackToSelf !== false ||
+      cfg.strictEnforcement !== true
+    ) {
+      warnings.push(
+        'Legacy selfReview config detected and normalized to mandatory strict. ' +
+        'Ensure flowguard-reviewer plugin is active.'
+      );
+    }
+  }
+
   return {
     phase: state.phase,
     policyMode: snapshot.mode,
@@ -354,6 +373,7 @@ export function buildReadinessProjection(
       snapshot.mode === 'regulated'
         ? (snapshot.minimumActorAssuranceForApproval ?? 'best_effort')
         : null,
+    warnings,
   };
 }
 

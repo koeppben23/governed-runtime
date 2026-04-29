@@ -124,7 +124,7 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 | `flowguard_validate`      | Validation runner           |
 | `flowguard_implement`     | Plan executor               |
 | `flowguard_review`        | Generate compliance report  |
-| `flowguard_architecture`  | ADR authoring + self-review |
+| `flowguard_architecture`  | ADR authoring + review loop |
 | `flowguard_abort_session` | Session termination         |
 | `flowguard_archive`       | Session archival            |
 

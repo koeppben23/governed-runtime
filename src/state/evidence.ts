@@ -66,7 +66,7 @@ export const RevisionDelta = z.enum(['none', 'minor', 'major']);
 export type RevisionDelta = z.infer<typeof RevisionDelta>;
 
 /**
- * Self-review / impl-review loop verdict.
+ * Plan/implementation review loop verdict.
  * Only approve or changes_requested — no reject (that's a human-only action).
  */
 export const LoopVerdict = z.enum(['approve', 'changes_requested']);
@@ -207,7 +207,7 @@ export const ReviewFindings = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
-    reviewMode: z.enum(['subagent', 'self']),
+    reviewMode: z.literal('subagent'),
     overallVerdict: LoopVerdict,
     blockingIssues: z.array(Finding),
     majorRisks: z.array(Finding),

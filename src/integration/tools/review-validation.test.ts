@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateReviewFindings,
-  requireFindingsForApprove,
+  requireReviewFindings,
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -13,7 +13,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return {
     iteration: 0,
     planVersion: 1,
-    reviewMode: 'self',
+    reviewMode: 'subagent',
     overallVerdict: 'approve',
     blockingIssues: [],
     majorRisks: [],
@@ -30,7 +30,7 @@ function makeCtx(
   overrides: Partial<ReviewFindingsValidationContext> = {},
 ): ReviewFindingsValidationContext {
   return {
-    subagentEnabled: false,
+    subagentEnabled: true,
     fallbackToSelf: false,
     expectedPlanVersion: 1,
     expectedIteration: 0,
@@ -89,23 +89,10 @@ describe('validateReviewFindings', () => {
   // ── Happy Path ──────────────────────────────────────────────────────────
 
   describe('happy path', () => {
-    it('returns null for valid self-review findings (subagent disabled)', () => {
-      const result = validateReviewFindings(makeFindings(), makeCtx());
-      expect(result).toBeNull();
-    });
-
     it('returns null for valid subagent findings (subagent enabled)', () => {
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent' }),
         makeCtx({ subagentEnabled: true }),
-      );
-      expect(result).toBeNull();
-    });
-
-    it('returns null for self-review with fallback allowed', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'self' }),
-        makeCtx({ subagentEnabled: true, fallbackToSelf: true }),
       );
       expect(result).toBeNull();
     });
@@ -127,51 +114,21 @@ describe('validateReviewFindings', () => {
     });
   });
 
-  // ── Rule 1: subagent mode gating ───────────────────────────────────────
+  // ── Rule 1: mandatory subagent mode ────────────────────────────────────
 
-  describe('Rule 1: subagent mode requires subagentEnabled', () => {
-    it('blocks subagent mode when subagentEnabled=false', () => {
+  describe('Rule 1: mandatory subagent mode', () => {
+    it('accepts subagent mode even when legacy subagentEnabled=false is supplied', () => {
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent' }),
         makeCtx({ subagentEnabled: false }),
       );
-      expect(result).not.toBeNull();
-      expect(parseBlocked(result!).code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+      expect(result).toBeNull();
     });
 
     it('accepts subagent mode when subagentEnabled=true', () => {
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent' }),
         makeCtx({ subagentEnabled: true }),
-      );
-      expect(result).toBeNull();
-    });
-  });
-
-  // ── Rule 2: self mode fallback gating ──────────────────────────────────
-
-  describe('Rule 2: self mode requires fallback when subagent enabled', () => {
-    it('blocks self mode when subagentEnabled=true and fallbackToSelf=false', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'self' }),
-        makeCtx({ subagentEnabled: true, fallbackToSelf: false }),
-      );
-      expect(result).not.toBeNull();
-      expect(parseBlocked(result!).code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-    });
-
-    it('accepts self mode when subagentEnabled=true and fallbackToSelf=true', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'self' }),
-        makeCtx({ subagentEnabled: true, fallbackToSelf: true }),
-      );
-      expect(result).toBeNull();
-    });
-
-    it('accepts self mode when subagentEnabled=false (fallback irrelevant)', () => {
-      const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'self' }),
-        makeCtx({ subagentEnabled: false, fallbackToSelf: false }),
       );
       expect(result).toBeNull();
     });
@@ -242,13 +199,13 @@ describe('validateReviewFindings', () => {
 
   describe('edge cases', () => {
     it('blocks on first failing rule (subagent before planVersion)', () => {
-      // Both subagent-disabled AND planVersion wrong — should hit Rule 1 first
+      // Legacy subagent-disabled is ignored; planVersion binding remains authoritative.
       const result = validateReviewFindings(
         makeFindings({ reviewMode: 'subagent', planVersion: 99 }),
         makeCtx({ subagentEnabled: false, expectedPlanVersion: 1 }),
       );
       expect(result).not.toBeNull();
-      expect(parseBlocked(result!).code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+      expect(parseBlocked(result!).code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
     });
 
     it('checks planVersion before iteration (rule order)', () => {
@@ -263,8 +220,8 @@ describe('validateReviewFindings', () => {
 
     it('returns structured JSON with error=true on any block', () => {
       const result = validateReviewFindings(
-        makeFindings({ reviewMode: 'subagent' }),
-        makeCtx({ subagentEnabled: false }),
+        makeFindings({ planVersion: 99 }),
+        makeCtx({ expectedPlanVersion: 1 }),
       );
       const parsed = JSON.parse(result!);
       expect(parsed.error).toBe(true);
@@ -283,9 +240,9 @@ describe('validateReviewFindings', () => {
     });
   });
 
-  // ── Corner: all policy combinations ────────────────────────────────────
+  // ── Corner: legacy policy combinations ─────────────────────────────────
 
-  describe('policy matrix (all 4 combinations)', () => {
+  describe('policy matrix (legacy combinations all require subagent findings)', () => {
     const combinations = [
       { subagentEnabled: false, fallbackToSelf: false },
       { subagentEnabled: false, fallbackToSelf: true },
@@ -294,29 +251,12 @@ describe('validateReviewFindings', () => {
     ] as const;
 
     for (const combo of combinations) {
-      it(`self mode + subagent=${combo.subagentEnabled} fallback=${combo.fallbackToSelf}`, () => {
-        const result = validateReviewFindings(makeFindings({ reviewMode: 'self' }), makeCtx(combo));
-        const shouldBlock = combo.subagentEnabled && !combo.fallbackToSelf;
-        if (shouldBlock) {
-          expect(result).not.toBeNull();
-          expect(parseBlocked(result!).code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
-        } else {
-          expect(result).toBeNull();
-        }
-      });
-
-      it(`subagent mode + subagent=${combo.subagentEnabled} fallback=${combo.fallbackToSelf}`, () => {
+      it(`accepts subagent mode + subagent=${combo.subagentEnabled} fallback=${combo.fallbackToSelf}`, () => {
         const result = validateReviewFindings(
           makeFindings({ reviewMode: 'subagent' }),
           makeCtx(combo),
         );
-        const shouldBlock = !combo.subagentEnabled;
-        if (shouldBlock) {
-          expect(result).not.toBeNull();
-          expect(parseBlocked(result!).code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
-        } else {
-          expect(result).toBeNull();
-        }
+        expect(result).toBeNull();
       });
     }
   });
@@ -392,30 +332,22 @@ describe('validateReviewFindings', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// requireFindingsForApprove
+// requireReviewFindings
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('requireFindingsForApprove', () => {
-  it('returns null when subagentEnabled=false (findings not required)', () => {
-    expect(requireFindingsForApprove(false, false)).toBeNull();
-  });
-
-  it('returns null when subagentEnabled=false even with findings', () => {
-    expect(requireFindingsForApprove(false, true)).toBeNull();
-  });
-
-  it('returns null when subagentEnabled=true and findings present', () => {
-    expect(requireFindingsForApprove(true, true)).toBeNull();
-  });
-
-  it('blocks when subagentEnabled=true and findings missing', () => {
-    const result = requireFindingsForApprove(true, false);
+describe('requireReviewFindings', () => {
+  it('blocks when findings are missing', () => {
+    const result = requireReviewFindings(false);
     expect(result).not.toBeNull();
-    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
+    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_REQUIRED');
+  });
+
+  it('returns null when findings are present', () => {
+    expect(requireReviewFindings(true)).toBeNull();
   });
 
   it('returns structured JSON with error=true', () => {
-    const result = requireFindingsForApprove(true, false);
+    const result = requireReviewFindings(false);
     const parsed = JSON.parse(result!);
     expect(parsed.error).toBe(true);
     expect(parsed.recovery).toBeTruthy();
