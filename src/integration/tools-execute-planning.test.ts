@@ -595,5 +595,47 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_PLAN');
     });
+
+    it('converged PLAN_REVIEW response contains reviewCard with full plan body', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Implement payment validation', source: 'user' }, ctx);
+      const planText =
+        '## Plan\n\n### Objective\nImplement payment validation.\n\n### Approach\nUse a validation pipeline.\n\n### Steps\n1. Add `validate.ts`.\n2. Add tests.\n\n### Files to Modify\n- `src/payments/validate.ts`\n\n### Edge Cases\n1. Empty input.\n\n### Validation Criteria\n1. `npm test` passes.\n\n### Verification Plan\n1. `npm test` — Source: package.json:scripts.test';
+      await plan.execute({ planText }, ctx);
+      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.reviewCard).toBeTypeOf('string');
+      expect(result.reviewCard).toContain('# FlowGuard Plan Review');
+      expect(result.reviewCard).toContain('## Proposed Plan');
+      expect(result.reviewCard).toContain('Implement payment validation');
+      expect(result.reviewCard).toContain('## Next recommended action');
+    });
+
+    it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.reviewCard).toContain('- `/approve`');
+      expect(result.reviewCard).toContain('- `/request-changes`');
+      expect(result.reviewCard).toContain('- `/reject`');
+    });
+
+    it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+
+      // Solo auto-advances through VALIDATION; if phase is not PLAN_REVIEW, no card
+      if (result.phase !== 'PLAN_REVIEW') {
+        expect(result.reviewCard).toBeUndefined();
+      }
+    });
   });
 });

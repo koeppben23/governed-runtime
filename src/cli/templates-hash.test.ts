@@ -66,7 +66,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('COMMANDS matches compiled output hash', () => {
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '69fa412e1d1cf094d20c4213d7e486f834e9dce50f42afec6b4fe49b527df25d',
+      '27cec7f84b96748d52b22c1ef00c8f6fafdd1c2785659cc1e46d75b19af0f009',
     );
   });
 

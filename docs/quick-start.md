@@ -17,23 +17,23 @@ Get FlowGuard up and running in 5 minutes.
 Open OpenCode and start a governed session:
 
 ```
-/hydrate
+/start
 ```
 
-After hydration, FlowGuard enters the **READY** phase. Choose one of three flows.
+After starting, FlowGuard enters the **READY** phase. Choose one of three flows.
 
 ## Ticket Flow (Full Development Lifecycle)
 
 ### 1. Record the Task
 
 ```
-/ticket Fix the authentication bug in the login flow
+/task Fix the authentication bug in the login flow
 ```
 
 Or reference an external Jira ticket:
 
 ```
-/ticket https://jira.example.com/browse/PROJ-123
+/task https://jira.example.com/browse/PROJ-123
 ```
 
 ### 2. Generate a Plan
@@ -42,16 +42,20 @@ Or reference an external Jira ticket:
 /plan
 ```
 
-### 3. Get Approval
+The LLM generates a detailed plan. When the plan is ready for review, a **Plan Review Card** is displayed with the full plan and recommended next actions.
+
+### 3. Approve the Plan
 
 ```
-/review-decision approve
+/approve
 ```
 
-### 4. Validate
+To request changes: `/request-changes`. To reject: `/reject`.
+
+### 4. Validate (Check)
 
 ```
-/validate
+/check
 ```
 
 ### 5. Implement
@@ -63,8 +67,18 @@ Or reference an external Jira ticket:
 ### 6. Final Review
 
 ```
-/review-decision approve
+/approve
 ```
+
+### 7. Export the Audit Package
+
+```
+/export
+```
+
+Creates a verifiable audit package with integrity verification.
+
+All canonical commands (`/hydrate`, `/ticket`, `/review-decision`, `/validate`, `/archive`) remain fully supported for scripts, CI, and advanced workflows.
 
 ## Architecture Flow (ADR Creation)
 

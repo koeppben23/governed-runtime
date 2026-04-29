@@ -108,13 +108,13 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Ten FlowGuard commands map to workflow phases:
+Ten canonical FlowGuard commands map to workflow phases:
 
-| Command            | Purpose                                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Command            | Purpose                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
-| `/plan`            | Generate implementation plan with self-review loop                                                             |
+| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.             |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
@@ -123,6 +123,8 @@ Ten FlowGuard commands map to workflow phases:
 | `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
 | `/abort`           | Emergency session termination                                                                                  |
 | `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
+
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. The Plan Review Card renders the complete plan with version, policy mode, task title, and recommended next actions when self-review converges to PLAN_REVIEW.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
