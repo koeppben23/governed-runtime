@@ -37,14 +37,14 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to exactly one npm script for clear diagnosis:
 
-| CI Job              | npm Script                     | Scope                                                             | Requires Build |
-| ------------------- | ------------------------------ | ----------------------------------------------------------------- | -------------- |
-| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2       | No             |
-| **integration**     | `npm run test:integration`     | All `src/integration/**/*.test.ts`, including T3, T4, and T5      | No             |
-| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                            | Yes            |
-| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                          | Yes            |
-| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths            | No             |
-| **actions-pinning** | `npm run check:actions-pinned` | Workflow `uses:` refs are immutable commit SHAs or Docker digests | No             |
+| CI Job              | npm Script                     | Scope                                                                       | Requires Build |
+| ------------------- | ------------------------------ | --------------------------------------------------------------------------- | -------------- |
+| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2                 | No             |
+| **integration**     | `npm run test:integration`     | All `src/integration/**/*.test.ts`, including T3, T4, and T5                | No             |
+| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                                      | Yes            |
+| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                                    | Yes            |
+| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths                      | No             |
+| **actions-pinning** | `npm run check:actions-pinned` | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
@@ -53,10 +53,10 @@ Additional CI jobs (not test-focused): `typecheck`, `lint`, `format`, `build`,
 `audit`, `actionlint`, `actions-pinning`, `secrets-scan`, `codeql-sast`,
 `security-policy`, `install`.
 
-The `actions-pinning` job enforces the CI supply-chain contract for workflow
-dependencies: external GitHub Actions must use full 40-character lowercase commit
-SHAs, local actions under `./` are allowed, and Docker actions are allowed only
-when pinned by `sha256` digest.
+The `actions-pinning` job enforces the CI supply-chain contract for workflow and
+local composite-action dependencies: external GitHub Actions must use full
+40-character lowercase commit SHAs, local actions under `./` are allowed, local
+and Docker actions are allowed only when pinned by `sha256` digest.
 
 The `mutation` job runs StrykerJS mutation testing against 12 security-critical
 files across machine, rails, audit, config, and identity paths. It uploads a mutation

@@ -1,7 +1,7 @@
 /**
  * @test-policy
  * HAPPY: accepts local actions, full commit-SHA refs, and Docker digest refs.
- * BAD: rejects mutable external action tags and Docker image tags.
+ * BAD: rejects mutable external action tags, Docker image tags, and unpinned uses inside local actions.
  * CORNER: handles quoted uses values and inline comments without treating comments as authority.
  * EDGE: rejects uppercase or short SHA-like refs and validates the repository workflows end to end.
  * PERF: not applicable; workflow files are tiny CI metadata.
@@ -25,6 +25,12 @@ async function createWorkflowProject(workflow: string): Promise<string> {
   await fs.mkdir(workflowsDir, { recursive: true });
   await fs.writeFile(path.join(workflowsDir, 'ci.yml'), workflow, 'utf8');
   return root;
+}
+
+async function writeLocalAction(root: string, action: string): Promise<void> {
+  const actionDir = path.join(root, '.github', 'actions', 'local-action');
+  await fs.mkdir(actionDir, { recursive: true });
+  await fs.writeFile(path.join(actionDir, 'action.yml'), action, 'utf8');
 }
 
 async function runCheck(cwd: string = repoRoot) {
@@ -111,6 +117,54 @@ jobs:
 
     await expect(runCheck(root)).rejects.toMatchObject({
       stderr: expect.stringContaining('owner/repo or owner/repo/path syntax'),
+    });
+  });
+
+  it('scans local composite actions so local uses cannot hide mutable external refs', async () => {
+    const root = await createWorkflowProject(`
+name: ci
+jobs:
+  test:
+    steps:
+      - uses: ./.github/actions/local-action
+`);
+    await writeLocalAction(
+      root,
+      `
+name: local-action
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+`,
+    );
+
+    await expect(runCheck(root)).rejects.toMatchObject({
+      stderr: expect.stringContaining('.github/actions/local-action/action.yml'),
+    });
+  });
+
+  it('accepts local composite actions when their internal external uses are pinned', async () => {
+    const root = await createWorkflowProject(`
+name: ci
+jobs:
+  test:
+    steps:
+      - uses: ./.github/actions/local-action
+`);
+    await writeLocalAction(
+      root,
+      `
+name: local-action
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
+`,
+    );
+
+    await expect(runCheck(root)).resolves.toMatchObject({
+      stdout: expect.stringContaining('passed'),
     });
   });
 

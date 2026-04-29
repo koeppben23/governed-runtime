@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const WORKFLOWS_DIR = path.join(process.cwd(), '.github', 'workflows');
+const ACTIONS_DIR = path.join(process.cwd(), '.github', 'actions');
 const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/;
 const DOCKER_DIGEST_PATTERN = /^docker:\/\/.+@sha256:[a-f0-9]{64}$/;
 const EXTERNAL_ACTION_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
@@ -68,14 +69,14 @@ export function validateUsesReference(value) {
   return 'External actions must be pinned to a full 40-character lowercase commit SHA';
 }
 
-function listWorkflowFiles(directory) {
+function listYamlFiles(directory) {
   if (!fs.existsSync(directory)) return [];
 
   return fs
     .readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) return listWorkflowFiles(entryPath);
+      if (entry.isDirectory()) return listYamlFiles(entryPath);
       if (/\.ya?ml$/i.test(entry.name)) return [entryPath];
       return [];
     })
@@ -99,11 +100,11 @@ export function checkWorkflowFiles(files) {
 }
 
 function main() {
-  const workflowFiles = listWorkflowFiles(WORKFLOWS_DIR);
-  const findings = checkWorkflowFiles(workflowFiles);
+  const checkedFiles = [...listYamlFiles(WORKFLOWS_DIR), ...listYamlFiles(ACTIONS_DIR)];
+  const findings = checkWorkflowFiles(checkedFiles);
 
   if (findings.length === 0) {
-    console.log(`GitHub Actions pinning check passed (${workflowFiles.length} workflow files).`);
+    console.log(`GitHub Actions pinning check passed (${checkedFiles.length} YAML files).`);
     return;
   }
 
