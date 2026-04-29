@@ -81,9 +81,10 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
 
   if (hasApprove || hasRequestChanges || hasReject) {
     const options: string[] = [];
-    if (hasApprove) options.push('- `/approve`');
-    if (hasRequestChanges) options.push('- `/request-changes`');
-    if (hasReject) options.push('- `/reject`');
+    if (hasApprove)
+      options.push('- `/approve` — approve the plan if it is complete and acceptable');
+    if (hasRequestChanges) options.push('- `/request-changes` — send the plan back for revision');
+    if (hasReject) options.push('- `/reject` — stop this task');
 
     footer.push('');
     footer.push(...options);

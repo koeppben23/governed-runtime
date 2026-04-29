@@ -134,6 +134,12 @@ Generate an implementation plan with mandatory independent subagent review.
 
 **Allowed in:** TICKET, PLAN
 
+When `/plan` advances to PLAN_REVIEW, the Plan Review Card footer renders the available decision commands as explanatory bullets:
+
+- `/approve` — approve the plan if it is complete and acceptable
+- `/request-changes` — send the plan back for revision
+- `/reject` — stop this task
+
 **Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
 
 - `artifacts/plan.v{n}.md` (human-readable)
