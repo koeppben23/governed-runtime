@@ -241,6 +241,25 @@ describe('hydrate rail', () => {
       }
     });
 
+    it('falls back to baseline profile when explicit profileId is unknown', () => {
+      const result = executeHydrate(
+        null,
+        {
+          ...HYDRATE_INPUT,
+          profile: {
+            ...HYDRATE_INPUT.profile,
+            profileId: 'unknown-profile-id',
+          },
+        },
+        ctx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.activeProfile?.id).toBe('baseline');
+        expect(result.state.activeChecks.length).toBeGreaterThan(0);
+      }
+    });
+
     it('freezes snapshot from policyResolution when provided', () => {
       const policyResolution: HydratePolicyResolution = {
         requestedMode: 'team-ci',

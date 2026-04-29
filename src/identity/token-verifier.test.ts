@@ -448,6 +448,7 @@ describe('JwtStaticTokenVerifier', () => {
       // nbf == frozenNow + 1: SHOULD reject (nbf > now)
       const token2 = await validRsaToken({ nbf: frozenNow + 1, exp: frozenNow + 3600 });
       await expect(verifier.verify(token2)).rejects.toMatchObject({ code: 'IDP_NOT_YET_VALID' });
+      await expect(verifier.verify(token2)).rejects.toThrow(/not yet valid until 20[2-9]\d/);
       vi.useRealTimers();
     });
 
