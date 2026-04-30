@@ -109,11 +109,33 @@ export interface RailContext {
 export const DEFAULT_MAX_REVIEW_ITERATIONS = 3;
 
 /**
+ * Maximum auto-advance steps before forced stop.
+ * Paranoia guard against infinite loops in misconfigured topology.
+ */
+const MAX_AUTO_ADVANCE_STEPS = 10;
+
+/**
  * Create a policy-aware evaluation closure.
  * Eliminates the repeated `const evalFn = (s: SessionState) => evaluate(s, ctx.policy)` pattern.
  */
 export function createPolicyEvalFn(ctx: RailContext): (state: SessionState) => EvalResult {
   return (s: SessionState) => evaluate(s, ctx.policy);
+}
+
+/**
+ * Build a READY → target flow-selection pre-transition.
+ *
+ * Used by /ticket and /architecture to record the implicit
+ * flow-selection step when issued from READY state.
+ *
+ * @returns The TransitionRecord and the new baseTransition for state.
+ */
+export function buildFlowSelectionTransition(
+  targetPhase: Phase,
+  event: Event,
+  at: string,
+): TransitionRecord {
+  return { from: 'READY', to: targetPhase, event, at };
 }
 
 /**
@@ -153,12 +175,11 @@ export function autoAdvance(
   evalFn: (s: SessionState) => EvalResult,
   ctx: RailContext,
 ): AutoAdvanceResult {
-  const MAX_STEPS = 10;
   const transitions: TransitionRecord[] = [];
   let current = state;
   let result = evalFn(current);
 
-  for (let step = 0; step < MAX_STEPS && result.kind === 'transition'; step++) {
+  for (let step = 0; step < MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition'; step++) {
     // Self-loop guard: if the transition targets the same phase, the state
     // won't change from the guards' perspective → stop to avoid pointless cycles.
     // Example: PLAN + SELF_REVIEW_PENDING → PLAN (waiting for LLM review).

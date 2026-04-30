@@ -33,6 +33,13 @@ import type {
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
 
+/**
+ * Normalize a legacy or weakened selfReview config to the mandatory strict default.
+ *
+ * FlowGuard requires subagent-enabled, no-fallback, strict-enforcement self-review.
+ * Any deviation (legacy null, partial config, weakened flags) is normalized to the
+ * canonical strict config with a console warning for operator visibility.
+ */
 function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
   if (value === null || typeof value !== 'object') {
     console.warn(
@@ -150,17 +157,19 @@ export function freezePolicySnapshot(
   resolvedAt: string,
   digestFn: (text: string) => string,
 ): PolicySnapshot {
-  const res = resolution as HydratePolicyResolution;
   return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
     requestedMode: resolution.requestedMode,
     effectiveGateBehavior: resolution.effectiveGateBehavior,
     degradedReason: resolution.degradedReason,
-    source: 'effectiveSource' in res ? res.effectiveSource : undefined,
-    resolutionReason: 'resolutionReason' in res ? res.resolutionReason : undefined,
-    centralMinimumMode: 'centralEvidence' in res ? res.centralEvidence?.minimumMode : undefined,
-    policyDigest: 'centralEvidence' in res ? res.centralEvidence?.digest : undefined,
-    policyVersion: 'centralEvidence' in res ? res.centralEvidence?.version : undefined,
-    policyPathHint: 'centralEvidence' in res ? res.centralEvidence?.pathHint : undefined,
+    source: 'effectiveSource' in resolution ? resolution.effectiveSource : undefined,
+    resolutionReason: 'resolutionReason' in resolution ? resolution.resolutionReason : undefined,
+    centralMinimumMode:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.minimumMode : undefined,
+    policyDigest: 'centralEvidence' in resolution ? resolution.centralEvidence?.digest : undefined,
+    policyVersion:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.version : undefined,
+    policyPathHint:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.pathHint : undefined,
   });
 }
 

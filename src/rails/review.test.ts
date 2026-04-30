@@ -474,7 +474,7 @@ describe('review rail', () => {
 
   // ─── MUTATION KILL: round 2 — targeted survivors ────────────
   describe('MUTATION: round 2 targeted survivors', () => {
-    it('failed checks message uses comma-space separator (L117 join)', async () => {
+    it('failed checks message uses comma-space separator (join format)', async () => {
       // Kill: join(', ') → join("")
       // VALIDATION_FAILED has test_quality (failed) + rollback_safety (passed)
       // We need 2+ failed checks to test the separator
@@ -492,7 +492,7 @@ describe('review rail', () => {
       expect(valFinding!.message).toContain('check_a, check_b');
     });
 
-    it('failed checks list excludes passed checks (L113 filter)', async () => {
+    it('failed checks list excludes passed checks (filter branch)', async () => {
       // Kill: .filter((v) => !v.passed).map(...) → .map(...) (removing filter)
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
@@ -508,7 +508,7 @@ describe('review rail', () => {
       expect(valFinding!.message).not.toContain('passing_one');
     });
 
-    it('no four-eyes finding when fourEyes.required=false and not satisfied (L122 && vs ||)', async () => {
+    it('no four-eyes finding when fourEyes.required=false and not satisfied (&& vs ||)', async () => {
       // Kill: required && !satisfied → required || !satisfied
       // When required=false, satisfied=false: original=false (no finding), mutant=true (finding)
       const state = makeState('COMPLETE', {
@@ -530,14 +530,14 @@ describe('review rail', () => {
       expect(fourEyes).toHaveLength(0);
     });
 
-    it('report has no references key when refInput is undefined (L182)', async () => {
+    it('report has no references key when refInput is undefined (conditional spread)', async () => {
       // Kill: refs !== undefined → true (always spread refs even when undefined)
       const state = makeProgressedState('COMPLETE');
       const report = await executeReview(state, NOW);
       expect(report).not.toHaveProperty('references');
     });
 
-    it('report has no references key when refInput.references is empty array (L182)', async () => {
+    it('report has no references key when refInput.references is empty array (empty guard)', async () => {
       const state = makeProgressedState('COMPLETE');
       const refInput: ReviewReferenceInput = { references: [] };
       const report = await executeReview(state, NOW, undefined, refInput);
@@ -563,6 +563,92 @@ describe('review rail', () => {
       times.sort((a, b) => a - b);
       const p99 = times[Math.floor(times.length * 0.99)] ?? times[times.length - 1] ?? 0;
       expect(p99).toBeLessThan(5);
+    });
+  });
+
+  // ─── MUTATION KILL: four-eyes, hasWarnings ─────────────────
+  describe('MUTATION_KILL', () => {
+    it('four-eyes required + satisfied → NO four-eyes finding (&& mutation)', async () => {
+      // regulated policy: required=true
+      // different actors: satisfied=true
+      const state = makeProgressedState('COMPLETE');
+      // Ensure different initiator and reviewer
+      const stateWithFourEyes = {
+        ...state,
+        policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
+        initiatedBy: 'initiator-1',
+        reviewDecision: {
+          ...state.reviewDecision!,
+          decidedBy: 'reviewer-2', // different person
+        },
+      };
+      const report = await executeReview(stateWithFourEyes, NOW);
+      // No four-eyes finding should exist when satisfied
+      const fourEyesFindings = report.findings.filter((f) => f.category === 'four-eyes');
+      expect(fourEyesFindings).toHaveLength(0);
+    });
+
+    it('four-eyes required + NOT satisfied (decidedBy=null) → warning', async () => {
+      // regulated + no review decision yet
+      const state = makeProgressedState('IMPLEMENTATION');
+      const stateWithFourEyes = {
+        ...state,
+        policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
+        reviewDecision: null,
+      };
+      const report = await executeReview(stateWithFourEyes, NOW);
+      const fourEyesFindings = report.findings.filter((f) => f.category === 'four-eyes');
+      expect(fourEyesFindings).toHaveLength(1);
+      expect(fourEyesFindings[0]!.severity).toBe('warning');
+      expect(fourEyesFindings[0]!.message).toContain('no review decision');
+    });
+
+    it('four-eyes required + NOT satisfied (same person) → error', async () => {
+      const state = makeProgressedState('COMPLETE');
+      const stateViolated = {
+        ...state,
+        policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
+        initiatedBy: 'same-person',
+        reviewDecision: {
+          ...state.reviewDecision!,
+          decidedBy: 'same-person', // same as initiator
+        },
+      };
+      const report = await executeReview(stateViolated, NOW);
+      const fourEyesFindings = report.findings.filter((f) => f.category === 'four-eyes');
+      expect(fourEyesFindings).toHaveLength(1);
+      expect(fourEyesFindings[0]!.severity).toBe('error');
+      expect(fourEyesFindings[0]!.message).toContain('VIOLATED');
+    });
+
+    it('warnings-only review → overallStatus "warnings" not "clean" (hasWarnings branch)', async () => {
+      // State at PLAN phase with plan=null → generates warning finding
+      // ticket present, no errors, no four-eyes issue
+      const state = makeState('PLAN', {
+        policySnapshot: {
+          ...makeProgressedState('PLAN').policySnapshot,
+          allowSelfApproval: true,
+        },
+      });
+      const report = await executeReview(state, NOW);
+      // Should have warnings (missing plan) but no errors
+      const hasErrors = report.findings.some((f) => f.severity === 'error');
+      const hasWarnings = report.findings.some((f) => f.severity === 'warning');
+      expect(hasErrors).toBe(false);
+      expect(hasWarnings).toBe(true);
+      expect(report.overallStatus).toBe('warnings');
+    });
+
+    it('clean review with no findings → overallStatus "clean" (!hasWarnings)', async () => {
+      const state = makeProgressedState('COMPLETE');
+      // COMPLETE with all evidence, no errors, self-approval allowed
+      const cleanState = {
+        ...state,
+        policySnapshot: { ...state.policySnapshot, allowSelfApproval: true },
+      };
+      const report = await executeReview(cleanState, NOW);
+      expect(report.findings).toHaveLength(0);
+      expect(report.overallStatus).toBe('clean');
     });
   });
 });

@@ -87,12 +87,16 @@ const OpenCodeSessionId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
  * ~/.config/opencode/workspaces/{fingerprint}/. Deterministic and stable
  * across clones of the same remote.
  */
+
+/** Canonical regex for a 24-hex-char repository fingerprint. */
+export const FINGERPRINT_PATTERN = /^[0-9a-f]{24}$/;
+
 export const BindingInfo = z
   .object({
     // OpenCode session IDs are opaque non-UUID identifiers (e.g. "ses_260740c65ffe77...").
     sessionId: OpenCodeSessionId,
     worktree: z.string().min(1),
-    fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
+    fingerprint: z.string().regex(FINGERPRINT_PATTERN),
     resolvedAt: z.string().datetime(),
   })
   .readonly();

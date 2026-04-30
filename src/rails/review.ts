@@ -19,11 +19,10 @@
 import type { SessionState } from '../state/schema.js';
 import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
-import { evaluate } from '../machine/evaluate.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { CompletenessReport } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
-import { autoAdvance, applyTransition } from './types.js';
+import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
@@ -221,7 +220,7 @@ export function executeReviewFlow(state: SessionState, ctx: RailContext): RailRe
   );
 
   // 3. autoAdvance: REVIEW → REVIEW_COMPLETE (reviewDone guard fires immediately)
-  const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+  const evalFn = createPolicyEvalFn(ctx);
   const {
     state: finalState,
     evalResult,

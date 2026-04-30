@@ -36,6 +36,11 @@ import { makeState, makeProgressedState, PLAN_RECORD, IMPL_EVIDENCE } from '../_
 import type { SessionState } from '../state/schema.js';
 import type { PlanEvidence, PlanRecord } from '../state/evidence.js';
 
+// ─── Shared Constants ─────────────────────────────────────────────────────────
+
+const POLICY_PATH = '/tmp/p.json';
+const digestFn = (s: string): string => `sha256:${s.length}`;
+
 describe('config/policy', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -606,7 +611,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_JSON for malformed JSON', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => 'not-json{{{',
         ),
@@ -616,7 +621,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON null', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => 'null',
         ),
@@ -626,7 +631,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON string', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => '"hello"',
         ),
@@ -636,7 +641,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for JSON array', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => '[]',
         ),
@@ -646,7 +651,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for wrong schemaVersion', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => JSON.stringify({ schemaVersion: 'v2', minimumMode: 'solo' }),
         ),
@@ -656,7 +661,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_MODE for invalid minimumMode', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'enterprise' }),
         ),
@@ -666,7 +671,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for non-string version', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: 123 }),
         ),
@@ -676,7 +681,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_INVALID_SCHEMA for non-string policyId', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', policyId: 42 }),
         ),
@@ -685,7 +690,7 @@ describe('config/policy', () => {
 
     it('includes version in evidence when provided as string', async () => {
       const result = await loadCentralPolicyEvidence(
-        '/tmp/p.json',
+        POLICY_PATH,
         (s) => `sha256:${s.length}`,
         async () =>
           JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo', version: '2026.04' }),
@@ -729,7 +734,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_UNREADABLE for non-ENOENT error', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => {
             const err = new Error('Permission denied') as Error & { code: string };
@@ -743,7 +748,7 @@ describe('config/policy', () => {
     it('throws CENTRAL_POLICY_UNREADABLE for error without code', async () => {
       await expect(
         loadCentralPolicyEvidence(
-          '/tmp/p.json',
+          POLICY_PATH,
           (s) => s,
           async () => {
             throw new Error('Something went wrong');
@@ -755,7 +760,7 @@ describe('config/policy', () => {
     it('computes digest from raw file content', async () => {
       const raw = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
       const result = await loadCentralPolicyEvidence(
-        '/tmp/p.json',
+        POLICY_PATH,
         (s) => `sha256:${s}`,
         async () => raw,
       );
@@ -771,14 +776,13 @@ describe('config/policy', () => {
       minimumMode: 'regulated',
     });
     const centralSolo = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo' });
-    const digestFn = (s: string) => `sha256:${s.length}`;
 
     it('explicit mode equal to central minimum: no error, no resolutionReason', async () => {
       const result = await resolvePolicyForHydrate({
         explicitMode: 'team',
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralTeam,
       });
@@ -793,7 +797,7 @@ describe('config/policy', () => {
           explicitMode: 'solo',
           defaultMode: 'solo',
           ciContext: false,
-          centralPolicyPath: '/tmp/p.json',
+          centralPolicyPath: POLICY_PATH,
           digestFn,
           readFileFn: async () => centralTeam,
         }),
@@ -805,7 +809,7 @@ describe('config/policy', () => {
         explicitMode: 'regulated',
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralSolo,
       });
@@ -819,7 +823,7 @@ describe('config/policy', () => {
         repoMode: 'team',
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralTeam,
       });
@@ -832,7 +836,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
       });
@@ -846,7 +850,7 @@ describe('config/policy', () => {
         repoMode: 'solo',
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
       });
@@ -859,7 +863,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
         configMaxSelfReviewIterations: 10,
@@ -886,7 +890,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
         configRequireVerifiedActorsForApproval: true,
@@ -898,7 +902,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
         configMinimumActorAssuranceForApproval: 'idp_verified',
@@ -911,7 +915,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
       });
@@ -924,7 +928,7 @@ describe('config/policy', () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
-        centralPolicyPath: '/tmp/p.json',
+        centralPolicyPath: POLICY_PATH,
         digestFn,
         readFileFn: async () => centralRegulated,
         configIdentityProvider: {
@@ -985,6 +989,318 @@ describe('config/policy', () => {
     it('regulated identityProvider is undefined', () => {
       const r = resolvePolicyWithContext('regulated', false);
       expect(r.policy.identityProvider).toBeUndefined();
+    });
+  });
+
+  // ─── MUTATION KILL: error message content assertions ──────────
+  describe('MUTATION: error message strings', () => {
+    it('validateExistingPolicyAgainstCentral error message mentions both modes', async () => {
+      const centralTeam = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+      await expect(
+        validateExistingPolicyAgainstCentral({
+          existingMode: 'solo',
+          centralPolicyPath: POLICY_PATH,
+          digestFn,
+          readFileFn: async () => centralTeam,
+        }),
+      ).rejects.toThrow(/solo.*weaker.*team/i);
+    });
+
+    it('central policy invalid mode error includes the invalid mode value', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () =>
+          JSON.stringify({ schemaVersion: 'v1', minimumMode: 'enterprise' }),
+        ),
+      ).rejects.toThrow(/enterprise/);
+    });
+
+    it('central policy invalid JSON error says "not valid JSON"', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => '{broken'),
+      ).rejects.toThrow(/not valid JSON/);
+    });
+
+    it('central policy non-object error says "must be a JSON object"', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => '"hello"'),
+      ).rejects.toThrow(/must be a JSON object/);
+    });
+
+    it('central policy wrong schemaVersion error mentions "v1"', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () =>
+          JSON.stringify({ schemaVersion: 'v2', minimumMode: 'team' }),
+        ),
+      ).rejects.toThrow(/schemaVersion.*"v1"/);
+    });
+
+    it('central policy numeric version error says "version must be a string"', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () =>
+          JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', version: 123 }),
+        ),
+      ).rejects.toThrow(/version must be a string/);
+    });
+
+    it('central policy numeric policyId error says "policyId must be a string"', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () =>
+          JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team', policyId: 42 }),
+        ),
+      ).rejects.toThrow(/policyId must be a string/);
+    });
+
+    it('empty path error says "FLOWGUARD_POLICY_PATH is set but empty"', async () => {
+      await expect(loadCentralPolicyEvidence('   ', digestFn, async () => '{}')).rejects.toThrow(
+        /FLOWGUARD_POLICY_PATH is set but empty/,
+      );
+    });
+
+    it('non-Error throw produces error message via String()', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+          throw 'raw string error';
+        }),
+      ).rejects.toThrow(/raw string error/);
+    });
+
+    it('read failure error message includes path and error text', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+          throw new Error('disk failure');
+        }),
+      ).rejects.toThrow(/cannot be read.*disk failure/i);
+    });
+  });
+
+  // ─── MUTATION KILL: parseCentralPolicyBundle conditional paths ─
+  describe('MUTATION: parseCentralPolicyBundle conditional spreads', () => {
+    it('JSON number triggers CENTRAL_POLICY_INVALID_SCHEMA', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => '42'),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_INVALID_SCHEMA' });
+    });
+
+    it('parses correctly when policyId is present (non-exposed field)', async () => {
+      const raw = JSON.stringify({
+        schemaVersion: 'v1',
+        minimumMode: 'solo',
+        policyId: 'org-policy-001',
+      });
+      const result = await loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => raw);
+      expect(result.minimumMode).toBe('solo');
+    });
+
+    it('version string passes through to evidence', async () => {
+      const raw = JSON.stringify({
+        schemaVersion: 'v1',
+        minimumMode: 'team',
+        version: '2026.1',
+        policyId: 'test-pol',
+      });
+      const result = await loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => raw);
+      expect(result.version).toBe('2026.1');
+    });
+
+    it('absent policyId does not produce undefined policyId field', async () => {
+      const raw = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+      const result = await loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => raw);
+      expect(result).not.toHaveProperty('policyId');
+    });
+
+    it('absent version does not produce undefined version field', async () => {
+      const raw = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+      const result = await loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => raw);
+      expect(result).not.toHaveProperty('version');
+    });
+
+    it('modeStrength: team equals central team (no error)', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'team',
+        defaultMode: 'solo',
+        ciContext: true,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+      });
+      expect(result.effectiveMode).toBe('team');
+    });
+
+    it('modeStrength: team-ci equals central team (no error)', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'team-ci',
+        defaultMode: 'solo',
+        ciContext: true,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' }),
+      });
+      expect(result.effectiveMode).toBe('team-ci');
+    });
+
+    it('read error without code property maps to CENTRAL_POLICY_UNREADABLE', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+          const e = { message: 'fail', code: 'EPERM' };
+          throw e;
+        }),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_UNREADABLE' });
+    });
+
+    it('read error with code ENOENT maps to CENTRAL_POLICY_MISSING', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+          const err = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+          throw err;
+        }),
+      ).rejects.toMatchObject({ code: 'CENTRAL_POLICY_MISSING' });
+    });
+
+    it('valid string policyId does not throw', async () => {
+      const result = await loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () =>
+        JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo', policyId: 'valid-id' }),
+      );
+      expect(result.minimumMode).toBe('solo');
+    });
+  });
+
+  // ─── MUTATION KILL: resolvePolicyForHydrate legacy & conditional spreads ──
+  describe('MUTATION: resolvePolicyForHydrate legacy & conditional spreads', () => {
+    const centralRegulated = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'regulated' });
+    const centralSolo = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'solo' });
+
+    it('legacy requireVerifiedActors=false does NOT produce claim_validated (local)', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn,
+        configRequireVerifiedActorsForApproval: false,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('legacy requireVerifiedActors=true produces claim_validated (local)', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn,
+        configRequireVerifiedActorsForApproval: true,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+    });
+
+    it('legacy requireVerifiedActors=false does NOT produce claim_validated (central)', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configRequireVerifiedActorsForApproval: false,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('legacy requireVerifiedActors=true produces claim_validated (central)', async () => {
+      const result = await resolvePolicyForHydrate({
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => centralRegulated,
+        configRequireVerifiedActorsForApproval: true,
+      });
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
+    });
+
+    it('explicit equal to central does NOT set resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => centralRegulated,
+      });
+      expect(result.resolutionReason).toBeUndefined();
+    });
+
+    it('explicit stronger than central DOES set resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => centralSolo,
+      });
+      expect(result.resolutionReason).toBe('explicit_stronger_than_central');
+    });
+
+    it('repo stronger than central does NOT set resolutionReason', async () => {
+      const result = await resolvePolicyForHydrate({
+        repoMode: 'regulated',
+        defaultMode: 'solo',
+        ciContext: false,
+        centralPolicyPath: POLICY_PATH,
+        digestFn,
+        readFileFn: async () => centralSolo,
+      });
+      expect(result.resolutionReason).toBeUndefined();
+    });
+
+    it('explicit team is weaker than central regulated → throws', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          explicitMode: 'team',
+          defaultMode: 'solo',
+          ciContext: false,
+          centralPolicyPath: POLICY_PATH,
+          digestFn,
+          readFileFn: async () => centralRegulated,
+        }),
+      ).rejects.toMatchObject({ code: 'EXPLICIT_WEAKER_THAN_CENTRAL' });
+    });
+
+    it('explicit team-ci is weaker than central regulated → throws', async () => {
+      await expect(
+        resolvePolicyForHydrate({
+          explicitMode: 'team-ci',
+          defaultMode: 'solo',
+          ciContext: true,
+          centralPolicyPath: POLICY_PATH,
+          digestFn,
+          readFileFn: async () => centralRegulated,
+        }),
+      ).rejects.toMatchObject({ code: 'EXPLICIT_WEAKER_THAN_CENTRAL' });
+    });
+
+    it('validateExistingPolicyAgainstCentral has correct error code', async () => {
+      const centralTeam = JSON.stringify({ schemaVersion: 'v1', minimumMode: 'team' });
+      await expect(
+        validateExistingPolicyAgainstCentral({
+          existingMode: 'solo',
+          centralPolicyPath: POLICY_PATH,
+          digestFn,
+          readFileFn: async () => centralTeam,
+        }),
+      ).rejects.toMatchObject({ code: 'EXISTING_POLICY_WEAKER_THAN_CENTRAL' });
+    });
+
+    it('loadCentralPolicyEvidence non-Error throw with code produces CENTRAL_POLICY_UNREADABLE and includes path', async () => {
+      const rejection = loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+        throw { code: 'EPERM', message: 'permission denied' };
+      });
+      await expect(rejection).rejects.toMatchObject({ code: 'CENTRAL_POLICY_UNREADABLE' });
+      await expect(rejection).rejects.toThrow(/p\.json/);
+    });
+
+    it('loadCentralPolicyEvidence non-Error throw message includes stringified error', async () => {
+      await expect(
+        loadCentralPolicyEvidence(POLICY_PATH, digestFn, async () => {
+          throw 'plain string failure';
+        }),
+      ).rejects.toThrow(/plain string failure/);
     });
   });
 });
