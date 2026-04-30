@@ -14,8 +14,6 @@
  * @version v1
  */
 
-import type { Command } from '../machine/commands.js';
-
 /**
  * Tool classification types.
  */
