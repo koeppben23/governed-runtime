@@ -1857,11 +1857,7 @@ describe('review-enforcement', () => {
           capturedFindings: null,
         });
 
-        const prompt =
-          'A'.repeat(50) +
-          ' iteration=1 ' +
-          ' planVersion=2 ' +
-          'B'.repeat(200);
+        const prompt = 'A'.repeat(50) + ' iteration=1 ' + ' planVersion=2 ' + 'B'.repeat(200);
         const result = enforceBeforeSubagentCall(state, {
           subagent_type: REVIEWER_SUBAGENT_TYPE,
           prompt,
