@@ -135,6 +135,47 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks mixed ADR submission and review verdict', async () => {
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute(
+      {
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        selfReviewVerdict: 'approve',
+      },
+      {} as never,
+    );
+    expect(JSON.parse(String(res)).code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+  });
+
+  it('blocks ADR resubmission during active review loop', async () => {
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute(
+      { title: 'ADR 2', adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC' },
+      {} as never,
+    );
+    expect(JSON.parse(String(res)).code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+  });
+
   it('blocks Mode B when command is not allowed', async () => {
     mocks.state = makeState('TICKET');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -159,7 +200,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ selfReviewVerdict: 'approve' }, {} as never);
-    expect(JSON.parse(String(res)).code).toBe('NO_SELF_REVIEW');
+    expect(JSON.parse(String(res)).code).toBe('ARCHITECTURE_REVIEW_LOOP_REQUIRED');
   });
 
   it('blocks Mode B when architecture is missing', async () => {

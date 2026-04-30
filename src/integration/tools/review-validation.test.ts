@@ -5,7 +5,11 @@ import {
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../review-assurance.js';
+import {
+  hashFindings,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../review-assurance.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -42,7 +46,22 @@ function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
 }
 
-function strictAssuranceFixture() {
+function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
+  return makeFindings({
+    reviewedBy: { sessionId: 'ses_child' },
+    attestation: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      toolObligationId: '11111111-1111-4111-8111-111111111111',
+      iteration: 0,
+      planVersion: 1,
+      reviewedBy: 'flowguard-reviewer',
+    },
+    ...overrides,
+  });
+}
+
+function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
   return {
     obligations: [
       {
@@ -72,7 +91,7 @@ function strictAssuranceFixture() {
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
-        findingsHash: 'def',
+        findingsHash: hashFindings(findings),
         invokedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
         consumedByObligationId: null,
@@ -263,23 +282,13 @@ describe('validateReviewFindings', () => {
 
   describe('strict assurance', () => {
     it('accepts when strict evidence and attestation match', () => {
-      const findings = makeFindings({
-        reviewMode: 'subagent',
-        attestation: {
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          toolObligationId: '11111111-1111-4111-8111-111111111111',
-          iteration: 0,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
-        },
-      });
+      const findings = strictFindings();
       const result = validateReviewFindings(
         findings,
         makeCtx({
           subagentEnabled: true,
           strictEnforcement: true,
-          assurance: strictAssuranceFixture(),
+          assurance: strictAssuranceFixture(findings),
           obligationType: 'plan',
         }),
       );
@@ -305,17 +314,7 @@ describe('validateReviewFindings', () => {
       const assurance = strictAssuranceFixture();
       assurance.obligations[0]!.status = 'blocked';
       assurance.obligations[0]!.blockedCode = 'STRICT_REVIEW_ORCHESTRATION_FAILED';
-      const findings = makeFindings({
-        reviewMode: 'subagent',
-        attestation: {
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          toolObligationId: '11111111-1111-4111-8111-111111111111',
-          iteration: 0,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
-        },
-      });
+      const findings = strictFindings();
       const result = validateReviewFindings(
         findings,
         makeCtx({
@@ -327,6 +326,50 @@ describe('validateReviewFindings', () => {
       );
       expect(result).not.toBeNull();
       expect(parseBlocked(result!).code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    });
+
+    it('blocks stale findings before selecting a matching stale obligation', () => {
+      const findings = strictFindings({ iteration: 1 });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          expectedIteration: 0,
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_ITERATION_MISMATCH');
+    });
+
+    it('blocks when submitted findings content differs from invocation hash', () => {
+      const original = strictFindings();
+      const tampered = { ...original, overallVerdict: 'changes_requested' as const };
+      const result = validateReviewFindings(
+        tampered,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(original),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
+    it('blocks when submitted findings session differs from invocation child session', () => {
+      const findings = strictFindings({ reviewedBy: { sessionId: 'ses_other' } });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(strictFindings()),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
     });
   });
 });

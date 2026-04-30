@@ -471,6 +471,58 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
   },
   {
+    code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings do not match the persisted subagent invocation evidence for obligation {obligationId}.',
+    recoverySteps: [
+      'Discard the modified review findings',
+      'Use the exact ReviewFindings returned by the fulfilled flowguard-reviewer invocation',
+      'If the evidence is stale, rerun the reviewer for the current obligation',
+    ],
+  },
+  {
+    code: 'REVIEW_FINDINGS_SESSION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings session does not match the persisted subagent invocation: provided {provided}, expected {expected}.',
+    recoverySteps: [
+      'Use ReviewFindings from the child session that fulfilled the active obligation',
+      'Rerun the flowguard-reviewer subagent if the findings came from a different session',
+    ],
+  },
+  {
+    code: 'INVALID_PLAN_TOOL_SEQUENCE',
+    category: 'precondition',
+    messageTemplate:
+      'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
+    recoverySteps: [
+      'Submit the plan first with flowguard_plan({ planText }) only',
+      'Do not include selfReviewVerdict or reviewFindings in the plan submission call',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'PLAN_SUBMISSION_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'A review verdict was submitted before any plan exists.',
+    recoverySteps: [
+      'Call flowguard_plan with planText first',
+      'Do not submit a review verdict before the plan review loop is initialized',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'PLAN_REVIEW_LOOP_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'A plan review verdict requires an active plan review loop.',
+    recoverySteps: [
+      'Submit the plan first and wait for the review obligation',
+      'Then submit selfReviewVerdict together with reviewFindings',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
     code: 'NO_PLAN',
     category: 'precondition',
     messageTemplate: 'No plan exists to review.',
@@ -485,10 +537,65 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/architecture',
   },
   {
+    code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
+    category: 'precondition',
+    messageTemplate:
+      'Invalid flowguard_architecture call sequence: ADR submission and review verdict inputs must be separate calls.',
+    recoverySteps: [
+      'Submit the ADR first with flowguard_architecture({ title, adrText }) only',
+      'Do not include selfReviewVerdict in the ADR submission call',
+      'During an active ADR review loop, submit only selfReviewVerdict and revised adrText when changes are requested',
+    ],
+    quickFixCommand: '/architecture',
+  },
+  {
+    code: 'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'An architecture review verdict requires an active ADR review loop.',
+    recoverySteps: [
+      'Submit the ADR first and wait for the architecture review loop',
+      'Then submit selfReviewVerdict for the active ADR review loop',
+    ],
+    quickFixCommand: '/architecture',
+  },
+  {
     code: 'NO_IMPLEMENTATION',
     category: 'precondition',
     messageTemplate: 'No implementation evidence to review.',
     recoverySteps: ['Record implementation via flowguard_implement first'],
+    quickFixCommand: '/implement',
+  },
+  {
+    code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
+    category: 'precondition',
+    messageTemplate:
+      'Invalid flowguard_implement call sequence: implementation evidence and review findings must be separate calls.',
+    recoverySteps: [
+      'Record implementation evidence first with flowguard_implement({}) only',
+      'Do not include reviewFindings unless reviewVerdict is also provided',
+    ],
+    quickFixCommand: '/implement',
+  },
+  {
+    code: 'IMPLEMENTATION_EVIDENCE_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'An implementation review verdict was submitted before implementation evidence exists.',
+    recoverySteps: [
+      'Make the implementation changes first',
+      'Call flowguard_implement({}) to record implementation evidence before submitting reviewVerdict',
+    ],
+    quickFixCommand: '/implement',
+  },
+  {
+    code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'An implementation review verdict requires an active implementation review loop.',
+    recoverySteps: [
+      'Record implementation evidence first and wait for the implementation review obligation',
+      'Then submit reviewVerdict together with reviewFindings',
+    ],
     quickFixCommand: '/implement',
   },
 

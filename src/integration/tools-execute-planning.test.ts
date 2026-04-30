@@ -16,6 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -500,6 +502,67 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
     });
+
+    it('blocks mixed first-call planText + selfReviewVerdict with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: '## Plan', selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.recovery).toContain(
+        'Submit the plan first with flowguard_plan({ planText }) only',
+      );
+    });
+
+    it('blocks first-call planText + reviewFindings with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: '## Plan', reviewFindings: modeBSubagentFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+    });
+
+    it('blocks plan-only resubmission while review loop is active', async () => {
+      await hydrateAndTicket();
+      const firstRaw = await plan.execute({ planText: '## Plan' }, ctx);
+      const first = parseToolResult(firstRaw);
+      expect(first.phase).toBe('PLAN');
+
+      const raw = await plan.execute({ planText: '## Replacement Plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+    });
+
+    it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: modeBSubagentFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
+      expect(result.recovery).toContain('Call flowguard_plan with planText first');
+    });
+
+    it('blocks changes_requested revised plan before review loop with PLAN_SUBMISSION_REQUIRED', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings: { ...modeBSubagentFindings, overallVerdict: 'changes_requested' },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
+    });
   });
 
   describe('CORNER', () => {
@@ -567,7 +630,34 @@ describe('plan', () => {
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
-    it('Mode B blocks with NO_SELF_REVIEW when selfReview is null', async () => {
+    it('Mode B blocks tampered review findings that do not match persisted evidence', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings: {
+            ...reviewFindings,
+            blockingIssues: [
+              {
+                severity: 'major' as const,
+                category: 'correctness' as const,
+                message: 'tampered issue',
+                location: 'test',
+              },
+            ],
+          },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
+    it('Mode B blocks with PLAN_REVIEW_LOOP_REQUIRED when selfReview is null', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
@@ -585,10 +675,10 @@ describe('plan', () => {
       const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('NO_SELF_REVIEW');
+      expect(result.code).toBe('PLAN_REVIEW_LOOP_REQUIRED');
     });
 
-    it('Mode B blocks with NO_PLAN when plan is null', async () => {
+    it('Mode B blocks with PLAN_SUBMISSION_REQUIRED when plan is null', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
@@ -606,7 +696,7 @@ describe('plan', () => {
       const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('NO_PLAN');
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
     });
 
     it('converged PLAN_REVIEW response contains reviewCard with full plan body', async () => {
@@ -674,7 +764,8 @@ describe('plan', () => {
 
     it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
       const original = process.env.OPENCODE_CONFIG_DIR;
-      process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+      const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
+      process.env.OPENCODE_CONFIG_DIR = nonTempPath;
       try {
         expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
       } finally {

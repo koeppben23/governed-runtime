@@ -130,7 +130,22 @@ export const implement: ToolDefinition = {
       const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
-      const isRecordImpl = !args.reviewVerdict;
+      const hasVerdict = args.reviewVerdict !== undefined;
+      const hasFindings = args.reviewFindings !== undefined;
+      const isRecordImpl = !hasVerdict;
+
+      // Runtime sequence contract: implementation evidence and review verdict are separate phases.
+      if (hasFindings && !hasVerdict) {
+        return formatBlocked('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+      }
+
+      if (hasVerdict && !state.implementation) {
+        return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+      }
+
+      if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
+        return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
+      }
 
       // Validate review findings for Mode A
       if (args.reviewFindings && isRecordImpl) {
@@ -269,12 +284,9 @@ export const implement: ToolDefinition = {
         return appendNextAction(JSON.stringify(response), finalState);
       } else {
         // ── Mode B: Implementation review verdict ────────────────
-        if (state.phase !== 'IMPL_REVIEW') {
-          return formatBlocked('WRONG_PHASE', { phase: state.phase });
-        }
-
-        if (!state.implementation) {
-          return formatBlocked('NO_IMPLEMENTATION');
+        const implementation = state.implementation;
+        if (!implementation) {
+          return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
         }
 
         if (!args.reviewFindings) {
@@ -300,7 +312,7 @@ export const implement: ToolDefinition = {
         }
 
         const verdict = args.reviewVerdict as LoopVerdict;
-        const prevDigest = state.implementation.digest;
+        const prevDigest = implementation.digest;
 
         // For changes_requested, the LLM should make changes and call
         // flowguard_implement({}) again (Mode A). Here we just record
@@ -344,7 +356,7 @@ export const implement: ToolDefinition = {
             iteration,
             maxIterations: maxImplReviewIterations,
             prevDigest,
-            currDigest: state.implementation.digest,
+            currDigest: implementation.digest,
             revisionDelta,
             verdict,
             executedAt: ctx.now(),
