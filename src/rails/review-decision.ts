@@ -71,10 +71,24 @@ const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
 // ─── State Clearing ───────────────────────────────────────────────────────────
 
 /**
- * State fields cleared on reject (from any gate).
+ * State fields cleared on reject (from PLAN_REVIEW or EVIDENCE_REVIEW).
  * Everything downstream of TICKET is wiped — plan must be rebuilt from scratch.
+ * Ticket itself is preserved (session returns to TICKET phase).
  */
 const REJECT_CLEAR = {
+  plan: null,
+  selfReview: null,
+  validation: [] as ValidationResult[],
+  implementation: null,
+  implReview: null,
+};
+
+/**
+ * State fields cleared on reject from PLAN_REVIEW.
+ * Ticket is also cleared — user must re-enter ticket text.
+ */
+const REJECT_CLEAR_FROM_PLAN = {
+  ticket: null,
   plan: null,
   selfReview: null,
   validation: [] as ValidationResult[],
@@ -114,6 +128,9 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
   if (verdict === 'reject') {
     if (state.phase === 'ARCH_REVIEW') {
       return { ...state, ...ARCH_REJECT_CLEAR };
+    }
+    if (state.phase === 'PLAN_REVIEW') {
+      return { ...state, ...REJECT_CLEAR_FROM_PLAN };
     }
     return { ...state, ...REJECT_CLEAR };
   }

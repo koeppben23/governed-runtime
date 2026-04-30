@@ -648,5 +648,129 @@ describe('review-decision rail', () => {
         expect(result.state.architecture).toBeNull();
       }
     });
+
+    // ── Kill mutants in applyStateClearingPattern ────────────────────
+
+    it('changes_requested at PLAN_REVIEW clears selfReview (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview (survivor kill)', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        implReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: IMPL_EVIDENCE.digest,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none',
+          verdict: 'approve',
+          executedAt: FIXED_TIME,
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementation).toBeNull();
+        expect(result.state.implReview).toBeNull();
+      }
+    });
+
+    it('changes_requested at ARCH_REVIEW clears selfReview (survivor kill)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('reject at PLAN_REVIEW clears all downstream evidence (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.ticket).toBeNull();
+        expect(result.state.plan).toBeNull();
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('reject at ARCH_REVIEW clears architecture and selfReview (survivor kill)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture).toBeNull();
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('actorAssurance fallback to best_effort when undefined (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: 'r@e.com',
+            actorSource: 'claim',
+            actorAssurance: undefined as unknown as 'claim_validated', // Test fallback
+          },
+        },
+        {
+          ...baseCtx,
+          policy: { requireVerifiedActorsForApproval: true },
+        },
+      );
+      // Should still work since undefined falls back to 'best_effort' which fails requirement
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      }
+    });
   });
 });

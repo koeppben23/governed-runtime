@@ -1725,5 +1725,245 @@ describe('review-enforcement', () => {
         'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
       );
     });
+
+    // ─── MUTATION KILL: enforceBeforeSubagentCall (lines 208-287) ────────────
+
+    describe('MUTATION_KILL: enforceBeforeSubagentCall', () => {
+      it('allows task call for non-reviewer subagent type', () => {
+        const state = createSessionState();
+        const result = enforceBeforeSubagentCall(state, { subagent_type: 'other-agent' });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('allows when no pending reviews exist (survivor kill)', () => {
+        const state = createSessionState();
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: 'Some prompt text here',
+        });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('blocks when prompt is too short (survivor kill)', () => {
+        const state = createSessionState();
+        // Register a pending review
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
+          capturedFindings: null,
+        });
+
+        const shortPrompt = 'Short';
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: shortPrompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_EMPTY');
+      });
+
+      it('blocks when contentMeta is null in strict mode (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null, // Content meta extraction failed
+          capturedFindings: null,
+        });
+
+        const result = enforceBeforeSubagentCall(
+          state,
+          {
+            subagent_type: REVIEWER_SUBAGENT_TYPE,
+            prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
+          },
+          true, // strictEnforcement
+        );
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_CONTEXT_UNVERIFIABLE');
+      });
+
+      it('allows when contentMeta is null in non-strict mode (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
+        });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('blocks when prompt missing iteration (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
+          capturedFindings: null,
+        });
+
+        const prompt = 'A'.repeat(100) + ' version=1 ' + 'B'.repeat(150);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+      });
+
+      it('blocks when prompt missing planVersion (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
+          capturedFindings: null,
+        });
+
+        const prompt = 'A'.repeat(100) + ' iteration=0 ' + 'B'.repeat(150);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+      });
+
+      it('allows when prompt contains both iteration and planVersion (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
+          capturedFindings: null,
+        });
+
+        const prompt =
+          'A'.repeat(50) +
+          ' iteration=1 ' +
+          ' planVersion=2 ' +
+          'B'.repeat(200);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(true);
+      });
+    });
+
+    // ─── MUTATION KILL: onFlowGuardToolAfter (lines 160-193) ─────────────────
+
+    describe('MUTATION_KILL: onFlowGuardToolAfter', () => {
+      it('ignores non-FlowGuard tools (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(state, 'other_tool', {}, 'Some output', NOW);
+        expect(state.pendingReviews.size).toBe(0);
+      });
+
+      it('clears pending review on Mode B success (survivor kill)', () => {
+        const state = createSessionState();
+        // First register a pending review
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        // Mode B: submit verdict with success
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          { selfReviewVerdict: 'approve' },
+          JSON.stringify({ status: 'Plan approved' }),
+          LATER,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
+      });
+
+      it('does NOT clear pending review on Mode B error (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        // Mode B: submit verdict with error
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          { selfReviewVerdict: 'approve' },
+          JSON.stringify({ error: true, code: 'SOME_ERROR' }),
+          LATER,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
+      });
+
+      it('registers pending review when next starts with REVIEW_REQUIRED_PREFIX (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          {},
+          JSON.stringify({
+            next: `${REVIEW_REQUIRED_PREFIX}: Call reviewer with iteration=0 and planVersion=1`,
+            reviewMode: 'subagent',
+          }),
+          NOW,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
+        // contentMeta may be parsed if the next string contains expected format
+        const pending = state.pendingReviews.get('flowguard_plan');
+        expect(pending).not.toBeUndefined();
+        // The exact contentMeta depends on extractContentMeta implementation
+        // Just verify the pending review was registered
+      });
+
+      it('does NOT register pending review when next does not start with prefix (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          {},
+          JSON.stringify({
+            next: 'Just some regular message',
+            reviewMode: 'subagent',
+          }),
+          NOW,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
+      });
+
+      it('handles unparseable output gracefully (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(state, 'flowguard_plan', {}, 'Not valid JSON{', NOW);
+        expect(state.pendingReviews.size).toBe(0);
+      });
+    });
   });
 });

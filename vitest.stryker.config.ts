@@ -28,6 +28,7 @@ export default defineConfig({
       'src/integration/review-assurance.test.ts',
       'src/integration/review-enforcement.test.ts',
       'src/integration/review-orchestrator.test.ts',
+      'src/integration/status.test.ts',
       'src/integration/services/decision-finalization.test.ts',
       'src/integration/services/regulated-completion.test.ts',
       'src/integration/session-state-upgrade.test.ts',
