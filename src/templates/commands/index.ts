@@ -5,7 +5,11 @@
  * Barrel file that assembles all individual command templates
  * into the COMMANDS registry used by install and runtime.
  *
- * @version v1
+ * All templates use positive language per Anthropic and OpenAI
+ * prompt engineering best practices. Shared governance rules are
+ * composed from shared-rules.ts.
+ *
+ * @version v2
  */
 
 import { HYDRATE_COMMAND } from './hydrate.js';
@@ -28,6 +32,8 @@ import { REJECT_COMMAND } from './reject.js';
 import { CHECK_COMMAND } from './check.js';
 import { EXPORT_COMMAND } from './export.js';
 import { WHY_COMMAND } from './why.js';
+
+export { GOVERNANCE_RULES } from './shared-rules.js';
 
 export const COMMANDS: Record<string, string> = {
   'hydrate.md': HYDRATE_COMMAND,

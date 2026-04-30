@@ -187,9 +187,8 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 }
 
 async function currentSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-    '../adapters/workspace/index.js'
-  );
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
@@ -224,9 +223,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'Fix login flow', source: 'user' }, ctx);
       // Read state directly from disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -257,9 +255,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'First ticket', source: 'user' }, ctx);
       await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -307,9 +304,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -348,9 +344,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -366,9 +361,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -503,18 +497,18 @@ describe('plan', () => {
       expect(result.code).toBe('NO_SESSION');
     });
 
-    it('blocks mixed first-call planText + selfReviewVerdict with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+    it('blocks mixed first-call planText + selfReviewVerdict with PLAN_APPROVE_WITH_TEXT', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute({ planText: '## Plan', selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'Submit the plan first with flowguard_plan({ planText }) only',
+        'For approval: call flowguard_plan({ selfReviewVerdict: "approve", reviewFindings })',
       );
     });
 
-    it('blocks first-call planText + reviewFindings with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+    it('blocks first-call planText + reviewFindings with PLAN_SUBMISSION_MIXED_INPUTS', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         { planText: '## Plan', reviewFindings: modeBSubagentFindings },
@@ -522,7 +516,7 @@ describe('plan', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
     });
 
     it('blocks plan-only resubmission while review loop is active', async () => {
@@ -534,7 +528,7 @@ describe('plan', () => {
       const raw = await plan.execute({ planText: '## Replacement Plan' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
@@ -601,9 +595,8 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'solo' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -661,9 +654,8 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -682,9 +674,8 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);

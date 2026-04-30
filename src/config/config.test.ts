@@ -2719,9 +2719,9 @@ describe('cli/templates/verification-output-contract', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
-    it('/plan must NOT allow inventing verification commands', () => {
+    it('/plan guards against invented verification commands via Source citation requirement', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect(planTemplate).toMatch(/DO NOT invent verification commands/i);
+      expect(planTemplate).toMatch(/Cite Source for each verification check/i);
     });
 
     it('/plan must NOT use generic commands when candidates exist', () => {
@@ -2729,11 +2729,9 @@ describe('cli/templates/verification-output-contract', () => {
       expect(planTemplate).toMatch(/verificationCandidates/i);
     });
 
-    it('/implement must NOT list checks as executed if not run', () => {
+    it('/implement requires listing only actually executed checks', () => {
       const implementTemplate = COMMANDS['implement.md'];
-      expect(implementTemplate).toMatch(
-        /only list checks.*Executed checks.*if they were actually run/i,
-      );
+      expect(implementTemplate).toMatch(/list only checks.*actually executed/i);
     });
   });
 
@@ -2746,7 +2744,7 @@ describe('cli/templates/verification-output-contract', () => {
 
     it('/implement requires clearly separated Verification Evidence', () => {
       const implementTemplate = COMMANDS['implement.md'];
-      expect(implementTemplate).toMatch(/Verification Evidence[\s\S]*clearly distinguishes/i);
+      expect(implementTemplate).toMatch(/Verification Evidence[\s\S]*distinguishing/i);
     });
   });
 

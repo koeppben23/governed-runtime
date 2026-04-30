@@ -98,7 +98,7 @@ export const architecture: ToolDefinition = {
 
       // Runtime sequence contract: ADR submission and review verdict are separate phases.
       if (hasTitle && hasVerdict) {
-        return formatBlocked('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+        return formatBlocked('ADR_SUBMISSION_MIXED_INPUTS');
       }
 
       if (
@@ -107,7 +107,7 @@ export const architecture: ToolDefinition = {
         state.phase === 'ARCHITECTURE' &&
         state.selfReview
       ) {
-        return formatBlocked('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+        return formatBlocked('ADR_REVIEW_IN_PROGRESS');
       }
 
       if (isInitialSubmission) {

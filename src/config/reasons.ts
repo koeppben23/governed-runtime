@@ -503,6 +503,50 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/plan',
   },
   {
+    code: 'PLAN_SUBMISSION_MIXED_INPUTS',
+    category: 'precondition',
+    messageTemplate:
+      'Plan submission included reviewFindings without a verdict. Findings belong to the verdict call, not the initial submission.',
+    recoverySteps: [
+      'Submit the plan with flowguard_plan({ planText }) only',
+      'Add reviewFindings in the verdict call: flowguard_plan({ selfReviewVerdict, reviewFindings })',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'PLAN_APPROVE_WITH_TEXT',
+    category: 'precondition',
+    messageTemplate:
+      'Plan approval included planText. For approval, send only the verdict and findings — planText is for revisions.',
+    recoverySteps: [
+      'For approval: call flowguard_plan({ selfReviewVerdict: "approve", reviewFindings })',
+      'Include planText only when selfReviewVerdict is "changes_requested" (revised plan)',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'PLAN_REVIEW_IN_PROGRESS',
+    category: 'precondition',
+    messageTemplate:
+      'The plan review loop is already active. Submit a review verdict to continue it, not a new plan.',
+    recoverySteps: [
+      'The review loop is active — send selfReviewVerdict + reviewFindings to continue it',
+      'Call flowguard_plan({ selfReviewVerdict: "approve"|"changes_requested", reviewFindings })',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
+    code: 'PLAN_FINDINGS_WITHOUT_VERDICT',
+    category: 'precondition',
+    messageTemplate:
+      'Review findings were submitted without a verdict. Include selfReviewVerdict alongside reviewFindings.',
+    recoverySteps: [
+      'Include selfReviewVerdict alongside reviewFindings',
+      'Call flowguard_plan({ selfReviewVerdict: "approve"|"changes_requested", reviewFindings })',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
     code: 'PLAN_SUBMISSION_REQUIRED',
     category: 'precondition',
     messageTemplate: 'A review verdict was submitted before any plan exists.',
@@ -545,6 +589,28 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Submit the ADR first with flowguard_architecture({ title, adrText }) only',
       'Do not include selfReviewVerdict in the ADR submission call',
       'During an active ADR review loop, submit only selfReviewVerdict and revised adrText when changes are requested',
+    ],
+    quickFixCommand: '/architecture',
+  },
+  {
+    code: 'ADR_SUBMISSION_MIXED_INPUTS',
+    category: 'precondition',
+    messageTemplate:
+      'ADR submission included a review verdict. Submission and verdict are separate calls.',
+    recoverySteps: [
+      'Submit the ADR with flowguard_architecture({ id, title, adrText }) only',
+      'Submit the review verdict separately: flowguard_architecture({ selfReviewVerdict })',
+    ],
+    quickFixCommand: '/architecture',
+  },
+  {
+    code: 'ADR_REVIEW_IN_PROGRESS',
+    category: 'precondition',
+    messageTemplate:
+      'The ADR review loop is already active. Submit a review verdict to continue it, not a new ADR.',
+    recoverySteps: [
+      'The review loop is active — send selfReviewVerdict to continue it',
+      'Call flowguard_architecture({ selfReviewVerdict: "approve"|"changes_requested" })',
     ],
     quickFixCommand: '/architecture',
   },

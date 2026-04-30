@@ -465,14 +465,14 @@ describe('DEV_REPO_INVARIANTS', () => {
       }
     });
 
-    it('all slash commands use Goal/Constraints/Done-when structure', () => {
+    it('all slash commands use Goal/Rules/Governance/Done-when structure', () => {
       for (const [name, content] of Object.entries(COMMANDS)) {
         expect(content, `${name} missing ## Goal`).toContain('## Goal');
-        expect(content, `${name} missing ## Constraints`).toContain('## Constraints');
+        expect(content, `${name} missing ## Governance rules`).toContain('## Governance rules');
         expect(content, `${name} missing ## Done-when`).toContain('## Done-when');
         // Must NOT contain legacy headings
         expect(content, `${name} has legacy ## Task`).not.toMatch(/^## Task$/m);
-        expect(content, `${name} has legacy ## Rules`).not.toMatch(/^## Rules$/m);
+        expect(content, `${name} has legacy ## Constraints`).not.toMatch(/^## Constraints$/m);
       }
     });
 

@@ -82,8 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compliance mapping filename corrected to `docs/marisk-mapping.md` and documentation index now links all compliance mappings and agent-guidance docs.
 - **Codebase restructuring**: Extracted the monolithic plugin into dedicated modules (logging, helpers, enforcement tracking, review audit, review state, workspace). Centralized tool name constants into a single SSOT module. Hardened all evidence schemas with readonly annotations. Consolidated duplicated patterns: parameter objects, loop-state builders, profile templates, and review-outcome blocking.
 - AGENTS v3 mandate hardened with explicit Red Lines, action-oriented invariants, and review verdict alignment (`approve` / `changes_requested`).
+- **Command templates simplified with action-oriented language**: All 20 command templates rewritten with clearer structure (Goal → Steps → Rules → Done-when). Shared governance rules extracted to `shared-rules.ts` to reduce duplication. Explicit governance boundaries remain preserved as hard prohibitions where appropriate.
 
 ### Fixed
+
+- **Plan/Architecture error code differentiation**: Guards in `/plan` and `/architecture` now use specific error codes (`PLAN_SUBMISSION_MIXED_INPUTS`, `PLAN_APPROVE_WITH_TEXT`, `PLAN_REVIEW_IN_PROGRESS`, `PLAN_FINDINGS_WITHOUT_VERDICT`, `ADR_SUBMISSION_MIXED_INPUTS`, `ADR_REVIEW_IN_PROGRESS`) with targeted recovery messages instead of a shared overloaded code. Prevents models from entering infinite recovery loops when a blocked guard returns a recovery message that triggers a different guard with the same code.
 
 - Telemetry code is no longer excluded from coverage collection in `vitest.config.ts`, so telemetry tests contribute to global coverage thresholds.
 - Fixed product one-pager title typo: "AI Engineering Governance Platform".
