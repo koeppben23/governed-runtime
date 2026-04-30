@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { executeReviewDecision } from './review-decision.js';
-import { makeState, ARCHITECTURE_DECISION, IMPL_EVIDENCE, PLAN_RECORD } from '../__fixtures__.js';
+import {
+  makeState,
+  ARCHITECTURE_DECISION,
+  IMPL_EVIDENCE,
+  PLAN_RECORD,
+  FIXED_TIME,
+} from '../__fixtures__.js';
 
 const baseCtx = {
-  now: () => '2026-01-01T00:00:00.000Z',
+  now: () => FIXED_TIME,
   policy: {},
 };
 
@@ -21,6 +27,14 @@ const reviewerIdentity = {
   actorDisplayName: 'Reviewer',
   actorSource: 'claim' as const,
   actorAssurance: 'claim_validated' as const,
+};
+
+/** Minimal converged self-review for tests requiring a completed review loop. */
+const CONVERGED_SELF_REVIEW = {
+  iteration: 1,
+  maxIterations: 3,
+  verdict: 'converged' as const,
+  decidedAt: FIXED_TIME,
 };
 
 describe('review-decision rail', () => {
@@ -56,7 +70,7 @@ describe('review-decision rail', () => {
 
   it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview', () => {
     const state = makeState('EVIDENCE_REVIEW', {
-      ticket: { text: 't', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
       plan: PLAN_RECORD,
       implementation: IMPL_EVIDENCE,
       implReview: {
@@ -66,7 +80,7 @@ describe('review-decision rail', () => {
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
         verdict: 'approve',
-        executedAt: '2026-01-01T00:00:00.000Z',
+        executedAt: FIXED_TIME,
       },
     });
 
@@ -391,7 +405,7 @@ describe('review-decision rail', () => {
   });
 
   // ─── MUTATION KILL round 2 ───────────────────────────────────
-  it('idp_verified passes requireVerifiedActorsForApproval (L200)', () => {
+  it('idp_verified passes requireVerifiedActorsForApproval (assurance threshold)', () => {
     // Kill: actorAssurance !== 'idp_verified' → true (blocks idp_verified)
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,
@@ -408,5 +422,355 @@ describe('review-decision rail', () => {
     );
     // idp_verified meets the threshold — should NOT be blocked
     expect(result.kind).toBe('ok');
+  });
+
+  // ─── MUTATION KILL ────────────────────────────────────────────────────
+
+  describe('MUTATION_KILL', () => {
+    it('approve at ARCH_REVIEW sets architecture.status to "accepted"', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture?.status).toBe('accepted');
+      }
+    });
+
+    it('approve at ARCH_REVIEW without architecture leaves state unchanged (arch guard)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: null,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture).toBeNull();
+      }
+    });
+
+    it('changes_requested at ARCH_REVIEW clears selfReview', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'Needs work', decidedBy: 'reviewer' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.selfReview).toBeNull();
+        // architecture should still be present
+        expect(result.state.architecture).not.toBeNull();
+      }
+    });
+
+    it('changes_requested does NOT trigger four-eyes check (verdict gate)', () => {
+      // Use regulated policy with allowSelfApproval=false
+      // changes_requested by same person as initiator should NOT be blocked
+      const state = makeState('PLAN_REVIEW', {
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+        initiatedBy: 'same-person',
+        initiatedByIdentity: { ...initiatorIdentity, actorId: 'same-person' },
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'changes_requested',
+          rationale: 'Needs changes',
+          decidedBy: 'same-person',
+          decisionIdentity: { ...reviewerIdentity, actorId: 'same-person' },
+        },
+        { ...baseCtx, policy: { allowSelfApproval: false } },
+      );
+      // Should NOT be blocked (four-eyes only applies to approve)
+      expect(result.kind).toBe('ok');
+    });
+
+    it('P34: minimumActorAssuranceForApproval=claim_validated blocks best_effort actor', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        initiatedBy: 'initiator',
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
+        },
+        {
+          ...baseCtx,
+          policy: {
+            minimumActorAssuranceForApproval: 'claim_validated',
+            // NOT using legacy requireVerifiedActorsForApproval
+          },
+        },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      }
+    });
+
+    it('P34: minimumActorAssuranceForApproval=idp_verified blocks claim_validated actor', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        initiatedBy: 'initiator',
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
+        },
+        {
+          ...baseCtx,
+          policy: {
+            minimumActorAssuranceForApproval: 'idp_verified',
+          },
+        },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      }
+    });
+
+    it('P34: minimumActorAssuranceForApproval=claim_validated allows claim_validated actor (>= threshold)', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        initiatedBy: 'initiator',
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'claim_validated' as const },
+        },
+        {
+          ...baseCtx,
+          policy: {
+            minimumActorAssuranceForApproval: 'claim_validated',
+          },
+        },
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('P34: minimumActorAssuranceForApproval=idp_verified allows idp_verified actor', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        initiatedBy: 'initiator',
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
+        },
+        {
+          ...baseCtx,
+          policy: {
+            minimumActorAssuranceForApproval: 'idp_verified',
+          },
+        },
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('P34: minimumActorAssuranceForApproval absent → no assurance check (else-if gate)', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        plan: PLAN_RECORD,
+        initiatedBy: 'initiator',
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
+        },
+        {
+          ...baseCtx,
+          policy: {
+            // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
+          },
+        },
+      );
+      expect(result.kind).toBe('ok');
+    });
+
+    it('approve at PLAN_REVIEW does NOT modify architecture (phase guard)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // architecture should remain null — not set to {status:'accepted'}
+        expect(result.state.architecture).toBeNull();
+      }
+    });
+
+    // ── Kill mutants in applyStateClearingPattern ────────────────────
+
+    it('changes_requested at PLAN_REVIEW clears selfReview (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('changes_requested at EVIDENCE_REVIEW clears implementation and implReview (survivor kill)', () => {
+      const state = makeState('EVIDENCE_REVIEW', {
+        implementation: IMPL_EVIDENCE,
+        implReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: IMPL_EVIDENCE.digest,
+          currDigest: IMPL_EVIDENCE.digest,
+          revisionDelta: 'none',
+          verdict: 'approve',
+          executedAt: FIXED_TIME,
+        },
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.implementation).toBeNull();
+        expect(result.state.implReview).toBeNull();
+      }
+    });
+
+    it('changes_requested at ARCH_REVIEW clears selfReview (survivor kill)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'changes_requested', rationale: 'rework', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('reject at PLAN_REVIEW clears all downstream evidence (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.ticket).toBeNull();
+        expect(result.state.plan).toBeNull();
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('reject at ARCH_REVIEW clears architecture and selfReview (survivor kill)', () => {
+      const state = makeState('ARCH_REVIEW', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        { verdict: 'reject', rationale: 'rejected', decidedBy: 'reviewer-1' },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture).toBeNull();
+        expect(result.state.selfReview).toBeNull();
+      }
+    });
+
+    it('actorAssurance fallback to best_effort when undefined (survivor kill)', () => {
+      const state = makeState('PLAN_REVIEW', {
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: 'r@e.com',
+            actorSource: 'claim',
+            actorAssurance: undefined as unknown as 'claim_validated', // Test fallback
+          },
+        },
+        {
+          ...baseCtx,
+          policy: { requireVerifiedActorsForApproval: true },
+        },
+      );
+      // Should still work since undefined falls back to 'best_effort' which fails requirement
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      }
+    });
   });
 });

@@ -16,6 +16,7 @@ import {
 import type { Phase } from '../state/schema.js';
 import {
   makeState,
+  FIXED_TIME,
   TICKET,
   PLAN_RECORD,
   SELF_REVIEW_CONVERGED,
@@ -211,7 +212,7 @@ describe('guards', () => {
           currDigest: 'd2',
           revisionDelta: 'minor',
           verdict: 'changes_requested',
-          executedAt: '2026-01-01T00:00:00.000Z',
+          executedAt: FIXED_TIME,
         },
       });
       expect(implReviewMet(atMax)).toBe(true);
@@ -224,7 +225,7 @@ describe('guards', () => {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
         ],
       });
@@ -288,19 +289,19 @@ describe('guards', () => {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
           {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok2',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
           {
             checkId: 'rollback_safety',
             passed: true,
             detail: 'ok',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
         ],
       });
@@ -315,13 +316,13 @@ describe('guards', () => {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
           {
             checkId: 'rollback_safety',
             passed: false,
             detail: 'fail',
-            executedAt: '2026-01-01T00:00:00.000Z',
+            executedAt: FIXED_TIME,
           },
         ],
       });
@@ -333,6 +334,29 @@ describe('guards', () => {
       const archGuards = GUARDS.get('ARCHITECTURE')!;
       expect(archGuards.length).toBe(planGuards.length);
       expect(archGuards.map((g) => g.event)).toEqual(planGuards.map((g) => g.event));
+    });
+  });
+
+  // ─── MUTATION KILL: implReviewPending ───────────────────────
+  describe('MUTATION_KILL', () => {
+    it('implReviewPending: true when implReview non-null and not converged', () => {
+      // implReview present but verdict != 'converged' → pending
+      const state = makeState('IMPLEMENTATION', {
+        implReview: IMPL_REVIEW_PENDING_RESULT,
+      });
+      expect(implReviewPending(state)).toBe(true);
+    });
+
+    it('implReviewPending: false when implReview is null (first operand)', () => {
+      const state = makeState('IMPLEMENTATION', { implReview: null });
+      expect(implReviewPending(state)).toBe(false);
+    });
+
+    it('implReviewPending: false when implReview converged (!implReviewMet)', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implReview: IMPL_REVIEW_CONVERGED,
+      });
+      expect(implReviewPending(state)).toBe(false);
     });
   });
 

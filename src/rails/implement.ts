@@ -30,6 +30,7 @@ import {
   autoAdvance,
   runConvergenceLoop,
   createPolicyEvalFn,
+  buildImplReviewState,
   DEFAULT_MAX_REVIEW_ITERATIONS,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -145,15 +146,7 @@ export async function executeImplement(
     nextState = {
       ...nextState,
       implementation: loop.artifact,
-      implReview: {
-        iteration: loop.iteration,
-        maxIterations: loop.maxIterations,
-        prevDigest: loop.prevDigest,
-        currDigest: loop.currDigest,
-        revisionDelta: loop.revisionDelta,
-        verdict: loop.verdict,
-        executedAt: ctx.now(),
-      },
+      implReview: buildImplReviewState(loop, ctx.now()),
     };
 
     // 8. Auto-advance from IMPL_REVIEW (→ EVIDENCE_REVIEW if converged) — policy-aware
