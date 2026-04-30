@@ -11,9 +11,6 @@ export default defineConfig({
     exclude: [
       // Unrelated to mutation targets — causes dry-run aborts
       'src/security/actions-pinning.test.ts',
-      // Integration tests — EPERM on Windows atomic writes under pool:'forks'
-      // and unrelated to mutation target unit coverage
-      'src/integration/**',
       // Performance timing tests — flaky under load
       'src/architecture/__tests__/dependency-rules.test.ts',
     ],
