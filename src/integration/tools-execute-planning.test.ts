@@ -16,6 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -762,7 +764,8 @@ describe('plan', () => {
 
     it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
       const original = process.env.OPENCODE_CONFIG_DIR;
-      process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+      const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
+      process.env.OPENCODE_CONFIG_DIR = nonTempPath;
       try {
         expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
       } finally {

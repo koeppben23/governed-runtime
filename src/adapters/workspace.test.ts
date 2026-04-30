@@ -381,7 +381,8 @@ describe('path resolution', () => {
 
   it('workspacesHome blocks when OPENCODE_CONFIG_DIR is outside tmpdir', () => {
     process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
-    process.env.OPENCODE_CONFIG_DIR = '/Users/home/.config/opencode';
+    const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
+    process.env.OPENCODE_CONFIG_DIR = nonTempPath;
     try {
       expect(() => workspacesHome()).toThrow('must be under the OS temp directory');
     } finally {
