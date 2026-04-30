@@ -84,7 +84,7 @@ const COMMAND_ALIASES: Readonly<Record<string, CommandAliasResolution>> = {
  * Strip leading slash and normalize whitespace from a command name.
  */
 function normalizeCommandName(input: string): string {
-  return input.trim().replace(/^\//, '');
+  return input.trim().replace(/^\/+/, '');
 }
 
 /**

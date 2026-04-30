@@ -19,6 +19,9 @@ import { IdpError, type IdpErrorCode } from './errors.js';
 import type { IdpConfig, VerifiedToken } from './types.js';
 import type { KeyResolver } from './key-resolver.js';
 
+/** Default token TTL when exp claim is absent (1 hour). */
+const DEFAULT_TOKEN_TTL_SECONDS = 3600;
+
 interface JwtHeader extends JWTHeaderParameters {
   alg: string;
 }
@@ -89,7 +92,7 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
     const exp =
       typeof verifiedPayload.exp === 'number'
         ? verifiedPayload.exp
-        : Math.floor(Date.now() / 1000) + 3600;
+        : Math.floor(Date.now() / 1000) + DEFAULT_TOKEN_TTL_SECONDS;
 
     return {
       subject,

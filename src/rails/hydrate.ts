@@ -27,6 +27,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
+import { FINGERPRINT_PATTERN } from '../state/evidence.js';
 import type { ActorInfo } from '../audit/types.js';
 import type { DecisionIdentity } from '../state/evidence.js';
 import type { DiscoverySummary } from '../discovery/types.js';
@@ -172,7 +173,7 @@ export function executeHydrate(
   if (!worktree.trim()) {
     return blocked('MISSING_WORKTREE');
   }
-  if (!fingerprint || !/^[0-9a-f]{24}$/.test(fingerprint)) {
+  if (!fingerprint || !FINGERPRINT_PATTERN.test(fingerprint)) {
     return blocked('INVALID_FINGERPRINT');
   }
 

@@ -576,4 +576,31 @@ describe('JwtStaticTokenVerifier', () => {
       vi.unstubAllGlobals();
     });
   });
+
+  // ── MUTATION KILL: NoCoverage and Survived paths ─────────────────────────
+  /**
+   * Equivalent/dead mutants documented here (cannot be killed):
+   * - audience defaults to empty array when aud is not in payload: jose validates
+   *   audience before our code runs. Branch is unreachable.
+   * - parts[0] ?? '' and parts[1] ?? '': when token.split('.') produces 3 parts,
+   *   parts[0] and parts[1] are always defined strings. The ?? '' never fires.
+   * - if (err instanceof IdpError) throw err: jwtVerify only throws jose errors,
+   *   never IdpError. Branch is dead defensive code.
+   */
+  describe('MUTATION: extractClaim trim and audience fallback', () => {
+    it('extractClaim returns trimmed subject (leading/trailing whitespace removed)', async () => {
+      const verifier = makeVerifier();
+      const token = await validRsaToken({ sub: '  spaced-user  ' });
+      const result = await verifier.verify(token);
+      expect(result.subject).toBe('spaced-user');
+      expect(result.subject).not.toContain(' ');
+    });
+
+    it('extractClaimOrNull trims email claim', async () => {
+      const verifier = makeVerifier();
+      const token = await validRsaToken({ email: '\t padded@test.com \t' });
+      const result = await verifier.verify(token);
+      expect(result.email).toBe('padded@test.com');
+    });
+  });
 });

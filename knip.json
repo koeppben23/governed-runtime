@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/cli/run.ts", "scripts/*.js"],
+  "project": ["src/**/*.ts", "scripts/*.js", "*.config.*"],
+  "ignoreDependencies": ["conventional-changelog-conventionalcommits"]
+}

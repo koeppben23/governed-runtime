@@ -39,9 +39,10 @@ import type {
 } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
-import type { RailResult, RailContext, TransitionRecord } from './types.js';
+import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { isAssuranceAtLeast } from '../identity/actor-info.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -70,10 +71,24 @@ const VERDICT_TO_EVENT: Record<ReviewVerdict, Event> = {
 // ─── State Clearing ───────────────────────────────────────────────────────────
 
 /**
- * State fields cleared on reject (from any gate).
+ * State fields cleared on reject (from PLAN_REVIEW or EVIDENCE_REVIEW).
  * Everything downstream of TICKET is wiped — plan must be rebuilt from scratch.
+ * Ticket itself is preserved (session returns to TICKET phase).
  */
 const REJECT_CLEAR = {
+  plan: null,
+  selfReview: null,
+  validation: [] as ValidationResult[],
+  implementation: null,
+  implReview: null,
+};
+
+/**
+ * State fields cleared on reject from PLAN_REVIEW.
+ * Ticket is also cleared — user must re-enter ticket text.
+ */
+const REJECT_CLEAR_FROM_PLAN = {
+  ticket: null,
   plan: null,
   selfReview: null,
   validation: [] as ValidationResult[],
@@ -114,6 +129,9 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     if (state.phase === 'ARCH_REVIEW') {
       return { ...state, ...ARCH_REJECT_CLEAR };
     }
+    if (state.phase === 'PLAN_REVIEW') {
+      return { ...state, ...REJECT_CLEAR_FROM_PLAN };
+    }
     return { ...state, ...REJECT_CLEAR };
   }
 
@@ -129,6 +147,83 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
   }
 
   return state;
+}
+
+// ─── Identity Enforcement ─────────────────────────────────────────────────────
+
+/**
+ * Enforce four-eyes principle and assurance thresholds for approval decisions.
+ *
+ * Regulated mode (allowSelfApproval === false):
+ * - Both initiator and reviewer must have structured identity.
+ * - Neither may have actorSource 'unknown'.
+ * - Initiator and reviewer actorId must differ (MaRisk AT 7.2 separation of duties).
+ *
+ * Assurance enforcement (P33 legacy + P34 explicit threshold):
+ * - requireVerifiedActorsForApproval: true → minimum 'claim_validated'
+ * - minimumActorAssuranceForApproval → explicit ordinal comparison via actor-info
+ *
+ * @returns RailBlocked if enforcement fails, null if approval may proceed.
+ */
+function enforceApprovalIdentity(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): RailBlocked | null {
+  if (ctx.policy?.allowSelfApproval === false) {
+    // P30: Require structured initiator identity (fail-closed on legacy sessions)
+    if (!state.initiatedByIdentity) {
+      return blocked('DECISION_IDENTITY_REQUIRED');
+    }
+
+    // P30: Require structured decision identity (fail-closed on legacy decisions)
+    if (!input.decisionIdentity) {
+      return blocked('DECISION_IDENTITY_REQUIRED');
+    }
+
+    // P30: Block unknown source actors
+    if (state.initiatedByIdentity.actorSource === 'unknown') {
+      return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'initiator' });
+    }
+
+    if (input.decisionIdentity.actorSource === 'unknown') {
+      return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'reviewer' });
+    }
+
+    // P30: Four-eyes enforcement via structured identity
+    if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
+      return blocked('FOUR_EYES_ACTOR_MATCH', {
+        initiator: state.initiatedByIdentity.actorId,
+      });
+    }
+  }
+
+  // P34: Assurance threshold enforcement.
+  // Only blocks if a stricter-than-default threshold is configured.
+  const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
+  const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
+  if (requireVerified) {
+    // P33 legacy: requireVerifiedActorsForApproval: true → equivalent to 'claim_validated'
+    if (
+      input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
+      input.decisionIdentity?.actorAssurance !== 'idp_verified'
+    ) {
+      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
+        minimum: 'claim_validated',
+        current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
+      });
+    }
+  } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
+    // P34: Explicit threshold stricter than default — uses canonical ordinal from actor-info
+    if (!isAssuranceAtLeast(input.decisionIdentity?.actorAssurance, minimumAssurance)) {
+      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
+        minimum: minimumAssurance,
+        current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
+      });
+    }
+  }
+
+  return null;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -152,75 +247,10 @@ export function executeReviewDecision(
     return blocked('INVALID_VERDICT', { verdict: String(input.verdict) });
   }
 
-  // 3. Four-eyes and decision identity enforcement.
-  //    Regulated mode applies strict identity checks only for approval decisions.
-  //    changes_requested/reject remain available for safety interventions.
-  //    P30: Requires structured identity — no legacy fail-open from sessionID only.
+  // 3. Four-eyes and decision identity enforcement (approval only).
   if (input.verdict === 'approve') {
-    if (ctx.policy?.allowSelfApproval === false) {
-      // P30: Require structured initiator identity (fail-closed on legacy sessions)
-      if (!state.initiatedByIdentity) {
-        return blocked('DECISION_IDENTITY_REQUIRED');
-      }
-
-      // P30: Require structured decision identity (fail-closed on legacy decisions)
-      if (!input.decisionIdentity) {
-        return blocked('DECISION_IDENTITY_REQUIRED');
-      }
-
-      // P30: Block unknown source actors
-      if (state.initiatedByIdentity.actorSource === 'unknown') {
-        return blocked('REGULATED_ACTOR_UNKNOWN', {
-          role: 'initiator',
-        });
-      }
-
-      if (input.decisionIdentity.actorSource === 'unknown') {
-        return blocked('REGULATED_ACTOR_UNKNOWN', {
-          role: 'reviewer',
-        });
-      }
-
-      // P30: Four-eyes enforcement via structured identity
-      if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
-        return blocked('FOUR_EYES_ACTOR_MATCH', {
-          initiator: state.initiatedByIdentity.actorId,
-        });
-      }
-    }
-
-    // P34: Assurance threshold enforcement.
-    // Only blocks if a stricter-than-default threshold is configured.
-    const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
-    const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
-    if (requireVerified) {
-      // P33 legacy: requireVerifiedActorsForApproval: true → equivalent to 'claim_validated'
-      if (
-        input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
-        input.decisionIdentity?.actorAssurance !== 'idp_verified'
-      ) {
-        return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-          minimum: 'claim_validated',
-          current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-        });
-      }
-    } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
-      // P34: Explicit threshold stricter than default
-      const ASSURANCE_ORDER: Record<string, number> = {
-        best_effort: 0,
-        claim_validated: 1,
-        idp_verified: 2,
-      };
-      const actorLevel =
-        ASSURANCE_ORDER[input.decisionIdentity?.actorAssurance ?? 'best_effort'] ?? 0;
-      const requiredLevel = ASSURANCE_ORDER[minimumAssurance] ?? 0;
-      if (actorLevel < requiredLevel) {
-        return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-          minimum: minimumAssurance,
-          current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-        });
-      }
-    }
+    const identityBlock = enforceApprovalIdentity(state, input, ctx);
+    if (identityBlock) return identityBlock;
   }
 
   // 4. Resolve target phase via topology

@@ -24,9 +24,13 @@ import type { SessionState } from '../state/schema.js';
 import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence.js';
 import { validateAdrSections } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
-import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
-import { autoAdvance } from './types.js';
+import {
+  autoAdvance,
+  createPolicyEvalFn,
+  buildFlowSelectionTransition,
+  DEFAULT_MAX_REVIEW_ITERATIONS,
+} from './types.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -75,14 +79,8 @@ export function executeArchitecture(
   let baseTransition = state.transition;
 
   if (state.phase === 'READY') {
-    const at = ctx.now();
-    basePhase = 'ARCHITECTURE';
-    const tr: TransitionRecord = {
-      from: 'READY',
-      to: 'ARCHITECTURE',
-      event: 'ARCHITECTURE_SELECTED',
-      at,
-    };
+    const tr = buildFlowSelectionTransition('ARCHITECTURE', 'ARCHITECTURE_SELECTED', ctx.now());
+    basePhase = tr.to;
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
   }
@@ -101,7 +99,7 @@ export function executeArchitecture(
   };
 
   // 6. Build state with ADR + initial self-review loop
-  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? 3;
+  const maxIterations = ctx.policy?.maxSelfReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
 
   const nextState: SessionState = {
     ...state,
@@ -121,7 +119,7 @@ export function executeArchitecture(
   };
 
   // 7. Auto-advance (ARCHITECTURE → ARCH_REVIEW if loop converges)
-  const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+  const evalFn = createPolicyEvalFn(ctx);
   const {
     state: finalState,
     evalResult: result,

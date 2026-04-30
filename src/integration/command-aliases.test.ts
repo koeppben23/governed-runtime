@@ -54,6 +54,11 @@ describe('resolveCommandAlias', () => {
       expect(result.canonicalCommand).toBe('archive');
     });
 
+    it('//start normalizes to same as /start', () => {
+      expect(resolveCommandAlias('//start')).toEqual(resolveCommandAlias('/start'));
+      expect(resolveCommandAlias('///start')).toEqual(resolveCommandAlias('/start'));
+    });
+
     it('/why → status with whyBlocked default', () => {
       const result = resolveCommandAlias('why');
       expect(result.canonicalCommand).toBe('status');

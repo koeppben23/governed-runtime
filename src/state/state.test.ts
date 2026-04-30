@@ -243,6 +243,11 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).toThrow();
     });
 
+    it('SessionState rejects null actorInfo', () => {
+      const state = { ...makeState('TICKET'), actorInfo: null };
+      expect(() => SessionState.parse(state)).toThrow();
+    });
+
     it('PolicySnapshotSchema rejects snapshot missing actorClassification', () => {
       const snapshot = {
         mode: 'team',
