@@ -691,6 +691,8 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
 
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === undefined) return null;
+
     switch (arg) {
       // ── New flags ──────────────────────────────────────────
       case '--install-scope': {

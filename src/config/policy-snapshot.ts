@@ -395,7 +395,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
       };
-    default: // team, team-ci, unknown
+    case 'team':
+    case 'team-ci':
       return {
         requireHumanGates: true,
         maxSelfReviewIterations: 3,

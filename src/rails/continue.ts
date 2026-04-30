@@ -108,24 +108,14 @@ export async function executeContinue(
   // 3. Phase-specific work
   let workState = state;
 
-  switch (state.phase) {
-    case 'VALIDATION':
-      workState = await runValidationChecks(workState, ctx, executors);
-      break;
-
-    case 'PLAN':
-      workState = await runOneSelfReviewIteration(workState, ctx, executors);
-      break;
-
-    case 'IMPL_REVIEW':
-      workState = await runOneImplReviewIteration(workState, ctx, executors);
-      break;
-
-    case 'ARCHITECTURE':
-      workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
-      break;
-
-    // Other phases: no work needed, just evaluate
+  if (state.phase === 'VALIDATION') {
+    workState = await runValidationChecks(workState, ctx, executors);
+  } else if (state.phase === 'PLAN') {
+    workState = await runOneSelfReviewIteration(workState, ctx, executors);
+  } else if (state.phase === 'IMPL_REVIEW') {
+    workState = await runOneImplReviewIteration(workState, ctx, executors);
+  } else if (state.phase === 'ARCHITECTURE') {
+    workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
   }
 
   // 4. Auto-advance (policy-aware)

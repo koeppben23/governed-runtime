@@ -123,6 +123,24 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  unused-dependencies:
+    name: unused-dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check unused dependencies
+        run: npm run check:unused-dependencies
+        env:
+          FORCE_COLOR: 0
+
   format:
     name: format
     runs-on: ubuntu-latest
