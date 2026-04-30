@@ -551,6 +551,26 @@ describe('implement', () => {
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
+    it('blocks tampered implementation review findings that do not match evidence', async () => {
+      await reachImplementation();
+      await enterImplReview();
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+
+      const raw = await implement.execute(
+        {
+          reviewVerdict: 'approve',
+          reviewFindings: {
+            ...reviewFindings,
+            missingVerification: ['tampered verification gap'],
+          },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
       await enterImplReview();

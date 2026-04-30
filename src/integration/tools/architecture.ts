@@ -91,7 +91,24 @@ export const architecture: ToolDefinition = {
       const ctx = createPolicyContext(policy);
       const maxSelfReviewIterations = policy.maxSelfReviewIterations;
 
+      const hasTitle = typeof args.title === 'string' && args.title.trim().length > 0;
+      const hasAdrText = typeof args.adrText === 'string' && args.adrText.trim().length > 0;
+      const hasVerdict = args.selfReviewVerdict !== undefined;
       const isInitialSubmission = !args.selfReviewVerdict;
+
+      // Runtime sequence contract: ADR submission and review verdict are separate phases.
+      if (hasTitle && hasVerdict) {
+        return formatBlocked('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+      }
+
+      if (
+        isInitialSubmission &&
+        (hasTitle || hasAdrText) &&
+        state.phase === 'ARCHITECTURE' &&
+        state.selfReview
+      ) {
+        return formatBlocked('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+      }
 
       if (isInitialSubmission) {
         // ── Mode A: Initial ADR submission (delegates to rail) ────
@@ -152,11 +169,11 @@ export const architecture: ToolDefinition = {
           });
         }
 
-        if (!state.selfReview) {
-          return formatBlocked('NO_SELF_REVIEW');
-        }
         if (!state.architecture) {
           return formatBlocked('NO_ARCHITECTURE');
+        }
+        if (!state.selfReview) {
+          return formatBlocked('ARCHITECTURE_REVIEW_LOOP_REQUIRED');
         }
 
         const iteration = state.selfReview.iteration + 1;

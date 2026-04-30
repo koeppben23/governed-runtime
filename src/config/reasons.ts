@@ -471,6 +471,27 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
   },
   {
+    code: 'REVIEW_FINDINGS_HASH_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings do not match the persisted subagent invocation evidence for obligation {obligationId}.',
+    recoverySteps: [
+      'Discard the modified review findings',
+      'Use the exact ReviewFindings returned by the fulfilled flowguard-reviewer invocation',
+      'If the evidence is stale, rerun the reviewer for the current obligation',
+    ],
+  },
+  {
+    code: 'REVIEW_FINDINGS_SESSION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings session does not match the persisted subagent invocation: provided {provided}, expected {expected}.',
+    recoverySteps: [
+      'Use ReviewFindings from the child session that fulfilled the active obligation',
+      'Rerun the flowguard-reviewer subagent if the findings came from a different session',
+    ],
+  },
+  {
     code: 'INVALID_PLAN_TOOL_SEQUENCE',
     category: 'precondition',
     messageTemplate:
@@ -513,6 +534,28 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'No ADR exists to review.',
     recoverySteps: ['Submit an ADR via flowguard_architecture with title and adrText first'],
+    quickFixCommand: '/architecture',
+  },
+  {
+    code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
+    category: 'precondition',
+    messageTemplate:
+      'Invalid flowguard_architecture call sequence: ADR submission and review verdict inputs must be separate calls.',
+    recoverySteps: [
+      'Submit the ADR first with flowguard_architecture({ title, adrText }) only',
+      'Do not include selfReviewVerdict in the ADR submission call',
+      'During an active ADR review loop, submit only selfReviewVerdict and revised adrText when changes are requested',
+    ],
+    quickFixCommand: '/architecture',
+  },
+  {
+    code: 'ARCHITECTURE_REVIEW_LOOP_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'An architecture review verdict requires an active ADR review loop.',
+    recoverySteps: [
+      'Submit the ADR first and wait for the architecture review loop',
+      'Then submit selfReviewVerdict for the active ADR review loop',
+    ],
     quickFixCommand: '/architecture',
   },
   {

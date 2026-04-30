@@ -166,6 +166,10 @@ export const plan: ToolDefinition = {
         return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
       }
 
+      if (isInitialSubmission && hasPlanText && state.phase === 'PLAN' && state.selfReview) {
+        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+      }
+
       if (hasVerdict && !state.plan) {
         return formatBlocked('PLAN_SUBMISSION_REQUIRED');
       }

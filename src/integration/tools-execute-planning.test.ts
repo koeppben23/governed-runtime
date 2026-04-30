@@ -523,6 +523,18 @@ describe('plan', () => {
       expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
     });
 
+    it('blocks plan-only resubmission while review loop is active', async () => {
+      await hydrateAndTicket();
+      const firstRaw = await plan.execute({ planText: '## Plan' }, ctx);
+      const first = parseToolResult(firstRaw);
+      expect(first.phase).toBe('PLAN');
+
+      const raw = await plan.execute({ planText: '## Replacement Plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+    });
+
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
@@ -614,6 +626,33 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
+    });
+
+    it('Mode B blocks tampered review findings that do not match persisted evidence', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings: {
+            ...reviewFindings,
+            blockingIssues: [
+              {
+                severity: 'major' as const,
+                category: 'correctness' as const,
+                message: 'tampered issue',
+                location: 'test',
+              },
+            ],
+          },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
     });
 
     it('Mode B blocks with PLAN_REVIEW_LOOP_REQUIRED when selfReview is null', async () => {
