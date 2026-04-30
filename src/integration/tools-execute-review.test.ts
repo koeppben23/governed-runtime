@@ -235,20 +235,20 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('reviewMode=subagent accepted by mandatory default', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
-    expect(result.latestReview.reviewMode).toBe('subagent');
+    expect(result.selfReviewIteration).toBe(1);
   });
 
-  it('reviewMode=self blocked by mandatory default', async () => {
+  it('reviewMode=self blocked by mandatory default in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -256,12 +256,13 @@ describe('P34a: Agent-Orchestrated Review', () => {
     expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
   });
 
-  it('planVersion mismatch blocked', async () => {
+  it('planVersion mismatch blocked in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: wrongVersion },
+      { selfReviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -286,10 +287,9 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('persists reviewFindings in state.plan.reviewFindings', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
       '../adapters/workspace/index.js'
@@ -307,10 +307,9 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
       '../adapters/workspace/index.js'
@@ -322,40 +321,32 @@ describe('P34a: Agent-Orchestrated Review', () => {
     expect(state.plan).toBeDefined();
     expect(state.plan?.current).toBeDefined();
     expect(state.plan?.current.body).toContain('## Plan');
-    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_test');
+    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_plan_reviewer');
     expect(state.plan?.history).toHaveLength(0);
   });
 
-  it('accepts valid reviewFindings with planVersion=1 on initial submission', async () => {
+  it('accepts valid reviewFindings with planVersion=1 in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
-    expect(result.latestReview).toBeTruthy();
-    expect(result.latestReview.planVersion).toBe(1);
+    expect(result.selfReviewIteration).toBe(1);
   });
 
-  it('latestReview summary appears in response', async () => {
+  it('converged Mode B response appears after reviewFindings submission', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
 
-    expect(result.latestReview).toBeDefined();
-    expect(result.latestReview.iteration).toBe(0);
-    expect(result.latestReview.planVersion).toBe(1);
-    expect(result.latestReview.reviewMode).toBe('subagent');
-    expect(result.latestReview.overallVerdict).toBe('approve');
-    expect(result.latestReview.blockingIssueCount).toBe(0);
-    expect(result.latestReview.majorRiskCount).toBe(0);
-    expect(result.latestReview.reviewedAt).toBeTruthy();
+    expect(result.error).toBeUndefined();
+    expect(result.status).toContain('Independent review converged');
+    expect(result.selfReviewIteration).toBe(1);
   });
 });
 
@@ -421,14 +412,12 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
-    const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
-    expect(result.latestReview).toBeTruthy();
-    expect(result.latestReview.reviewMode).toBe('subagent');
+    expect(result.selfReviewIteration).toBe(1);
   });
 
   it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → BLOCKED', async () => {
@@ -450,8 +439,9 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -478,8 +468,9 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -535,24 +526,9 @@ describe('P34a: Policy-Driven Branches', () => {
     state = await readState(sessDir);
     expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
 
-    const validFindings = {
-      iteration: 0,
-      planVersion: 1,
-      reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
-      blockingIssues: [],
-      majorRisks: [],
-      missingVerification: [],
-      scopeCreep: [],
-      unknowns: [],
-      reviewedBy: { sessionId: 'ses_actor' },
-      reviewedAt: new Date().toISOString(),
-    };
-
-    const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validFindings },
-      ctx,
-    );
+    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'approve');
+    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
   });

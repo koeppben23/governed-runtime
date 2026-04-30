@@ -281,15 +281,15 @@ describe('implement', () => {
       expect(domain).not.toContain('node_modules/dep/index.js');
     });
 
-    it('Mode B blocks with WRONG_PHASE outside IMPL_REVIEW', async () => {
+    it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('WRONG_PHASE');
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
     });
 
-    it('Mode B blocks with NO_IMPLEMENTATION when implementation is null', async () => {
+    it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
 
@@ -307,7 +307,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('NO_IMPLEMENTATION');
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
     });
   });
 
@@ -359,60 +359,98 @@ describe('implement', () => {
       });
     }
 
-    async function enterImplReviewWithFindings(
-      findings: typeof validReviewFindingsSelf,
-    ): Promise<void> {
-      await implement.execute({ reviewFindings: findings }, ctx);
+    async function enterImplReview(): Promise<void> {
+      await implement.execute({}, ctx);
     }
 
-    it('reviewMode=subagent accepted by mandatory default', async () => {
+    it('reviewMode=subagent accepted by mandatory default in Mode B', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      await enterImplReview();
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
-    it('reviewMode=self blocked by mandatory default', async () => {
+    it('reviewMode=self blocked by mandatory default in Mode B', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      await enterImplReview();
+      const raw = await implement.execute(
+        {
+          reviewVerdict: 'approve',
+          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
+        },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
-    it('planVersion mismatch blocked', async () => {
+    it('planVersion mismatch blocked in Mode B', async () => {
       await reachImplementation();
-      const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
-      const raw = await implement.execute({ reviewFindings: wrongVersion }, ctx);
+      await enterImplReview();
+      const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
+      const raw = await implement.execute(
+        {
+          reviewVerdict: 'changes_requested',
+          reviewFindings: wrongVersion,
+        },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
     });
 
-    it('subagentEnabled=true + reviewMode=subagent -> accepted', async () => {
+    it('reviewFindings without reviewVerdict blocks with INVALID_IMPLEMENT_TOOL_SEQUENCE', async () => {
+      await reachImplementation();
+      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+    });
+
+    it('subagentEnabled=true + reviewMode=subagent -> accepted in Mode B', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      await enterImplReview();
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
-    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> BLOCKED', async () => {
+    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> BLOCKED in Mode B', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, true);
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      await enterImplReview();
+      const raw = await implement.execute(
+        {
+          reviewVerdict: 'approve',
+          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
+        },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
-    it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self -> BLOCKED', async () => {
+    it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self -> BLOCKED in Mode B', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      await enterImplReview();
+      const raw = await implement.execute(
+        {
+          reviewVerdict: 'approve',
+          reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
+        },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
@@ -430,7 +468,7 @@ describe('implement', () => {
     it('Mode B: reviewMode=self blocked when subagentEnabled=true and fallbackToSelf=false', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
-      await enterImplReviewWithFindings(validReviewFindingsSubagent);
+      await enterImplReview();
 
       const modeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
       const raw = await implement.execute(
@@ -499,7 +537,7 @@ describe('implement', () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
 
-      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      await enterImplReview();
       const modeBFindings = await fulfillReview('implement', 1, 'approve');
       const raw = await implement.execute(
         { reviewVerdict: 'approve', reviewFindings: modeBFindings },
@@ -515,7 +553,9 @@ describe('implement', () => {
 
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
-      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      await enterImplReview();
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
         '../adapters/workspace/index.js'
@@ -530,14 +570,16 @@ describe('implement', () => {
 
     it('latestImplementationReview appears in status', async () => {
       await reachImplementation();
-      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      await enterImplReview();
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);
 
       expect(result.latestImplementationReview).toBeDefined();
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-      expect(result.latestImplementationReview.iteration).toBe(0);
+      expect(result.latestImplementationReview.iteration).toBe(1);
     });
   });
 });

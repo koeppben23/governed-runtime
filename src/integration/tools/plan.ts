@@ -152,7 +152,35 @@ export const plan: ToolDefinition = {
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
-      const isInitialSubmission = !args.selfReviewVerdict;
+      const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
+      const hasVerdict = args.selfReviewVerdict !== undefined;
+      const hasFindings = args.reviewFindings !== undefined;
+      const isInitialSubmission = !hasVerdict;
+
+      // Runtime sequence contract: plan submission and review verdict are separate phases.
+      if (hasPlanText && hasFindings && !hasVerdict) {
+        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+      }
+
+      if (hasPlanText && hasVerdict && args.selfReviewVerdict !== 'changes_requested') {
+        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+      }
+
+      if (hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasVerdict && !state.selfReview) {
+        return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict) {
+        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+      }
 
       if (isInitialSubmission && args.reviewFindings) {
         const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {

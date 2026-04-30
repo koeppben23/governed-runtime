@@ -500,6 +500,55 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
     });
+
+    it('blocks mixed first-call planText + selfReviewVerdict with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: '## Plan', selfReviewVerdict: 'approve' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.recovery).toContain(
+        'Submit the plan first with flowguard_plan({ planText }) only',
+      );
+    });
+
+    it('blocks first-call planText + reviewFindings with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: '## Plan', reviewFindings: modeBSubagentFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+    });
+
+    it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: modeBSubagentFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
+      expect(result.recovery).toContain('Call flowguard_plan with planText first');
+    });
+
+    it('blocks changes_requested revised plan before review loop with PLAN_SUBMISSION_REQUIRED', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          planText: '## Revised Plan',
+          reviewFindings: { ...modeBSubagentFindings, overallVerdict: 'changes_requested' },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
+    });
   });
 
   describe('CORNER', () => {
@@ -567,7 +616,7 @@ describe('plan', () => {
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
-    it('Mode B blocks with NO_SELF_REVIEW when selfReview is null', async () => {
+    it('Mode B blocks with PLAN_REVIEW_LOOP_REQUIRED when selfReview is null', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
@@ -585,10 +634,10 @@ describe('plan', () => {
       const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('NO_SELF_REVIEW');
+      expect(result.code).toBe('PLAN_REVIEW_LOOP_REQUIRED');
     });
 
-    it('Mode B blocks with NO_PLAN when plan is null', async () => {
+    it('Mode B blocks with PLAN_SUBMISSION_REQUIRED when plan is null', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
@@ -606,7 +655,7 @@ describe('plan', () => {
       const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('NO_PLAN');
+      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
     });
 
     it('converged PLAN_REVIEW response contains reviewCard with full plan body', async () => {
