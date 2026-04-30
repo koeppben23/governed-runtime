@@ -252,14 +252,14 @@ export const SessionState = z.object({
   /**
    * Structured initiator identity for regulated approval (P30).
    * Persists actor identity at session creation for four-eyes proof.
-   * Required for regulated mode; absent for pre-P30 sessions.
+   * Required for regulated mode.
    */
   initiatedByIdentity: DecisionIdentitySchema.optional(),
 
   /**
    * Resolved actor identity at hydrate time (P27).
    * Best-effort operator identity — NOT an authentication claim.
-   * Absent for sessions created before P27.
+   * Absent when no actor identity was resolved; null is not a valid state value.
    */
   actorInfo: ActorInfoSchema.optional(),
 

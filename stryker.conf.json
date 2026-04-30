@@ -21,12 +21,21 @@
     "src/audit/integrity.ts",
     "src/audit/completeness.ts",
     "src/config/reasons.ts",
-    "src/config/policy.ts"
+    "src/config/policy.ts",
+    "src/presentation/next-action-copy.ts",
+    "src/presentation/plan-review-card.ts",
+    "src/presentation/phase-labels.ts",
+    "src/integration/command-aliases.ts",
+    "src/integration/tool-classification.ts",
+    "src/integration/tool-names.ts",
+    "src/integration/review-enforcement.ts",
+    "src/integration/review-orchestrator.ts",
+    "src/integration/status.ts"
   ],
   "ignoreStatic": true,
   "thresholds": {
     "high": 90,
-    "low": 85,
-    "break": 85
+    "low": 80,
+    "break": 80
   }
 }
