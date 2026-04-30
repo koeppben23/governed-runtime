@@ -11,8 +11,10 @@
  * - Operational tools MUST have explicit classification and guard tests
  * - No tool may exist outside classification
  *
- * @version v1
+ * @version v2
  */
+
+import { Command } from '../machine/commands.js';
 
 /**
  * Tool classification types.
@@ -22,26 +24,79 @@ export type ToolClassification = 'workflow' | 'operational';
 /**
  * Tool classification registry.
  * Every tool MUST be listed here.
+ * Uses canonical TOOL_FLOWGUARD_* names from tool-names.ts
  */
+import {
+  TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_TICKET,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_VALIDATE,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_ARCHIVE,
+} from './tool-names.js';
+
 export const TOOL_CLASSIFICATION = {
   // Workflow tools (must use COMMAND_POLICY from machine/commands)
-  hydrate: 'workflow',
-  ticket: 'workflow',
-  plan: 'workflow',
-  continue: 'workflow',
-  validate: 'workflow',
-  implement: 'workflow',
-  'review-decision': 'workflow',
-  review: 'workflow',
-  architecture: 'workflow',
-  abort: 'workflow',
+  [TOOL_FLOWGUARD_HYDRATE]: 'workflow',
+  [TOOL_FLOWGUARD_TICKET]: 'workflow',
+  [TOOL_FLOWGUARD_PLAN]: 'workflow',
+  [TOOL_FLOWGUARD_VALIDATE]: 'workflow',
+  [TOOL_FLOWGUARD_IMPLEMENT]: 'workflow',
+  [TOOL_FLOWGUARD_DECISION]: 'workflow',
+  [TOOL_FLOWGUARD_REVIEW]: 'workflow',
+  [TOOL_FLOWGUARD_ARCHITECTURE]: 'workflow',
+  [TOOL_FLOWGUARD_ABORT]: 'workflow',
 
   // Operational tools (explicitly classified, own guards)
-  status: 'operational',
-  archive: 'operational',
-  doctor: 'operational',
-  install: 'operational',
+  [TOOL_FLOWGUARD_STATUS]: 'operational',
+  [TOOL_FLOWGUARD_ARCHIVE]: 'operational',
 } as const;
+
+type OperationalToolName = typeof TOOL_FLOWGUARD_STATUS | typeof TOOL_FLOWGUARD_ARCHIVE;
+type WorkflowToolName = Exclude<keyof typeof TOOL_CLASSIFICATION, OperationalToolName>;
+
+/**
+ * Workflow tool → Command mapping.
+ * Every workflow tool MUST have a corresponding Command.
+ */
+export const WORKFLOW_TOOL_TO_COMMAND = {
+  [TOOL_FLOWGUARD_HYDRATE]: Command.HYDRATE,
+  [TOOL_FLOWGUARD_TICKET]: Command.TICKET,
+  [TOOL_FLOWGUARD_PLAN]: Command.PLAN,
+  [TOOL_FLOWGUARD_VALIDATE]: Command.VALIDATE,
+  [TOOL_FLOWGUARD_IMPLEMENT]: Command.IMPLEMENT,
+  [TOOL_FLOWGUARD_DECISION]: Command.REVIEW_DECISION,
+  [TOOL_FLOWGUARD_REVIEW]: Command.REVIEW,
+  [TOOL_FLOWGUARD_ARCHITECTURE]: Command.ARCHITECTURE,
+  [TOOL_FLOWGUARD_ABORT]: Command.ABORT,
+} satisfies Record<WorkflowToolName, Command>; // Checks all workflow tools are mapped
+
+/**
+ * True when the tool routes through COMMAND_POLICY.
+ */
+export function isWorkflowTool(toolName: string): boolean {
+  try {
+    return getToolClassification(toolName) === 'workflow';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the tool has explicit operational guards outside COMMAND_POLICY.
+ */
+export function isOperationalTool(toolName: string): boolean {
+  try {
+    return getToolClassification(toolName) === 'operational';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Get tool classification.
@@ -53,28 +108,6 @@ export function getToolClassification(toolName: string): ToolClassification {
     throw new Error(`Unclassified tool: ${toolName}. Add to TOOL_CLASSIFICATION registry.`);
   }
   return classification;
-}
-
-/**
- * Check if a tool is a workflow tool.
- */
-export function isWorkflowTool(toolName: string): boolean {
-  try {
-    return getToolClassification(toolName) === 'workflow';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if a tool is an operational tool.
- */
-export function isOperationalTool(toolName: string): boolean {
-  try {
-    return getToolClassification(toolName) === 'operational';
-  } catch {
-    return false;
-  }
 }
 
 /**
