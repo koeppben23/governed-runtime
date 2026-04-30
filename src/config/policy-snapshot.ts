@@ -33,6 +33,34 @@ import type {
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
 
+function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
+  if (value === null || typeof value !== 'object') {
+    console.warn(
+      '[FlowGuard] Legacy selfReview config (null/undefined) normalized to mandatory strict. ' +
+        'Ensure flowguard-reviewer plugin is active.',
+    );
+    return DEFAULT_SELF_REVIEW_CONFIG;
+  }
+
+  const candidate = value as Partial<SelfReviewConfig>;
+  if (
+    candidate.subagentEnabled === true &&
+    candidate.fallbackToSelf === false &&
+    candidate.strictEnforcement === true
+  ) {
+    return DEFAULT_SELF_REVIEW_CONFIG;
+  }
+
+  console.warn(
+    '[FlowGuard] Legacy/weakened selfReview config normalized to mandatory strict. ' +
+      `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
+      `fallbackToSelf=${candidate.fallbackToSelf}, ` +
+      `strictEnforcement=${candidate.strictEnforcement}. ` +
+      'Ensure flowguard-reviewer plugin is active.',
+  );
+  return DEFAULT_SELF_REVIEW_CONFIG;
+}
+
 // ─── Canonical Snapshot Creation ──────────────────────────────────────────────
 
 /**
@@ -283,6 +311,16 @@ export function normalizePolicySnapshotWithMeta(
   };
   if (!rawAudit || typeof rawAudit !== 'object') normalized = true;
 
+  const rawSelfReview = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
+  if (
+    !rawSelfReview ||
+    rawSelfReview.subagentEnabled !== true ||
+    rawSelfReview.fallbackToSelf !== false ||
+    rawSelfReview.strictEnforcement !== true
+  ) {
+    normalized = true;
+  }
+
   return {
     snapshot: {
       mode,
@@ -322,10 +360,7 @@ export function normalizePolicySnapshotWithMeta(
           ? (s.identityProvider as IdpConfig)
           : undefined,
       identityProviderMode,
-      selfReview:
-        s.selfReview !== null && typeof s.selfReview === 'object'
-          ? (s.selfReview as SelfReviewConfig)
-          : undefined,
+      selfReview: normalizeSelfReviewConfig(rawSelfReview),
     },
     normalized,
     reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -392,7 +427,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: snapshot.selfReview ?? DEFAULT_SELF_REVIEW_CONFIG,
+    selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     minimumActorAssuranceForApproval:
       (snapshot.minimumActorAssuranceForApproval as
         | 'best_effort'

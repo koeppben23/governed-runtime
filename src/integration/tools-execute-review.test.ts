@@ -22,6 +22,7 @@ import {
   isTarAvailable,
   parseToolResult,
   isBlockedResult,
+  fulfillStrictReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -182,6 +183,26 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
+async function currentSessionDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+    '../adapters/workspace/index.js'
+  );
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
+async function fulfillPlanReview(
+  iteration = 0,
+  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+) {
+  return fulfillStrictReviewObligation(await currentSessionDir(), {
+    obligationType: 'plan',
+    iteration,
+    planVersion: 1,
+    overallVerdict,
+  });
+}
+
 describe('P34a: Agent-Orchestrated Review', () => {
   const validReviewFindingsSubagent = {
     iteration: 0,
@@ -200,7 +221,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   const validReviewFindingsSelf = {
     iteration: 0,
     planVersion: 1,
-    reviewMode: 'self' as const,
+    reviewMode: 'self' as unknown as 'subagent',
     overallVerdict: 'approve' as const,
     blockingIssues: [],
     majorRisks: [],
@@ -211,7 +232,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     reviewedAt: new Date().toISOString(),
   };
 
-  it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
+  it('reviewMode=subagent accepted by mandatory default', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     const raw = await plan.execute(
@@ -219,11 +240,11 @@ describe('P34a: Agent-Orchestrated Review', () => {
       ctx,
     );
     const result = parseToolResult(raw);
-    expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+    expect(result.error).toBeUndefined();
+    expect(result.latestReview.reviewMode).toBe('subagent');
   });
 
-  it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
+  it('reviewMode=self blocked by mandatory default', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     const raw = await plan.execute(
@@ -231,15 +252,14 @@ describe('P34a: Agent-Orchestrated Review', () => {
       ctx,
     );
     const result = parseToolResult(raw);
-    expect(result.error).toBeUndefined();
-    expect(result.latestReview).toBeTruthy();
-    expect(result.latestReview.reviewMode).toBe('self');
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
   });
 
   it('planVersion mismatch blocked', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
+    const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
     const raw = await plan.execute(
       { planText: '## Plan\n1. Fix', reviewFindings: wrongVersion },
       ctx,
@@ -253,7 +273,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const wrongIteration = { ...validReviewFindingsSelf, iteration: 99 };
+    const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
     const raw = await plan.execute(
       { selfReviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
       ctx,
@@ -267,7 +287,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
       ctx,
     );
 
@@ -280,7 +300,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
 
     expect(state.plan).toBeDefined();
     expect(state.plan?.reviewFindings).toHaveLength(1);
-    expect(state.plan?.reviewFindings?.[0].reviewMode).toBe('self');
+    expect(state.plan?.reviewFindings?.[0].reviewMode).toBe('subagent');
     expect(state.plan?.history).toHaveLength(0);
   });
 
@@ -288,7 +308,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
       ctx,
     );
 
@@ -302,7 +322,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     expect(state.plan).toBeDefined();
     expect(state.plan?.current).toBeDefined();
     expect(state.plan?.current.body).toContain('## Plan');
-    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_self');
+    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_test');
     expect(state.plan?.history).toHaveLength(0);
   });
 
@@ -310,7 +330,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -323,7 +343,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     const raw = await plan.execute(
-      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSelf },
+      { planText: '## Plan\n1. Fix', reviewFindings: validReviewFindingsSubagent },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -331,7 +351,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     expect(result.latestReview).toBeDefined();
     expect(result.latestReview.iteration).toBe(0);
     expect(result.latestReview.planVersion).toBe(1);
-    expect(result.latestReview.reviewMode).toBe('self');
+    expect(result.latestReview.reviewMode).toBe('subagent');
     expect(result.latestReview.overallVerdict).toBe('approve');
     expect(result.latestReview.blockingIssueCount).toBe(0);
     expect(result.latestReview.majorRiskCount).toBe(0);
@@ -371,7 +391,7 @@ describe('P34a: Policy-Driven Branches', () => {
   const validReviewFindingsSelf = {
     iteration: 0,
     planVersion: 1,
-    reviewMode: 'self' as const,
+    reviewMode: 'self' as unknown as 'subagent',
     overallVerdict: 'approve' as const,
     blockingIssues: [],
     majorRisks: [],
@@ -411,7 +431,7 @@ describe('P34a: Policy-Driven Branches', () => {
     expect(result.latestReview.reviewMode).toBe('subagent');
   });
 
-  it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → accepted', async () => {
+  it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self → BLOCKED', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
@@ -435,8 +455,8 @@ describe('P34a: Policy-Driven Branches', () => {
       ctx,
     );
     const result = parseToolResult(raw);
-    expect(result.error).toBeUndefined();
-    expect(result.latestReview.reviewMode).toBe('self');
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
   });
 
   it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self → BLOCKED', async () => {
@@ -490,7 +510,7 @@ describe('P34a: Policy-Driven Branches', () => {
     const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
-    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
+    expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
   it('approve + subagentEnabled=true + valid reviewFindings → accepted', async () => {
@@ -548,12 +568,12 @@ describe('decision', () => {
     await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    // In team mode, we need to manually approve self-review
-    // Keep approving until convergence
+    // In team mode, submit mandate-bound reviewer findings until convergence.
     for (let i = 0; i < 5; i++) {
       const s = parseToolResult(await status.execute({}, ctx));
       if (s.phase === 'PLAN_REVIEW') break;
-      await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillPlanReview(i, 'approve');
+      await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     }
   }
 

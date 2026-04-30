@@ -46,11 +46,17 @@ The LLM generates a detailed plan. When the plan is ready for review, a **Plan R
 
 ### 3. Approve the Plan
 
+The Plan Review Card footer lists the available decision commands with short explanations:
+
+- `/approve` — approve the plan if it is complete and acceptable
+- `/request-changes` — send the plan back for revision
+- `/reject` — stop this task
+
 ```
 /approve
 ```
 
-To request changes: `/request-changes`. To reject: `/reject`.
+Use `/request-changes` to revise the plan or `/reject` to stop the task.
 
 ### 4. Validate (Check)
 
@@ -88,7 +94,7 @@ Create an Architecture Decision Record:
 /architecture
 ```
 
-The LLM generates the ADR with `## Context`, `## Decision`, and `## Consequences` sections (MADR format). After self-review, approve:
+The LLM generates the ADR with `## Context`, `## Decision`, and `## Consequences` sections (MADR format). After the ADR review loop, approve:
 
 ```
 /review-decision approve

@@ -22,6 +22,7 @@ import {
   isTarAvailable,
   parseToolResult,
   isBlockedResult,
+  fulfillStrictReviewObligation,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -182,13 +183,34 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
+async function currentSessionDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+    '../adapters/workspace/index.js'
+  );
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
+async function fulfillReview(
+  obligationType: 'plan' | 'implement',
+  iteration: number,
+  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+) {
+  return fulfillStrictReviewObligation(await currentSessionDir(), {
+    obligationType,
+    iteration,
+    planVersion: 1,
+    overallVerdict,
+  });
+}
+
 describe('implement', () => {
   /** Helper: reach IMPLEMENTATION phase via solo workflow. */
   async function reachImplementation(): Promise<void> {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-    // Solo: self-review auto-converges at max=1
-    await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    const planReviewFindings = await fulfillReview('plan', 0, 'approve');
+    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION
     // Submit validation results
     await validate.execute(
@@ -215,7 +237,8 @@ describe('implement', () => {
     it('Mode B: approve review converges in solo', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(
@@ -306,7 +329,7 @@ describe('implement', () => {
     const validReviewFindingsSelf = {
       iteration: 0,
       planVersion: 1,
-      reviewMode: 'self' as const,
+      reviewMode: 'self' as unknown as 'subagent',
       overallVerdict: 'approve' as const,
       blockingIssues: [],
       majorRisks: [],
@@ -342,26 +365,25 @@ describe('implement', () => {
       await implement.execute({ reviewFindings: findings }, ctx);
     }
 
-    it('reviewMode=subagent blocked when subagentEnabled=false (default)', async () => {
+    it('reviewMode=subagent accepted by mandatory default', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+      expect(result.error).toBeUndefined();
+      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
-    it('reviewMode=self accepted when subagentEnabled=false (default)', async () => {
+    it('reviewMode=self blocked by mandatory default', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('self');
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
     it('planVersion mismatch blocked', async () => {
       await reachImplementation();
-      const wrongVersion = { ...validReviewFindingsSelf, planVersion: 99 };
+      const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
       const raw = await implement.execute({ reviewFindings: wrongVersion }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
@@ -378,14 +400,13 @@ describe('implement', () => {
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
     });
 
-    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> accepted', async () => {
+    it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> BLOCKED', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, true);
       const raw = await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('self');
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
     it('subagentEnabled=true + fallbackToSelf=false + reviewMode=self -> BLOCKED', async () => {
@@ -397,16 +418,13 @@ describe('implement', () => {
       expect(result.code).toBe('REVIEW_MODE_SELF_NOT_ALLOWED');
     });
 
-    it('Mode B: reviewMode=subagent blocked when subagentEnabled=false', async () => {
+    it('Mode B: missing mandatory reviewer findings blocks approve', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const raw = await implement.execute(
-        { reviewVerdict: 'changes_requested', reviewFindings: validReviewFindingsSubagent },
-        ctx,
-      );
+      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_MODE_SUBAGENT_DISABLED');
+      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
     it('Mode B: reviewMode=self blocked when subagentEnabled=true and fallbackToSelf=false', async () => {
@@ -428,7 +446,7 @@ describe('implement', () => {
       await reachImplementation();
       await implement.execute({}, ctx);
 
-      const wrongVersion = { ...validReviewFindingsSelf, iteration: 1, planVersion: 99 };
+      const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
       const raw = await implement.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
         ctx,
@@ -442,7 +460,7 @@ describe('implement', () => {
       await reachImplementation();
       await implement.execute({}, ctx);
 
-      const wrongIteration = { ...validReviewFindingsSelf, iteration: 99 };
+      const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
       const raw = await implement.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
         ctx,
@@ -456,7 +474,7 @@ describe('implement', () => {
       await reachImplementation();
       await implement.execute({}, ctx);
 
-      const validModeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
+      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
       const raw = await implement.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
         ctx,
@@ -474,7 +492,7 @@ describe('implement', () => {
       const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE');
+      expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
     it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
@@ -482,11 +500,7 @@ describe('implement', () => {
       await setSelfReviewPolicy(true, false);
 
       await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
-      const st = parseToolResult(await status.execute({}, ctx));
-      const modeBFindings = {
-        ...validReviewFindingsSubagent,
-        iteration: ((st.implReviewIteration as number | null) ?? 0) + 1,
-      };
+      const modeBFindings = await fulfillReview('implement', 1, 'approve');
       const raw = await implement.execute(
         { reviewVerdict: 'approve', reviewFindings: modeBFindings },
         ctx,
@@ -501,7 +515,7 @@ describe('implement', () => {
 
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
-      await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
         '../adapters/workspace/index.js'
@@ -511,18 +525,18 @@ describe('implement', () => {
       const state = await readState(sessDir);
 
       expect(state.implReviewFindings).toHaveLength(1);
-      expect(state.implReviewFindings?.[0].reviewMode).toBe('self');
+      expect(state.implReviewFindings?.[0].reviewMode).toBe('subagent');
     });
 
     it('latestImplementationReview appears in status', async () => {
       await reachImplementation();
-      await implement.execute({ reviewFindings: validReviewFindingsSelf }, ctx);
+      await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);
 
       expect(result.latestImplementationReview).toBeDefined();
-      expect(result.latestImplementationReview.reviewMode).toBe('self');
+      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
       expect(result.latestImplementationReview.iteration).toBe(0);
     });
   });
@@ -537,7 +551,8 @@ describe('validate', () => {
   async function reachValidation(): Promise<void> {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan' }, ctx);
-    await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    const reviewFindings = await fulfillReview('plan', 0, 'approve');
+    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
     // Solo: auto-advances to VALIDATION
   }
 

@@ -82,7 +82,7 @@ Invalid or unrecognized policy mode values are rejected with an explicit `Policy
 **Type:** `number` (1-20)
 **Default:** Preset value (solo=2, team/regulated=3)
 
-Overrides the maximum self-review iterations in PLAN phase:
+Overrides the maximum independent review iterations in PLAN phase. The field name is retained as the persisted policy contract:
 
 ```json
 {

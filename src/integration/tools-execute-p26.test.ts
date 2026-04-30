@@ -21,6 +21,7 @@ import {
   createTestWorkspace,
   isTarAvailable,
   parseToolResult,
+  withStrictReviewFindings,
   isBlockedResult,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
@@ -182,6 +183,20 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
   await ticket.execute({ text: ticketText, source: 'user' }, ctx);
 }
 
+async function currentSessDir(): Promise<string> {
+  const { computeFingerprint, sessionDir: resolveSessionDir } = wsMock;
+  const fp = await computeFingerprint(ws.tmpDir);
+  return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
+async function executeWithStrictReview(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): Promise<string> {
+  const finalArgs = await withStrictReviewFindings(await currentSessDir(), args);
+  return tool.execute(finalArgs, ctx);
+}
+
 // =============================================================================
 // P26: Regulated Archive Completion Semantics
 // =============================================================================
@@ -328,7 +343,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
-        await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+        await executeWithStrictReview(plan, { selfReviewVerdict: 'approve' });
       }
       await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
       await validate.execute(
@@ -344,7 +359,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'EVIDENCE_REVIEW') break;
-        await implement.execute({ reviewVerdict: 'approve' }, ctx);
+        await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
       }
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
       const result = parseToolResult(raw);
@@ -365,7 +380,7 @@ describe('P26: regulated archive completion', () => {
       // Solo auto-approves at gates — simple workflow
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-      await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      await executeWithStrictReview(plan, { selfReviewVerdict: 'approve' });
       await validate.execute(
         {
           results: [
@@ -376,7 +391,7 @@ describe('P26: regulated archive completion', () => {
         ctx,
       );
       await implement.execute({}, ctx);
-      await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
 
       // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
       const s = parseToolResult(await status.execute({}, ctx));

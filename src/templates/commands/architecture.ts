@@ -25,7 +25,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
    - Revise the ADR based on the feedback.
    - Call \`flowguard_architecture\` with the updated \`id\`, \`title\`, and \`adrText\`.
 
-4. The tool will run a self-review loop automatically. If it returns in ARCH_REVIEW phase, the ADR is ready for human review.
+4. The tool will run the ADR review loop automatically. If it returns in ARCH_REVIEW phase, the ADR is ready for human review.
 
 5. Report the result to the user:
    - Show the ADR title and ID.
@@ -48,7 +48,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 ## Done-when
 
 - ADR is created or revised with Context, Decision, and Consequences sections.
-- Self-review loop has converged.
+- ADR review loop has converged.
 - Phase has reached ARCH_REVIEW (ready for human review).
 - Response ends with a \`Next action:\` line.
 `;

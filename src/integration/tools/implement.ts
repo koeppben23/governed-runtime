@@ -18,25 +18,19 @@
  * 6. Primary agent submits reviewVerdict + reviewFindings to FlowGuard (Mode B)
  * 7. FlowGuard validates and persists both (append-only, separate)
  *
- * Flow (subagentEnabled=false, default):
- * 1-2. Same as above
- * 3. FlowGuard returns next-action instructing self-review
- * 4. Primary agent reviews own implementation, submits reviewVerdict
- *
  * Tool responsibilities:
  * - Input validation: reviewFindings vs policy, iteration binding
  * - Persistence: impl history (author), implReviewFindings (reviewer)
  * - Response: summary of review findings
- * - Next-action: policy-conditional instructions (subagent or self-review)
+ * - Next-action: independent reviewer instructions
  *
  * Policy config (selfReview):
  * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: allows self-review fallback when subagent unavailable
+ * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
  *
  * Validation rules:
- * - reviewMode=subagent + !subagentEnabled → BLOCKED
- * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
- * - reviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
+ * - reviewMode=self → BLOCKED
+ * - reviewVerdict=approve + missing reviewFindings → BLOCKED
  * - reviewFindings.iteration mismatch → BLOCKED
  *
  * Multi-call pattern driven by the LLM:
@@ -47,8 +41,7 @@
  *   -> Auto-advances to IMPL_REVIEW
  *   -> Returns "review needed" with policy-conditional next-action
  *
- * Step 3 (subagentEnabled=true): LLM calls flowguard-reviewer subagent via Task tool
- * Step 3 (subagentEnabled=false): LLM reviews the implementation itself
+ * Step 3: LLM calls flowguard-reviewer subagent via Task tool
  * Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
@@ -90,7 +83,7 @@ import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evi
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
-import { validateReviewFindings, requireFindingsForApprove } from './review-validation.js';
+import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 import {
   createReviewObligation,
   ensureReviewAssurance,
@@ -149,19 +142,6 @@ export const implement: ToolDefinition = {
           strictEnforcement: false,
         });
         if (blocked) return blocked;
-      }
-
-      // Approve requires findings when subagent enabled
-      if (args.reviewVerdict === 'approve') {
-        const blocked = requireFindingsForApprove(subagentEnabled, !!args.reviewFindings);
-        if (blocked) return blocked;
-      }
-
-      if (strictEnforcement && subagentEnabled && args.reviewVerdict && !args.reviewFindings) {
-        return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-          action: 'strict review verdict submission',
-          required: 'reviewFindings',
-        });
       }
 
       if (isRecordImpl) {
@@ -235,7 +215,7 @@ export const implement: ToolDefinition = {
           status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
           changedFiles: files,
           domainFiles,
-          reviewMode: subagentEnabled ? 'subagent' : 'self',
+          reviewMode: 'subagent',
           ...(nextObligation
             ? {
                 reviewObligation: {
@@ -253,21 +233,19 @@ export const implement: ToolDefinition = {
                 reviewMandateDigest: nextObligation.mandateDigest,
               }
             : {}),
-          next: subagentEnabled
-            ? 'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
-              'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
-              'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
-              '(1) the implementation summary and changed files, ' +
-              '(2) the approved plan text, (3) the ticket text, (4) iteration=1, ' +
-              '(5) planVersion=' +
-              ((state.plan?.history.length ?? 0) + 1) +
-              '. ' +
-              'Instruct the subagent to read and review the changed files. ' +
-              'Parse the JSON ReviewFindings from the subagent response. ' +
-              'Then call flowguard_implement with reviewVerdict based on the findings ' +
-              'overallVerdict, and include the reviewFindings object.'
-            : 'Review the implementation against the plan. Check correctness, completeness, ' +
-              'edge cases, and code quality. Then call flowguard_implement with reviewVerdict.',
+          next:
+            'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
+            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
+            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+            '(1) the implementation summary and changed files, ' +
+            '(2) the approved plan text, (3) the ticket text, (4) iteration=1, ' +
+            '(5) planVersion=' +
+            ((state.plan?.history.length ?? 0) + 1) +
+            '. ' +
+            'Instruct the subagent to read and review the changed files. ' +
+            'Parse the JSON ReviewFindings from the subagent response. ' +
+            'Then call flowguard_implement with reviewVerdict based on the findings ' +
+            'overallVerdict, and include the reviewFindings object.',
           _audit: { transitions },
         };
 
@@ -297,6 +275,11 @@ export const implement: ToolDefinition = {
 
         if (!state.implementation) {
           return formatBlocked('NO_IMPLEMENTATION');
+        }
+
+        if (!args.reviewFindings) {
+          const blocked = requireReviewFindings(false);
+          if (blocked) return blocked;
         }
 
         // Compute iteration before validation
@@ -418,12 +401,10 @@ export const implement: ToolDefinition = {
 
         if (verdict === 'changes_requested') {
           response.status = `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`;
-          response.next = subagentEnabled
-            ? 'Make the requested code changes using read/write/bash tools, ' +
-              'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-              'After re-recording, call the flowguard-reviewer subagent again for independent review.'
-            : 'Make the requested code changes using read/write/bash tools, ' +
-              'then call flowguard_implement (without reviewVerdict) to re-record the implementation.';
+          response.next =
+            'Make the requested code changes using read/write/bash tools, ' +
+            'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+            'After re-recording, call the flowguard-reviewer subagent again for independent review.';
           return appendNextAction(JSON.stringify(response), finalState);
         }
 

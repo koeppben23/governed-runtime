@@ -220,9 +220,13 @@ export async function runReviewOrchestration(
       } else {
         const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
         if (!parsedFindings.success && strictEnforcement) {
-          output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-            reason: 'reviewer response did not match ReviewFindings schema',
-          });
+          await deps.blockReviewOutcome(
+            { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
+            reviewCtx.obligationId,
+            'STRICT_REVIEW_ORCHESTRATION_FAILED',
+            { reason: 'reviewer response did not match ReviewFindings schema' },
+            output,
+          );
         }
 
         if (strictEnforcement && parsedFindings.success) {
