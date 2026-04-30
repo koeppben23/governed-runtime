@@ -7,11 +7,10 @@
  * string on any policy or binding violation, or null when valid.
  *
  * Validation rules:
- * - reviewMode=subagent + !subagentEnabled → BLOCKED
- * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
+ * - reviewMode=self is rejected by the ReviewFindings schema
  * - planVersion mismatch → BLOCKED
  * - iteration mismatch → BLOCKED
- * - approve verdict + subagentEnabled + missing findings → BLOCKED
+ * - approve verdict + missing findings → BLOCKED
  */
 
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -23,9 +22,9 @@ import type { ReviewAssuranceState, ReviewObligationType } from '../../state/evi
 
 /** Policy and binding context required for review-findings validation. */
 export interface ReviewFindingsValidationContext {
-  /** Whether subagent-based review is enabled in policy. */
+  /** Deprecated compatibility field; mandatory subagent review is always required. */
   readonly subagentEnabled: boolean;
-  /** Whether self-review is allowed as fallback when subagent is enabled. */
+  /** Deprecated compatibility field; self-review fallback is always prohibited. */
   readonly fallbackToSelf: boolean;
   /** Expected plan version (history.length + 1). */
   readonly expectedPlanVersion: number;
@@ -50,35 +49,39 @@ export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
 ): string | null {
-  // Rule 1: subagent mode requires policy enabled
-  if (findings.reviewMode === 'subagent' && !ctx.subagentEnabled) {
-    return formatBlocked('REVIEW_MODE_SUBAGENT_DISABLED', {
-      action: 'submit subagent review findings',
-      policy: 'selfReview.subagentEnabled',
+  const reviewMode = (findings as { reviewMode?: unknown }).reviewMode;
+  if (reviewMode !== 'subagent') {
+    return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
+      action: 'submit non-subagent review findings',
+      policyHint: 'mandatory flowguard-reviewer subagent review required',
     });
   }
 
-  // Rule 2: self mode requires fallbackToSelf when subagent enabled
-  if (findings.reviewMode === 'self' && ctx.subagentEnabled && !ctx.fallbackToSelf) {
-    return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
-      action: 'submit self-review findings',
-      policyHint: 'selfReview.fallbackToSelf=true required',
-    });
-  }
+  const strictMatchedObligation =
+    ctx.strictEnforcement && ctx.assurance && ctx.obligationType
+      ? findLatestObligation(
+          ctx.assurance.obligations,
+          ctx.obligationType,
+          findings.iteration,
+          findings.planVersion,
+        )
+      : null;
+  const expectedIteration = strictMatchedObligation?.iteration ?? ctx.expectedIteration;
+  const expectedPlanVersion = strictMatchedObligation?.planVersion ?? ctx.expectedPlanVersion;
 
   // Rule 3: planVersion binding
-  if (findings.planVersion !== ctx.expectedPlanVersion) {
+  if (findings.planVersion !== expectedPlanVersion) {
     return formatBlocked('REVIEW_PLAN_VERSION_MISMATCH', {
       provided: String(findings.planVersion),
-      expected: String(ctx.expectedPlanVersion),
+      expected: String(expectedPlanVersion),
     });
   }
 
   // Rule 4: iteration binding
-  if (findings.iteration !== ctx.expectedIteration) {
+  if (findings.iteration !== expectedIteration) {
     return formatBlocked('REVIEW_ITERATION_MISMATCH', {
       provided: String(findings.iteration),
-      expected: String(ctx.expectedIteration),
+      expected: String(expectedIteration),
     });
   }
 
@@ -92,14 +95,14 @@ export function validateReviewFindings(
     const obligation = findLatestObligation(
       ctx.assurance.obligations,
       ctx.obligationType,
-      ctx.expectedIteration,
-      ctx.expectedPlanVersion,
+      expectedIteration,
+      expectedPlanVersion,
     );
     if (!obligation || !obligation.pluginHandshakeAt) {
       return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
         obligationType: ctx.obligationType,
-        iteration: String(ctx.expectedIteration),
-        planVersion: String(ctx.expectedPlanVersion),
+        iteration: String(expectedIteration),
+        planVersion: String(expectedPlanVersion),
       });
     }
 
@@ -117,8 +120,8 @@ export function validateReviewFindings(
 
     const attestationError = validateStrictAttestation(findings, {
       obligationId: obligation.obligationId,
-      iteration: ctx.expectedIteration,
-      planVersion: ctx.expectedPlanVersion,
+      iteration: expectedIteration,
+      planVersion: expectedPlanVersion,
     });
     if (attestationError) {
       return formatBlocked(attestationError, {
@@ -150,17 +153,15 @@ export function validateReviewFindings(
 }
 
 /**
- * Check whether an approve verdict requires review findings.
+ * Check whether a review verdict requires review findings.
+ * Covers approve and changes_requested verdicts in mandatory review mode.
  *
  * @returns formatBlocked string if findings are required but missing, null otherwise.
  */
-export function requireFindingsForApprove(
-  subagentEnabled: boolean,
-  hasFindings: boolean,
-): string | null {
-  if (subagentEnabled && !hasFindings) {
-    return formatBlocked('REVIEW_FINDINGS_REQUIRED_FOR_APPROVE', {
-      action: 'approve with subagentEnabled=true',
+export function requireReviewFindings(hasFindings: boolean): string | null {
+  if (!hasFindings) {
+    return formatBlocked('REVIEW_FINDINGS_REQUIRED', {
+      action: 'mandatory subagent review',
       required: 'reviewFindings',
     });
   }

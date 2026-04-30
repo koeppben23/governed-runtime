@@ -25,6 +25,7 @@ import {
   createToolContext,
   createTestWorkspace,
   parseToolResult,
+  withStrictReviewFindings,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -106,7 +107,8 @@ async function callOk(
   args: unknown,
   context: TestToolContext = ctx,
 ) {
-  const raw = await tool.execute(args, context);
+  const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
+  const raw = await tool.execute(finalArgs, context);
   const result = parseToolResult(raw);
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} — ${result.message}`);
@@ -287,6 +289,7 @@ describe('HAPPY: reason codes are stable', () => {
     'NO_SELF_REVIEW',
     'NO_PLAN',
     'MISSING_EVIDENCE',
+    'REVIEW_FINDINGS_REQUIRED',
   ] as const;
 
   it('documents known reason codes without claiming every code is triggered here', () => {
@@ -299,6 +302,7 @@ describe('HAPPY: reason codes are stable', () => {
       'NO_SELF_REVIEW',
       'NO_PLAN',
       'MISSING_EVIDENCE',
+      'REVIEW_FINDINGS_REQUIRED',
     ]);
   });
 

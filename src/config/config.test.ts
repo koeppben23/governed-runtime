@@ -193,7 +193,9 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(SOLO_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
-      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(false);
+      expect(SOLO_POLICY.selfReview?.subagentEnabled).toBe(true);
+      expect(SOLO_POLICY.selfReview?.fallbackToSelf).toBe(false);
+      expect(SOLO_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_POLICY fields match expected values', () => {
@@ -208,7 +210,9 @@ describe('config/policy', () => {
       expect(TEAM_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(TEAM_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(false);
+      expect(TEAM_POLICY.selfReview?.subagentEnabled).toBe(true);
+      expect(TEAM_POLICY.selfReview?.fallbackToSelf).toBe(false);
+      expect(TEAM_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all REGULATED_POLICY fields match expected values', () => {
@@ -223,7 +227,9 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
-      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(false);
+      expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(true);
+      expect(REGULATED_POLICY.selfReview?.fallbackToSelf).toBe(false);
+      expect(REGULATED_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('all TEAM_CI_POLICY fields match expected values', () => {
@@ -238,7 +244,9 @@ describe('config/policy', () => {
       expect(TEAM_CI_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
       expect(TEAM_CI_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
-      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(false);
+      expect(TEAM_CI_POLICY.selfReview?.subagentEnabled).toBe(true);
+      expect(TEAM_CI_POLICY.selfReview?.fallbackToSelf).toBe(false);
+      expect(TEAM_CI_POLICY.selfReview?.strictEnforcement).toBe(true);
     });
 
     it('detectCiContext recognizes common CI signals', () => {
@@ -959,7 +967,9 @@ describe('config/policy', () => {
 
     it('solo selfReview is default config', () => {
       const r = resolvePolicyWithContext('solo', false);
-      expect(r.policy.selfReview.subagentEnabled).toBe(false);
+      expect(r.policy.selfReview.subagentEnabled).toBe(true);
+      expect(r.policy.selfReview.fallbackToSelf).toBe(false);
+      expect(r.policy.selfReview.strictEnforcement).toBe(true);
     });
 
     it('solo identityProvider is undefined', () => {
@@ -2413,14 +2423,14 @@ describe('cli/templates/verification-output-contract', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('/plan self-review checklist includes Verification Plan', () => {
+    it('/plan requires source-backed Verification Plan', () => {
       const planTemplate = COMMANDS['plan.md'];
       expect(planTemplate).toMatch(/Verification Plan cites Source/i);
     });
 
-    it('/implement review checklist includes Verification Evidence', () => {
+    it('/implement requires clearly separated Verification Evidence', () => {
       const implementTemplate = COMMANDS['implement.md'];
-      expect(implementTemplate).toMatch(/Verification Evidence clearly distinguishes/i);
+      expect(implementTemplate).toMatch(/Verification Evidence[\s\S]*clearly distinguishes/i);
     });
   });
 
@@ -2547,7 +2557,7 @@ describe('cli/templates/verification-output-contract', () => {
 
   // ─── EDGE ──────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('/plan has verification review step in self-review loop', () => {
+    it('/plan has verification guidance in independent review loop', () => {
       const planTemplate = COMMANDS['plan.md'];
       expect(planTemplate).toMatch(/verificationCandidates/i);
     });

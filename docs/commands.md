@@ -125,14 +125,20 @@ Record the task description. Starts the ticket flow from READY or updates ticket
 
 ### /plan
 
-Generate an implementation plan with self-review loop.
+Generate an implementation plan with mandatory independent subagent review.
 
 1. LLM generates plan text
-2. Self-review loop starts
-3. Plan refined until convergence
+2. `flowguard-reviewer` reviews the plan
+3. Plan refined until independent review convergence
 4. Advances to PLAN_REVIEW
 
 **Allowed in:** TICKET, PLAN
+
+When `/plan` advances to PLAN_REVIEW, the Plan Review Card footer renders the available decision commands as explanatory bullets:
+
+- `/approve` — approve the plan if it is complete and acceptable
+- `/request-changes` — send the plan back for revision
+- `/reject` — stop this task
 
 **Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
 
@@ -169,7 +175,7 @@ Execute the implementation plan.
 
 1. LLM implements using OpenCode tools
 2. Changed files recorded via git
-3. Implementation review loop
+3. Independent implementation review loop
 4. Advances to EVIDENCE_REVIEW
 
 **Allowed in:** IMPLEMENTATION
@@ -180,8 +186,8 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts self-review loop.
-- **Mode B (self-review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the ADR review loop.
+- **Mode B (ADR review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
 
@@ -217,8 +223,9 @@ Start the standalone review flow. Generates a compliance report.
 Universal routing command. Inspects current phase and does the next appropriate action.
 
 - At user gates: returns "waiting" (use /review-decision)
-- At PLAN/ARCHITECTURE: runs one self-review iteration
-- At IMPL_REVIEW: runs one implementation review iteration
+- At PLAN: runs one independent subagent review iteration
+- At ARCHITECTURE: runs one ADR review iteration
+- At IMPL_REVIEW: runs one independent implementation review iteration
 - At VALIDATION: runs all validation checks
 - At other phases: evaluates and auto-advances if evidence is present
 

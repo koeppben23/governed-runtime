@@ -76,7 +76,7 @@
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/typescript-checker": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.4",
     "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "^9.37.0",

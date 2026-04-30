@@ -1,13 +1,13 @@
 export const PLAN_COMMAND = `
 ---
-description: Generate a plan with self-review loop for the current task.
+description: Generate a plan with mandatory independent subagent review for the current task.
 ---
 
 You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Generate a comprehensive implementation plan for the current ticket, then review it.
+Generate a comprehensive implementation plan for the current ticket, then obtain mandatory independent review.
 
 ## Steps
 
@@ -30,7 +30,7 @@ Generate a comprehensive implementation plan for the current ticket, then review
     - \`## Validation Criteria\` — Numbered list of verifiable conditions. Each entry is a concrete check (e.g., "running \`npm test\` passes", "function X returns Y when given Z").
     - \`## Verification Plan\` — Numbered list of planned verification checks. For each check, cite the command AND its Source (e.g., "Source: package.json:scripts.test").
 4. Call \`flowguard_plan\` with the argument \`planText\` set to the full plan markdown. Do NOT set \`selfReviewVerdict\`.
-5. Read the response. It will contain a \`next\` field and a \`reviewMode\` field that determine the review approach.
+5. Read the response. It will contain a \`next\` field and a \`reviewMode\` field that determine whether plugin-provided findings are already available or the reviewer subagent must be called manually.
 
 ### Phase 3: Review Loop
 
@@ -49,12 +49,12 @@ Generate a comprehensive implementation plan for the current ticket, then review
       - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_plan\` with \`selfReviewVerdict: "approve"\` and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
       - If \`overallVerdict\` is \`"changes_requested"\`: Review the \`blockingIssues\` and \`majorRisks\` from the findings. Revise the plan to address them. Call \`flowguard_plan\` with \`selfReviewVerdict: "changes_requested"\`, \`planText\` set to the complete revised plan, and \`reviewFindings\` set to the \`_pluginReviewFindings\` object.
    c. Read the response:
-       - If self-review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
+       - If independent review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
        - If another iteration is needed: Go back to step 6.
 
-    **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
+    **Path A2: Required Manual Subagent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
 
-   The plugin could not invoke the reviewer automatically. You must call the subagent manually.
+   The plugin has not completed the reviewer call. You must call the flowguard-reviewer subagent manually. Do not perform self-review.
 
    a. Call the Task tool with:
       - \`subagent_type\`: \`"flowguard-reviewer"\`
@@ -64,46 +64,22 @@ Generate a comprehensive implementation plan for the current ticket, then review
       - If \`overallVerdict\` is \`"approve"\`: Call \`flowguard_plan\` with \`selfReviewVerdict: "approve"\` and \`reviewFindings\` set to the parsed JSON object.
       - If \`overallVerdict\` is \`"changes_requested"\`: Review the \`blockingIssues\` and \`majorRisks\` from the findings. Revise the plan to address them. Call \`flowguard_plan\` with \`selfReviewVerdict: "changes_requested"\`, \`planText\` set to the complete revised plan, and \`reviewFindings\` set to the parsed JSON object.
    d. Read the response:
-       - If self-review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
+       - If independent review converged: Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation.
        - If another iteration is needed: Go back to step 6.
-
-#### Path B: Self-Review (when \`next\` does NOT start with "INDEPENDENT_REVIEW_REQUIRED")
-
-   Review the plan yourself against this checklist. For EACH item, determine pass or fail:
-    - [ ] Every section heading listed in Phase 2 step 3 is present (including Verification Plan).
-    - [ ] The Objective section matches the ticket requirements (no scope creep, no missing requirements).
-    - [ ] Every step in the Steps section names at least one file path.
-    - [ ] Every step describes a concrete, specific change (not vague or generic).
-    - [ ] The Steps are in a logical dependency order (no step depends on a later step).
-    - [ ] The Files to Modify list is consistent with the Steps section (no files mentioned in Steps but missing from the list, and vice versa).
-    - [ ] At least 2 edge cases are identified.
-    - [ ] Each edge case has a concrete handling strategy (not "handle gracefully" but specific behavior).
-    - [ ] At least 2 validation criteria are listed.
-    - [ ] Each validation criterion is mechanically verifiable (could be checked by running a command or inspecting output).
-    - [ ] Verification Plan cites Source for each check OR states NOT_VERIFIED with recovery steps.
-    - [ ] Verification Plan does not use generic commands when more specific candidates exist in flowguard_status.verificationCandidates.
-
-   Based on your review:
-    - If ALL checklist items pass: Call \`flowguard_plan\` with the argument \`selfReviewVerdict\` set to \`"approve"\`. Do NOT set \`planText\`.
-    - If ANY checklist item fails: Revise the plan to fix all failing items. Call \`flowguard_plan\` with \`selfReviewVerdict\` set to \`"changes_requested"\` AND \`planText\` set to the complete revised plan.
-
-   Read the response:
-   - If self-review converged (the response says "converged" or the phase changed to PLAN_REVIEW): Report the final status to the user. If the response contains a \`reviewCard\` field, present it in full without modification or summarisation. The card contains the complete plan and recommended next actions.
-   - If another iteration is needed: Go back to step 6.
 
 ## Constraints
 
 - DO NOT generate a plan with vague steps like "implement the feature" or "add error handling". Every step must be specific.
-- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1), call the subagent manually (Path A2), or run the checklist (Path B) at least once.
-- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
-- DO NOT approve a plan that fails any checklist item (Path B) or has blocking issues (Path A).
+- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1) or call the flowguard-reviewer subagent manually (Path A2).
+- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. DO NOT substitute self-review.
+- DO NOT approve a plan that has blocking issues from the independent review.
 - When providing a revised plan, you MUST include the COMPLETE plan text, not a diff or partial update.
 - The plan MUST include all seven sections listed above (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria, Verification Plan).
 - In Verification Plan, use flowguard_status.verificationCandidates when available. Cite the specific command AND its Source (e.g., "Source: package.json:scripts.test").
 - If no repo-native verification candidate is available, state "NOT_VERIFIED" and provide recovery steps (e.g., "inspect package scripts / build wrapper / CI config").
 - DO NOT invent verification commands. Always cite the Source when using verificationCandidates.
 - DO NOT call any implementation tools (write, edit, bash for code changes). Planning only.
-- The review loop runs up to 3 iterations maximum.
+- The independent review loop runs up to 3 iterations maximum.
 - DO NOT use the \`question\` tool or present selectable choices.
 - DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
 - DO NOT auto-chain into /continue, /review, /implement, or /review-decision after the plan converges.
@@ -117,7 +93,7 @@ Generate a comprehensive implementation plan for the current ticket, then review
 
 - Plan contains all 7 required sections (Objective, Approach, Steps, Files to Modify, Edge Cases, Validation Criteria, Verification Plan).
 - Verification Plan cites Source for each check OR states NOT_VERIFIED with recovery steps.
-- Review loop has converged (approved or max 3 iterations reached).
+- Independent review loop has converged (approved or max 3 iterations reached).
 - Phase has advanced to PLAN_REVIEW.
 - Response ends with exactly one \`Next action:\` line.
 `;

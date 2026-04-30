@@ -7,7 +7,7 @@ You are managing a FlowGuard-controlled development workflow.
 
 ## Goal
 
-Implement the approved plan and review the implementation.
+Implement the approved plan and obtain mandatory independent implementation review.
 
 ## Steps
 
@@ -31,7 +31,7 @@ Implement the approved plan and review the implementation.
 4. After completing ALL implementation steps from the plan, call \`flowguard_implement\` with no arguments (do NOT set \`reviewVerdict\`).
    - The tool will auto-detect changed files via git and record implementation evidence.
    - It will advance the phase to IMPL_REVIEW.
-5. Read the response. It will list the changed files, a \`reviewMode\` field, and a \`next\` field that determines the review approach.
+5. Read the response. It will list the changed files, a \`reviewMode\` field, and a \`next\` field that determines whether plugin-provided findings are already available or the reviewer subagent must be called manually.
 
 ### Phase 3: Record Verification Evidence
 
@@ -60,9 +60,9 @@ Implement the approved plan and review the implementation.
       - If review converged: Report the final status to the user.
       - If another iteration is needed: Go back to step 7.
 
-   **Path A2: Fallback LLM-Driven Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
+   **Path A2: Required Manual Subagent Review (when \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED")**
 
-   The plugin could not invoke the reviewer automatically. You must call the subagent manually.
+   The plugin has not completed the reviewer call. You must call the flowguard-reviewer subagent manually. Do not perform self-review.
 
    a. Call the Task tool with:
       - \`subagent_type\`: \`"flowguard-reviewer"\`
@@ -75,38 +75,17 @@ Implement the approved plan and review the implementation.
       - If review converged: Report the final status to the user.
       - If another iteration is needed: Go back to step 7.
 
-#### Path B: Self-Review (when \`next\` does NOT start with "INDEPENDENT_REVIEW_REQUIRED")
-
-   Review the implementation yourself against this checklist. For EACH item, determine pass or fail:
-    - [ ] Every step from the plan has a corresponding code change (no steps were skipped).
-    - [ ] Every file listed in the plan's "Files to Modify" section was actually modified (or the omission is justified).
-    - [ ] No files were modified that are NOT in the plan (unless they are direct dependencies like imports or config).
-    - [ ] Each edge case from the plan has corresponding handling code.
-    - [ ] No obvious bugs: null checks present where needed, error handling in place, no typos in identifiers.
-    - [ ] Code follows the project's existing conventions (naming, formatting, file organization).
-    - [ ] Each validation criterion from the plan is testable against the current code.
-    - [ ] Verification Evidence clearly distinguishes Planned checks from Executed checks.
-    - [ ] Unexecuted checks are marked as NOT_VERIFIED.
-
-   Based on your review:
-    - If ALL checklist items pass: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"approve"\`.
-    - If ANY checklist item fails: Call \`flowguard_implement\` with \`reviewVerdict\` set to \`"changes_requested"\`. Then make the necessary code changes using read/write/bash tools to fix the failing items. After making changes, call \`flowguard_implement\` with no arguments (no \`reviewVerdict\`) to re-record the implementation.
-
-   Read the response:
-    - If review converged: Report the final status to the user.
-    - If another review iteration is needed: Go back to step 7.
-
 8. Report the final status to the user.
 
 ## Constraints
 
 - Follow the plan exactly. Do not deviate from the approved plan.
 - In Verification Evidence, only list checks in "Executed checks" if they were actually run. Otherwise mark as NOT_VERIFIED.
-- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1), call the subagent manually (Path A2), or run the checklist (Path B) at least once.
-- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. Do NOT substitute self-review.
+- DO NOT skip the review. You MUST either use plugin-provided findings (Path A1) or call the flowguard-reviewer subagent manually (Path A2).
+- When the tool response indicates INDEPENDENT_REVIEW_COMPLETED, use the \`_pluginReviewFindings\` directly. When it indicates INDEPENDENT_REVIEW_REQUIRED, you MUST call the flowguard-reviewer subagent. DO NOT substitute self-review.
 - When changes are requested in the review, you MUST make the actual code changes BEFORE calling flowguard_implement again.
 - Call flowguard_implement with no arguments (Mode A) BEFORE calling it with reviewVerdict (Mode B). Mode A records the evidence; Mode B records the review.
-- The review loop runs up to 3 iterations maximum.
+- The independent review loop runs up to 3 iterations maximum.
 - DO NOT modify FlowGuard state files directly. Only use FlowGuard tools.
 - DO NOT use the \`question\` tool or present selectable choices.
 - DO NOT bypass flowguard_implement with direct file manipulation of FlowGuard state.
@@ -123,7 +102,7 @@ Implement the approved plan and review the implementation.
 - Verification Evidence section clearly distinguishes Planned checks from Executed checks.
 - Unexecuted checks are marked as NOT_VERIFIED.
 - Implementation evidence is recorded via flowguard_implement.
-- Implementation review loop has converged (approved or max iterations).
+- Independent implementation review loop has converged (approved or max iterations).
 - Phase has advanced to EVIDENCE_REVIEW.
 - Response ends with exactly one \`Next action:\` line.
 `;

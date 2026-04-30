@@ -3,7 +3,7 @@
  * @description Pure presentation builder for the Plan Review Card.
  *
  * Builds a markdown card presenting the full plan with context metadata
- * and recommended next actions. Called only when self-review converges
+ * and recommended next actions. Called only when independent review converges
  * (phase PLAN_REVIEW), never during active plan refinement.
  *
  * This is a pure function — no state dependency, no side effects.
@@ -81,9 +81,10 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
 
   if (hasApprove || hasRequestChanges || hasReject) {
     const options: string[] = [];
-    if (hasApprove) options.push('- `/approve`');
-    if (hasRequestChanges) options.push('- `/request-changes`');
-    if (hasReject) options.push('- `/reject`');
+    if (hasApprove)
+      options.push('- `/approve` — approve the plan if it is complete and acceptable');
+    if (hasRequestChanges) options.push('- `/request-changes` — send the plan back for revision');
+    if (hasReject) options.push('- `/reject` — stop this task');
 
     footer.push('');
     footer.push(...options);

@@ -642,6 +642,23 @@ describe('context and readiness projections', () => {
     expect(typeof readiness.evidenceComplete).toBe('boolean');
     expect(typeof readiness.actorKnown).toBe('boolean');
   });
+
+  it('includes warning when legacy selfReview config is normalized', () => {
+    const state = makeMinimalState('READY');
+    // Inject legacy config
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: false,
+        fallbackToSelf: true,
+        strictEnforcement: false,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+
+    expect(readiness.warnings).toBeDefined();
+    expect(readiness.warnings.length).toBeGreaterThan(0);
+    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
+  });
 });
 
 // ─── E2E: Full Session Simulation ────────────────────────────────────────────

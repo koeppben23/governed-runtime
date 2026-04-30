@@ -5,9 +5,9 @@
  * Re-exports 11 tools from focused modules:
  * - helpers.ts        — shared interfaces, formatters, workspace/state/policy helpers
  * - hydrate.ts        — session bootstrap with discovery and profile resolution
- * - plan.ts           — plan submission and self-review loop
+ * - plan.ts           — plan submission and independent review loop
  * - implement.ts      — implementation recording and review loop
- * - architecture.ts   — ADR submission and self-review loop
+ * - architecture.ts   — ADR submission and review loop
  * - status-tool.ts    — read-only session state check
  * - decision-tool.ts  — human review verdict at user gates
  * - validate-tool.ts  — validation check result recording
