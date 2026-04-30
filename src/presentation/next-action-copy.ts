@@ -13,58 +13,56 @@
  */
 
 import type { NextAction } from '../machine/next-action.js';
+import { ACTION_CODES } from '../machine/next-action.js';
 import type { Phase } from '../state/schema.js';
 import { PHASE_LABELS } from './phase-labels.js';
 
-// ─── Product Guidance ─────────────────────────────────────────────────────────
+// ─── Product Guidance ─────────────────────────────────────────────────
 
 /**
  * Product-friendly display for each next-action code.
  * Maps machine codes to user-facing guidance text and product command names.
  */
-const PRODUCT_GUIDANCE: Record<string, { text: string; commands: readonly string[] } | undefined> =
-  {
-    CHOOSE_FLOW: {
-      text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
-      commands: ['/task', '/architecture', '/review'],
-    },
-    RUN_TICKET: {
-      text: 'Describe your governed task with /task',
-      commands: ['/task'],
-    },
-    RUN_PLAN: {
-      text: 'Task captured. Generate an implementation plan with /plan',
-      commands: ['/plan'],
-    },
-    RUN_REVIEW_DECISION: {
-      text: 'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
-      commands: ['/approve', '/request-changes', '/reject'],
-    },
-    RUN_VALIDATE: {
-      text: 'Run validation checks with /check',
-      commands: ['/check'],
-    },
-    RUN_CONTINUE: {
-      text: 'Run /continue to proceed',
-      commands: ['/continue'],
-    },
-    RUN_IMPLEMENT: {
-      text: 'Execute the approved plan with /implement',
-      commands: ['/implement'],
-    },
-    SESSION_COMPLETE: {
-      text: 'Workflow complete. Run /export to create a verifiable audit package.',
-      commands: ['/export'],
-    },
-    RUN_ARCHITECTURE: {
-      text: 'Submit your Architecture Decision Record with /architecture',
-      commands: ['/architecture'],
-    },
-    RUN_REVIEW: {
-      text: 'Generate a compliance review report with /review',
-      commands: ['/review'],
-    },
-  };
+type ActionCode = (typeof ACTION_CODES)[keyof typeof ACTION_CODES];
+
+const PRODUCT_GUIDANCE = {
+  CHOOSE_FLOW: {
+    text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+    commands: ['/task', '/architecture', '/review'],
+  },
+  RUN_TICKET: {
+    text: 'Describe your governed task with /task',
+    commands: ['/task'],
+  },
+  RUN_PLAN: {
+    text: 'Task captured. Generate an implementation plan with /plan',
+    commands: ['/plan'],
+  },
+  RUN_REVIEW_DECISION: {
+    text: 'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
+    commands: ['/approve', '/request-changes', '/reject'],
+  },
+  RUN_VALIDATE: {
+    text: 'Run validation checks with /check',
+    commands: ['/check'],
+  },
+  RUN_CONTINUE: {
+    text: 'Run /continue to proceed',
+    commands: ['/continue'],
+  },
+  RUN_IMPLEMENT: {
+    text: 'Execute the approved plan with /implement',
+    commands: ['/implement'],
+  },
+  SESSION_COMPLETE: {
+    text: 'Workflow complete. Run /export to create a verifiable audit package.',
+    commands: ['/export'],
+  },
+  RUN_ARCHITECTURE: {
+    text: 'Submit your Architecture Decision Record with /architecture',
+    commands: ['/architecture'],
+  },
+} satisfies Partial<Record<ActionCode, { text: string; commands: readonly string[] }>>;
 
 /**
  * Resolve product-friendly next action text and commands for a phase.
@@ -80,7 +78,8 @@ export function buildProductNextAction(
   action: NextAction,
   phase: Phase,
 ): { text: string; commands: readonly string[] } {
-  const guidance = PRODUCT_GUIDANCE[action.code];
+  const code = action.code as ActionCode;
+  const guidance = PRODUCT_GUIDANCE[code];
 
   if (!guidance) {
     return { text: action.text, commands: action.commands };

@@ -63,7 +63,7 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
   const header = ['# FlowGuard Plan Review', '', `> **Status:** ${phaseLabel}`];
 
   // ── Section 2: Metadata ────────────────────────────────────────────
-  if (planVersion !== undefined) {
+  if (planVersion !== undefined && Number.isInteger(planVersion) && planVersion > 0) {
     header.push(`> **Plan version:** v${planVersion}`);
   }
   if (policyMode) {

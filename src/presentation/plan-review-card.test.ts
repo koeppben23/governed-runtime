@@ -88,6 +88,54 @@ describe('buildPlanReviewCard', () => {
       expect(card).toContain('> **Plan version:** v3');
     });
 
+    it('omits plan version when planVersion is 0', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        planVersion: 0,
+      });
+
+      expect(card).not.toContain('> **Plan version:** v0');
+    });
+
+    it('omits plan version when planVersion is -1', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        planVersion: -1,
+      });
+
+      expect(card).not.toContain('> **Plan version:**');
+    });
+
+    it('omits plan version when planVersion is 1.5 (non-integer)', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        planVersion: 1.5 as unknown as number,
+      });
+
+      expect(card).not.toContain('> **Plan version:**');
+    });
+
+    it('renders plan version when planVersion is 1', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        planVersion: 1,
+      });
+
+      expect(card).toContain('> **Plan version:** v1');
+    });
+
     it('includes policy mode when provided', () => {
       const card = buildPlanReviewCard({
         planText: 'Plan.',
