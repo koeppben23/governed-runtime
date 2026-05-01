@@ -51,12 +51,32 @@
 import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_ARCHITECTURE,
   REVIEWER_SUBAGENT_TYPE,
 } from './tool-names.js';
 import type { SessionState } from '../state/schema.js';
 
 /** Tools that can trigger independent review. */
-export type ReviewableTool = typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT;
+export type ReviewableTool =
+  | typeof TOOL_FLOWGUARD_PLAN
+  | typeof TOOL_FLOWGUARD_IMPLEMENT
+  | typeof TOOL_FLOWGUARD_ARCHITECTURE;
+
+/** Type-guard: is the given tool name a reviewable FlowGuard tool? */
+function isReviewableTool(toolName: string): toolName is ReviewableTool {
+  return (
+    toolName === TOOL_FLOWGUARD_PLAN ||
+    toolName === TOOL_FLOWGUARD_IMPLEMENT ||
+    toolName === TOOL_FLOWGUARD_ARCHITECTURE
+  );
+}
+
+/** Map a reviewable tool to its corresponding obligationType. */
+function obligationTypeForTool(toolName: ReviewableTool): 'plan' | 'implement' | 'architecture' {
+  if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
+  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
+  return 'architecture';
+}
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
@@ -164,9 +184,9 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
+  if (!isReviewableTool(toolName)) return;
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
   const parsed = safeParse(output);
   if (!parsed) return;
 
@@ -399,11 +419,11 @@ export function enforceBeforeVerdict(
   sessionState?: SessionState | null,
   strictEnforcement = false,
 ): EnforcementResult {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) {
+  if (!isReviewableTool(toolName)) {
     return { allowed: true };
   }
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
 
   // Only enforce on Mode B calls (verdict submission)
   const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
@@ -415,10 +435,7 @@ export function enforceBeforeVerdict(
     // P35 Recovery: Reconstruct from session-state.json when transient cache miss
     if (sessionState?.reviewAssurance?.obligations) {
       const pendingObligation = sessionState.reviewAssurance.obligations.find(
-        (o) =>
-          o.status === 'pending' &&
-          ((reviewTool === TOOL_FLOWGUARD_PLAN && o.obligationType === 'plan') ||
-            (reviewTool === TOOL_FLOWGUARD_IMPLEMENT && o.obligationType === 'implement')),
+        (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
       );
       if (pendingObligation) {
         return {
@@ -550,9 +567,9 @@ export function recordPluginReview(
   capturedFindings: CapturedFindings | null,
   now: string,
 ): boolean {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return false;
+  if (!isReviewableTool(toolName)) return false;
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending || pending.subagentCalled) return false;
 

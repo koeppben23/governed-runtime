@@ -8,6 +8,8 @@ import {
   ReviewVerdict,
   RevisionDelta,
   LoopVerdict,
+  ReviewObligationType,
+  ArchitectureDecision,
   BindingInfo,
   TicketEvidence,
   PlanEvidence,
@@ -377,6 +379,53 @@ describe('state schemas', () => {
       expect(() => LoopVerdict.parse('reject')).toThrow();
       expect(() => LoopVerdict.parse('unknown')).toThrow();
       expect(() => LoopVerdict.parse('')).toThrow();
+    });
+
+    it('ReviewObligationType has 3 values: plan, implement, architecture (F13)', () => {
+      expect(ReviewObligationType.options).toEqual(['plan', 'implement', 'architecture']);
+    });
+
+    it('ReviewObligationType rejects unknown values', () => {
+      expect(() => ReviewObligationType.parse('design')).toThrow();
+      expect(() => ReviewObligationType.parse('unknown')).toThrow();
+      expect(() => ReviewObligationType.parse('')).toThrow();
+    });
+
+    it('ArchitectureDecision accepts optional reviewFindings array (F13 slice 7c)', () => {
+      // F13 slice 7c adds an optional reviewFindings array to ArchitectureDecision
+      // mirroring plan.reviewFindings and implementation.reviewFindings, so the
+      // independent review history of an ADR is auditable across iterations.
+      // The field MUST be optional for backwards-compat with sessions created
+      // before F13 — schema MUST accept both absent and empty array.
+      const baseAdr = {
+        id: 'ADR-1',
+        title: 'Test',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        status: 'proposed' as const,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        digest: 'sha256-deadbeef',
+      };
+      // Absent reviewFindings: valid (legacy).
+      expect(() => ArchitectureDecision.parse(baseAdr)).not.toThrow();
+      // Empty array: valid (initial state after F13).
+      expect(() => ArchitectureDecision.parse({ ...baseAdr, reviewFindings: [] })).not.toThrow();
+      // Populated array of well-formed ReviewFindings: valid.
+      const findings = {
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'approve' as const,
+        blockingIssues: [],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'sess-test' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+      };
+      expect(() =>
+        ArchitectureDecision.parse({ ...baseAdr, reviewFindings: [findings] }),
+      ).not.toThrow();
     });
 
     it('PolicySnapshotSchema validates nested audit object', () => {

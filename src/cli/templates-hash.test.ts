@@ -44,11 +44,15 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
-    // Refreshed in P1.3 slice 3: REVIEWER_AGENT body extended with the
-    // "When You Cannot Review (Validity Conditions)" section + Rules
-    // amendments documenting the third LoopVerdict value 'unable_to_review'.
-    // See src/templates/mandates.ts:354-394 (validity conditions) and
-    // :395-405 (rules).
+    // Refreshed in F13 slice 4: REVIEWER_AGENT body extended with a
+    // "For Architecture Decisions (ADRs)" subsection under Review Criteria
+    // and minor wording updates ("plan, implementation, or ADR" /
+    // "/plan, /implement, or /architecture") to make the reviewer mandate
+    // applicable to the architecture obligation type introduced in F13 slice 1.
+    // See src/templates/mandates.ts:354-362 (ADR review criteria).
+    //
+    // Predecessor: P1.3 slice 3 added the validity-conditions section
+    // (hash 1ce8ec9c…5fc84).
     //
     // Cross-session compatibility: this hash gates ONLY the template-body
     // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
@@ -60,7 +64,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // this slice, so persisted obligations from prior sessions continue
     // to validate correctly under the same mandateDigest.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '1ce8ec9c34413125ec7c7f469765558067ae0c8d785c67e441918a4d0ef55c84',
+      '43f77b97ca6d8af755d5934261596976b3ae79f74f2f36fbdad69592387acf50',
     );
   });
 
@@ -91,7 +95,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cbd958fce5e52ad5c96a270a754787efd1fd79cf807e381153950241bd6888f9',
+      '5b7652a386a6231c7873d22d2cd5838e89c2f397a5ef3815fb8a286790b21747',
     );
   });
 

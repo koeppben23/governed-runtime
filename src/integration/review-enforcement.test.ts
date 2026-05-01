@@ -1291,6 +1291,43 @@ describe('review-enforcement', () => {
     });
   });
 
+  // ─── F13: Architecture independent-review parity (slice 2) ──
+  describe('F13 architecture tool-name gates', () => {
+    it('onFlowGuardToolAfter accepts flowguard_architecture (no early return)', () => {
+      const state = createSessionState();
+
+      // Without slice 2, onFlowGuardToolAfter would early-return for architecture
+      // and never register a pending review. With slice 2, the gate accepts it.
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_architecture',
+        { adrText: '## ADR' },
+        modeASubagentResponse({ phase: 'ARCHITECTURE' }),
+        NOW,
+      );
+
+      // Pending review must be registered for architecture tool key
+      expect(state.pendingReviews.has('flowguard_architecture')).toBe(true);
+    });
+
+    it('enforceBeforeVerdict accepts flowguard_architecture as ReviewableTool', () => {
+      const state = createSessionState();
+
+      // No pending review, no Mode B args → still allowed (gate widening only).
+      const result = enforceBeforeVerdict(state, 'flowguard_architecture', {});
+      expect(result.allowed).toBe(true);
+    });
+
+    it('enforceBeforeVerdict still rejects unrelated tools (negative)', () => {
+      const state = createSessionState();
+      const result = enforceBeforeVerdict(state, 'flowguard_status', {
+        selfReviewVerdict: 'approve',
+      });
+      // Unrelated tools bypass review enforcement (no obligation matching).
+      expect(result.allowed).toBe(true);
+    });
+  });
+
   // ─── HELPER FUNCTIONS ──────────────────────────────────────
   describe('matchPendingReview', () => {
     it('returns null when no pending reviews exist', () => {

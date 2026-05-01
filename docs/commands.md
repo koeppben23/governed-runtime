@@ -186,10 +186,12 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the ADR review loop.
-- **Mode B (ADR review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
+- **Mode B (ADR review):** Provide `selfReviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
+
+ADR review is **subagent-driven by default** in solo, team, and regulated profiles, parity with `/plan` and `/implement`. The plugin invokes the reviewer deterministically; manual self-review is rejected in strict mode (fail-closed). The reviewer applies ADR-specific criteria (Context completeness, Decision concreteness, Consequences honesty, MADR structure) defined in the `flowguard-reviewer` agent body.
 
 **Allowed in:** READY (starts flow), ARCHITECTURE (revise after changes_requested)
 
