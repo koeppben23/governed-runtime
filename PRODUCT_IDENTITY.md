@@ -110,11 +110,11 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 Ten canonical FlowGuard commands map to workflow phases:
 
-| Command            | Purpose                                                                                                           |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Command            | Purpose                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
-| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.             |
+| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
@@ -354,8 +354,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
 - **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; all modes default to `best_effort` — stronger thresholds require explicit `minimumActorAssuranceForApproval` config; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic
-- **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
-- **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
+- **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
+- **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
