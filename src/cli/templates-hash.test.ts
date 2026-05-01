@@ -83,19 +83,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed in P1.3 slice 6: plan.ts / implement.ts / architecture.ts
-    // narratives extended with the third LoopVerdict 'unable_to_review' and
-    // the corresponding BLOCKED-handling guidance (SUBAGENT_UNABLE_TO_REVIEW).
-    // See src/templates/commands/plan.ts review-loop section,
-    // src/templates/commands/implement.ts review-loop section, and
-    // src/templates/commands/architecture.ts ## Rules section.
+    // Refreshed in PR-E: review.ts narrative now requires content-aware /review
+    // calls to submit concrete analysisFindings for reviewed text/PR/branch/URL
+    // content, preserving fail-closed behavior for content review.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '5b7652a386a6231c7873d22d2cd5838e89c2f397a5ef3815fb8a286790b21747',
+      '8c1d2d7b555578c9bdd2317820d89e0f9f8a6b54e30be098ad7d28f3d1756e64',
     );
   });
 

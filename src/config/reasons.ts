@@ -384,6 +384,17 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Check activeChecks in the session state via flowguard_status',
     ],
   },
+  {
+    code: 'CONTENT_ANALYSIS_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      'Content-aware /review requires analysisFindings. Analyze the supplied content before calling flowguard_review.',
+    recoverySteps: [
+      'Fetch or inspect the referenced text, PR, branch, or URL content',
+      'Create concrete findings with severity, category, and message',
+      'Re-run flowguard_review with analysisFindings populated',
+    ],
+  },
 
   // ── Precondition ──────────────────────────────────────────────
   {
