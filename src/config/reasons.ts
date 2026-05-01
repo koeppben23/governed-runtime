@@ -929,6 +929,142 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'If the error persists, abort the session with /abort',
     ],
   },
+  {
+    code: 'POLICY_SNAPSHOT_MISSING',
+    category: 'state',
+    messageTemplate:
+      'Session state is missing policySnapshot. Every hydrated session must have a frozen policy snapshot.',
+    recoverySteps: [
+      'Re-hydrate the session with /hydrate',
+      'If the issue persists, the session state may be corrupted — start a new session',
+      'Verify session-state.json contains a non-empty policySnapshot field',
+    ],
+    quickFixCommand: '/hydrate',
+  },
+  {
+    code: 'AUDIT_PERSISTENCE_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Audit event persistence failed: {message}',
+    recoverySteps: [
+      'Check workspace audit directory permissions and disk space',
+      'In regulated mode, the operation is blocked until audit can be persisted',
+      'Re-run the command after fixing the underlying I/O issue',
+    ],
+  },
+  {
+    code: 'DECISION_RECEIPT_ACTOR_MISSING',
+    category: 'identity',
+    messageTemplate:
+      'Decision receipt skipped because decidedBy is missing on the review-decision output.',
+    recoverySteps: [
+      'Ensure /review-decision output includes reviewDecision.decidedBy',
+      'Set FLOWGUARD_ACTOR_ID before running /review-decision',
+      'Re-run /review-decision with a verified actor identity',
+    ],
+  },
+
+  // ── Independent Review (Subagent enforcement) ─────────────────
+  {
+    code: 'SUBAGENT_PROMPT_EMPTY',
+    category: 'precondition',
+    messageTemplate:
+      'The flowguard-reviewer prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.',
+    recoverySteps: [
+      'Provide a substantive prompt to the flowguard-reviewer subagent',
+      'Include the full review context: plan or implementation text, ticket text, iteration, and planVersion',
+      'Re-invoke the subagent with the complete context',
+    ],
+  },
+  {
+    code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
+    category: 'precondition',
+    messageTemplate:
+      'The flowguard-reviewer prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.',
+    recoverySteps: [
+      'Read the iteration and planVersion values from the flowguard_plan or flowguard_implement response',
+      'Include those exact values in the prompt to the flowguard-reviewer subagent',
+      'Re-invoke the subagent with the corrected prompt',
+    ],
+  },
+  {
+    code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
+    category: 'state',
+    messageTemplate:
+      'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
+    recoverySteps: [
+      'Re-run the FlowGuard tool that produced the review obligation (flowguard_plan or flowguard_implement)',
+      'Verify the response contains the reviewObligation field with iteration and planVersion',
+      'If the issue persists in regulated mode, re-hydrate the session',
+    ],
+    quickFixCommand: '/continue',
+  },
+  {
+    code: 'SUBAGENT_REVIEW_NOT_INVOKED',
+    category: 'precondition',
+    messageTemplate:
+      'FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to flowguard-reviewer was detected. Call the subagent before submitting a verdict.',
+    recoverySteps: [
+      'Call the flowguard-reviewer subagent via the Task tool',
+      'Pass the plan/implementation text, ticket text, iteration, and planVersion in the prompt',
+      'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
+    ],
+  },
+  {
+    code: 'SUBAGENT_SESSION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked flowguard-reviewer.',
+    recoverySteps: [
+      'Use the exact reviewFindings object returned by the flowguard-reviewer subagent',
+      'Do not modify reviewedBy.sessionId after the subagent produces the findings',
+      'Re-invoke the subagent if the findings came from a different session',
+    ],
+  },
+  {
+    code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted reviewFindings.overallVerdict ({provided}) does not match the actual subagent verdict ({expected}). Findings must not be modified.',
+    recoverySteps: [
+      'Submit the verdict exactly as the flowguard-reviewer subagent returned it',
+      'Do not override the subagent verdict with a different value',
+      'If you disagree with the subagent verdict, run another review iteration with revised input',
+    ],
+  },
+  {
+    code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted reviewFindings.blockingIssues count ({provided}) does not match the actual subagent count ({expected}).',
+    recoverySteps: [
+      'Submit the exact reviewFindings object returned by the flowguard-reviewer subagent',
+      'Do not add, remove, or modify blockingIssues entries after the subagent produces them',
+      'Re-invoke the subagent if the captured findings are stale',
+    ],
+  },
+  {
+    code: 'SUBAGENT_EVIDENCE_REUSED',
+    category: 'state',
+    messageTemplate:
+      'Subagent invocation evidence has already been consumed for this obligation. Each obligation requires a fresh invocation.',
+    recoverySteps: [
+      'Re-invoke the flowguard-reviewer subagent for the current obligation',
+      'Do not reuse findings from a previously consumed invocation',
+      'Each plan version and review iteration requires its own subagent invocation',
+    ],
+  },
+  {
+    code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+    category: 'state',
+    messageTemplate:
+      'Cannot verify review obligation fulfillment in strict mode — enforcement state is unavailable and session state cannot be read.',
+    recoverySteps: [
+      'Re-hydrate the session with /hydrate',
+      'Run /continue before submitting a verdict to restore enforcement state',
+      'Verify session-state.json is readable and contains a reviewAssurance object',
+    ],
+    quickFixCommand: '/continue',
+  },
 ];
 
 // ─── Default Registry ─────────────────────────────────────────────────────────
