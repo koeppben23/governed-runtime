@@ -8,6 +8,7 @@ import {
   ReviewVerdict,
   RevisionDelta,
   LoopVerdict,
+  ReviewObligationType,
   BindingInfo,
   TicketEvidence,
   PlanEvidence,
@@ -377,6 +378,16 @@ describe('state schemas', () => {
       expect(() => LoopVerdict.parse('reject')).toThrow();
       expect(() => LoopVerdict.parse('unknown')).toThrow();
       expect(() => LoopVerdict.parse('')).toThrow();
+    });
+
+    it('ReviewObligationType has 3 values: plan, implement, architecture (F13)', () => {
+      expect(ReviewObligationType.options).toEqual(['plan', 'implement', 'architecture']);
+    });
+
+    it('ReviewObligationType rejects unknown values', () => {
+      expect(() => ReviewObligationType.parse('design')).toThrow();
+      expect(() => ReviewObligationType.parse('unknown')).toThrow();
+      expect(() => ReviewObligationType.parse('')).toThrow();
     });
 
     it('PolicySnapshotSchema validates nested audit object', () => {

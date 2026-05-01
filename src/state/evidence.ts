@@ -241,7 +241,7 @@ export const ReviewFindings = z
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 /** Independent review obligation type. */
-export const ReviewObligationType = z.enum(['plan', 'implement']);
+export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture']);
 export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 
 /** Strict review obligation state. */
