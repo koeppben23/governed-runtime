@@ -214,6 +214,30 @@ export interface ImplReviewPromptOpts {
   readonly mandateDigest: string;
 }
 
+/** Options for building an architecture (ADR) review prompt. F13 slice 6. */
+export interface ArchitectureReviewPromptOpts {
+  /** The ADR text to review (full MADR markdown body). */
+  readonly adrText: string;
+  /** Short title of the architecture decision. */
+  readonly adrTitle: string;
+  /** The ticket text for context. */
+  readonly ticketText: string;
+  /** The current self-review iteration (0-based). */
+  readonly iteration: number;
+  /**
+   * The plan version number. For architecture obligations there is no plan
+   * artifact; we use planVersion=1 for the initial submission and increment
+   * for revisions, mirroring the plan/implement convention.
+   */
+  readonly planVersion: number;
+  /** Strict review obligation identifier. */
+  readonly obligationId: string;
+  /** Strict criteria version string. */
+  readonly criteriaVersion: string;
+  /** Strict mandate digest. */
+  readonly mandateDigest: string;
+}
+
 /** Result of a successful reviewer invocation. */
 export interface ReviewerResult {
   /** The child session ID used for the review. */
@@ -329,6 +353,61 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     'Review this implementation against the approved plan and ticket.',
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
+    'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
+    `Set attestation.toolObligationId=${obligationId}.`,
+    `Set attestation.criteriaVersion=${criteriaVersion}.`,
+    `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
+    'Set attestation.reviewedBy="flowguard-reviewer".',
+  ].join('\n');
+}
+
+/**
+ * Build a prompt for architecture (ADR) review by the flowguard-reviewer subagent.
+ *
+ * F13 slice 6: parity with plan/impl review prompts. The prompt structure
+ * mirrors buildPlanReviewPrompt (no changedFiles section, since an ADR is
+ * a self-contained document) but instructs the subagent to apply the
+ * "For Architecture Decisions (ADRs)" review-criteria section added to
+ * REVIEWER_AGENT in F13 slice 4.
+ *
+ * The ticket text is included for scope-creep verification (Out-of-scope
+ * clarity is a documented ADR review dimension).
+ *
+ * @param opts - Architecture review context
+ * @returns Prompt text string
+ */
+export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts): string {
+  const {
+    adrText,
+    adrTitle,
+    ticketText,
+    iteration,
+    planVersion,
+    obligationId,
+    criteriaVersion,
+    mandateDigest,
+  } = opts;
+  return [
+    `You are reviewing an architecture decision (ADR) for iteration=${iteration}, planVersion=${planVersion}.`,
+    '',
+    '## Ticket',
+    '',
+    ticketText,
+    '',
+    `## ADR to Review: ${adrTitle}`,
+    '',
+    adrText,
+    '',
+    '## Instructions',
+    '',
+    'Review this ADR against the ticket and your review criteria for Architecture',
+    'Decisions (ADRs). Focus on problem framing, alternatives considered, decision',
+    'rationale, consequences, reversibility, compatibility, out-of-scope clarity,',
+    'and verification path. Use the read/glob/grep tools to verify any claims about',
+    'existing files, schemas, or contracts referenced in the ADR.',
     'Return your findings as a single JSON object matching the ReviewFindings schema.',
     `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
     `Set attestation.toolObligationId=${obligationId}.`,
