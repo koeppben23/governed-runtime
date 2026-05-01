@@ -19,6 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
+  buildArchitectureReviewPrompt,
   invokeReviewer,
   buildMutatedOutput,
   isReviewRequired,
@@ -320,6 +321,83 @@ describe('buildImplReviewPrompt', () => {
       changedFiles: ['a.ts', 'b.ts', 'c.ts'],
     });
     expect(prompt).toContain('- a.ts\n- b.ts\n- c.ts');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// buildArchitectureReviewPrompt (F13 slice 6)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('buildArchitectureReviewPrompt', () => {
+  const baseOpts = {
+    adrText: '## Context\nFoo.\n\n## Decision\nBar.\n\n## Consequences\nBaz.',
+    adrTitle: 'ADR-001 Use X over Y',
+    ticketText: 'Pick X or Y for the auth flow',
+    iteration: 0,
+    planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-mandate-digest',
+  };
+
+  it('includes ADR title in the section heading', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## ADR to Review: ADR-001 Use X over Y');
+  });
+
+  it('includes the full ADR text', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## Context\nFoo.');
+    expect(prompt).toContain('## Decision\nBar.');
+    expect(prompt).toContain('## Consequences\nBaz.');
+  });
+
+  it('embeds iteration and planVersion in the body and attestation lines', () => {
+    const prompt = buildArchitectureReviewPrompt({
+      ...baseOpts,
+      iteration: 2,
+      planVersion: 3,
+    });
+    expect(prompt).toContain('iteration=2, planVersion=3');
+    expect(prompt).toContain('Set iteration=2 and planVersion=3');
+    expect(prompt).toContain('Set attestation.iteration=2.');
+    expect(prompt).toContain('Set attestation.planVersion=3.');
+  });
+
+  it('embeds obligationId, criteriaVersion, and mandateDigest in attestation block', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.criteriaVersion=p35-v1.');
+    expect(prompt).toContain('Set attestation.mandateDigest=test-mandate-digest.');
+  });
+
+  it('includes the ticket text for scope-creep verification', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('Pick X or Y for the auth flow');
+  });
+
+  it('instructs the reviewer to use ADR-specific review criteria', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    // Anchors the prompt to the REVIEWER_AGENT body section added in F13 slice 4.
+    expect(prompt).toContain('Architecture');
+    expect(prompt).toContain('problem framing');
+    expect(prompt).toContain('alternatives considered');
+    expect(prompt).toContain('reversibility');
+    expect(prompt).toContain('out-of-scope clarity');
+  });
+
+  it('does NOT include a Changed Files section (ADR is a self-contained document)', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).not.toContain('## Changed Files');
+  });
+
+  it('handles empty ticket text without throwing', () => {
+    const prompt = buildArchitectureReviewPrompt({ ...baseOpts, ticketText: '' });
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## ADR to Review:');
   });
 });
 

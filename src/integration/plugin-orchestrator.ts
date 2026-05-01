@@ -32,6 +32,7 @@ import {
   extractReviewContext,
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
+  buildArchitectureReviewPrompt,
   invokeReviewer,
   buildMutatedOutput,
   type OrchestratorClient,
@@ -44,10 +45,32 @@ import {
 } from './plugin-helpers.js';
 import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
-import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
+
+// ─── F13 slice 6 helper ─────────────────────────────────────────────────────
+
+/**
+ * Map a reviewable FlowGuard tool name to its corresponding obligationType.
+ *
+ * Replaces the previous 2-way ternary (`=== TOOL_FLOWGUARD_PLAN ? 'plan'
+ * : 'implement'`) which could not represent the architecture obligation
+ * introduced in F13 slice 1. The 3-way switch is exhaustive over the
+ * ReviewableTool union and TypeScript will catch any future tool-name
+ * additions that omit a branch here.
+ */
+function obligationTypeForTool(
+  toolName: string,
+): 'plan' | 'implement' | 'architecture' {
+  if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
+  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
+  if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) return 'architecture';
+  // The plugin layer only invokes the orchestrator after isReviewRequired()
+  // has classified the tool; defensive fallback for type-soundness.
+  return 'plan';
+}
 
 /**
  * Dependency interface for closure-captured values in plugin.ts.
@@ -147,7 +170,7 @@ export async function runReviewOrchestration(
       'review:obligation_created',
       {
         obligationId: reviewCtx.obligationId,
-        obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+        obligationType: obligationTypeForTool(toolName),
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
@@ -159,29 +182,63 @@ export async function runReviewOrchestration(
     const planText = sessionState.plan?.current?.body ?? '';
     const toolArgs = getToolArgs(input);
 
-    const prompt =
-      toolName === TOOL_FLOWGUARD_PLAN
-        ? buildPlanReviewPrompt({
-            planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
-            ticketText,
-            iteration: reviewCtx.iteration,
-            planVersion: reviewCtx.planVersion,
-            obligationId: reviewCtx.obligationId,
-            criteriaVersion: reviewCtx.criteriaVersion,
-            mandateDigest: reviewCtx.mandateDigest,
-          })
-        : buildImplReviewPrompt({
-            changedFiles: Array.isArray(parsedOutput.changedFiles)
-              ? (parsedOutput.changedFiles as string[])
-              : (sessionState.implementation?.changedFiles ?? []),
-            planText,
-            ticketText,
-            iteration: reviewCtx.iteration,
-            planVersion: reviewCtx.planVersion,
-            obligationId: reviewCtx.obligationId,
-            criteriaVersion: reviewCtx.criteriaVersion,
-            mandateDigest: reviewCtx.mandateDigest,
-          });
+    // F13 slice 6: 3-way prompt selection by reviewable tool.
+    // The previous 2-way ternary defaulted any non-PLAN tool to the
+    // implementation prompt, which would have produced incorrect prompts
+    // for the architecture tool once it routes through this orchestrator
+    // (slice 7). The exhaustive switch surfaces unsupported tools as a
+    // typed error at the bottom rather than silently picking impl.
+    let prompt: string;
+    if (toolName === TOOL_FLOWGUARD_PLAN) {
+      prompt = buildPlanReviewPrompt({
+        planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+      });
+    } else if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+      prompt = buildImplReviewPrompt({
+        changedFiles: Array.isArray(parsedOutput.changedFiles)
+          ? (parsedOutput.changedFiles as string[])
+          : (sessionState.implementation?.changedFiles ?? []),
+        planText,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+      });
+    } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
+      const adrText =
+        typeof toolArgs.adrText === 'string'
+          ? toolArgs.adrText
+          : (sessionState.architecture?.adrText ?? '');
+      const adrTitle =
+        typeof toolArgs.title === 'string'
+          ? toolArgs.title
+          : (sessionState.architecture?.title ?? '');
+      prompt = buildArchitectureReviewPrompt({
+        adrText,
+        adrTitle,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+      });
+    } else {
+      // Unreachable: orchestrator is only entered when isReviewRequired()
+      // classified the tool as reviewable. Defensive fail-closed.
+      deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', {
+        tool: toolName,
+      });
+      return;
+    }
 
     deps.log.info('orchestrator', 'invoking reviewer subagent', {
       tool: toolName,
@@ -299,7 +356,7 @@ export async function runReviewOrchestration(
 
               const invocation = buildInvocationEvidence({
                 obligationId: reviewCtx.obligationId,
-                obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                obligationType: obligationTypeForTool(toolName),
                 parentSessionId: sessionId,
                 childSessionId: reviewerResult.sessionId,
                 promptHash,
@@ -327,7 +384,7 @@ export async function runReviewOrchestration(
                   }
                 : {
                     obligationId: reviewCtx.obligationId,
-                    obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                    obligationType: obligationTypeForTool(toolName),
                     parentSessionId: sessionId,
                     childSessionId: reviewerResult.sessionId,
                     agentType: REVIEWER_SUBAGENT_TYPE,
