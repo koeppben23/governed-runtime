@@ -53,9 +53,12 @@ import {
 
 // Review obligation helpers (F13: parity with plan/implement)
 import {
+  appendReviewObligation,
+  consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
@@ -164,7 +167,6 @@ export const architecture: ToolDefinition = {
         // to reviewAssurance so the orchestrator can wire the verdict submission
         // to the flowguard-reviewer subagent. Mirrors plan.ts:233-259.
         const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
-        const assuranceBase = ensureReviewAssurance(result.state.reviewAssurance);
         const archPlanVersion = 1; // ADRs are immutable per id; iteration counts revisions
         const nextObligation = subagentEnabled
           ? createReviewObligation({
@@ -178,10 +180,7 @@ export const architecture: ToolDefinition = {
         const augmentedState: SessionState = nextObligation
           ? {
               ...result.state,
-              reviewAssurance: {
-                obligations: [...assuranceBase.obligations, nextObligation],
-                invocations: assuranceBase.invocations,
-              },
+              reviewAssurance: appendReviewObligation(result.state.reviewAssurance, nextObligation),
             }
           : result.state;
 
@@ -211,24 +210,7 @@ export const architecture: ToolDefinition = {
           selfReviewIteration: 0,
           maxSelfReviewIterations,
           reviewMode: subagentEnabled ? 'subagent' : 'self',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'architecture' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                // Backward-compat flat fields (parity with plan.ts)
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
+          ...reviewObligationResponseFields(nextObligation),
           next: modeANext,
           _audit: { transitions: result.transitions },
         };
@@ -341,22 +323,11 @@ export const architecture: ToolDefinition = {
             )
           : null;
 
-        const consumedObligations = assuranceBaseModeB.obligations.map((item) => {
-          if (!strictObligation || item.obligationId !== strictObligation.obligationId) return item;
-          return {
-            ...item,
-            status: 'consumed' as const,
-            consumedAt: ctx.now(),
-          };
-        });
-
-        const consumedInvocations = assuranceBaseModeB.invocations.map((inv) => {
-          if (!strictObligation || inv.invocationId !== strictObligation.invocationId) return inv;
-          return {
-            ...inv,
-            consumedByObligationId: strictObligation.obligationId,
-          };
-        });
+        const consumedAssurance = consumeReviewObligation(
+          assuranceBaseModeB,
+          strictObligation,
+          ctx.now(),
+        );
 
         // Build updated state
         const nextState: SessionState = {
@@ -371,8 +342,8 @@ export const architecture: ToolDefinition = {
             verdict,
           },
           reviewAssurance: {
-            obligations: consumedObligations,
-            invocations: consumedInvocations,
+            obligations: consumedAssurance.obligations,
+            invocations: consumedAssurance.invocations,
           },
           error: null,
         };
@@ -471,23 +442,7 @@ export const architecture: ToolDefinition = {
           selfReviewIteration: iteration,
           revisionDelta,
           reviewMode: subagentEnabledModeB ? 'subagent' : 'self',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'architecture' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
+          ...reviewObligationResponseFields(nextObligation),
           next: nonConvergedNext,
           _audit: { transitions },
         };

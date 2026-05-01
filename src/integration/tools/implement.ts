@@ -85,9 +85,11 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 import {
+  appendReviewObligation,
+  consumeReviewObligation,
   createReviewObligation,
-  ensureReviewAssurance,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -195,7 +197,6 @@ export const implement: ToolDefinition = {
           ? [...existingFindings, args.reviewFindings as ReviewFindings]
           : existingFindings;
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
         const nextObligation = subagentEnabled
           ? createReviewObligation({
               obligationType: 'implement',
@@ -210,12 +211,7 @@ export const implement: ToolDefinition = {
           implementation: implEvidence,
           implReview: null,
           implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-          reviewAssurance: nextObligation
-            ? {
-                obligations: [...assuranceBase.obligations, nextObligation],
-                invocations: assuranceBase.invocations,
-              }
-            : assuranceBase,
+          reviewAssurance: appendReviewObligation(state.reviewAssurance, nextObligation),
           error: null,
         };
 
@@ -231,23 +227,7 @@ export const implement: ToolDefinition = {
           changedFiles: files,
           domainFiles,
           reviewMode: 'subagent',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'implement' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
+          ...reviewObligationResponseFields(nextObligation),
           next:
             'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
             'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
@@ -325,7 +305,7 @@ export const implement: ToolDefinition = {
           ? [...existingFindings, args.reviewFindings as ReviewFindings]
           : existingFindings;
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
+        const assuranceBase = state.reviewAssurance ?? { obligations: [], invocations: [] };
         const strictObligation = strictEnforcement
           ? findLatestObligation(
               assuranceBase.obligations,
@@ -334,21 +314,11 @@ export const implement: ToolDefinition = {
               (state.plan?.history.length ?? 0) + 1,
             )
           : null;
-        const consumedObligations = assuranceBase.obligations.map((item) => {
-          if (!strictObligation || item.obligationId !== strictObligation.obligationId) return item;
-          return {
-            ...item,
-            status: 'consumed' as const,
-            consumedAt: ctx.now(),
-          };
-        });
-        const consumedInvocations = assuranceBase.invocations.map((inv) => {
-          if (!strictObligation || inv.invocationId !== strictObligation.invocationId) return inv;
-          return {
-            ...inv,
-            consumedByObligationId: strictObligation.obligationId,
-          };
-        });
+        const consumedAssurance = consumeReviewObligation(
+          assuranceBase,
+          strictObligation,
+          ctx.now(),
+        );
 
         const nextState: SessionState = {
           ...state,
@@ -363,8 +333,8 @@ export const implement: ToolDefinition = {
           },
           implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
           reviewAssurance: {
-            obligations: consumedObligations,
-            invocations: consumedInvocations,
+            obligations: consumedAssurance.obligations,
+            invocations: consumedAssurance.invocations,
           },
           error: null,
         };
