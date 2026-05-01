@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { strictBlockedOutput } from './plugin-helpers.js';
+import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
   runReviewOrchestration as runOrchestrator,
@@ -160,7 +160,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               sessionId,
               code: result.code,
             });
-            throw new Error(`[FlowGuard] ${result.code}: ${result.reason}`);
+            throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
           }
         }
         return;
@@ -189,7 +189,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           sessionId,
           code: result.code,
         });
-        throw new Error(`[FlowGuard] ${result.code}: ${result.reason}`);
+        throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
       }
     },
 
