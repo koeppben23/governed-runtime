@@ -50,29 +50,10 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
 } from './tool-names.js';
+import { obligationTypeForTool } from './review-obligation-tools.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
-
-// ─── F13 slice 6 helper ─────────────────────────────────────────────────────
-
-/**
- * Map a reviewable FlowGuard tool name to its corresponding obligationType.
- *
- * Replaces the previous 2-way ternary (`=== TOOL_FLOWGUARD_PLAN ? 'plan'
- * : 'implement'`) which could not represent the architecture obligation
- * introduced in F13 slice 1. The 3-way switch is exhaustive over the
- * ReviewableTool union and TypeScript will catch any future tool-name
- * additions that omit a branch here.
- */
-function obligationTypeForTool(toolName: string): 'plan' | 'implement' | 'architecture' {
-  if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
-  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
-  if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) return 'architecture';
-  // The plugin layer only invokes the orchestrator after isReviewRequired()
-  // has classified the tool; defensive fallback for type-soundness.
-  return 'plan';
-}
 
 /**
  * Dependency interface for closure-captured values in plugin.ts.
@@ -157,6 +138,15 @@ export async function runReviewOrchestration(
       return;
     }
 
+    const obligationType = obligationTypeForTool(toolName);
+    if (!obligationType) {
+      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        reason: `unsupported reviewable tool for review orchestration: ${toolName}`,
+      });
+      deps.log.warn('orchestrator', 'unsupported reviewable tool — blocked', { tool: toolName });
+      return;
+    }
+
     strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
     await deps.updateReviewAssurance(sessDir, (s, now2) =>
@@ -172,7 +162,7 @@ export async function runReviewOrchestration(
       'review:obligation_created',
       {
         obligationId: reviewCtx.obligationId,
-        obligationType: obligationTypeForTool(toolName),
+        obligationType,
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
@@ -358,7 +348,7 @@ export async function runReviewOrchestration(
 
               const invocation = buildInvocationEvidence({
                 obligationId: reviewCtx.obligationId,
-                obligationType: obligationTypeForTool(toolName),
+                obligationType,
                 parentSessionId: sessionId,
                 childSessionId: reviewerResult.sessionId,
                 promptHash,
@@ -386,7 +376,7 @@ export async function runReviewOrchestration(
                   }
                 : {
                     obligationId: reviewCtx.obligationId,
-                    obligationType: obligationTypeForTool(toolName),
+                    obligationType,
                     parentSessionId: sessionId,
                     childSessionId: reviewerResult.sessionId,
                     agentType: REVIEWER_SUBAGENT_TYPE,

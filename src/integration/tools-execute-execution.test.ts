@@ -508,6 +508,20 @@ describe('implement', () => {
       expect(result.code).toBe('REVIEW_ITERATION_MISMATCH');
     });
 
+    it('Mode B: reviewVerdict must match reviewFindings overallVerdict', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const changesRequestedFindings = await fulfillReview('implement', 1, 'changes_requested');
+      const raw = await implement.execute(
+        { reviewVerdict: 'approve', reviewFindings: changesRequestedFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+    });
+
     it('Mode B: changes_requested accepted with valid reviewFindings', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
@@ -520,6 +534,46 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.status).toContain('Changes requested');
+    });
+
+    it('Mode B: changes_requested returns to IMPLEMENTATION for fresh implementation evidence', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+
+      const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
+      const reviewRaw = await implement.execute(
+        { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
+        ctx,
+      );
+      const reviewResult = parseToolResult(reviewRaw);
+      expect(reviewResult.error).toBeUndefined();
+      expect(reviewResult.phase).toBe('IMPLEMENTATION');
+
+      const sessDir = await currentSessionDir();
+      const afterReviewState = await readState(sessDir);
+      expect(afterReviewState?.implementation).toBeNull();
+      expect(afterReviewState?.implReview).toBeNull();
+
+      const recordRaw = await implement.execute({}, ctx);
+      const recordResult = parseToolResult(recordRaw);
+      expect(recordResult.error).toBeUndefined();
+      expect(recordResult.phase).toBe('IMPL_REVIEW');
+      expect(recordResult.reviewObligationIteration).toBe(2);
+
+      const afterRecordState = await readState(sessDir);
+      expect(afterRecordState?.implementation).not.toBeNull();
+      expect(afterRecordState?.implReview).toBeNull();
+      expect(afterRecordState?.implReviewFindings).toHaveLength(1);
+
+      const secondReviewFindings = await fulfillReview('implement', 2, 'approve');
+      const approveRaw = await implement.execute(
+        { reviewVerdict: 'approve', reviewFindings: secondReviewFindings },
+        ctx,
+      );
+      const approveResult = parseToolResult(approveRaw);
+      expect(approveResult.error).toBeUndefined();
+      expect(approveResult.implReviewIteration).toBe(2);
+      expect(['EVIDENCE_REVIEW', 'COMPLETE']).toContain(approveResult.phase);
     });
 
     it('approve + subagentEnabled=true + missing reviewFindings -> BLOCKED', async () => {

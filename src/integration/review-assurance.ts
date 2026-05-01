@@ -56,6 +56,39 @@ export function createReviewObligation(input: {
   };
 }
 
+export function appendReviewObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligation: ReviewObligation | null,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  if (!obligation) return base;
+  return {
+    obligations: [...base.obligations, obligation],
+    invocations: base.invocations,
+  };
+}
+
+export function reviewObligationResponseFields(
+  obligation: ReviewObligation | null,
+): Record<string, unknown> {
+  if (!obligation) return {};
+  return {
+    reviewObligation: {
+      obligationId: obligation.obligationId,
+      obligationType: obligation.obligationType,
+      iteration: obligation.iteration,
+      planVersion: obligation.planVersion,
+      criteriaVersion: obligation.criteriaVersion,
+      mandateDigest: obligation.mandateDigest,
+    },
+    reviewObligationId: obligation.obligationId,
+    reviewObligationIteration: obligation.iteration,
+    reviewObligationPlanVersion: obligation.planVersion,
+    reviewCriteriaVersion: obligation.criteriaVersion,
+    reviewMandateDigest: obligation.mandateDigest,
+  };
+}
+
 export function findLatestObligation(
   obligations: ReviewObligation[],
   obligationType: ReviewObligationType,
@@ -74,6 +107,31 @@ export function findLatestObligation(
     }
   }
   return null;
+}
+
+export function consumeReviewObligation(
+  assurance: ReviewAssuranceState,
+  obligation: ReviewObligation | null,
+  now: string,
+): ReviewAssuranceState {
+  if (!obligation) return assurance;
+  return {
+    obligations: assurance.obligations.map((item) => {
+      if (item.obligationId !== obligation.obligationId) return item;
+      return {
+        ...item,
+        status: 'consumed' as const,
+        consumedAt: now,
+      };
+    }),
+    invocations: assurance.invocations.map((invocation) => {
+      if (invocation.invocationId !== obligation.invocationId) return invocation;
+      return {
+        ...invocation,
+        consumedByObligationId: obligation.obligationId,
+      };
+    }),
+  };
 }
 
 export function hashText(text: string): string {

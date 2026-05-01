@@ -82,11 +82,26 @@ function makeValidReport(): ReviewReport {
     sessionId: FIXED_SESSION_UUID,
     generatedAt: FIXED_TIME,
     phase: 'COMPLETE',
-    planDigest: 'digest-abc',
-    implDigest: 'digest-xyz',
+    planDigest: null,
+    implDigest: null,
     validationSummary: [],
     findings: [],
     overallStatus: 'clean',
+    completeness: {
+      sessionId: FIXED_SESSION_UUID,
+      phase: 'COMPLETE',
+      policyMode: 'solo',
+      overallComplete: true,
+      slots: [],
+      fourEyes: {
+        required: false,
+        satisfied: true,
+        initiatedBy: 'test',
+        decidedBy: null,
+        detail: 'Four-eyes not required by policy',
+      },
+      summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+    },
   };
 }
 

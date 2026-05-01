@@ -69,11 +69,11 @@ import {
 
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
-import { evaluate } from '../../machine/evaluate.js';
+import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
-import { autoAdvance } from '../../rails/types.js';
+import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
 import { changedFiles } from '../../adapters/git.js';
@@ -85,14 +85,24 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 import {
+  appendReviewObligation,
+  consumeReviewObligation,
   createReviewObligation,
-  ensureReviewAssurance,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
 // ═══════════════════════════════════════════════════════════════════════════════
+
+function nextImplementationReviewIteration(state: SessionState): number {
+  let latest = state.implReview?.iteration ?? 0;
+  for (const findings of state.implReviewFindings ?? []) {
+    latest = Math.max(latest, findings.iteration);
+  }
+  return latest + 1;
+}
 
 export const implement: ToolDefinition = {
   description:
@@ -195,11 +205,11 @@ export const implement: ToolDefinition = {
           ? [...existingFindings, args.reviewFindings as ReviewFindings]
           : existingFindings;
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
+        const reviewIteration = nextImplementationReviewIteration(state);
         const nextObligation = subagentEnabled
           ? createReviewObligation({
               obligationType: 'implement',
-              iteration: 1,
+              iteration: reviewIteration,
               planVersion: (state.plan?.history.length ?? 0) + 1,
               now: ctx.now(),
             })
@@ -210,12 +220,7 @@ export const implement: ToolDefinition = {
           implementation: implEvidence,
           implReview: null,
           implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-          reviewAssurance: nextObligation
-            ? {
-                obligations: [...assuranceBase.obligations, nextObligation],
-                invocations: assuranceBase.invocations,
-              }
-            : assuranceBase,
+          reviewAssurance: appendReviewObligation(state.reviewAssurance, nextObligation),
           error: null,
         };
 
@@ -231,29 +236,15 @@ export const implement: ToolDefinition = {
           changedFiles: files,
           domainFiles,
           reviewMode: 'subagent',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'implement' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
+          ...reviewObligationResponseFields(nextObligation),
           next:
             'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
             'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
             'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
             '(1) the implementation summary and changed files, ' +
-            '(2) the approved plan text, (3) the ticket text, (4) iteration=1, ' +
+            '(2) the approved plan text, (3) the ticket text, (4) iteration=' +
+            reviewIteration +
+            ', ' +
             '(5) planVersion=' +
             ((state.plan?.history.length ?? 0) + 1) +
             '. ' +
@@ -295,7 +286,7 @@ export const implement: ToolDefinition = {
         }
 
         // Compute iteration before validation
-        const iteration = (state.implReview?.iteration ?? 0) + 1;
+        const iteration = nextImplementationReviewIteration(state);
 
         // Validate review findings in Mode B
         if (args.reviewFindings) {
@@ -309,6 +300,13 @@ export const implement: ToolDefinition = {
             obligationType: 'implement',
           });
           if (blocked) return blocked;
+
+          if (args.reviewFindings.overallVerdict !== args.reviewVerdict) {
+            return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+              reviewVerdict: args.reviewVerdict,
+              overallVerdict: args.reviewFindings.overallVerdict,
+            });
+          }
         }
 
         const verdict = args.reviewVerdict as LoopVerdict;
@@ -325,7 +323,7 @@ export const implement: ToolDefinition = {
           ? [...existingFindings, args.reviewFindings as ReviewFindings]
           : existingFindings;
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
+        const assuranceBase = state.reviewAssurance ?? { obligations: [], invocations: [] };
         const strictObligation = strictEnforcement
           ? findLatestObligation(
               assuranceBase.obligations,
@@ -334,23 +332,13 @@ export const implement: ToolDefinition = {
               (state.plan?.history.length ?? 0) + 1,
             )
           : null;
-        const consumedObligations = assuranceBase.obligations.map((item) => {
-          if (!strictObligation || item.obligationId !== strictObligation.obligationId) return item;
-          return {
-            ...item,
-            status: 'consumed' as const,
-            consumedAt: ctx.now(),
-          };
-        });
-        const consumedInvocations = assuranceBase.invocations.map((inv) => {
-          if (!strictObligation || inv.invocationId !== strictObligation.invocationId) return inv;
-          return {
-            ...inv,
-            consumedByObligationId: strictObligation.obligationId,
-          };
-        });
+        const consumedAssurance = consumeReviewObligation(
+          assuranceBase,
+          strictObligation,
+          ctx.now(),
+        );
 
-        const nextState: SessionState = {
+        const reviewedState: SessionState = {
           ...state,
           implReview: {
             iteration,
@@ -363,11 +351,67 @@ export const implement: ToolDefinition = {
           },
           implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
           reviewAssurance: {
-            obligations: consumedObligations,
-            invocations: consumedInvocations,
+            obligations: consumedAssurance.obligations,
+            invocations: consumedAssurance.invocations,
           },
           error: null,
         };
+
+        if (verdict === 'changes_requested') {
+          const target = evaluateWithEvent(state.phase, 'CHANGES_REQUESTED');
+          if (target === undefined) {
+            return formatBlocked('INVALID_TRANSITION', {
+              event: 'CHANGES_REQUESTED',
+              phase: state.phase,
+            });
+          }
+
+          const at = ctx.now();
+          const finalState = applyTransition(
+            {
+              ...reviewedState,
+              implementation: null,
+              implReview: null,
+            },
+            state.phase,
+            target,
+            'CHANGES_REQUESTED',
+            at,
+          );
+          const transitions = [
+            { from: state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at },
+          ];
+          await writeStateWithArtifacts(sessDir, finalState);
+
+          const response: Record<string, unknown> = {
+            phase: finalState.phase,
+            implReviewIteration: iteration,
+            status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
+            next:
+              'Make the requested code changes using read/write/bash tools, ' +
+              'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+              'After re-recording, call the flowguard-reviewer subagent again for independent review.',
+            _audit: { transitions },
+          };
+
+          if (newReviewFindings.length > 0) {
+            const atIndex = newReviewFindings.length - 1;
+            const rf = newReviewFindings.at(atIndex);
+            if (rf) {
+              response.latestImplementationReview = {
+                iteration: rf.iteration,
+                reviewMode: rf.reviewMode,
+                overallVerdict: rf.overallVerdict,
+                blockingIssueCount: rf.blockingIssues.length,
+                majorRiskCount: rf.majorRisks.length,
+                missingVerificationCount: rf.missingVerification.length,
+                reviewedAt: rf.reviewedAt,
+              };
+            }
+          }
+
+          return appendNextAction(JSON.stringify(response), finalState);
+        }
 
         // Evaluate + autoAdvance (policy-aware)
         const evalFn = (s: SessionState) => evaluate(s, policy);
@@ -375,7 +419,7 @@ export const implement: ToolDefinition = {
           state: finalState,
           evalResult: ev,
           transitions,
-        } = autoAdvance(nextState, evalFn, ctx);
+        } = autoAdvance(reviewedState, evalFn, ctx);
         await writeStateWithArtifacts(sessDir, finalState);
 
         const converged =
@@ -408,15 +452,6 @@ export const implement: ToolDefinition = {
 
         if (converged && verdict === 'approve') {
           response.status = `Implementation review converged at iteration ${iteration}. Approved.`;
-          return appendNextAction(JSON.stringify(response), finalState);
-        }
-
-        if (verdict === 'changes_requested') {
-          response.status = `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`;
-          response.next =
-            'Make the requested code changes using read/write/bash tools, ' +
-            'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-            'After re-recording, call the flowguard-reviewer subagent again for independent review.';
           return appendNextAction(JSON.stringify(response), finalState);
         }
 
