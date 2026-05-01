@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reviewer attestation contract enforcement (PR #73)**: The `flowguard-reviewer` mandate template now emits the full six-field `attestation` block (`mandateDigest`, `criteriaVersion`, `toolObligationId`, `iteration`, `planVersion`, `reviewedBy`) the strict-path runtime requires. Pre-fix the template omitted the block entirely, so strict-mode subagent reviews failed with `SUBAGENT_MANDATE_MISSING` even when the reviewer behaved correctly. Plan/implement review prompts now explicitly instruct the reviewer to populate `attestation.iteration` and `attestation.planVersion`. A build-time guard (`mandates-schema-drift.test.ts`) walks the template against the Zod `ReviewAttestation` schema to prevent silent drift.
+
+- **Reviewer session-id authority (PR #73)**: Subagents cannot reliably know their own OpenCode session ID. `invokeReviewer` in `review-orchestrator.ts` now overwrites `findings.reviewedBy.sessionId` with the verified `childSessionId` returned by `client.session.create()`. Reconstructs `reviewedBy` when the subagent omits it. Removes a stale template literal in `mandates.ts` that asked the agent to guess. Fixes spurious `SUBAGENT_SESSION_MISMATCH` blocks.
+
+- **Phantom `flowguard_continue` tool reference (PR #73)**: The `commands/continue.ts` slash-command template referenced a tool that does not exist in the runtime registry (`tool-names.ts` lists 11 tools; `flowguard_continue` is not one). Removed the reference. Added build-time guard `commands/template-tool-references.test.ts` that scans all 20 templates for `flowguard_*` tokens and asserts every token resolves to a registered tool name.
+
+- **JSON-Schema ↔ Zod ReviewFindings drift (PR #73)**: `REVIEW_FINDINGS_JSON_SCHEMA` (sent to the OpenCode SDK structured-output API) had two real drifts from the Zod `ReviewFindings` schema: (1) the `actorAssurance` enum lacked `verified` (one of four values Zod accepts via `assuranceSchema()`); (2) `attestation.toolObligationId` was an unconstrained string but Zod requires UUID format. SDK structured output would silently reject reviewer responses that the runtime would accept, or vice versa. Both schemas now align. New build-time guard `review-findings-schema-drift.test.ts` walks both schemas, asserts property parity, enum equality, and runs round-trip validation.
+
+- **Structured BLOCKED responses for plugin-hook enforcement (PR #73)**: Plugin hooks at `tool.execute.before` previously threw raw `'[FlowGuard] CODE: reason'` strings for L1 (subagent-call) and L3 (verdict-submission) enforcement blocks. Other layers returned structured `RailBlocked` payloads with code, message, detail, recovery, and quickFix. The LLM saw two divergent failure shapes. New `buildEnforcementError` helper produces an `Error` whose name is `FlowGuardEnforcementError` and whose message is `[FlowGuard] {jsonPayload}` with the full registry-driven structure. The `strictBlockedOutput` helper also now consults the reason registry for recovery and quickFix instead of hardcoding empty `recovery: []`.
+
+- **12 missing reason codes registered (PR #73)**: The reason registry (`config/reasons.ts`) lacked entries for codes emitted by review-enforcement and audit paths: `POLICY_SNAPSHOT_MISSING`, `AUDIT_PERSISTENCE_FAILED`, `DECISION_RECEIPT_ACTOR_MISSING`, `SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`, `SUBAGENT_CONTEXT_UNVERIFIABLE`, `SUBAGENT_REVIEW_NOT_INVOKED`, `SUBAGENT_SESSION_MISMATCH`, `SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`, `SUBAGENT_EVIDENCE_REUSED`, `REVIEW_ASSURANCE_STATE_UNAVAILABLE`. All carry recovery steps; some include `quickFixCommand`. Build-time guard `reasons-completeness.test.ts` scans `src/` for code literals and asserts each is registered (with a documented allow-list for test-fixture codes).
+
+- **Fingerprint folder for non-repo worktrees (PR #73)**: A bug in `plugin-workspace.ts` created a rogue fingerprint folder when FlowGuard ran outside a git worktree. Now skipped cleanly.
+
+### Changed
+
+- **`pluginReviewFindings` (renamed from `_pluginReviewFindings`, PR #73)**: The leading underscore wrongly suggested an internal/private field. The field is part of the public LLM-facing contract — agents read it from plugin output and submit it back as `reviewFindings`. Renamed in code, slash-command templates (`plan`, `implement`, `continue`), `docs/independent-review.md`, and this changelog. Since 1.2.0 is unreleased, the rename is non-breaking. `COMMANDS` template hash refreshed.
+
+- **Dropped dead text-fallback parsers in review orchestrator (PR #73)**: `extractResponseText`, `parseReviewerFindings`, `isValidFindings`, and `extractJsonBlock` were the legacy fallback for pre-structured-output responses. After the SDK structured-output migration the orchestrator only consults `info.structured_output` and fails closed on missing structured data. The unreachable text parsers are removed; their tests are removed; the surface area is smaller and the temptation of a non-deterministic best-effort path is eliminated.
+
+### Added
+
+- **`promptContainsValue` contract documentation + edge tests (PR #73)**: Comprehensive JSDoc on the L3 prompt-context regex documenting matching rules, the 30-character non-digit ceiling rationale, and word-boundary semantics. 11 new EDGE tests cover XML-wrapped values, JSON embeds, markdown-formatted values, multi-line attestation blocks, partial-number rejection (1 vs 15, 2 vs 21), distance-ceiling rejection, large numbers, case-insensitive keywords, and zero as a non-falsy expected value.
+
 ### Added
 
 - **Installer workspace initialization fix**: The installer now uses `ensureWorkspace()` — the same SSOT workspace-root path as the runtime — instead of writing `config.json` in isolation. Every `flowguard install` now creates a complete workspace with `workspace.json`, `sessions/`, and `discovery/`. The doctor detects config-only workspace directories left behind by older installs.

@@ -217,13 +217,23 @@ Independent subagent review is the default FlowGuard policy configuration:
   attestation?: {
     mandateDigest:      string    // must match runtime review mandate digest
     criteriaVersion:    string    // must match runtime review criteria version
-    toolObligationId:   string    // must match strict review obligation id
+    toolObligationId:   string    // RFC 4122 UUID; must match strict review obligation id
     iteration:          number    // must match expected iteration
     planVersion:        number    // must match expected plan version
     reviewedBy:         string    // expected: flowguard-reviewer
   }
 }
 ```
+
+> **Attestation in subagent mode:** the `attestation` field is declared
+> optional in the Zod `ReviewFindings` schema (so self-review and legacy
+> findings remain shape-compatible) but the OpenCode SDK
+> `REVIEW_FINDINGS_JSON_SCHEMA` sent to the reviewer subagent declares
+> all six attestation fields as required. In strict subagent mode the
+> reviewer agent MUST emit a complete attestation block; missing fields
+> fail closed at SDK structured-output validation time, before the
+> findings ever reach plugin enforcement. `validateStrictAttestation`
+> in `review-assurance.ts` is the second-line runtime check.
 
 ---
 
