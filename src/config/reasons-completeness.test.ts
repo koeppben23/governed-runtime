@@ -9,7 +9,7 @@
  * (and humans) no actionable guidance.
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -26,14 +26,26 @@ const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   'REVIEW_FAILED', // audit-test fixture, not a runtime block
 ]);
 
+/**
+ * Walks the source tree and collects every `code: 'FOO_BAR'` literal.
+ *
+ * Implementation note: uses `readdirSync(..., { withFileTypes: true })` to
+ * obtain dirent kind in a single syscall, and reads file contents directly
+ * (no separate existence check). This avoids the TOCTOU pattern flagged by
+ * CodeQL `js/file-system-race` — there is no "check then use" window because
+ * we never check before reading; we either succeed or surface the I/O error.
+ *
+ * Build-time only (vitest), no untrusted input, but the safer pattern is
+ * trivial to apply and removes a static-analysis false-positive.
+ */
 function collectCodeLiterals(dir: string, acc: Set<string>): void {
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
       collectCodeLiterals(fullPath, acc);
       continue;
     }
+    if (!entry.isFile()) continue;
     if (!fullPath.endsWith('.ts')) continue;
     if (fullPath.endsWith('.test.ts')) continue;
     if (fullPath.endsWith('reasons.ts')) continue; // registry self-reference
