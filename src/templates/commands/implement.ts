@@ -38,9 +38,9 @@ Implement the approved plan and obtain mandatory independent implementation revi
 ### Phase 4: Implementation Review Loop
 
 6. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`_pluginReviewFindings\` in the response. Pass the entire \`_pluginReviewFindings\` object as \`reviewFindings\`:
-     - "approve": Call \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <_pluginReviewFindings> })\`.
-     - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <_pluginReviewFindings> })\`, then make the code changes, then call \`flowguard_implement({})\` again to re-record.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. Pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
+     - "approve": Call \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\`.
+     - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <pluginReviewFindings> })\`, then make the code changes, then call \`flowguard_implement({})\` again to re-record.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent, then submit verdict with reviewFindings.
    - If review converged: Report the final status.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
@@ -62,13 +62,13 @@ Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
 3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <_pluginReviewFindings> })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\` → EVIDENCE_REVIEW
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <_pluginReviewFindings> })\`
+1. \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <pluginReviewFindings> })\`
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <new _pluginReviewFindings> })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <new pluginReviewFindings> })\` → EVIDENCE_REVIEW
 
 ${GOVERNANCE_RULES}
 ## Done-when

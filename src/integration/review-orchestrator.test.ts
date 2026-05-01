@@ -653,8 +653,8 @@ describe('buildMutatedOutput', () => {
     expect((parsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
 
     // Findings should be injected
-    expect(parsed._pluginReviewFindings).toBeDefined();
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    expect(parsed.pluginReviewFindings).toBeDefined();
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('approve');
 
     // Session ID should be injected
@@ -686,7 +686,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
 
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('changes_requested');
   });
 
@@ -875,7 +875,7 @@ describe('end-to-end orchestration flow', () => {
     // Verify mutated output
     const mutatedParsed = JSON.parse(mutated!) as Record<string, unknown>;
     expect((mutatedParsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
-    expect(mutatedParsed._pluginReviewFindings).toBeDefined();
+    expect(mutatedParsed.pluginReviewFindings).toBeDefined();
     expect(mutatedParsed._pluginReviewSessionId).toBe('child-session-1');
     // Original fields preserved
     expect(mutatedParsed.phase).toBe('PLAN');

@@ -37,9 +37,9 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 ### Phase 3: Review Loop
 
 6. Follow the \`next\` field instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`_pluginReviewFindings\` in the response. Pass the entire \`_pluginReviewFindings\` object as \`reviewFindings\`:
-     - "approve": Call \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <_pluginReviewFindings> })\`.
-     - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <_pluginReviewFindings> })\`.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. Pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
+     - "approve": Call \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\`.
+     - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <pluginReviewFindings> })\`.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool, then submit the verdict with reviewFindings.
    - If review converged: Report the result. Present any \`reviewCard\` field in full.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
@@ -61,12 +61,12 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 Happy path:
 1. \`flowguard_status\` → phase: TICKET, ticket present
 2. \`flowguard_plan({ planText })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <_pluginReviewFindings> })\` → PLAN_REVIEW
+3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\` → PLAN_REVIEW
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <_pluginReviewFindings> })\`
+1. \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <pluginReviewFindings> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <new _pluginReviewFindings> })\` → PLAN_REVIEW
+3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <new pluginReviewFindings> })\` → PLAN_REVIEW
 
 ${GOVERNANCE_RULES}
 ## Done-when

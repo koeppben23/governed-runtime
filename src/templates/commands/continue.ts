@@ -21,14 +21,14 @@ Determine what the workflow needs next and do it.
    ### READY — Tell the user to choose: /ticket, /architecture, or /review.
    ### TICKET (no plan) — Tell the user to run /plan.
    ### PLAN (review pending) — Follow the \`next\` field:
-   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`_pluginReviewFindings\` with verdict to \`flowguard_plan\`.
+   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`pluginReviewFindings\` with verdict to \`flowguard_plan\`.
    - "INDEPENDENT_REVIEW_REQUIRED": Call flowguard-reviewer subagent, then submit verdict.
    - Otherwise: Report malformed state and stop.
    ### PLAN_REVIEW (User Gate) — Present plan summary, ask for verdict via \`/review-decision\`.
    ### VALIDATION — Run checks (test_quality, rollback_safety), call \`flowguard_validate\`.
    ### IMPLEMENTATION — Tell the user to run /implement.
    ### IMPL_REVIEW (review pending) — Follow the \`next\` field:
-   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`_pluginReviewFindings\` with verdict to \`flowguard_implement\`.
+   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`pluginReviewFindings\` with verdict to \`flowguard_implement\`.
    - "INDEPENDENT_REVIEW_REQUIRED": Call flowguard-reviewer subagent, then submit verdict.
    - Otherwise: Report malformed state and stop.
    ### EVIDENCE_REVIEW (User Gate) — Present implementation summary, ask for verdict.

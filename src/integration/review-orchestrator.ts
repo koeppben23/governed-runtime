@@ -504,12 +504,12 @@ export function buildMutatedOutput(
     parsed.next =
       `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
       `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-      `_pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
+      `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
       `overallVerdict, and include the reviewFindings object from ` +
-      `_pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
+      `pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
 
     // Inject structured findings
-    parsed._pluginReviewFindings = reviewerResult.findings;
+    parsed.pluginReviewFindings = reviewerResult.findings;
     parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
     return JSON.stringify(parsed);
