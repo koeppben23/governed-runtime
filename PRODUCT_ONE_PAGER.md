@@ -28,7 +28,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
 - External references for `/ticket` and `/review`: link Jira, ADO, GitHub Issues, PRs, branches, commits, and Confluence docs with full audit provenance (type, source, extractedAt)
-- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`) for intuitive daily use; canonical commands remain fully supported
+- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) for intuitive daily use; canonical commands remain fully supported
 - Plan Review Card: full plan with metadata and recommended next actions displayed at PLAN_REVIEW
 
 ### Policy Enforcement
