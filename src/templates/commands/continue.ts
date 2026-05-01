@@ -35,7 +35,7 @@ Determine what the workflow needs next and do it.
    ### ARCHITECTURE (ADR review pending) — Review against MADR standards, call \`flowguard_architecture\`.
    ### ARCH_REVIEW (User Gate) — Present ADR summary, ask for verdict.
    ### COMPLETE / ARCH_COMPLETE / REVIEW_COMPLETE (terminal) — Report workflow complete.
-   ### REVIEW — Call \`flowguard_continue\` to advance.
+   ### REVIEW — Transient phase; auto-advances to REVIEW_COMPLETE. Re-call \`flowguard_status\` to confirm.
 
 3. Report the action taken and current state.
 
