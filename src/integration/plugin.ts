@@ -10,6 +10,8 @@
  * @version v9
  */
 
+import { existsSync, statSync } from 'node:fs';
+import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
@@ -35,8 +37,42 @@ import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 
 const FG_PREFIX = 'flowguard_';
 
+/**
+ * Determine whether a worktree path points at a real git repository.
+ *
+ * Fail-closed: returns false for empty paths, the filesystem root, or any
+ * path without a `.git` entry. This prevents the plugin from materializing
+ * a workspace folder under `~/.config/opencode/workspaces/<fp>/` for non-repo
+ * bootstrap contexts (e.g. when OpenCode starts from `$HOME` or `/`).
+ *
+ * Invariant: one fingerprint folder per repository. Any worktree that does
+ * not look like a repo MUST NOT produce a workspace folder.
+ *
+ * @param worktree - Candidate worktree path (may be empty/undefined).
+ * @returns true if the path is a non-root directory containing a `.git` entry.
+ */
+export function isUsableWorktree(worktree: string | undefined): boolean {
+  if (!worktree) return false;
+  // Reject filesystem root and Windows drive roots.
+  const normalized = path.resolve(worktree);
+  if (normalized === '/' || /^[A-Za-z]:[\\/]?$/.test(normalized)) return false;
+  try {
+    const gitPath = path.join(normalized, '.git');
+    if (!existsSync(gitPath)) return false;
+    // `.git` is either a directory (normal repo) or a file (worktree/submodule).
+    const st = statSync(gitPath);
+    return st.isDirectory() || st.isFile();
+  } catch {
+    return false;
+  }
+}
+
 export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
-  const auditWorktree = worktree || directory;
+  const candidateWorktree = worktree || directory;
+  // Fail-closed: only resolve a fingerprint and create a workspace file sink
+  // when the worktree is a real git repo. Otherwise we would create a rogue
+  // `workspaces/<fp>/.opencode/logs/` folder for every non-repo bootstrap.
+  const auditWorktree = isUsableWorktree(candidateWorktree) ? candidateWorktree : undefined;
 
   // ── Workspace + Logger ──────────────────────────────────────────────────
   const ws = createWorkspace({ auditWorktree });

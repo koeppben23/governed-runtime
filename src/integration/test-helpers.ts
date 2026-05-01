@@ -145,6 +145,12 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   assertTestConfigDir();
 
+  // Make tmpDir look like a real worktree so the plugin's `isUsableWorktree`
+  // check (fail-closed: rejects non-repo paths to avoid creating rogue
+  // workspace folders) accepts it. Tests that pass `worktree: ws.tmpDir` to
+  // the plugin rely on this marker.
+  await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+
   return {
     tmpDir,
     cleanup: async () => {
