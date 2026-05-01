@@ -23,7 +23,7 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { execSync } from 'node:child_process';
+import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 
 // ─── Content Loading Helpers ──────────────────────────────────────
 
@@ -220,7 +220,9 @@ function loadBranchContent(refInput: ReviewReferenceInput): { content: string } 
   }
 }
 
-async function loadUrlContent(refInput: ReviewReferenceInput): Promise<{ content: string } | ReviewReport> {
+async function loadUrlContent(
+  refInput: ReviewReferenceInput,
+): Promise<{ content: string } | ReviewReport> {
   try {
     const content = await fetchUrlContent(refInput.url!);
     return { content };
@@ -272,9 +274,7 @@ function computeOverallStatus(
 }
 
 function computeRefs(refInput?: ReviewReferenceInput): ExternalReference[] | undefined {
-  return refInput?.references && refInput.references.length > 0
-    ? refInput.references
-    : undefined;
+  return refInput?.references && refInput.references.length > 0 ? refInput.references : undefined;
 }
 
 // ─── Report Generator ─────────────────────────────────────────

@@ -689,7 +689,13 @@ describe('review rail', () => {
         const llmExecutors: ReviewExecutors = {
           analyze: async (_state, content) => {
             capturedContent.push(content ?? 'NO_CONTENT');
-            return [{ severity: 'info', category: 'analysis', message: `Analyzed: ${content?.slice(0, 20)}` }];
+            return [
+              {
+                severity: 'info',
+                category: 'analysis',
+                message: `Analyzed: ${content?.slice(0, 20)}`,
+              },
+            ];
           },
         };
         const report = await executeReview(state, NOW, llmExecutors, refInput);
