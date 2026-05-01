@@ -61,6 +61,26 @@ export function validateReviewFindings(
     });
   }
 
+  // P1.3 slice 4e: third-verdict tool-layer assertion.
+  // The schema (slice 1) accepts overallVerdict='unable_to_review' so
+  // that the subagent can declare the artifact unreviewable. However,
+  // there is NO legitimate tool-submit path that consumes such findings:
+  // - In strict mode, the plugin orchestrator (slice 4c) routes
+  //   unable_to_review to BLOCKED before the tool ever sees the findings.
+  // - In non-strict / submit-driven flows, a caller passing such findings
+  //   would otherwise cause rails to advance state on a 2-valued
+  //   selfReviewVerdict ('approve' or 'changes_requested') while the
+  //   findings declare the verdict unreviewable — a fabrication-of-
+  //   convergence bypass.
+  // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)
+  // and Decision G (BLOCKED is the only legitimate outcome on this
+  // verdict), this layer fail-closes with the SSOT reason from slice 2.
+  if ((findings as { overallVerdict?: unknown }).overallVerdict === 'unable_to_review') {
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: ctx.obligationType ?? 'review',
+    });
+  }
+
   const expectedIteration = ctx.expectedIteration;
   const expectedPlanVersion = ctx.expectedPlanVersion;
 
