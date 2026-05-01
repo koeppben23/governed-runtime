@@ -40,7 +40,10 @@ function redactFindings(findings: Record<string, unknown>[], mode: RedactionMode
 /**
  * Redact validation summary array in the report.
  */
-function redactValidationSummary(validationSummary: Record<string, unknown>[], mode: RedactionMode): void {
+function redactValidationSummary(
+  validationSummary: Record<string, unknown>[],
+  mode: RedactionMode,
+): void {
   for (const item of validationSummary) {
     if (typeof item.detail === 'string') {
       item.detail = stableMask(item.detail, mode);
