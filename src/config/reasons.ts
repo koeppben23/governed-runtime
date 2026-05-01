@@ -1065,6 +1065,18 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
     quickFixCommand: '/continue',
   },
+  {
+    code: 'SUBAGENT_UNABLE_TO_REVIEW',
+    category: 'state',
+    messageTemplate:
+      'The flowguard-reviewer subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.',
+    recoverySteps: [
+      'Do NOT retry the same submission — the reviewer has already declared the input unreviewable',
+      'Inspect reviewFindings.missingVerification[] and reviewFindings.unknowns[] for the specific tool-failure cause',
+      'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
+      'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
+    ],
+  },
 ];
 
 // ─── Default Registry ─────────────────────────────────────────────────────────

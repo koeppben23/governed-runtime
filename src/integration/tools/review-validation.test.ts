@@ -372,6 +372,69 @@ describe('validateReviewFindings', () => {
       expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
     });
   });
+
+  // ─── P1.3 slice 4e: third-verdict tool-layer assertion ───────────────
+  describe('Rule 5: overallVerdict=unable_to_review fails closed', () => {
+    it('blocks with SUBAGENT_UNABLE_TO_REVIEW (HAPPY: third-verdict pin)', () => {
+      // Even with otherwise-valid subagent findings, an
+      // overallVerdict='unable_to_review' must fail closed at the tool
+      // layer. The orchestrator (slice 4c) handles strict-mode by
+      // routing BLOCKED before tools see findings; this tool-layer
+      // guard catches the residual non-strict / submit-driven path.
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks before planVersion/iteration mismatch checks (CORNER: precedence)', () => {
+      // Even when planVersion/iteration are wrong, unable_to_review
+      // takes precedence — there is no convergence path regardless of
+      // binding correctness, and the operator-facing recovery copy
+      // (slice 2 reason) is the right starting point.
+      const findings = makeFindings({
+        overallVerdict: 'unable_to_review',
+        planVersion: 999, // would otherwise trigger REVIEW_PLAN_VERSION_MISMATCH
+        iteration: 999, // would otherwise trigger REVIEW_ITERATION_MISMATCH
+      });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks before strict-mode mandate checks (CORNER: precedence over strict)', () => {
+      // unable_to_review must fail closed regardless of strict-mode
+      // mandate state. Even if assurance is missing/inconsistent,
+      // the unreviewable verdict is the dominant signal.
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: undefined, // would otherwise trigger PLUGIN_ENFORCEMENT_UNAVAILABLE
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('does NOT block when overallVerdict=approve (HAPPY: regression guard)', () => {
+      // The new gate must NOT capture the normal path. With approve,
+      // validation proceeds to existing rules; on a fully-valid
+      // findings + ctx the result is null (validation pass).
+      const findings = makeFindings({ overallVerdict: 'approve' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).toBeNull();
+    });
+
+    it('does NOT block when overallVerdict=changes_requested (HAPPY: regression guard)', () => {
+      // Symmetric guard for the second 2-valued LoopVerdict.
+      const findings = makeFindings({ overallVerdict: 'changes_requested' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).toBeNull();
+    });
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

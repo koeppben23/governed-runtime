@@ -37,6 +37,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 - Call the tool immediately — explain only after.
 - Do not call implementation tools (write/edit/bash) during /architecture.
 - Do not auto-chain into /plan or /implement after ADR approval.
+- If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: the independent reviewer declared the ADR unreviewable (e.g., contradictory context, missing prerequisites, or scope ambiguity). Stop the review loop. Treat the obligation as consumed (no retry). Report the reviewer's findings to the user, then either resolve the prerequisite ambiguity OR submit a substantially-revised ADR (a fresh \`flowguard_architecture({ id, title, adrText })\` call starts a new review obligation).
 ${GOVERNANCE_RULES}
 ## Done-when
 

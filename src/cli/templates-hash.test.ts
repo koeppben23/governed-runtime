@@ -44,8 +44,23 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
+    // Refreshed in P1.3 slice 3: REVIEWER_AGENT body extended with the
+    // "When You Cannot Review (Validity Conditions)" section + Rules
+    // amendments documenting the third LoopVerdict value 'unable_to_review'.
+    // See src/templates/mandates.ts:354-394 (validity conditions) and
+    // :395-405 (rules).
+    //
+    // Cross-session compatibility: this hash gates ONLY the template-body
+    // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
+    // to .opencode/agent/flowguard-reviewer.md). It is independent from
+    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:22), which
+    // is computed from the constant REVIEW_MANDATE_TEXT and is the actual
+    // runtime gate enforced in review-assurance.ts:136 and
+    // plugin-orchestrator.ts:248. REVIEW_MANDATE_TEXT is NOT modified by
+    // this slice, so persisted obligations from prior sessions continue
+    // to validate correctly under the same mandateDigest.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '6378c1914f1ab44306cffe82f71dbd7b91fefdf0d545aca49848693e47f66fdf',
+      '1ce8ec9c34413125ec7c7f469765558067ae0c8d785c67e441918a4d0ef55c84',
     );
   });
 
@@ -64,9 +79,19 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
+    // Refreshed in P1.3 slice 6: plan.ts / implement.ts / architecture.ts
+    // narratives extended with the third LoopVerdict 'unable_to_review' and
+    // the corresponding BLOCKED-handling guidance (SUBAGENT_UNABLE_TO_REVIEW).
+    // See src/templates/commands/plan.ts review-loop section,
+    // src/templates/commands/implement.ts review-loop section, and
+    // src/templates/commands/architecture.ts ## Rules section.
+    //
+    // This hash gates ONLY the byte-stability of the markdown a CLI install
+    // writes to .opencode/command/*.md. It is independent from any runtime
+    // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e66dfd62b2fdd33b17c04fdcfa38976bc4454c58a9d59fe198f49045d1f275d1',
+      'cbd958fce5e52ad5c96a270a754787efd1fd79cf807e381153950241bd6888f9',
     );
   });
 

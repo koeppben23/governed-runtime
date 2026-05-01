@@ -43,6 +43,26 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  *   iteration >= maxIterations (force-convergence)
  *   OR (revisionDelta === "none" AND verdict === "approve") (stable approval)
  *
+ * Special case (P1.3 — third LoopVerdict):
+ *   verdict === "unable_to_review" returns false UNCONDITIONALLY.
+ *
+ * The 'unable_to_review' verdict is a tool-failure signal from the reviewer
+ * subagent (see src/templates/mandates.ts validity-conditions whitelist).
+ * It MUST NOT count as convergence on either disjunct:
+ *
+ * 1. The "stable approval" disjunct does not apply (verdict !== "approve").
+ * 2. The "iteration >= maxIterations" force-convergence disjunct WOULD
+ *    otherwise force-converge an unreviewable submission, which is
+ *    exactly the failure mode this slice prevents. A reviewer that has
+ *    declared the input unreviewable must not have its verdict silently
+ *    upgraded to "converged" by exhausting the iteration budget — the
+ *    runtime must instead route to BLOCKED (slice 4c) so the user submits
+ *    a fresh /plan or /implement.
+ *
+ * Implementation: explicit early-return BEFORE the existing condition,
+ * so the maxIterations branch cannot fire when the verdict is
+ * 'unable_to_review'. The order matters; do not reorder these.
+ *
  * Structural interface — works with SelfReviewLoop, ImplReviewResult,
  * or any object with the required shape. No type imports needed.
  */
@@ -52,6 +72,9 @@ export function isConverged(review: {
   readonly revisionDelta: string;
   readonly verdict: string;
 }): boolean {
+  // P1.3 slice 4a: unable_to_review never converges, even on the
+  // iteration >= maxIterations disjunct. Routed to BLOCKED in slice 4c.
+  if (review.verdict === 'unable_to_review') return false;
   return (
     review.iteration >= review.maxIterations ||
     (review.revisionDelta === 'none' && review.verdict === 'approve')

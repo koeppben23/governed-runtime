@@ -66,10 +66,25 @@ export const RevisionDelta = z.enum(['none', 'minor', 'major']);
 export type RevisionDelta = z.infer<typeof RevisionDelta>;
 
 /**
- * Plan/implementation review loop verdict.
- * Only approve or changes_requested — no reject (that's a human-only action).
+ * Plan/implementation review loop verdict — emitted by the reviewer subagent.
+ *
+ * Three values:
+ * - `approve`: the artifact is correct; iteration may converge.
+ * - `changes_requested`: the artifact needs revision; the reviewer documents
+ *   blocking issues. The submitter then revises and resubmits.
+ * - `unable_to_review`: the reviewer cannot honestly evaluate due to a
+ *   tool-failure condition (plan/impl text empty/malformed, missing required
+ *   context references, structured-output schema violation it cannot recover
+ *   from, mandate digest mismatch / corrupted mandate). This is NOT an
+ *   evasion route for substantive findings — for those, the correct verdict
+ *   is `changes_requested`. When emitted, the loop exits BLOCKED (never
+ *   converged); recovery is via fresh /plan or /implement submit (resets
+ *   iteration to 0).
+ *
+ * Note: `reject` is intentionally absent here — that is a human-only action
+ * at User Gates, captured by `ReviewVerdict` above.
  */
-export const LoopVerdict = z.enum(['approve', 'changes_requested']);
+export const LoopVerdict = z.enum(['approve', 'changes_requested', 'unable_to_review']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
 /** Safe opaque OpenCode session ID segment (e.g. `ses_...`). */

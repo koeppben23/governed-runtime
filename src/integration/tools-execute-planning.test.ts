@@ -745,6 +745,70 @@ describe('plan', () => {
     });
   });
 
+  // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────────
+  describe('EDGE: unable_to_review tool-layer integration', () => {
+    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
+      // End-to-end: full plan submission flow, real fulfilled obligation,
+      // findings mutated to unable_to_review. The tool layer (slice 4e)
+      // MUST short-circuit to BLOCKED before any selfReviewVerdict
+      // semantics are evaluated.
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      // fulfillPlanReview installs a valid attestation; mutate the verdict.
+      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'changes_requested', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW even when paired with selfReviewVerdict=approve (E2E precedence)', async () => {
+      // Slice 4e precedence: unable_to_review fails closed regardless of
+      // the agent's submitted selfReviewVerdict. There is no path where
+      // an unreviewable finding can be coerced into convergence.
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('SUBAGENT_UNABLE_TO_REVIEW response carries operator recovery copy (E2E reason wiring)', async () => {
+      // Slice 2 reason registration must be reachable through the full
+      // tool stack (not only via the unit-level validation test).
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await plan.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+      // Reason must surface a non-empty recovery hint; exact wording is
+      // pinned in the reason-shape tests, not here.
+      expect(typeof result.recovery === 'string' || Array.isArray(result.recovery)).toBe(true);
+      const recoveryText = Array.isArray(result.recovery)
+        ? (result.recovery as string[]).join(' ')
+        : (result.recovery as string);
+      expect(recoveryText.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('assertTestConfigDir (test safety guard)', () => {
     it('HAPPY: passes when OPENCODE_CONFIG_DIR is set to a temp directory', async () => {
       const ws = await createTestWorkspace();

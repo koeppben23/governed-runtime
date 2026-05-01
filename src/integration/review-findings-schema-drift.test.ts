@@ -86,10 +86,10 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(missing).toEqual([]);
   });
 
-  it('GOOD: overallVerdict enum matches LoopVerdict (approve | changes_requested)', () => {
+  it('GOOD: overallVerdict enum matches LoopVerdict (approve | changes_requested | unable_to_review)', () => {
     const props = jsonSchemaProperties();
     const verdict = props.overallVerdict as JsonSchemaProperty;
-    expect(verdict.enum).toEqual(['approve', 'changes_requested']);
+    expect(verdict.enum).toEqual(['approve', 'changes_requested', 'unable_to_review']);
   });
 
   it('GOOD: reviewMode is locked to const "subagent"', () => {
@@ -264,5 +264,45 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     const reviewedBy = props.reviewedBy as JsonSchemaProperty;
     const actorAssurance = reviewedBy.properties?.actorAssurance as JsonSchemaProperty;
     expect(actorAssurance.enum).toContain('verified');
+  });
+
+  it('GOOD: round-trip with overallVerdict=unable_to_review — passes both schemas (P1.3 third-verdict)', () => {
+    // Regression guard for P1.3: ensure the new third LoopVerdict value
+    // round-trips through both the JSON-Schema (SDK structured output) and
+    // the Zod ReviewFindings parser. Drift here would mean the reviewer
+    // subagent could emit unable_to_review but the runtime would reject it
+    // (or vice versa), defeating the BLOCKED-routing in slice 4.
+    const payload = {
+      iteration: 1,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'unable_to_review' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: ['plan text malformed at line 42'],
+      scopeCreep: [],
+      unknowns: ['cannot parse the proposed schema diff'],
+      reviewedBy: {
+        sessionId: 'sess_abc123',
+        actorAssurance: 'best_effort' as const,
+      },
+      reviewedAt: new Date().toISOString(),
+      attestation: {
+        mandateDigest: 'sha256:placeholder',
+        criteriaVersion: '1.0.0',
+        toolObligationId: '00000000-0000-4000-8000-000000000000',
+        iteration: 1,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer' as const,
+      },
+    };
+    const result = ReviewFindings.safeParse(payload);
+    if (!result.success) console.log('zod errors:', JSON.stringify(result.error.issues, null, 2));
+    expect(result.success).toBe(true);
+
+    // Also assert the JSON-Schema enum admits the value.
+    const props = jsonSchemaProperties();
+    const verdict = props.overallVerdict as JsonSchemaProperty;
+    expect(verdict.enum).toContain('unable_to_review');
   });
 });

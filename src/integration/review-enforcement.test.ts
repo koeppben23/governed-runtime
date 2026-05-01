@@ -1531,6 +1531,27 @@ describe('review-enforcement', () => {
         sessionId: null,
       });
     });
+
+    // P1.3 slice 5: third LoopVerdict capture pin.
+    // The capture path is string-based (extractFindingsFromObject),
+    // so unable_to_review is preserved verbatim without any narrowing.
+    // This test pins that contract so a future schema-narrowing refactor
+    // (e.g. dropping back to a 2-valued enum) cannot silently strip
+    // unreviewable verdicts before they reach the L4 mismatch gate.
+    it('extracts overallVerdict=unable_to_review verbatim (HAPPY: third-verdict capture)', () => {
+      const findings = extractCapturedFindings(
+        JSON.stringify({
+          overallVerdict: 'unable_to_review',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 's-unable' },
+        }),
+      );
+      expect(findings).toEqual({
+        overallVerdict: 'unable_to_review',
+        blockingIssuesCount: 0,
+        sessionId: 's-unable',
+      });
+    });
   });
 
   describe('promptContainsValue', () => {
@@ -1781,6 +1802,80 @@ describe('review-enforcement', () => {
         selfReviewVerdict: 'approve',
         reviewFindings: {
           overallVerdict: 'approve', // Tampered!
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      expect(enforcement.allowed).toBe(false);
+      expect(enforcement.allowed === false && enforcement.code).toBe(
+        'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+      );
+    });
+
+    // P1.3 slice 5: L4 enforcement parity for the third LoopVerdict.
+    // These tests guard that:
+    // (a) matching unable_to_review verdicts on both sides do NOT
+    //     produce a spurious mismatch (string-equality contract holds),
+    // (b) a tampered submit that claims convergence ('approve') while
+    //     the captured plugin-reviewer verdict is 'unable_to_review'
+    //     is rejected with SUBAGENT_FINDINGS_VERDICT_MISMATCH — closing
+    //     the residual L4 bypass that the slice 4e tool-layer assertion
+    //     does not reach (e.g. when L4 fires post-tool, mid-pipeline).
+    it('L4 allows when both submitted and captured verdicts are unable_to_review (HAPPY: third-verdict parity)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'unable_to_review',
+          blockingIssuesCount: 0,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve', // submitter-side stays 2-valued
+        reviewFindings: {
+          overallVerdict: 'unable_to_review', // matches captured
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      // L4 itself does not fire (verdicts match). Other gates may fire
+      // (e.g. tools layer slice 4e), but at the L4 verdict-equality
+      // checkpoint specifically there is no mismatch — proving the
+      // string-equality contract is invariant under the third verdict.
+      if (!enforcement.allowed) {
+        expect(enforcement.code).not.toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+      }
+    });
+
+    it('L4 blocks when submitted=approve but captured=unable_to_review (CORNER: convergence-fabrication bypass)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'unable_to_review',
+          blockingIssuesCount: 0,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      // Attacker / buggy caller fabricates approve from an unreviewable
+      // capture. L4 must reject with the existing mismatch code.
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve',
+        reviewFindings: {
+          overallVerdict: 'approve', // Tampered: real reviewer said unable_to_review
           blockingIssues: [],
           reviewedBy: { sessionId: 'child-session-1' },
         },
