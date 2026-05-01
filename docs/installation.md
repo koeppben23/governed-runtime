@@ -47,7 +47,7 @@ Expected output:
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (10 command files total)
+  ... (20 command files total — 12 canonical + 8 product aliases)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
@@ -93,22 +93,40 @@ FlowGuard integrates with OpenCode via a two-level command surface:
 
 Use these commands in OpenCode chat to drive workflows:
 
-| Command                      | Description       |
-| ---------------------------- | ----------------- |
-| `/hydrate`                   | Bootstrap session |
-| `/status`                    | Read session view |
-| `/ticket <text>`             | Record task       |
-| `/plan`                      | Generate plan     |
-| `/continue`                  | Auto-advance      |
-| `/validate`                  | Run checks        |
-| `/implement`                 | Execute plan      |
-| `/review-decision <verdict>` | Human approval    |
-| `/review`                    | Generate report   |
-| `/architecture`              | Create/revise ADR |
-| `/abort`                     | Terminate session |
-| `/archive`                   | Archive session   |
+**Canonical commands (12):**
+
+| Command                      | Description                |
+| ---------------------------- | -------------------------- |
+| `/hydrate`                   | Bootstrap session          |
+| `/status`                    | Read session view          |
+| `/ticket <text>`             | Record task                |
+| `/plan`                      | Generate plan              |
+| `/continue`                  | Auto-advance               |
+| `/validate`                  | Run checks                 |
+| `/implement`                 | Execute plan               |
+| `/review-decision <verdict>` | Human approval             |
+| `/review`                    | Generate compliance report |
+| `/architecture`              | Create/revise ADR          |
+| `/abort`                     | Terminate session          |
+| `/archive`                   | Archive session            |
 
 `<verdict>` accepts `approve`, `changes_requested`, or `reject`.
+
+**Product aliases (8):**
+
+| Alias              | Routes to                                     |
+| ------------------ | --------------------------------------------- |
+| `/start`           | `/ticket` + `/plan`                           |
+| `/task`            | `/ticket`                                     |
+| `/approve`         | `/review-decision approve`                    |
+| `/request-changes` | `/review-decision changes_requested`          |
+| `/reject`          | `/review-decision reject`                     |
+| `/check`           | `/validate`                                   |
+| `/export`          | `/archive`                                    |
+| `/why`             | Diagnostic explanation of current next-action |
+
+Aliases inherit the canonical command's allowed-phase policy and gate identically;
+see `docs/commands.md` for the full mapping.
 
 ### Internal Tool Bindings (OpenCode Infrastructure)
 
