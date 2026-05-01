@@ -46,7 +46,7 @@ import { autoAdvance } from '../../rails/types.js';
 
 // Evidence types
 import type { LoopVerdict, RevisionDelta } from '../../state/evidence.js';
-import { validateAdrSections } from '../../state/evidence.js';
+import { validateAdrSections, ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
@@ -55,12 +55,16 @@ import { validateAdrSections } from '../../state/evidence.js';
 export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
-    'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts self-review loop.\n' +
-    "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
+    'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
+    "Mode B (review verdict): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
-    'The self-review loop runs up to maxIterations (from policy). ' +
+    'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
+    'by the flowguard-reviewer subagent and the verdict submission MUST include reviewFindings ' +
+    'returned by that subagent. When subagentEnabled=false, the legacy LLM-driven self-review path is used.\n' +
+    'The review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to ARCH_REVIEW.\n' +
-    'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).',
+    'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).\n' +
+    'Optionally accepts reviewFindings from an independent review agent (F13).',
   args: {
     title: z
       .string()
@@ -78,10 +82,15 @@ export const architecture: ToolDefinition = {
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        'Self-review verdict. Omit for initial ADR submission. ' +
+        'Review verdict. Omit for initial ADR submission. ' +
           "'approve' = ADR is good, advance. " +
           "'changes_requested' = ADR needs revision, provide updated adrText.",
       ),
+    reviewFindings: ReviewFindingsSchema.optional().describe(
+      'Structured findings from the flowguard-reviewer subagent (F13). ' +
+        'Required when selfReviewVerdict is "approve" and subagentEnabled=true. ' +
+        'Use exactly the JSON object the subagent returned — do not modify it.',
+    ),
   },
   async execute(args, context) {
     try {

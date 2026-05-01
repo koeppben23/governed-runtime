@@ -348,6 +348,38 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.architecture?.status).toBe('accepted');
   });
 
+  it('accepts the F13 reviewFindings arg (slice 7a additive surface)', async () => {
+    // F13 slice 7a adds reviewFindings as an optional arg on the architecture
+    // tool, mirroring plan/implement. In slice 7a the arg is wired into the
+    // zod schema but not yet consumed by the runtime — the tool MUST accept
+    // a well-formed reviewFindings payload without new error codes, and MUST
+    // behave byte-identically to a call that omits the arg. Slice 7c will
+    // start consuming the arg.
+    const { architecture } = await import('./architecture.js');
+    const findings = {
+      iteration: 1,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict: 'approve' as const,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'sess-test' },
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const res = await architecture.execute(
+      { title: 'x', adrText: 'y', reviewFindings: findings },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    // Same Mode-A success outcome as the baseline test above, regardless of
+    // whether reviewFindings was supplied.
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
+  });
+
   it('formats error when dependency throws', async () => {
     mocks.resolveWorkspacePaths.mockRejectedValueOnce(new Error('boom'));
     const { architecture } = await import('./architecture.js');
