@@ -20,8 +20,6 @@ import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   invokeReviewer,
-  extractResponseText,
-  parseReviewerFindings,
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
@@ -189,6 +187,53 @@ describe('buildPlanReviewPrompt', () => {
     // MIN_SUBAGENT_PROMPT_LENGTH is 200 chars
     expect(prompt.length).toBeGreaterThan(200);
   });
+
+  // SURVIVOR_KILL: pin every literal phrase emitted by the prompt builder so that
+  // string-literal mutations cannot survive.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildPlanReviewPrompt({
+      ...baseOpts,
+      iteration: 5,
+      planVersion: 7,
+      obligationId: 'OBL-42',
+      criteriaVersion: 'CRIT-v9',
+      mandateDigest: 'MD-deadbeef',
+    });
+    expect(prompt).toContain('You are reviewing a plan for iteration=5, planVersion=7.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain(
+      'Review this plan against the ticket requirements. Follow your review criteria',
+    );
+    expect(prompt).toContain(
+      'for plans. Return your findings as a single JSON object matching the',
+    );
+    expect(prompt).toContain(
+      'ReviewFindings schema. Use the exact iteration and planVersion values above.',
+    );
+    expect(prompt).toContain('Set iteration=5 and planVersion=7 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-v9.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-deadbeef.');
+    expect(prompt).toContain('Set attestation.iteration=5.');
+    expect(prompt).toContain('Set attestation.planVersion=7.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+  });
+
+  it('joins prompt lines with "\\n" (kills join-char string mutant)', () => {
+    const prompt = buildPlanReviewPrompt(baseOpts);
+    const lines = prompt.split('\n');
+    // Empty join would collapse to 1 line; canonical prompt has many.
+    expect(lines.length).toBeGreaterThan(15);
+    // First line must be the canonical opening.
+    expect(lines[0]).toBe('You are reviewing a plan for iteration=0, planVersion=1.');
+    // Section headings must appear on their own lines surrounded by blanks.
+    const ticketIdx = lines.indexOf('## Ticket');
+    expect(ticketIdx).toBeGreaterThan(-1);
+    expect(lines[ticketIdx - 1]).toBe('');
+    expect(lines[ticketIdx + 1]).toBe('');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -236,169 +281,45 @@ describe('buildImplReviewPrompt', () => {
     expect(prompt).toContain('- src/my file.ts');
     expect(prompt).toContain('- src/@scope/pkg.ts');
   });
-});
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// extractResponseText
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('extractResponseText', () => {
-  // HAPPY: single text part
-  it('extracts text from a single TextPart', () => {
-    const parts = [{ type: 'text', text: 'Hello world' }];
-    expect(extractResponseText(parts)).toBe('Hello world');
-  });
-
-  // HAPPY: multiple text parts are concatenated
-  it('concatenates multiple text parts', () => {
-    const parts = [
-      { type: 'text', text: 'Part 1 ' },
-      { type: 'text', text: 'Part 2' },
-    ];
-    expect(extractResponseText(parts)).toBe('Part 1 Part 2');
-  });
-
-  // HAPPY: non-text parts are filtered out
-  it('filters out non-text parts', () => {
-    const parts = [
-      { type: 'reasoning', text: 'Thinking...' },
-      { type: 'text', text: 'Response text' },
-      { type: 'tool', text: 'tool output' },
-    ];
-    expect(extractResponseText(parts)).toBe('Response text');
-  });
-
-  // BAD: null parts
-  it('returns null for null parts', () => {
-    expect(extractResponseText(null)).toBeNull();
-  });
-
-  // BAD: undefined parts
-  it('returns null for undefined parts', () => {
-    expect(extractResponseText(undefined)).toBeNull();
-  });
-
-  // BAD: empty array
-  it('returns null for empty array', () => {
-    expect(extractResponseText([])).toBeNull();
-  });
-
-  // EDGE: only whitespace text
-  it('returns null when text is only whitespace', () => {
-    const parts = [{ type: 'text', text: '   \n  ' }];
-    expect(extractResponseText(parts)).toBeNull();
-  });
-
-  // CORNER: parts with missing type or text
-  it('skips parts with missing type', () => {
-    const parts = [
-      { text: 'no type' } as { type?: string; text?: string },
-      { type: 'text', text: 'valid' },
-    ];
-    expect(extractResponseText(parts)).toBe('valid');
-  });
-
-  it('skips parts with missing text', () => {
-    const parts = [
-      { type: 'text' } as { type?: string; text?: string },
-      { type: 'text', text: 'valid' },
-    ];
-    expect(extractResponseText(parts)).toBe('valid');
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// parseReviewerFindings
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('parseReviewerFindings', () => {
-  // HAPPY: clean JSON
-  it('parses clean JSON ReviewFindings', () => {
-    const json = validFindings();
-    const result = parseReviewerFindings(json);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
-    expect(result!.blockingIssues).toEqual([]);
-  });
-
-  // HAPPY: changes_requested verdict with blocking issues
-  it('parses changes_requested findings', () => {
-    const json = validFindings({
-      overallVerdict: 'changes_requested',
-      blockingIssues: [
-        { severity: 'critical', category: 'correctness', message: 'Bug found', location: 'foo.ts' },
-      ],
+  // SURVIVOR_KILL: pin every literal phrase emitted by the impl prompt builder.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      iteration: 4,
+      planVersion: 6,
+      obligationId: 'OBL-99',
+      criteriaVersion: 'CRIT-impl-v3',
+      mandateDigest: 'MD-cafebabe',
     });
-    const result = parseReviewerFindings(json);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('changes_requested');
-    expect(Array.isArray(result!.blockingIssues)).toBe(true);
-    expect((result!.blockingIssues as unknown[]).length).toBe(1);
+    expect(prompt).toContain('You are reviewing an implementation for iteration=4, planVersion=6.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Approved Plan');
+    expect(prompt).toContain('## Changed Files');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain('Review this implementation against the approved plan and ticket.');
+    expect(prompt).toContain(
+      'Read the changed files using the read/glob/grep tools to verify correctness.',
+    );
+    expect(prompt).toContain('Follow your review criteria for implementations.');
+    expect(prompt).toContain(
+      'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    );
+    expect(prompt).toContain('Set iteration=4 and planVersion=6 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-impl-v3.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-cafebabe.');
+    expect(prompt).toContain('Set attestation.iteration=4.');
+    expect(prompt).toContain('Set attestation.planVersion=6.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
   });
 
-  // HAPPY: JSON embedded in surrounding text
-  it('extracts JSON embedded in text', () => {
-    const text = `Here are my findings:\n${validFindings()}\n\nThat concludes my review.`;
-    const result = parseReviewerFindings(text);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
-  });
-
-  // BAD: completely invalid text
-  it('returns null for completely invalid text', () => {
-    expect(parseReviewerFindings('This is not JSON at all')).toBeNull();
-  });
-
-  // BAD: valid JSON but missing overallVerdict
-  it('returns null for JSON without overallVerdict', () => {
-    const json = JSON.stringify({ blockingIssues: [], iteration: 0 });
-    expect(parseReviewerFindings(json)).toBeNull();
-  });
-
-  // BAD: valid JSON but invalid verdict value
-  it('returns null for JSON with invalid verdict value', () => {
-    const json = JSON.stringify({
-      overallVerdict: 'maybe',
-      blockingIssues: [],
+  it('joins changed files with "\\n" using "- " bullet prefix', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      changedFiles: ['a.ts', 'b.ts', 'c.ts'],
     });
-    expect(parseReviewerFindings(json)).toBeNull();
-  });
-
-  // BAD: valid JSON but missing blockingIssues array
-  it('returns null for JSON without blockingIssues', () => {
-    const json = JSON.stringify({ overallVerdict: 'approve' });
-    expect(parseReviewerFindings(json)).toBeNull();
-  });
-
-  // EDGE: empty string
-  it('returns null for empty string', () => {
-    expect(parseReviewerFindings('')).toBeNull();
-  });
-
-  // CORNER: JSON wrapped in markdown code fences
-  it('extracts JSON from markdown code fences', () => {
-    const text = '```json\n' + validFindings() + '\n```';
-    const result = parseReviewerFindings(text);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
-  });
-
-  // CORNER: nested JSON objects (findings within findings-like structure)
-  it('handles nested JSON correctly', () => {
-    const findings = validFindings({
-      blockingIssues: [
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'Object {foo: "bar"} is wrong',
-          location: 'src/x.ts:10',
-        },
-      ],
-      overallVerdict: 'changes_requested',
-    });
-    const result = parseReviewerFindings(findings);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('changes_requested');
+    expect(prompt).toContain('- a.ts\n- b.ts\n- c.ts');
   });
 });
 
@@ -507,9 +428,9 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: reviewer returns valid findings with session ID
-  it('captures session ID from reviewer findings', async () => {
-    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-ses-42' } });
+  // CORNER: runtime authoritatively overwrites reviewedBy.sessionId with childSessionId (B3)
+  it('overwrites findings.reviewedBy.sessionId with authoritative childSessionId', async () => {
+    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
         data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
@@ -520,7 +441,25 @@ describe('invokeReviewer', () => {
     expect(result).not.toBeNull();
     expect(result!.findings).not.toBeNull();
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('reviewer-ses-42');
+    // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
+    expect(reviewedBy.sessionId).toBe('child-session-1');
+  });
+
+  // CORNER: missing reviewedBy is reconstructed from authoritative childSessionId
+  it('reconstructs reviewedBy when subagent omits it', async () => {
+    const findingsJson = validFindings();
+    const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
+    delete parsed.reviewedBy;
+    const client = mockClient({
+      promptResult: {
+        data: { info: { structured_output: parsed } },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.sessionId).toBe('child-session-1');
   });
 });
 
@@ -548,8 +487,8 @@ describe('buildMutatedOutput', () => {
     expect((parsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
 
     // Findings should be injected
-    expect(parsed._pluginReviewFindings).toBeDefined();
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    expect(parsed.pluginReviewFindings).toBeDefined();
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('approve');
 
     // Session ID should be injected
@@ -581,7 +520,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
 
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('changes_requested');
   });
 
@@ -770,7 +709,7 @@ describe('end-to-end orchestration flow', () => {
     // Verify mutated output
     const mutatedParsed = JSON.parse(mutated!) as Record<string, unknown>;
     expect((mutatedParsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
-    expect(mutatedParsed._pluginReviewFindings).toBeDefined();
+    expect(mutatedParsed.pluginReviewFindings).toBeDefined();
     expect(mutatedParsed._pluginReviewSessionId).toBe('child-session-1');
     // Original fields preserved
     expect(mutatedParsed.phase).toBe('PLAN');

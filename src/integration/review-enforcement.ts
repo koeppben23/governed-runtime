@@ -630,11 +630,33 @@ export function extractCapturedFindings(taskResult: string): CapturedFindings | 
 }
 
 /**
- * Check if a prompt contains an expected numeric value near a keyword.
+ * Check whether a reviewer prompt contains a specific numeric value
+ * associated with a keyword (e.g. "iteration", "version").
  *
- * Uses contextual matching: the keyword (e.g. "iteration") must appear
- * within 30 characters before the expected number. This prevents false
- * positives from matching the number in unrelated contexts.
+ * Used in L3 prompt-context enforcement (`enforceBeforeVerdict` and
+ * `enforceBeforeSubagentCall`) to verify the prompt was constructed
+ * with the runtime's expected iteration/planVersion values, not stale
+ * values from a previous turn.
+ *
+ * Matching rules:
+ * - Case-insensitive keyword match.
+ * - Up to 30 non-digit characters between keyword and number. This
+ *   accommodates all formats currently produced by mandate templates
+ *   (`iteration=0`, `Iteration: 0`, `iteration 0`) plus future XML
+ *   wrappers (`<iteration>0</iteration>` — `>` is a single non-digit
+ *   character) and JSON embeds (`"iteration": 0` — `": ` is 3 chars).
+ * - The 30-char ceiling intentionally rejects long-distance "matches"
+ *   where the number is unrelated to the keyword (e.g. an iteration
+ *   keyword followed by a sentence and then an unrelated number).
+ *
+ * Word-boundary semantics:
+ * - `\b` at the suffix prevents partial-number matches: expected=1
+ *   does NOT match "iteration=12" because `1` is followed by digit
+ *   `2` (no word boundary between two digits).
+ * - The prefix is bounded by the keyword + a non-digit gap (`[^\d]`),
+ *   so a number embedded inside another number cannot be mis-attributed
+ *   (e.g. expected=1 against "iteration=21" — the `[^\d]` separator
+ *   forbids the leading `2` to count as the gap).
  *
  * @param prompt - The full prompt text
  * @param keyword - The keyword to match near (e.g. "iteration", "version")

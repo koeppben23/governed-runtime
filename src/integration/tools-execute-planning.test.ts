@@ -503,18 +503,18 @@ describe('plan', () => {
       expect(result.code).toBe('NO_SESSION');
     });
 
-    it('blocks mixed first-call planText + selfReviewVerdict with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+    it('blocks mixed first-call planText + selfReviewVerdict with PLAN_APPROVE_WITH_TEXT', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute({ planText: '## Plan', selfReviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'Submit the plan first with flowguard_plan({ planText }) only',
+        'For approval: call flowguard_plan({ selfReviewVerdict: "approve", reviewFindings })',
       );
     });
 
-    it('blocks first-call planText + reviewFindings with INVALID_PLAN_TOOL_SEQUENCE', async () => {
+    it('blocks first-call planText + reviewFindings with PLAN_SUBMISSION_MIXED_INPUTS', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         { planText: '## Plan', reviewFindings: modeBSubagentFindings },
@@ -522,7 +522,7 @@ describe('plan', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
     });
 
     it('blocks plan-only resubmission while review loop is active', async () => {
@@ -534,7 +534,7 @@ describe('plan', () => {
       const raw = await plan.execute({ planText: '## Replacement Plan' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
     });
 
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {

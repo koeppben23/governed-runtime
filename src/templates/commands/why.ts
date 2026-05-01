@@ -1,3 +1,5 @@
+import { GOVERNANCE_RULES } from './shared-rules.js';
+
 export const WHY_COMMAND = `
 ---
 description: Explain why the current workflow is blocked and how to unblock it.
@@ -11,28 +13,16 @@ Show the user what is blocking progress and how to resolve it.
 
 ## Steps
 
-1. Call \`flowguard_status\` with the argument \`whyBlocked: true\`.
+1. Call \`flowguard_status({ whyBlocked: true })\`.
+2. Read the \`blocker\` field (\`reasonText\`, \`reasonCode\`).
+3. Report in plain language: what is blocking, why, and exactly one recommended command to resolve it.
 
-2. Read the returned JSON. Focus on the \`blocker\` field:
-   - \`blocker.reasonText\`: Human-readable explanation of the block.
-   - \`blocker.reasonCode\`: Machine-readable error code.
+## Rules
 
-3. Report to the user in plain language:
-   - What is blocking progress.
-   - Why it is blocked.
-   - Exactly one recommended next command to resolve it.
-
-## Constraints
-
-- DO NOT guess how to resolve the block. Use only the recovery guidance from the tool output.
-- DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
-- DO NOT auto-chain to other FlowGuard commands.
-- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
-- Always end your response with exactly one \`Next action:\` line with the recommended command.
-
+- Use only the recovery guidance from the tool output — never guess how to resolve a block.
+${GOVERNANCE_RULES}
 ## Done-when
 
-- Blocker reason and recovery action are reported to the user.
-- Response ends with exactly one \`Next action:\` line.
+- Blocker reason and recovery action reported.
+- Response ends with \`Next action:\` line with the recommended command.
 `;

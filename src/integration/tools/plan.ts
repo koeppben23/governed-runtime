@@ -159,15 +159,15 @@ export const plan: ToolDefinition = {
 
       // Runtime sequence contract: plan submission and review verdict are separate phases.
       if (hasPlanText && hasFindings && !hasVerdict) {
-        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+        return formatBlocked('PLAN_SUBMISSION_MIXED_INPUTS');
       }
 
       if (hasPlanText && hasVerdict && args.selfReviewVerdict !== 'changes_requested') {
-        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+        return formatBlocked('PLAN_APPROVE_WITH_TEXT');
       }
 
       if (isInitialSubmission && hasPlanText && state.phase === 'PLAN' && state.selfReview) {
-        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+        return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
       }
 
       if (hasVerdict && !state.plan) {
@@ -183,7 +183,7 @@ export const plan: ToolDefinition = {
       }
 
       if (hasFindings && !hasVerdict) {
-        return formatBlocked('INVALID_PLAN_TOOL_SEQUENCE');
+        return formatBlocked('PLAN_FINDINGS_WITHOUT_VERDICT');
       }
 
       if (isInitialSubmission && args.reviewFindings) {

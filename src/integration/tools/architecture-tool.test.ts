@@ -145,7 +145,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       },
       {} as never,
     );
-    expect(JSON.parse(String(res)).code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+    expect(JSON.parse(String(res)).code).toBe('ADR_SUBMISSION_MIXED_INPUTS');
   });
 
   it('blocks ADR resubmission during active review loop', async () => {
@@ -173,7 +173,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       { title: 'ADR 2', adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC' },
       {} as never,
     );
-    expect(JSON.parse(String(res)).code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+    expect(JSON.parse(String(res)).code).toBe('ADR_REVIEW_IN_PROGRESS');
   });
 
   it('blocks Mode B when command is not allowed', async () => {

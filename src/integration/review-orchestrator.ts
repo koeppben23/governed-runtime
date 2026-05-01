@@ -88,7 +88,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
         actorSource: { type: 'string', enum: ['env', 'git', 'claim', 'unknown'] },
         actorAssurance: {
           type: 'string',
-          enum: ['best_effort', 'claim_validated', 'idp_verified'],
+          enum: ['verified', 'best_effort', 'claim_validated', 'idp_verified'],
         },
       },
       required: ['sessionId'],
@@ -99,7 +99,13 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       properties: {
         mandateDigest: { type: 'string' },
         criteriaVersion: { type: 'string' },
-        toolObligationId: { type: 'string' },
+        toolObligationId: {
+          type: 'string',
+          // RFC 4122 UUID pattern. Must stay in sync with z.string().uuid() in
+          // src/state/evidence.ts ReviewAttestation.toolObligationId.
+          // Drift guard: src/integration/review-findings-schema-drift.test.ts.
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+        },
         iteration: { type: 'integer', minimum: 0 },
         planVersion: { type: 'integer', minimum: 1 },
         reviewedBy: { type: 'string', const: REVIEWER_SUBAGENT_TYPE },
@@ -280,6 +286,8 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
@@ -326,6 +334,8 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
@@ -386,76 +396,23 @@ export async function invokeReviewer(
     return null;
   }
 
+  // Authoritative session ID injection: the subagent cannot reliably know its
+  // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
+  // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
+  // failures caused by the subagent guessing or using a placeholder literal.
+  const findings = info.structured_output as Record<string, unknown>;
+  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
+  if (reviewedBy && typeof reviewedBy === 'object') {
+    reviewedBy.sessionId = childSessionId;
+  } else {
+    findings.reviewedBy = { sessionId: childSessionId };
+  }
+
   return {
     sessionId: childSessionId,
-    rawResponse: JSON.stringify(info.structured_output),
-    findings: info.structured_output as Record<string, unknown>,
+    rawResponse: JSON.stringify(findings),
+    findings,
   };
-}
-
-// ─── Response Parsing ────────────────────────────────────────────────────────
-
-/**
- * Extract text content from response parts array.
- *
- * The SDK returns an array of Part objects. We concatenate all text
- * parts to get the full response. Handles various Part shapes defensively.
- *
- * @param parts - Response parts array from SDK
- * @returns Concatenated text content, or null if no text found
- */
-export function extractResponseText(
-  parts: Array<{ type?: string; text?: string }> | undefined | null,
-): string | null {
-  if (!parts || !Array.isArray(parts)) return null;
-
-  const textParts: string[] = [];
-  for (const part of parts) {
-    if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
-      textParts.push(part.text);
-    }
-  }
-
-  const combined = textParts.join('').trim();
-  return combined.length > 0 ? combined : null;
-}
-
-/**
- * Parse ReviewFindings JSON from the reviewer's response text.
- *
- * The reviewer is instructed to return exactly one JSON object.
- * However, the response might contain surrounding text. We try:
- * 1. Direct JSON parse of the full text
- * 2. Find and parse the first JSON block containing overallVerdict
- *
- * @param responseText - Raw response text from the reviewer
- * @returns Parsed findings object, or null if parsing fails
- */
-export function parseReviewerFindings(responseText: string): Record<string, unknown> | null {
-  // Try 1: Direct JSON parse
-  try {
-    const parsed = JSON.parse(responseText) as unknown;
-    if (isValidFindings(parsed)) return parsed as Record<string, unknown>;
-  } catch {
-    // Not clean JSON — try extraction
-  }
-
-  // Try 2: Find JSON block with overallVerdict
-  const jsonMatch = responseText.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
-  if (jsonMatch) {
-    const startIdx = responseText.indexOf(jsonMatch[0]);
-    const candidate = extractJsonBlock(responseText, startIdx);
-    if (candidate) {
-      try {
-        const parsed = JSON.parse(candidate) as unknown;
-        if (isValidFindings(parsed)) return parsed as Record<string, unknown>;
-      } catch {
-        // Parse failed
-      }
-    }
-  }
-
-  return null;
 }
 
 // ─── Output Mutation ─────────────────────────────────────────────────────────
@@ -488,12 +445,12 @@ export function buildMutatedOutput(
     parsed.next =
       `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
       `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-      `_pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
+      `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
       `overallVerdict, and include the reviewFindings object from ` +
-      `_pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
+      `pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
 
     // Inject structured findings
-    parsed._pluginReviewFindings = reviewerResult.findings;
+    parsed.pluginReviewFindings = reviewerResult.findings;
     parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
     return JSON.stringify(parsed);
@@ -601,55 +558,4 @@ export function extractReviewContext(
   }
 
   return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
-}
-
-// ─── Internal helpers ────────────────────────────────────────────────────────
-
-/** Check if a parsed object looks like valid ReviewFindings. */
-function isValidFindings(obj: unknown): boolean {
-  if (!obj || typeof obj !== 'object') return false;
-  const record = obj as Record<string, unknown>;
-  return (
-    typeof record.overallVerdict === 'string' &&
-    (record.overallVerdict === 'approve' || record.overallVerdict === 'changes_requested') &&
-    Array.isArray(record.blockingIssues)
-  );
-}
-
-/**
- * Extract a complete JSON block starting from a given index.
- * Counts braces to find the matching closing brace.
- */
-function extractJsonBlock(text: string, startIdx: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i]!;
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\' && inString) {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-
-    if (ch === '{') depth++;
-    if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIdx, i + 1);
-      }
-    }
-  }
-
-  return null;
 }

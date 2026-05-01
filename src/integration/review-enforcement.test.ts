@@ -1567,6 +1567,71 @@ describe('review-enforcement', () => {
         true,
       );
     });
+
+    // ─── EDGE: real-world mandate prompt formats ─────────────────────────────
+
+    it('EDGE: matches XML-wrapped values (<iteration>0</iteration>)', () => {
+      // P1.3 future templates may wrap context in XML. The `>` and whitespace
+      // between tag and number are <30 non-digit chars.
+      expect(promptContainsValue('<iteration>0</iteration>', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('<iteration>\n  3\n</iteration>', 'iteration', 3)).toBe(true);
+    });
+
+    it('EDGE: matches JSON-embedded values ("iteration": 0)', () => {
+      expect(promptContainsValue('{"iteration": 0, "planVersion": 1}', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('{"planVersion":   42}', 'version', 42)).toBe(true);
+    });
+
+    it('EDGE: matches markdown-formatted values (`iteration` is `0`)', () => {
+      // Backticks and articles still fit within 30 non-digit chars.
+      expect(promptContainsValue('The `iteration` is `5`', 'iteration', 5)).toBe(true);
+      expect(promptContainsValue('**iteration**: **0**', 'iteration', 0)).toBe(true);
+    });
+
+    it('EDGE: matches multi-line attestation block', () => {
+      const prompt =
+        'Set attestation.iteration=4.\nSet attestation.planVersion=7.\nReturn JSON only.';
+      expect(promptContainsValue(prompt, 'iteration', 4)).toBe(true);
+      expect(promptContainsValue(prompt, 'version', 7)).toBe(true);
+    });
+
+    // ─── EDGE: word-boundary correctness ─────────────────────────────────────
+
+    it('EDGE: expected=1 does NOT match planVersion=15 (suffix boundary)', () => {
+      expect(promptContainsValue('planVersion=15', 'version', 1)).toBe(false);
+    });
+
+    it('EDGE: expected=2 does NOT match iteration=21 (suffix boundary)', () => {
+      expect(promptContainsValue('iteration=21', 'iteration', 2)).toBe(false);
+    });
+
+    it('EDGE: expected=0 matches iteration=0 even adjacent to next clause', () => {
+      // Suffix \b matches between `0` and `,` because `,` is non-word.
+      expect(promptContainsValue('iteration=0,planVersion=1', 'iteration', 0)).toBe(true);
+    });
+
+    it('EDGE: distance-ceiling rejects unrelated number ~30+ chars away', () => {
+      // 32 non-digit chars between "iteration" and "5" — exceeds 30 ceiling.
+      const prompt = 'iteration is described in the manual as 5';
+      // "is described in the manual as " = 30 chars exactly; preceding space brings it to 31.
+      expect(promptContainsValue(prompt, 'iteration', 5)).toBe(false);
+    });
+
+    it('EDGE: large number matches correctly', () => {
+      expect(promptContainsValue('iteration=1234', 'iteration', 1234)).toBe(true);
+      // And the prefix-of-larger pattern still rejects:
+      expect(promptContainsValue('iteration=12345', 'iteration', 1234)).toBe(false);
+    });
+
+    it('EDGE: case-insensitive keyword (Iteration, ITERATION, iteration)', () => {
+      expect(promptContainsValue('ITERATION=3', 'iteration', 3)).toBe(true);
+      expect(promptContainsValue('Iteration: 3', 'iteration', 3)).toBe(true);
+    });
+
+    it('EDGE: zero is a valid expected value (not falsy-tripped)', () => {
+      expect(promptContainsValue('iteration=0', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('iteration=1', 'iteration', 0)).toBe(false);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

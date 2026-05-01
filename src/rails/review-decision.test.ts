@@ -770,6 +770,68 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+        // Pin the explicit string fallback so a literal mutation cannot survive:
+        // the rendered message must contain "best_effort" as the current assurance.
+        expect(result.reason).toContain('best_effort');
+        expect(result.reason).toContain('claim_validated');
+      }
+    });
+
+    it('actorAssurance fallback to best_effort under explicit minimumAssurance (P34 path)', () => {
+      // Triggers the second fallback site at line 221.
+      const state = makeState('PLAN_REVIEW', {
+        initiatedByIdentity: initiatorIdentity,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+          decisionIdentity: {
+            actorId: 'reviewer-1',
+            actorEmail: 'r@e.com',
+            actorSource: 'claim',
+            actorAssurance: undefined as unknown as 'claim_validated',
+          },
+        },
+        {
+          ...baseCtx,
+          policy: { minimumActorAssuranceForApproval: 'claim_validated' },
+        },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+        expect(result.reason).toContain('best_effort');
+        expect(result.reason).toContain('claim_validated');
+      }
+    });
+
+    it('approve at non-ARCH_REVIEW phase does NOT mutate architecture status', () => {
+      // Kills L122 mutant `if (true && state.architecture)`:
+      // approve at PLAN_REVIEW with architecture present must leave it untouched.
+      const state = makeState('PLAN_REVIEW', {
+        initiatedByIdentity: initiatorIdentity,
+        architecture: ARCHITECTURE_DECISION,
+        plan: PLAN_RECORD,
+        selfReview: CONVERGED_SELF_REVIEW,
+      });
+      const result = executeReviewDecision(
+        state,
+        {
+          verdict: 'approve',
+          rationale: 'ok',
+          decidedBy: 'reviewer-1',
+        },
+        baseCtx,
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Architecture must be preserved as-is, NOT promoted to 'accepted'
+        // (which would happen only at ARCH_REVIEW).
+        expect(result.state.architecture).toBe(state.architecture);
+        expect(result.state.architecture?.status).toBe(ARCHITECTURE_DECISION.status);
       }
     });
   });

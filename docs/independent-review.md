@@ -49,7 +49,7 @@ Separation of concerns:
 
 When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a `next` field:
 
-- **Plugin-completed path:** `next` says `INDEPENDENT_REVIEW_COMPLETED` and includes `_pluginReviewFindings`.
+- **Plugin-completed path:** `next` says `INDEPENDENT_REVIEW_COMPLETED` and includes `pluginReviewFindings`.
 - **Manual subagent path:** `next` says `INDEPENDENT_REVIEW_REQUIRED`; the agent must call `flowguard-reviewer` via the Task tool and submit those findings.
 - **Blocked path:** strict orchestration or evidence failures return BLOCKED. The agent must stop and report the recovery action.
 
@@ -62,7 +62,7 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 3. **Creates a child session** via `client.session.create({ parentID })` for traceability
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ agent: "flowguard-reviewer" })`
 5. **Parses ReviewFindings** from the reviewer's response
-6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `_pluginReviewFindings` injected (only when structured ReviewFindings are available)
+6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` injected (only when structured ReviewFindings are available)
 7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
 The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
@@ -217,13 +217,23 @@ Independent subagent review is the default FlowGuard policy configuration:
   attestation?: {
     mandateDigest:      string    // must match runtime review mandate digest
     criteriaVersion:    string    // must match runtime review criteria version
-    toolObligationId:   string    // must match strict review obligation id
+    toolObligationId:   string    // RFC 4122 UUID; must match strict review obligation id
     iteration:          number    // must match expected iteration
     planVersion:        number    // must match expected plan version
     reviewedBy:         string    // expected: flowguard-reviewer
   }
 }
 ```
+
+> **Attestation in subagent mode:** the `attestation` field is declared
+> optional in the Zod `ReviewFindings` schema (so self-review and legacy
+> findings remain shape-compatible) but the OpenCode SDK
+> `REVIEW_FINDINGS_JSON_SCHEMA` sent to the reviewer subagent declares
+> all six attestation fields as required. In strict subagent mode the
+> reviewer agent MUST emit a complete attestation block; missing fields
+> fail closed at SDK structured-output validation time, before the
+> findings ever reach plugin enforcement. `validateStrictAttestation`
+> in `review-assurance.ts` is the second-line runtime check.
 
 ---
 
