@@ -27,42 +27,6 @@ import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 
 // ─── Content Loading Helpers ──────────────────────────────────────
 
-/** Check if `gh` CLI is available and authenticated. */
-function hasGhCli(): boolean {
-  try {
-    execSync('gh auth status', { stdio: 'ignore', timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Load PR diff via `gh` CLI. Throws on failure. */
-function loadPrDiff(prNumber: number): string {
-  const out = execSync(`gh pr view ${prNumber} --json diff --jq '.diff'`, {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    timeout: 15000,
-  });
-  if (!out || out.trim() === 'null') {
-    throw new Error(`PR #${prNumber} not found or has no diff`);
-  }
-  return out;
-}
-
-/** Load branch diff via `gh` CLI. Throws on failure. */
-function loadBranchDiff(branch: string): string {
-  const out = execSync(`gh pr diff ${branch}`, {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    timeout: 15000,
-  });
-  if (!out || out.trim() === '') {
-    throw new Error(`Branch '${branch}' has no diff or does not exist`);
-  }
-  return out;
-}
-
 /** Fetch content from URL using native fetch. Throws on failure. */
 async function fetchUrlContent(url: string): Promise<string> {
   const resp = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
