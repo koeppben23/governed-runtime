@@ -3,7 +3,7 @@
  * @description Tests for the /review rail — standalone compliance report generator.
  *
  * /review is always available, read-only, does NOT mutate state.
- * Produces an ExtendedReviewReport with completeness matrix and findings.
+ * Produces a ReviewReport with completeness matrix and findings.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
