@@ -38,8 +38,12 @@ export type CommandAliasResolution = Readonly<{
  * unchanged via the fallback case in resolveCommandAlias().
  *
  * Rule: no passthrough entry for canonical commands — they resolve naturally.
+ *
+ * Exported as the canonical SSOT for product alias names. Drift guards in
+ * `src/documentation/__tests__/` import this map to validate that documentation
+ * never mentions a phantom alias.
  */
-const COMMAND_ALIASES: Readonly<Record<string, CommandAliasResolution>> = {
+export const COMMAND_ALIASES: Readonly<Record<string, CommandAliasResolution>> = {
   start: {
     canonicalCommand: 'hydrate',
     productLabel: 'Start governed task',

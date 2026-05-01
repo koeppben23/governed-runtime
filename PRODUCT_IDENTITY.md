@@ -108,11 +108,12 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Ten canonical FlowGuard commands map to workflow phases:
+Twelve installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
 | Command            | Purpose                                                                                                        |
 | ------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
+| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                      |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
 | `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
