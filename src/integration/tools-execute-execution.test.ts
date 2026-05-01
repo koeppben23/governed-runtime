@@ -601,6 +601,42 @@ describe('implement', () => {
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
       expect(result.latestImplementationReview.iteration).toBe(1);
     });
+
+    // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────
+    describe('EDGE: unable_to_review tool-layer integration', () => {
+      it('blocks implement with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
+        // End-to-end mirror of the plan-layer slice-8 test: real impl
+        // obligation, mutated finding verdict, full tool-layer pipeline.
+        await reachImplementation();
+        await enterImplReview();
+        const baseFindings = await fulfillReview('implement', 1, 'approve');
+        const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+        const raw = await implement.execute(
+          { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+      });
+
+      it('blocks implement even when paired with reviewVerdict=approve (E2E precedence)', async () => {
+        // unable_to_review must override any submitted reviewVerdict.
+        await reachImplementation();
+        await enterImplReview();
+        const baseFindings = await fulfillReview('implement', 1, 'approve');
+        const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+        const raw = await implement.execute(
+          { reviewVerdict: 'approve', reviewFindings: unableFindings },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+      });
+    });
   });
 });
 
