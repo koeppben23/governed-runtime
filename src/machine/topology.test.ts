@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from '../machine/topology.js';
-import type { Phase, Event } from '../state/schema.js';
+import { Event, type Phase, type Event as EventType } from '../state/schema.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('topology', () => {
@@ -87,7 +87,7 @@ describe('topology', () => {
     });
 
     it('returns undefined for all events at COMPLETE', () => {
-      const events: Event[] = [
+      const events: EventType[] = [
         'TICKET_SELECTED',
         'ARCHITECTURE_SELECTED',
         'REVIEW_SELECTED',
@@ -229,6 +229,20 @@ describe('topology', () => {
       const readyMap = TRANSITIONS.get('READY');
       expect(readyMap).toBeDefined();
       expect(readyMap!.size).toBe(3);
+    });
+
+    it('Event enum is covered by topology or documented topology-bypass handling', () => {
+      const transitionEvents = new Set<EventType>();
+      for (const transitionMap of TRANSITIONS.values()) {
+        for (const event of transitionMap.keys()) {
+          transitionEvents.add(event);
+        }
+      }
+
+      const topologyBypassEvents: EventType[] = ['ABORT'];
+      expect([...transitionEvents, ...topologyBypassEvents].sort()).toEqual(
+        [...Event.options].sort(),
+      );
     });
 
     it('every non-terminal, non-gate, non-READY phase has at least one outgoing transition', () => {
