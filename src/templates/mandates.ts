@@ -381,7 +381,15 @@ Do NOT include any text before or after the JSON.
   "scopeCreep": ["<specific item that exceeds ticket scope>"],
   "unknowns": ["<specific unknown that could not be resolved>"],
   "reviewedBy": { "sessionId": "<your assigned session ID>" },
-  "reviewedAt": "<ISO 8601 timestamp>"
+  "reviewedAt": "<ISO 8601 timestamp>",
+  "attestation": {
+    "mandateDigest": "<from prompt: attestation.mandateDigest value>",
+    "criteriaVersion": "<from prompt: attestation.criteriaVersion value>",
+    "toolObligationId": "<from prompt: attestation.toolObligationId value>",
+    "iteration": <same number as top-level iteration>,
+    "planVersion": <same number as top-level planVersion>,
+    "reviewedBy": "flowguard-reviewer"
+  }
 }
 
 ## Rules
