@@ -81,6 +81,25 @@ If deterministic invocation has not completed but the tool response remains `IND
 
 Self-review is not a fallback. Strict orchestration and parsing failures return BLOCKED (`STRICT_REVIEW_ORCHESTRATION_FAILED`).
 
+### Reviewer Verdict Outcomes
+
+The reviewer subagent returns one of three `overallVerdict` values:
+
+| Verdict             | Outcome                                                                                          | Loop status                              |
+| ------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `approve`           | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW. | converged                                |
+| `changes_requested` | Findings recorded; agent revises the artifact and resubmits. Loop continues until convergence or `maxIterations`. | continues                                |
+| `unable_to_review`  | The reviewer declares the artifact unreviewable (e.g., contradictory inputs, missing prerequisites, scope ambiguity that prevents critique). The tool returns BLOCKED with code `SUBAGENT_UNABLE_TO_REVIEW`. The pending review obligation is consumed — retrying the review with the same artifact is rejected. | BLOCKED (obligation consumed)            |
+
+`unable_to_review` is enforced fail-closed at every layer:
+
+- **Tool layer (`review-validation.ts`):** rejects findings.overallVerdict='unable_to_review' regardless of submitted `selfReviewVerdict` / `reviewVerdict`.
+- **Orchestrator (`plugin-orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
+- **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
+- **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
+
+Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planText })` with clearer scope) or address the prerequisite that made the artifact unreviewable (e.g., file a new ticket). A fresh artifact submission starts a new review obligation.
+
 ### Fail-Closed Enforcement
 
 FlowGuard enforces the subagent requirement at three layers:
@@ -206,7 +225,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   iteration:            number    // 0-based, must match expected iteration
   planVersion:          number    // positive integer, must match current plan version
   reviewMode:           'subagent'
-  overallVerdict:       'approve' | 'changes_requested'
+  overallVerdict:       'approve' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]
@@ -268,6 +287,7 @@ Validation logic is implemented once in `src/integration/tools/review-validation
 | L3    | Prompt has context | Task prompt missing expected iteration or planVersion               | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call |
 | L4    | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict     | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B |
 | L4    | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B |
+| L4/Tool | Reviewability    | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
 Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 
