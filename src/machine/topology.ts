@@ -108,12 +108,14 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ],
 
   // ── IMPL_REVIEW ─────────────────────────────────────────────
-  // Review loop: iterates until convergence (digest-stop, max 3).
+  // Review loop: approve converges to evidence review; requested changes
+  // return to implementation so fresh evidence replaces stale evidence.
   [
     'IMPL_REVIEW',
     new Map<Event, Phase>([
       ['REVIEW_MET', 'EVIDENCE_REVIEW'],
       ['REVIEW_PENDING', 'IMPL_REVIEW'],
+      ['CHANGES_REQUESTED', 'IMPLEMENTATION'],
       ['ERROR', 'IMPL_REVIEW'],
     ]),
   ],

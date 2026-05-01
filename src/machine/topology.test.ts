@@ -35,6 +35,10 @@ describe('topology', () => {
       expect(resolveTransition('IMPL_REVIEW', 'REVIEW_MET')).toBe('EVIDENCE_REVIEW');
     });
 
+    it('resolves IMPL_REVIEW + CHANGES_REQUESTED → IMPLEMENTATION', () => {
+      expect(resolveTransition('IMPL_REVIEW', 'CHANGES_REQUESTED')).toBe('IMPLEMENTATION');
+    });
+
     it('resolves EVIDENCE_REVIEW + APPROVE → COMPLETE', () => {
       expect(resolveTransition('EVIDENCE_REVIEW', 'APPROVE')).toBe('COMPLETE');
     });
