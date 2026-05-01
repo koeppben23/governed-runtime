@@ -210,6 +210,23 @@ export const status: ToolDefinition = {
               reviewedAt: latest.reviewedAt,
             };
           })(),
+          // Latest independent architecture (ADR) review summary (F13 slice 9)
+          latestArchitectureReview: (() => {
+            const findings = state.architecture?.reviewFindings;
+            if (!findings || findings.length === 0) return null;
+            const latest = findings[findings.length - 1];
+            if (!latest) return null;
+            return {
+              iteration: latest.iteration,
+              planVersion: latest.planVersion,
+              overallVerdict: latest.overallVerdict,
+              blockingIssueCount: latest.blockingIssues.length,
+              majorRiskCount: latest.majorRisks.length,
+              missingVerificationCount: latest.missingVerification.length,
+              reviewMode: latest.reviewMode,
+              reviewedAt: latest.reviewedAt,
+            };
+          })(),
           hasReviewDecision: state.reviewDecision !== null,
           reviewVerdict: state.reviewDecision?.verdict ?? null,
           error: state.error,
