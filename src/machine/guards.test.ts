@@ -127,6 +127,86 @@ describe('guards', () => {
         isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'major', verdict: 'approve' }),
       ).toBe(false);
     });
+
+    // ─── P1.3 slice 4a: unable_to_review must never converge ────────────
+    // The early-return in isConverged() is the runtime gate that prevents
+    // a tool-failure verdict from being silently upgraded to "converged"
+    // by either the digest-stop disjunct or the maxIterations disjunct.
+    // Each test below pins one combination that previously WOULD have
+    // returned true (under the broader pre-slice-1 enum) but now MUST
+    // return false because the third verdict short-circuits the check.
+
+    it('isConverged returns false on unable_to_review (HAPPY: mid-iteration tool failure)', () => {
+      // Reviewer reports tool-failure on iteration 1 of 3. This is the
+      // typical case — must NOT converge; orchestrator routes to BLOCKED.
+      expect(
+        isConverged({
+          iteration: 1,
+          maxIterations: 3,
+          revisionDelta: 'minor',
+          verdict: 'unable_to_review',
+        }),
+      ).toBe(false);
+    });
+
+    it('isConverged returns false on unable_to_review at iteration limit (CORNER: maxIterations disjunct)', () => {
+      // Critical regression guard: BEFORE the slice-4a early-return, the
+      // iteration >= maxIterations disjunct would have force-converged
+      // this case, silently upgrading a tool-failure to a converged loop.
+      // The early-return MUST short-circuit this disjunct.
+      expect(
+        isConverged({
+          iteration: 3,
+          maxIterations: 3,
+          revisionDelta: 'major',
+          verdict: 'unable_to_review',
+        }),
+      ).toBe(false);
+    });
+
+    it('isConverged returns false on unable_to_review past iteration limit (CORNER: defensive overshoot)', () => {
+      // Defensive: even if iteration somehow exceeds maxIterations
+      // (e.g. via a race or forced state edit), unable_to_review still
+      // blocks convergence. The early-return is order-independent of
+      // numeric comparisons.
+      expect(
+        isConverged({
+          iteration: 5,
+          maxIterations: 3,
+          revisionDelta: 'major',
+          verdict: 'unable_to_review',
+        }),
+      ).toBe(false);
+    });
+
+    it('isConverged returns false on unable_to_review with revisionDelta=none (CORNER: digest-stop disjunct)', () => {
+      // The (revisionDelta === "none" AND verdict === "approve") disjunct
+      // already excludes this verdict via the verdict equality check.
+      // This test pins the behavior so that future refactors of the
+      // digest-stop predicate cannot accidentally drop the verdict guard.
+      expect(
+        isConverged({
+          iteration: 1,
+          maxIterations: 3,
+          revisionDelta: 'none',
+          verdict: 'unable_to_review',
+        }),
+      ).toBe(false);
+    });
+
+    it('isConverged returns false on unable_to_review at iteration zero (EDGE: first-call tool failure)', () => {
+      // Edge: reviewer fails on the very first invocation. Must still
+      // route to BLOCKED, not converge. Confirms the early-return fires
+      // even when no normal convergence condition could possibly be true.
+      expect(
+        isConverged({
+          iteration: 0,
+          maxIterations: 3,
+          revisionDelta: 'major',
+          verdict: 'unable_to_review',
+        }),
+      ).toBe(false);
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
