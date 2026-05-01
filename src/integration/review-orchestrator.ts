@@ -280,6 +280,8 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
@@ -326,6 +328,8 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }

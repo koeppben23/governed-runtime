@@ -218,6 +218,8 @@ describe('buildPlanReviewPrompt', () => {
     expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
     expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-v9.');
     expect(prompt).toContain('Set attestation.mandateDigest=MD-deadbeef.');
+    expect(prompt).toContain('Set attestation.iteration=5.');
+    expect(prompt).toContain('Set attestation.planVersion=7.');
     expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
   });
 
@@ -309,6 +311,8 @@ describe('buildImplReviewPrompt', () => {
     expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
     expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-impl-v3.');
     expect(prompt).toContain('Set attestation.mandateDigest=MD-cafebabe.');
+    expect(prompt).toContain('Set attestation.iteration=4.');
+    expect(prompt).toContain('Set attestation.planVersion=6.');
     expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
   });
 
