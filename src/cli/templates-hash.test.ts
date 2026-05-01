@@ -64,7 +64,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // this slice, so persisted obligations from prior sessions continue
     // to validate correctly under the same mandateDigest.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '43f77b97ca6d8af755d5934261596976b3ae79f74f2f36fbdad69592387acf50',
+      '99805aecdfc63f862c5da166ead3f99ffda185317980977e687db0a5d260ca1f',
     );
   });
 
@@ -92,7 +92,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '8c1d2d7b555578c9bdd2317820d89e0f9f8a6b54e30be098ad7d28f3d1756e64',
+      '630a5a5e9054c05bd31f0144c3bcb0b05398f6f08160bb61cc45666c9562ca6a',
     );
   });
 

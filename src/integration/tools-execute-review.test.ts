@@ -121,6 +121,17 @@ const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 
+// ─── GH-CLI Mock ────────────────────────────────────────────────────────────
+// Mock gh-cli adapter to avoid dependency on real `gh` CLI in tests.
+// Using vi.mock() which is hoisted, so this affects all tests.
+// The P34a test doesn't use gh-cli, so this is safe.
+
+vi.mock('../adapters/gh-cli', () => ({
+  hasGhCli: vi.fn().mockReturnValue(true),
+  loadPrDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+new line'),
+  loadBranchDiff: vi.fn().mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+branch line'),
+}));
+
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
 const tarOk = await isTarAvailable();
@@ -648,6 +659,337 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+    });
+  });
+});
+
+// =============================================================================
+// Tool 10: review (standalone review flow with subagent pattern)
+// =============================================================================
+
+describe('review (standalone flow)', () => {
+  // Mock fetch for URL tests
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: () => Promise.resolve('Mock URL content for review'),
+    } as Response));
+  });
+
+  // Helper: Create a fresh session in READY phase
+  async function hydrateAndGetReady(): Promise<void> {
+    const raw = await hydrate.execute({ policyMode: 'team' }, ctx);
+    const result = parseToolResult(raw);
+    if (result.error) {
+      throw new Error(`Failed to hydrate: ${result.message}`);
+    }
+  }
+
+  // Helper: Build analysisFindings from subagent output
+  function buildAnalysisFindings(overallVerdict: 'approve' | 'changes_requested') {
+    const findings = [];
+    if (overallVerdict === 'changes_requested') {
+      findings.push({
+        severity: 'major' as const,
+        category: 'blocking-issue',
+        message: 'Critical security flaw in authentication flow',
+        location: 'src/auth/login.ts:45',
+      });
+    }
+    return findings;
+  }
+
+  // =========================================================================
+  // HAPPY PATHS - Successful review flows
+  // =========================================================================
+  describe('HAPPY', () => {
+    it('content-aware review with PR number succeeds with analysisFindings', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        { prNumber: 123, analysisFindings: findings, inputOrigin: 'pr' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.status).toBe('Review flow complete. Report generated.');
+      expect(result.findingsCount).toBeGreaterThanOrEqual(0);
+      expect(result.inputOrigin).toBe('pr');
+    });
+
+    it('content-aware review with branch succeeds with analysisFindings', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        { branch: 'feature-auth', analysisFindings: findings, inputOrigin: 'branch' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.inputOrigin).toBe('branch');
+    });
+
+    it('content-aware review with URL succeeds with analysisFindings', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        { url: 'https://example.com/api-doc', analysisFindings: findings, inputOrigin: 'external_reference' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.inputOrigin).toBe('external_reference');
+    });
+
+    it('content-aware review with manual text succeeds', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        { text: 'Manual review text content', analysisFindings: findings, inputOrigin: 'manual_text' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.inputOrigin).toBe('manual_text');
+    });
+
+    it('non-content review (no external content) succeeds without analysisFindings', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.status).toBe('Review flow complete. Report generated.');
+    });
+
+    it('review with references but no content fields succeeds', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute(
+        {
+          references: [{ ref: 'https://github.com/owner/repo/issues/123', type: 'issue' }],
+          inputOrigin: 'external_reference',
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.references).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // BAD PATHS - Invalid inputs, missing content, subagent failures
+  // =========================================================================
+  describe('BAD', () => {
+    it('BLOCKED: content-aware review without analysisFindings', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute(
+        { prNumber: 123, inputOrigin: 'pr' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      expect(result.recovery).toBeDefined();
+      expect(result.recovery.length).toBeGreaterThan(0);
+    });
+
+    it('PR number with empty analysisFindings array succeeds (subagent found no issues)', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute(
+        { prNumber: 456, analysisFindings: [], inputOrigin: 'pr' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+    });
+
+    it('BLOCKED: review in wrong phase (not READY)', async () => {
+      await hydrateSession();
+      await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);
+
+      const findings = buildAnalysisFindings('approve');
+      const raw = await review.execute(
+        { prNumber: 123, analysisFindings: findings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+    });
+  });
+
+  // =========================================================================
+  // CORNER CASES - Edge cases, mixed inputs
+  // =========================================================================
+  describe('CORNER', () => {
+    it('mixed input: text AND references with inputOrigin="mixed"', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        {
+          text: 'Mixed content review',
+          references: [{ ref: 'PR#789', type: 'pr' }],
+          analysisFindings: findings,
+          inputOrigin: 'mixed',
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.inputOrigin).toBe('mixed');
+    });
+
+    it('report includes external references when provided', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        {
+          prNumber: 999,
+          analysisFindings: findings,
+          references: [
+            { ref: 'https://github.com/owner/repo/pull/999', type: 'pr', title: 'PR #999' },
+          ],
+          inputOrigin: 'pr',
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.references).toBeDefined();
+      expect(result.references?.length).toBeGreaterThan(0);
+    });
+  });
+
+  // =========================================================================
+  // EDGE CASES - Boundary conditions
+  // =========================================================================
+  describe('EDGE', () => {
+    it('review with all optional fields populated', async () => {
+      await hydrateAndGetReady();
+      const findings = buildAnalysisFindings('approve');
+
+      const raw = await review.execute(
+        {
+          prNumber: 123,
+          text: 'Additional context',
+          analysisFindings: findings,
+          inputOrigin: 'mixed',
+          references: [
+            { ref: 'PR#123', type: 'pr', title: 'Main PR' },
+            { ref: 'JIRA-456', type: 'ticket', title: 'Related ticket' },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+    });
+  });
+
+  // =========================================================================
+  // E2E TESTS - Full review flow with subagent
+  // =========================================================================
+  describe('E2E', () => {
+    it('full content-aware review flow: hydrate → review with content', async () => {
+      // Step 1: Hydrate (creates session in READY)
+      let raw = await hydrate.execute({ policyMode: 'team' }, ctx);
+      let result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('READY');
+
+      // Step 2: Execute review with PR content and simulated subagent findings
+      const subagentFindings = [
+        {
+          severity: 'major' as const,
+          category: 'blocking-issue',
+          message: 'Missing error handling in API endpoint',
+          location: 'src/api/endpoint.ts:89',
+        },
+      ];
+
+      raw = await review.execute(
+        {
+          prNumber: 42,
+          analysisFindings: subagentFindings,
+          inputOrigin: 'pr',
+          references: [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' }],
+        },
+        ctx,
+      );
+      result = parseToolResult(raw);
+
+      if (result.error) {
+        console.log('E2E test error:', JSON.stringify(result, null, 2));
+      }
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.overallStatus).toBeDefined();
+      expect(result.completeness).toBeDefined();
+      expect(result.findings).toBeDefined();
+      expect(result.findings.length).toBeGreaterThan(0);
+      expect(result.inputOrigin).toBe('pr');
+    });
+  });
+
+  // =========================================================================
+  // SMOKE TESTS - Basic functionality verification
+  // =========================================================================
+  describe('SMOKE', () => {
+    it('smoke: minimal review without content completes', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.status).toContain('Review flow complete');
+    });
+
+    it('smoke: report contains expected fields', async () => {
+      await hydrateAndGetReady();
+
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBeUndefined();
+      expect(result.overallStatus).toMatch(/clean|warnings|issues/);
+      expect(result.completeness).toBeDefined();
+      expect(result.validationSummary).toBeDefined();
     });
   });
 });

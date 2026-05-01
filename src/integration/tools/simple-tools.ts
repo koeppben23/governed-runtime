@@ -38,12 +38,6 @@ import { ActorClaimError } from '../../adapters/actor.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
 
-const ReviewAnalysisFindingSchema = z.object({
-  severity: z.enum(['info', 'warning', 'error']),
-  category: z.string().min(1),
-  message: z.string().min(1),
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_ticket — Record Task
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -136,28 +130,17 @@ function hasReviewContentInput(args: {
   );
 }
 
-function buildReviewExecutors(args: {
-  analysisFindings?: Array<{
-    severity: 'info' | 'warning' | 'error';
-    category: string;
-    message: string;
-  }>;
-}): ReviewExecutors | undefined {
-  if (!args.analysisFindings) return undefined;
-  return {
-    analyze: async () => args.analysisFindings!,
-  };
-}
-
 function formatMissingContentAnalysis(): string {
   return JSON.stringify({
     error: true,
     code: 'CONTENT_ANALYSIS_REQUIRED',
     message:
-      'Content-aware /review requires analysisFindings. Analyze the provided text/PR/branch/URL content before calling flowguard_review, then submit concrete findings.',
+      'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content.',
     recovery: [
-      'Fetch or inspect the referenced content.',
-      'Identify concrete review findings with severity, category, and message.',
+      'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
+      'Call Task tool with subagent_type: "flowguard-reviewer" and provide the content in the prompt.',
+      'Instruct the subagent to return findings as JSON with blockingIssues and majorRisks arrays.',
+      'Parse the subagent response and map findings to analysisFindings format.',
       'Re-run flowguard_review with analysisFindings populated.',
     ],
   });
@@ -209,30 +192,64 @@ export const review: ToolDefinition = {
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
     analysisFindings: z
-      .array(ReviewAnalysisFindingSchema)
+      .array(
+        z.object({
+          severity: z.enum(['info', 'warning', 'error']),
+          category: z.string().min(1),
+          message: z.string().min(1),
+          location: z.string().optional(),
+        }),
+      )
       .optional()
       .describe(
-        'Concrete findings from reviewing the supplied text/PR/branch/URL content. Required when content-aware fields are provided.',
+        'Findings from flowguard-reviewer subagent analysis of the supplied text/PR/branch/URL content. ' +
+          'Required when content-aware fields are provided. ' +
+          'Map the subagent output: blockingIssues→blocking-issue, majorRisks→major-risk.',
       ),
   },
-  async execute(args, context) {
-    try {
-      const { sessDir, state, ctx } = await withMutableSession(context);
+    async execute(args, context) {
+      try {
+        const { sessDir, state, ctx } = await withMutableSession(context);
 
-      // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
-      const result = executeReviewFlow(state, ctx);
+        // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
+        const result = executeReviewFlow(state, ctx);
 
-      if (result.kind === 'blocked') {
-        return formatRailResult(result);
-      }
+        if (result.kind === 'blocked') {
+          return formatRailResult(result);
+        }
 
-      // 2. Generate the compliance report using the final state
-      const now = new Date().toISOString();
-      const refInput = buildReviewReferenceInput(args);
-      if (hasReviewContentInput(args) && !args.analysisFindings?.length) {
-        return formatMissingContentAnalysis();
-      }
-      const report = await executeReview(result.state, now, buildReviewExecutors(args), refInput);
+        // 2. Generate the compliance report using the final state
+        const now = new Date().toISOString();
+        const refInput = buildReviewReferenceInput(args);
+        if (hasReviewContentInput(args) && args.analysisFindings === undefined) {
+          return formatMissingContentAnalysis();
+        }
+
+        // Create executors with analyze function that returns the supplied analysisFindings
+        // Map severity values to match the schema (info | warning | error)
+        const severityMap: Record<string, 'info' | 'warning' | 'error'> = {
+          critical: 'error',
+          major: 'error',
+          minor: 'warning',
+          info: 'info',
+        };
+        interface AnalysisFinding {
+          severity: string;
+          category: string;
+          message: string;
+          location?: string;
+        }
+        const executors: ReviewExecutors = {
+          analyze: async () => {
+            return (args.analysisFindings ?? []).map((f: AnalysisFinding) => ({
+              severity: severityMap[f.severity] ?? 'warning',
+              category: f.category,
+              message: f.message,
+            }));
+          },
+        };
+
+        const report = await executeReview(result.state, now, executors, refInput);
 
       if ('kind' in report && report.kind === 'blocked') {
         return formatBlockedReviewReport(report);

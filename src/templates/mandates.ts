@@ -362,15 +362,38 @@ the author missed. You review falsification-first: try to break it before approv
 - **Out-of-scope clarity**: Are boundaries explicit? An ADR that quietly expands scope beyond its stated problem is scope creep.
 - **Verification**: How will the decision be validated after implementation? An ADR with no validation path leaves the decision unfalsifiable.
 
+## Content Review (for /review flow)
+
+When the prompt contains PR diff, branch diff, URL content, or manual text to review:
+
+1. **Analyze the content** for issues using the read, glob, grep, and webfetch tools:
+   - Code quality issues (severity: \`"error"\` | \`"warning"\` | \`"info"\`)
+   - Security concerns (category: \`"security"\`)
+   - Compliance issues (category: \`"compliance"\`)
+   - General findings (category: \`"finding"\`)
+   - Missing validations (category: \`"validation"\`)
+
+2. **Return findings in standard ReviewFindings format:**
+   - Map issues to \`blockingIssues\` array with severity, category, message, location
+   - Map risks to \`majorRisks\` array if applicable
+   - Set \`overallVerdict\` based on findings:
+     * Has critical/major blockingIssues → \`"changes_requested"\`
+     * Only minor/info issues → \`"approve"\`
+     * Cannot analyze content at all → \`"unable_to_review"\`
+
+3. **Use this mapping for analysisFindings:**
+   - Each blockingIssue → { severity, category: \`"blocking-issue"\`, message, location }
+   - Each majorRisk → { severity, category: \`"major-risk"\`, message, location }
+
 ## When You Cannot Review (Validity Conditions)
 
 There is a third overallVerdict value, "unable_to_review", reserved for tool-failure
 conditions where you cannot honestly evaluate the input. Emit it ONLY when one of these
 conditions holds:
 
-1. **Submitted text is empty or unparseable.** The plan body, implementation diff, or
-   ADR text provided in the prompt is empty, truncated, or not readable as the expected
-   artifact type.
+1. **Submitted text is empty or unparseable.** The plan body, implementation diff,
+   ADR text, PR diff, branch diff, or URL content provided in the prompt is empty,
+   truncated, or not readable as the expected artifact type.
 2. **Required context is missing.** The prompt does not include the iteration value,
    the planVersion value, or the ticket text needed to evaluate scope and conformance.
 3. **Structured-output schema is unrecoverable.** You cannot produce a JSON object that
