@@ -27,36 +27,58 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 
 ## In 30 Seconds
 
-Start a governed FlowGuard workflow from any OpenCode session after install using product commands:
+Three governed flows are available after `/start` (or `/hydrate`):
 
-1. `/start` — bootstrap the session and choose a workflow
+**Ticket flow** — full development lifecycle:
+
+1. `/start` — bootstrap the session
 2. `/task "description"` — capture your governed task
-3. `/plan` — generate an implementation plan
+3. `/plan` — generate an implementation plan (subagent-reviewed iteratively)
 4. `/approve` — approve the plan (or `/request-changes` to revise)
 5. `/check` — run validation checks
-6. `/implement` — execute the approved plan
-7. `/export` — create a verifiable audit package
+6. `/implement` — execute the approved plan (subagent-reviewed iteratively)
+7. `/approve` — approve the implementation evidence
+8. `/export` — create a verifiable audit package
 
-**Diagnostic commands:** `/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
+**Architecture flow** — record an Architecture Decision Record (ADR):
 
-**Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`, `/validate`, `/archive`) remain fully supported for scripts, CI, and power users.
+1. `/start`
+2. `/architecture title="..." adrText="..."` — record the ADR (MADR format,
+   subagent-reviewed iteratively for Context completeness, Decision concreteness,
+   Consequences honesty, MADR structure)
+3. `/approve` — accept the ADR
 
-See [docs/commands.md](./docs/commands.md) for the complete command reference.
+**Compliance review flow** — generate a session compliance report:
+
+1. `/start`
+2. `/review` — generate a `flowguard-review-report.v1` artifact
+
+**Diagnostic commands:** `/status` — current phase, next action, evidence summary.
+`/why` — explain and resolve blockers.
+
+**Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
+`/validate`, `/architecture`, `/review`, `/archive`, `/abort`, `/continue`)
+remain fully supported for scripts, CI, and power users.
+
+See [docs/commands.md](./docs/commands.md) for the complete command reference and
+[docs/independent-review.md](./docs/independent-review.md) for the subagent-driven
+review pipeline shared by `/plan`, `/architecture`, and `/implement`.
 
 ## Product Facts
 
-| Feature                           | Description                                                                                                                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Policy Modes**                  | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review)                                                                                |
-| **Profiles**                      | Auto-detect tech stack (TypeScript, Java, Angular)                                                                                                                             |
-| **Python/Rust/Go Detection**      | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files                                                                                        |
-| **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                              |
-| **Audit Trail**                   | Hash-chained, tamper-evident                                                                                                                                                   |
-| **Decision Receipts**             | Append-only `decision:DEC-xxx` events for every `/review-decision`                                                                                                             |
-| **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                  |
-| **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                            |
-| **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                        |
-| **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing |
+| Feature                           | Description                                                                                                                                                                                                                                                      |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Policy Modes**                  | Solo (auto), Team (human-gated), Team-CI (CI auto, local degrade), Regulated (mandatory review)                                                                                                                                                                  |
+| **Independent Subagent Review**   | Mandatory plugin-orchestrated `flowguard-reviewer` subagent for `/plan`, `/architecture`, `/implement`. Fail-closed at four enforcement layers (subagent invoked, session ID match, prompt context, findings integrity). Self-review never accepted as evidence. |
+| **Profiles**                      | Auto-detect tech stack (TypeScript, Java, Angular)                                                                                                                                                                                                               |
+| **Python/Rust/Go Detection**      | Detects root-level Python, Rust, and Go ecosystem signals from manifest/toolchain files                                                                                                                                                                          |
+| **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                                                                                                                |
+| **Audit Trail**                   | Hash-chained, tamper-evident                                                                                                                                                                                                                                     |
+| **Decision Receipts**             | Append-only `decision:DEC-xxx` events for every `/review-decision`                                                                                                                                                                                               |
+| **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                                                                                                    |
+| **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                                                                                                              |
+| **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
+| **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing                                                                                   |
 
 ---
 
@@ -67,7 +89,8 @@ See [docs/commands.md](./docs/commands.md) for the complete command reference.
 | [Installation](./docs/installation.md)                          | Install and configure FlowGuard                  |
 | [Commands](./docs/commands.md)                                  | Command reference                                |
 | [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
-| [Policies](./docs/policies.md)                                  | Solo, Team, Regulated modes                      |
+| [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes             |
+| [Independent Review](./docs/independent-review.md)              | Subagent review pipeline (plan / arch / impl)    |
 | [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
 | [Archive](./docs/archive.md)                                    | Session archiving                                |
 | [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |

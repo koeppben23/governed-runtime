@@ -148,12 +148,14 @@ Organizations should maintain:
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0
-├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0-rc.1.tgz   (current)
+├── flowguard-core-1.1.0.tgz        (previous)
+├── flowguard-core-1.0.0.tgz        (rollback)
 ├── checksums.sha256
 └── release-notes/
     ├── v1.2.0.md
-    └── 1.0.0.md
+    ├── v1.1.0.md
+    └── v1.0.0.md
 ```
 
 ---

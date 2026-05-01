@@ -13,6 +13,15 @@ FlowGuard uses a two-level command surface:
 
 The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
 
+**Naming exceptions** (slash command and tool name differ):
+
+| Slash command      | Tool binding         | Reason                                          |
+| ------------------ | -------------------- | ----------------------------------------------- |
+| `/review-decision` | `flowguard_decision` | Tool kept short; verdict-routing is the surface |
+
+For all other commands, slash and tool names match `1:1` (`/hydrate` →
+`flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
+
 ### Interactive vs Non-Interactive Execution
 
 - Interactive chat sessions may ask one precise follow-up question when required inputs are missing.
@@ -150,6 +159,10 @@ FlowGuard fail-closes governance commands when required ticket/plan artifacts ar
 ### /review-decision
 
 Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
+The slash command name `review-decision` differs from the tool name; the tool is
+registered as `flowguard_decision`.
+
+**Allowed in:** PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW
 
 **Verdicts:**
 
@@ -157,9 +170,20 @@ Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REV
 - `changes_requested` → return to previous phase for revision
 - `reject` → restart (TICKET for ticket flow, READY for architecture flow)
 
-**Four-eyes:** In regulated mode, `approve` requires reviewer identity different from session initiator, and both identities must be known.
+**Four-eyes (regulated mode):** `approve` requires reviewer identity different
+from session initiator, and both identities must be known. Same-actor approve
+returns BLOCKED `FOUR_EYES_VIOLATION`.
 
-Every successful `/review-decision` emits a decision receipt in the audit trail (`decision:DEC-xxx`).
+**Actor assurance gate (any mode with `policy.minimumActorAssuranceForApproval`
+set above the default `best_effort`):** the approver's resolved assurance tier
+must be `>=` the configured minimum. Insufficient assurance returns BLOCKED
+`ACTOR_ASSURANCE_INSUFFICIENT`. If `policy.identityProviderMode = required` and
+the approver cannot be IdP-verified, returns BLOCKED `ACTOR_IDP_MODE_REQUIRED`.
+See `docs/policies.md` "Actor Identity & Assurance" for configuration.
+
+Every successful `/review-decision` emits a decision receipt in the audit trail
+(`decision:DEC-xxx`) and a redacted-by-default companion artifact
+`decision-receipts.redacted.v1.json` is written on archive.
 
 ### /validate
 
@@ -233,7 +257,10 @@ Universal routing command. Inspects current phase and does the next appropriate 
 
 ### /abort
 
-Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irreversible.
+Emergency session termination. Bypasses the topology and directly sets phase
+to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
+non-terminal phase. Aborted sessions remain identifiable post-mortem via
+`state.error.code === 'ABORTED'`.
 
 ## Operational Tools
 
