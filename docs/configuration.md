@@ -80,7 +80,7 @@ Invalid or unrecognized policy mode values are rejected with an explicit `Policy
 ### policy.maxSelfReviewIterations
 
 **Type:** `number` (1-20)
-**Default:** Preset value (solo=2, team/regulated=3)
+**Default:** Preset value (solo=2, team/team-ci/regulated=3)
 
 Overrides the maximum independent review iterations in PLAN phase. The field name is retained as the persisted policy contract:
 
@@ -95,7 +95,7 @@ Overrides the maximum independent review iterations in PLAN phase. The field nam
 **Resolution priority:**
 
 1. Config override (`config.policy.maxSelfReviewIterations`)
-2. Policy preset value (solo=2, team=3, regulated=3)
+2. Policy preset value (solo=2, team=3, team-ci=3, regulated=3)
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
@@ -201,7 +201,7 @@ Controls whether IdP verification failure blocks session creation:
 ### policy.maxImplReviewIterations
 
 **Type:** `number` (1-20)
-**Default:** Preset value (solo=1, team/regulated=3)
+**Default:** Preset value (solo=1, team/team-ci/regulated=3)
 
 Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
 
@@ -216,7 +216,7 @@ Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
 **Resolution priority:**
 
 1. Config override (`config.policy.maxImplReviewIterations`)
-2. Policy preset value (solo=1, team=3, regulated=3)
+2. Policy preset value (solo=1, team=3, team-ci=3, regulated=3)
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
