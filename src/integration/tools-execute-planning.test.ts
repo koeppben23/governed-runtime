@@ -35,6 +35,7 @@ import {
   hydrate,
   ticket,
   plan,
+  architecture,
   decision,
   implement,
   validate,
@@ -200,6 +201,18 @@ async function fulfillPlanReview(
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
+    iteration,
+    planVersion: 1,
+    overallVerdict,
+  });
+}
+
+async function fulfillArchitectureReview(
+  iteration = 0,
+  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+) {
+  return fulfillStrictReviewObligation(await currentSessionDir(), {
+    obligationType: 'architecture',
     iteration,
     planVersion: 1,
     overallVerdict,
@@ -806,6 +819,96 @@ describe('plan', () => {
         ? (result.recovery as string[]).join(' ')
         : (result.recovery as string);
       expect(recoveryText.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ─── F13 slice 10: architecture tool-layer EDGE pipeline ───────────────
+  describe('EDGE: architecture unable_to_review tool-layer integration (F13 slice 10)', () => {
+    const adrText =
+      '## Context\nA database is needed.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.';
+
+    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
+      // F13 slice 10 parity with the plan EDGE test above. Full architecture
+      // submission flow with a real fulfilled obligation; finding verdict
+      // mutated to unable_to_review. The tool layer (slice 7c hooks
+      // validateReviewFindings, which fail-closes per P1.3 slice 4e) MUST
+      // short-circuit to BLOCKED before any selfReviewVerdict semantics
+      // are evaluated.
+      await hydrateSession({ policyMode: 'solo' });
+      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await architecture.execute(
+        { selfReviewVerdict: 'changes_requested', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW even when paired with selfReviewVerdict=approve (E2E precedence)', async () => {
+      // Slice 4e precedence parity for architecture: unable_to_review fails
+      // closed regardless of the agent's submitted selfReviewVerdict. There
+      // is no path where an unreviewable finding can be coerced into
+      // architecture convergence.
+      await hydrateSession({ policyMode: 'solo' });
+      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await architecture.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('SUBAGENT_UNABLE_TO_REVIEW response carries operator recovery copy (E2E reason wiring, architecture)', async () => {
+      // Slice 2 reason registration must be reachable through the full
+      // architecture tool stack, parity with the plan version above.
+      await hydrateSession({ policyMode: 'solo' });
+      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
+
+      const raw = await architecture.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+      expect(typeof result.recovery === 'string' || Array.isArray(result.recovery)).toBe(true);
+      const recoveryText = Array.isArray(result.recovery)
+        ? (result.recovery as string[]).join(' ')
+        : (result.recovery as string);
+      expect(recoveryText.length).toBeGreaterThan(0);
+    });
+
+    it('architecture obligation iteration matches expectedIteration (planVersion stable at 1)', async () => {
+      // F13 slice 10 contract pin: the architecture obligation always uses
+      // planVersion=1 (ADRs are immutable per id; iteration counts revisions).
+      // Submitting findings with planVersion!=1 must be rejected by
+      // validateReviewFindings to prevent cross-iteration replay.
+      await hydrateSession({ policyMode: 'solo' });
+      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const driftFindings = { ...baseFindings, planVersion: 2 };
+
+      const raw = await architecture.execute(
+        { selfReviewVerdict: 'approve', reviewFindings: driftFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      // The exact code is one of REVIEW_PLAN_VERSION_MISMATCH or similar
+      // depending on validation order — pin the family rather than the exact
+      // code so a future validation reorder doesn't break this contract pin.
+      expect(typeof result.code).toBe('string');
+      expect(String(result.code).length).toBeGreaterThan(0);
     });
   });
 
