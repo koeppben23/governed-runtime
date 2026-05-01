@@ -152,7 +152,37 @@ READY → REVIEW → REVIEW_COMPLETE
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality. Both plan and implement tools optionally accept structured `reviewFindings` from an independent review agent (controlled by `selfReview.subagentEnabled` policy). When enabled, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()` with `json_schema` structured output) — no LLM decision involved for invocation. Non-strict orchestration failures preserve the LLM-driven Task fallback path; strict orchestration failures block fail-closed with explicit error output. Author and reviewer artifacts are stored separately (append-only). 4-level plugin enforcement via `tool.execute.before/after` hooks physically blocks progression: L1 binary gate (`SUBAGENT_REVIEW_NOT_INVOKED`), L2 session-ID match (`SUBAGENT_SESSION_MISMATCH`), L3 prompt integrity (`SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`), L4 findings integrity (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`). Each subagent call satisfies exactly one pending review obligation; plan and implement reviews require independent subagent invocations. See [docs/independent-review.md](./docs/independent-review.md).
+**Independent Review Loops** (subagent-driven, mandatory): three reviewable
+obligation types — `plan`, `architecture`, `implement` — share one orchestration
+pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
+(F12 + F13 + P1.3). Each loop runs up to a per-mode iteration limit with
+digest-stop convergence:
+
+- **PLAN phase** — plan review loop (`obligationType: 'plan'`)
+- **ARCHITECTURE phase** — ADR review loop (`obligationType: 'architecture'`)
+  with ADR-specific criteria (Context completeness, Decision concreteness,
+  Consequences honesty, MADR structure)
+- **IMPL_REVIEW phase** — implementation review loop (`obligationType: 'implement'`)
+
+The FlowGuard plugin deterministically invokes the `flowguard-reviewer` subagent
+via the OpenCode SDK client (`session.create()` + `session.prompt()` with
+`json_schema` structured output) — no LLM decision is involved for invocation.
+Self-review is **never** accepted as review evidence in the current release;
+strict orchestration failures BLOCK fail-closed.
+
+Author and reviewer artifacts are stored separately (append-only). 4-level plugin
+enforcement via `tool.execute.before/after` hooks physically blocks progression:
+
+- **L1** (`SUBAGENT_REVIEW_NOT_INVOKED`) — binary gate: subagent must have been called
+- **L2** (`SUBAGENT_SESSION_MISMATCH`) — `reviewedBy.sessionId` matches actual subagent session
+- **L3** (`SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`) — prompt integrity
+- **L4** (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`) — findings integrity
+
+Each subagent call satisfies exactly one pending review obligation; the three
+loop types each require their own subagent invocations. The reviewer's third
+verdict `unable_to_review` consumes the obligation and BLOCKS via
+`SUBAGENT_UNABLE_TO_REVIEW` (P1.3) instead of fabricating an `approve` or
+`changes_requested`. See [docs/independent-review.md](./docs/independent-review.md).
 
 **Backward Transitions**:
 
