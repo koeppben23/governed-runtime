@@ -803,6 +803,44 @@ describe('review', () => {
       expect(review.args.prNumber).toBeDefined();
       expect(review.args.branch).toBeDefined();
       expect(review.args.url).toBeDefined();
+      expect(review.args.analysisFindings).toBeDefined();
+    });
+
+    it('requires analysis findings for content-aware review inputs', async () => {
+      await hydrateSession();
+      const raw = await review.execute({ text: 'diff --git a/file.ts b/file.ts' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    });
+
+    it('persists supplied analysis findings for text review content', async () => {
+      await hydrateSession();
+      const raw = await review.execute(
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/file.ts b/file.ts',
+          analysisFindings: [
+            {
+              severity: 'warning',
+              category: 'correctness',
+              message: 'The supplied diff needs follow-up review evidence.',
+            },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'warning',
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          }),
+        ]),
+      );
     });
 
     it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {

@@ -25,7 +25,7 @@ import {
 
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
-import { executeReview, executeReviewFlow } from '../../rails/review.js';
+import { executeReview, executeReviewFlow, type ReviewExecutors } from '../../rails/review.js';
 import { executeAbort } from '../../rails/abort.js';
 
 // Evidence schemas for external reference handling
@@ -37,6 +37,12 @@ import { writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
+
+const ReviewAnalysisFindingSchema = z.object({
+  severity: z.enum(['info', 'warning', 'error']),
+  category: z.string().min(1),
+  message: z.string().min(1),
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_ticket — Record Task
@@ -116,6 +122,47 @@ function buildReviewReferenceInput(args: {
   };
 }
 
+function hasReviewContentInput(args: {
+  text?: string;
+  prNumber?: number;
+  branch?: string;
+  url?: string;
+}): boolean {
+  return (
+    args.text !== undefined ||
+    args.prNumber !== undefined ||
+    args.branch !== undefined ||
+    args.url !== undefined
+  );
+}
+
+function buildReviewExecutors(args: {
+  analysisFindings?: Array<{
+    severity: 'info' | 'warning' | 'error';
+    category: string;
+    message: string;
+  }>;
+}): ReviewExecutors | undefined {
+  if (!args.analysisFindings) return undefined;
+  return {
+    analyze: async () => args.analysisFindings!,
+  };
+}
+
+function formatMissingContentAnalysis(): string {
+  return JSON.stringify({
+    error: true,
+    code: 'CONTENT_ANALYSIS_REQUIRED',
+    message:
+      'Content-aware /review requires analysisFindings. Analyze the provided text/PR/branch/URL content before calling flowguard_review, then submit concrete findings.',
+    recovery: [
+      'Fetch or inspect the referenced content.',
+      'Identify concrete review findings with severity, category, and message.',
+      'Re-run flowguard_review with analysisFindings populated.',
+    ],
+  });
+}
+
 function formatBlockedReviewReport(report: unknown): string {
   const blockedReport = report as {
     code: string;
@@ -161,6 +208,12 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
+    analysisFindings: z
+      .array(ReviewAnalysisFindingSchema)
+      .optional()
+      .describe(
+        'Concrete findings from reviewing the supplied text/PR/branch/URL content. Required when content-aware fields are provided.',
+      ),
   },
   async execute(args, context) {
     try {
@@ -176,7 +229,10 @@ export const review: ToolDefinition = {
       // 2. Generate the compliance report using the final state
       const now = new Date().toISOString();
       const refInput = buildReviewReferenceInput(args);
-      const report = await executeReview(result.state, now, undefined, refInput);
+      if (hasReviewContentInput(args) && !args.analysisFindings?.length) {
+        return formatMissingContentAnalysis();
+      }
+      const report = await executeReview(result.state, now, buildReviewExecutors(args), refInput);
 
       if ('kind' in report && report.kind === 'blocked') {
         return formatBlockedReviewReport(report);
