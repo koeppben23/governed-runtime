@@ -33,7 +33,11 @@ import {
   REVIEWER_SUBAGENT_TYPE,
 } from './review-enforcement.js';
 
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+} from './tool-names.js';
 
 const FG_PREFIX = 'flowguard_';
 

@@ -45,7 +45,11 @@ import {
 } from './plugin-helpers.js';
 import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+} from './tool-names.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
@@ -61,9 +65,7 @@ import type { SessionState } from '../state/schema.js';
  * ReviewableTool union and TypeScript will catch any future tool-name
  * additions that omit a branch here.
  */
-function obligationTypeForTool(
-  toolName: string,
-): 'plan' | 'implement' | 'architecture' {
+function obligationTypeForTool(toolName: string): 'plan' | 'implement' | 'architecture' {
   if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
   if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
   if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) return 'architecture';

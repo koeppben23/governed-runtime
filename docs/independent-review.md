@@ -303,11 +303,11 @@ Enforcement logic is implemented in `src/integration/review-enforcement.ts` and 
 
 Author and reviewer artifacts are stored in parallel, never mixed:
 
-| Tool            | Author artifacts                                    | Reviewer artifacts                  |
-| --------------- | --------------------------------------------------- | ----------------------------------- |
-| `/plan`         | `state.plan.current`, `state.plan.history`          | `state.plan.reviewFindings`         |
-| `/architecture` | `state.architecture.decisions[id].adrText` + history| `state.architecture.decisions[id].reviewFindings` |
-| `/implement`    | `state.implementation`                              | `state.implReviewFindings`          |
+| Tool            | Author artifacts                                     | Reviewer artifacts                                |
+| --------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| `/plan`         | `state.plan.current`, `state.plan.history`           | `state.plan.reviewFindings`                       |
+| `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
+| `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
 All three reviewer artifact arrays are **append-only**. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped.
 
