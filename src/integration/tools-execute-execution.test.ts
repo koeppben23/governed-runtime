@@ -798,6 +798,13 @@ describe('validate', () => {
 
 describe('review', () => {
   describe('HAPPY', () => {
+    it('exposes content-aware review arguments', () => {
+      expect(review.args.text).toBeDefined();
+      expect(review.args.prNumber).toBeDefined();
+      expect(review.args.branch).toBeDefined();
+      expect(review.args.url).toBeDefined();
+    });
+
     it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
       await hydrateSession();
       const raw = await review.execute({}, ctx);

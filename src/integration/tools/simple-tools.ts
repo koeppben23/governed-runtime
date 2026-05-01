@@ -30,6 +30,7 @@ import { executeAbort } from '../../rails/abort.js';
 
 // Evidence schemas for external reference handling
 import { InputOriginSchema, ExternalReferenceSchema } from '../../state/evidence.js';
+import type { ReviewReferenceInput } from '../../rails/review.js';
 
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
@@ -94,6 +95,43 @@ export const ticket: ToolDefinition = {
 // flowguard_review — Standalone Review Flow (READY → REVIEW → REVIEW_COMPLETE)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function buildReviewReferenceInput(args: {
+  inputOrigin?: ReviewReferenceInput['inputOrigin'];
+  references?: ReviewReferenceInput['references'];
+  text?: string;
+  prNumber?: number;
+  branch?: string;
+  url?: string;
+}): ReviewReferenceInput | undefined {
+  const hasContent =
+    args.inputOrigin || args.references || args.text || args.prNumber || args.branch || args.url;
+  if (!hasContent) return undefined;
+  return {
+    inputOrigin: args.inputOrigin,
+    references: args.references,
+    text: args.text,
+    prNumber: args.prNumber,
+    branch: args.branch,
+    url: args.url,
+  };
+}
+
+function formatBlockedReviewReport(report: unknown): string {
+  const blockedReport = report as {
+    code: string;
+    reason: string;
+    recovery: readonly string[];
+    quickFix?: string;
+  };
+  return JSON.stringify({
+    error: true,
+    code: blockedReport.code,
+    message: blockedReport.reason,
+    recovery: blockedReport.recovery,
+    quickFix: blockedReport.quickFix,
+  });
+}
+
 export const review: ToolDefinition = {
   description:
     'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
@@ -114,6 +152,15 @@ export const review: ToolDefinition = {
           'Each reference has ref (URL/ID), type (ticket/issue/pr/branch/commit/url/doc/other), ' +
           'optional title, source platform, and extractedAt timestamp.',
       ),
+    text: z.string().optional().describe('Direct text blob to analyze during /review.'),
+    prNumber: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
+    branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
+    url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
   },
   async execute(args, context) {
     try {
@@ -128,14 +175,12 @@ export const review: ToolDefinition = {
 
       // 2. Generate the compliance report using the final state
       const now = new Date().toISOString();
-      const refInput =
-        args.inputOrigin || args.references
-          ? {
-              inputOrigin: args.inputOrigin,
-              references: args.references,
-            }
-          : undefined;
+      const refInput = buildReviewReferenceInput(args);
       const report = await executeReview(result.state, now, undefined, refInput);
+
+      if ('kind' in report && report.kind === 'blocked') {
+        return formatBlockedReviewReport(report);
+      }
 
       // 3. Persist state + write report artifact
       await writeStateWithArtifacts(sessDir, result.state);
