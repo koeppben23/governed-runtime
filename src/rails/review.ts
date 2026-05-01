@@ -20,13 +20,6 @@ import type { SessionState } from '../state/schema.js';
 import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import type { CompletenessReport } from '../audit/completeness.js';
-import {
-  EvidenceSlotStatusSchema,
-  FourEyesStatusSchema,
-  CompletenessSummarySchema,
-  CompletenessReportSchema,
-} from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
