@@ -434,6 +434,16 @@ export const ArchitectureDecision = z
     createdAt: z.string().datetime(),
     /** SHA-256 digest of the adrText for integrity verification. */
     digest: z.string().min(1),
+    /**
+     * Independent review findings, one entry per review iteration (F13).
+     *
+     * Parallel to plan.reviewFindings and implementation.reviewFindings:
+     * stored append-only as the architecture review loop progresses, so the
+     * full review history is auditable. Optional for backwards-compat with
+     * sessions created before F13 — absent and empty array MUST be treated
+     * equivalently by all consumers.
+     */
+    reviewFindings: z.array(ReviewFindings).optional(),
   })
   .readonly();
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
