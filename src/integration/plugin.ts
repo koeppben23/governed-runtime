@@ -33,7 +33,7 @@ import {
   REVIEWER_SUBAGENT_TYPE,
 } from './review-enforcement.js';
 
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
 
 const FG_PREFIX = 'flowguard_';
 
@@ -166,7 +166,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         return;
       }
 
-      if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
+      if (
+        toolName !== TOOL_FLOWGUARD_PLAN &&
+        toolName !== TOOL_FLOWGUARD_IMPLEMENT &&
+        toolName !== TOOL_FLOWGUARD_ARCHITECTURE
+      )
+        return;
 
       const eState = ws.getEnforcementState(sessionId);
       let sessionState: SessionState | null = null;
@@ -198,7 +203,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       const sessionId: string = (input as { sessionID?: string })?.sessionID ?? 'unknown';
       const now = new Date().toISOString();
 
-      if (toolName === TOOL_FLOWGUARD_PLAN || toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+      if (
+        toolName === TOOL_FLOWGUARD_PLAN ||
+        toolName === TOOL_FLOWGUARD_IMPLEMENT ||
+        toolName === TOOL_FLOWGUARD_ARCHITECTURE
+      ) {
         try {
           trackFlowGuardEnforcement(
             ws.getEnforcementState(sessionId),
