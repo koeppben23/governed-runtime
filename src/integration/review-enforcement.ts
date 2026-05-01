@@ -48,35 +48,14 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_ARCHITECTURE,
-  REVIEWER_SUBAGENT_TYPE,
-} from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
 import type { SessionState } from '../state/schema.js';
-
-/** Tools that can trigger independent review. */
-export type ReviewableTool =
-  | typeof TOOL_FLOWGUARD_PLAN
-  | typeof TOOL_FLOWGUARD_IMPLEMENT
-  | typeof TOOL_FLOWGUARD_ARCHITECTURE;
-
-/** Type-guard: is the given tool name a reviewable FlowGuard tool? */
-function isReviewableTool(toolName: string): toolName is ReviewableTool {
-  return (
-    toolName === TOOL_FLOWGUARD_PLAN ||
-    toolName === TOOL_FLOWGUARD_IMPLEMENT ||
-    toolName === TOOL_FLOWGUARD_ARCHITECTURE
-  );
-}
-
-/** Map a reviewable tool to its corresponding obligationType. */
-function obligationTypeForTool(toolName: ReviewableTool): 'plan' | 'implement' | 'architecture' {
-  if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
-  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
-  return 'architecture';
-}
+import {
+  isReviewableTool,
+  obligationTypeForTool,
+  type ReviewableTool,
+} from './review-obligation-tools.js';
+export type { ReviewableTool } from './review-obligation-tools.js';
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
