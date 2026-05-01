@@ -72,9 +72,7 @@ function isReviewableTool(toolName: string): toolName is ReviewableTool {
 }
 
 /** Map a reviewable tool to its corresponding obligationType. */
-function obligationTypeForTool(
-  toolName: ReviewableTool,
-): 'plan' | 'implement' | 'architecture' {
+function obligationTypeForTool(toolName: ReviewableTool): 'plan' | 'implement' | 'architecture' {
   if (toolName === TOOL_FLOWGUARD_PLAN) return 'plan';
   if (toolName === TOOL_FLOWGUARD_IMPLEMENT) return 'implement';
   return 'architecture';

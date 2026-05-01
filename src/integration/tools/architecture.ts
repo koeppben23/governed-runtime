@@ -46,7 +46,10 @@ import { autoAdvance } from '../../rails/types.js';
 
 // Evidence types
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
-import { validateAdrSections, ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import {
+  validateAdrSections,
+  ReviewFindings as ReviewFindingsSchema,
+} from '../../state/evidence.js';
 
 // Review obligation helpers (F13: parity with plan/implement)
 import {
@@ -194,7 +197,7 @@ export const architecture: ToolDefinition = {
             '. ' +
             'Parse the JSON ReviewFindings from the subagent response. ' +
             'Then call flowguard_architecture with selfReviewVerdict based on ' +
-            "the findings overallVerdict, and include the reviewFindings object. " +
+            'the findings overallVerdict, and include the reviewFindings object. ' +
             'If the subagent returns changes_requested, revise the ADR and resubmit.'
           : 'Self-review needed. Review the ADR critically against MADR standards. ' +
             'Check for completeness, clarity, and consequences coverage. ' +

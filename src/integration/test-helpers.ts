@@ -409,9 +409,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
       .reverse()
       .find(
         (item) =>
-          item.obligationType === type &&
-          item.status !== 'consumed' &&
-          item.consumedAt == null,
+          item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
       );
 
   let obligationType: ReviewObligationType;
