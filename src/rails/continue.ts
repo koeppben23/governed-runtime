@@ -35,7 +35,7 @@ import type {
 import { validateAdrSections } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
-import type { RailResult, RailContext } from './types.js';
+import type { RailResult, RailBlocked, RailContext } from './types.js';
 import {
   autoAdvance,
   runSingleIteration,
@@ -73,6 +73,20 @@ export interface ContinueExecutors {
   ) => Promise<{ verdict: LoopVerdict; revisedText?: string }>;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Type guard for the SessionState | RailBlocked union returned by the
+ * review-iteration helpers in this rail (P1.3 slice 4b).
+ *
+ * SessionState does not have a `kind` discriminator, so a structural
+ * `'kind' in x` check does not narrow safely. RailBlocked carries
+ * `kind: 'blocked'`; this predicate gives TypeScript an explicit guard.
+ */
+function isRailBlocked(x: SessionState | RailBlocked): x is RailBlocked {
+  return (x as { kind?: string }).kind === 'blocked';
+}
+
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export async function executeContinue(
@@ -106,7 +120,10 @@ export async function executeContinue(
   }
 
   // 3. Phase-specific work
-  let workState = state;
+  // P1.3 slice 4b: each review-loop helper may return a RailBlocked
+  // result (when the reviewer subagent emits unable_to_review). On
+  // BLOCKED, short-circuit auto-advance and return the block directly.
+  let workState: SessionState | RailBlocked = state;
 
   if (state.phase === 'VALIDATION') {
     workState = await runValidationChecks(workState, ctx, executors);
@@ -116,6 +133,12 @@ export async function executeContinue(
     workState = await runOneImplReviewIteration(workState, ctx, executors);
   } else if (state.phase === 'ARCHITECTURE') {
     workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
+  }
+
+  // P1.3 slice 4b: short-circuit on BLOCKED. The helper has already
+  // formatted the SUBAGENT_UNABLE_TO_REVIEW reason; do not auto-advance.
+  if (isRailBlocked(workState)) {
+    return workState;
   }
 
   // 4. Auto-advance (policy-aware)
@@ -168,7 +191,7 @@ async function runOneSelfReviewIteration(
   state: SessionState,
   ctx: RailContext,
   executors: ContinueExecutors,
-): Promise<SessionState> {
+): Promise<SessionState | RailBlocked> {
   if (!state.plan) return state;
 
   const currentPlan = state.plan.current;
@@ -201,6 +224,14 @@ async function runOneSelfReviewIteration(
     },
   );
 
+  // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).
+  if (loop.kind === 'blocked') {
+    return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'plan-self-review',
+      reason: `reviewer subagent declared the plan unreviewable at iteration ${loop.iteration} (single-step continue)`,
+    });
+  }
+
   // No iteration ran (already at max)
   if (loop.iteration === startIteration) return state;
 
@@ -221,7 +252,7 @@ async function runOneImplReviewIteration(
   state: SessionState,
   ctx: RailContext,
   executors: ContinueExecutors,
-): Promise<SessionState> {
+): Promise<SessionState | RailBlocked> {
   if (!state.implementation || !state.plan) return state;
 
   const currentImpl = state.implementation;
@@ -243,6 +274,14 @@ async function runOneImplReviewIteration(
     },
   );
 
+  // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).
+  if (loop.kind === 'blocked') {
+    return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'impl-review',
+      reason: `reviewer subagent declared the implementation unreviewable at iteration ${loop.iteration} (single-step continue)`,
+    });
+  }
+
   // No iteration ran (already at max)
   if (loop.iteration === startIteration) return state;
 
@@ -258,7 +297,7 @@ async function runOneArchitectureReviewIteration(
   state: SessionState,
   ctx: RailContext,
   executors: ContinueExecutors,
-): Promise<SessionState> {
+): Promise<SessionState | RailBlocked> {
   if (!state.architecture) return state;
 
   const currentAdr = state.architecture;
@@ -295,6 +334,14 @@ async function runOneArchitectureReviewIteration(
       return { verdict: review.verdict };
     },
   );
+
+  // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).
+  if (loop.kind === 'blocked') {
+    return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'arch-self-review',
+      reason: `reviewer subagent declared the ADR unreviewable at iteration ${loop.iteration} (single-step continue)`,
+    });
+  }
 
   // No iteration ran (already at max)
   if (loop.iteration === startIteration) return state;

@@ -134,6 +134,18 @@ export async function executePlan(
     return { verdict: review.verdict };
   });
 
+  // P1.3 slice 4b: route reviewer tool-failure to BLOCKED.
+  // The convergence loop returns kind='blocked' when the reviewer subagent
+  // emits overallVerdict='unable_to_review'. We surface SUBAGENT_UNABLE_TO_REVIEW
+  // (registered in src/config/reasons.ts) instead of fabricating a converged
+  // state; recovery is a fresh /plan submission (which resets iteration to 0).
+  if (loop.kind === 'blocked') {
+    return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'plan-self-review',
+      reason: `reviewer subagent declared the plan unreviewable at iteration ${loop.iteration}`,
+    });
+  }
+
   // 7. Build final state
   const nextState: SessionState = {
     ...state,

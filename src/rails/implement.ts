@@ -143,6 +143,16 @@ export async function executeImplement(
       return { verdict: review.verdict, updated: review.updatedImpl };
     });
 
+    // P1.3 slice 4b: route reviewer tool-failure to BLOCKED.
+    // See plan.ts for the parallel pattern. Both rails use the same
+    // SUBAGENT_UNABLE_TO_REVIEW reason; recovery is a fresh /implement.
+    if (loop.kind === 'blocked') {
+      return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+        obligationId: 'impl-review',
+        reason: `reviewer subagent declared the implementation unreviewable at iteration ${loop.iteration}`,
+      });
+    }
+
     nextState = {
       ...nextState,
       implementation: loop.artifact,
