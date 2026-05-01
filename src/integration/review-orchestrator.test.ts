@@ -590,9 +590,9 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: reviewer returns valid findings with session ID
-  it('captures session ID from reviewer findings', async () => {
-    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-ses-42' } });
+  // CORNER: runtime authoritatively overwrites reviewedBy.sessionId with childSessionId (B3)
+  it('overwrites findings.reviewedBy.sessionId with authoritative childSessionId', async () => {
+    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
         data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
@@ -603,7 +603,25 @@ describe('invokeReviewer', () => {
     expect(result).not.toBeNull();
     expect(result!.findings).not.toBeNull();
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('reviewer-ses-42');
+    // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
+    expect(reviewedBy.sessionId).toBe('child-session-1');
+  });
+
+  // CORNER: missing reviewedBy is reconstructed from authoritative childSessionId
+  it('reconstructs reviewedBy when subagent omits it', async () => {
+    const findingsJson = validFindings();
+    const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
+    delete parsed.reviewedBy;
+    const client = mockClient({
+      promptResult: {
+        data: { info: { structured_output: parsed } },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.sessionId).toBe('child-session-1');
   });
 });
 

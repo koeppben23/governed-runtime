@@ -386,10 +386,22 @@ export async function invokeReviewer(
     return null;
   }
 
+  // Authoritative session ID injection: the subagent cannot reliably know its
+  // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
+  // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
+  // failures caused by the subagent guessing or using a placeholder literal.
+  const findings = info.structured_output as Record<string, unknown>;
+  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
+  if (reviewedBy && typeof reviewedBy === 'object') {
+    reviewedBy.sessionId = childSessionId;
+  } else {
+    findings.reviewedBy = { sessionId: childSessionId };
+  }
+
   return {
     sessionId: childSessionId,
-    rawResponse: JSON.stringify(info.structured_output),
-    findings: info.structured_output as Record<string, unknown>,
+    rawResponse: JSON.stringify(findings),
+    findings,
   };
 }
 
