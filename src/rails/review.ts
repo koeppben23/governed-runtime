@@ -6,7 +6,7 @@
  *
  * 1. Report generator (executeReview): Pure read-only report generation.
  *    Always available, does NOT mutate state.
- *    Produces an ExtendedReviewReport with completeness matrix and findings.
+ *    Produces a ReviewReport with completeness matrix and findings.
  *
  * 2. Flow mode (executeReviewFlow): Standalone review flow.
  *    READY → REVIEW → REVIEW_COMPLETE.
@@ -21,6 +21,12 @@ import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evid
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { CompletenessReport } from '../audit/completeness.js';
+import {
+  EvidenceSlotStatusSchema,
+  FourEyesStatusSchema,
+  CompletenessSummarySchema,
+  CompletenessReportSchema,
+} from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
@@ -50,21 +56,10 @@ export interface ReviewReferenceInput {
   readonly references?: ExternalReference[];
 }
 
-// ─── Extended Review Report ───────────────────────────────────────────────────
+// ─── Report Generator ─────────────────────────────────────────────────
 
 /**
- * Extended review report with completeness matrix.
- * Extends the base ReviewReport with evidence completeness and four-eyes data.
- */
-export interface ExtendedReviewReport extends ReviewReport {
-  /** Evidence completeness matrix — per-slot status for all evidence. */
-  completeness: CompletenessReport;
-}
-
-// ─── Report Generator ─────────────────────────────────────────────────────────
-
-/**
- * Generate an ExtendedReviewReport from the current state.
+ * Generate a ReviewReport (with completeness matrix) from the current state.
  * Pure read — does NOT mutate state, does NOT produce RailResult.
  *
  * The caller is responsible for:
@@ -76,7 +71,7 @@ export async function executeReview(
   now: string,
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
-): Promise<ExtendedReviewReport> {
+): Promise<ReviewReport> {
   // 1. Collect validation summary from state
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,

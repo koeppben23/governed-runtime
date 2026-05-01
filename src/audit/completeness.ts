@@ -39,7 +39,46 @@
  * @version v2
  */
 
+import { z } from 'zod';
 import type { SessionState, Phase } from '../state/schema.js';
+
+// ─── Zod Schemas for ReviewReport ────────────────────────────────────
+
+export const EvidenceSlotStatusSchema = z.object({
+  slot: z.string(),
+  label: z.string(),
+  required: z.boolean(),
+  present: z.boolean(),
+  status: z.enum(['complete', 'missing', 'not_yet_required', 'failed']),
+  detail: z.string().optional(),
+  artifactKind: z.string().optional(),
+});
+
+export const FourEyesStatusSchema = z.object({
+  required: z.boolean(),
+  satisfied: z.boolean(),
+  initiatedBy: z.string(),
+  decidedBy: z.string().nullable(),
+  detail: z.string(),
+});
+
+export const CompletenessSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  complete: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  notYetRequired: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+
+export const CompletenessReportSchema = z.object({
+  sessionId: z.string().uuid(),
+  phase: z.string(),
+  policyMode: z.string(),
+  overallComplete: z.boolean(),
+  slots: z.array(EvidenceSlotStatusSchema),
+  fourEyes: FourEyesStatusSchema,
+  summary: CompletenessSummarySchema,
+});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +133,7 @@ export interface CompletenessReport {
    * no slots have failed, and four-eyes is satisfied (if required).
    */
   readonly overallComplete: boolean;
-  readonly slots: readonly EvidenceSlotStatus[];
+  readonly slots: EvidenceSlotStatus[];
   readonly fourEyes: FourEyesStatus;
   readonly summary: CompletenessSummary;
 }
