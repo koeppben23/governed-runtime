@@ -461,6 +461,34 @@ describe('invokeReviewer', () => {
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.sessionId).toBe('child-session-1');
   });
+
+  // P1.3 slice 4c: third LoopVerdict propagation through invokeReviewer.
+  // Pins that subagent-emitted overallVerdict='unable_to_review' is
+  // preserved verbatim through ReviewFindings parsing and authoritative
+  // reviewedBy reconstruction. The downstream consumer
+  // (plugin-orchestrator.ts) reads parsedFindings.data.overallVerdict
+  // for the BLOCKED-routing branch; this test fixes that contract.
+  it('propagates overallVerdict=unable_to_review verbatim (HAPPY: third verdict end-to-end)', async () => {
+    const findingsJson = validFindings({
+      overallVerdict: 'unable_to_review',
+      blockingIssues: [],
+      majorRisks: [],
+    });
+    const client = mockClient({
+      promptResult: {
+        data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    expect(result!.findings).not.toBeNull();
+    expect(result!.findings!.overallVerdict).toBe('unable_to_review');
+    // Confirm reviewedBy is still authoritatively set; the unreviewable
+    // verdict must NOT bypass childSessionId enforcement.
+    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.sessionId).toBe('child-session-1');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

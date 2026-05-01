@@ -254,6 +254,23 @@ export async function runReviewOrchestration(
               { obligationId: reviewCtx.obligationId },
               output,
             );
+          } else if (parsedFindings.data.overallVerdict === 'unable_to_review') {
+            // P1.3 slice 4c: subagent declared the artifact unreviewable.
+            // The reviewer mandate has been satisfied (validity-conditions
+            // whitelist enforces preconditions in templates/reviewer-agent),
+            // but no convergence is possible. Per Decision C, the
+            // obligation IS consumed (no retry path) and the tool output
+            // is BLOCKED so that downstream automation cannot fabricate a
+            // converged artifact from an unreviewable verdict. SSOT reason
+            // SUBAGENT_UNABLE_TO_REVIEW (registered in slice 2) carries
+            // the operator-facing copy and recovery guidance.
+            await deps.blockReviewOutcome(
+              { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
+              reviewCtx.obligationId,
+              'SUBAGENT_UNABLE_TO_REVIEW',
+              { obligationId: reviewCtx.obligationId },
+              output,
+            );
           }
         }
 
