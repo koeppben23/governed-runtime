@@ -6,7 +6,7 @@
  * `rails/` imports from here instead of using `node:child_process` directly.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 /**
  * Check if `gh` CLI is available and authenticated.
@@ -14,7 +14,7 @@ import { execSync } from 'node:child_process';
  */
 export function hasGhCli(): boolean {
   try {
-    execSync('gh auth status', { stdio: 'ignore', timeout: 5000 });
+    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 });
     return true;
   } catch {
     return false;
@@ -28,11 +28,15 @@ export function hasGhCli(): boolean {
  * Throws if PR not found or gh fails.
  */
 export function loadPrDiff(prNumber: number): string {
-  const out = execSync(`gh pr view ${prNumber} --json diff --jq '.diff'`, {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-    timeout: 15000,
-  });
+  const out = execFileSync(
+    'gh',
+    ['pr', 'view', String(prNumber), '--json', 'diff', '--jq', '.diff'],
+    {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 15000,
+    },
+  );
   if (!out || out.trim() === 'null') {
     throw new Error(`PR #${prNumber} not found or has no diff`);
   }
@@ -46,7 +50,7 @@ export function loadPrDiff(prNumber: number): string {
  * Throws if branch not found or gh fails.
  */
 export function loadBranchDiff(branch: string): string {
-  const out = execSync(`gh pr diff ${branch}`, {
+  const out = execFileSync('gh', ['pr', 'diff', branch], {
     encoding: 'utf-8',
     stdio: 'pipe',
     timeout: 15000,
