@@ -435,6 +435,60 @@ describe('validateReviewFindings', () => {
       expect(result).toBeNull();
     });
   });
+
+  // ─── F13: architecture obligationType (slice 3) ──────────────
+  describe('F13 architecture obligationType', () => {
+    it("accepts obligationType: 'architecture' (non-strict path)", () => {
+      const findings = makeFindings({ overallVerdict: 'approve' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).toBeNull();
+    });
+
+    it("third-verdict precedence still wins for obligationType: 'architecture'", () => {
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).not.toBeNull();
+      const parsed = parseBlocked(result!);
+      expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it("strict assurance accepts obligationType: 'architecture' when attestation matches", () => {
+      const findings = strictFindings();
+      const archAssurance = {
+        ...strictAssuranceFixture(findings),
+        obligations: strictAssuranceFixture(findings).obligations.map((o) => ({
+          ...o,
+          obligationType: 'architecture' as const,
+        })),
+        invocations: strictAssuranceFixture(findings).invocations.map((i) => ({
+          ...i,
+          obligationType: 'architecture' as const,
+        })),
+      };
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          strictEnforcement: true,
+          assurance: archAssurance,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).toBeNull();
+    });
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
