@@ -37,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`promptContainsValue` contract documentation + edge tests (PR #73)**: Comprehensive JSDoc on the L3 prompt-context regex documenting matching rules, the 30-character non-digit ceiling rationale, and word-boundary semantics. 11 new EDGE tests cover XML-wrapped values, JSON embeds, markdown-formatted values, multi-line attestation blocks, partial-number rejection (1 vs 15, 2 vs 21), distance-ceiling rejection, large numbers, case-insensitive keywords, and zero as a non-falsy expected value.
 
-### Added
-
 - **Installer workspace initialization fix**: The installer now uses `ensureWorkspace()` — the same SSOT workspace-root path as the runtime — instead of writing `config.json` in isolation. Every `flowguard install` now creates a complete workspace with `workspace.json`, `sessions/`, and `discovery/`. The doctor detects config-only workspace directories left behind by older installs.
 - **E2E workspace isolation**: The independent-review E2E script now sets `OPENCODE_CONFIG_DIR` to a temporary directory when spawning the OpenCode server and running tests, preventing workspace registry writes into the production `~/.config/opencode/workspaces/` during CI/local verification.
 - **Test workspace safety guard**: Added `assertTestConfigDir()` and `FLOWGUARD_REQUIRE_TEST_CONFIG_DIR` environment variable guard in `workspacesHome()`. When active, workspace operations are blocked unless `OPENCODE_CONFIG_DIR` points to a temporary directory. `createTestWorkspace()` sets this guard automatically.

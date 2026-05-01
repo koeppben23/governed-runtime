@@ -10,7 +10,7 @@
 
 ## 1) Problem Statement
 
-FlowGuard The original provides an actor identity bridge via `FLOWGUARD_ACTOR_CLAIMS_PATH`. The current `assurance` model is binary (`best_effort | verified`) and tied directly to the claim source.
+FlowGuard provides an actor identity bridge via `FLOWGUARD_ACTOR_CLAIMS_PATH`. The original `assurance` model was binary (`best_effort | verified`) and tied directly to the claim source.
 
 For Bank/DATEV/Adorsys pilots, this is insufficient:
 

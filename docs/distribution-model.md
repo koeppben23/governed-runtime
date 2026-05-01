@@ -141,7 +141,7 @@ FlowGuard uses `file:`-based npm dependencies for offline resolution:
 ```json
 {
   "dependencies": {
-    "@flowguard/core": "file:./vendor/flowguard-core-1.2.0"
+    "@flowguard/core": "file:./vendor/flowguard-core-{version}.tgz"
   }
 }
 ```
