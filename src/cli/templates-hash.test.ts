@@ -45,7 +45,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'b3ddba51a17836f5f2e95f92854f34583a6c7d953653c5fb7b7a41ce8352dc13',
+      '6378c1914f1ab44306cffe82f71dbd7b91fefdf0d545aca49848693e47f66fdf',
     );
   });
 
@@ -66,7 +66,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('COMMANDS matches compiled output hash', () => {
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'ca735847503d9e66029608c9e6fc198de79c47366883319007045e3ef921f45c',
+      'ce2b33585e0d1b04d9bc742c5c767730bb3c0ef2791e7590af16b032e457223d',
     );
   });
 
