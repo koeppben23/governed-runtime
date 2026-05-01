@@ -85,11 +85,11 @@ Self-review is not a fallback. Strict orchestration and parsing failures return 
 
 The reviewer subagent returns one of three `overallVerdict` values:
 
-| Verdict             | Outcome                                                                                          | Loop status                              |
-| ------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `approve`           | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW. | converged                                |
-| `changes_requested` | Findings recorded; agent revises the artifact and resubmits. Loop continues until convergence or `maxIterations`. | continues                                |
-| `unable_to_review`  | The reviewer declares the artifact unreviewable (e.g., contradictory inputs, missing prerequisites, scope ambiguity that prevents critique). The tool returns BLOCKED with code `SUBAGENT_UNABLE_TO_REVIEW`. The pending review obligation is consumed — retrying the review with the same artifact is rejected. | BLOCKED (obligation consumed)            |
+| Verdict             | Outcome                                                                                                                                                                                                                                                                                                          | Loop status                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `approve`           | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW.                                                                                                                                                                                                            | converged                     |
+| `changes_requested` | Findings recorded; agent revises the artifact and resubmits. Loop continues until convergence or `maxIterations`.                                                                                                                                                                                                | continues                     |
+| `unable_to_review`  | The reviewer declares the artifact unreviewable (e.g., contradictory inputs, missing prerequisites, scope ambiguity that prevents critique). The tool returns BLOCKED with code `SUBAGENT_UNABLE_TO_REVIEW`. The pending review obligation is consumed — retrying the review with the same artifact is rejected. | BLOCKED (obligation consumed) |
 
 `unable_to_review` is enforced fail-closed at every layer:
 
@@ -279,15 +279,15 @@ Validation logic is implemented once in `src/integration/tools/review-validation
 
 **Plugin-level enforcement (`review-enforcement.ts`):**
 
-| Level | Rule               | Condition                                                           | BLOCKED Code                         | Hook Point       |
-| ----- | ------------------ | ------------------------------------------------------------------- | ------------------------------------ | ---------------- |
-| L1    | Subagent invoked   | Pending review + no Task call to `flowguard-reviewer`               | `SUBAGENT_REVIEW_NOT_INVOKED`        | before FG Mode B |
-| L2    | Session ID match   | `reviewedBy.sessionId` does not match actual subagent session ID    | `SUBAGENT_SESSION_MISMATCH`          | before FG Mode B |
-| L3    | Prompt substantive | Task prompt < 200 chars                                             | `SUBAGENT_PROMPT_EMPTY`              | before task call |
-| L3    | Prompt has context | Task prompt missing expected iteration or planVersion               | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call |
-| L4    | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict     | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B |
-| L4    | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B |
-| L4/Tool | Reviewability    | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
+| Level   | Rule               | Condition                                                                                   | BLOCKED Code                         | Hook Point                |
+| ------- | ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------- |
+| L1      | Subagent invoked   | Pending review + no Task call to `flowguard-reviewer`                                       | `SUBAGENT_REVIEW_NOT_INVOKED`        | before FG Mode B          |
+| L2      | Session ID match   | `reviewedBy.sessionId` does not match actual subagent session ID                            | `SUBAGENT_SESSION_MISMATCH`          | before FG Mode B          |
+| L3      | Prompt substantive | Task prompt < 200 chars                                                                     | `SUBAGENT_PROMPT_EMPTY`              | before task call          |
+| L3      | Prompt has context | Task prompt missing expected iteration or planVersion                                       | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call          |
+| L4      | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict                             | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B          |
+| L4      | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count                         | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B          |
+| L4/Tool | Reviewability      | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
 Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 

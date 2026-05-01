@@ -39,16 +39,10 @@ vi.mock('./plugin-review-audit.js', () => ({
 
 import { readState } from '../adapters/persistence.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
-import type {
-  OrchestratorDeps,
-  ToolCallEvent,
-} from './plugin-orchestrator.js';
+import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review-enforcement.js';
-import {
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-} from './review-assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../__fixtures__.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -104,9 +98,7 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
 function buildMockClient(findingsJson: string) {
   return {
     session: {
-      create: vi
-        .fn()
-        .mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
+      create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({
         data: {
           parts: [{ type: 'text', text: findingsJson }],
