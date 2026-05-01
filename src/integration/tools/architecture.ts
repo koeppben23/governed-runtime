@@ -48,6 +48,12 @@ import { autoAdvance } from '../../rails/types.js';
 import type { LoopVerdict, RevisionDelta } from '../../state/evidence.js';
 import { validateAdrSections, ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
+// Review obligation helpers (F13: parity with plan/implement)
+import {
+  createReviewObligation,
+  ensureReviewAssurance,
+} from '../review-assurance.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -147,24 +153,80 @@ export const architecture: ToolDefinition = {
           });
         }
 
-        await writeStateWithArtifacts(sessDir, result.state);
+        // F13 slice 7b: when subagentEnabled, attach a fresh review obligation
+        // to reviewAssurance so the orchestrator can wire the verdict submission
+        // to the flowguard-reviewer subagent. Mirrors plan.ts:233-259.
+        const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
+        const assuranceBase = ensureReviewAssurance(result.state.reviewAssurance);
+        const archPlanVersion = 1; // ADRs are immutable per id; iteration counts revisions
+        const nextObligation = subagentEnabled
+          ? createReviewObligation({
+              obligationType: 'architecture',
+              iteration: 0,
+              planVersion: archPlanVersion,
+              now: ctx.now(),
+            })
+          : null;
 
-        return appendNextAction(
-          JSON.stringify({
-            phase: result.state.phase,
-            status: `ADR ${result.state.architecture!.id} submitted: ${args.title}`,
-            adrId: result.state.architecture!.id,
-            adrDigest: result.state.architecture!.digest,
-            selfReviewIteration: 0,
-            maxSelfReviewIterations,
-            next:
-              'Self-review needed. Review the ADR critically against MADR standards. ' +
-              'Check for completeness, clarity, and consequences coverage. ' +
-              'Then call flowguard_architecture with selfReviewVerdict.',
-            _audit: { transitions: result.transitions },
-          }),
-          result.state,
-        );
+        const augmentedState: SessionState = nextObligation
+          ? {
+              ...result.state,
+              reviewAssurance: {
+                obligations: [...assuranceBase.obligations, nextObligation],
+                invocations: assuranceBase.invocations,
+              },
+            }
+          : result.state;
+
+        await writeStateWithArtifacts(sessDir, augmentedState);
+
+        const modeANext = subagentEnabled
+          ? 'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
+            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
+            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+            '(1) the full ADR text, (2) the ADR title, (3) the ticket text, ' +
+            '(4) iteration=0, (5) planVersion=' +
+            archPlanVersion +
+            '. ' +
+            'Parse the JSON ReviewFindings from the subagent response. ' +
+            'Then call flowguard_architecture with selfReviewVerdict based on ' +
+            "the findings overallVerdict, and include the reviewFindings object. " +
+            'If the subagent returns changes_requested, revise the ADR and resubmit.'
+          : 'Self-review needed. Review the ADR critically against MADR standards. ' +
+            'Check for completeness, clarity, and consequences coverage. ' +
+            'Then call flowguard_architecture with selfReviewVerdict.';
+
+        const modeAResponse: Record<string, unknown> = {
+          phase: augmentedState.phase,
+          status: `ADR ${augmentedState.architecture!.id} submitted: ${args.title}`,
+          adrId: augmentedState.architecture!.id,
+          adrDigest: augmentedState.architecture!.digest,
+          selfReviewIteration: 0,
+          maxSelfReviewIterations,
+          reviewMode: subagentEnabled ? 'subagent' : 'self',
+          ...(nextObligation
+            ? {
+                reviewObligation: {
+                  obligationId: nextObligation.obligationId,
+                  obligationType: 'architecture' as const,
+                  iteration: nextObligation.iteration,
+                  planVersion: nextObligation.planVersion,
+                  criteriaVersion: nextObligation.criteriaVersion,
+                  mandateDigest: nextObligation.mandateDigest,
+                },
+                // Backward-compat flat fields (parity with plan.ts)
+                reviewObligationId: nextObligation.obligationId,
+                reviewObligationIteration: nextObligation.iteration,
+                reviewObligationPlanVersion: nextObligation.planVersion,
+                reviewCriteriaVersion: nextObligation.criteriaVersion,
+                reviewMandateDigest: nextObligation.mandateDigest,
+              }
+            : {}),
+          next: modeANext,
+          _audit: { transitions: result.transitions },
+        };
+
+        return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
       } else {
         // ── Mode B: Self-review verdict ──────────────────────────
         // Admissibility: must be in ARCHITECTURE phase
