@@ -34,10 +34,14 @@ For team projects with optional human oversight.
 
 **Characteristics:**
 
-- 3 mandatory human gates (PLAN_REVIEW, IMPL_REVIEW, EVIDENCE_REVIEW)
+- 3 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW)
 - Four-eyes optional (can be same person)
 - Self-approval allowed
 - Review documentation required
+- Hash chain enabled
+
+Note: `IMPL_REVIEW` is **not** a human gate. It is an independent-review gate that
+auto-advances on subagent verdict convergence (see `docs/independent-review.md`).
 
 ## Team-CI Mode
 
@@ -67,11 +71,12 @@ For compliance-required environments (banks, healthcare, etc.).
 
 **Characteristics:**
 
-- 3 mandatory human gates
+- 3 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW)
 - Four-eyes **required** — reviewer must differ from initiator
 - Self-approval **not allowed**
 - Audit trail mandatory
-- Hash chain verification
+- Hash chain verification (strict mode in archive verification)
+- Mandatory independent subagent review for `/plan`, `/architecture`, and `/implement` (fail-closed)
 
 **When to use:**
 
@@ -94,21 +99,19 @@ In `config.json`:
 ```json
 {
   "policy": {
-    "defaultMode": "regulated",
-    "modes": {
-      "regulated": {
-        "requireHumanGates": true,
-        "allowSelfApproval": false,
-        "audit": {
-          "emitTransitions": true,
-          "emitToolCalls": true,
-          "enableChainHash": true
-        }
-      }
-    }
+    "defaultMode": "regulated"
   }
 }
 ```
+
+The selected mode determines all enforcement characteristics in the table above
+(human gates, four-eyes, self-approval, audit trail, hash chain, iteration limits,
+subagent review). Per-mode overrides via `policy.modes.<mode>.<field>` are **not**
+a runtime authority surface in the current release — see
+[`configuration.md`](./configuration.md#policymodes). The mode itself is the
+configuration unit. To configure stronger actor identity assurance independent of
+mode, use `policy.minimumActorAssuranceForApproval` and
+`policy.identityProviderMode` (see "Configuring Stronger Assurance" below).
 
 ## Central Policy Minimum
 
@@ -129,13 +132,26 @@ Resolution contract:
 
 ## Policy Comparison
 
-| Setting            | Solo     | Team        | Team-CI     | Regulated       |
-| ------------------ | -------- | ----------- | ----------- | --------------- |
-| Human gates        | 0        | 3           | 0 (CI only) | 3               |
-| Four-eyes required | No       | No          | No          | **Yes**         |
-| Self-approval      | Allowed  | Allowed     | Allowed     | **Not Allowed** |
-| Audit trail        | Optional | Recommended | Recommended | **Mandatory**   |
-| Hash chain         | No       | Optional    | **Yes**     | **Yes**         |
+| Setting                   | Solo     | Team    | Team-CI             | Regulated       |
+| ------------------------- | -------- | ------- | ------------------- | --------------- |
+| Human gates               | 0        | 3       | 0 (CI only; else 3) | 3               |
+| Four-eyes required        | No       | No      | No                  | **Yes**         |
+| Self-approval             | Allowed  | Allowed | Allowed             | **Not Allowed** |
+| Audit trail               | Optional | **Yes** | **Yes**             | **Mandatory**   |
+| Hash chain                | No       | **Yes** | **Yes**             | **Yes**         |
+| Subagent review           | **Yes**  | **Yes** | **Yes**             | **Yes**         |
+| Strict review enforcement | **Yes**  | **Yes** | **Yes**             | **Yes**         |
+
+**Human gates list (where applicable):** `PLAN_REVIEW`, `EVIDENCE_REVIEW`,
+`ARCH_REVIEW`. `IMPL_REVIEW` is an independent-review gate (subagent-driven), not
+a human gate.
+
+**Subagent review:** All four modes ship with `selfReview.subagentEnabled = true`,
+`selfReview.fallbackToSelf = false`, `selfReview.strictEnforcement = true` as the
+runtime-normalized defaults. Self-review is never accepted as review evidence in
+the current release; the orchestrator deterministically invokes the
+`flowguard-reviewer` subagent for `/plan`, `/architecture`, and `/implement` and
+fails closed on missing or mismatched evidence (see `docs/independent-review.md`).
 
 ## Actor Identity & Assurance
 
