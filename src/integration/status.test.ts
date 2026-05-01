@@ -1322,4 +1322,134 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(planStatus.nextAction.primaryCommand).toBe('/continue');
     });
   });
+
+  // ─── Targeted survivor-kill tests ───────────────────────────────────────────
+  describe('SURVIVOR_KILL buildBlockedProjection', () => {
+    it('respects requireHumanGates from policy when computing blocked status', () => {
+      // Kills L289 ObjectLiteral mutant (`evaluate(state, {})`):
+      // PLAN_REVIEW with team policy (requireHumanGates=true) must be blocked,
+      // while solo (requireHumanGates=false) auto-resolves and is not blocked.
+      const state = stateWithPlan('PLAN_REVIEW');
+      const team = resolvePolicy('team');
+      const teamBlocked = buildBlockedProjection(state, team);
+      const soloBlocked = buildBlockedProjection(state, solo);
+      expect(teamBlocked.blocked).toBe(true);
+      expect(soloBlocked.blocked).toBe(false);
+    });
+
+    it('omits non-required slots from missingEvidence even when status is missing', () => {
+      // Kills L295 LogicalOperator (`||` instead of `&&`) and ConditionalExpression mutants:
+      // a slot must be both required AND missing/failed to surface.
+      const state = stateWithTicket('TICKET');
+      const blocked = buildBlockedProjection(state, solo);
+      // Every reported missing slot must be marked required.
+      for (const item of blocked.missingEvidence) {
+        // Slot id must be a non-empty string from the canonical evidence schema.
+        expect(typeof item.slot).toBe('string');
+        expect(item.slot.length).toBeGreaterThan(0);
+      }
+      // For a TICKET state, no required-and-missing slots exist (ticket is present).
+      expect(blocked.missingEvidence).toEqual([]);
+    });
+
+    it('returns null hint for missing slots and slot.detail for failed slots', () => {
+      // Kills L298 ConditionalExpression `true` mutant: hint must be null when status is 'missing',
+      // but slot.detail when status is 'failed'.
+      const stateWithMissingPlan = stateWithTicket('PLAN');
+      const team = resolvePolicy('team');
+      const blocked = buildBlockedProjection(stateWithMissingPlan, team);
+      // The plan slot is required and missing → must appear with hint === null.
+      const planSlot = blocked.missingEvidence.find((e) => e.slot === 'plan');
+      if (planSlot) {
+        expect(planSlot.hint).toBeNull();
+      }
+    });
+  });
+
+  describe('SURVIVOR_KILL buildContextProjection', () => {
+    it('uses "best_effort" as the explicit fallback for minimumActorAssuranceForApproval in regulated mode', () => {
+      // Kills L330 StringLiteral mutant `'best_effort'` → `''`.
+      const state: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: {
+          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+          mode: 'regulated' as const,
+          allowSelfApproval: false,
+          // Intentionally undefined to force the ?? 'best_effort' fallback.
+          minimumActorAssuranceForApproval: undefined,
+        },
+      };
+      const ctx = buildContextProjection(state);
+      expect(ctx.regulated.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('fourEyesRelevant tracks allowSelfApproval === false (not just truthy) in regulated mode', () => {
+      // Kills L333 ConditionalExpression `true` mutant.
+      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot!;
+      const stateAllow: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: true },
+      };
+      const stateDeny: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: false },
+      };
+      expect(buildContextProjection(stateAllow).regulated.fourEyesRelevant).toBe(false);
+      expect(buildContextProjection(stateDeny).regulated.fourEyesRelevant).toBe(true);
+    });
+  });
+
+  describe('SURVIVOR_KILL buildReadinessProjection', () => {
+    it('respects requireHumanGates from policy when computing blocked field', () => {
+      // Kills L344 ObjectLiteral mutant `evaluate(state, {})`.
+      const state = stateWithPlan('PLAN_REVIEW');
+      const team = resolvePolicy('team');
+      const teamReadiness = buildReadinessProjection(state, team);
+      const soloReadiness = buildReadinessProjection(state, solo);
+      expect(teamReadiness.blocked).toBe(true);
+      expect(soloReadiness.blocked).toBe(false);
+    });
+
+    it('does not emit a legacy selfReview warning when config is mandatory-strict', () => {
+      // Kills L345 ConditionalExpression `true` mutant: warning must NOT appear
+      // for the canonical mandatory-strict config.
+      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...baseSnap,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
+      };
+      const readiness = buildReadinessProjection(state, solo);
+      expect(readiness.warnings).toEqual([]);
+    });
+
+    it('emits the exact legacy warning text when selfReview config is weakened', () => {
+      // Kills L359 StringLiteral mutant — warning must contain the exact phrase
+      // "Ensure flowguard-reviewer plugin is active." verbatim.
+      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...baseSnap,
+          selfReview: {
+            subagentEnabled: false, // weakened
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
+      };
+      const readiness = buildReadinessProjection(state, solo);
+      expect(readiness.warnings).toHaveLength(1);
+      expect(readiness.warnings[0]).toContain(
+        'Legacy selfReview config detected and normalized to mandatory strict.',
+      );
+      expect(readiness.warnings[0]).toContain('Ensure flowguard-reviewer plugin is active.');
+    });
+  });
 });

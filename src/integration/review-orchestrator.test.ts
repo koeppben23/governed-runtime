@@ -189,6 +189,51 @@ describe('buildPlanReviewPrompt', () => {
     // MIN_SUBAGENT_PROMPT_LENGTH is 200 chars
     expect(prompt.length).toBeGreaterThan(200);
   });
+
+  // SURVIVOR_KILL: pin every literal phrase emitted by the prompt builder so that
+  // string-literal mutations cannot survive.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildPlanReviewPrompt({
+      ...baseOpts,
+      iteration: 5,
+      planVersion: 7,
+      obligationId: 'OBL-42',
+      criteriaVersion: 'CRIT-v9',
+      mandateDigest: 'MD-deadbeef',
+    });
+    expect(prompt).toContain('You are reviewing a plan for iteration=5, planVersion=7.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain(
+      'Review this plan against the ticket requirements. Follow your review criteria',
+    );
+    expect(prompt).toContain(
+      'for plans. Return your findings as a single JSON object matching the',
+    );
+    expect(prompt).toContain(
+      'ReviewFindings schema. Use the exact iteration and planVersion values above.',
+    );
+    expect(prompt).toContain('Set iteration=5 and planVersion=7 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-v9.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-deadbeef.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+  });
+
+  it('joins prompt lines with "\\n" (kills join-char string mutant)', () => {
+    const prompt = buildPlanReviewPrompt(baseOpts);
+    const lines = prompt.split('\n');
+    // Empty join would collapse to 1 line; canonical prompt has many.
+    expect(lines.length).toBeGreaterThan(15);
+    // First line must be the canonical opening.
+    expect(lines[0]).toBe('You are reviewing a plan for iteration=0, planVersion=1.');
+    // Section headings must appear on their own lines surrounded by blanks.
+    const ticketIdx = lines.indexOf('## Ticket');
+    expect(ticketIdx).toBeGreaterThan(-1);
+    expect(lines[ticketIdx - 1]).toBe('');
+    expect(lines[ticketIdx + 1]).toBe('');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -235,6 +280,44 @@ describe('buildImplReviewPrompt', () => {
     });
     expect(prompt).toContain('- src/my file.ts');
     expect(prompt).toContain('- src/@scope/pkg.ts');
+  });
+
+  // SURVIVOR_KILL: pin every literal phrase emitted by the impl prompt builder.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      iteration: 4,
+      planVersion: 6,
+      obligationId: 'OBL-99',
+      criteriaVersion: 'CRIT-impl-v3',
+      mandateDigest: 'MD-cafebabe',
+    });
+    expect(prompt).toContain('You are reviewing an implementation for iteration=4, planVersion=6.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Approved Plan');
+    expect(prompt).toContain('## Changed Files');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain('Review this implementation against the approved plan and ticket.');
+    expect(prompt).toContain(
+      'Read the changed files using the read/glob/grep tools to verify correctness.',
+    );
+    expect(prompt).toContain('Follow your review criteria for implementations.');
+    expect(prompt).toContain(
+      'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    );
+    expect(prompt).toContain('Set iteration=4 and planVersion=6 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-impl-v3.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-cafebabe.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+  });
+
+  it('joins changed files with "\\n" using "- " bullet prefix', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      changedFiles: ['a.ts', 'b.ts', 'c.ts'],
+    });
+    expect(prompt).toContain('- a.ts\n- b.ts\n- c.ts');
   });
 });
 

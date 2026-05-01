@@ -650,5 +650,27 @@ describe('review rail', () => {
       expect(report.findings).toHaveLength(0);
       expect(report.overallStatus).toBe('clean');
     });
+
+    it('info-only findings → overallStatus "clean" (kills hasWarnings predicate mutant)', async () => {
+      // Kills L162 mutant: `(f) => f.severity === 'warning'` → `(f) => true`.
+      // A clean state with only info-level LLM findings must yield overallStatus 'clean',
+      // NOT 'warnings'. The mutant would flip it to 'warnings'.
+      const state = makeProgressedState('COMPLETE');
+      const cleanState = {
+        ...state,
+        policySnapshot: { ...state.policySnapshot, allowSelfApproval: true },
+      };
+      const llmExecutors: ReviewExecutors = {
+        analyze: async () => [
+          { severity: 'info', category: 'style', message: 'Code looks clean' },
+          { severity: 'info', category: 'docs', message: 'Documentation is thorough' },
+        ],
+      };
+      const report = await executeReview(cleanState, NOW, llmExecutors);
+      // Two info findings exist, but no warnings or errors.
+      expect(report.findings).toHaveLength(2);
+      expect(report.findings.every((f) => f.severity === 'info')).toBe(true);
+      expect(report.overallStatus).toBe('clean');
+    });
   });
 });
