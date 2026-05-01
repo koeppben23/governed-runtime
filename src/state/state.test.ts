@@ -369,8 +369,14 @@ describe('state schemas', () => {
       expect(RevisionDelta.options).toEqual(['none', 'minor', 'major']);
     });
 
-    it('LoopVerdict has exactly 2 values (no reject)', () => {
-      expect(LoopVerdict.options).toEqual(['approve', 'changes_requested']);
+    it('LoopVerdict has 3 values: approve, changes_requested, unable_to_review (no reject)', () => {
+      expect(LoopVerdict.options).toEqual(['approve', 'changes_requested', 'unable_to_review']);
+    });
+
+    it('LoopVerdict rejects unknown values', () => {
+      expect(() => LoopVerdict.parse('reject')).toThrow();
+      expect(() => LoopVerdict.parse('unknown')).toThrow();
+      expect(() => LoopVerdict.parse('')).toThrow();
     });
 
     it('PolicySnapshotSchema validates nested audit object', () => {
