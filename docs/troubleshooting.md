@@ -139,14 +139,11 @@ real, registered reason.
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                               |
 | `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                     |
 | `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact |
-| `SUBAGENT_MANDATE_MISSING`           | Findings missing the attestation block                                        | Use the runtime-emitted reviewer template; do not strip attestation                   |
-| `SUBAGENT_MANDATE_MISMATCH`          | Attestation digest does not match runtime `REVIEW_MANDATE_DIGEST`             | Verify the reviewer template was not modified                                         |
-| `REVIEW_MODE_SELF_NOT_ALLOWED`       | Self-review submitted but strict subagent mode is mandatory                   | Invoke `flowguard-reviewer` via the Task tool                                         |
-| `REVIEW_PLAN_VERSION_MISMATCH`       | `findings.planVersion` does not match runtime expected planVersion            | Use the planVersion the runtime emitted in the obligation                             |
-| `REVIEW_ITERATION_MISMATCH`          | `findings.iteration` does not match runtime expected iteration                | Use the iteration the runtime emitted in the obligation                               |
+| `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                   |
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                        |
-| `STRICT_REVIEW_ORCHESTRATION_FAILED` | Plugin orchestrator could not invoke or parse the reviewer subagent           | Retry; if persistent, run `flowguard doctor`                                          |
-| `PLUGIN_ENFORCEMENT_UNAVAILABLE`     | Plugin enforcement state could not be loaded                                  | Re-hydrate; if persistent, restore from archive                                       |
+| `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                         |
+| `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                          |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                       |
 
 ### Identity & Approvals
 
@@ -154,7 +151,7 @@ real, registered reason.
 | ------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `ACTOR_ASSURANCE_INSUFFICIENT` | Approver assurance below `policy.minimumActorAssuranceForApproval`      | Configure stronger actor assurance (see `docs/policies.md`) |
 | `ACTOR_IDP_MODE_REQUIRED`      | `policy.identityProviderMode=required` but actor cannot be IdP-verified | Provide a valid `FLOWGUARD_ACTOR_TOKEN_PATH`                |
-| `FOUR_EYES_VIOLATION`          | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                     |
+| `FOUR_EYES_ACTOR_MATCH`        | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                     |
 
 ### Configuration & Central Policy
 
@@ -175,6 +172,109 @@ Archive **runtime** errors are surfaced via tool BLOCKED responses; archive
 **verification** findings are reported by `verifyArchive()` per
 [`docs/archive.md`](./archive.md#verification-finding-codes) (11 finding codes
 covering manifest, hash chain, and per-artifact integrity).
+
+## Complete Registered Code Index
+
+This index is intentionally compact. The canonical messages, categories, recovery
+steps, and quick fixes remain in `src/config/reasons.ts`.
+
+```text
+ABORTED
+ACTOR_ASSURANCE_INSUFFICIENT
+ACTOR_CLAIM_EXPIRED
+ACTOR_CLAIM_INVALID
+ACTOR_CLAIM_MISSING
+ACTOR_CLAIM_PATH_EMPTY
+ACTOR_CLAIM_UNREADABLE
+ACTOR_IDP_CONFIG_REQUIRED
+ACTOR_IDP_MODE_REQUIRED
+ADR_REVIEW_IN_PROGRESS
+ADR_SUBMISSION_MIXED_INPUTS
+ARCHITECTURE_REVIEW_LOOP_REQUIRED
+AUDIT_PERSISTENCE_FAILED
+CENTRAL_POLICY_INVALID_JSON
+CENTRAL_POLICY_INVALID_MODE
+CENTRAL_POLICY_INVALID_SCHEMA
+CENTRAL_POLICY_MISSING
+CENTRAL_POLICY_PATH_EMPTY
+CENTRAL_POLICY_UNREADABLE
+COMMAND_NOT_ALLOWED
+DECISION_IDENTITY_REQUIRED
+DECISION_RECEIPT_ACTOR_MISSING
+DISCOVERY_PERSIST_FAILED
+DISCOVERY_RESULT_MISSING
+EMPTY_ADR_TEXT
+EMPTY_ADR_TITLE
+EMPTY_PLAN
+EMPTY_TICKET
+EVIDENCE_ARTIFACT_IMMUTABLE
+EVIDENCE_ARTIFACT_MISMATCH
+EVIDENCE_ARTIFACT_MISSING
+EXISTING_POLICY_WEAKER_THAN_CENTRAL
+EXPLICIT_WEAKER_THAN_CENTRAL
+FOUR_EYES_ACTOR_MATCH
+GIT_COMMAND_FAILED
+GIT_NOT_FOUND
+HYDRATE_DISCOVERY_CONTRACT_FAILED
+IMPLEMENTATION_EVIDENCE_REQUIRED
+IMPLEMENT_REVIEW_LOOP_REQUIRED
+INTERNAL_ERROR
+INVALID_ARCHITECTURE_TOOL_SEQUENCE
+INVALID_FINGERPRINT
+INVALID_IMPLEMENT_TOOL_SEQUENCE
+INVALID_PLAN_TOOL_SEQUENCE
+INVALID_PROFILE
+INVALID_TRANSITION
+INVALID_VERDICT
+MISSING_ADR_SECTIONS
+MISSING_CHECKS
+MISSING_SESSION_ID
+MISSING_WORKTREE
+NOT_GIT_REPO
+NO_ACTIVE_CHECKS
+NO_ARCHITECTURE
+NO_IMPLEMENTATION
+NO_PLAN
+NO_SELF_REVIEW
+NO_SESSION
+PARSE_FAILED
+PLAN_APPROVE_WITH_TEXT
+PLAN_FINDINGS_WITHOUT_VERDICT
+PLAN_REQUIRED
+PLAN_REVIEW_IN_PROGRESS
+PLAN_REVIEW_LOOP_REQUIRED
+PLAN_SUBMISSION_MIXED_INPUTS
+PLAN_SUBMISSION_REQUIRED
+POLICY_SNAPSHOT_MISSING
+PROFILE_RESOLUTION_PERSIST_FAILED
+READ_FAILED
+REGULATED_ACTOR_UNKNOWN
+REVIEW_ASSURANCE_STATE_UNAVAILABLE
+REVIEW_FINDINGS_HASH_MISMATCH
+REVIEW_FINDINGS_REQUIRED
+REVIEW_FINDINGS_SESSION_MISMATCH
+REVISED_PLAN_REQUIRED
+SCHEMA_VALIDATION_FAILED
+SUBAGENT_CONTEXT_UNVERIFIABLE
+SUBAGENT_EVIDENCE_REUSED
+SUBAGENT_FINDINGS_ISSUES_MISMATCH
+SUBAGENT_FINDINGS_VERDICT_MISMATCH
+SUBAGENT_PROMPT_EMPTY
+SUBAGENT_PROMPT_MISSING_CONTEXT
+SUBAGENT_REVIEW_NOT_INVOKED
+SUBAGENT_SESSION_MISMATCH
+SUBAGENT_UNABLE_TO_REVIEW
+TICKET_REQUIRED
+TOOL_ERROR
+VALIDATION_INCOMPLETE
+VERIFIED_ACTOR_REQUIRED
+WORKSPACE_CONFIG_INVALID
+WORKSPACE_CONFIG_MISSING
+WORKSPACE_CONFIG_WRITE_FAILED
+WORKTREE_MISMATCH
+WRITE_FAILED
+WRONG_PHASE
+```
 
 ## Debug Mode
 
