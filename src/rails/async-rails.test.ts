@@ -530,6 +530,32 @@ describe('continue rail', () => {
       }
     });
 
+    // ─── F13 slice 5: BlockedResult routing for arch self-review ───
+    it("at ARCHITECTURE with reviewer 'unable_to_review' → BLOCKED (SUBAGENT_UNABLE_TO_REVIEW)", async () => {
+      const unableExecutors = {
+        ...continueExecutors,
+        architectureReview: async () => ({ verdict: 'unable_to_review' as const }),
+      };
+      const state = makeState('ARCHITECTURE', {
+        architecture: ARCHITECTURE_DECISION,
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: ARCHITECTURE_DECISION.digest,
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+      });
+      const result = await executeContinue(state, ctx, unableExecutors);
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+        // F13 invariant: phase must NOT advance to ARCH_REVIEW on unable_to_review
+        // (BLOCKED, not convergence).
+      }
+    });
+
     it('at REVIEW → auto-advances to REVIEW_COMPLETE', async () => {
       const state = makeState('REVIEW');
       const result = await executeContinue(state, ctx, continueExecutors);
