@@ -388,4 +388,75 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('INTERNAL_ERROR');
   });
+
+  // ── F13 slice 7b: Mode-A INDEPENDENT_REVIEW_REQUIRED + reviewObligation ──
+
+  it('emits INDEPENDENT_REVIEW_REQUIRED next-action when subagentEnabled=true (Mode A)', async () => {
+    // Slice 7b: when policy.selfReview.subagentEnabled=true, the architecture
+    // tool MUST emit a next-action that instructs the primary agent to call
+    // the flowguard-reviewer subagent before submitting a verdict. Mirrors
+    // plan.ts and implement.ts behavior. The orchestrator (slice 6) detects
+    // this marker to dispatch the subagent automatically.
+    mocks.resolvePolicyFromState.mockReturnValueOnce({
+      maxSelfReviewIterations: 3,
+      selfReview: { subagentEnabled: true },
+    } as never);
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.next).toContain('flowguard-reviewer');
+    expect(parsed.next).toContain('Task tool');
+    expect(parsed.next).toContain('full ADR text');
+    expect(parsed.next).toContain('ticket text');
+    expect(parsed.reviewMode).toBe('subagent');
+  });
+
+  it('attaches an architecture review obligation when subagentEnabled=true (Mode A)', async () => {
+    // Slice 7b: the response and the persisted state must carry a fresh
+    // ReviewObligation with obligationType='architecture' so:
+    //  (a) the orchestrator can identify the subagent dispatch target, and
+    //  (b) Mode B verdict submission can be cross-checked via
+    //      validateReviewFindings (slice 7c).
+    mocks.resolvePolicyFromState.mockReturnValueOnce({
+      maxSelfReviewIterations: 3,
+      selfReview: { subagentEnabled: true },
+    } as never);
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.reviewObligation).toBeDefined();
+    expect(parsed.reviewObligation.obligationType).toBe('architecture');
+    expect(parsed.reviewObligation.iteration).toBe(0);
+    expect(parsed.reviewObligation.planVersion).toBe(1);
+    expect(parsed.reviewObligation.obligationId).toBeDefined();
+    // Backward-compat flat fields parity with plan.ts
+    expect(parsed.reviewObligationId).toBe(parsed.reviewObligation.obligationId);
+    expect(parsed.reviewObligationIteration).toBe(0);
+    // Persisted state carries the obligation
+    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
+      reviewAssurance?: { obligations?: Array<{ obligationType?: string }> };
+    };
+    expect(writtenState.reviewAssurance?.obligations).toHaveLength(1);
+    expect(writtenState.reviewAssurance?.obligations?.[0]?.obligationType).toBe('architecture');
+  });
+
+  it('keeps legacy self-review next-action when subagentEnabled=false (Mode A)', async () => {
+    // Slice 7b backwards-compat guarantee: with the legacy default
+    // (subagentEnabled absent or false), the Mode-A response MUST NOT
+    // mention INDEPENDENT_REVIEW_REQUIRED, MUST set reviewMode='self',
+    // and MUST NOT attach a reviewObligation. This pin protects the
+    // backwards-compat fallback path against accidental coupling.
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.next).not.toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(parsed.next).toContain('Self-review needed');
+    expect(parsed.reviewMode).toBe('self');
+    expect(parsed.reviewObligation).toBeUndefined();
+    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
+      reviewAssurance?: { obligations?: unknown[] };
+    };
+    expect(writtenState.reviewAssurance?.obligations ?? []).toHaveLength(0);
+  });
 });
