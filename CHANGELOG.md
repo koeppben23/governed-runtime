@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
+
+- **Content-aware `/review` (PR-E)**: `ReviewReferenceInput` extended with `text`, `prNumber`, `branch`, `url` fields. `/review` now loads external content (text blob, PR diff via `gh` CLI, branch diff via `gh` CLI, URL fetch via native `fetch`) and passes it to `executors.analyze()` as context. `gh` CLI is a hard dependency when PR/branch content is requested — missing CLI returns `blocked` with recovery instructions. New helper functions: `loadExternalContent`, `loadPrContent`, `loadBranchContent`, `loadUrlContent`, `buildMechanicalFindings`, `buildReport`. `executeReview` refactored for low complexity (12) and testability. Comprehensive tests: happy (text, url), bad (gh missing), corner (empty text), edge (no content fields).
 
 - **ReviewReport Zod schema completeness field (PR-C)**: `ReviewReport` Zod schema in `evidence.ts` now includes `completeness: CompletenessReportSchema`. Previously `ReviewReport.safeParse()` stripped the `completeness` matrix when persisting or reading `review-report.json` (H1 defect). `CompletenessReportSchema` is imported from `audit/completeness.js` where it is defined alongside the existing interfaces. `ExtendedReviewReport` type removed from `review.ts`; `executeReview` now returns `ReviewReport` directly. Tests in `state.test.ts`, `adapters.test.ts`, and `review.test.ts` updated for the new schema.
 
