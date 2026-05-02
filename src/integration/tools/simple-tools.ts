@@ -36,8 +36,17 @@ import {
 } from '../../state/evidence.js';
 import type { ReviewReferenceInput } from '../../rails/review.js';
 
-// Review assurance (mandate digest)
-import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from '../review-assurance.js';
+// Review assurance (mandate digest, obligation lifecycle)
+import {
+  REVIEW_MANDATE_DIGEST,
+  REVIEW_CRITERIA_VERSION,
+  createReviewObligation,
+  appendReviewObligation,
+  findLatestPendingReviewObligation,
+  consumeReviewObligation,
+  validateStrictAttestation,
+  ensureReviewAssurance,
+} from '../review-assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Adapters
@@ -142,16 +151,18 @@ function hasReviewContentInput(args: {
  * Canonical recovery payload for any blocked /review response that requires the
  * primary agent to re-invoke the flowguard-reviewer subagent. Includes the
  * exact attestation values the subagent must populate so the agent never has
- * to guess `mandateDigest` or `criteriaVersion`.
+ * to guess `mandateDigest`, `criteriaVersion`, or `toolObligationId`.
  *
- * `toolObligationId` is intentionally absent: standalone /review has no
- * obligation, so we must not push the agent toward fabricating a UUID.
+ * `toolObligationId` is the UUID of the ReviewObligation created for this
+ * content-aware /review call. Every content-aware /review now creates a real
+ * obligation before sending a blocked response.
  */
-function buildRequiredReviewAttestationPayload(): {
+function buildRequiredReviewAttestationPayload(obligationId: string): {
   requiredReviewAttestation: {
     reviewedBy: string;
     mandateDigest: string;
     criteriaVersion: string;
+    toolObligationId: string;
   };
   reviewerSubagentType: string;
   recovery: string[];
@@ -161,12 +172,13 @@ function buildRequiredReviewAttestationPayload(): {
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
+      toolObligationId: obligationId,
     },
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
       'Call Task tool with subagent_type: "flowguard-reviewer" and provide the content in the prompt.',
-      'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, and attestation.criteriaVersion exactly.',
+      'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
       'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
       'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
       'Re-run flowguard_review with analysisFindings set to the complete ReviewFindings object.',
@@ -174,26 +186,28 @@ function buildRequiredReviewAttestationPayload(): {
   };
 }
 
-function formatBlockedWithAttestation(code: string, message: string): string {
+function formatBlockedWithAttestation(code: string, message: string, obligationId: string): string {
   return JSON.stringify({
     error: true,
     code,
     message,
-    ...buildRequiredReviewAttestationPayload(),
+    ...buildRequiredReviewAttestationPayload(obligationId),
   });
 }
 
-function formatMissingContentAnalysis(): string {
+function formatMissingContentAnalysis(obligationId: string): string {
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
     'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object.',
+    obligationId,
   );
 }
 
-function formatSubagentReviewNotInvoked(detail: string): string {
+function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
     `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the flowguard-reviewer subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object.`,
+    obligationId,
   );
 }
 
@@ -254,7 +268,7 @@ export const review: ToolDefinition = {
       const { sessDir, state, ctx } = await withMutableSession(context);
 
       // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
-      const result = executeReviewFlow(state, ctx);
+      let result = executeReviewFlow(state, ctx);
 
       if (result.kind === 'blocked') {
         return formatRailResult(result);
@@ -264,43 +278,77 @@ export const review: ToolDefinition = {
       const now = new Date().toISOString();
       let refInput = buildReviewReferenceInput(args);
 
-      // Content-aware review requires analysisFindings
+      // Content-aware review requires analysisFindings.
+      // When absent, create or reuse a pending review obligation and return
+      // a blocked response so the agent gets the canonical attestation values.
       const hasContentInput = hasReviewContentInput(args);
       if (hasContentInput && args.analysisFindings === undefined) {
-        return formatMissingContentAnalysis();
+        // Create or reuse a pending review obligation for this content-aware call.
+        // Idempotent: repeated calls with the same input reuse the same obligation
+        // so that an already-in-flight subagent invocation is not invalidated.
+        const assurance = state.reviewAssurance;
+        let obligation = findLatestPendingReviewObligation(assurance, 'review');
+        if (!obligation) {
+          obligation = createReviewObligation({
+            obligationType: 'review',
+            iteration: 1,
+            planVersion: 1,
+            now,
+          });
+          // Persist the new obligation to state so the follow-up call (with
+          // analysisFindings) finds it. Existing obligations are already persisted.
+          const augmentedState = {
+            ...state,
+            reviewAssurance: appendReviewObligation(assurance, obligation),
+          };
+          await writeStateWithArtifacts(sessDir, augmentedState);
+        }
+
+        return formatMissingContentAnalysis(obligation.obligationId);
       }
 
-      // If analysisFindings provided, validate it came from the flowguard-reviewer
-      // subagent (attestation-based, no spoofable sessionId checks) and skip the
-      // external content load to preserve subagent's authoritative analysis.
+      // If analysisFindings provided, validate against the pending obligation
+      // using the central validateStrictAttestation gate.
       if (args.analysisFindings !== undefined) {
         const findings = args.analysisFindings as Record<string, unknown>;
         const reviewMode = findings.reviewMode as string;
-        const attestation = findings.attestation as Record<string, unknown> | undefined;
+
+        // Resolve the obligation early so we can include its UUID in blocked
+        // responses even when the failure is pre-attestation (e.g. wrong reviewMode).
+        const assurance = state.reviewAssurance;
+        const obligation = findLatestPendingReviewObligation(assurance, 'review');
+        const obligationId = obligation?.obligationId ?? '';
 
         if (reviewMode !== 'subagent') {
           return formatSubagentReviewNotInvoked(
             'reviewMode is not "subagent" — findings did not come from the flowguard-reviewer subagent',
+            obligationId,
           );
         }
 
-        if (!attestation) {
-          return formatSubagentReviewNotInvoked('attestation is missing from ReviewFindings');
+        if (!obligation) {
+          return formatSubagentReviewNotInvoked(
+            'no pending review obligation found — call /review without analysisFindings first to create one',
+            '',
+          );
         }
 
-        if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) {
+        // Delegate to the central validateStrictAttestation gate that /plan,
+        // /architecture, and /implement use. This avoids duplicating attestation
+        // logic and guarantees the same enforcement.
+        const verdict = validateStrictAttestation(
+          findings as unknown as Parameters<typeof validateStrictAttestation>[0],
+          {
+            obligationId: obligation.obligationId,
+            iteration: obligation.iteration,
+            planVersion: obligation.planVersion,
+          },
+        );
+
+        if (verdict) {
           return formatSubagentReviewNotInvoked(
-            `attestation.reviewedBy is not "${REVIEWER_SUBAGENT_TYPE}"`,
-          );
-        }
-        if (attestation.mandateDigest !== REVIEW_MANDATE_DIGEST) {
-          return formatSubagentReviewNotInvoked(
-            'attestation.mandateDigest does not match REVIEW_MANDATE_DIGEST',
-          );
-        }
-        if (attestation.criteriaVersion !== REVIEW_CRITERIA_VERSION) {
-          return formatSubagentReviewNotInvoked(
-            'attestation.criteriaVersion does not match REVIEW_CRITERIA_VERSION',
+            `validateStrictAttestation returned ${verdict}`,
+            obligation.obligationId,
           );
         }
 
@@ -373,6 +421,29 @@ export const review: ToolDefinition = {
 
       if ('kind' in report && report.kind === 'blocked') {
         return formatBlockedReviewReport(report);
+      }
+
+      // Consume the review obligation on success so the same obligation
+      // UUID cannot be reused for another submission (single-use enforcement,
+      // matching /plan, /architecture, and /implement).
+      if (args.analysisFindings !== undefined) {
+        const obligation = findLatestPendingReviewObligation(
+          result.state.reviewAssurance,
+          'review',
+        );
+        if (obligation) {
+          result = {
+            ...result,
+            state: {
+              ...result.state,
+              reviewAssurance: consumeReviewObligation(
+                ensureReviewAssurance(result.state.reviewAssurance),
+                obligation,
+                now,
+              ),
+            },
+          };
+        }
       }
 
       // 3. Persist state + write report artifact

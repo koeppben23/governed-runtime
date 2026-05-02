@@ -244,18 +244,18 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
  * P35 strict independent-review attestation.
  * Binds findings to one obligation + mandate version/digest.
  *
- * `toolObligationId` is optional at the schema level so that standalone /review
- * (which has no real obligation) can submit attested ReviewFindings without
- * inventing a UUID. Runtime gates for /plan, /architecture, and /implement
- * compare `toolObligationId` against the expected obligationId
- * (see review-assurance.ts:validateStrictAttestation, plugin-orchestrator.ts);
- * a missing field still fails those gates because `undefined !== <real-uuid>`.
+ * `toolObligationId` identifies the ReviewObligation this attestation is
+ * bound to. All reviewable flows (/plan, /architecture, /implement,
+ * /review) create a ReviewObligation before subagent invocation, so the
+ * UUID is always available.
+ * validateStrictAttestation (review-assurance.ts) and plugin-orchestrator.ts
+ * compare this field against the expected obligationId.
  */
 export const ReviewAttestation = z
   .object({
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
-    toolObligationId: z.string().uuid().optional(),
+    toolObligationId: z.string().uuid(),
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
     reviewedBy: z.literal(REVIEWER_SUBAGENT_TYPE),
@@ -286,7 +286,7 @@ export const ReviewFindings = z
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 /** Independent review obligation type. */
-export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture']);
+export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture', 'review']);
 export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 
 /** Strict review obligation state. */

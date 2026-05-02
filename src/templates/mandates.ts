@@ -394,9 +394,10 @@ When the prompt contains PR diff, branch diff, URL content, or manual text to re
    to an array and do NOT drop \`reviewMode\`, \`reviewedBy\`, \`reviewedAt\`, \`attestation\`,
    \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
 
-4. **Standalone /review has no obligation.** Omit \`attestation.toolObligationId\` for
-   standalone /review calls. Only include \`toolObligationId\` when FlowGuard provides
-   one in the prompt (i.e., for /plan, /architecture, or /implement reviews).
+4. **toolObligationId is always provided.** Include \`attestation.toolObligationId\`
+    exactly as provided by FlowGuard in \`requiredReviewAttestation\`. This UUID binds
+    your findings to the review obligation. Every content-aware /review flow
+    receives a canonical UUID — do NOT invent, omit, or reuse one from a prior call.
 
 ## When You Cannot Review (Validity Conditions)
 
@@ -465,7 +466,7 @@ Do NOT include any text before or after the JSON.
   "attestation": {
     "mandateDigest": "<from prompt: attestation.mandateDigest value>",
     "criteriaVersion": "<from prompt: attestation.criteriaVersion value>",
-    "toolObligationId": "<include ONLY when FlowGuard provided one in the prompt; for standalone /review, omit this field entirely>",
+    "toolObligationId": "<from prompt: attestation.toolObligationId value. FlowGuard provides this UUID for every reviewable flow, including content-aware /review.>",
     "iteration": <same number as top-level iteration>,
     "planVersion": <same number as top-level planVersion>,
     "reviewedBy": "flowguard-reviewer"

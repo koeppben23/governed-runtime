@@ -41,13 +41,19 @@ Start the compliance review flow for the current FlowGuard session.
       \`reviewMode: "subagent"\`, \`iteration\`, \`planVersion\`, \`overallVerdict\`,
       \`blockingIssues\`, \`majorRisks\`, \`missingVerification\`, \`scopeCreep\`, \`unknowns\`,
       \`reviewedBy { sessionId }\`, \`reviewedAt\`, and \`attestation { reviewedBy: "flowguard-reviewer", mandateDigest, criteriaVersion }\`.
-    - For standalone /review, omit \`attestation.toolObligationId\` (no real obligation exists). Do NOT invent a UUID.
-      Only include \`toolObligationId\` if FlowGuard provided one in the prompt.
+    - Set \`attestation.toolObligationId\` to the value provided in \`requiredReviewAttestation\`.
+      FlowGuard provides this UUID for every content-aware /review flow that requires subagent analysis.
+      Do NOT invent a UUID — use exactly what \`requiredReviewAttestation\` returns.
     - Parse the subagent's JSON response as a \`ReviewFindings\` object.
     - Preserve every field. Do NOT convert to an array. Do NOT drop \`reviewMode\`, \`reviewedBy\`,
       \`reviewedAt\`, \`attestation\`, \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
     - Subagent findings must use \`category\` from the schema-allowed set ONLY:
       \`"completeness" | "correctness" | "feasibility" | "risk" | "quality"\`.
+
+    - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the
+      content was unparseable), do NOT submit \`analysisFindings\`. Report the reason to the user.
+      The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
+      Only submit \`analysisFindings\` when the subagent returns \`approve\` or \`changes_requested\`.
 
 4. Call \`flowguard_review\` with:
     - The matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`)

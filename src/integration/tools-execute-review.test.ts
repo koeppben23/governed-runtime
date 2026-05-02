@@ -696,8 +696,13 @@ describe('review (standalone flow)', () => {
   // primary agent would receive it from the flowguard-reviewer subagent.
   // Categories are restricted to the schema-allowed enum
   // ("completeness" | "correctness" | "feasibility" | "risk" | "quality").
-  // Standalone /review has no obligation, so toolObligationId is omitted.
-  function buildAnalysisFindings(overallVerdict: 'approve' | 'changes_requested') {
+  // toolObligationId is required (schema demands it after P2 obligation binding);
+  // callers that need the real obligation UUID should create an obligation first
+  // and pass the returned UUID to this helper.
+  function buildAnalysisFindings(
+    overallVerdict: 'approve' | 'changes_requested',
+    toolObligationId?: string,
+  ) {
     const blockingIssues =
       overallVerdict === 'changes_requested'
         ? [
@@ -709,6 +714,8 @@ describe('review (standalone flow)', () => {
             },
           ]
         : [];
+
+    const fallbackUuid = '11111111-1111-4111-8111-111111111111';
 
     return {
       iteration: 1,
@@ -723,9 +730,7 @@ describe('review (standalone flow)', () => {
       reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
-        // toolObligationId intentionally omitted: standalone /review has no
-        // real obligation. Schema permits absence; runtime gates for /plan,
-        // /architecture, and /implement still enforce it (see EDGE/E2 test).
+        toolObligationId: toolObligationId ?? fallbackUuid,
         iteration: 1,
         planVersion: 1,
         reviewedBy: 'flowguard-reviewer',
@@ -735,20 +740,38 @@ describe('review (standalone flow)', () => {
     };
   }
 
+  // Helper: Create a review obligation and return its UUID by calling /review
+  // without findings first. Hydrates a fresh READY session internally.
+  async function obtainObligationUuid(contentArg: Record<string, unknown>): Promise<string> {
+    await hydrateAndGetReady();
+    const raw = await review.execute(contentArg, ctx);
+    const blocked = parseToolResult(raw);
+    if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
+      throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
+    }
+    const att = blocked.requiredReviewAttestation as Record<string, string>;
+    return att.toolObligationId;
+  }
+
+  // Helper: Full two-step flow — creates obligation, then submits valid findings.
+  // Returns the parseToolResult from the second (successful) /review call.
+  async function submitContentReview(
+    contentArg: Record<string, unknown>,
+    overallVerdict: 'approve' | 'changes_requested' = 'approve',
+    findingOverrides?: Partial<Record<string, unknown>>,
+  ) {
+    const uuid = await obtainObligationUuid(contentArg);
+    const findings = { ...buildAnalysisFindings(overallVerdict, uuid), ...findingOverrides };
+    const raw = await review.execute({ ...contentArg, analysisFindings: findings as never }, ctx);
+    return parseToolResult(raw);
+  }
+
   // =========================================================================
   // HAPPY PATHS - Successful review flows
   // =========================================================================
   describe('HAPPY', () => {
     it('content-aware review with PR number succeeds with analysisFindings', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        { prNumber: 123, analysisFindings: findings, inputOrigin: 'pr' },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({ prNumber: 123, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.status).toBe('Review flow complete. Report generated.');
@@ -757,53 +780,27 @@ describe('review (standalone flow)', () => {
     });
 
     it('content-aware review with branch succeeds with analysisFindings', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        { branch: 'feature-auth', analysisFindings: findings, inputOrigin: 'branch' },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({ branch: 'feature-auth', inputOrigin: 'branch' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('branch');
     });
 
     it('content-aware review with URL succeeds with analysisFindings', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        {
-          url: 'https://example.com/api-doc',
-          analysisFindings: findings,
-          inputOrigin: 'external_reference',
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({
+        url: 'https://example.com/api-doc',
+        inputOrigin: 'external_reference',
+      });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('external_reference');
     });
 
     it('content-aware review with manual text succeeds', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        {
-          text: 'Manual review text content',
-          analysisFindings: findings,
-          inputOrigin: 'manual_text',
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({
+        text: 'Manual review text content',
+        inputOrigin: 'manual_text',
+      });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('manual_text');
@@ -855,17 +852,7 @@ describe('review (standalone flow)', () => {
     });
 
     it('PR number with ReviewFindings (subagent found no issues)', async () => {
-      await hydrateAndGetReady();
-
-      // Create a proper ReviewFindings object with empty arrays (subagent found no issues)
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        { prNumber: 456, analysisFindings: findings, inputOrigin: 'pr' },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({ prNumber: 456, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
     });
@@ -888,42 +875,24 @@ describe('review (standalone flow)', () => {
   // =========================================================================
   describe('CORNER', () => {
     it('mixed input: text AND references with inputOrigin="mixed"', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        {
-          text: 'Mixed content review',
-          references: [{ ref: 'PR#789', type: 'pr' }],
-          analysisFindings: findings,
-          inputOrigin: 'mixed',
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({
+        text: 'Mixed content review',
+        references: [{ ref: 'PR#789', type: 'pr' }],
+        inputOrigin: 'mixed',
+      });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('mixed');
     });
 
     it('report includes external references when provided', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        {
-          prNumber: 999,
-          analysisFindings: findings,
-          references: [
-            { ref: 'https://github.com/owner/repo/pull/999', type: 'pr', title: 'PR #999' },
-          ],
-          inputOrigin: 'pr',
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({
+        prNumber: 999,
+        references: [
+          { ref: 'https://github.com/owner/repo/pull/999', type: 'pr', title: 'PR #999' },
+        ],
+        inputOrigin: 'pr',
+      });
       expect(result.error).toBeUndefined();
       expect(result.references).toBeDefined();
       expect(result.references?.length).toBeGreaterThan(0);
@@ -935,24 +904,15 @@ describe('review (standalone flow)', () => {
   // =========================================================================
   describe('EDGE', () => {
     it('review with all optional fields populated', async () => {
-      await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
-
-      const raw = await review.execute(
-        {
-          prNumber: 123,
-          text: 'Additional context',
-          analysisFindings: findings,
-          inputOrigin: 'mixed',
-          references: [
-            { ref: 'PR#123', type: 'pr', title: 'Main PR' },
-            { ref: 'JIRA-456', type: 'ticket', title: 'Related ticket' },
-          ],
-        },
-        ctx,
-      );
-      const result = parseToolResult(raw);
-
+      const result = await submitContentReview({
+        prNumber: 123,
+        text: 'Additional context',
+        inputOrigin: 'mixed',
+        references: [
+          { ref: 'PR#123', type: 'pr', title: 'Main PR' },
+          { ref: 'JIRA-456', type: 'ticket', title: 'Related ticket' },
+        ],
+      });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
     });
@@ -963,29 +923,14 @@ describe('review (standalone flow)', () => {
   // =========================================================================
   describe('E2E', () => {
     it('full content-aware review flow: hydrate → review with content', async () => {
-      // Step 1: Hydrate (creates session in READY)
-      let raw = await hydrate.execute({ policyMode: 'team' }, ctx);
-      let result = parseToolResult(raw);
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('READY');
-
-      // Step 2: Execute review with PR content and simulated subagent findings
-      const subagentFindings = buildAnalysisFindings('approve');
-
-      raw = await review.execute(
+      const result = await submitContentReview(
         {
           prNumber: 42,
-          analysisFindings: subagentFindings,
           inputOrigin: 'pr',
           references: [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' }],
         },
-        ctx,
+        'approve',
       );
-      result = parseToolResult(raw);
-
-      if (result.error) {
-        console.log('E2E test error:', JSON.stringify(result, null, 2));
-      }
 
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
@@ -1051,32 +996,21 @@ describe('review (standalone flow)', () => {
         expect(result.requiredReviewAttestation.reviewedBy).toBe('flowguard-reviewer');
         expect(result.requiredReviewAttestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
         expect(result.requiredReviewAttestation.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
-        // toolObligationId must NOT be in the recovery payload — standalone /review
-        // has no obligation, and we must not push the agent toward fabricating UUIDs.
-        expect(result.requiredReviewAttestation.toolObligationId).toBeUndefined();
+        // toolObligationId is always present — every content-aware /review
+        // creates a real ReviewObligation with a canonical UUID.
+        expect(result.requiredReviewAttestation.toolObligationId).toMatch(/^[0-9a-f-]{36}$/);
         expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
         expect(Array.isArray(result.recovery)).toBe(true);
         expect(result.recovery.length).toBeGreaterThan(0);
       });
 
-      it('H2: complete ReviewFindings without toolObligationId is accepted, mapped, and skips external content reload', async () => {
-        await hydrateAndGetReady();
-
-        const findings = buildAnalysisFindings('changes_requested');
-        // Sanity: helper omits toolObligationId.
-        expect((findings.attestation as Record<string, unknown>).toolObligationId).toBeUndefined();
-
+      it('H2: complete ReviewFindings with obligation-bound toolObligationId is accepted, mapped, and skips external content reload', async () => {
+        // Full flow: create obligation -> submit findings with matching UUID -> success.
         const refs = [{ ref: 'https://github.com/owner/repo/pull/77', type: 'pr' as const }];
-        const raw = await review.execute(
-          {
-            prNumber: 77,
-            analysisFindings: findings,
-            inputOrigin: 'pr',
-            references: refs,
-          },
-          ctx,
+        const result = await submitContentReview(
+          { prNumber: 77, inputOrigin: 'pr', references: refs },
+          'changes_requested',
         );
-        const result = parseToolResult(raw);
 
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
@@ -1118,7 +1052,7 @@ describe('review (standalone flow)', () => {
         expect(att?.reviewedBy).toBe('flowguard-reviewer');
         expect(att?.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
         expect(att?.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
-        expect(att?.toolObligationId).toBeUndefined();
+        expect(typeof att?.toolObligationId).toBe('string');
         expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
       }
 
@@ -1194,8 +1128,11 @@ describe('review (standalone flow)', () => {
     describe('CORNER (attestation)', () => {
       it('C1: all five finding arrays surface in the report with schema-allowed categories', async () => {
         await hydrateAndGetReady();
-
-        const base = buildAnalysisFindings('changes_requested');
+        const uuid = await obtainObligationUuid({
+          text: 'diff content',
+          inputOrigin: 'manual_text',
+        });
+        const base = buildAnalysisFindings('changes_requested', uuid);
         const findings = {
           ...base,
           blockingIssues: [
@@ -1251,13 +1188,7 @@ describe('review (standalone flow)', () => {
       });
 
       it('C2: empty finding arrays (subagent found no issues) are accepted', async () => {
-        await hydrateAndGetReady();
-        const findings = buildAnalysisFindings('approve'); // all arrays empty
-        const raw = await review.execute(
-          { prNumber: 99, analysisFindings: findings, inputOrigin: 'pr' },
-          ctx,
-        );
-        const result = parseToolResult(raw);
+        const result = await submitContentReview({ prNumber: 99, inputOrigin: 'pr' }, 'approve');
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
       });
@@ -1265,19 +1196,16 @@ describe('review (standalone flow)', () => {
 
     // ---------- EDGE ----------
     describe('EDGE (attestation)', () => {
-      it('E1: ReviewAttestation schema parses successfully without toolObligationId', () => {
+      it('E1: ReviewAttestation schema requires toolObligationId (obligation-bound)', () => {
         const parsed = ReviewAttestation.safeParse({
           mandateDigest: REVIEW_MANDATE_DIGEST,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
           iteration: 1,
           planVersion: 1,
           reviewedBy: 'flowguard-reviewer',
-          // toolObligationId intentionally omitted
+          // toolObligationId intentionally omitted — should fail
         });
-        expect(parsed.success).toBe(true);
-        if (parsed.success) {
-          expect(parsed.data.toolObligationId).toBeUndefined();
-        }
+        expect(parsed.success).toBe(false);
       });
 
       it('E2: runtime gate (validateStrictAttestation) still rejects findings without toolObligationId for /plan and /implement', async () => {
@@ -1348,6 +1276,7 @@ describe('review (standalone flow)', () => {
             reviewedBy: att.reviewedBy as 'flowguard-reviewer',
             mandateDigest: att.mandateDigest,
             criteriaVersion: att.criteriaVersion,
+            toolObligationId: att.toolObligationId,
           },
         };
 

@@ -70,7 +70,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // schema-allowed categories only, which is a mandatory contract upgrade
     // for /review.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'fa0e19139d4519f19ed7fea009f6935a3d9280097768a11a8307f798d09bf2b3',
+      '3470a9e3ab6c10cf6f65c99f5b933f7da712b73fd542b02ad9bbf79e972098d3',
     );
   });
 
@@ -89,18 +89,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed in P1 (review-flow-fix): review.ts step 3 now instructs the agent
-    // to pass the complete subagent-attested ReviewFindings object as
-    // analysisFindings (no array, no mapping), references the canonical
-    // requiredReviewAttestation block returned by flowguard_review's blocked
-    // response, and tells standalone /review to omit attestation.toolObligationId.
+    // Refreshed in P2 (obligation-binding): review.ts step 3 now tells the agent to
+    // include attestation.toolObligationId exactly as provided by FlowGuard
+    // (every content-aware /review now creates a real ReviewObligation with a
+    // canonical UUID). The P1 "omit for standalone /review" guidance is removed.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '46eca0a50362d1e05a3a3bb95ec756c048e02c6a7763ef5854bbb3c333b1ca97',
+      'beb0f9a32eb57e2560560f6ad386141881b79f1b9052b5ce41c95ca258949ba7',
     );
   });
 

@@ -32,7 +32,12 @@ describe('review-obligation-tools', () => {
   describe('CORNER', () => {
     it('reviewable tool list covers ReviewObligationType exactly once', () => {
       const obligationTypes = REVIEWABLE_TOOLS.map((tool) => obligationTypeForTool(tool)).sort();
-      expect(obligationTypes).toEqual([...ReviewObligationType.options].sort());
+      // 'review' obligation type is created by standalone /review (not a
+      // reviewable tool), so it is intentionally absent from REVIEWABLE_TOOLS.
+      const reviewableTypes = [...ReviewObligationType.options]
+        .filter((type) => type !== 'review')
+        .sort();
+      expect(obligationTypes).toEqual(reviewableTypes);
     });
   });
 

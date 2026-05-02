@@ -115,6 +115,26 @@ export function findLatestObligation(
   return null;
 }
 
+/**
+ * Find the latest pending obligation of a given type.
+ *
+ * Used by standalone /review to reuse an existing pending obligation (retry-safe)
+ * rather than creating a fresh one on every call. Unlike findLatestObligation
+ * which matches on iteration + planVersion, this matches only on obligationType
+ * + pending status so it works for content-aware /review flows where the
+ * obligation was created before the review findings are submitted.
+ */
+export function findLatestPendingReviewObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligationType: ReviewObligationType,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  const pending = base.obligations
+    .filter((o) => o.obligationType === obligationType && o.status === 'pending')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return pending[0] ?? null;
+}
+
 export function consumeReviewObligation(
   assurance: ReviewAssuranceState,
   obligation: ReviewObligation | null,

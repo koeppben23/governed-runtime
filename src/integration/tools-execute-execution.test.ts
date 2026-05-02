@@ -817,7 +817,20 @@ describe('review', () => {
 
     it('persists supplied analysis findings for text review content', async () => {
       await hydrateSession();
-      // Create proper ReviewFindings object
+      // Step 1: call /review with content but no findings — creates the obligation
+      // and gives us the canonical toolObligationId.
+      const blockedRaw = await review.execute(
+        { inputOrigin: 'manual_text', text: 'diff --git a/file.ts b/file.ts' },
+        ctx,
+      );
+      const blocked = parseToolResult(blockedRaw);
+      expect(blocked.error).toBe(true);
+      expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+      expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+
+      // Step 2: submit valid ReviewFindings with the matching toolObligationId.
       const findings = {
         iteration: 1,
         planVersion: 1,
@@ -837,7 +850,7 @@ describe('review', () => {
         reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
         reviewedAt: '2026-01-01T00:00:00.000Z',
         attestation: {
-          toolObligationId: '123e4567-e89b-12d3-a456-426614174000',
+          toolObligationId: obligationId,
           iteration: 1,
           planVersion: 1,
           reviewedBy: 'flowguard-reviewer',
