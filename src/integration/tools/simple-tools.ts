@@ -49,6 +49,12 @@ import {
   consumeReviewObligation,
   validateStrictAttestation,
   ensureReviewAssurance,
+  buildInvocationEvidence,
+  hasEvidenceReuse,
+  hashFindings,
+  hashText,
+  appendInvocationEvidence,
+  fulfillObligation,
 } from '../review-assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
@@ -406,6 +412,65 @@ export const review: ToolDefinition = {
         // is consumed on success. This prevents consuming a different pending
         // obligation belonging to another review input.
         validatedReviewObligation = obligation;
+
+        // Record invocation evidence from accepted subagent-attested findings.
+        // This reconstructs audit evidence from the fields in analysisFindings —
+        // childSessionId comes from the subagent's attested reviewedBy.sessionId
+        // (not from a host-side subagent invocation intercept, so this is
+        // attested/reconstructed evidence, not host-captured evidence).
+        if (args.analysisFindings) {
+          const findings = args.analysisFindings as Record<string, unknown>;
+          const childSessionId = String(
+            (findings.reviewedBy as Record<string, unknown>).sessionId ?? '',
+          );
+          if (!childSessionId) {
+            return formatSubagentReviewNotInvoked(
+              'Subagent findings must include reviewedBy.sessionId.',
+              obligation.obligationId,
+            );
+          }
+
+          const findingsHash = hashFindings(findings);
+          const promptHash = hashText(fingerprintReviewInput(args));
+
+          // Prevent replay: same subagent session or same findings already used.
+          const assurance = ensureReviewAssurance(result.state.reviewAssurance);
+          if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
+            return formatBlockedWithAttestation(
+              'SUBAGENT_EVIDENCE_REUSED',
+              'The submitted subagent findings have already been used for a prior review obligation.',
+              obligation.obligationId,
+            );
+          }
+
+          const invocation = buildInvocationEvidence({
+            obligationId: obligation.obligationId,
+            obligationType: 'review',
+            parentSessionId: context.sessionID,
+            childSessionId,
+            promptHash,
+            findingsHash,
+            invokedAt: now,
+            fulfilledAt: now,
+          });
+
+          // Fulfill obligation and append evidence. Consumption happens below.
+          result = {
+            ...result,
+            state: {
+              ...result.state,
+              reviewAssurance: appendInvocationEvidence(
+                fulfillObligation(
+                  ensureReviewAssurance(result.state.reviewAssurance),
+                  obligation.obligationId,
+                  invocation.invocationId,
+                  now,
+                ),
+                invocation,
+              ),
+            },
+          };
+        }
 
         // Skip the external content reload: the subagent has already analysed
         // the source content. Preserve every other refInput field for provenance.

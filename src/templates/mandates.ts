@@ -461,7 +461,7 @@ Do NOT include any text before or after the JSON.
   "missingVerification": ["<specific check that was not run or not provable>"],
   "scopeCreep": ["<specific item that exceeds ticket scope>"],
   "unknowns": ["<specific unknown that could not be resolved>"],
-  "reviewedBy": { "sessionId": "<your assigned session ID>" },
+  "reviewedBy": { "sessionId": "<your assigned session ID — recorded in invocation evidence for audit>" },
   "reviewedAt": "<ISO 8601 timestamp>",
   "attestation": {
     "mandateDigest": "<from prompt: attestation.mandateDigest value>",

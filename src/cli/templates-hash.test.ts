@@ -70,7 +70,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // schema-allowed categories only, which is a mandatory contract upgrade
     // for /review.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '3470a9e3ab6c10cf6f65c99f5b933f7da712b73fd542b02ad9bbf79e972098d3',
+      '9a4a216d222f86f751d7131d94ba575c33c0d19c15cd7378152d63f8fd16db72',
     );
   });
 

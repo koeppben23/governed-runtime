@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review-assurance.js';
-import { ReviewAttestation } from '../state/evidence.js';
+import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
 import { findLatestPendingReviewObligation } from './review-assurance.js';
 import {
   status,
@@ -1262,7 +1262,7 @@ describe('review (standalone flow)', () => {
           },
         };
         const expected = {
-          obligationId: '11111111-2222-3333-4444-555555555555',
+          obligationId: '11111111-2222-3333-8444-555555555555',
           iteration: 1,
           planVersion: 1,
         };
@@ -1362,6 +1362,132 @@ describe('review (standalone flow)', () => {
 
         expect(a.requiredReviewAttestation).toEqual(b.requiredReviewAttestation);
         expect(a.reviewerSubagentType).toBe(b.reviewerSubagentType);
+      });
+    });
+
+    // ---------- INVOCATION EVIDENCE ----------
+    describe('INVOCATION EVIDENCE', () => {
+      it('H4: successful /review appends ReviewInvocationEvidence to reviewAssurance', async () => {
+        const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
+        const findings = buildAnalysisFindings('approve', uuid);
+        const raw = await review.execute(
+          { prNumber: 42, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+
+        // Read state and verify invocation evidence was created.
+        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+          '../adapters/workspace/index.js'
+        );
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        const invocations = state.reviewAssurance?.invocations ?? [];
+        expect(invocations.length).toBe(1);
+        expect(invocations[0].agentType).toBe('flowguard-reviewer');
+        expect(invocations[0].obligationType).toBe('review');
+        expect(invocations[0].obligationId).toBe(uuid);
+        expect(invocations[0].findingsHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(invocations[0].promptHash).toMatch(/^[a-f0-9]{64}$/);
+        // childSessionId from the attested reviewedBy.sessionId in buildAnalysisFindings.
+        expect(invocations[0].childSessionId).toBe('flowguard-reviewer-session-123');
+      });
+
+      it('H5: obligation is consumed after successful /review', async () => {
+        const uuid = await obtainObligationUuid({ prNumber: 43, inputOrigin: 'pr' });
+        const findings = buildAnalysisFindings('approve', uuid);
+        const raw = await review.execute(
+          { prNumber: 43, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+
+        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+          '../adapters/workspace/index.js'
+        );
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        const consumed = state.reviewAssurance?.obligations.find(
+          (o) => o.obligationType === 'review' && o.obligationId === uuid,
+        );
+        expect(consumed).toBeDefined();
+        expect(consumed?.status).toBe('consumed');
+        expect(consumed?.consumedAt).toBeTruthy();
+        // invocationId was set by fulfillObligation before consumption.
+        expect(consumed?.invocationId).toMatch(/^[0-9a-f-]{36}$/);
+      });
+
+      it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
+        const { consumeReviewObligation, ensureReviewAssurance } = await import(
+          './review-assurance.js'
+        );
+        const assurance = ensureReviewAssurance(undefined);
+        const obligation = {
+          obligationId: '00000000-0000-0000-0000-000000000001',
+          obligationType: 'review' as const,
+          iteration: 1,
+          planVersion: 1,
+          criteriaVersion: 'p35-v1',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          createdAt: new Date().toISOString(),
+          pluginHandshakeAt: null,
+          status: 'fulfilled' as const,
+          invocationId: '00000000-0000-0000-0000-000000000002',
+          blockedCode: null,
+          fulfilledAt: new Date().toISOString(),
+          consumedAt: null,
+        };
+        const withObligation = {
+          ...assurance,
+          obligations: [...assurance.obligations, obligation],
+        };
+        const consumed = consumeReviewObligation(
+          ensureReviewAssurance(withObligation),
+          obligation,
+          new Date().toISOString(),
+        );
+        const found = consumed.obligations.find((o) => o.obligationId === obligation.obligationId);
+        expect(found?.status).toBe('consumed');
+        expect(found?.consumedAt).toBeTruthy();
+      });
+
+      it('EE2: full flow end-to-end with invocation evidence', async () => {
+        const result = await submitContentReview({ prNumber: 48, inputOrigin: 'pr' }, 'approve');
+        expect(result.error).toBeUndefined();
+
+        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+          '../adapters/workspace/index.js'
+        );
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        const inv = state.reviewAssurance?.invocations ?? [];
+        const obl = state.reviewAssurance?.obligations ?? [];
+        expect(inv.length).toBeGreaterThanOrEqual(1);
+        expect(obl.length).toBeGreaterThanOrEqual(1);
+        const reviewObls = obl.filter((o) => o.obligationType === 'review');
+        expect(reviewObls.some((o) => o.status === 'consumed')).toBe(true);
+        const reviewInvs = inv.filter((i) => i.obligationType === 'review');
+        expect(reviewInvs.length).toBeGreaterThanOrEqual(1);
+      });
+
+      it('S3: ReviewInvocationEvidence.parse accepts buildInvocationEvidence output', async () => {
+        const { buildInvocationEvidence } = await import('./review-assurance.js');
+        const inv = buildInvocationEvidence({
+          obligationId: '11111111-2222-3333-8444-555555555555',
+          obligationType: 'review',
+          parentSessionId: 'parent-session',
+          childSessionId: 'child-session',
+          promptHash: 'a'.repeat(64),
+          findingsHash: 'b'.repeat(64),
+          invokedAt: new Date().toISOString(),
+          fulfilledAt: new Date().toISOString(),
+        });
+        expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
       });
     });
   });

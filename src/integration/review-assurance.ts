@@ -225,6 +225,39 @@ export function hasEvidenceReuse(
   );
 }
 
+/**
+ * Append a ReviewInvocationEvidence record to the assurance state.
+ * Uses spread to preserve any future fields added to ReviewAssuranceState.
+ */
+export function appendInvocationEvidence(
+  assurance: ReviewAssuranceState,
+  invocation: ReviewInvocationEvidence,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return { ...base, invocations: [...base.invocations, invocation] };
+}
+
+/**
+ * Mark an obligation as fulfilled and bind it to an invocation.
+ * Uses spread to preserve any future fields added to ReviewObligation.
+ */
+export function fulfillObligation(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+  invocationId: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return {
+    ...base,
+    obligations: base.obligations.map((o) =>
+      o.obligationId !== obligationId
+        ? o
+        : { ...o, status: 'fulfilled' as const, invocationId, fulfilledAt: now },
+    ),
+  };
+}
+
 export function validateStrictAttestation(
   findings: ReviewFindings,
   expected: {
