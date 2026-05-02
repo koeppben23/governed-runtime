@@ -220,9 +220,51 @@ export const review: ToolDefinition = {
 
         // 2. Generate the compliance report using the final state
         const now = new Date().toISOString();
-        const refInput = buildReviewReferenceInput(args);
+        let refInput = buildReviewReferenceInput(args);
         if (hasReviewContentInput(args) && args.analysisFindings === undefined) {
           return formatMissingContentAnalysis();
+        }
+
+        // P0 #3: Skip loadExternalContent if analysisFindings already provided
+        // The subagent already analyzed the content - no need to re-fetch
+        if (args.analysisFindings !== undefined) {
+          // Keep only inputOrigin and references for audit trail
+          // Remove prNumber, branch, url to prevent loadExternalContent from running
+          refInput = {
+            ...(refInput && { inputOrigin: refInput.inputOrigin }),
+            ...(refInput && { references: refInput.references }),
+          };
+        }
+
+        // P0 #2: Verify analysisFindings come from flowguard-reviewer subagent
+        if (args.analysisFindings !== undefined) {
+          const findings = args.analysisFindings as Array<Record<string, unknown>>;
+          // Empty findings array is valid (subagent found no issues)
+          // Non-empty array must have at least one finding with subagent evidence
+          const hasSubagentEvidence =
+            findings.length === 0 ||
+            findings.some(
+              (f: Record<string, unknown>) => {
+                // Check reviewedBy.sessionId contains 'flowguard-reviewer'
+                if (f.reviewedBy && typeof f.reviewedBy === 'object') {
+                  const reviewedBy = f.reviewedBy as Record<string, unknown>;
+                  if (reviewedBy.sessionId && String(reviewedBy.sessionId).includes('flowguard-reviewer')) {
+                    return true;
+                  }
+                }
+                // Check attestation.reviewedBy === 'flowguard-reviewer'
+                if (f.attestation && typeof f.attestation === 'object') {
+                  const attestation = f.attestation as Record<string, unknown>;
+                  if (attestation.reviewedBy === 'flowguard-reviewer') {
+                    return true;
+                  }
+                }
+                return false;
+              }
+            );
+          if (!hasSubagentEvidence) {
+            return formatBlocked('SUBAGENT_REVIEW_REQUIRED');
+          }
         }
 
         // Create executors with analyze function that returns the supplied analysisFindings
@@ -245,6 +287,7 @@ export const review: ToolDefinition = {
               severity: severityMap[f.severity] ?? 'warning',
               category: f.category,
               message: f.message,
+              ...(f.location && { location: f.location }),
             }));
           },
         };

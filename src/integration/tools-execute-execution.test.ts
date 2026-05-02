@@ -825,6 +825,7 @@ describe('review', () => {
               severity: 'warning',
               category: 'correctness',
               message: 'The supplied diff needs follow-up review evidence.',
+              reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
             },
           ],
         },

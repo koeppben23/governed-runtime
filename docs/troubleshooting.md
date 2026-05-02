@@ -132,6 +132,7 @@ real, registered reason.
 | Code                                 | Description                                                                   | Solution                                                                              |
 | ------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `SUBAGENT_REVIEW_NOT_INVOKED`        | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                          |
+| `SUBAGENT_REVIEW_REQUIRED`           | Content-aware review requires analysisFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as analysisFindings |
 | `SUBAGENT_SESSION_MISMATCH`          | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it               |
 | `SUBAGENT_PROMPT_EMPTY`              | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                               |
 | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                          |
@@ -263,6 +264,7 @@ SUBAGENT_FINDINGS_VERDICT_MISMATCH
 SUBAGENT_PROMPT_EMPTY
 SUBAGENT_PROMPT_MISSING_CONTEXT
 SUBAGENT_REVIEW_NOT_INVOKED
+SUBAGENT_REVIEW_REQUIRED
 SUBAGENT_SESSION_MISMATCH
 SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED

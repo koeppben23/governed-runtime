@@ -759,6 +759,7 @@ export const ReviewReport = z.object({
       severity: z.enum(['info', 'warning', 'error']),
       category: z.string(),
       message: z.string(),
+      location: z.string().optional(),
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),

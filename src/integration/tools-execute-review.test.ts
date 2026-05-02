@@ -696,6 +696,7 @@ describe('review (standalone flow)', () => {
         category: 'blocking-issue',
         message: 'Critical security flaw in authentication flow',
         location: 'src/auth/login.ts:45',
+        reviewedBy: { sessionId: 'flowguard-reviewer' },
       });
     }
     return findings;
@@ -897,7 +898,10 @@ describe('review (standalone flow)', () => {
   describe('EDGE', () => {
     it('review with all optional fields populated', async () => {
       await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve');
+      const findings = buildAnalysisFindings('approve').map((f) => ({
+        ...f,
+        reviewedBy: { sessionId: 'flowguard-reviewer' },
+      }));
 
       const raw = await review.execute(
         {
@@ -937,6 +941,7 @@ describe('review (standalone flow)', () => {
           category: 'blocking-issue',
           message: 'Missing error handling in API endpoint',
           location: 'src/api/endpoint.ts:89',
+          reviewedBy: { sessionId: 'flowguard-reviewer' },
         },
       ];
 

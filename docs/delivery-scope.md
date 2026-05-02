@@ -52,7 +52,7 @@ These properties are guaranteed by the implementation and cannot be circumvented
 
 ## Currently Delivered
 
-These features are available in FlowGuard 1.2.0-rc.1.
+These features are available in FlowGuard 1.2.0.
 
 ### Workflow Engine
 

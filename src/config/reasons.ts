@@ -395,6 +395,17 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Re-run flowguard_review with analysisFindings populated',
     ],
   },
+  {
+    code: 'SUBAGENT_REVIEW_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      'analysisFindings must come from flowguard-reviewer subagent. The findings provided do not contain evidence of subagent origin.',
+    recoverySteps: [
+      'Call Task tool with subagent_type: "flowguard-reviewer"',
+      'Pass the subagent output as analysisFindings',
+      'Ensure findings include reviewedBy.sessionId containing "flowguard-reviewer" or attestation.reviewedBy === "flowguard-reviewer"',
+    ],
+  },
 
   // ── Precondition ──────────────────────────────────────────────
   {
