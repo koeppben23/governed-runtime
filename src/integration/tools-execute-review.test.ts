@@ -1137,18 +1137,15 @@ describe('review (standalone flow)', () => {
 
         // Step 2: Re-submit the SAME findings with the SAME (now consumed) UUID.
         // The obligation was consumed on success — this must be rejected.
-        // Because the session advanced to REVIEW_COMPLETE, /review is no longer
-        // allowed on this session. The rejection proves the obligation lifecycle
-        // is correct: the consumed UUID can never be used again.
-        // In a real flow a fresh /start would be required to create a new review.
         const raw2 = await review.execute(
           { prNumber: 42, analysisFindings: findings1 as never, inputOrigin: 'pr' },
           ctx,
         );
         const result2 = parseToolResult(raw2);
         expect(result2.error).toBe(true);
-        // COMMAND_NOT_ALLOWED: the session is no longer in READY, proving the
-        // obligation was consumed and the session advanced to REVIEW_COMPLETE.
+        // COMMAND_NOT_ALLOWED: the session advanced to REVIEW_COMPLETE after
+        // the obligation was consumed, so /review is no longer permitted.
+        // This proves the obligation lifecycle completed successfully.
         expect(result2.code).toBe('COMMAND_NOT_ALLOWED');
       });
     });

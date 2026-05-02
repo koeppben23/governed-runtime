@@ -152,23 +152,27 @@ function hasReviewContentInput(args: {
 
 /**
  * Compute an input fingerprint for a content-aware /review call.
- * Two calls with the same input type and value will produce the same fingerprint,
- * making obligation reuse deterministic and input-bound (not global).
+ * All content fields are included so that different combinations
+ * (e.g. prNumber=42+text=A vs. prNumber=42+text=B) get different fingerprints.
  */
 function fingerprintReviewInput(args: {
   prNumber?: number;
   branch?: string;
   url?: string;
   text?: string;
+  inputOrigin?: string;
+  references?: unknown;
 }): string {
-  if (typeof args.prNumber === 'number') return `pr:${args.prNumber}`;
-  if (typeof args.branch === 'string') return `branch:${args.branch}`;
-  if (typeof args.url === 'string') return `url:${args.url}`;
-  if (typeof args.text === 'string') {
-    const hash = createHash('sha256').update(args.text, 'utf-8').digest('hex');
-    return `text:${hash.slice(0, 16)}`;
-  }
-  return 'unknown';
+  const payload = JSON.stringify({
+    prNumber: args.prNumber,
+    branch: args.branch,
+    url: args.url,
+    textHash: args.text
+      ? createHash('sha256').update(args.text, 'utf-8').digest('hex').slice(0, 16)
+      : undefined,
+    inputOrigin: args.inputOrigin,
+  });
+  return createHash('sha256').update(payload, 'utf-8').digest('hex');
 }
 
 /**
@@ -332,14 +336,12 @@ export const review: ToolDefinition = {
       }
 
       // If analysisFindings provided, validate against the pending obligation
-      // using the central validateStrictAttestation gate.
+      // for this specific input and skip the external content load so the
+      // subagent's authoritative analysis is preserved.
+      let validatedReviewObligation: ReturnType<typeof findLatestPendingReviewObligation> = null;
       if (args.analysisFindings !== undefined) {
         const findings = args.analysisFindings as Record<string, unknown>;
         const reviewMode = findings.reviewMode as string;
-
-        // Find the obligation that was created for this review input.
-        // If no obligation exists, create one but reject the submitted
-        // findings — the agent must resubmit after the obligation is created.
         const fingerprint = fingerprintReviewInput(args);
         const assurance = state.reviewAssurance;
         let obligation = findLatestPendingReviewObligation(assurance, 'review', fingerprint);
@@ -393,6 +395,11 @@ export const review: ToolDefinition = {
             obligation.obligationId,
           );
         }
+
+        // Track the exact obligation that passed validation so it — and only it —
+        // is consumed on success. This prevents consuming a different pending
+        // obligation belonging to another review input.
+        validatedReviewObligation = obligation;
 
         // Skip the external content reload: the subagent has already analysed
         // the source content. Preserve every other refInput field for provenance.
@@ -465,27 +472,22 @@ export const review: ToolDefinition = {
         return formatBlockedReviewReport(report);
       }
 
-      // Consume the review obligation on success so the same obligation
-      // UUID cannot be reused for another submission (single-use enforcement,
-      // matching /plan, /architecture, and /implement).
-      if (args.analysisFindings !== undefined) {
-        const obligation = findLatestPendingReviewObligation(
-          result.state.reviewAssurance,
-          'review',
-        );
-        if (obligation) {
-          result = {
-            ...result,
-            state: {
-              ...result.state,
-              reviewAssurance: consumeReviewObligation(
-                ensureReviewAssurance(result.state.reviewAssurance),
-                obligation,
-                now,
-              ),
-            },
-          };
-        }
+      // Consume exactly the obligation that passed attestation validation.
+      // This prevents a race where two different review inputs (`prNumber=42`
+      // and `prNumber=99`) each have a pending obligation, and consuming the
+      // wrong one breaks the other review chain.
+      if (validatedReviewObligation) {
+        result = {
+          ...result,
+          state: {
+            ...result.state,
+            reviewAssurance: consumeReviewObligation(
+              ensureReviewAssurance(result.state.reviewAssurance),
+              validatedReviewObligation,
+              now,
+            ),
+          },
+        };
       }
 
       // 3. Persist state + write report artifact

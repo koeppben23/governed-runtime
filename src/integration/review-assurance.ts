@@ -137,12 +137,22 @@ export function findLatestPendingReviewObligation(
     (o) => o.obligationType === obligationType && o.status === 'pending',
   );
   // Fingerprint filter: when provided, only match obligations with the same
-  // input fingerprint. When absent, match any pending obligation of this type
-  // (broad — used when fingerprinting is not available).
-  const matched = metadataFingerprint
-    ? candidates.filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
-    : candidates;
-  return matched.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).at(0) ?? null;
+  // input fingerprint. For review obligations, fingerprinting is mandatory
+  // because multiple review inputs can be pending simultaneously.
+  // For plan/implement/architecture, there is at most one pending obligation
+  // per type at a time, so broad matching is acceptable.
+  if (metadataFingerprint) {
+    return (
+      candidates
+        .filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .at(0) ?? null
+    );
+  }
+  // Broad match: return the latest pending obligation of this type.
+  // Only safe when fingerprinting is not required (plan, implement, architecture).
+  const broad = candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return broad.at(0) ?? null;
 }
 
 export function consumeReviewObligation(
