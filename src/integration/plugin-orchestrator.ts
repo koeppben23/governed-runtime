@@ -5,7 +5,7 @@
  * Invokes the flowguard-reviewer subagent via the OpenCode SDK client when a
  * FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED. Handles:
  * - Review obligation creation + audit
- * - Prompt building (plan or impl)
+ * - Prompt building (plan, architecture, or impl)
  * - Subagent invocation
  * - Structured findings validation (P35 strict / non-strict)
  * - Evidence recording with reuse detection

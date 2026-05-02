@@ -27,6 +27,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
+import { REVIEW_MANDATE_DIGEST } from './review-assurance.js';
 import {
   status,
   hydrate,
@@ -816,18 +817,40 @@ describe('review', () => {
 
     it('persists supplied analysis findings for text review content', async () => {
       await hydrateSession();
+      // Create proper ReviewFindings object
+      const findings = {
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'approve' as const,
+        blockingIssues: [],
+        majorRisks: [
+          {
+            severity: 'major' as const,
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          },
+        ],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          toolObligationId: '123e4567-e89b-12d3-a456-426614174000',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: 'p35-v1',
+        },
+      };
+
       const raw = await review.execute(
         {
           inputOrigin: 'manual_text',
           text: 'diff --git a/file.ts b/file.ts',
-          analysisFindings: [
-            {
-              severity: 'warning',
-              category: 'correctness',
-              message: 'The supplied diff needs follow-up review evidence.',
-              reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
-            },
-          ],
+          analysisFindings: findings,
         },
         ctx,
       );
@@ -836,7 +859,7 @@ describe('review', () => {
       expect(result.findings).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            severity: 'warning',
+            severity: 'error', // 'major' maps to 'error'
             category: 'correctness',
             message: 'The supplied diff needs follow-up review evidence.',
           }),

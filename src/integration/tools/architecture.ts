@@ -371,11 +371,12 @@ export const architecture: ToolDefinition = {
           (revisionDelta === 'none' && verdict === 'approve');
 
         if (converged) {
+          const isComplete = finalState.phase === 'ARCH_COMPLETE';
           const convergedResp: Record<string, unknown> = {
             phase: finalState.phase,
             status: subagentEnabledModeB
-              ? `Independent review converged at iteration ${iteration}. ADR approved.`
-              : `ADR self-review converged at iteration ${iteration}. ADR approved.`,
+              ? `Independent review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`
+              : `ADR self-review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`,
             adrId: currentAdr.id,
             adrDigest: currentAdr.digest,
             selfReviewIteration: iteration,

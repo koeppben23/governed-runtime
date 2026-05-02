@@ -29,8 +29,16 @@ import { executeReview, executeReviewFlow, type ReviewExecutors } from '../../ra
 import { executeAbort } from '../../rails/abort.js';
 
 // Evidence schemas for external reference handling
-import { InputOriginSchema, ExternalReferenceSchema } from '../../state/evidence.js';
+import {
+  InputOriginSchema,
+  ExternalReferenceSchema,
+  ReviewFindings,
+} from '../../state/evidence.js';
 import type { ReviewReferenceInput } from '../../rails/review.js';
+
+// Review assurance (mandate digest)
+import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from '../review-assurance.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
@@ -191,108 +199,127 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
-    analysisFindings: z
-      .array(
-        z.object({
-          severity: z.enum(['info', 'warning', 'error']),
-          category: z.string().min(1),
-          message: z.string().min(1),
-          location: z.string().optional(),
-        }),
-      )
-      .optional()
-      .describe(
-        'Findings from flowguard-reviewer subagent analysis of the supplied text/PR/branch/URL content. ' +
-          'Required when content-aware fields are provided. ' +
-          'Map the subagent output: blockingIssues→blocking-issue, majorRisks→major-risk.',
-      ),
+    analysisFindings: ReviewFindings.optional().describe(
+      'Complete findings from flowguard-reviewer subagent analysis. ' +
+        'Required when content-aware fields (text/prNumber/branch/url) are provided. ' +
+        'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
+        'mandateDigest and criteriaVersion.',
+    ),
   },
-    async execute(args, context) {
-      try {
-        const { sessDir, state, ctx } = await withMutableSession(context);
+  async execute(args, context) {
+    try {
+      const { sessDir, state, ctx } = await withMutableSession(context);
 
-        // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
-        const result = executeReviewFlow(state, ctx);
+      // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
+      const result = executeReviewFlow(state, ctx);
 
-        if (result.kind === 'blocked') {
-          return formatRailResult(result);
+      if (result.kind === 'blocked') {
+        return formatRailResult(result);
+      }
+
+      // 2. Generate the compliance report using the final state
+      const now = new Date().toISOString();
+      let refInput = buildReviewReferenceInput(args);
+
+      // Content-aware review requires analysisFindings
+      const hasContentInput = hasReviewContentInput(args);
+      if (hasContentInput && args.analysisFindings === undefined) {
+        return formatMissingContentAnalysis();
+      }
+
+      // P0 #2 + P0 #3: If analysisFindings provided, validate and skip external content load
+      if (args.analysisFindings !== undefined) {
+        // Validate analysisFindings - must be proper ReviewFindings from flowguard-reviewer
+        const findings = args.analysisFindings as Record<string, unknown>;
+        const reviewMode = findings.reviewMode as string;
+        const attestation = findings.attestation as Record<string, unknown> | undefined;
+
+        // Must be from subagent
+        if (reviewMode !== 'subagent') {
+          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
         }
 
-        // 2. Generate the compliance report using the final state
-        const now = new Date().toISOString();
-        let refInput = buildReviewReferenceInput(args);
-        if (hasReviewContentInput(args) && args.analysisFindings === undefined) {
-          return formatMissingContentAnalysis();
+        // Must have valid attestation with all required fields
+        if (!attestation) {
+          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
         }
 
-        // P0 #3: Skip loadExternalContent if analysisFindings already provided
-        // The subagent already analyzed the content - no need to re-fetch
-        if (args.analysisFindings !== undefined) {
-          // Keep only inputOrigin and references for audit trail
-          // Remove prNumber, branch, url to prevent loadExternalContent from running
-          refInput = {
-            ...(refInput && { inputOrigin: refInput.inputOrigin }),
-            ...(refInput && { references: refInput.references }),
-          };
+        // Verify attestation fields (no spoofable sessionId check)
+        if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) {
+          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+        }
+        if (attestation.mandateDigest !== REVIEW_MANDATE_DIGEST) {
+          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+        }
+        if (attestation.criteriaVersion !== REVIEW_CRITERIA_VERSION) {
+          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
         }
 
-        // P0 #2: Verify analysisFindings come from flowguard-reviewer subagent
-        if (args.analysisFindings !== undefined) {
-          const findings = args.analysisFindings as Array<Record<string, unknown>>;
-          // Empty findings array is valid (subagent found no issues)
-          // Non-empty array must have at least one finding with subagent evidence
-          const hasSubagentEvidence =
-            findings.length === 0 ||
-            findings.some(
-              (f: Record<string, unknown>) => {
-                // Check reviewedBy.sessionId contains 'flowguard-reviewer'
-                if (f.reviewedBy && typeof f.reviewedBy === 'object') {
-                  const reviewedBy = f.reviewedBy as Record<string, unknown>;
-                  if (reviewedBy.sessionId && String(reviewedBy.sessionId).includes('flowguard-reviewer')) {
-                    return true;
-                  }
-                }
-                // Check attestation.reviewedBy === 'flowguard-reviewer'
-                if (f.attestation && typeof f.attestation === 'object') {
-                  const attestation = f.attestation as Record<string, unknown>;
-                  if (attestation.reviewedBy === 'flowguard-reviewer') {
-                    return true;
-                  }
-                }
-                return false;
-              }
-            );
-          if (!hasSubagentEvidence) {
-            return formatBlocked('SUBAGENT_REVIEW_REQUIRED');
-          }
+        // P0 #3: Keep ALL refInput fields for provenance, just add skipExternalContentLoad
+        if (refInput) {
+          refInput = { ...refInput, skipExternalContentLoad: true };
         }
+      }
 
-        // Create executors with analyze function that returns the supplied analysisFindings
-        // Map severity values to match the schema (info | warning | error)
-        const severityMap: Record<string, 'info' | 'warning' | 'error'> = {
-          critical: 'error',
-          major: 'error',
-          minor: 'warning',
-          info: 'info',
-        };
-        interface AnalysisFinding {
-          severity: string;
-          category: string;
-          message: string;
-          location?: string;
-        }
-        const executors: ReviewExecutors = {
-          analyze: async () => {
-            return (args.analysisFindings ?? []).map((f: AnalysisFinding) => ({
-              severity: severityMap[f.severity] ?? 'warning',
-              category: f.category,
-              message: f.message,
-              ...(f.location && { location: f.location }),
-            }));
-          },
-        };
+      // Create executors with analyze function that maps ReviewFindings to report format
+      // Severity mapping
+      const severityMap: Record<string, 'info' | 'warning' | 'error'> = {
+        critical: 'error',
+        major: 'error',
+        minor: 'warning',
+        info: 'info',
+        error: 'error',
+        warning: 'warning',
+      };
 
-        const report = await executeReview(result.state, now, executors, refInput);
+      // Helper: Map ReviewFindings to report findings
+      function mapReviewFindingsToReport(analysisFindings: Record<string, unknown>): Array<{
+        severity: 'info' | 'warning' | 'error';
+        category: string;
+        message: string;
+        location?: string;
+      }> {
+        const findings = analysisFindings;
+
+        // Extract all finding types from ReviewFindings
+        const allFindings: Array<Record<string, unknown>> = [
+          ...((findings.blockingIssues as Array<Record<string, unknown>>) ?? []),
+          ...((findings.majorRisks as Array<Record<string, unknown>>) ?? []),
+          ...((findings.missingVerification as string[]) ?? []).map((message) => ({
+            severity: 'warning' as const,
+            category: 'missing-verification',
+            message,
+          })),
+          ...((findings.scopeCreep as string[]) ?? []).map((message) => ({
+            severity: 'warning' as const,
+            category: 'scope-creep',
+            message,
+          })),
+          ...((findings.unknowns as string[]) ?? []).map((message) => ({
+            severity: 'info' as const,
+            category: 'unknown',
+            message,
+          })),
+        ];
+
+        return allFindings
+          .filter((f) => f.severity && f.category && f.message)
+          .map((f) => ({
+            severity: severityMap[f.severity as string] ?? 'warning',
+            category: f.category as string,
+            message: f.message as string,
+            ...(f.location ? { location: f.location as string } : {}),
+          }));
+      }
+
+      const executors: ReviewExecutors = {
+        analyze: async () => {
+          if (!args.analysisFindings) return [];
+          return mapReviewFindingsToReport(args.analysisFindings as Record<string, unknown>);
+        },
+      };
+
+      const report = await executeReview(result.state, now, executors, refInput);
 
       if ('kind' in report && report.kind === 'blocked') {
         return formatBlockedReviewReport(report);

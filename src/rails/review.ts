@@ -67,6 +67,8 @@ export interface ReviewReferenceInput {
   readonly branch?: string;
   /** URL to fetch content from. */
   readonly url?: string;
+  /** Skip external content loading (when analysisFindings provided by subagent). */
+  readonly skipExternalContentLoad?: boolean;
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
@@ -259,7 +261,7 @@ export async function executeReview(
   const findings = buildMechanicalFindings(state, completeness);
 
   let externalContent: string | undefined;
-  if (refInput) {
+  if (refInput && !refInput.skipExternalContentLoad) {
     const result = await loadExternalContent(refInput);
     if ('content' in result) {
       // Treat empty string as no content

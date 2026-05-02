@@ -12,7 +12,7 @@
  * hook calls this orchestrator when a FlowGuard tool response signals
  * INDEPENDENT_REVIEW_REQUIRED. The orchestrator:
  *
- * 1. Builds a structured prompt with plan/implementation text and context
+ * 1. Builds a structured prompt with plan/architecture/implementation text and context
  * 2. Creates a child session via client.session.create()
  * 3. Sends the prompt to the flowguard-reviewer agent via client.session.prompt()
  * 4. Parses the reviewer's JSON ReviewFindings response
@@ -227,7 +227,7 @@ export interface ArchitectureReviewPromptOpts {
   /**
    * The plan version number. For architecture obligations there is no plan
    * artifact; we use planVersion=1 for the initial submission and increment
-   * for revisions, mirroring the plan/implement convention.
+   * for revisions, mirroring the plan/architecture/implement convention.
    */
   readonly planVersion: number;
   /** Strict review obligation identifier. */
@@ -526,7 +526,7 @@ export function buildMutatedOutput(
       `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
       `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
       `overallVerdict, and include the reviewFindings object from ` +
-      `pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
+      `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
 
     // Inject structured findings
     parsed.pluginReviewFindings = reviewerResult.findings;
@@ -562,7 +562,7 @@ export function isReviewRequired(toolOutput: string): boolean {
  * Parses the iteration and planVersion from the `next` field,
  * and extracts other context needed for prompt building.
  *
- * @param toolName - 'flowguard_plan' or 'flowguard_implement'
+ * @param toolName - 'flowguard_plan', 'flowguard_architecture', or 'flowguard_implement'
  * @param toolOutput - Parsed tool output object
  * @returns Review context or null if extraction fails
  */

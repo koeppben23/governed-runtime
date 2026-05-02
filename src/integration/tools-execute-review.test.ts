@@ -27,6 +27,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
+import { REVIEW_MANDATE_DIGEST } from './review-assurance.js';
 import {
   status,
   hydrate,
@@ -670,12 +671,15 @@ describe('decision', () => {
 describe('review (standalone flow)', () => {
   // Mock fetch for URL tests
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      text: () => Promise.resolve('Mock URL content for review'),
-    } as Response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: () => Promise.resolve('Mock URL content for review'),
+      } as Response),
+    );
   });
 
   // Helper: Create a fresh session in READY phase
@@ -688,18 +692,41 @@ describe('review (standalone flow)', () => {
   }
 
   // Helper: Build analysisFindings from subagent output
+  // Returns a proper ReviewFindings object (not legacy array)
   function buildAnalysisFindings(overallVerdict: 'approve' | 'changes_requested') {
-    const findings = [];
-    if (overallVerdict === 'changes_requested') {
-      findings.push({
-        severity: 'major' as const,
-        category: 'blocking-issue',
-        message: 'Critical security flaw in authentication flow',
-        location: 'src/auth/login.ts:45',
-        reviewedBy: { sessionId: 'flowguard-reviewer' },
-      });
-    }
-    return findings;
+    const blockingIssues =
+      overallVerdict === 'changes_requested'
+        ? [
+            {
+              severity: 'major' as const,
+              category: 'blocking-issue',
+              message: 'Critical security flaw in authentication flow',
+              location: 'src/auth/login.ts:45',
+            },
+          ]
+        : [];
+
+    return {
+      iteration: 1,
+      planVersion: 1,
+      reviewMode: 'subagent' as const,
+      overallVerdict,
+      blockingIssues,
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+      attestation: {
+        toolObligationId: '123e4567-e89b-12d3-a456-426614174000',
+        iteration: 1,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: 'p35-v1',
+      },
+    };
   }
 
   // =========================================================================
@@ -743,7 +770,11 @@ describe('review (standalone flow)', () => {
       const findings = buildAnalysisFindings('approve');
 
       const raw = await review.execute(
-        { url: 'https://example.com/api-doc', analysisFindings: findings, inputOrigin: 'external_reference' },
+        {
+          url: 'https://example.com/api-doc',
+          analysisFindings: findings,
+          inputOrigin: 'external_reference',
+        },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -758,7 +789,11 @@ describe('review (standalone flow)', () => {
       const findings = buildAnalysisFindings('approve');
 
       const raw = await review.execute(
-        { text: 'Manual review text content', analysisFindings: findings, inputOrigin: 'manual_text' },
+        {
+          text: 'Manual review text content',
+          analysisFindings: findings,
+          inputOrigin: 'manual_text',
+        },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -804,10 +839,7 @@ describe('review (standalone flow)', () => {
     it('BLOCKED: content-aware review without analysisFindings', async () => {
       await hydrateAndGetReady();
 
-      const raw = await review.execute(
-        { prNumber: 123, inputOrigin: 'pr' },
-        ctx,
-      );
+      const raw = await review.execute({ prNumber: 123, inputOrigin: 'pr' }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
@@ -816,11 +848,14 @@ describe('review (standalone flow)', () => {
       expect(result.recovery.length).toBeGreaterThan(0);
     });
 
-    it('PR number with empty analysisFindings array succeeds (subagent found no issues)', async () => {
+    it('PR number with ReviewFindings (subagent found no issues)', async () => {
       await hydrateAndGetReady();
 
+      // Create a proper ReviewFindings object with empty arrays (subagent found no issues)
+      const findings = buildAnalysisFindings('approve');
+
       const raw = await review.execute(
-        { prNumber: 456, analysisFindings: [], inputOrigin: 'pr' },
+        { prNumber: 456, analysisFindings: findings, inputOrigin: 'pr' },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -834,10 +869,7 @@ describe('review (standalone flow)', () => {
       await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);
 
       const findings = buildAnalysisFindings('approve');
-      const raw = await review.execute(
-        { prNumber: 123, analysisFindings: findings },
-        ctx,
-      );
+      const raw = await review.execute({ prNumber: 123, analysisFindings: findings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
@@ -898,10 +930,7 @@ describe('review (standalone flow)', () => {
   describe('EDGE', () => {
     it('review with all optional fields populated', async () => {
       await hydrateAndGetReady();
-      const findings = buildAnalysisFindings('approve').map((f) => ({
-        ...f,
-        reviewedBy: { sessionId: 'flowguard-reviewer' },
-      }));
+      const findings = buildAnalysisFindings('approve');
 
       const raw = await review.execute(
         {
@@ -935,15 +964,7 @@ describe('review (standalone flow)', () => {
       expect(result.phase).toBe('READY');
 
       // Step 2: Execute review with PR content and simulated subagent findings
-      const subagentFindings = [
-        {
-          severity: 'major' as const,
-          category: 'blocking-issue',
-          message: 'Missing error handling in API endpoint',
-          location: 'src/api/endpoint.ts:89',
-          reviewedBy: { sessionId: 'flowguard-reviewer' },
-        },
-      ];
+      const subagentFindings = buildAnalysisFindings('approve');
 
       raw = await review.execute(
         {

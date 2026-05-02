@@ -12,36 +12,22 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+
+// Static import - mandate content is a constant in ESM
+import { REVIEWER_AGENT } from '../templates/mandates.js';
 
 export const REVIEW_CRITERIA_VERSION = 'p35-v1';
 
-// Dynamic mandate digest - computed from actual REVIEWER_AGENT template
-// This prevents failures when the template content changes
-let _mandateDigest: string | null = null;
-
-function computeReviewMandateDigest(): string {
-  const defaultText = 'FlowGuard P35 strict mandate: each independent-review obligation must be fulfilled by exactly one flowguard-reviewer subagent invocation bound to obligationId/iteration/planVersion/criteriaVersion/mandateDigest. No fallback path is accepted in strict mode.';
-  
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mandates = require('../templates/mandates.js');
-    const REVIEWER_AGENT = mandates.REVIEWER_AGENT || defaultText;
-    return createHash('sha256').update(REVIEWER_AGENT, 'utf-8').digest('hex');
-  } catch (_err) {
-    return createHash('sha256').update(defaultText, 'utf-8').digest('hex');
-  }
-}
+// Mandate digest - computed from actual REVIEWER_AGENT template at module load
+// No fallback: if the import fails, the module fails fast (desired for governance)
+export const REVIEW_MANDATE_DIGEST = createHash('sha256')
+  .update(REVIEWER_AGENT, 'utf-8')
+  .digest('hex');
 
 export function getReviewMandateDigest(): string {
-  if (_mandateDigest === null) {
-    _mandateDigest = computeReviewMandateDigest();
-  }
-  return _mandateDigest;
+  return REVIEW_MANDATE_DIGEST;
 }
-
-// For backward compatibility - computed at first use
-export const REVIEW_MANDATE_DIGEST = getReviewMandateDigest();
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return { obligations: [], invocations: [] };
