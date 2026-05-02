@@ -44,6 +44,7 @@ export function createReviewObligation(input: {
   iteration: number;
   planVersion: number;
   now: string;
+  metadata?: Record<string, unknown>;
 }): ReviewObligation {
   return {
     obligationId: randomUUID(),
@@ -59,6 +60,7 @@ export function createReviewObligation(input: {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    metadata: input.metadata,
   };
 }
 
@@ -118,21 +120,29 @@ export function findLatestObligation(
 /**
  * Find the latest pending obligation of a given type.
  *
+ * When a `metadataFingerprint` is supplied, only obligations whose
+ * `metadata.fingerprint` matches are returned. This prevents a /review
+ * call for prNumber=42 from reusing an obligation created for prNumber=99.
+ *
  * Used by standalone /review to reuse an existing pending obligation (retry-safe)
- * rather than creating a fresh one on every call. Unlike findLatestObligation
- * which matches on iteration + planVersion, this matches only on obligationType
- * + pending status so it works for content-aware /review flows where the
- * obligation was created before the review findings are submitted.
+ * rather than creating a fresh one on every call.
  */
 export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
+  metadataFingerprint?: string,
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
-  const pending = base.obligations
-    .filter((o) => o.obligationType === obligationType && o.status === 'pending')
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return pending[0] ?? null;
+  const candidates = base.obligations.filter(
+    (o) => o.obligationType === obligationType && o.status === 'pending',
+  );
+  // Fingerprint filter: when provided, only match obligations with the same
+  // input fingerprint. When absent, match any pending obligation of this type
+  // (broad — used when fingerprinting is not available).
+  const matched = metadataFingerprint
+    ? candidates.filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
+    : candidates;
+  return matched.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).at(0) ?? null;
 }
 
 export function consumeReviewObligation(

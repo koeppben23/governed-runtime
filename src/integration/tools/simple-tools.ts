@@ -13,6 +13,9 @@
 
 import { z } from 'zod';
 
+// Crypto — fingerprint generation
+import { createHash } from 'node:crypto';
+
 import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSession,
@@ -148,6 +151,27 @@ function hasReviewContentInput(args: {
 }
 
 /**
+ * Compute an input fingerprint for a content-aware /review call.
+ * Two calls with the same input type and value will produce the same fingerprint,
+ * making obligation reuse deterministic and input-bound (not global).
+ */
+function fingerprintReviewInput(args: {
+  prNumber?: number;
+  branch?: string;
+  url?: string;
+  text?: string;
+}): string {
+  if (typeof args.prNumber === 'number') return `pr:${args.prNumber}`;
+  if (typeof args.branch === 'string') return `branch:${args.branch}`;
+  if (typeof args.url === 'string') return `url:${args.url}`;
+  if (typeof args.text === 'string') {
+    const hash = createHash('sha256').update(args.text, 'utf-8').digest('hex');
+    return `text:${hash.slice(0, 16)}`;
+  }
+  return 'unknown';
+}
+
+/**
  * Canonical recovery payload for any blocked /review response that requires the
  * primary agent to re-invoke the flowguard-reviewer subagent. Includes the
  * exact attestation values the subagent must populate so the agent never has
@@ -279,24 +303,24 @@ export const review: ToolDefinition = {
       let refInput = buildReviewReferenceInput(args);
 
       // Content-aware review requires analysisFindings.
-      // When absent, create or reuse a pending review obligation and return
-      // a blocked response so the agent gets the canonical attestation values.
+      // When absent, create or reuse a pending review obligation for this
+      // specific input and return a blocked response so the agent gets the
+      // canonical attestation values.
       const hasContentInput = hasReviewContentInput(args);
       if (hasContentInput && args.analysisFindings === undefined) {
-        // Create or reuse a pending review obligation for this content-aware call.
-        // Idempotent: repeated calls with the same input reuse the same obligation
-        // so that an already-in-flight subagent invocation is not invalidated.
+        // Compute an input fingerprint so that different review inputs
+        // (e.g. prNumber=42 vs. prNumber=99) get different obligations.
+        const fingerprint = fingerprintReviewInput(args);
         const assurance = state.reviewAssurance;
-        let obligation = findLatestPendingReviewObligation(assurance, 'review');
+        let obligation = findLatestPendingReviewObligation(assurance, 'review', fingerprint);
         if (!obligation) {
           obligation = createReviewObligation({
             obligationType: 'review',
             iteration: 1,
             planVersion: 1,
             now,
+            metadata: { fingerprint },
           });
-          // Persist the new obligation to state so the follow-up call (with
-          // analysisFindings) finds it. Existing obligations are already persisted.
           const augmentedState = {
             ...state,
             reviewAssurance: appendReviewObligation(assurance, obligation),
@@ -313,23 +337,41 @@ export const review: ToolDefinition = {
         const findings = args.analysisFindings as Record<string, unknown>;
         const reviewMode = findings.reviewMode as string;
 
-        // Resolve the obligation early so we can include its UUID in blocked
-        // responses even when the failure is pre-attestation (e.g. wrong reviewMode).
+        // Find the obligation that was created for this review input.
+        // If no obligation exists, create one but reject the submitted
+        // findings — the agent must resubmit after the obligation is created.
+        const fingerprint = fingerprintReviewInput(args);
         const assurance = state.reviewAssurance;
-        const obligation = findLatestPendingReviewObligation(assurance, 'review');
-        const obligationId = obligation?.obligationId ?? '';
+        let obligation = findLatestPendingReviewObligation(assurance, 'review', fingerprint);
+
+        if (!obligation) {
+          // Create a fresh obligation so the blocked response carries a real
+          // UUID the agent can use on retry. But reject the current findings:
+          // they were submitted before the obligation existed, so the
+          // toolObligationId cannot match.
+          obligation = createReviewObligation({
+            obligationType: 'review',
+            iteration: 1,
+            planVersion: 1,
+            now,
+            metadata: { fingerprint },
+          });
+          const augmentedState = {
+            ...state,
+            reviewAssurance: appendReviewObligation(assurance, obligation),
+          };
+          await writeStateWithArtifacts(sessDir, augmentedState);
+
+          return formatSubagentReviewNotInvoked(
+            'no pending review obligation found for this input — a fresh obligation has been created. Re-submit your findings with the toolObligationId from the returned requiredReviewAttestation.',
+            obligation.obligationId,
+          );
+        }
 
         if (reviewMode !== 'subagent') {
           return formatSubagentReviewNotInvoked(
             'reviewMode is not "subagent" — findings did not come from the flowguard-reviewer subagent',
-            obligationId,
-          );
-        }
-
-        if (!obligation) {
-          return formatSubagentReviewNotInvoked(
-            'no pending review obligation found — call /review without analysisFindings first to create one',
-            '',
+            obligation.obligationId,
           );
         }
 

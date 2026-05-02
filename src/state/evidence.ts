@@ -311,6 +311,8 @@ export const ReviewObligation = z.object({
   blockedCode: z.string().nullable(),
   fulfilledAt: z.string().datetime().nullable(),
   consumedAt: z.string().datetime().nullable(),
+  /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
