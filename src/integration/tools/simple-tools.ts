@@ -361,14 +361,13 @@ export const review: ToolDefinition = {
 
         // Resolve the obligation by its canonical UUID if the attestation
         // carries one (both blocked response and plugin-orchestrator set it).
-        const attToolObligationId = (
-          (findings.attestation as Record<string, unknown> | undefined)?.toolObligationId
-        ) as string | undefined;
-        const obligationById =
-          attToolObligationId
-            ? findReviewObligationById(assurance, attToolObligationId)
-            : null;
-        let obligation = obligationById ?? findLatestPendingReviewObligation(assurance, 'review', fingerprint);
+        const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
+          ?.toolObligationId as string | undefined;
+        const obligationById = attToolObligationId
+          ? findReviewObligationById(assurance, attToolObligationId)
+          : null;
+        let obligation =
+          obligationById ?? findLatestPendingReviewObligation(assurance, 'review', fingerprint);
 
         if (!obligation) {
           obligation = createReviewObligation({
@@ -456,8 +455,7 @@ export const review: ToolDefinition = {
           const assurance = ensureReviewAssurance(result.state.reviewAssurance);
           const hostInvForObligation = assurance.invocations.find(
             (inv) =>
-              inv.obligationId === obligation.obligationId &&
-              inv.source === 'host-orchestrated',
+              inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
           );
 
           if (hostInvForObligation) {

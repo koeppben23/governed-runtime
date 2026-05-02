@@ -26,7 +26,6 @@ import {
   hasEvidenceReuse,
   hashFindings,
   hashText,
-  fulfillObligation,
   appendInvocationEvidence,
 } from './review-assurance.js';
 import {
@@ -440,7 +439,7 @@ export async function runReviewOrchestration(
           return;
         }
 
-      const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+        const mutated = buildMutatedOutput(rawOutput, reviewerResult);
 
         if (mutated) {
           if (strictEnforcement && parsedFindings.success) {
