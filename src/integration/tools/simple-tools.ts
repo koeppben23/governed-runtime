@@ -46,6 +46,7 @@ import {
   createReviewObligation,
   appendReviewObligation,
   findLatestPendingReviewObligation,
+  findReviewObligationById,
   consumeReviewObligation,
   validateStrictAttestation,
   ensureReviewAssurance,
@@ -347,22 +348,29 @@ export const review: ToolDefinition = {
         return formatMissingContentAnalysis(obligation.obligationId);
       }
 
-      // If analysisFindings provided, validate against the pending obligation
-      // for this specific input and skip the external content load so the
-      // subagent's authoritative analysis is preserved.
+      // If analysisFindings provided, resolve the obligation it targets.
+      // Priority: attestation.toolObligationId (set by the blocked response or
+      // the plugin-orchestrator). Fallback: fingerprint + pending status (for
+      // manual submissions that predate the obligation).
       let validatedReviewObligation: ReturnType<typeof findLatestPendingReviewObligation> = null;
       if (args.analysisFindings !== undefined) {
         const findings = args.analysisFindings as Record<string, unknown>;
         const reviewMode = findings.reviewMode as string;
         const fingerprint = fingerprintReviewInput(args);
         const assurance = state.reviewAssurance;
-        let obligation = findLatestPendingReviewObligation(assurance, 'review', fingerprint);
+
+        // Resolve the obligation by its canonical UUID if the attestation
+        // carries one (both blocked response and plugin-orchestrator set it).
+        const attToolObligationId = (
+          (findings.attestation as Record<string, unknown> | undefined)?.toolObligationId
+        ) as string | undefined;
+        const obligationById =
+          attToolObligationId
+            ? findReviewObligationById(assurance, attToolObligationId)
+            : null;
+        let obligation = obligationById ?? findLatestPendingReviewObligation(assurance, 'review', fingerprint);
 
         if (!obligation) {
-          // Create a fresh obligation so the blocked response carries a real
-          // UUID the agent can use on retry. But reject the current findings:
-          // they were submitted before the obligation existed, so the
-          // toolObligationId cannot match.
           obligation = createReviewObligation({
             obligationType: 'review',
             iteration: 1,
@@ -377,7 +385,15 @@ export const review: ToolDefinition = {
           await writeStateWithArtifacts(sessDir, augmentedState);
 
           return formatSubagentReviewNotInvoked(
-            'no pending review obligation found for this input — a fresh obligation has been created. Re-submit your findings with the toolObligationId from the returned requiredReviewAttestation.',
+            'no review obligation found — a fresh obligation has been created. Re-submit your findings with the toolObligationId from the returned requiredReviewAttestation.',
+            obligation.obligationId,
+          );
+        }
+
+        // Guard consumed obligations (single-use enforcement).
+        if (obligation.status === 'consumed') {
+          return formatSubagentReviewNotInvoked(
+            'this review obligation has already been consumed. Start a fresh /review to create a new obligation.',
             obligation.obligationId,
           );
         }

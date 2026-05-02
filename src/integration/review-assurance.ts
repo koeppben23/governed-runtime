@@ -155,6 +155,22 @@ export function findLatestPendingReviewObligation(
   return broad.at(0) ?? null;
 }
 
+/**
+ * Find a review obligation by its exact UUID.
+ *
+ * Used when analysisFindings carry attestation.toolObligationId — the
+ * obligation was either created by the blocked response (pending) or already
+ * fulfilled by the plugin-orchestrator. Both states are valid for the final
+ * submit; only 'consumed' obligations are rejected (single-use enforcement).
+ */
+export function findReviewObligationById(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
+}
+
 export function consumeReviewObligation(
   assurance: ReviewAssuranceState,
   obligation: ReviewObligation | null,
