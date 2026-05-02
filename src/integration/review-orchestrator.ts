@@ -36,7 +36,7 @@
  */
 
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
-import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
@@ -546,11 +546,23 @@ export function buildMutatedOutput(
  * @param toolOutput - Raw tool output string
  * @returns true if the output contains the review-required signal
  */
-export function isReviewRequired(toolOutput: string): boolean {
+export function isReviewRequired(toolOutput: string, toolName?: string): boolean {
   try {
     const parsed = JSON.parse(toolOutput) as Record<string, unknown>;
     const next = typeof parsed.next === 'string' ? parsed.next : '';
-    return next.startsWith(REVIEW_REQUIRED_PREFIX);
+    if (next.startsWith(REVIEW_REQUIRED_PREFIX)) return true;
+    // Standalone /review: blocked with CONTENT_ANALYSIS_REQUIRED + requiredReviewAttestation.
+    // Narrow to TOOL_FLOWGUARD_REVIEW only — other tools may return this code
+    // for unrelated reasons.
+    if (
+      toolName === TOOL_FLOWGUARD_REVIEW &&
+      parsed.error === true &&
+      parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+      typeof parsed.requiredReviewAttestation === 'object'
+    ) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -576,7 +588,26 @@ export function extractReviewContext(
   criteriaVersion: string;
   mandateDigest: string;
 } | null {
-  // P1a: Prefer structured reviewObligation object, fall back to flat fields,
+  // Standalone /review: extract review context from requiredReviewAttestation
+  // embedded in the blocked CONTENT_ANALYSIS_REQUIRED response.
+  // iteration and planVersion are the obligation defaults (1/1).
+  if (toolName === TOOL_FLOWGUARD_REVIEW) {
+    const att = toolOutput.requiredReviewAttestation as Record<string, unknown> | undefined;
+    if (!att) return null;
+    const obligationId = typeof att.toolObligationId === 'string' ? att.toolObligationId : '';
+    const mandateDigest = typeof att.mandateDigest === 'string' ? att.mandateDigest : '';
+    const criteriaVersion = typeof att.criteriaVersion === 'string' ? att.criteriaVersion : '';
+    if (!obligationId || !mandateDigest || !criteriaVersion) return null;
+    return {
+      iteration: 1,
+      planVersion: 1,
+      obligationId,
+      criteriaVersion,
+      mandateDigest,
+    };
+  }
+
+  // Generic plan/implement/architecture extraction.
   // then to regex extraction from next text for backward compatibility.
   const obl = toolOutput.reviewObligation as
     | {
@@ -637,4 +668,54 @@ export function extractReviewContext(
   }
 
   return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
+}
+
+/**
+ * Build a review prompt for content-aware standalone /review.
+ * Used by the plugin-orchestrator when it detects a CONTENT_ANALYSIS_REQUIRED
+ * blocked response with requiredReviewAttestation.
+ *
+ * Unlike buildPlanReviewPrompt / buildImplReviewPrompt / buildArchitectureReviewPrompt
+ * which wrap artifact-specific context, this prompt presents arbitrary external
+ * content (PR diff, branch diff, URL content, or manual text) for subagent analysis.
+ */
+
+export function buildReviewContentPrompt(opts: {
+  content: string;
+  ticketText: string;
+  obligationId: string;
+  mandateDigest: string;
+  criteriaVersion: string;
+  iteration: number;
+  planVersion: number;
+}): string {
+  const lines: string[] = [
+    'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',
+    'Review the following content for issues, risks, and missing verification.',
+    'Obligation: ' + opts.obligationId,
+    'Iteration: ' + String(opts.iteration) + ', PlanVersion: ' + String(opts.planVersion),
+    '',
+    'ATTESTATION (include these exact values in your ReviewFindings output):',
+    '  reviewedBy: "' + REVIEWER_SUBAGENT_TYPE + '"',
+    '  mandateDigest: "' + opts.mandateDigest + '"',
+    '  criteriaVersion: "' + opts.criteriaVersion + '"',
+    '  toolObligationId: "' + opts.obligationId + '"',
+    '',
+  ];
+  if (opts.ticketText) {
+    lines.push('Ticket context: ' + opts.ticketText, '');
+  }
+  lines.push(
+    'CONTENT TO REVIEW:',
+    '```',
+    opts.content,
+    '```',
+    '',
+    'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',
+    'Fields: reviewMode: "subagent", iteration, planVersion, overallVerdict,',
+    '  blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns,',
+    '  reviewedBy: { sessionId }, reviewedAt, attestation.',
+    'Use ONLY these categories: completeness, correctness, feasibility, risk, quality.',
+  );
+  return lines.join('\n');
 }

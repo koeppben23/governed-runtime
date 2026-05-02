@@ -197,6 +197,7 @@ export function buildInvocationEvidence(input: {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
+  source?: 'host-orchestrated' | 'agent-submitted-attested';
 }): ReviewInvocationEvidence {
   return {
     invocationId: randomUUID(),
@@ -212,6 +213,7 @@ export function buildInvocationEvidence(input: {
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt,
     consumedByObligationId: null,
+    source: input.source,
   };
 }
 

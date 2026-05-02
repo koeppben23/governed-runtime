@@ -452,6 +452,7 @@ export const review: ToolDefinition = {
             findingsHash,
             invokedAt: now,
             fulfilledAt: now,
+            source: 'agent-submitted-attested',
           });
 
           // Fulfill obligation and append evidence. Consumption happens below.

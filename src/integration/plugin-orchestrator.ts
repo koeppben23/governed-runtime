@@ -35,6 +35,7 @@ import {
   buildArchitectureReviewPrompt,
   invokeReviewer,
   buildMutatedOutput,
+  buildReviewContentPrompt,
   type OrchestratorClient,
 } from './review-orchestrator.js';
 import {
@@ -43,6 +44,8 @@ import {
   parseToolResult,
   strictBlockedOutput,
 } from './plugin-helpers.js';
+import { loadExternalContent } from '../rails/review.js';
+import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import {
@@ -105,7 +108,7 @@ export async function runReviewOrchestration(
 
   const rawOutput = getToolOutput(output);
   let strictEnforcement: boolean | null = null;
-  const inReviewPath = isReviewRequired(rawOutput);
+  const inReviewPath = isReviewRequired(rawOutput, toolName);
   if (!inReviewPath) return;
 
   try {
@@ -135,6 +138,92 @@ export async function runReviewOrchestration(
           reason: 'review context missing for strict orchestration',
         });
       }
+      return;
+    }
+
+    // Host-orchestrated /review content analysis.
+    // When flowguard_review blocks with CONTENT_ANALYSIS_REQUIRED, the
+    // orchestrator loads external content, invokes the subagent, and injects
+    // pluginReviewFindings so the agent can resubmit. If any step fails the
+    // output is unchanged — the agent invokes the subagent manually.
+    if (toolName === TOOL_FLOWGUARD_REVIEW) {
+      strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      const rawInput = input as Record<string, unknown>;
+      const refInput = {
+        text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
+        prNumber: typeof rawInput.prNumber === 'number' ? rawInput.prNumber : undefined,
+        branch: typeof rawInput.branch === 'string' ? rawInput.branch : undefined,
+        url: typeof rawInput.url === 'string' ? rawInput.url : undefined,
+      };
+      const contentResult = await loadExternalContent(refInput);
+      const content = (contentResult as Record<string, unknown>).content;
+      if (typeof content !== 'string') return;
+
+      const prompt = buildReviewContentPrompt({
+        content,
+        ticketText: sessionState.ticket?.text ?? '',
+        obligationId: reviewCtx.obligationId,
+        mandateDigest: reviewCtx.mandateDigest,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+      });
+
+      const reviewerResult = await invokeReviewer(
+        deps.client as OrchestratorClient,
+        prompt,
+        sessionId,
+      );
+      if (!reviewerResult?.findings) return;
+
+      const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
+      if (!parsedFindings.success) return;
+
+      if (strictEnforcement) {
+        const att = parsedFindings.data.attestation;
+        if (!att) return;
+        if (
+          att.toolObligationId !== reviewCtx.obligationId ||
+          att.mandateDigest !== reviewCtx.mandateDigest ||
+          att.criteriaVersion !== reviewCtx.criteriaVersion ||
+          att.reviewedBy !== REVIEWER_SUBAGENT_TYPE
+        )
+          return;
+
+        const promptHash = hashText(prompt);
+        const findingsHash = hashFindings(reviewerResult.findings);
+        await deps.updateReviewAssurance(sessDir, (s) => {
+          const assurance = ensureReviewAssurance(s.reviewAssurance);
+          if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+            return updateObligation(s, reviewCtx.obligationId, (item) => ({
+              ...item,
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+            }));
+          }
+          const invocation = buildInvocationEvidence({
+            obligationId: reviewCtx.obligationId,
+            obligationType: 'review',
+            parentSessionId: sessionId,
+            childSessionId: reviewerResult.sessionId,
+            promptHash,
+            findingsHash,
+            invokedAt: now,
+            fulfilledAt: now,
+            source: 'host-orchestrated',
+          });
+          assurance.invocations.push(invocation);
+          return updateObligation(s, reviewCtx.obligationId, (item) => ({
+            ...item,
+            status: 'fulfilled',
+            invocationId: invocation.invocationId,
+            fulfilledAt: now,
+          }));
+        });
+      }
+
+      const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+      if (mutated) output.output = mutated;
       return;
     }
 

@@ -332,6 +332,8 @@ export const ReviewInvocationEvidence = z
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime(),
     consumedByObligationId: z.string().uuid().nullable(),
+    /** Evidence source: host-orchestrated or agent-submitted-attested. */
+    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;

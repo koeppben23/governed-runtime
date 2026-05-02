@@ -27,28 +27,20 @@ Start the compliance review flow for the current FlowGuard session.
     - **No reference**: Proceed without \`references\` or \`inputOrigin\`.
     Always preserve the original URL/reference.
 
-3. **Independent Content Review via flowguard-reviewer Subagent** (MANDATORY for content-aware reviews):
-    If content was loaded (step 2), you MUST call the \`flowguard-reviewer\` subagent.
-    First call \`flowguard_review\` once WITHOUT \`analysisFindings\` to receive the canonical
-    \`requiredReviewAttestation\` block (reviewedBy, mandateDigest, criteriaVersion). The tool
-    blocks fail-closed with code \`CONTENT_ANALYSIS_REQUIRED\` and returns those values.
-    Then:
-    - Use the Task tool with \`subagent_type: "flowguard-reviewer"\`.
-    - Provide the loaded content (PR diff, branch diff, URL content, or manual text) in the prompt.
-    - Pass \`requiredReviewAttestation\` values into the subagent prompt so it can populate
-      \`attestation.reviewedBy\`, \`attestation.mandateDigest\`, and \`attestation.criteriaVersion\`.
-    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object with:
-      \`reviewMode: "subagent"\`, \`iteration\`, \`planVersion\`, \`overallVerdict\`,
-      \`blockingIssues\`, \`majorRisks\`, \`missingVerification\`, \`scopeCreep\`, \`unknowns\`,
-      \`reviewedBy { sessionId }\`, \`reviewedAt\`, and \`attestation { reviewedBy: "flowguard-reviewer", mandateDigest, criteriaVersion }\`.
-    - Set \`attestation.toolObligationId\` to the value provided in \`requiredReviewAttestation\`.
-      FlowGuard provides this UUID for every content-aware /review flow that requires subagent analysis.
-      Do NOT invent a UUID — use exactly what \`requiredReviewAttestation\` returns.
-    - Parse the subagent's JSON response as a \`ReviewFindings\` object.
-    - Preserve every field. Do NOT convert to an array. Do NOT drop \`reviewMode\`, \`reviewedBy\`,
-      \`reviewedAt\`, \`attestation\`, \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
-    - Subagent findings must use \`category\` from the schema-allowed set ONLY:
-      \`"completeness" | "correctness" | "feasibility" | "risk" | "quality"\`.
+3. **Subagent Review** (content-aware only):
+    If the blocked response contains \`pluginReviewFindings\`, use those findings
+    directly — the FlowGuard orchestration plugin has already invoked the
+    \`flowguard-reviewer\` subagent for you and injected the results.
+    If the response contains \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\`
+    and NO \`pluginReviewFindings\`, manually call the \`flowguard-reviewer\` subagent
+    via Task tool:
+    - Use \`subagent_type: "flowguard-reviewer"\`
+    - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
+    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
+    - Parse the response as \`ReviewFindings\` object — preserve all fields
+    - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
+      (FlowGuard provides this UUID for every content-aware /review)
+    Both paths converge at step 4.
 
     - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the
       content was unparseable), do NOT submit \`analysisFindings\`. Report the reason to the user.
