@@ -433,21 +433,33 @@ export const review: ToolDefinition = {
           const findingsHash = hashFindings(findings);
           const promptHash = hashText(fingerprintReviewInput(args));
 
-          // Check if this submission continues the plugin-orchestrator path:
-          // the same findings were already recorded as host-orchestrated
-          // evidence for this obligation. If so, skip both the reuse check
-          // and the evidence creation — the plugin already handled it.
+          // Plugin-orchestrator path: if host-orchestrated evidence already
+          // exists for this obligation, the submitted findings MUST match it
+          // exactly. No downgrade to manual path — the host already captured
+          // authoritative evidence.
           const assurance = ensureReviewAssurance(result.state.reviewAssurance);
-          const existingHostInv = assurance.invocations.find(
+          const hostInvForObligation = assurance.invocations.find(
             (inv) =>
               inv.obligationId === obligation.obligationId &&
-              inv.findingsHash === findingsHash &&
               inv.source === 'host-orchestrated',
           );
 
-          if (!existingHostInv) {
-            // Not from the plugin path — check for genuine replay (same
-            // session or findings used for a DIFFERENT obligation).
+          if (hostInvForObligation) {
+            // Host-orchestrated evidence exists for this obligation.
+            // Only accept findings that match it exactly.
+            if (
+              hostInvForObligation.findingsHash !== findingsHash ||
+              hostInvForObligation.childSessionId !== childSessionId
+            ) {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_MANDATE_MISMATCH',
+                'Submitted findings do not match the host-orchestrated reviewer findings for this obligation. Re-submit with the exact pluginReviewFindings provided by the plugin.',
+                obligation.obligationId,
+              );
+            }
+            // Exact match — evidence already recorded by plugin, skip creation.
+          } else {
+            // No host-orchestrated evidence — manual path.
             if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
               return formatBlockedWithAttestation(
                 'SUBAGENT_EVIDENCE_REUSED',
@@ -469,7 +481,6 @@ export const review: ToolDefinition = {
               source: 'agent-submitted-attested',
             });
 
-            // Fulfill obligation and append evidence. Consumption happens below.
             result = {
               ...result,
               state: {
@@ -486,7 +497,6 @@ export const review: ToolDefinition = {
               },
             };
           }
-          // Plugin path: evidence already recorded by orchestrator.
           // Consumption happens below via validatedReviewObligation.
         }
 

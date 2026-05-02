@@ -538,6 +538,40 @@ export function buildMutatedOutput(
   }
 }
 
+/**
+ * Build mutated output for content-aware standalone /review.
+ *
+ * Unlike buildMutatedOutput (which injects a self-review verdict instruction
+ * for /plan, /architecture, /implement), this injects pluginReviewFindings
+ * and instructs the agent to re-call flowguard_review with the same content
+ * input and analysisFindings set to the injected findings.
+ */
+export function buildReviewContentMutatedOutput(
+  originalOutput: string,
+  reviewerResult: ReviewerResult,
+): string | null {
+  if (!reviewerResult.findings) return null;
+
+  try {
+    const parsed = JSON.parse(originalOutput) as Record<string, unknown>;
+
+    parsed.next =
+      `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
+      `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
+      `pluginReviewFindings. Call flowguard_review again with the same content ` +
+      `input (prNumber/branch/url/text) and set analysisFindings to the ` +
+      `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
+      `Include attestation.toolObligationId from requiredReviewAttestation.`;
+
+    parsed.pluginReviewFindings = reviewerResult.findings;
+    parsed._pluginReviewSessionId = reviewerResult.sessionId;
+
+    return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Orchestration Entry Point ───────────────────────────────────────────────
 
 /**
