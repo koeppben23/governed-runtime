@@ -27,7 +27,8 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review-assurance.js';
+import { ReviewAttestation } from '../state/evidence.js';
 import {
   status,
   hydrate,
@@ -691,15 +692,18 @@ describe('review (standalone flow)', () => {
     }
   }
 
-  // Helper: Build analysisFindings from subagent output
-  // Returns a proper ReviewFindings object (not legacy array)
+  // Helper: Build a complete subagent-attested ReviewFindings object as the
+  // primary agent would receive it from the flowguard-reviewer subagent.
+  // Categories are restricted to the schema-allowed enum
+  // ("completeness" | "correctness" | "feasibility" | "risk" | "quality").
+  // Standalone /review has no obligation, so toolObligationId is omitted.
   function buildAnalysisFindings(overallVerdict: 'approve' | 'changes_requested') {
     const blockingIssues =
       overallVerdict === 'changes_requested'
         ? [
             {
               severity: 'major' as const,
-              category: 'blocking-issue',
+              category: 'risk' as const,
               message: 'Critical security flaw in authentication flow',
               location: 'src/auth/login.ts:45',
             },
@@ -719,7 +723,9 @@ describe('review (standalone flow)', () => {
       reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
-        toolObligationId: '123e4567-e89b-12d3-a456-426614174000',
+        // toolObligationId intentionally omitted: standalone /review has no
+        // real obligation. Schema permits absence; runtime gates for /plan,
+        // /architecture, and /implement still enforce it (see EDGE/E2 test).
         iteration: 1,
         planVersion: 1,
         reviewedBy: 'flowguard-reviewer',
@@ -1016,6 +1022,387 @@ describe('review (standalone flow)', () => {
       expect(result.overallStatus).toMatch(/clean|warnings|issues/);
       expect(result.completeness).toBeDefined();
       expect(result.validationSummary).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // ATTESTATION CONTRACT TESTS (P1: review-flow-fix)
+  //
+  // Cover the attestation contract between /review and the flowguard-reviewer
+  // subagent. These tests prove:
+  //   - blocked responses include canonical requiredReviewAttestation
+  //   - schema is permissive about toolObligationId for standalone /review
+  //   - runtime gates for /plan and /implement remain strict
+  //   - all five ReviewFindings categories surface in the report
+  //   - the agent never has to invent attestation values
+  // =========================================================================
+  describe('attestation contract', () => {
+    // ---------- HAPPY ----------
+    describe('HAPPY (attestation)', () => {
+      it('H1: content-aware /review without analysisFindings returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
+        await hydrateAndGetReady();
+
+        const raw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
+        const result = parseToolResult(raw);
+
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        expect(result.requiredReviewAttestation).toBeDefined();
+        expect(result.requiredReviewAttestation.reviewedBy).toBe('flowguard-reviewer');
+        expect(result.requiredReviewAttestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(result.requiredReviewAttestation.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
+        // toolObligationId must NOT be in the recovery payload — standalone /review
+        // has no obligation, and we must not push the agent toward fabricating UUIDs.
+        expect(result.requiredReviewAttestation.toolObligationId).toBeUndefined();
+        expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
+        expect(Array.isArray(result.recovery)).toBe(true);
+        expect(result.recovery.length).toBeGreaterThan(0);
+      });
+
+      it('H2: complete ReviewFindings without toolObligationId is accepted, mapped, and skips external content reload', async () => {
+        await hydrateAndGetReady();
+
+        const findings = buildAnalysisFindings('changes_requested');
+        // Sanity: helper omits toolObligationId.
+        expect((findings.attestation as Record<string, unknown>).toolObligationId).toBeUndefined();
+
+        const refs = [{ ref: 'https://github.com/owner/repo/pull/77', type: 'pr' as const }];
+        const raw = await review.execute(
+          {
+            prNumber: 77,
+            analysisFindings: findings,
+            inputOrigin: 'pr',
+            references: refs,
+          },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe('REVIEW_COMPLETE');
+        // Mapped finding (severity 'major' -> 'error', category 'risk' preserved) is in the report.
+        const mapped = result.findings as Array<Record<string, unknown>>;
+        expect(
+          mapped.some(
+            (f) =>
+              f.category === 'risk' &&
+              f.message === 'Critical security flaw in authentication flow' &&
+              f.severity === 'error',
+          ),
+        ).toBe(true);
+        // Provenance preserved: inputOrigin and references survive the report.
+        expect(result.inputOrigin).toBe('pr');
+        expect(result.references).toBeDefined();
+        expect((result.references as unknown[]).length).toBe(1);
+      });
+
+      it('H3: plain /review without content fields still works (no analysisFindings needed)', async () => {
+        await hydrateAndGetReady();
+
+        const raw = await review.execute({}, ctx);
+        const result = parseToolResult(raw);
+
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.requiredReviewAttestation).toBeUndefined();
+      });
+    });
+
+    // ---------- BAD ----------
+    describe('BAD (attestation)', () => {
+      function expectAttestationBlocked(result: Record<string, unknown>) {
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+        const att = result.requiredReviewAttestation as Record<string, unknown> | undefined;
+        expect(att).toBeDefined();
+        expect(att?.reviewedBy).toBe('flowguard-reviewer');
+        expect(att?.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(att?.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
+        expect(att?.toolObligationId).toBeUndefined();
+        expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
+      }
+
+      it('B1: reviewMode !== "subagent" is rejected with requiredReviewAttestation', async () => {
+        await hydrateAndGetReady();
+        const findings = {
+          ...buildAnalysisFindings('approve'),
+          reviewMode: 'human',
+        } as unknown;
+        const raw = await review.execute(
+          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        expectAttestationBlocked(parseToolResult(raw));
+      });
+
+      it('B2: missing attestation is rejected with requiredReviewAttestation', async () => {
+        await hydrateAndGetReady();
+        const base = buildAnalysisFindings('approve') as Record<string, unknown>;
+        const { attestation: _omit, ...rest } = base;
+        void _omit;
+        const raw = await review.execute(
+          { prNumber: 1, analysisFindings: rest as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        expectAttestationBlocked(parseToolResult(raw));
+      });
+
+      it('B3: attestation.reviewedBy !== "flowguard-reviewer" is rejected', async () => {
+        await hydrateAndGetReady();
+        const base = buildAnalysisFindings('approve');
+        const findings = {
+          ...base,
+          attestation: { ...base.attestation, reviewedBy: 'someone-else' },
+        };
+        const raw = await review.execute(
+          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        expectAttestationBlocked(parseToolResult(raw));
+      });
+
+      it('B4: attestation.mandateDigest mismatch is rejected', async () => {
+        await hydrateAndGetReady();
+        const base = buildAnalysisFindings('approve');
+        const findings = {
+          ...base,
+          attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
+        };
+        const raw = await review.execute(
+          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        expectAttestationBlocked(parseToolResult(raw));
+      });
+
+      it('B5: attestation.criteriaVersion mismatch is rejected', async () => {
+        await hydrateAndGetReady();
+        const base = buildAnalysisFindings('approve');
+        const findings = {
+          ...base,
+          attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
+        };
+        const raw = await review.execute(
+          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        expectAttestationBlocked(parseToolResult(raw));
+      });
+    });
+
+    // ---------- CORNER ----------
+    describe('CORNER (attestation)', () => {
+      it('C1: all five finding arrays surface in the report with schema-allowed categories', async () => {
+        await hydrateAndGetReady();
+
+        const base = buildAnalysisFindings('changes_requested');
+        const findings = {
+          ...base,
+          blockingIssues: [
+            {
+              severity: 'critical' as const,
+              category: 'correctness' as const,
+              message: 'Logic error in token refresh',
+              location: 'src/auth/token.ts:120',
+            },
+          ],
+          majorRisks: [
+            {
+              severity: 'major' as const,
+              category: 'risk' as const,
+              message: 'Race condition in cache invalidation',
+            },
+          ],
+          missingVerification: ['no integration test for the new error path'],
+          scopeCreep: ['unrelated dependency upgrade snuck in'],
+          unknowns: ['behaviour under sustained load is unproven'],
+        };
+
+        const raw = await review.execute(
+          { text: 'diff content', analysisFindings: findings, inputOrigin: 'manual_text' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+
+        const mapped = result.findings as Array<Record<string, unknown>>;
+        expect(mapped.some((f) => f.message === 'Logic error in token refresh')).toBe(true);
+        expect(mapped.some((f) => f.message === 'Race condition in cache invalidation')).toBe(true);
+        expect(
+          mapped.some(
+            (f) =>
+              f.category === 'missing-verification' &&
+              f.message === 'no integration test for the new error path',
+          ),
+        ).toBe(true);
+        expect(
+          mapped.some(
+            (f) =>
+              f.category === 'scope-creep' && f.message === 'unrelated dependency upgrade snuck in',
+          ),
+        ).toBe(true);
+        expect(
+          mapped.some(
+            (f) =>
+              f.category === 'unknown' &&
+              f.message === 'behaviour under sustained load is unproven',
+          ),
+        ).toBe(true);
+      });
+
+      it('C2: empty finding arrays (subagent found no issues) are accepted', async () => {
+        await hydrateAndGetReady();
+        const findings = buildAnalysisFindings('approve'); // all arrays empty
+        const raw = await review.execute(
+          { prNumber: 99, analysisFindings: findings, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe('REVIEW_COMPLETE');
+      });
+    });
+
+    // ---------- EDGE ----------
+    describe('EDGE (attestation)', () => {
+      it('E1: ReviewAttestation schema parses successfully without toolObligationId', () => {
+        const parsed = ReviewAttestation.safeParse({
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+          // toolObligationId intentionally omitted
+        });
+        expect(parsed.success).toBe(true);
+        if (parsed.success) {
+          expect(parsed.data.toolObligationId).toBeUndefined();
+        }
+      });
+
+      it('E2: runtime gate (validateStrictAttestation) still rejects findings without toolObligationId for /plan and /implement', async () => {
+        // Schema is permissive (E1) — but runtime obligation gate must remain strict.
+        // validateStrictAttestation compares attestation.toolObligationId against
+        // expected.obligationId; undefined !== <real-uuid> -> SUBAGENT_MANDATE_MISMATCH.
+        const { validateStrictAttestation } = await import('./review-assurance.js');
+        const findings = {
+          iteration: 1,
+          planVersion: 1,
+          reviewMode: 'subagent' as const,
+          overallVerdict: 'approve' as const,
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'flowguard-reviewer-session-xyz' },
+          reviewedAt: '2026-01-01T00:00:00.000Z',
+          attestation: {
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            iteration: 1,
+            planVersion: 1,
+            reviewedBy: 'flowguard-reviewer' as const,
+            // toolObligationId intentionally omitted — should fail the obligation gate
+          },
+        };
+        const expected = {
+          obligationId: '11111111-2222-3333-4444-555555555555',
+          iteration: 1,
+          planVersion: 1,
+        };
+        const verdict = validateStrictAttestation(findings, expected);
+        expect(verdict).toBe('SUBAGENT_MANDATE_MISMATCH');
+      });
+    });
+
+    // ---------- E2E ----------
+    describe('E2E (attestation)', () => {
+      it('EE1: hydrate -> blocked with attestation -> consume payload -> succeed with complete ReviewFindings', async () => {
+        await hydrateAndGetReady();
+
+        // Step 1: call /review with content but no analysisFindings -> blocked
+        const blockedRaw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
+        const blocked = parseToolResult(blockedRaw);
+        expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        expect(blocked.requiredReviewAttestation).toBeDefined();
+
+        const att = blocked.requiredReviewAttestation as Record<string, string>;
+
+        // Step 2: build ReviewFindings from the canonical attestation values returned
+        const findings = {
+          iteration: 1,
+          planVersion: 1,
+          reviewMode: 'subagent' as const,
+          overallVerdict: 'approve' as const,
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'flowguard-reviewer-session-e2e' },
+          reviewedAt: '2026-01-01T00:00:00.000Z',
+          attestation: {
+            iteration: 1,
+            planVersion: 1,
+            reviewedBy: att.reviewedBy as 'flowguard-reviewer',
+            mandateDigest: att.mandateDigest,
+            criteriaVersion: att.criteriaVersion,
+          },
+        };
+
+        // Step 3: re-call /review with the complete object
+        const raw = await review.execute(
+          {
+            prNumber: 42,
+            analysisFindings: findings as never,
+            inputOrigin: 'pr',
+            references: [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }],
+          },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe('REVIEW_COMPLETE');
+        expect(result.inputOrigin).toBe('pr');
+        expect((result.references as unknown[]).length).toBe(1);
+      });
+    });
+
+    // ---------- SMOKE ----------
+    describe('SMOKE (attestation)', () => {
+      it('S1: requiredReviewAttestation.mandateDigest is the canonical REVIEW_MANDATE_DIGEST constant', async () => {
+        await hydrateAndGetReady();
+        const raw = await review.execute({ prNumber: 1, inputOrigin: 'pr' }, ctx);
+        const result = parseToolResult(raw);
+        expect(result.requiredReviewAttestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(result.requiredReviewAttestation.mandateDigest).toMatch(/^[a-f0-9]{64}$/);
+      });
+
+      it('S2: CONTENT_ANALYSIS_REQUIRED and SUBAGENT_REVIEW_NOT_INVOKED return identical attestation payload', async () => {
+        await hydrateAndGetReady();
+
+        // CONTENT_ANALYSIS_REQUIRED: triggered by content fields without analysisFindings.
+        const rawA = await review.execute({ prNumber: 7, inputOrigin: 'pr' }, ctx);
+        const a = parseToolResult(rawA);
+        expect(a.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+        // SUBAGENT_REVIEW_NOT_INVOKED: triggered by malformed reviewMode.
+        await hydrateAndGetReady();
+        const tampered = {
+          ...buildAnalysisFindings('approve'),
+          reviewMode: 'human',
+        } as unknown;
+        const rawB = await review.execute(
+          { prNumber: 7, analysisFindings: tampered as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const b = parseToolResult(rawB);
+        expect(b.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+
+        expect(a.requiredReviewAttestation).toEqual(b.requiredReviewAttestation);
+        expect(a.reviewerSubagentType).toBe(b.reviewerSubagentType);
+      });
     });
   });
 });

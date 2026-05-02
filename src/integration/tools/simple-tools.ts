@@ -138,20 +138,63 @@ function hasReviewContentInput(args: {
   );
 }
 
-function formatMissingContentAnalysis(): string {
-  return JSON.stringify({
-    error: true,
-    code: 'CONTENT_ANALYSIS_REQUIRED',
-    message:
-      'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content.',
+/**
+ * Canonical recovery payload for any blocked /review response that requires the
+ * primary agent to re-invoke the flowguard-reviewer subagent. Includes the
+ * exact attestation values the subagent must populate so the agent never has
+ * to guess `mandateDigest` or `criteriaVersion`.
+ *
+ * `toolObligationId` is intentionally absent: standalone /review has no
+ * obligation, so we must not push the agent toward fabricating a UUID.
+ */
+function buildRequiredReviewAttestationPayload(): {
+  requiredReviewAttestation: {
+    reviewedBy: string;
+    mandateDigest: string;
+    criteriaVersion: string;
+  };
+  reviewerSubagentType: string;
+  recovery: string[];
+} {
+  return {
+    requiredReviewAttestation: {
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+    },
+    reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
       'Call Task tool with subagent_type: "flowguard-reviewer" and provide the content in the prompt.',
-      'Instruct the subagent to return findings as JSON with blockingIssues and majorRisks arrays.',
-      'Parse the subagent response and map findings to analysisFindings format.',
-      'Re-run flowguard_review with analysisFindings populated.',
+      'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, and attestation.criteriaVersion exactly.',
+      'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
+      'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
+      'Re-run flowguard_review with analysisFindings set to the complete ReviewFindings object.',
     ],
+  };
+}
+
+function formatBlockedWithAttestation(code: string, message: string): string {
+  return JSON.stringify({
+    error: true,
+    code,
+    message,
+    ...buildRequiredReviewAttestationPayload(),
   });
+}
+
+function formatMissingContentAnalysis(): string {
+  return formatBlockedWithAttestation(
+    'CONTENT_ANALYSIS_REQUIRED',
+    'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object.',
+  );
+}
+
+function formatSubagentReviewNotInvoked(detail: string): string {
+  return formatBlockedWithAttestation(
+    'SUBAGENT_REVIEW_NOT_INVOKED',
+    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the flowguard-reviewer subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object.`,
+  );
 }
 
 function formatBlockedReviewReport(report: unknown): string {
@@ -227,35 +270,42 @@ export const review: ToolDefinition = {
         return formatMissingContentAnalysis();
       }
 
-      // P0 #2 + P0 #3: If analysisFindings provided, validate and skip external content load
+      // If analysisFindings provided, validate it came from the flowguard-reviewer
+      // subagent (attestation-based, no spoofable sessionId checks) and skip the
+      // external content load to preserve subagent's authoritative analysis.
       if (args.analysisFindings !== undefined) {
-        // Validate analysisFindings - must be proper ReviewFindings from flowguard-reviewer
         const findings = args.analysisFindings as Record<string, unknown>;
         const reviewMode = findings.reviewMode as string;
         const attestation = findings.attestation as Record<string, unknown> | undefined;
 
-        // Must be from subagent
         if (reviewMode !== 'subagent') {
-          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+          return formatSubagentReviewNotInvoked(
+            'reviewMode is not "subagent" — findings did not come from the flowguard-reviewer subagent',
+          );
         }
 
-        // Must have valid attestation with all required fields
         if (!attestation) {
-          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+          return formatSubagentReviewNotInvoked('attestation is missing from ReviewFindings');
         }
 
-        // Verify attestation fields (no spoofable sessionId check)
         if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) {
-          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+          return formatSubagentReviewNotInvoked(
+            `attestation.reviewedBy is not "${REVIEWER_SUBAGENT_TYPE}"`,
+          );
         }
         if (attestation.mandateDigest !== REVIEW_MANDATE_DIGEST) {
-          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+          return formatSubagentReviewNotInvoked(
+            'attestation.mandateDigest does not match REVIEW_MANDATE_DIGEST',
+          );
         }
         if (attestation.criteriaVersion !== REVIEW_CRITERIA_VERSION) {
-          return formatBlocked('SUBAGENT_REVIEW_NOT_INVOKED');
+          return formatSubagentReviewNotInvoked(
+            'attestation.criteriaVersion does not match REVIEW_CRITERIA_VERSION',
+          );
         }
 
-        // P0 #3: Keep ALL refInput fields for provenance, just add skipExternalContentLoad
+        // Skip the external content reload: the subagent has already analysed
+        // the source content. Preserve every other refInput field for provenance.
         if (refInput) {
           refInput = { ...refInput, skipExternalContentLoad: true };
         }

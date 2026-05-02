@@ -243,12 +243,19 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 /**
  * P35 strict independent-review attestation.
  * Binds findings to one obligation + mandate version/digest.
+ *
+ * `toolObligationId` is optional at the schema level so that standalone /review
+ * (which has no real obligation) can submit attested ReviewFindings without
+ * inventing a UUID. Runtime gates for /plan, /architecture, and /implement
+ * compare `toolObligationId` against the expected obligationId
+ * (see review-assurance.ts:validateStrictAttestation, plugin-orchestrator.ts);
+ * a missing field still fails those gates because `undefined !== <real-uuid>`.
  */
 export const ReviewAttestation = z
   .object({
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
-    toolObligationId: z.string().uuid(),
+    toolObligationId: z.string().uuid().optional(),
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
     reviewedBy: z.literal(REVIEWER_SUBAGENT_TYPE),

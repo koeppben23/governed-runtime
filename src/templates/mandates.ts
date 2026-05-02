@@ -366,24 +366,37 @@ the author missed. You review falsification-first: try to break it before approv
 
 When the prompt contains PR diff, branch diff, URL content, or manual text to review:
 
-1. **Analyze the content** for issues using the read, glob, grep, and webfetch tools:
-   - Code quality issues (severity: \`"error"\` | \`"warning"\` | \`"info"\`)
-   - Security concerns (category: \`"security"\`)
-   - Compliance issues (category: \`"compliance"\`)
-   - General findings (category: \`"finding"\`)
-   - Missing validations (category: \`"validation"\`)
+1. **Analyze the content** for issues using the read, glob, grep, and webfetch tools.
+   Use the schema-allowed \`severity\` values only: \`"critical" | "major" | "minor" | "info"\`.
+   Use the schema-allowed \`category\` values only:
+   \`"completeness" | "correctness" | "feasibility" | "risk" | "quality"\`.
+   Map your concerns to those categories:
+   - Security concerns -> use category \`"risk"\`
+   - Compliance issues -> use category \`"correctness"\`
+   - General quality findings -> use category \`"quality"\`
+   - Missing validations -> use category \`"completeness"\`
+   - Feasibility concerns -> use category \`"feasibility"\`
 
-2. **Return findings in standard ReviewFindings format:**
-   - Map issues to \`blockingIssues\` array with severity, category, message, location
-   - Map risks to \`majorRisks\` array if applicable
-   - Set \`overallVerdict\` based on findings:
-     * Has critical/major blockingIssues → \`"changes_requested"\`
-     * Only minor/info issues → \`"approve"\`
-     * Cannot analyze content at all → \`"unable_to_review"\`
+2. **Return a complete ReviewFindings JSON object** matching the schema in the
+   "Output Format" section below. Populate the finding arrays with concrete entries:
+   - \`blockingIssues\`: substantive defects that must be fixed (severity critical/major).
+   - \`majorRisks\`: risks that should be addressed but do not block (severity major/minor).
+   - \`missingVerification\`: string entries for checks that could not be performed.
+   - \`scopeCreep\`: string entries for items beyond the ticket boundary.
+   - \`unknowns\`: string entries for unresolved questions.
+   Set \`overallVerdict\`:
+   - Critical/major \`blockingIssues\` present -> \`"changes_requested"\`
+   - Empty or only minor issues -> \`"approve"\`
+   - Cannot analyze the content at all -> \`"unable_to_review"\` (see validity conditions below)
 
-3. **Use this mapping for analysisFindings:**
-   - Each blockingIssue → { severity, category: \`"blocking-issue"\`, message, location }
-   - Each majorRisk → { severity, category: \`"major-risk"\`, message, location }
+3. **Pass the complete object through.** The primary agent must hand the entire
+   ReviewFindings object to \`flowguard_review\` as \`analysisFindings\`. Do NOT convert
+   to an array and do NOT drop \`reviewMode\`, \`reviewedBy\`, \`reviewedAt\`, \`attestation\`,
+   \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
+
+4. **Standalone /review has no obligation.** Omit \`attestation.toolObligationId\` for
+   standalone /review calls. Only include \`toolObligationId\` when FlowGuard provides
+   one in the prompt (i.e., for /plan, /architecture, or /implement reviews).
 
 ## When You Cannot Review (Validity Conditions)
 

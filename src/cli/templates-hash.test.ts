@@ -63,8 +63,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // plugin-orchestrator.ts:248. REVIEW_MANDATE_TEXT is NOT modified by
     // this slice, so persisted obligations from prior sessions continue
     // to validate correctly under the same mandateDigest.
+    // Refreshed in P1 (review-flow-fix): mandates.ts Content Review section now
+    // maps subagent finding categories to the schema-allowed enum
+    // ("completeness" | "correctness" | "feasibility" | "risk" | "quality"),
+    // removes the legacy "blocking-issue"/"major-risk" mapping output, and tells
+    // standalone /review to omit attestation.toolObligationId. REVIEW_MANDATE_TEXT
+    // is NOT modified by this slice, so the runtime mandate digest is unaffected.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '99805aecdfc63f862c5da166ead3f99ffda185317980977e687db0a5d260ca1f',
+      'a67280b878fb559842b8b7a83e3207acf7a1c2e18c4202bd3877e9f25931effe',
     );
   });
 
@@ -83,16 +89,18 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed in PR-E: review.ts narrative now requires content-aware /review
-    // calls to submit concrete analysisFindings for reviewed text/PR/branch/URL
-    // content, preserving fail-closed behavior for content review.
+    // Refreshed in P1 (review-flow-fix): review.ts step 3 now instructs the agent
+    // to pass the complete subagent-attested ReviewFindings object as
+    // analysisFindings (no array, no mapping), references the canonical
+    // requiredReviewAttestation block returned by flowguard_review's blocked
+    // response, and tells standalone /review to omit attestation.toolObligationId.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '9db05a43fc5b7152be659956c3e860cc1bb47e6295a864f7d7afc5b3bc649c38',
+      '46eca0a50362d1e05a3a3bb95ec756c048e02c6a7763ef5854bbb3c333b1ca97',
     );
   });
 
