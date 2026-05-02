@@ -26,6 +26,8 @@ import {
   hasEvidenceReuse,
   hashFindings,
   hashText,
+  fulfillObligation,
+  appendInvocationEvidence,
 } from './review-assurance.js';
 import {
   isReviewRequired,
@@ -192,33 +194,51 @@ export async function runReviewOrchestration(
 
         const promptHash = hashText(prompt);
         const findingsHash = hashFindings(reviewerResult.findings);
-        await deps.updateReviewAssurance(sessDir, (s) => {
-          const assurance = ensureReviewAssurance(s.reviewAssurance);
-          if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
-            return updateObligation(s, reviewCtx.obligationId, (item) => ({
+
+        // Check reuse before creating evidence. If the same subagent session
+        // or findings were already used, block the output and do NOT inject findings.
+        const currentAssurance = ensureReviewAssurance(sessionState.reviewAssurance);
+        if (hasEvidenceReuse(currentAssurance.invocations, reviewerResult.sessionId, findingsHash)) {
+          await deps.updateReviewAssurance(sessDir, (s) =>
+            updateObligation(s, reviewCtx.obligationId, (item) => ({
               ...item,
               status: 'blocked',
               blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-            }));
-          }
-          const invocation = buildInvocationEvidence({
+            })),
+          );
+          output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
             obligationId: reviewCtx.obligationId,
-            obligationType: 'review',
-            parentSessionId: sessionId,
-            childSessionId: reviewerResult.sessionId,
-            promptHash,
-            findingsHash,
-            invokedAt: now,
-            fulfilledAt: now,
-            source: 'host-orchestrated',
+            reason: 'subagent findings already used for a prior obligation',
           });
-          assurance.invocations.push(invocation);
-          return updateObligation(s, reviewCtx.obligationId, (item) => ({
+          return;
+        }
+
+        // Atomically fulfill the obligation and append invocation evidence.
+        const invocation = buildInvocationEvidence({
+          obligationId: reviewCtx.obligationId,
+          obligationType: 'review',
+          parentSessionId: sessionId,
+          childSessionId: reviewerResult.sessionId,
+          promptHash,
+          findingsHash,
+          invokedAt: now,
+          fulfilledAt: now,
+          source: 'host-orchestrated',
+        });
+        await deps.updateReviewAssurance(sessDir, (s) => {
+          const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
             ...item,
             status: 'fulfilled',
             invocationId: invocation.invocationId,
             fulfilledAt: now,
           }));
+          return {
+            ...updated,
+            reviewAssurance: appendInvocationEvidence(
+              ensureReviewAssurance(updated.reviewAssurance),
+              invocation,
+            ),
+          };
         });
       }
 
