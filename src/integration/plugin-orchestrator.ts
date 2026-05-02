@@ -245,7 +245,7 @@ export async function runReviewOrchestration(
         });
       }
 
-      const mutated = buildMutatedOutput(rawOutput, reviewerResult);
+      const mutated = buildReviewContentMutatedOutput(rawOutput, reviewerResult);
       if (mutated) output.output = mutated;
       return;
     }
@@ -440,7 +440,7 @@ export async function runReviewOrchestration(
           return;
         }
 
-      const mutated = buildReviewContentMutatedOutput(rawOutput, reviewerResult);
+      const mutated = buildMutatedOutput(rawOutput, reviewerResult);
 
         if (mutated) {
           if (strictEnforcement && parsedFindings.success) {
