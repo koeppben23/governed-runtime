@@ -29,6 +29,7 @@ import {
 } from './test-helpers.js';
 import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review-assurance.js';
 import { ReviewAttestation } from '../state/evidence.js';
+import { findLatestPendingReviewObligation } from './review-assurance.js';
 import {
   status,
   hydrate,
