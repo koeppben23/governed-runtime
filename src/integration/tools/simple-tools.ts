@@ -171,6 +171,12 @@ function fingerprintReviewInput(args: {
       ? createHash('sha256').update(args.text, 'utf-8').digest('hex').slice(0, 16)
       : undefined,
     inputOrigin: args.inputOrigin,
+    references: args.references
+      ? createHash('sha256')
+          .update(JSON.stringify(args.references), 'utf-8')
+          .digest('hex')
+          .slice(0, 16)
+      : undefined,
   });
   return createHash('sha256').update(payload, 'utf-8').digest('hex');
 }

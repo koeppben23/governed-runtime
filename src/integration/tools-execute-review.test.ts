@@ -1276,7 +1276,11 @@ describe('review (standalone flow)', () => {
         await hydrateAndGetReady();
 
         // Step 1: call /review with content but no analysisFindings -> blocked
-        const blockedRaw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
+        const refs = [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }];
+        const blockedRaw = await review.execute(
+          { prNumber: 42, inputOrigin: 'pr', references: refs },
+          ctx,
+        );
         const blocked = parseToolResult(blockedRaw);
         expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
         expect(blocked.requiredReviewAttestation).toBeDefined();
@@ -1312,7 +1316,7 @@ describe('review (standalone flow)', () => {
             prNumber: 42,
             analysisFindings: findings as never,
             inputOrigin: 'pr',
-            references: [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }],
+            references: refs,
           },
           ctx,
         );
