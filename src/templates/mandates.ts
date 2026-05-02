@@ -465,7 +465,7 @@ Do NOT include any text before or after the JSON.
   "attestation": {
     "mandateDigest": "<from prompt: attestation.mandateDigest value>",
     "criteriaVersion": "<from prompt: attestation.criteriaVersion value>",
-    "toolObligationId": "<from prompt: attestation.toolObligationId value>",
+    "toolObligationId": "<include ONLY when FlowGuard provided one in the prompt; for standalone /review, omit this field entirely>",
     "iteration": <same number as top-level iteration>,
     "planVersion": <same number as top-level planVersion>,
     "reviewedBy": "flowguard-reviewer"

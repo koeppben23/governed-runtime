@@ -57,20 +57,20 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Cross-session compatibility: this hash gates ONLY the template-body
     // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
     // to .opencode/agent/flowguard-reviewer.md). It is independent from
-    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:22), which
-    // is computed from the constant REVIEW_MANDATE_TEXT and is the actual
-    // runtime gate enforced in review-assurance.ts:136 and
-    // plugin-orchestrator.ts:248. REVIEW_MANDATE_TEXT is NOT modified by
-    // this slice, so persisted obligations from prior sessions continue
-    // to validate correctly under the same mandateDigest.
-    // Refreshed in P1 (review-flow-fix): mandates.ts Content Review section now
-    // maps subagent finding categories to the schema-allowed enum
-    // ("completeness" | "correctness" | "feasibility" | "risk" | "quality"),
-    // removes the legacy "blocking-issue"/"major-risk" mapping output, and tells
-    // standalone /review to omit attestation.toolObligationId. REVIEW_MANDATE_TEXT
-    // is NOT modified by this slice, so the runtime mandate digest is unaffected.
+    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:24), which
+    // is sha256(REVIEWER_AGENT) at module-load time.
+    //
+    // This P1 slice modifies REVIEWER_AGENT (the Content Review section of
+    // mandates.ts), therefore both the template-body hash AND the runtime
+    // REVIEW_MANDATE_DIGEST change. Persisted obligations from prior sessions
+    // that reference the old mandateDigest will fail validation — the user
+    // must re-hydrate or re-create affected sessions.
+    //
+    // This is the expected behaviour: the changed text tells subagents to use
+    // schema-allowed categories only, which is a mandatory contract upgrade
+    // for /review.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'a67280b878fb559842b8b7a83e3207acf7a1c2e18c4202bd3877e9f25931effe',
+      'fa0e19139d4519f19ed7fea009f6935a3d9280097768a11a8307f798d09bf2b3',
     );
   });
 
