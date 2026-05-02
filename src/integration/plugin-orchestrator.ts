@@ -198,7 +198,9 @@ export async function runReviewOrchestration(
         // Check reuse before creating evidence. If the same subagent session
         // or findings were already used, block the output and do NOT inject findings.
         const currentAssurance = ensureReviewAssurance(sessionState.reviewAssurance);
-        if (hasEvidenceReuse(currentAssurance.invocations, reviewerResult.sessionId, findingsHash)) {
+        if (
+          hasEvidenceReuse(currentAssurance.invocations, reviewerResult.sessionId, findingsHash)
+        ) {
           await deps.updateReviewAssurance(sessDir, (s) =>
             updateObligation(s, reviewCtx.obligationId, (item) => ({
               ...item,

@@ -433,44 +433,61 @@ export const review: ToolDefinition = {
           const findingsHash = hashFindings(findings);
           const promptHash = hashText(fingerprintReviewInput(args));
 
-          // Prevent replay: same subagent session or same findings already used.
+          // Check if this submission continues the plugin-orchestrator path:
+          // the same findings were already recorded as host-orchestrated
+          // evidence for this obligation. If so, skip both the reuse check
+          // and the evidence creation — the plugin already handled it.
           const assurance = ensureReviewAssurance(result.state.reviewAssurance);
-          if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
-            return formatBlockedWithAttestation(
-              'SUBAGENT_EVIDENCE_REUSED',
-              'The submitted subagent findings have already been used for a prior review obligation.',
-              obligation.obligationId,
-            );
-          }
+          const existingHostInv = assurance.invocations.find(
+            (inv) =>
+              inv.obligationId === obligation.obligationId &&
+              inv.findingsHash === findingsHash &&
+              inv.source === 'host-orchestrated',
+          );
 
-          const invocation = buildInvocationEvidence({
-            obligationId: obligation.obligationId,
-            obligationType: 'review',
-            parentSessionId: context.sessionID,
-            childSessionId,
-            promptHash,
-            findingsHash,
-            invokedAt: now,
-            fulfilledAt: now,
-            source: 'agent-submitted-attested',
-          });
+          if (!existingHostInv) {
+            // Not from the plugin path — check for genuine replay (same
+            // session or findings used for a DIFFERENT obligation).
+            if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_EVIDENCE_REUSED',
+                'The submitted subagent findings have already been used for a prior review obligation.',
+                obligation.obligationId,
+              );
+            }
 
-          // Fulfill obligation and append evidence. Consumption happens below.
-          result = {
-            ...result,
-            state: {
-              ...result.state,
-              reviewAssurance: appendInvocationEvidence(
-                fulfillObligation(
-                  ensureReviewAssurance(result.state.reviewAssurance),
-                  obligation.obligationId,
-                  invocation.invocationId,
-                  now,
+            // Manual path: create agent-submitted-attested evidence.
+            const invocation = buildInvocationEvidence({
+              obligationId: obligation.obligationId,
+              obligationType: 'review',
+              parentSessionId: context.sessionID,
+              childSessionId,
+              promptHash,
+              findingsHash,
+              invokedAt: now,
+              fulfilledAt: now,
+              source: 'agent-submitted-attested',
+            });
+
+            // Fulfill obligation and append evidence. Consumption happens below.
+            result = {
+              ...result,
+              state: {
+                ...result.state,
+                reviewAssurance: appendInvocationEvidence(
+                  fulfillObligation(
+                    ensureReviewAssurance(result.state.reviewAssurance),
+                    obligation.obligationId,
+                    invocation.invocationId,
+                    now,
+                  ),
+                  invocation,
                 ),
-                invocation,
-              ),
-            },
-          };
+              },
+            };
+          }
+          // Plugin path: evidence already recorded by orchestrator.
+          // Consumption happens below via validatedReviewObligation.
         }
 
         // Skip the external content reload: the subagent has already analysed
