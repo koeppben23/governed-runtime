@@ -328,8 +328,9 @@ export function startReviewFlow(state: SessionState, ctx: RailContext): RailResu
 
 /**
  * Full review flow: READY → REVIEW → REVIEW_COMPLETE (with autoAdvance).
- * Used when reviewReportPath is already set before calling this function
- * (e.g. via the tool layer pre-setting it).
+ * Used only by tests or callers that already have persisted report evidence
+ * and intentionally pass a state with reviewReportPath set.
+ * The tool layer must use startReviewFlow + writeReport + autoAdvance instead.
  */
 export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
   if (!isCommandAllowed(state.phase, Command.REVIEW)) {

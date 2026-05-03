@@ -127,7 +127,7 @@ export const implReviewMet: GuardFn = (s) => {
 export const implReviewPending: GuardFn = (s) => s.implReview !== null && !implReviewMet(s);
 
 /** Review report has been generated (review flow completion). */
-export const reviewDone: GuardFn = (s) => s.phase === 'REVIEW' && !!s.reviewReportPath;
+export const reviewDone: GuardFn = (s) => s.phase === 'REVIEW' && s.reviewReportPath !== null;
 
 // ─── Guard Table ──────────────────────────────────────────────────────────────
 

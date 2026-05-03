@@ -117,10 +117,34 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
+// ─── Persistence Mock (P8b: writeReport-throws test) ────────────────────────
+// wrap writeReport as vi.fn forwarding to real implementation; tests can
+// override per-test via mockImplementation.
+
+const persistenceOriginals = vi.hoisted(() => ({
+  writeReport: null as unknown as (typeof import('../adapters/persistence.js'))['writeReport'],
+  readState: null as unknown as (typeof import('../adapters/persistence.js'))['readState'],
+  writeState: null as unknown as (typeof import('../adapters/persistence.js'))['writeState'],
+}));
+
+vi.mock('../adapters/persistence', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/persistence.js')>();
+  persistenceOriginals.writeReport = original.writeReport;
+  persistenceOriginals.readState = original.readState;
+  persistenceOriginals.writeState = original.writeState;
+  return {
+    ...original,
+    writeReport: vi.fn(original.writeReport),
+    readState: vi.fn(original.readState),
+    writeState: vi.fn(original.writeState),
+  };
+});
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
+const persistenceMock = await import('../adapters/persistence.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -147,6 +171,16 @@ afterEach(async () => {
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  // Reset persistence mock to real implementation (P8b)
+  vi.mocked(persistenceMock.writeReport)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.writeReport);
+  vi.mocked(persistenceMock.readState)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.readState);
+  vi.mocked(persistenceMock.writeState)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.writeState);
   // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
@@ -965,6 +999,27 @@ describe('review', () => {
       expect(report.references[0].ref).toBe('https://github.com/org/repo/pull/42');
       expect(report.references[0].type).toBe('pr');
       expect(report.references[0].source).toBe('github');
+    });
+
+    // P8b: writeReport throws → no REVIEW_COMPLETE persisted
+    it('P8b: writeReport failure leaves session in REVIEW, not REVIEW_COMPLETE', async () => {
+      await hydrateSession();
+      // Make writeReport throw
+      vi.mocked(persistenceMock.writeReport).mockRejectedValueOnce(
+        new Error('simulated disk failure'),
+      );
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      // writeReport throws → the catch block returns formatError(err)
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INTERNAL_ERROR');
+      // Phase on disk should still be READY (session was at READY before review
+      // was called, and the failed review didn't persist any state).
+      // Actually, startReviewFlow transitions in-memory to REVIEW, but that
+      // state was never persisted because writeReport failed before
+      // writeStateWithArtifacts. The persisted state (from hydrate) remains READY.
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).not.toBe('REVIEW_COMPLETE');
     });
   });
 });

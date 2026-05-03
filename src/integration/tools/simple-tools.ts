@@ -28,11 +28,7 @@ import {
 
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
-import {
-  executeReview,
-  startReviewFlow,
-  type ReviewExecutors,
-} from '../../rails/review.js';
+import { executeReview, startReviewFlow, type ReviewExecutors } from '../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../rails/types.js';
 import { executeAbort } from '../../rails/abort.js';
 
@@ -613,7 +609,7 @@ export const review: ToolDefinition = {
         };
       }
 
-      // 3. Write report — if this fails, the session stays in REVIEW.
+      // 3. Write report — if this fails, no REVIEW_COMPLETE state is persisted.
       await writeReport(sessDir, report);
 
       // 4. Set reviewReportPath on state, then autoAdvance REVIEW → REVIEW_COMPLETE.
