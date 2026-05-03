@@ -374,7 +374,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 1.2.0-rc.1
+- **Version:** 1.2.0-rc.2
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
@@ -408,7 +408,7 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-**Version:** 1.2.0-rc.1
+**Version:** 1.2.0-rc.2
 _Architecture: TypeScript, OpenCode-native, Zero-Bridge_
 _Distribution: Pre-built proprietary artifact (GitHub Releases)_
 _Last Updated: 2026-04-27_
