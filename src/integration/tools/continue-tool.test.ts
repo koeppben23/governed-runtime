@@ -123,6 +123,17 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.code).toBe('CONTINUE_AMBIGUOUS');
   });
 
+  it('VALIDATION phase returns guidance with /check', async () => {
+    setPhase('VALIDATION');
+    mocks.appendNextAction.mockImplementation((p: string) => p);
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('VALIDATION');
+    expect(parsed.next).toBe('/check');
+    expect(parsed._continue.action).toBe('deterministic');
+  });
+
   it('blocks unknown phase with CONTINUE_UNKNOWN_PHASE', async () => {
     setPhase('BOGUS_ZONE');
     const { continue_cmd } = await import('./continue-tool.js');
@@ -250,6 +261,7 @@ describe('implement: empty evidence guard (P8a.1)', () => {
       'IMPLEMENTATION_EVIDENCE_EMPTY',
       expect.anything(),
     );
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
     const parsed = JSON.parse(String(res));
     expect(parsed.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
   });

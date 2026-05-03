@@ -17,12 +17,16 @@ import type { ToolDefinition } from './helpers.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
   TICKET: {
-    status: 'Ticket phase active. Call /ticket to record the task description.',
-    command: '/ticket',
+    status: 'Ticket captured. Continue with /plan.',
+    command: '/plan',
   },
   PLAN: {
     status: 'Plan phase active. Submit or revise the implementation plan via /plan.',
     command: '/plan',
+  },
+  VALIDATION: {
+    status: 'Validation phase active. Run required checks and submit results via /check.',
+    command: '/check',
   },
   IMPLEMENTATION: {
     status: 'Plan approved. Execute the implementation.',
