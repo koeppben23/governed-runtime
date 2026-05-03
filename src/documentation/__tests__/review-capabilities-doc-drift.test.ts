@@ -229,8 +229,6 @@ describe('documentation/review-capabilities-doc-drift', () => {
   // =========================================================================
   // SMOKE — All key docs exist and are readable
   // =========================================================================
-  // SMOKE — All key docs exist and are readable
-  // =========================================================================
   describe('SMOKE — key docs are readable', () => {
     it('CHANGELOG.md exists', () => {
       expect(readDoc('CHANGELOG.md').length).toBeGreaterThan(100);
