@@ -507,10 +507,23 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
-    code: 'NO_SELF_REVIEW',
-    category: 'precondition',
-    messageTemplate: 'No self-review loop is active. Submit a plan first.',
-    recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
+    code: 'CONTINUE_AMBIGUOUS',
+    category: 'admissibility',
+    messageTemplate:
+      'Multiple flows are available from phase {phase}. /continue cannot choose — pick one explicitly.',
+    recoverySteps: [
+      'Choose a flow: /task (development), /architecture (ADR), /review (compliance/content)',
+      'Or use one of the recommended commands in the /status output',
+    ],
+  },
+  {
+    code: 'CONTINUE_UNKNOWN_PHASE',
+    category: 'admissibility',
+    messageTemplate: 'Unknown phase {phase} encountered by /continue.',
+    recoverySteps: [
+      'Run /status to see the current phase and next recommended action',
+      'Use the recommended command directly instead of /continue',
+    ],
   },
   {
     code: 'REVIEW_FINDINGS_HASH_MISMATCH',
@@ -623,6 +636,16 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/architecture',
   },
   {
+    code: 'NO_SELF_REVIEW',
+    category: 'precondition',
+    messageTemplate: 'No self-review exists for this session.',
+    recoverySteps: [
+      'Generate a plan first via flowguard_plan',
+      'Submit a self-review verdict after plan generation',
+    ],
+    quickFixCommand: '/plan',
+  },
+  {
     code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',
     category: 'precondition',
     messageTemplate:
@@ -692,6 +715,18 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Make the implementation changes first',
       'Call flowguard_implement({}) to record implementation evidence before submitting reviewVerdict',
+    ],
+    quickFixCommand: '/implement',
+  },
+  {
+    code: 'IMPLEMENTATION_EVIDENCE_EMPTY',
+    category: 'precondition',
+    messageTemplate:
+      'No changed files were detected in the worktree. Implementation cannot proceed without evidence.',
+    recoverySteps: [
+      'Make implementation changes in the worktree before calling /implement',
+      'Verify that git detects your changes (git status shows modified files)',
+      'If you have already made changes, ensure the worktree directory is correct',
     ],
     quickFixCommand: '/implement',
   },

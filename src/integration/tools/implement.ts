@@ -187,6 +187,11 @@ export const implement: ToolDefinition = {
 
         // Auto-detect changed files via git
         const files = await changedFiles(worktree);
+        if (files.length === 0) {
+          return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+            reason: 'no changed files detected in worktree',
+          });
+        }
         // Separate domain files (non-config, non-test, non-infrastructure)
         const domainFiles = files.filter(
           (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),

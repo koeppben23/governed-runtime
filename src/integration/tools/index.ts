@@ -31,6 +31,7 @@ import { hydrate as rawHydrate } from './hydrate.js';
 import { plan as rawPlan } from './plan.js';
 import { implement as rawImplement } from './implement.js';
 import { architecture as rawArchitecture } from './architecture.js';
+import { continue_cmd as rawContinue } from './continue-tool.js';
 
 // ── Focused tools ────────────────────────────────────────────────────────────
 export const status = rawStatus;
@@ -48,3 +49,4 @@ export const hydrate = rawHydrate;
 export const plan = rawPlan;
 export const implement = rawImplement;
 export const architecture = rawArchitecture;
+export const continue_flow = rawContinue;
