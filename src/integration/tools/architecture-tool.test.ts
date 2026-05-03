@@ -678,4 +678,25 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewObligation?.obligationType).toBe('architecture');
     expect(parsed.reviewObligation?.iteration).toBe(1);
   });
+
+  it('blocks Mode B when selfReviewVerdict does not match reviewFindings.overallVerdict', async () => {
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001', title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr', status: 'proposed',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      selfReview: { iteration: 1, maxIterations: 3, prevDigest: null, currDigest: 'd2', revisionDelta: 'major', verdict: 'changes_requested' },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute(
+      { selfReviewVerdict: 'approve', reviewFindings: { iteration: 1, planVersion: 1, reviewMode: 'subagent', overallVerdict: 'changes_requested', blockingIssues: [], majorRisks: [], missingVerification: [], scopeCreep: [], unknowns: [], reviewedBy: { sessionId: 's1' }, reviewedAt: '2026-01-01T00:00:00.000Z' } },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+  });
 });

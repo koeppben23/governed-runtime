@@ -379,11 +379,21 @@ export const architecture: ToolDefinition = {
             : advancedState;
 
         // Check convergence before building the next obligation.
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        const approvedConverged =
+          revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
 
-        if (converged) {
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        if (approvedConverged) {
           await writeStateWithArtifacts(sessDir, finalState);
           const isComplete = finalState.phase === 'ARCH_COMPLETE';
           const convergedResp: Record<string, unknown> = {

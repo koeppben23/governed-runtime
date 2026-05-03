@@ -1108,6 +1108,17 @@ const SEED_REASONS: readonly BlockedReason[] = [
     quickFixCommand: '/continue',
   },
   {
+    code: 'MAX_REVIEW_ITERATIONS_REACHED',
+    category: 'state',
+    messageTemplate:
+      'Maximum review iterations ({maxIterations}) reached without convergence (last verdict: {lastVerdict}). The review loop could not converge within the policy limit.',
+    recoverySteps: [
+      'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
+      'Review the subagent findings — addressing the outstanding issues may allow convergence in the next attempt',
+      'If the policy limit is too restrictive, adjust maxSelfReviewIterations in the policy configuration',
+    ],
+  },
+  {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
     category: 'state',
     messageTemplate:

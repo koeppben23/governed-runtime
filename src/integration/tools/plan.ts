@@ -433,11 +433,22 @@ export const plan: ToolDefinition = {
         } = autoAdvance(nextState, evalFn, ctx);
 
         // Check convergence BEFORE building the next obligation.
-        // Converged paths do NOT need a next obligation — only non-converged
-        // Mode B needs one for the next review iteration.
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        // Only non-converged Mode B needs a next review obligation.
+        const approvedConverged =
+          revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
+
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        const converged = approvedConverged;
 
         if (converged && finalState.phase === 'PLAN_REVIEW') {
           await writeStateWithArtifacts(sessDir, finalState);
