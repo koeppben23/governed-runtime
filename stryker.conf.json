@@ -23,6 +23,7 @@
     "src/config/reasons.ts",
     "src/config/policy.ts",
     "src/presentation/next-action-copy.ts",
+    "src/presentation/next-action-copy.ts",
     "src/presentation/plan-review-card.ts",
     "src/presentation/phase-labels.ts",
     "src/integration/command-aliases.ts",
