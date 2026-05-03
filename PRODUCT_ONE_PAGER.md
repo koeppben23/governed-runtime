@@ -95,5 +95,5 @@ FlowGuard is an OpenCode-native governance runtime. It runs locally within the A
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
-**Current snapshot: 1.2.0-rc.1**
+**Current snapshot: 1.2.0-rc.2**
 **API Reference:** [TypeDoc-generated](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
