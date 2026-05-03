@@ -141,7 +141,7 @@ real, registered reason.
 | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict              | Submit the findings exactly as returned by the orchestrator                                 |
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | L4 — submitted blockingIssues count differs from actual count                   | Submit the findings exactly as returned                                                     |
 | `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                         | Submit a substantively-new artifact for a fresh review obligation                           |
-| `MAX_REVIEW_ITERATIONS_REACHED`      | Review loop reached max iterations without convergence ({lastVerdict})       | Submit a fresh /plan or /implement to reset the iteration counter                    |
+| `MAX_REVIEW_ITERATIONS_REACHED`      | Review loop reached max iterations without convergence ({lastVerdict})          | Submit a fresh /plan or /implement to reset the iteration counter                           |
 | `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed                | Address the reviewer's reason or substantially revise; do not retry the same artifact       |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output          | Re-run the tool that produced the review obligation                                         |
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                               | Include the structured `reviewFindings` object                                              |

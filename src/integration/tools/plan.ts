@@ -434,8 +434,7 @@ export const plan: ToolDefinition = {
 
         // Check convergence BEFORE building the next obligation.
         // Only non-converged Mode B needs a next review obligation.
-        const approvedConverged =
-          revisionDelta === 'none' && verdict === 'approve';
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
         const maxReached = iteration >= maxSelfReviewIterations;
 
         // Max iterations reached without approval: fail-closed, not converged.

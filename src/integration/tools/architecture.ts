@@ -379,8 +379,7 @@ export const architecture: ToolDefinition = {
             : advancedState;
 
         // Check convergence before building the next obligation.
-        const approvedConverged =
-          revisionDelta === 'none' && verdict === 'approve';
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
         const maxReached = iteration >= maxSelfReviewIterations;
 
         // Max iterations reached without approval: fail-closed, not converged.

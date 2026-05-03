@@ -201,8 +201,7 @@ export function autoAdvance(
   }
   // Only flag when the loop hit MAX_AUTO_ADVANCE_STEPS AND the final
   // evaluation is still 'transition' (a real overflow, not a clean exit).
-  const hitLimit =
-    transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition';
+  const hitLimit = transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition';
   const diagnostic = hitLimit ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
 
   return { state: current, evalResult: result, transitions, diagnostic };
