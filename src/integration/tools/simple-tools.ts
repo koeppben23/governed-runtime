@@ -656,7 +656,10 @@ export const review: ToolDefinition = {
         'review-report-card',
         reviewCard,
         result.state,
-        validatedReviewObligation?.obligationId ?? result.state.id,
+        validatedReviewObligation?.obligationId ??
+          // Fallback: content-derived digest so two different review cards
+          // in the same session still get different artifact files.
+          createHash('sha256').update(reviewCard, 'utf-8').digest('hex').slice(0, 16),
       );
       const artifactWarning = artifactErr ?? undefined;
 

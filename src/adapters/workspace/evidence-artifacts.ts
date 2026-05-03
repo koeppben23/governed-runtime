@@ -86,14 +86,14 @@ export async function materializeEvidenceArtifacts(
  * Materialize a review card as an immutable derived evidence artifact.
  *
  * Writes `artifacts/<artifactType>.<contentDigest>.md` and `.json`.
- * The content digest prevents stale artifacts — when a plan/ADR is
- * revised and a new card is generated, it gets a NEW file rather than
- * hitting the immutable guard.
+ *
+ * IMPORTANT: Callers MUST persist state (writeStateWithArtifacts) BEFORE
+ * calling this function. The stateHash is computed from session-state.json
+ * which must reflect the CURRENT phase, not a prior one.
  *
  * @param contentDigest - unique digest of the artifact content (planDigest,
  *   obligationId, or adrDigest). Used as the version identifier in the filename.
  * @returns null on success, or { code, message } on non-fatal failure
- *          (caller should inject artifactWarning into the tool response).
  */
 export async function materializeReviewCardArtifact(
   sessionDir: string,
