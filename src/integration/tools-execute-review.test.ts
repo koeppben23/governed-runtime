@@ -1498,6 +1498,21 @@ describe('review (standalone flow)', () => {
         const card = result.reviewCard as string;
         expect(card).toContain('# FlowGuard Review Report');
         expect(card).toContain('Review complete');
+
+        // Verify the card was persisted as an artifact.
+        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
+          '../adapters/workspace/index.js'
+        );
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const artifactsDir = `${sessDir}/artifacts`;
+        const files = await fs.readdir(artifactsDir);
+        const cardFile = files.find(
+          (f) => f.startsWith('review-report-card.') && f.endsWith('.md'),
+        );
+        expect(cardFile).toBeDefined();
+        const content = await fs.readFile(`${artifactsDir}/${cardFile}`, 'utf-8');
+        expect(content).toContain('# FlowGuard Review Report');
       });
     });
   });

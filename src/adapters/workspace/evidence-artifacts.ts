@@ -85,11 +85,13 @@ export async function materializeEvidenceArtifacts(
 /**
  * Materialize a review card as an immutable derived evidence artifact.
  *
- * Writes `artifacts/<artifactType>.md` and `artifacts/<artifactType>.json`
- * metadata. Single-shot per session — if the file already exists with the
- * same content it is a no-op; if the file exists with different content
- * a warning is returned and the existing file is preserved (immutable).
+ * Writes `artifacts/<artifactType>.<contentDigest>.md` and `.json`.
+ * The content digest prevents stale artifacts — when a plan/ADR is
+ * revised and a new card is generated, it gets a NEW file rather than
+ * hitting the immutable guard.
  *
+ * @param contentDigest - unique digest of the artifact content (planDigest,
+ *   obligationId, or adrDigest). Used as the version identifier in the filename.
  * @returns null on success, or { code, message } on non-fatal failure
  *          (caller should inject artifactWarning into the tool response).
  */
@@ -98,30 +100,35 @@ export async function materializeReviewCardArtifact(
   artifactType: 'plan-review-card' | 'review-report-card' | 'architecture-review-card',
   markdown: string,
   state: SessionState,
+  contentDigest: string,
 ): Promise<{ code: string; message: string } | null> {
   const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
-  const mdPath = path.join(artifactsDir, `${artifactType}.md`);
-  const jsonPath = path.join(artifactsDir, `${artifactType}.json`);
-  const markdownSha256 = crypto.createHash('sha256').update(markdown, 'utf-8').digest('hex');
+  const base = `${artifactType}.${contentDigest}`;
+  const mdPath = path.join(artifactsDir, `${base}.md`);
+  const jsonPath = path.join(artifactsDir, `${base}.json`);
+  const persistedContent = markdown.endsWith('\n') ? markdown : `${markdown}\n`;
+  // P0#2: hash is computed from the ACTUAL persisted content (with trailing newline).
+  const markdownSha256 = crypto
+    .createHash('sha256')
+    .update(persistedContent, 'utf-8')
+    .digest('hex');
 
   try {
     await fs.mkdir(artifactsDir, { recursive: true });
     const sourceStateHash = await hashFile(path.join(sessionDir, 'session-state.json'));
 
-    // Immutability: if the file already exists and content differs, preserve
-    // the original. Same content is a no-op.
+    // Immutability: if the file already exists, preserve the original.
     try {
       const existing = await fs.readFile(mdPath, 'utf-8');
-      const persistedContent = markdown + '\n';
-      const persistedHash = crypto
-        .createHash('sha256')
-        .update(persistedContent, 'utf-8')
-        .digest('hex');
       const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
-      if (existingHash === persistedHash) return null; // no-op
+      if (existingHash === markdownSha256) {
+        // P1#3: verify .json metadata exists and matches. Recreate if missing.
+        await ensureMetaJson(jsonPath, artifactType, state, sourceStateHash, markdownSha256, base);
+        return null; // no-op
+      }
       return {
         code: 'REVIEW_CARD_ARTIFACT_IMMUTABLE',
-        message: `Artifact already exists with different content: ${artifactType}.md`,
+        message: `Artifact already exists with different content: ${base}.md`,
       };
     } catch (err) {
       if (!isNotFound(err)) throw err;
@@ -129,6 +136,7 @@ export async function materializeReviewCardArtifact(
 
     const meta = {
       artifactType,
+      contentDigest,
       derived: true,
       source: 'presentation',
       phase: state.phase,
@@ -136,12 +144,12 @@ export async function materializeReviewCardArtifact(
       createdAt: new Date().toISOString(),
       stateHash: sourceStateHash,
       markdownSha256,
-      path: `${EVIDENCE_ARTIFACTS_DIR}/${artifactType}.md`,
+      path: `${EVIDENCE_ARTIFACTS_DIR}/${base}.md`,
     };
 
     const createdPaths: string[] = [];
     try {
-      await writeImmutableFile(mdPath, markdown + '\n', createdPaths);
+      await writeImmutableFile(mdPath, persistedContent, createdPaths);
       await writeImmutableFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', createdPaths);
       return null;
     } catch (err) {
@@ -155,6 +163,34 @@ export async function materializeReviewCardArtifact(
         `Failed to materialize review card artifact ${artifactType}: ` +
         (err instanceof Error ? err.message : String(err)),
     };
+  }
+}
+
+/** Ensure the metadata JSON exists. Recreates it if missing after a partial write. */
+async function ensureMetaJson(
+  jsonPath: string,
+  artifactType: string,
+  state: SessionState,
+  stateHash: string,
+  markdownSha256: string,
+  base: string,
+): Promise<void> {
+  try {
+    await fs.access(jsonPath);
+  } catch {
+    // .json was lost (crash between .md and .json write). Recreate it.
+    const meta = {
+      artifactType,
+      derived: true,
+      source: 'presentation',
+      phase: state.phase,
+      sessionId: state.id,
+      createdAt: new Date().toISOString(),
+      stateHash,
+      markdownSha256,
+      path: `${EVIDENCE_ARTIFACTS_DIR}/${base}.md`,
+    };
+    await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
   }
 }
 

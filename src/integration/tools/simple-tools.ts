@@ -656,6 +656,7 @@ export const review: ToolDefinition = {
         'review-report-card',
         reviewCard,
         result.state,
+        validatedReviewObligation?.obligationId ?? result.state.id,
       );
       const artifactWarning = artifactErr ?? undefined;
 

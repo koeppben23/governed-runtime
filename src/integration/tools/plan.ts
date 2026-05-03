@@ -443,6 +443,7 @@ export const plan: ToolDefinition = {
             'plan-review-card',
             reviewCard,
             finalState,
+            currentPlan.digest,
           );
           const response: Record<string, unknown> = {
             phase: finalState.phase,

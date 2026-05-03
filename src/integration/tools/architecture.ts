@@ -444,6 +444,7 @@ export const architecture: ToolDefinition = {
             'architecture-review-card',
             convergedResp.reviewCard as string,
             finalState,
+            currentAdr.digest,
           );
           if (artifactErr) convergedResp.artifactWarning = artifactErr;
           return appendNextAction(JSON.stringify(convergedResp), finalState);
