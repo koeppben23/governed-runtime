@@ -20,13 +20,6 @@ describe('materializeReviewCardArtifact', () => {
       JSON.stringify({ id: 'test-session' }),
       'utf-8',
     );
-    await fs.mkdir(tmpDir, { recursive: true });
-    // Create a minimal session-state.json for hashFile to read.
-    await fs.writeFile(
-      path.join(tmpDir, 'session-state.json'),
-      JSON.stringify({ id: 'test-session' }),
-      'utf-8',
-    );
   });
 
   afterEach(async () => {
