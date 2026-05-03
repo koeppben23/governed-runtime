@@ -117,7 +117,17 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     lines.push(`> **Input:** ${inputOrigin}`);
   }
   if (references && references.length > 0) {
-    const refList = references.map((r) => `${r.type}: ${r.ref}`).join(', ');
+    const refList = references
+      .map((r) => {
+        const value =
+          (r as Record<string, unknown>).ref ??
+          (r as Record<string, unknown>).source ??
+          (r as Record<string, unknown>).title ??
+          JSON.stringify(r);
+        const type = (r as Record<string, unknown>).type;
+        return type ? `${type}: ${value}` : String(value);
+      })
+      .join(', ');
     lines.push(`> **References:** ${refList}`);
   }
   lines.push('');
@@ -186,9 +196,20 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
   lines.push('');
   lines.push('## Recommended follow-up');
   lines.push('');
-  lines.push('- Address critical and major findings before merging.');
-  lines.push('- Add missing verification where listed.');
-  lines.push('- Re-run `/review` after changes if needed.');
+  const hasCriticalOrMajor = findings.some(
+    (f) => f.severity === 'critical' || f.severity === 'major' || f.severity === 'error',
+  );
+  if (findings.length === 0) {
+    lines.push(
+      '- No follow-up required from this review. Re-run `/review` after changes if needed.',
+    );
+  } else {
+    if (hasCriticalOrMajor) {
+      lines.push('- Address critical and major findings before merging.');
+    }
+    lines.push('- Add missing verification where listed.');
+    lines.push('- Re-run `/review` after changes if needed.');
+  }
   lines.push('');
 
   return lines.join('\n');

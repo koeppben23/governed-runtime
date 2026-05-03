@@ -79,6 +79,7 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
     phaseLabel,
     adrTitle,
     adrId,
+    adrDigest,
     iteration,
     overallVerdict,
     blockingIssues,
@@ -102,12 +103,13 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
   lines.push('');
 
   // ── Metadata ────────────────────────────────────────────────────
-  if (adrId || iteration > 0) {
+  if (adrId || adrDigest || iteration > 0) {
     lines.push('---');
     lines.push('');
     lines.push('## ADR Details');
     lines.push('');
     if (adrId) lines.push(`- **ID:** \`${adrId}\``);
+    if (adrDigest) lines.push(`- **Digest:** \`${adrDigest}\``);
     if (iteration > 0) lines.push(`- **Review iteration:** ${iteration}`);
     lines.push('');
   }
