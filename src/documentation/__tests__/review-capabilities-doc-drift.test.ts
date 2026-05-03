@@ -188,6 +188,15 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(readme).toContain('Review Cards');
       expect(readme).toContain('Review Report Card');
     });
+    it('README documentation table includes standalone /review attestation model', () => {
+      const readme = readDoc('README.md');
+      expect(readme).toMatch(/Independent Review.*\/review|\/review.*attestation/i);
+    });
+
+    it('CHANGELOG does not contradict content-aware URL loading', () => {
+      const section = unreleasedSection();
+      expect(section).not.toContain('FlowGuard itself never fetches URLs');
+    });
   });
 
   // =========================================================================

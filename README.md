@@ -99,7 +99,7 @@ review pipeline shared by `/plan`, `/architecture`, and `/implement`.
 | [Commands](./docs/commands.md)                                  | Command reference                                |
 | [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
 | [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes             |
-| [Independent Review](./docs/independent-review.md)              | Subagent review pipeline (plan / arch / impl)    |
+| [Independent Review](./docs/independent-review.md)              | Review obligations, subagent attestation, and `/review` evidence model |
 | [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
 | [Archive](./docs/archive.md)                                    | Session archiving                                |
 | [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |
