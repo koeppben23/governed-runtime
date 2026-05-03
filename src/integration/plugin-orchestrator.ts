@@ -163,6 +163,7 @@ export async function runReviewOrchestration(
 
       const prompt = buildReviewContentPrompt({
         content,
+        // Ticket text may be empty for standalone /review and architecture flows.
         ticketText: sessionState.ticket?.text ?? '',
         obligationId: reviewCtx.obligationId,
         mandateDigest: reviewCtx.mandateDigest,

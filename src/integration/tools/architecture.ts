@@ -174,7 +174,10 @@ export const architecture: ToolDefinition = {
         // to reviewAssurance so the orchestrator can wire the verdict submission
         // to the flowguard-reviewer subagent. Mirrors plan.ts:233-259.
         const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
-        const archPlanVersion = 1; // ADRs are immutable per id; iteration counts revisions
+        // Architecture reviews reuse ReviewObligation.planVersion as the generic
+        // review-subject version binding. For ADR/MADR subjects this is fixed to 1;
+        // it is not a task-plan version.
+        const archPlanVersion = 1;
         const nextObligation = subagentEnabled
           ? createReviewObligation({
               obligationType: 'architecture',
