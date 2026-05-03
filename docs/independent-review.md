@@ -334,7 +334,7 @@ Both paths are validated through the same `validateStrictAttestation` gate. Manu
 `flowguard_status` exposes the latest review summary for all three reviewable tools:
 
 - `latestReview` — latest plan review findings (iteration, planVersion, overallVerdict, counts, reviewMode, reviewedAt)
-- `latestArchitectureReview` — latest architecture (ADR) review findings (same shape; planVersion is the ADR's iteration count)
+- `latestArchitectureReview` — latest architecture (ADR) review findings. planVersion is a compatibility binding for the ADR review subject and must not be interpreted as the task plan version.
 - `latestImplementationReview` — latest implementation review findings (same shape without planVersion)
 
 ---

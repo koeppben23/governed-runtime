@@ -13,31 +13,13 @@ Determine what the workflow needs next and do it.
 
 ## Steps
 
-1. Call \`flowguard_status\` to check the current session state.
-   - If no session: call \`flowguard_hydrate\` first.
+1. Call \`flowguard_continue\` to get deterministic guidance for the current phase.
+   - If the tool returns \`_continue: { action: "deterministic" }\`, present the \`next\` command as the deterministic recommendation. Do not execute another workflow command unless explicitly requested by the user.
+   - If the tool returns \`_continue: { action: "manual_decision" }\`, present the blocked reason + recommended commands to the user.
+   - If the tool returns \`_continue: { action: "terminal" }\`, report workflow complete.
+   - If the tool blocks (error), present the blocked reason and recovery steps.
 
-2. Based on the current phase, take the appropriate action:
-
-   ### READY — Tell the user to choose: /ticket, /architecture, or /review.
-   ### TICKET (no plan) — Tell the user to run /plan.
-   ### PLAN (review pending) — Follow the \`next\` field:
-   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`pluginReviewFindings\` with verdict to \`flowguard_plan\`.
-   - "INDEPENDENT_REVIEW_REQUIRED": Call flowguard-reviewer subagent, then submit verdict.
-   - Otherwise: Report malformed state and stop.
-   ### PLAN_REVIEW (User Gate) — Present plan summary, ask for verdict via \`/review-decision\`.
-   ### VALIDATION — Run checks (test_quality, rollback_safety), call \`flowguard_validate\`.
-   ### IMPLEMENTATION — Tell the user to run /implement.
-   ### IMPL_REVIEW (review pending) — Follow the \`next\` field:
-   - "INDEPENDENT_REVIEW_COMPLETED": Submit \`pluginReviewFindings\` with verdict to \`flowguard_implement\`.
-   - "INDEPENDENT_REVIEW_REQUIRED": Call flowguard-reviewer subagent, then submit verdict.
-   - Otherwise: Report malformed state and stop.
-   ### EVIDENCE_REVIEW (User Gate) — Present implementation summary, ask for verdict.
-   ### ARCHITECTURE (ADR review pending) — Review against MADR standards, call \`flowguard_architecture\`.
-   ### ARCH_REVIEW (User Gate) — Present ADR summary, ask for verdict.
-   ### COMPLETE / ARCH_COMPLETE / REVIEW_COMPLETE (terminal) — Report workflow complete.
-   ### REVIEW — Transient phase; auto-advances to REVIEW_COMPLETE. Re-call \`flowguard_status\` to confirm.
-
-3. Report the action taken and current state.
+2. Do not infer or execute another command unless the tool response explicitly says to do so.
 
 ## Rules
 

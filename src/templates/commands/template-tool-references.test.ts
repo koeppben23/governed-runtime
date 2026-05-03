@@ -17,6 +17,7 @@ import {
   TOOL_FLOWGUARD_VALIDATE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
 } from '../../integration/tool-names.js';
@@ -32,6 +33,7 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_VALIDATE,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
 ]);
@@ -54,10 +56,10 @@ describe('command templates: tool reference integrity', () => {
     expect(violations).toEqual([]);
   });
 
-  it('continue.md does not reference the phantom flowguard_continue tool (B4)', () => {
+  it('continue.md references the flowguard_continue tool (P8)', () => {
     const body = COMMANDS['continue.md'];
     expect(body).toBeDefined();
-    expect(body).not.toContain('flowguard_continue');
+    expect(body).toContain('flowguard_continue');
   });
 });
 

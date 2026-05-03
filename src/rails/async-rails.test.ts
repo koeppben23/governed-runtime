@@ -557,11 +557,11 @@ describe('continue rail', () => {
     });
 
     it('at REVIEW → auto-advances to REVIEW_COMPLETE', async () => {
-      const state = makeState('REVIEW');
+      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = await executeContinue(state, ctx, continueExecutors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
-        // reviewDone guard fires immediately when phase === "REVIEW"
+        // reviewDone guard fires when phase === "REVIEW" and reviewReportPath is set
         expect(result.state.phase).toBe('REVIEW_COMPLETE');
       }
     });

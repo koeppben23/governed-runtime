@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
   executeReview,
   executeReviewFlow,
+  startReviewFlow,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
@@ -441,7 +442,7 @@ describe('review rail', () => {
     const ctx = createTestContext();
 
     it('HAPPY: transitions from READY to REVIEW_COMPLETE', () => {
-      const state = makeState('READY');
+      const state = makeState('READY', { reviewReportPath: '/tmp/report.json' });
       const result = executeReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
@@ -468,6 +469,25 @@ describe('review rail', () => {
       if (result.kind === 'blocked') {
         expect(result.code).toBe('COMMAND_NOT_ALLOWED');
         expect(result.reason).toContain('/review');
+      }
+    });
+  });
+
+  // ─── P8b: startReviewFlow (test: writeReport throws → no REVIEW_COMPLETE) ──
+  describe('P8b: startReviewFlow', () => {
+    const ctx = createTestContext();
+
+    it('transitions READY → REVIEW, NOT to REVIEW_COMPLETE', () => {
+      // P8b: startReviewFlow only applies the READY→REVIEW transition.
+      // The reviewDone guard requires reviewReportPath, which is not yet set.
+      // This proves that if writeReport throws before the caller sets
+      // reviewReportPath and calls autoAdvance, no REVIEW_COMPLETE is persisted.
+      const state = makeState('READY');
+      const result = startReviewFlow(state, ctx);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('REVIEW');
+        expect(result.state.reviewReportPath).toBeFalsy();
       }
     });
   });

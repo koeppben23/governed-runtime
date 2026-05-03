@@ -133,7 +133,7 @@ describe('evaluate', () => {
     });
 
     it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
-      const state = makeState('REVIEW');
+      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {

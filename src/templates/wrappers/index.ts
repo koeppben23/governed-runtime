@@ -2,7 +2,7 @@ export const TOOL_WRAPPER = `\
 /**
  * FlowGuard tools — thin wrapper.
  * All logic lives in @flowguard/core. This file re-exports
- * the 10 named tool definitions for OpenCode to discover.
+ * the 12 named tool definitions for OpenCode to discover.
  *
  * Tool naming: OpenCode derives names as <filename>_<exportname>.
  * flowguard.ts + export const status -> flowguard_status
@@ -18,8 +18,10 @@ export {
   implement,
   validate,
   review,
+  continue,
   abort_session,
   archive,
+  architecture,
 } from "@flowguard/core/integration";
 `;
 
