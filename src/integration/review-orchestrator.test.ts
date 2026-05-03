@@ -1134,31 +1134,59 @@ describe('extractReviewContext edge cases', () => {
 });
 // ─── buildReviewContentMutatedOutput extra edge cases ────────────────────────
 describe('buildReviewContentMutatedOutput edge cases', () => {
-  const findings = JSON.parse(JSON.stringify({
-    iteration: 0, planVersion: 1, reviewMode: 'subagent', overallVerdict: 'approve',
-    blockingIssues: [], majorRisks: [], missingVerification: [], scopeCreep: [], unknowns: [],
-    reviewedBy: { sessionId: 'child-1' }, reviewedAt: '2026-01-01T00:00:00.000Z',
-    attestation: { mandateDigest: 'a'.repeat(64), criteriaVersion: 'p35-v1',
-      toolObligationId: '00000000-0000-0000-0000-000000000001', iteration: 0, planVersion: 1, reviewedBy: 'flowguard-reviewer' },
-  }));
+  const findings = JSON.parse(
+    JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'child-1' },
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+      attestation: {
+        mandateDigest: 'a'.repeat(64),
+        criteriaVersion: 'p35-v1',
+        toolObligationId: '00000000-0000-0000-0000-000000000001',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
+    }),
+  );
 
   it('preserves original fields from the blocked output', () => {
     const original = JSON.stringify({ code: 'CONTENT_ANALYSIS_REQUIRED', error: true });
-    const result = buildReviewContentMutatedOutput(original, { sessionId: 's1', findings, rawResponse: '' });
+    const result = buildReviewContentMutatedOutput(original, {
+      sessionId: 's1',
+      findings,
+      rawResponse: '',
+    });
     const parsed = JSON.parse(result!);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     expect(parsed.error).toBe(true);
   });
 
   it('includes requiredReviewAttestation next instruction', () => {
-    const result = buildReviewContentMutatedOutput('{}', { sessionId: 's1', findings, rawResponse: '' });
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 's1',
+      findings,
+      rawResponse: '',
+    });
     const parsed = JSON.parse(result!);
     expect(parsed.next).toContain('analysisFindings');
     expect(parsed.next).toContain('pluginReviewFindings');
   });
 
   it('sets _pluginReviewSessionId correctly', () => {
-    const result = buildReviewContentMutatedOutput('{}', { sessionId: 'child-session-xyz', findings, rawResponse: '' });
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 'child-session-xyz',
+      findings,
+      rawResponse: '',
+    });
     const parsed = JSON.parse(result!);
     expect(parsed._pluginReviewSessionId).toBe('child-session-xyz');
   });
@@ -1173,7 +1201,8 @@ describe('isReviewRequired without toolName', () => {
 
   it('returns false for CONTENT_ANALYSIS_REQUIRED without toolName arg', () => {
     const output = JSON.stringify({
-      error: true, code: 'CONTENT_ANALYSIS_REQUIRED',
+      error: true,
+      code: 'CONTENT_ANALYSIS_REQUIRED',
       requiredReviewAttestation: { toolObligationId: 'x' },
     });
     expect(isReviewRequired(output)).toBe(false);
