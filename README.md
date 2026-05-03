@@ -68,8 +68,8 @@ Three governed flows are available after `/start` (or `/hydrate`):
 remain fully supported for scripts, CI, and power users.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
-[docs/independent-review.md](./docs/independent-review.md) for the subagent-driven
-review pipeline shared by `/plan`, `/architecture`, and `/implement`.
+[docs/independent-review.md](./docs/independent-review.md) for review obligations,
+subagent attestation, and the `/review` evidence model.
 
 ## Product Facts
 

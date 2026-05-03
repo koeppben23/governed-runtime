@@ -32,11 +32,11 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                       | Purpose                                      |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                   |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR) |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance review report          |
+| Flow             | Command         | Phases                                                                                                       | Purpose                                              |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR)         |
+| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance or content-aware review report |
 
 ## Product Commands
 
@@ -55,7 +55,7 @@ Product commands invoke canonical FlowGuard tools. Runtime enforcement remains i
 | `/export`          | `/archive`                           | Export a verifiable audit package                         |
 | `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
 | `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance review report (same name)           |
+| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
 | `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
 
 Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.

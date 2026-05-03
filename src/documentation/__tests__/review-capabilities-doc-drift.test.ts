@@ -197,6 +197,16 @@ describe('documentation/review-capabilities-doc-drift', () => {
       const section = unreleasedSection();
       expect(section).not.toContain('FlowGuard itself never fetches URLs');
     });
+
+    it('commands.md does not describe /review as compliance-only', () => {
+      const cmds = readDoc('docs/commands.md');
+      expect(cmds).toMatch(/content-aware|content review|compliance or content/i);
+    });
+
+    it('README intro does not limit review pipeline to plan/arch/impl only', () => {
+      const readme = readDoc('README.md');
+      expect(readme).toMatch(/review obligations|subagent attestation|\/review evidence/i);
+    });
   });
 
   // =========================================================================
