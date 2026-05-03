@@ -67,6 +67,7 @@ import { validateReviewFindings, requireReviewFindings } from './review-validati
 // Presentation
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildArchitectureReviewCard } from '../../presentation/architecture-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
@@ -438,6 +439,13 @@ export const architecture: ToolDefinition = {
             productNextAction: productNext,
             isApproved: isComplete,
           });
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'architecture-review-card',
+            convergedResp.reviewCard as string,
+            finalState,
+          );
+          if (artifactErr) convergedResp.artifactWarning = artifactErr;
           return appendNextAction(JSON.stringify(convergedResp), finalState);
         }
 

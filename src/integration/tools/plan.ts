@@ -54,6 +54,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine
@@ -437,18 +438,23 @@ export const plan: ToolDefinition = {
             policyMode: finalState.policySnapshot?.mode,
             taskTitle: firstLine(finalState.ticket?.text),
           });
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
-              planDigest: currentPlan.digest,
-              selfReviewIteration: iteration,
-              reviewCard,
-              next: formatEval(ev),
-              _audit: { transitions },
-            }),
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'plan-review-card',
+            reviewCard,
             finalState,
           );
+          const response: Record<string, unknown> = {
+            phase: finalState.phase,
+            status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
+            planDigest: currentPlan.digest,
+            selfReviewIteration: iteration,
+            reviewCard,
+            next: formatEval(ev),
+            _audit: { transitions },
+          };
+          if (artifactErr) response.artifactWarning = artifactErr;
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         if (converged) {

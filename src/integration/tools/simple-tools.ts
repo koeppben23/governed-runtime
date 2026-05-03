@@ -62,6 +62,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 // Presentation
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildReviewReportCard } from '../../presentation/review-report-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
@@ -649,10 +650,20 @@ export const review: ToolDefinition = {
             | undefined),
       });
 
+      // Materialize the review card as an immutable evidence artifact.
+      const artifactErr = await materializeReviewCardArtifact(
+        sessDir,
+        'review-report-card',
+        reviewCard,
+        result.state,
+      );
+      const artifactWarning = artifactErr ?? undefined;
+
       return appendNextAction(
         JSON.stringify({
           reviewCard,
           phase: result.state.phase,
+          ...(artifactWarning && { artifactWarning }),
           status: 'Review flow complete. Report generated.',
           overallStatus: report.overallStatus,
           policyMode: result.state.policySnapshot?.mode ?? 'unknown',

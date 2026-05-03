@@ -21,7 +21,12 @@ import type { SessionState } from '../../state/schema.js';
 export const EVIDENCE_ARTIFACT_SCHEMA_VERSION = 'flowguard-evidence-artifact.v1';
 export const EVIDENCE_ARTIFACTS_DIR = 'artifacts';
 
-type ArtifactType = 'ticket' | 'plan';
+type ArtifactType =
+  | 'ticket'
+  | 'plan'
+  | 'plan-review-card'
+  | 'review-report-card'
+  | 'architecture-review-card';
 
 interface EvidenceArtifactMeta {
   readonly schemaVersion: typeof EVIDENCE_ARTIFACT_SCHEMA_VERSION;
@@ -74,6 +79,82 @@ export async function materializeEvidenceArtifacts(
   } catch (err) {
     await cleanupCreatedArtifacts(createdPaths);
     throw err;
+  }
+}
+
+/**
+ * Materialize a review card as an immutable derived evidence artifact.
+ *
+ * Writes `artifacts/<artifactType>.md` and `artifacts/<artifactType>.json`
+ * metadata. Single-shot per session — if the file already exists with the
+ * same content it is a no-op; if the file exists with different content
+ * a warning is returned and the existing file is preserved (immutable).
+ *
+ * @returns null on success, or { code, message } on non-fatal failure
+ *          (caller should inject artifactWarning into the tool response).
+ */
+export async function materializeReviewCardArtifact(
+  sessionDir: string,
+  artifactType: 'plan-review-card' | 'review-report-card' | 'architecture-review-card',
+  markdown: string,
+  state: SessionState,
+): Promise<{ code: string; message: string } | null> {
+  const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
+  const mdPath = path.join(artifactsDir, `${artifactType}.md`);
+  const jsonPath = path.join(artifactsDir, `${artifactType}.json`);
+  const markdownSha256 = crypto.createHash('sha256').update(markdown, 'utf-8').digest('hex');
+
+  try {
+    await fs.mkdir(artifactsDir, { recursive: true });
+    const sourceStateHash = await hashFile(path.join(sessionDir, 'session-state.json'));
+
+    // Immutability: if the file already exists and content differs, preserve
+    // the original. Same content is a no-op.
+    try {
+      const existing = await fs.readFile(mdPath, 'utf-8');
+      const persistedContent = markdown + '\n';
+      const persistedHash = crypto
+        .createHash('sha256')
+        .update(persistedContent, 'utf-8')
+        .digest('hex');
+      const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
+      if (existingHash === persistedHash) return null; // no-op
+      return {
+        code: 'REVIEW_CARD_ARTIFACT_IMMUTABLE',
+        message: `Artifact already exists with different content: ${artifactType}.md`,
+      };
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+
+    const meta = {
+      artifactType,
+      derived: true,
+      source: 'presentation',
+      phase: state.phase,
+      sessionId: state.id,
+      createdAt: new Date().toISOString(),
+      stateHash: sourceStateHash,
+      markdownSha256,
+      path: `${EVIDENCE_ARTIFACTS_DIR}/${artifactType}.md`,
+    };
+
+    const createdPaths: string[] = [];
+    try {
+      await writeImmutableFile(mdPath, markdown + '\n', createdPaths);
+      await writeImmutableFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', createdPaths);
+      return null;
+    } catch (err) {
+      await cleanupCreatedArtifacts(createdPaths);
+      throw err;
+    }
+  } catch (err) {
+    return {
+      code: 'REVIEW_CARD_ARTIFACT_WRITE_FAILED',
+      message:
+        `Failed to materialize review card artifact ${artifactType}: ` +
+        (err instanceof Error ? err.message : String(err)),
+    };
   }
 }
 

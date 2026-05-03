@@ -477,6 +477,26 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'REVIEW_CARD_ARTIFACT_WRITE_FAILED',
+    category: 'state',
+    messageTemplate: 'Review card materialization failed: {message}',
+    recoverySteps: [
+      'The review card was shown in the tool response but could not be saved as an artifact file.',
+      'Check filesystem permissions and disk space in the session directory.',
+      'The runtime transition is not affected — this is a presentation artifact only.',
+    ],
+  },
+  {
+    code: 'REVIEW_CARD_ARTIFACT_IMMUTABLE',
+    category: 'state',
+    messageTemplate: 'Review card artifact immutable: {message}',
+    recoverySteps: [
+      'The review card artifact already exists with different content and cannot be overwritten.',
+      'This is expected — review cards are single-shot per session.',
+      'The original card artifact is preserved.',
+    ],
+  },
+  {
     code: 'REVIEW_FINDINGS_REQUIRED',
     category: 'precondition',
     messageTemplate:
