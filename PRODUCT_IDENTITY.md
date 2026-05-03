@@ -116,6 +116,8 @@ Twelve installed core FlowGuard commands cover workflow, diagnostics, and operat
 | `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                      |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
 | `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
+| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
+| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
@@ -125,7 +127,7 @@ Twelve installed core FlowGuard commands cover workflow, diagnostics, and operat
 | `/abort`           | Emergency session termination                                                                                  |
 | `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. The Plan Review Card renders the complete plan with version, policy mode, task title, and recommended next actions when self-review converges to PLAN_REVIEW.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 

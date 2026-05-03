@@ -221,22 +221,29 @@ ADR review is **subagent-driven by default** in solo, team, and regulated profil
 
 ### /review
 
-Start the standalone review flow. Generates a compliance report.
+Start the standalone review flow. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
 
 **Allowed in:** READY
 **Arguments (all optional):**
 
-- `inputOrigin` (optional): Where the review content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
+- `text` (optional): Direct text blob to review.
+- `prNumber` (optional): GitHub PR number — loads PR diff via `gh` CLI.
+- `branch` (optional): Git branch name — loads diff against detected base branch via `git diff`.
+- `url` (optional): URL content to review.
+- `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
+- `analysisFindings` (optional): Complete `ReviewFindings` object from `flowguard-reviewer` subagent. Required when content-aware fields are provided.
 
 **Examples:**
 
-- `/review` — review current workspace (no references)
-- `/review https://github.com/org/repo/pull/42` — agent fetches PR, extracts info, stores URL as reference
-- `/review feature/my-fix` — review based on branch reference
+- `/review` — plain compliance report (no external content)
+- `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
+- `/review prNumber=42 analysisFindings=<ReviewFindings>` — submit subagent findings
 
 **Produces:**
 
+- `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
+- `reviewCard` (markdown, display verbatim)
 - Evidence completeness matrix
 - Four-eyes status
 - Validation summary

@@ -45,7 +45,7 @@ Separation of concerns:
 
 **Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer in the primary path — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. In strict mode, unparseable responses and orchestration failures are BLOCKED. If a tool response preserves `INDEPENDENT_REVIEW_REQUIRED`, the LLM must invoke `flowguard-reviewer` via the Task tool; self-review is never valid review evidence.
 
-The three reviewable obligation types — `plan`, `architecture`, and `implement` — share the same orchestration pipeline, the same ReviewFindings schema, and the same fail-closed strict-enforcement model. The reviewer mandate (REVIEW_MANDATE_DIGEST) is shared; the per-obligation criteria are differentiated by sections inside the reviewer agent body (`For Plan Documents`, `For Architecture Decisions (ADRs)`, `For Implementation Changes`).
+The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` supports both host-orchestrated invocation (when the plugin is active) and manual subagent invocation as fallback.
 
 ---
 
@@ -281,7 +281,7 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`          |
 | Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
-Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, and `/implement` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement'`) selects per-obligation criteria; iteration and planVersion binding rules are uniform across all three.
+Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria; iteration and planVersion binding rules are uniform across all four.
 
 **Plugin-level enforcement (`review-enforcement.ts`):**
 
@@ -309,7 +309,23 @@ Author and reviewer artifacts are stored in parallel, never mixed:
 | `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
 | `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
-All three reviewer artifact arrays are **append-only**. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped.
+All four reviewer artifact arrays are **append-only**. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped.
+
+### Standalone /review Obligation Lifecycle
+
+Standalone `/review` creates its own obligation lifecycle (obligationType `review`), independent of plan/architecture/implement obligations:
+
+1. Content-aware `/review` without findings → blocked with `CONTENT_ANALYSIS_REQUIRED` + `requiredReviewAttestation` (containing the obligation UUID)
+2. Subagent invoked (plugin-orchestrated or manual)
+3. `/review` with `analysisFindings` matching the obligation UUID → validated via `validateStrictAttestation`
+4. Obligation consumed on success (single-use enforcement)
+
+Invocation evidence carries source marking:
+
+- `host-orchestrated` — plugin invoked the subagent (stronger evidence: real `childSessionId`, real `promptHash`)
+- `agent-submitted-attested` — agent manually invoked subagent (attested but reconstructed evidence)
+
+Both paths are validated through the same `validateStrictAttestation` gate. Manual fallback is accepted only when subagent-attested and obligation-bound.
 
 ---
 
