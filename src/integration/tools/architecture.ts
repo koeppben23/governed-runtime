@@ -64,6 +64,12 @@ import {
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
 import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 
+// Presentation
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { buildArchitectureReviewCard } from '../../presentation/architecture-review-card.js';
+import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { resolveNextAction } from '../../machine/next-action.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -396,6 +402,42 @@ export const architecture: ToolDefinition = {
               reviewedAt: f.reviewedAt,
             };
           }
+
+          // Build the Architecture Review Card as a markdown presentation layer.
+          const nextAction = resolveNextAction(finalState.phase, finalState);
+          const productNext = buildProductNextAction(nextAction, finalState.phase);
+          const reviewFindings = convergedResp.latestReview as Record<string, unknown> | undefined;
+          const f = args.reviewFindings ? (args.reviewFindings as ReviewFindings) : null;
+          convergedResp.reviewCard = buildArchitectureReviewCard({
+            phase: finalState.phase,
+            phaseLabel: PHASE_LABELS[finalState.phase],
+            adrTitle: currentAdr.title,
+            adrId: currentAdr.id,
+            adrDigest: currentAdr.digest,
+            iteration,
+            overallVerdict: reviewFindings?.overallVerdict as string | undefined,
+            blockingIssues: f?.blockingIssues as
+              | Array<{
+                  severity: string;
+                  category: string;
+                  message: string;
+                  location?: string;
+                }>
+              | undefined,
+            majorRisks: f?.majorRisks as
+              | Array<{
+                  severity: string;
+                  category: string;
+                  message: string;
+                  location?: string;
+                }>
+              | undefined,
+            missingVerification: f?.missingVerification as string[] | undefined,
+            scopeCreep: f?.scopeCreep as string[] | undefined,
+            unknowns: f?.unknowns as string[] | undefined,
+            productNextAction: productNext,
+            isApproved: isComplete,
+          });
           return appendNextAction(JSON.stringify(convergedResp), finalState);
         }
 

@@ -59,11 +59,8 @@ Start the compliance review flow for the current FlowGuard session.
 6. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
 
 7. Present the report:
-    - Overall status (clean, warnings, issues).
-    - Findings with severity, category, message (including your content analysis findings).
-    - Validation summary.
-    - External references used.
-    - Actionable recommendations for warnings/issues.
+    - If the response contains a \`reviewCard\` field, display its markdown verbatim.
+    - It contains the formatted review report with findings, completeness, and evidence.
 
 ## Verification Review Check
 

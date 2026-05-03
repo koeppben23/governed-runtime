@@ -59,6 +59,10 @@ import {
 } from '../review-assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
+// Presentation
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { buildReviewReportCard } from '../../presentation/review-report-card.js';
+
 // Adapters
 import { writeReport } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
@@ -607,8 +611,47 @@ export const review: ToolDefinition = {
       await writeStateWithArtifacts(sessDir, result.state);
       await writeReport(sessDir, report);
 
+      // Build the review report card as a markdown presentation layer.
+      const assurance = ensureReviewAssurance(result.state.reviewAssurance);
+      const boundInvocation = validatedReviewObligation
+        ? assurance.invocations.find(
+            (inv) => inv.obligationId === validatedReviewObligation.obligationId,
+          )
+        : undefined;
+      const findingsForCard = args.analysisFindings
+        ? (args.analysisFindings as Record<string, unknown>)
+        : undefined;
+      const reviewCard = buildReviewReportCard({
+        phase: result.state.phase,
+        phaseLabel: PHASE_LABELS[result.state.phase],
+        overallStatus: report.completeness.overallComplete ? 'complete' : 'incomplete',
+        findings: (report.findings ?? []) as Array<{
+          severity: string;
+          category: string;
+          message: string;
+          location?: string;
+        }>,
+        completeness: {
+          overallComplete: report.completeness.overallComplete,
+          fourEyes: report.completeness.fourEyes?.satisfied ?? false,
+          summary:
+            `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
+            `${report.completeness.summary.missing} missing`,
+        },
+        inputOrigin: args.inputOrigin as string | undefined,
+        references: args.references as Array<{ ref: string; type: string }> | undefined,
+        obligationId: validatedReviewObligation?.obligationId,
+        invocationSource: boundInvocation?.source,
+        reviewerSessionId:
+          boundInvocation?.childSessionId ??
+          ((findingsForCard?.reviewedBy as Record<string, unknown>)?.sessionId as
+            | string
+            | undefined),
+      });
+
       return appendNextAction(
         JSON.stringify({
+          reviewCard,
           phase: result.state.phase,
           status: 'Review flow complete. Report generated.',
           overallStatus: report.overallStatus,

@@ -99,7 +99,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'bbe536c12b048a55fb0c9856626acb391b7316ad1d90dfbc7f5f571c23da3aef',
+      '2ffccfdc971762f59972107aa3c4a1e8e4b5147dea92dc56733f97523c43e30f',
     );
   });
 

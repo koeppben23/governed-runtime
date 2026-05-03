@@ -68,6 +68,11 @@ Revision path (when review returns changes_requested):
 3. After re-reviewing, \`flowguard_architecture({ selfReviewVerdict: "approve", reviewFindings: <new findings> })\` → ARCH_REVIEW
 
 ${GOVERNANCE_RULES}
+## Presentation
+
+- If the response contains a \`reviewCard\` field, display its markdown verbatim.
+- It contains the formatted architecture review with ADR details, findings, and next actions.
+
 ## Done-when
 
 - ADR is created or revised with Context, Decision, and Consequences sections.
