@@ -263,6 +263,7 @@ export function executeHydrate(
     implementation: null,
     implReview: null,
     reviewDecision: null,
+    reviewReportPath: null,
     nextAdrNumber: 1,
 
     // Configuration

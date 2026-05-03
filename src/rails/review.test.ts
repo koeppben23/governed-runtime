@@ -441,7 +441,7 @@ describe('review rail', () => {
     const ctx = createTestContext();
 
     it('HAPPY: transitions from READY to REVIEW_COMPLETE', () => {
-      const state = makeState('READY');
+      const state = makeState('READY', { reviewReportPath: '/tmp/report.json' });
       const result = executeReviewFlow(state, ctx);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {

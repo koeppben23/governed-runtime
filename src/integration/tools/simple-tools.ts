@@ -65,7 +65,7 @@ import { buildReviewReportCard } from '../../presentation/review-report-card.js'
 import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 
 // Adapters
-import { writeReport } from '../../adapters/persistence.js';
+import { writeReport, reportPath } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
@@ -314,7 +314,12 @@ export const review: ToolDefinition = {
       const { sessDir, state, ctx } = await withMutableSession(context);
 
       // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
-      let result = executeReviewFlow(state, ctx);
+      //    Pre-set reviewReportPath so the reviewDone guard fires during autoAdvance.
+      const stateWithPath = {
+        ...state,
+        reviewReportPath: reportPath(sessDir),
+      };
+      let result = executeReviewFlow(stateWithPath, ctx);
 
       if (result.kind === 'blocked') {
         return formatRailResult(result);
@@ -613,7 +618,11 @@ export const review: ToolDefinition = {
       //    — the obligation consumption applied to result.state in memory is
       //    not persisted. The session is recoverable via re-hydration.
       await writeReport(sessDir, report);
-      await writeStateWithArtifacts(sessDir, result.state);
+      const stateWithReportPath = {
+        ...result.state,
+        reviewReportPath: reportPath(sessDir),
+      };
+      await writeStateWithArtifacts(sessDir, stateWithReportPath);
 
       // Build the review report card as a markdown presentation layer.
       const assurance = ensureReviewAssurance(result.state.reviewAssurance);
