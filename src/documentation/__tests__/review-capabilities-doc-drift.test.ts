@@ -207,8 +207,27 @@ describe('documentation/review-capabilities-doc-drift', () => {
       const readme = readDoc('README.md');
       expect(readme).toMatch(/review obligations|subagent attestation|\/review evidence/i);
     });
+
+    it('PRODUCT_IDENTITY has exactly one /review command row', () => {
+      const pi = readDoc('PRODUCT_IDENTITY.md');
+      const rows = pi.match(/\| `\/review`\s+\|/g) ?? [];
+      expect(rows).toHaveLength(1);
+    });
+
+    it('PRODUCT_IDENTITY has exactly one /architecture command row', () => {
+      const pi = readDoc('PRODUCT_IDENTITY.md');
+      const rows = pi.match(/\| `\/architecture`\s+\|/g) ?? [];
+      expect(rows).toHaveLength(1);
+    });
+
+    it('PRODUCT_IDENTITY does not keep stale compliance-only /review wording', () => {
+      const pi = readDoc('PRODUCT_IDENTITY.md');
+      expect(pi).not.toContain('Start standalone compliance review flow');
+    });
   });
 
+  // =========================================================================
+  // SMOKE — All key docs exist and are readable
   // =========================================================================
   // SMOKE — All key docs exist and are readable
   // =========================================================================

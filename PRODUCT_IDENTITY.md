@@ -121,8 +121,6 @@ Twelve installed core FlowGuard commands cover workflow, diagnostics, and operat
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
-| `/architecture`    | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated)               |
-| `/review`          | Start standalone compliance review flow. Supports PR URLs, branches, and commit references.                    |
 | `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
 | `/abort`           | Emergency session termination                                                                                  |
 | `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
