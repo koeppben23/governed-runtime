@@ -13,7 +13,7 @@ Determine what the workflow needs next and do it.
 
 ## Steps
 
-1. Call \`flowguard_continue_cmd\` to get deterministic guidance for the current phase.
+1. Call \`flowguard_continue\` to get deterministic guidance for the current phase.
    - If the tool returns \`_continue: { action: "deterministic" }\`, follow the \`next\` field exactly.
    - If the tool returns \`_continue: { action: "manual_decision" }\`, present the blocked reason + recommended commands to the user.
    - If the tool returns \`_continue: { action: "terminal" }\`, report workflow complete.

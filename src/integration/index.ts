@@ -17,7 +17,7 @@ export {
   implement,
   validate,
   review,
-  continue_cmd,
+  continue,
   abort_session,
   archive,
   architecture,

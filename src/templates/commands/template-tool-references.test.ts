@@ -2,7 +2,7 @@
  * @module templates/commands/template-tool-references.test
  * @description Build-time guard: every flowguard_* tool name referenced in command
  * templates MUST be a registered tool. Prevents phantom-tool regressions like B4
- * (where /continue referenced a non-existent flowguard_continue_cmd).
+ * (where /continue referenced a non-existent flowguard_continue).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -56,10 +56,10 @@ describe('command templates: tool reference integrity', () => {
     expect(violations).toEqual([]);
   });
 
-  it('continue.md references the flowguard_continue_cmd tool (P8)', () => {
+  it('continue.md references the flowguard_continue tool (P8)', () => {
     const body = COMMANDS['continue.md'];
     expect(body).toBeDefined();
-    expect(body).toContain('flowguard_continue_cmd');
+    expect(body).toContain('flowguard_continue');
   });
 });
 

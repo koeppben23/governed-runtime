@@ -507,6 +507,12 @@ const SEED_REASONS: readonly BlockedReason[] = [
     ],
   },
   {
+    code: 'NO_SELF_REVIEW',
+    category: 'precondition',
+    messageTemplate: 'No self-review loop is active. Submit a plan first.',
+    recoverySteps: ['Submit a plan via flowguard_plan with planText first'],
+  },
+  {
     code: 'CONTINUE_AMBIGUOUS',
     category: 'admissibility',
     messageTemplate:
@@ -634,16 +640,6 @@ const SEED_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'No ADR exists to review.',
     recoverySteps: ['Submit an ADR via flowguard_architecture with title and adrText first'],
     quickFixCommand: '/architecture',
-  },
-  {
-    code: 'NO_SELF_REVIEW',
-    category: 'precondition',
-    messageTemplate: 'No self-review exists for this session.',
-    recoverySteps: [
-      'Generate a plan first via flowguard_plan',
-      'Submit a self-review verdict after plan generation',
-    ],
-    quickFixCommand: '/plan',
   },
   {
     code: 'INVALID_ARCHITECTURE_TOOL_SEQUENCE',

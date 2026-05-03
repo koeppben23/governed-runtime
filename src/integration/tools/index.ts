@@ -2,7 +2,7 @@
  * @module integration/tools
  * @description Barrel export for FlowGuard tool definitions.
  *
- * Re-exports 11 tools from focused modules:
+ * Re-exports 12 tools from focused modules:
  * - helpers.ts        — shared interfaces, formatters, workspace/state/policy helpers
  * - hydrate.ts        — session bootstrap with discovery and profile resolution
  * - plan.ts           — plan submission and independent review loop
@@ -31,7 +31,7 @@ import { hydrate as rawHydrate } from './hydrate.js';
 import { plan as rawPlan } from './plan.js';
 import { implement as rawImplement } from './implement.js';
 import { architecture as rawArchitecture } from './architecture.js';
-import { continue_cmd as rawContinue } from './continue-tool.js';
+export { continue_cmd as continue } from './continue-tool.js';
 
 // ── Focused tools ────────────────────────────────────────────────────────────
 export const status = rawStatus;
@@ -49,4 +49,3 @@ export const hydrate = rawHydrate;
 export const plan = rawPlan;
 export const implement = rawImplement;
 export const architecture = rawArchitecture;
-export const continue_cmd = rawContinue;
