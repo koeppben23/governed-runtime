@@ -383,6 +383,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       {} as never,
     );
     expect(JSON.parse(String(res)).status).toContain('converged');
+    const parsed = JSON.parse(String(res));
+    expect(parsed.reviewCard).toBeDefined();
+    expect(typeof parsed.reviewCard).toBe('string');
+    expect(parsed.reviewCard).toContain('# FlowGuard Architecture Review');
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
       architecture?: { status?: string };
     };
