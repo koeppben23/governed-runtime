@@ -431,7 +431,28 @@ export const plan: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
+
+        // Build next obligation for non-converged path BEFORE the first write
+        // so that a single atomic state write covers both the transition and
+        // the obligation. This closes the crash-window between the two writes.
+        const nextIteration = iteration;
+        const nextPlanVersion = history.length + 1;
+        const nextObligation = subagentEnabled
+          ? createReviewObligation({
+              obligationType: 'plan',
+              iteration: nextIteration,
+              planVersion: nextPlanVersion,
+              now: ctx.now(),
+            })
+          : null;
+        const augmentedState = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        const toPersist = augmentedState;
+        await writeStateWithArtifacts(sessDir, toPersist);
 
         // Check convergence for messaging
         const converged =
@@ -480,32 +501,12 @@ export const plan: ToolDefinition = {
               next: formatEval(ev),
               _audit: { transitions },
             }),
-            finalState,
+            toPersist,
           );
         }
 
-        const nextIteration = iteration;
-        const nextPlanVersion = history.length + 1;
-        const nextObligation = subagentEnabled
-          ? createReviewObligation({
-              obligationType: 'plan',
-              iteration: nextIteration,
-              planVersion: nextPlanVersion,
-              now: ctx.now(),
-            })
-          : null;
-        // Use the immutable appendReviewObligation helper instead of
-        // mutating ensureReviewAssurance()'s return via .push().
-        const augmentedState = nextObligation
-          ? {
-              ...finalState,
-              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
-            }
-          : finalState;
-        if (nextObligation) {
-          await writeStateWithArtifacts(sessDir, augmentedState);
-        }
-
+        // Non-converged: obligation was already built + persisted above.
+        // augmentedState is available for the response.
         return appendNextAction(
           JSON.stringify({
             phase: finalState.phase,

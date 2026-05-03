@@ -334,6 +334,7 @@ async function runOneArchitectureReviewIteration(
       }
       return { verdict: review.verdict };
     },
+    state.selfReview?.verdict,
   );
 
   // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).

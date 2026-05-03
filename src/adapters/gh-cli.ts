@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 
 /**
  * Check if `gh` CLI is available and authenticated.
- * Result is cached once per process — the check is synchronous with a 5s timeout.
+ * Result is cached once per process — the check is synchronous with a 3s timeout.
  */
 let _ghCliAvailable: boolean | null = null;
 

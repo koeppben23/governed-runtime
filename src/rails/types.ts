@@ -181,10 +181,8 @@ export function autoAdvance(
   const transitions: TransitionRecord[] = [];
   let current = state;
   let result = evalFn(current);
-  let stepCount = 0;
 
   for (let step = 0; step < MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition'; step++) {
-    stepCount = step;
     // Self-loop guard: if the transition targets the same phase, the state
     // won't change from the guards' perspective → stop to avoid pointless cycles.
     // Example: PLAN + SELF_REVIEW_PENDING → PLAN (waiting for LLM review).
@@ -201,7 +199,11 @@ export function autoAdvance(
     current = applyTransition(current, from, to, event, at);
     result = evalFn(current);
   }
-  const diagnostic = stepCount >= MAX_AUTO_ADVANCE_STEPS - 1 ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
+  // Only flag when the loop hit MAX_AUTO_ADVANCE_STEPS AND the final
+  // evaluation is still 'transition' (a real overflow, not a clean exit).
+  const hitLimit =
+    transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition';
+  const diagnostic = hitLimit ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
 
   return { state: current, evalResult: result, transitions, diagnostic };
 }
