@@ -16,22 +16,13 @@ import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import type { ToolDefinition } from './helpers.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
-  READY: {
-    status: 'Session ready. Choose a flow.',
-    commands: ['/task', '/architecture', '/review'],
-  },
   TICKET: {
-    status: 'Task captured. Generate an implementation plan.',
-    command: '/plan',
+    status: 'Ticket phase active. Call /ticket to record the task description.',
+    command: '/ticket',
   },
   PLAN: {
-    status:
-      'Plan review is pending. Use /plan with the required review findings when review evidence is available.',
+    status: 'Plan phase active. Submit or revise the implementation plan via /plan.',
     command: '/plan',
-  },
-  VALIDATION: {
-    status: 'Validation checks are pending. Run /check to execute them.',
-    command: '/check',
   },
   IMPLEMENTATION: {
     status: 'Plan approved. Execute the implementation.',
@@ -41,6 +32,15 @@ const PHASE_GUIDANCE: Record<string, { status: string; command?: string; command
     status:
       'Implementation review is pending. Use /implement with the required review findings when review evidence is available.',
     command: '/implement',
+  },
+  ARCHITECTURE: {
+    status:
+      'Architecture review is pending. Use /architecture with required review findings when review evidence is available.',
+    command: '/architecture',
+  },
+  REVIEW: {
+    status: 'Standalone review phase active. Call /review to evaluate the session.',
+    command: '/review',
   },
   COMPLETE: {
     status: 'Workflow complete. Use /export to create an audit package.',
