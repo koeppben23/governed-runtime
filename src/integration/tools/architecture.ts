@@ -433,9 +433,9 @@ export const architecture: ToolDefinition = {
                   location?: string;
                 }>
               | undefined,
-            missingVerification: f?.missingVerification as string[] | undefined,
-            scopeCreep: f?.scopeCreep as string[] | undefined,
-            unknowns: f?.unknowns as string[] | undefined,
+            missingVerification: f?.missingVerification,
+            scopeCreep: f?.scopeCreep,
+            unknowns: f?.unknowns,
             productNextAction: productNext,
             isApproved: isComplete,
           });
