@@ -491,8 +491,8 @@ const SEED_REASONS: readonly BlockedReason[] = [
     category: 'state',
     messageTemplate: 'Review card artifact immutable: {message}',
     recoverySteps: [
-      'The review card artifact already exists with different content and cannot be overwritten.',
-      'This is expected — review cards are single-shot per session.',
+      'Review card artifacts are immutable per content digest.',
+      'A revised card (e.g., after /request-changes) should use a new digest-based artifact path.',
       'The original card artifact is preserved.',
     ],
   },

@@ -123,7 +123,15 @@ export async function materializeReviewCardArtifact(
       const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
       if (existingHash === markdownSha256) {
         // P1#3: verify .json metadata exists and matches. Recreate if missing.
-        await ensureMetaJson(jsonPath, artifactType, state, sourceStateHash, markdownSha256, base);
+        await ensureMetaJson(
+          jsonPath,
+          artifactType,
+          state,
+          sourceStateHash,
+          markdownSha256,
+          base,
+          contentDigest,
+        );
         return null; // no-op
       }
       return {
@@ -174,6 +182,7 @@ async function ensureMetaJson(
   stateHash: string,
   markdownSha256: string,
   base: string,
+  contentDigest: string,
 ): Promise<void> {
   try {
     await fs.access(jsonPath);
@@ -181,6 +190,7 @@ async function ensureMetaJson(
     // .json was lost (crash between .md and .json write). Recreate it.
     const meta = {
       artifactType,
+      contentDigest,
       derived: true,
       source: 'presentation',
       phase: state.phase,
