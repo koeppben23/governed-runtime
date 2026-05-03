@@ -608,9 +608,12 @@ export const review: ToolDefinition = {
         };
       }
 
-      // 3. Persist state + write report artifact
-      await writeStateWithArtifacts(sessDir, result.state);
+      // 3. Write report first, then persist state.
+      //    If writeReport fails, the session stays in REVIEW (not REVIEW_COMPLETE)
+      //    — the obligation consumption applied to result.state in memory is
+      //    not persisted. The session is recoverable via re-hydration.
       await writeReport(sessDir, report);
+      await writeStateWithArtifacts(sessDir, result.state);
 
       // Build the review report card as a markdown presentation layer.
       const assurance = ensureReviewAssurance(result.state.reviewAssurance);
@@ -625,7 +628,7 @@ export const review: ToolDefinition = {
       const reviewCard = buildReviewReportCard({
         phase: result.state.phase,
         phaseLabel: PHASE_LABELS[result.state.phase],
-        overallStatus: report.completeness.overallComplete ? 'complete' : 'incomplete',
+        overallStatus: report.overallStatus,
         findings: (report.findings ?? []) as Array<{
           severity: string;
           category: string;

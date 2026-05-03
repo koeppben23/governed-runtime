@@ -10,15 +10,19 @@ import { execFileSync } from 'node:child_process';
 
 /**
  * Check if `gh` CLI is available and authenticated.
- * Returns true if `gh` exists and `gh auth status` succeeds.
+ * Result is cached once per process — the check is synchronous with a 5s timeout.
  */
+let _ghCliAvailable: boolean | null = null;
+
 export function hasGhCli(): boolean {
+  if (_ghCliAvailable !== null) return _ghCliAvailable;
   try {
-    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 5000 });
-    return true;
+    execFileSync('gh', ['auth', 'status'], { stdio: 'ignore', timeout: 3000 });
+    _ghCliAvailable = true;
   } catch {
-    return false;
+    _ghCliAvailable = false;
   }
+  return _ghCliAvailable;
 }
 
 /**
@@ -50,13 +54,40 @@ export function loadPrDiff(prNumber: number): string {
  * Throws if branch not found or gh fails.
  */
 export function loadBranchDiff(branch: string): string {
-  const out = execFileSync('gh', ['pr', 'diff', branch], {
+  const base = detectBaseBranch();
+  const out = execFileSync('git', ['diff', `${base}...${branch}`], {
     encoding: 'utf-8',
     stdio: 'pipe',
     timeout: 15000,
   });
   if (!out || out.trim() === '') {
-    throw new Error(`Branch '${branch}' has no diff or does not exist`);
+    throw new Error(`Branch '${branch}' has no changes relative to ${base}`);
   }
   return out;
+}
+
+function detectBaseBranch(): string {
+  try {
+    return execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 3000,
+    })
+      .trim()
+      .replace('refs/remotes/', '');
+  } catch {
+    /* fallback */
+  }
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'main'], { stdio: 'ignore', timeout: 3000 });
+    return 'main';
+  } catch {
+    /* fallback */
+  }
+  try {
+    execFileSync('git', ['rev-parse', '--verify', 'master'], { stdio: 'ignore', timeout: 3000 });
+    return 'master';
+  } catch {
+    throw new Error('Cannot determine base branch for diff');
+  }
 }

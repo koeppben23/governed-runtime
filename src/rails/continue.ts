@@ -213,15 +213,15 @@ async function runOneSelfReviewIteration(
         return {
           verdict: review.verdict,
           updated: {
+            ...plan,
             body: review.revisedBody,
             digest: ctx.digest(review.revisedBody),
-            sections: currentPlan.sections, // Will be re-extracted by adapter
-            createdAt: ctx.now(),
           },
         };
       }
       return { verdict: review.verdict };
     },
+    state.selfReview?.verdict,
   );
 
   // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).
@@ -272,6 +272,7 @@ async function runOneImplReviewIteration(
       const review = await executors.implReview(impl, plan, iter);
       return { verdict: review.verdict, updated: review.updatedImpl };
     },
+    state.implReview?.verdict,
   );
 
   // P1.3 slice 4b: route reviewer tool-failure to BLOCKED (single-step continue path).

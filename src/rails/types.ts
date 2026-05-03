@@ -45,6 +45,9 @@ export interface AutoAdvanceResult {
    * For audit: one audit event per entry.
    */
   readonly transitions: readonly TransitionRecord[];
+  /** Set to 'MAX_AUTO_ADVANCE_LIMIT' if the safety guard stopped the loop.
+   *  Undefined otherwise. Diagnostic only — no behavioral impact. */
+  readonly diagnostic?: string;
 }
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
@@ -178,8 +181,10 @@ export function autoAdvance(
   const transitions: TransitionRecord[] = [];
   let current = state;
   let result = evalFn(current);
+  let stepCount = 0;
 
   for (let step = 0; step < MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition'; step++) {
+    stepCount = step;
     // Self-loop guard: if the transition targets the same phase, the state
     // won't change from the guards' perspective → stop to avoid pointless cycles.
     // Example: PLAN + SELF_REVIEW_PENDING → PLAN (waiting for LLM review).
@@ -196,8 +201,9 @@ export function autoAdvance(
     current = applyTransition(current, from, to, event, at);
     result = evalFn(current);
   }
+  const diagnostic = stepCount >= MAX_AUTO_ADVANCE_STEPS - 1 ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
 
-  return { state: current, evalResult: result, transitions };
+  return { state: current, evalResult: result, transitions, diagnostic };
 }
 
 // ─── Convergence Loop ─────────────────────────────────────────────────────────
@@ -382,8 +388,12 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
   startIteration: number,
   maxIterations: number,
   iterate: (artifact: T, iteration: number) => Promise<IterationResult<T>>,
+  lastVerdict?: LoopVerdict,
 ): Promise<ConvergenceResult<T>> {
-  // Already at max — no iteration runs
+  // Already at max — force-converge with the last real verdict.
+  // Use the caller-supplied lastVerdict (from state.selfReview.verdict)
+  // so that force-convergence does NOT synthesize a fake 'approve'.
+  // Conservative default: 'changes_requested' (fail-safe when verdict unknown).
   if (startIteration >= maxIterations) {
     return {
       kind: 'converged',
@@ -393,7 +403,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
       prevDigest: null,
       currDigest: current.digest,
       revisionDelta: 'none',
-      verdict: 'approve',
+      verdict: lastVerdict ?? 'changes_requested',
     };
   }
 

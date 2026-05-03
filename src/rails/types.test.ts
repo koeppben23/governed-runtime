@@ -190,7 +190,7 @@ describe('rails/types', () => {
         throw new Error('should not be called');
       });
       expect(result.iteration).toBe(3);
-      expect(result.verdict).toBe('approve');
+      expect(result.verdict).toBe('changes_requested');
       expect(result.revisionDelta).toBe('none');
     });
 
@@ -291,7 +291,7 @@ describe('rails/types', () => {
       // The startIteration >= maxIterations early-return in
       // runSingleIteration fires BEFORE iterate is called. Even if the
       // reviewer would have emitted unable_to_review, the loop never
-      // reaches that point; the result is converged with verdict=approve.
+      // reaches that point; the result is converged with verdict=changes_requested.
       // This pins the precedence order so a future refactor cannot
       // accidentally swap it.
       const current = { digest: 'd0' };
@@ -300,7 +300,7 @@ describe('rails/types', () => {
       });
       expect(result.kind).toBe('converged');
       if (result.kind !== 'converged') throw new Error('expected converged');
-      expect(result.verdict).toBe('approve');
+      expect(result.verdict).toBe('changes_requested');
       expect(result.artifact).toBe(current);
     });
 

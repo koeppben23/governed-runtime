@@ -23,7 +23,7 @@ export interface ReviewReportCardInput {
   /** Human-readable phase label (from PHASE_LABELS). */
   phaseLabel: string;
   /** Derived from report.completeness.overallComplete. */
-  overallStatus: 'complete' | 'incomplete';
+  overallStatus: 'clean' | 'warnings' | 'issues';
   /** Review findings from the report. */
   findings: Array<{
     severity: string;

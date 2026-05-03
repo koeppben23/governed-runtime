@@ -342,6 +342,18 @@ export const plan: ToolDefinition = {
           if (blocked) return blocked;
         }
 
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
+        }
+
         const iteration = state.selfReview.iteration + 1;
         const verdict = args.selfReviewVerdict as LoopVerdict;
         const prevDigest = state.plan.current.digest;
@@ -482,13 +494,16 @@ export const plan: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
+        // Use the immutable appendReviewObligation helper instead of
+        // mutating ensureReviewAssurance()'s return via .push().
+        const augmentedState = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
         if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
+          await writeStateWithArtifacts(sessDir, augmentedState);
         }
 
         return appendNextAction(

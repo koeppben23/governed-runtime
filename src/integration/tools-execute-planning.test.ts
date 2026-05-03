@@ -629,7 +629,7 @@ describe('plan', () => {
       });
 
       await plan.execute({ planText: '## Plan' }, ctx);
-      const findings = { ...modeBSelfFindings };
+      const findings = { ...modeBSelfFindings, overallVerdict: 'changes_requested' as const };
       const raw = await plan.execute(
         {
           selfReviewVerdict: 'changes_requested',

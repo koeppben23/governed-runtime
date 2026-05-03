@@ -171,6 +171,31 @@ export function findReviewObligationById(
   return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
 }
 
+/**
+ * Find the latest unconsumed obligation of a given type.
+ * Matches both 'pending' and 'fulfilled' statuses — plugin-orchestrated
+ * obligations are set to 'fulfilled' before the agent's Mode B submission.
+ * Excludes 'consumed' obligations (single-use enforcement).
+ *
+ * Used by /architecture Mode B for consistency with the manual search that
+ * previously matched status !== 'consumed' && consumedAt == null.
+ */
+export function findLatestUnconsumedObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligationType: ReviewObligationType,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  return (
+    base.obligations
+      .filter(
+        (o) =>
+          o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .at(0) ?? null
+  );
+}
+
 export function consumeReviewObligation(
   assurance: ReviewAssuranceState,
   obligation: ReviewObligation | null,

@@ -58,6 +58,7 @@ import {
   createReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
+  findLatestUnconsumedObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
 
@@ -225,11 +226,8 @@ export const architecture: ToolDefinition = {
         return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
       } else {
         // ── Mode B: Review verdict (F13 slice 7c: subagent-driven by default) ──
-        // Admissibility: must be in ARCHITECTURE phase
-        if (
-          !isCommandAllowed(state.phase, Command.ARCHITECTURE) &&
-          state.phase !== 'ARCHITECTURE'
-        ) {
+        // Admissibility: Mode B is only valid from ARCHITECTURE phase.
+        if (state.phase !== 'ARCHITECTURE') {
           return formatBlocked('COMMAND_NOT_ALLOWED', {
             command: '/architecture',
             phase: state.phase,
@@ -255,16 +253,14 @@ export const architecture: ToolDefinition = {
         }
 
         // ADRs are immutable per id; planVersion is fixed at 1, iteration is
-        // the loop counter. The pendingObligation lookup mirrors plan.ts:339-348.
+        // the loop counter. Use the centralized obligation lookup (matches
+        // both pending and fulfilled — plugin-orchestrated obligations are
+        // set to 'fulfilled' before Mode B submission).
         const assuranceBaseModeB = ensureReviewAssurance(state.reviewAssurance);
-        const pendingObligation = [...assuranceBaseModeB.obligations]
-          .reverse()
-          .find(
-            (item) =>
-              item.obligationType === 'architecture' &&
-              item.status !== 'consumed' &&
-              item.consumedAt == null,
-          );
+        const pendingObligation = findLatestUnconsumedObligation(
+          assuranceBaseModeB,
+          'architecture',
+        );
         const expectedIteration = pendingObligation?.iteration ?? state.selfReview.iteration;
         const expectedPlanVersion = pendingObligation?.planVersion ?? 1;
 
@@ -279,6 +275,18 @@ export const architecture: ToolDefinition = {
             obligationType: 'architecture',
           });
           if (blocked) return blocked;
+        }
+
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
         }
 
         const iteration = state.selfReview.iteration + 1;
@@ -462,13 +470,15 @@ export const architecture: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
+        // Use immutable appendReviewObligation instead of mutating via .push().
+        const augmentedState = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
         if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
+          await writeStateWithArtifacts(sessDir, augmentedState);
         }
 
         const nonConvergedNext = subagentEnabledModeB

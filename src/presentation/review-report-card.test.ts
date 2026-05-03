@@ -8,7 +8,7 @@ import { buildReviewReportCard } from './review-report-card.js';
 const baseInput = {
   phase: 'REVIEW_COMPLETE' as const,
   phaseLabel: 'Review complete',
-  overallStatus: 'complete' as const,
+  overallStatus: 'clean' as const,
   findings: [] as Array<{
     severity: string;
     category: string;
@@ -49,7 +49,7 @@ describe('buildReviewReportCard', () => {
   it('renders all finding groups sorted by severity', () => {
     const card = buildReviewReportCard({
       ...baseInput,
-      overallStatus: 'incomplete',
+      overallStatus: 'issues',
       findings: [
         { severity: 'critical', category: 'risk', message: 'SQL injection vulnerability' },
         { severity: 'major', category: 'correctness', message: 'Logic error in token refresh' },

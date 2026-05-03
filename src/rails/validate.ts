@@ -75,7 +75,13 @@ export async function executeValidate(
     ...state,
     validation: results,
     error: null,
-    ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+    ...(allPassed
+      ? {}
+      : {
+          selfReview: null,
+          reviewDecision: null,
+          plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
+        }),
   };
 
   // 5. Auto-advance (ALL_PASSED → IMPLEMENTATION, or CHECK_FAILED → PLAN) — policy-aware

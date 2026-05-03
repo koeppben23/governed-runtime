@@ -179,7 +179,14 @@ export async function runReviewOrchestration(
       if (!reviewerResult?.findings) return;
 
       const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
-      if (!parsedFindings.success) return;
+      if (!parsedFindings.success) {
+        if (strictEnforcement) {
+          output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+            reason: 'reviewer response did not match ReviewFindings schema',
+          });
+        }
+        return;
+      }
 
       if (strictEnforcement) {
         const att = parsedFindings.data.attestation;
@@ -467,8 +474,18 @@ export async function runReviewOrchestration(
                 invokedAt: now2,
                 fulfilledAt: now2,
               });
-              assurance.invocations.push(invocation);
-              return updateObligation(s, reviewCtx.obligationId, (item) => ({
+              // Use immutable appendInvocationEvidence instead of
+              // mutating ensureReviewAssurance()'s return via .push().
+              // Combine both operations (append invocation + update obligation)
+              // in a single immutable state build.
+              const withInvocation = {
+                ...s,
+                reviewAssurance: appendInvocationEvidence(
+                  ensureReviewAssurance(s.reviewAssurance),
+                  invocation,
+                ),
+              };
+              return updateObligation(withInvocation, reviewCtx.obligationId, (item) => ({
                 ...item,
                 status: 'fulfilled',
                 invocationId: invocation.invocationId,
