@@ -219,9 +219,8 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 }
 
 async function currentSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-    '../adapters/workspace/index.js'
-  );
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
@@ -328,9 +327,8 @@ describe('implement', () => {
       await reachImplementation();
       await implement.execute({}, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -379,9 +377,8 @@ describe('implement', () => {
       subagentEnabled: boolean,
       fallbackToSelf: boolean,
     ): Promise<void> {
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -666,9 +663,8 @@ describe('implement', () => {
       const reviewFindings = await fulfillReview('implement', 1, 'approve');
       await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -985,9 +981,8 @@ describe('review', () => {
       );
 
       // Also verify the persisted report file contains references
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const { readFile } = await import('node:fs/promises');
       const { join } = await import('node:path');
       const fp = await computeFingerprint(ws.tmpDir);

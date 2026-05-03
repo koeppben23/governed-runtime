@@ -53,7 +53,7 @@ export async function executeRegulatedCompletion(
     //    Reads the trail to get correct prevHash (independent of plugin cache).
     //    Failure here is fatal — no archive without terminal audit event.
     const { events } = await readAuditTrail(sessDir);
-    const prevHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
+    const prevHash = getLastChainHash(events);
     const completionEvt = createLifecycleEvent(
       sessionID,
       { action: 'session_completed', finalPhase: 'COMPLETE' as const },

@@ -465,7 +465,7 @@ async function verifyArchiveImpl(
     }
 
     if (events.length > 0) {
-      const chainResult = verifyChain(events as Array<Record<string, unknown>>, { strict });
+      const chainResult = verifyChain(events, { strict });
       if (!chainResult.valid) {
         findings.push({
           code: 'audit_chain_invalid',

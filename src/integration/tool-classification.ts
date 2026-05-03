@@ -119,6 +119,6 @@ export function getToolClassification(toolName: string): ToolClassification {
 export function listClassifiedTools(): Array<{ tool: string; classification: ToolClassification }> {
   return Object.entries(TOOL_CLASSIFICATION).map(([tool, classification]) => ({
     tool,
-    classification: classification as ToolClassification,
+    classification: classification,
   }));
 }

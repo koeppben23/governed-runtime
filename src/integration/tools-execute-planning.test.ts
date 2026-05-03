@@ -188,9 +188,8 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 }
 
 async function currentSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-    '../adapters/workspace/index.js'
-  );
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
@@ -237,9 +236,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'Fix login flow', source: 'user' }, ctx);
       // Read state directly from disk
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -270,9 +268,8 @@ describe('ticket', () => {
       await hydrateSession();
       await ticket.execute({ text: 'First ticket', source: 'user' }, ctx);
       await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -320,9 +317,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -361,9 +357,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -379,9 +374,8 @@ describe('ticket', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -614,9 +608,8 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'solo' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -690,9 +683,8 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -711,9 +703,8 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
