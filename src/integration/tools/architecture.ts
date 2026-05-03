@@ -377,31 +377,14 @@ export const architecture: ToolDefinition = {
                 architecture: { ...advancedState.architecture, status: 'accepted' as const },
               }
             : advancedState;
-        // Build next obligation before the first write so a single atomic
-        // state write covers both the transition and the obligation.
-        const nextIteration = iteration;
-        const nextObligation = subagentEnabledModeB
-          ? createReviewObligation({
-              obligationType: 'architecture',
-              iteration: nextIteration,
-              planVersion: expectedPlanVersion,
-              now: ctx.now(),
-            })
-          : null;
-        const augmentedState = nextObligation
-          ? {
-              ...finalState,
-              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
-            }
-          : finalState;
-        await writeStateWithArtifacts(sessDir, augmentedState);
 
-        // Check convergence for messaging
+        // Check convergence before building the next obligation.
         const converged =
           iteration >= maxSelfReviewIterations ||
           (revisionDelta === 'none' && verdict === 'approve');
 
         if (converged) {
+          await writeStateWithArtifacts(sessDir, finalState);
           const isComplete = finalState.phase === 'ARCH_COMPLETE';
           const convergedResp: Record<string, unknown> = {
             phase: finalState.phase,
@@ -474,8 +457,24 @@ export const architecture: ToolDefinition = {
           return appendNextAction(JSON.stringify(convergedResp), finalState);
         }
 
-        // Non-converged: obligation was already built + persisted above.
-        // augmentedState is available for the response.
+        // Non-converged: build next obligation and write atomically.
+        const nextIteration = iteration;
+        const nextObligation = subagentEnabledModeB
+          ? createReviewObligation({
+              obligationType: 'architecture',
+              iteration: nextIteration,
+              planVersion: expectedPlanVersion,
+              now: ctx.now(),
+            })
+          : null;
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
+
         const nonConvergedNext = subagentEnabledModeB
           ? 'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
             'to review the revised ADR. Use subagent_type "flowguard-reviewer" with a prompt ' +
@@ -504,7 +503,7 @@ export const architecture: ToolDefinition = {
           _audit: { transitions },
         };
 
-        return appendNextAction(JSON.stringify(nonConvergedResp), augmentedState);
+        return appendNextAction(JSON.stringify(nonConvergedResp), stateToPersist);
       }
     } catch (err) {
       return formatError(err);

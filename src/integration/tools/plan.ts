@@ -432,34 +432,15 @@ export const plan: ToolDefinition = {
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
 
-        // Build next obligation for non-converged path BEFORE the first write
-        // so that a single atomic state write covers both the transition and
-        // the obligation. This closes the crash-window between the two writes.
-        const nextIteration = iteration;
-        const nextPlanVersion = history.length + 1;
-        const nextObligation = subagentEnabled
-          ? createReviewObligation({
-              obligationType: 'plan',
-              iteration: nextIteration,
-              planVersion: nextPlanVersion,
-              now: ctx.now(),
-            })
-          : null;
-        const augmentedState = nextObligation
-          ? {
-              ...finalState,
-              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
-            }
-          : finalState;
-        const toPersist = augmentedState;
-        await writeStateWithArtifacts(sessDir, toPersist);
-
-        // Check convergence for messaging
+        // Check convergence BEFORE building the next obligation.
+        // Converged paths do NOT need a next obligation — only non-converged
+        // Mode B needs one for the next review iteration.
         const converged =
           iteration >= maxSelfReviewIterations ||
           (revisionDelta === 'none' && verdict === 'approve');
 
         if (converged && finalState.phase === 'PLAN_REVIEW') {
+          await writeStateWithArtifacts(sessDir, finalState);
           const nextAction = resolveNextAction(finalState.phase, finalState);
           const productNext = buildProductNextAction(nextAction, finalState.phase);
           const reviewCard = buildPlanReviewCard({
@@ -492,6 +473,7 @@ export const plan: ToolDefinition = {
         }
 
         if (converged) {
+          await writeStateWithArtifacts(sessDir, finalState);
           return appendNextAction(
             JSON.stringify({
               phase: finalState.phase,
@@ -501,12 +483,29 @@ export const plan: ToolDefinition = {
               next: formatEval(ev),
               _audit: { transitions },
             }),
-            toPersist,
+            finalState,
           );
         }
 
-        // Non-converged: obligation was already built + persisted above.
-        // augmentedState is available for the response.
+        // Non-converged: build next obligation and write atomically.
+        const nextIteration = iteration;
+        const nextPlanVersion = history.length + 1;
+        const nextObligation = subagentEnabled
+          ? createReviewObligation({
+              obligationType: 'plan',
+              iteration: nextIteration,
+              planVersion: nextPlanVersion,
+              now: ctx.now(),
+            })
+          : null;
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
+
         return appendNextAction(
           JSON.stringify({
             phase: finalState.phase,
@@ -527,7 +526,7 @@ export const plan: ToolDefinition = {
               'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.',
             _audit: { transitions },
           }),
-          finalState,
+          stateToPersist,
         );
       }
     } catch (err) {
