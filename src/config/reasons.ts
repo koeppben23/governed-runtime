@@ -384,6 +384,28 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Check activeChecks in the session state via flowguard_status',
     ],
   },
+  {
+    code: 'CONTENT_ANALYSIS_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      'Content-aware /review requires analysisFindings. Analyze the supplied content before calling flowguard_review.',
+    recoverySteps: [
+      'Fetch or inspect the referenced text, PR, branch, or URL content',
+      'Create concrete findings with severity, category, and message',
+      'Re-run flowguard_review with analysisFindings populated',
+    ],
+  },
+  {
+    code: 'SUBAGENT_REVIEW_REQUIRED',
+    category: 'input',
+    messageTemplate:
+      'analysisFindings must come from flowguard-reviewer subagent. The findings provided do not contain evidence of subagent origin.',
+    recoverySteps: [
+      'Call Task tool with subagent_type: "flowguard-reviewer"',
+      'Pass the subagent output as analysisFindings',
+      'Ensure findings include reviewedBy.sessionId containing "flowguard-reviewer" or attestation.reviewedBy === "flowguard-reviewer"',
+    ],
+  },
 
   // ── Precondition ──────────────────────────────────────────────
   {
@@ -452,6 +474,26 @@ const SEED_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Create a new artifact version instead of modifying an existing artifact file',
       'Restore immutable artifact files from a trusted archive if they were modified',
+    ],
+  },
+  {
+    code: 'REVIEW_CARD_ARTIFACT_WRITE_FAILED',
+    category: 'state',
+    messageTemplate: 'Review card materialization failed: {message}',
+    recoverySteps: [
+      'The review card was shown in the tool response but could not be saved as an artifact file.',
+      'Check filesystem permissions and disk space in the session directory.',
+      'The runtime transition is not affected — this is a presentation artifact only.',
+    ],
+  },
+  {
+    code: 'REVIEW_CARD_ARTIFACT_IMMUTABLE',
+    category: 'state',
+    messageTemplate: 'Review card artifact immutable: {message}',
+    recoverySteps: [
+      'Review card artifacts are immutable per content digest.',
+      'A revised card (e.g., after /request-changes) should use a new digest-based artifact path.',
+      'The original card artifact is preserved.',
     ],
   },
   {
@@ -1064,6 +1106,17 @@ const SEED_REASONS: readonly BlockedReason[] = [
       'Verify session-state.json is readable and contains a reviewAssurance object',
     ],
     quickFixCommand: '/continue',
+  },
+  {
+    code: 'MAX_REVIEW_ITERATIONS_REACHED',
+    category: 'state',
+    messageTemplate:
+      'Maximum review iterations ({maxIterations}) reached without convergence (last verdict: {lastVerdict}). The review loop could not converge within the policy limit.',
+    recoverySteps: [
+      'Submit a fresh /plan or /implement (this resets the iteration counter to 0 and starts a new obligation)',
+      'Review the subagent findings — addressing the outstanding issues may allow convergence in the next attempt',
+      'If the policy limit is too restrictive, adjust maxSelfReviewIterations in the policy configuration',
+    ],
   },
   {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',

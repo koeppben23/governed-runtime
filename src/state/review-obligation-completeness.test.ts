@@ -11,12 +11,14 @@ const PRODUCER_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
   plan: 'integration/tools/plan.ts',
   implement: 'integration/tools/implement.ts',
   architecture: 'integration/tools/architecture.ts',
+  review: 'integration/tools/simple-tools.ts',
 };
 
 const TEMPLATE_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
   plan: 'templates/commands/plan.ts',
   implement: 'templates/commands/implement.ts',
   architecture: 'templates/commands/architecture.ts',
+  review: 'templates/commands/review.ts',
 };
 
 function readSource(relativePath: string): string {

@@ -32,11 +32,11 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                       | Purpose                                      |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                   |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR) |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance review report          |
+| Flow             | Command         | Phases                                                                                                       | Purpose                                              |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR)         |
+| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance or content-aware review report |
 
 ## Product Commands
 
@@ -55,7 +55,7 @@ Product commands invoke canonical FlowGuard tools. Runtime enforcement remains i
 | `/export`          | `/archive`                           | Export a verifiable audit package                         |
 | `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
 | `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance review report (same name)           |
+| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
 | `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
 
 Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
@@ -221,22 +221,29 @@ ADR review is **subagent-driven by default** in solo, team, and regulated profil
 
 ### /review
 
-Start the standalone review flow. Generates a compliance report.
+Start the standalone review flow. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
 
 **Allowed in:** READY
 **Arguments (all optional):**
 
-- `inputOrigin` (optional): Where the review content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
+- `text` (optional): Direct text blob to review.
+- `prNumber` (optional): GitHub PR number — loads PR diff via `gh` CLI.
+- `branch` (optional): Git branch name — loads diff against detected base branch via `git diff`.
+- `url` (optional): URL content to review.
+- `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
+- `analysisFindings` (optional): Complete `ReviewFindings` object from `flowguard-reviewer` subagent. Required when content-aware fields are provided.
 
 **Examples:**
 
-- `/review` — review current workspace (no references)
-- `/review https://github.com/org/repo/pull/42` — agent fetches PR, extracts info, stores URL as reference
-- `/review feature/my-fix` — review based on branch reference
+- `/review` — plain compliance report (no external content)
+- `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
+- `/review prNumber=42 analysisFindings=<ReviewFindings>` — submit subagent findings
 
 **Produces:**
 
+- `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
+- `reviewCard` (markdown, display verbatim)
 - Evidence completeness matrix
 - Four-eyes status
 - Validation summary

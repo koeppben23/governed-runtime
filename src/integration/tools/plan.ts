@@ -54,6 +54,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine
@@ -341,6 +342,18 @@ export const plan: ToolDefinition = {
           if (blocked) return blocked;
         }
 
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
+        }
+
         const iteration = state.selfReview.iteration + 1;
         const verdict = args.selfReviewVerdict as LoopVerdict;
         const prevDigest = state.plan.current.digest;
@@ -418,14 +431,26 @@ export const plan: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
 
-        // Check convergence for messaging
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        // Check convergence BEFORE building the next obligation.
+        // Only non-converged Mode B needs a next review obligation.
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
+
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        const converged = approvedConverged;
 
         if (converged && finalState.phase === 'PLAN_REVIEW') {
+          await writeStateWithArtifacts(sessDir, finalState);
           const nextAction = resolveNextAction(finalState.phase, finalState);
           const productNext = buildProductNextAction(nextAction, finalState.phase);
           const reviewCard = buildPlanReviewCard({
@@ -437,21 +462,28 @@ export const plan: ToolDefinition = {
             policyMode: finalState.policySnapshot?.mode,
             taskTitle: firstLine(finalState.ticket?.text),
           });
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
-              planDigest: currentPlan.digest,
-              selfReviewIteration: iteration,
-              reviewCard,
-              next: formatEval(ev),
-              _audit: { transitions },
-            }),
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'plan-review-card',
+            reviewCard,
             finalState,
+            currentPlan.digest,
           );
+          const response: Record<string, unknown> = {
+            phase: finalState.phase,
+            status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
+            planDigest: currentPlan.digest,
+            selfReviewIteration: iteration,
+            reviewCard,
+            next: formatEval(ev),
+            _audit: { transitions },
+          };
+          if (artifactErr) response.artifactWarning = artifactErr;
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         if (converged) {
+          await writeStateWithArtifacts(sessDir, finalState);
           return appendNextAction(
             JSON.stringify({
               phase: finalState.phase,
@@ -465,6 +497,7 @@ export const plan: ToolDefinition = {
           );
         }
 
+        // Non-converged: build next obligation and write atomically.
         const nextIteration = iteration;
         const nextPlanVersion = history.length + 1;
         const nextObligation = subagentEnabled
@@ -475,14 +508,13 @@ export const plan: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
-        if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
-        }
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
 
         return appendNextAction(
           JSON.stringify({
@@ -504,7 +536,7 @@ export const plan: ToolDefinition = {
               'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.',
             _audit: { transitions },
           }),
-          finalState,
+          stateToPersist,
         );
       }
     } catch (err) {

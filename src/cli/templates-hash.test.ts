@@ -57,14 +57,20 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Cross-session compatibility: this hash gates ONLY the template-body
     // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
     // to .opencode/agent/flowguard-reviewer.md). It is independent from
-    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:22), which
-    // is computed from the constant REVIEW_MANDATE_TEXT and is the actual
-    // runtime gate enforced in review-assurance.ts:136 and
-    // plugin-orchestrator.ts:248. REVIEW_MANDATE_TEXT is NOT modified by
-    // this slice, so persisted obligations from prior sessions continue
-    // to validate correctly under the same mandateDigest.
+    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:24), which
+    // is sha256(REVIEWER_AGENT) at module-load time.
+    //
+    // This P1 slice modifies REVIEWER_AGENT (the Content Review section of
+    // mandates.ts), therefore both the template-body hash AND the runtime
+    // REVIEW_MANDATE_DIGEST change. Persisted obligations from prior sessions
+    // that reference the old mandateDigest will fail validation — the user
+    // must re-hydrate or re-create affected sessions.
+    //
+    // This is the expected behaviour: the changed text tells subagents to use
+    // schema-allowed categories only, which is a mandatory contract upgrade
+    // for /review.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '43f77b97ca6d8af755d5934261596976b3ae79f74f2f36fbdad69592387acf50',
+      '9a4a216d222f86f751d7131d94ba575c33c0d19c15cd7378152d63f8fd16db72',
     );
   });
 
@@ -83,19 +89,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed in P1.3 slice 6: plan.ts / implement.ts / architecture.ts
-    // narratives extended with the third LoopVerdict 'unable_to_review' and
-    // the corresponding BLOCKED-handling guidance (SUBAGENT_UNABLE_TO_REVIEW).
-    // See src/templates/commands/plan.ts review-loop section,
-    // src/templates/commands/implement.ts review-loop section, and
-    // src/templates/commands/architecture.ts ## Rules section.
+    // Refreshed in P2 (obligation-binding): review.ts step 3 now tells the agent to
+    // include attestation.toolObligationId exactly as provided by FlowGuard
+    // (every content-aware /review now creates a real ReviewObligation with a
+    // canonical UUID). The P1 "omit for standalone /review" guidance is removed.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '5b7652a386a6231c7873d22d2cd5838e89c2f397a5ef3815fb8a286790b21747',
+      '66c2614a6f6bcce55975ca9acb29eedb262ee44bac6bc8d2c7c0228a1f36ed47',
     );
   });
 

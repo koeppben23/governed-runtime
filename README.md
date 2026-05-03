@@ -48,10 +48,17 @@ Three governed flows are available after `/start` (or `/hydrate`):
    Consequences honesty, MADR structure)
 3. `/approve` — accept the ADR
 
-**Compliance review flow** — generate a session compliance report:
+**Compliance / Content review flow** — review session compliance or external content:
 
 1. `/start`
-2. `/review` — generate a `flowguard-review-report.v1` artifact
+2. `/review` — plain compliance report (no external content)
+   OR `/review prNumber=42` / `branch=feature` / `url=https://...` /
+   `text="diff"` → blocked with `requiredReviewAttestation` (obligation UUID)
+3. When plugin orchestration is active, FlowGuard may invoke the reviewer
+   subagent and inject `pluginReviewFindings`; otherwise the blocked response
+   instructs manual subagent invocation.
+4. `/review prNumber=42 analysisFindings=<complete object>` →
+   REVIEW_COMPLETE, receives structured `reviewCard`
 
 **Diagnostic commands:** `/status` — current phase, next action, evidence summary.
 `/why` — explain and resolve blockers.
@@ -61,8 +68,8 @@ Three governed flows are available after `/start` (or `/hydrate`):
 remain fully supported for scripts, CI, and power users.
 
 See [docs/commands.md](./docs/commands.md) for the complete command reference and
-[docs/independent-review.md](./docs/independent-review.md) for the subagent-driven
-review pipeline shared by `/plan`, `/architecture`, and `/implement`.
+[docs/independent-review.md](./docs/independent-review.md) for review obligations,
+subagent attestation, and the `/review` evidence model.
 
 ## Product Facts
 
@@ -75,6 +82,8 @@ review pipeline shared by `/plan`, `/architecture`, and `/implement`.
 | **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                                                                                                                |
 | **Audit Trail**                   | Hash-chained, tamper-evident                                                                                                                                                                                                                                     |
 | **Decision Receipts**             | Append-only `decision:DEC-xxx` events for every `/review-decision`                                                                                                                                                                                               |
+| **Review Cards**                  | Structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Derived presentation artifacts — `session-state.json` remains SSOT                                                                                |
+| **Content-Aware /review**         | Single `/review` call supports text, PR number, branch name, or URL input with subagent-attested content analysis                                                                                                                             |
 | **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                                                                                                    |
 | **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                                                                                                              |
 | **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
@@ -90,7 +99,7 @@ review pipeline shared by `/plan`, `/architecture`, and `/implement`.
 | [Commands](./docs/commands.md)                                  | Command reference                                |
 | [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
 | [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes             |
-| [Independent Review](./docs/independent-review.md)              | Subagent review pipeline (plan / arch / impl)    |
+| [Independent Review](./docs/independent-review.md)              | Review obligations, subagent attestation, and `/review` evidence model |
 | [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
 | [Archive](./docs/archive.md)                                    | Session archiving                                |
 | [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |

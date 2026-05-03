@@ -36,7 +36,6 @@ import {
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
 import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rails
 import { executeArchitecture } from '../../rails/architecture.js';
@@ -58,11 +57,19 @@ import {
   createReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
+  findLatestUnconsumedObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
 import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
+
+// Presentation
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { buildArchitectureReviewCard } from '../../presentation/architecture-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
+import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
@@ -218,11 +225,8 @@ export const architecture: ToolDefinition = {
         return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
       } else {
         // ── Mode B: Review verdict (F13 slice 7c: subagent-driven by default) ──
-        // Admissibility: must be in ARCHITECTURE phase
-        if (
-          !isCommandAllowed(state.phase, Command.ARCHITECTURE) &&
-          state.phase !== 'ARCHITECTURE'
-        ) {
+        // Admissibility: Mode B is only valid from ARCHITECTURE phase.
+        if (state.phase !== 'ARCHITECTURE') {
           return formatBlocked('COMMAND_NOT_ALLOWED', {
             command: '/architecture',
             phase: state.phase,
@@ -248,16 +252,14 @@ export const architecture: ToolDefinition = {
         }
 
         // ADRs are immutable per id; planVersion is fixed at 1, iteration is
-        // the loop counter. The pendingObligation lookup mirrors plan.ts:339-348.
+        // the loop counter. Use the centralized obligation lookup (matches
+        // both pending and fulfilled — plugin-orchestrated obligations are
+        // set to 'fulfilled' before Mode B submission).
         const assuranceBaseModeB = ensureReviewAssurance(state.reviewAssurance);
-        const pendingObligation = [...assuranceBaseModeB.obligations]
-          .reverse()
-          .find(
-            (item) =>
-              item.obligationType === 'architecture' &&
-              item.status !== 'consumed' &&
-              item.consumedAt == null,
-          );
+        const pendingObligation = findLatestUnconsumedObligation(
+          assuranceBaseModeB,
+          'architecture',
+        );
         const expectedIteration = pendingObligation?.iteration ?? state.selfReview.iteration;
         const expectedPlanVersion = pendingObligation?.planVersion ?? 1;
 
@@ -272,6 +274,18 @@ export const architecture: ToolDefinition = {
             obligationType: 'architecture',
           });
           if (blocked) return blocked;
+        }
+
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
         }
 
         const iteration = state.selfReview.iteration + 1;
@@ -363,19 +377,29 @@ export const architecture: ToolDefinition = {
                 architecture: { ...advancedState.architecture, status: 'accepted' as const },
               }
             : advancedState;
-        await writeStateWithArtifacts(sessDir, finalState);
 
-        // Check convergence for messaging
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        // Check convergence before building the next obligation.
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
 
-        if (converged) {
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        if (approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          const isComplete = finalState.phase === 'ARCH_COMPLETE';
           const convergedResp: Record<string, unknown> = {
             phase: finalState.phase,
             status: subagentEnabledModeB
-              ? `Independent review converged at iteration ${iteration}. ADR approved.`
-              : `ADR self-review converged at iteration ${iteration}. ADR approved.`,
+              ? `Independent review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`
+              : `ADR self-review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`,
             adrId: currentAdr.id,
             adrDigest: currentAdr.digest,
             selfReviewIteration: iteration,
@@ -395,12 +419,54 @@ export const architecture: ToolDefinition = {
               reviewedAt: f.reviewedAt,
             };
           }
+
+          // Build the Architecture Review Card as a markdown presentation layer.
+          const nextAction = resolveNextAction(finalState.phase, finalState);
+          const productNext = buildProductNextAction(nextAction, finalState.phase);
+          const reviewFindings = convergedResp.latestReview as Record<string, unknown> | undefined;
+          const f = args.reviewFindings ? (args.reviewFindings as ReviewFindings) : null;
+          convergedResp.reviewCard = buildArchitectureReviewCard({
+            phase: finalState.phase,
+            phaseLabel: PHASE_LABELS[finalState.phase],
+            adrTitle: currentAdr.title,
+            adrId: currentAdr.id,
+            adrDigest: currentAdr.digest,
+            iteration,
+            overallVerdict: reviewFindings?.overallVerdict as string | undefined,
+            blockingIssues: f?.blockingIssues as
+              | Array<{
+                  severity: string;
+                  category: string;
+                  message: string;
+                  location?: string;
+                }>
+              | undefined,
+            majorRisks: f?.majorRisks as
+              | Array<{
+                  severity: string;
+                  category: string;
+                  message: string;
+                  location?: string;
+                }>
+              | undefined,
+            missingVerification: f?.missingVerification,
+            scopeCreep: f?.scopeCreep,
+            unknowns: f?.unknowns,
+            productNextAction: productNext,
+            isApproved: isComplete,
+          });
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'architecture-review-card',
+            convergedResp.reviewCard as string,
+            finalState,
+            currentAdr.digest,
+          );
+          if (artifactErr) convergedResp.artifactWarning = artifactErr;
           return appendNextAction(JSON.stringify(convergedResp), finalState);
         }
 
-        // Non-converged: when subagentEnabled, attach a fresh obligation for
-        // the next iteration so the orchestrator can dispatch the subagent
-        // again. Mirrors plan.ts:499-516.
+        // Non-converged: build next obligation and write atomically.
         const nextIteration = iteration;
         const nextObligation = subagentEnabledModeB
           ? createReviewObligation({
@@ -410,14 +476,13 @@ export const architecture: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
-        if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
-        }
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
 
         const nonConvergedNext = subagentEnabledModeB
           ? 'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
@@ -447,7 +512,7 @@ export const architecture: ToolDefinition = {
           _audit: { transitions },
         };
 
-        return appendNextAction(JSON.stringify(nonConvergedResp), finalState);
+        return appendNextAction(JSON.stringify(nonConvergedResp), stateToPersist);
       }
     } catch (err) {
       return formatError(err);

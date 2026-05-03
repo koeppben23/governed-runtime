@@ -119,31 +119,35 @@ real, registered reason.
 
 ### Evidence Integrity
 
-| Code                          | Description                                                    | Solution                                                                 |
-| ----------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `EVIDENCE_ARTIFACT_MISSING`   | Required derived ticket/plan artifact missing                  | Restore session directory from trusted archive before continuing         |
-| `EVIDENCE_ARTIFACT_MISMATCH`  | Derived artifact hash inconsistent with current ticket/plan    | Restore artifacts from trusted archive or regenerate from trusted state  |
-| `EVIDENCE_ARTIFACT_IMMUTABLE` | Attempt to overwrite an already-versioned append-only artifact | Do not retry the same submission with different content; re-run the tool |
-| `EMPTY_TICKET`                | `/ticket` text is empty after trim                             | Provide a substantive ticket description                                 |
-| `EMPTY_PLAN`                  | `/plan` text is empty after trim                               | Provide a substantive plan                                               |
+| Code                                | Description                                                     | Solution                                                                                       |
+| ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `EVIDENCE_ARTIFACT_MISSING`         | Required derived ticket/plan artifact missing                   | Restore session directory from trusted archive before continuing                               |
+| `EVIDENCE_ARTIFACT_MISMATCH`        | Derived artifact hash inconsistent with current ticket/plan     | Restore artifacts from trusted archive or regenerate from trusted state                        |
+| `EVIDENCE_ARTIFACT_IMMUTABLE`       | Attempt to overwrite an already-versioned append-only artifact  | Do not retry the same submission with different content; re-run the tool                       |
+| `REVIEW_CARD_ARTIFACT_WRITE_FAILED` | Review card materialization failed (presentation artifact only) | Check filesystem permissions/disk space; runtime transition not affected                       |
+| `REVIEW_CARD_ARTIFACT_IMMUTABLE`    | Review card artifact already exists with different content      | Expected — cards are immutable per content digest; a revised card uses a new digest-based path |
+| `EMPTY_TICKET`                      | `/ticket` text is empty after trim                              | Provide a substantive ticket description                                                       |
+| `EMPTY_PLAN`                        | `/plan` text is empty after trim                                | Provide a substantive plan                                                                     |
 
 ### Independent Review (subagent)
 
-| Code                                 | Description                                                                   | Solution                                                                              |
-| ------------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `SUBAGENT_REVIEW_NOT_INVOKED`        | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                          |
-| `SUBAGENT_SESSION_MISMATCH`          | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it               |
-| `SUBAGENT_PROMPT_EMPTY`              | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                               |
-| `SUBAGENT_PROMPT_MISSING_CONTEXT`    | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                          |
-| `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                           |
-| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                               |
-| `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                     |
-| `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact |
-| `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                   |
-| `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                        |
-| `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                         |
-| `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                          |
-| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                       |
+| Code                                 | Description                                                                     | Solution                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `SUBAGENT_REVIEW_NOT_INVOKED`        | L1 — primary agent submitted a verdict without invoking the reviewer subagent   | Read the previous tool response and follow the `next` action                                |
+| `SUBAGENT_REVIEW_REQUIRED`           | Content-aware review requires analysisFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as analysisFindings |
+| `SUBAGENT_SESSION_MISMATCH`          | L2 — `reviewedBy.sessionId` does not match actual subagent session              | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                     |
+| `SUBAGENT_PROMPT_EMPTY`              | L3 — subagent prompt < 200 chars                                                | Use the runtime-built review prompt (do not hand-craft)                                     |
+| `SUBAGENT_PROMPT_MISSING_CONTEXT`    | L3 — prompt missing iteration or planVersion context                            | Use the runtime-built prompt                                                                |
+| `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict              | Submit the findings exactly as returned by the orchestrator                                 |
+| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | L4 — submitted blockingIssues count differs from actual count                   | Submit the findings exactly as returned                                                     |
+| `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                         | Submit a substantively-new artifact for a fresh review obligation                           |
+| `MAX_REVIEW_ITERATIONS_REACHED`      | Review loop reached max iterations without convergence ({lastVerdict})          | Submit a fresh /plan or /implement to reset the iteration counter                           |
+| `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed                | Address the reviewer's reason or substantially revise; do not retry the same artifact       |
+| `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output          | Re-run the tool that produced the review obligation                                         |
+| `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                               | Include the structured `reviewFindings` object                                              |
+| `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session       | Use findings produced for the current session                                               |
+| `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                              | Re-run the review for the current obligation                                                |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                    | Re-hydrate; if persistent, restore from archive                                             |
 
 ### Identity & Approvals
 
@@ -199,6 +203,7 @@ CENTRAL_POLICY_MISSING
 CENTRAL_POLICY_PATH_EMPTY
 CENTRAL_POLICY_UNREADABLE
 COMMAND_NOT_ALLOWED
+CONTENT_ANALYSIS_REQUIRED
 DECISION_IDENTITY_REQUIRED
 DECISION_RECEIPT_ACTOR_MISSING
 DISCOVERY_PERSIST_FAILED
@@ -241,6 +246,7 @@ PARSE_FAILED
 PLAN_APPROVE_WITH_TEXT
 PLAN_FINDINGS_WITHOUT_VERDICT
 PLAN_REQUIRED
+MAX_REVIEW_ITERATIONS_REACHED
 PLAN_REVIEW_IN_PROGRESS
 PLAN_REVIEW_LOOP_REQUIRED
 PLAN_SUBMISSION_MIXED_INPUTS
@@ -250,6 +256,8 @@ PROFILE_RESOLUTION_PERSIST_FAILED
 READ_FAILED
 REGULATED_ACTOR_UNKNOWN
 REVIEW_ASSURANCE_STATE_UNAVAILABLE
+REVIEW_CARD_ARTIFACT_IMMUTABLE
+REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
@@ -262,6 +270,7 @@ SUBAGENT_FINDINGS_VERDICT_MISMATCH
 SUBAGENT_PROMPT_EMPTY
 SUBAGENT_PROMPT_MISSING_CONTEXT
 SUBAGENT_REVIEW_NOT_INVOKED
+SUBAGENT_REVIEW_REQUIRED
 SUBAGENT_SESSION_MISMATCH
 SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED

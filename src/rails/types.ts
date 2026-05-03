@@ -45,6 +45,9 @@ export interface AutoAdvanceResult {
    * For audit: one audit event per entry.
    */
   readonly transitions: readonly TransitionRecord[];
+  /** Set to 'MAX_AUTO_ADVANCE_LIMIT' if the safety guard stopped the loop.
+   *  Undefined otherwise. Diagnostic only — no behavioral impact. */
+  readonly diagnostic?: string;
 }
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
@@ -196,8 +199,12 @@ export function autoAdvance(
     current = applyTransition(current, from, to, event, at);
     result = evalFn(current);
   }
+  // Only flag when the loop hit MAX_AUTO_ADVANCE_STEPS AND the final
+  // evaluation is still 'transition' (a real overflow, not a clean exit).
+  const hitLimit = transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition';
+  const diagnostic = hitLimit ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
 
-  return { state: current, evalResult: result, transitions };
+  return { state: current, evalResult: result, transitions, diagnostic };
 }
 
 // ─── Convergence Loop ─────────────────────────────────────────────────────────
@@ -382,8 +389,12 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
   startIteration: number,
   maxIterations: number,
   iterate: (artifact: T, iteration: number) => Promise<IterationResult<T>>,
+  lastVerdict?: LoopVerdict,
 ): Promise<ConvergenceResult<T>> {
-  // Already at max — no iteration runs
+  // Already at max — force-converge with the last real verdict.
+  // Use the caller-supplied lastVerdict (from state.selfReview.verdict)
+  // so that force-convergence does NOT synthesize a fake 'approve'.
+  // Conservative default: 'changes_requested' (fail-safe when verdict unknown).
   if (startIteration >= maxIterations) {
     return {
       kind: 'converged',
@@ -393,7 +404,7 @@ export async function runSingleIteration<T extends { readonly digest: string }>(
       prevDigest: null,
       currDigest: current.digest,
       revisionDelta: 'none',
-      verdict: 'approve',
+      verdict: lastVerdict ?? 'changes_requested',
     };
   }
 

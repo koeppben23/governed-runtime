@@ -33,7 +33,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance report)
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
 - **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
@@ -116,16 +116,16 @@ Twelve installed core FlowGuard commands cover workflow, diagnostics, and operat
 | `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                      |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
 | `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
+| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
+| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
-| `/architecture`    | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated)               |
-| `/review`          | Start standalone compliance review flow. Supports PR URLs, branches, and commit references.                    |
 | `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
 | `/abort`           | Emergency session termination                                                                                  |
 | `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. The Plan Review Card renders the complete plan with version, policy mode, task title, and recommended next actions when self-review converges to PLAN_REVIEW.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 

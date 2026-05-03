@@ -243,6 +243,13 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 /**
  * P35 strict independent-review attestation.
  * Binds findings to one obligation + mandate version/digest.
+ *
+ * `toolObligationId` identifies the ReviewObligation this attestation is
+ * bound to. All reviewable flows (/plan, /architecture, /implement,
+ * /review) create a ReviewObligation before subagent invocation, so the
+ * UUID is always available.
+ * validateStrictAttestation (review-assurance.ts) and plugin-orchestrator.ts
+ * compare this field against the expected obligationId.
  */
 export const ReviewAttestation = z
   .object({
@@ -279,7 +286,7 @@ export const ReviewFindings = z
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 /** Independent review obligation type. */
-export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture']);
+export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture', 'review']);
 export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 
 /** Strict review obligation state. */
@@ -304,6 +311,8 @@ export const ReviewObligation = z.object({
   blockedCode: z.string().nullable(),
   fulfilledAt: z.string().datetime().nullable(),
   consumedAt: z.string().datetime().nullable(),
+  /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
@@ -323,6 +332,8 @@ export const ReviewInvocationEvidence = z
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime(),
     consumedByObligationId: z.string().uuid().nullable(),
+    /** Evidence source: host-orchestrated or agent-submitted-attested. */
+    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
@@ -759,6 +770,7 @@ export const ReviewReport = z.object({
       severity: z.enum(['info', 'warning', 'error']),
       category: z.string(),
       message: z.string(),
+      location: z.string().optional(),
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),

@@ -12,16 +12,22 @@ import type {
   ReviewObligation,
   ReviewObligationType,
 } from '../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+
+// Static import - mandate content is a constant in ESM
+import { REVIEWER_AGENT } from '../templates/mandates.js';
 
 export const REVIEW_CRITERIA_VERSION = 'p35-v1';
 
-export const REVIEW_MANDATE_TEXT =
-  'FlowGuard P35 strict mandate: each independent-review obligation must be fulfilled by exactly one flowguard-reviewer subagent invocation bound to obligationId/iteration/planVersion/criteriaVersion/mandateDigest. No fallback path is accepted in strict mode.';
-
+// Mandate digest - computed from actual REVIEWER_AGENT template at module load
+// No fallback: if the import fails, the module fails fast (desired for governance)
 export const REVIEW_MANDATE_DIGEST = createHash('sha256')
-  .update(REVIEW_MANDATE_TEXT, 'utf-8')
+  .update(REVIEWER_AGENT, 'utf-8')
   .digest('hex');
+
+export function getReviewMandateDigest(): string {
+  return REVIEW_MANDATE_DIGEST;
+}
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
   return { obligations: [], invocations: [] };
@@ -38,6 +44,7 @@ export function createReviewObligation(input: {
   iteration: number;
   planVersion: number;
   now: string;
+  metadata?: Record<string, unknown>;
 }): ReviewObligation {
   return {
     obligationId: randomUUID(),
@@ -53,6 +60,7 @@ export function createReviewObligation(input: {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    metadata: input.metadata,
   };
 }
 
@@ -109,6 +117,85 @@ export function findLatestObligation(
   return null;
 }
 
+/**
+ * Find the latest pending obligation of a given type.
+ *
+ * When a `metadataFingerprint` is supplied, only obligations whose
+ * `metadata.fingerprint` matches are returned. This prevents a /review
+ * call for prNumber=42 from reusing an obligation created for prNumber=99.
+ *
+ * Used by standalone /review to reuse an existing pending obligation (retry-safe)
+ * rather than creating a fresh one on every call.
+ */
+export function findLatestPendingReviewObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligationType: ReviewObligationType,
+  metadataFingerprint?: string,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  const candidates = base.obligations.filter(
+    (o) => o.obligationType === obligationType && o.status === 'pending',
+  );
+  // Fingerprint filter: when provided, only match obligations with the same
+  // input fingerprint. For review obligations, fingerprinting is mandatory
+  // because multiple review inputs can be pending simultaneously.
+  // For plan/implement/architecture, there is at most one pending obligation
+  // per type at a time, so broad matching is acceptable.
+  if (metadataFingerprint) {
+    return (
+      candidates
+        .filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .at(0) ?? null
+    );
+  }
+  // Broad match: return the latest pending obligation of this type.
+  // Only safe when fingerprinting is not required (plan, implement, architecture).
+  const broad = candidates.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return broad.at(0) ?? null;
+}
+
+/**
+ * Find a review obligation by its exact UUID.
+ *
+ * Used when analysisFindings carry attestation.toolObligationId — the
+ * obligation was either created by the blocked response (pending) or already
+ * fulfilled by the plugin-orchestrator. Both states are valid for the final
+ * submit; only 'consumed' obligations are rejected (single-use enforcement).
+ */
+export function findReviewObligationById(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  return base.obligations.find((o) => o.obligationId === obligationId) ?? null;
+}
+
+/**
+ * Find the latest unconsumed obligation of a given type.
+ * Matches both 'pending' and 'fulfilled' statuses — plugin-orchestrated
+ * obligations are set to 'fulfilled' before the agent's Mode B submission.
+ * Excludes 'consumed' obligations (single-use enforcement).
+ *
+ * Used by /architecture Mode B for consistency with the manual search that
+ * previously matched status !== 'consumed' && consumedAt == null.
+ */
+export function findLatestUnconsumedObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligationType: ReviewObligationType,
+): ReviewObligation | null {
+  const base = ensureReviewAssurance(assurance);
+  return (
+    base.obligations
+      .filter(
+        (o) =>
+          o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .at(0) ?? null
+  );
+}
+
 export function consumeReviewObligation(
   assurance: ReviewAssuranceState,
   obligation: ReviewObligation | null,
@@ -151,6 +238,7 @@ export function buildInvocationEvidence(input: {
   findingsHash: string;
   invokedAt: string;
   fulfilledAt: string;
+  source?: 'host-orchestrated' | 'agent-submitted-attested';
 }): ReviewInvocationEvidence {
   return {
     invocationId: randomUUID(),
@@ -166,6 +254,7 @@ export function buildInvocationEvidence(input: {
     invokedAt: input.invokedAt,
     fulfilledAt: input.fulfilledAt,
     consumedByObligationId: null,
+    source: input.source,
   };
 }
 
@@ -177,6 +266,39 @@ export function hasEvidenceReuse(
   return invocations.some(
     (item) => item.childSessionId === childSessionId || item.findingsHash === findingsHash,
   );
+}
+
+/**
+ * Append a ReviewInvocationEvidence record to the assurance state.
+ * Uses spread to preserve any future fields added to ReviewAssuranceState.
+ */
+export function appendInvocationEvidence(
+  assurance: ReviewAssuranceState,
+  invocation: ReviewInvocationEvidence,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return { ...base, invocations: [...base.invocations, invocation] };
+}
+
+/**
+ * Mark an obligation as fulfilled and bind it to an invocation.
+ * Uses spread to preserve any future fields added to ReviewObligation.
+ */
+export function fulfillObligation(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+  invocationId: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return {
+    ...base,
+    obligations: base.obligations.map((o) =>
+      o.obligationId !== obligationId
+        ? o
+        : { ...o, status: 'fulfilled' as const, invocationId, fulfilledAt: now },
+    ),
+  };
 }
 
 export function validateStrictAttestation(

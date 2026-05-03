@@ -27,6 +27,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
+import { REVIEW_MANDATE_DIGEST } from './review-assurance.js';
 import {
   status,
   hydrate,
@@ -798,6 +799,87 @@ describe('validate', () => {
 
 describe('review', () => {
   describe('HAPPY', () => {
+    it('exposes content-aware review arguments', () => {
+      expect(review.args.text).toBeDefined();
+      expect(review.args.prNumber).toBeDefined();
+      expect(review.args.branch).toBeDefined();
+      expect(review.args.url).toBeDefined();
+      expect(review.args.analysisFindings).toBeDefined();
+    });
+
+    it('requires analysis findings for content-aware review inputs', async () => {
+      await hydrateSession();
+      const raw = await review.execute({ text: 'diff --git a/file.ts b/file.ts' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    });
+
+    it('persists supplied analysis findings for text review content', async () => {
+      await hydrateSession();
+      // Step 1: call /review with content but no findings — creates the obligation
+      // and gives us the canonical toolObligationId.
+      const blockedRaw = await review.execute(
+        { inputOrigin: 'manual_text', text: 'diff --git a/file.ts b/file.ts' },
+        ctx,
+      );
+      const blocked = parseToolResult(blockedRaw);
+      expect(blocked.error).toBe(true);
+      expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+      expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+
+      // Step 2: submit valid ReviewFindings with the matching toolObligationId.
+      const findings = {
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'approve' as const,
+        blockingIssues: [],
+        majorRisks: [
+          {
+            severity: 'major' as const,
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          },
+        ],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          toolObligationId: obligationId,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: 'p35-v1',
+        },
+      };
+
+      const raw = await review.execute(
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/file.ts b/file.ts',
+          analysisFindings: findings,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error', // 'major' maps to 'error'
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          }),
+        ]),
+      );
+    });
+
     it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
       await hydrateSession();
       const raw = await review.execute({}, ctx);

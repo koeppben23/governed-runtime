@@ -629,7 +629,7 @@ describe('plan', () => {
       });
 
       await plan.execute({ planText: '## Plan' }, ctx);
-      const findings = { ...modeBSelfFindings };
+      const findings = { ...modeBSelfFindings, overallVerdict: 'changes_requested' as const };
       const raw = await plan.execute(
         {
           selfReviewVerdict: 'changes_requested',
@@ -668,6 +668,22 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
+    it('Mode B blocks when selfReviewVerdict does not match reviewFindings.overallVerdict', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
+      const raw = await plan.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
     });
 
     it('Mode B blocks with PLAN_REVIEW_LOOP_REQUIRED when selfReview is null', async () => {

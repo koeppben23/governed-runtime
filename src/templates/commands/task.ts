@@ -21,7 +21,7 @@ Task description: $ARGUMENTS
 2. If \`$ARGUMENTS\` is empty: ask the user to describe their task (never invent content).
    If \`$ARGUMENTS\` contains "--ref": parse the reference (Jira URL, ADO work item, GitHub Issue, PR URL, branch, or commit SHA) and pass as \`references[]\`.
 
-3. Call \`flowguard_ticket({ ticketText, references })\` with the task description.
+3. Call \`flowguard_ticket({ text: "<task description>", source: "user", references })\` with the task description.
 
 4. Report the confirmed task, current phase, and next action.
 

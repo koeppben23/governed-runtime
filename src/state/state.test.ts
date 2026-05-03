@@ -381,8 +381,8 @@ describe('state schemas', () => {
       expect(() => LoopVerdict.parse('')).toThrow();
     });
 
-    it('ReviewObligationType has 3 values: plan, implement, architecture (F13)', () => {
-      expect(ReviewObligationType.options).toEqual(['plan', 'implement', 'architecture']);
+    it('ReviewObligationType has 4 values: plan, implement, architecture, review (P2)', () => {
+      expect(ReviewObligationType.options).toEqual(['plan', 'implement', 'architecture', 'review']);
     });
 
     it('ReviewObligationType rejects unknown values', () => {
