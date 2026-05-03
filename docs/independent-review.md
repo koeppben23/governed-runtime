@@ -281,7 +281,7 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`          |
 | Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
-Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria; iteration and planVersion binding rules are uniform across all four.
+Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
 **Plugin-level enforcement (`review-enforcement.ts`):**
 
@@ -309,7 +309,7 @@ Author and reviewer artifacts are stored in parallel, never mixed:
 | `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
 | `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
-All four reviewer artifact arrays are **append-only**. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped.
+Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report, invocation evidence, and derived review-card artifacts — these are evidence surfaces, not runtime authority.
 
 ### Standalone /review Obligation Lifecycle
 

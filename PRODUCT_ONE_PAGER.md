@@ -50,6 +50,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 - Regulated mode enforces initiator/reviewer separation
 - Strict independent review uses a hidden `flowguard-reviewer` subagent, SDK `json_schema` structured output, mandate-bound attestation, and fail-closed orchestration in strict mode
 - Independent review is wired for **all three** review-loop tools — `/plan`, `/architecture`, and `/implement` — sharing one orchestration pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
+- Standalone `/review` creates obligation-bound content-review evidence with `review` obligations, strict attestation validation, and explicit host-orchestrated vs agent-submitted evidence source marking
 - Reviewer's `unable_to_review` third verdict consumes the obligation and BLOCKS via `SUBAGENT_UNABLE_TO_REVIEW` instead of fabricating an `approve` or `changes_requested`
 - Minimum actor assurance is policy-bound via `minimumActorAssuranceForApproval` across `best_effort`, `claim_validated`, and `idp_verified`
 - `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification

@@ -120,6 +120,12 @@ describe('documentation/review-capabilities-doc-drift', () => {
       const cmds = readDoc('docs/commands.md');
       expect(cmds).toMatch(/branch.*git diff/i);
     });
+
+    it('CHANGELOG PR-E entry does not claim branch review requires gh CLI', () => {
+      const section = unreleasedSection();
+      expect(section).toMatch(/branch.*git diff/i);
+      expect(section).not.toMatch(/PR\/branch.*gh|gh.*PR\/branch/i);
+    });
   });
 
   // =========================================================================
@@ -137,6 +143,19 @@ describe('documentation/review-capabilities-doc-drift', () => {
       expect(ir).toContain('host-orchestrated');
       expect(ir).toContain('agent-submitted-attested');
     });
+
+    it('does not claim uniform iteration/planVersion semantics across all four', () => {
+      const ir = readDoc('docs/independent-review.md');
+      expect(ir).not.toContain(
+        'iteration and planVersion binding rules are uniform across all four',
+      );
+    });
+
+    it('documents standalone /review as evidence surfaces, not runtime authority', () => {
+      const ir = readDoc('docs/independent-review.md');
+      expect(ir).toContain('toolObligationId');
+      expect(ir).toMatch(/input.*fingerprint|fingerprint.*input/i);
+    });
   });
 
   // =========================================================================
@@ -151,7 +170,12 @@ describe('documentation/review-capabilities-doc-drift', () => {
     it('product-identity states session-state.json is SSOT', () => {
       const pi = readDoc('PRODUCT_IDENTITY.md');
       expect(pi).toContain('session-state.json');
-      expect(pi).toMatch(/SSOT|single source of truth/i);
+      expect(pi).toMatch(/SSOT|single source of truth|remains the SSOT/i);
+    });
+
+    it('product-identity does not describe Review as compliance-only', () => {
+      const pi = readDoc('PRODUCT_IDENTITY.md');
+      expect(pi).toMatch(/content.*review|content-aware/i);
     });
 
     it('README does not claim /review is compliance-only', () => {
