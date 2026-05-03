@@ -113,6 +113,7 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
   lines.push('# FlowGuard Review Report');
   lines.push('');
   lines.push(`> **Status:** ${phaseLabel}`);
+  lines.push(`> **Overall:** ${overallStatus}`);
   if (inputOrigin) {
     lines.push(`> **Input:** ${inputOrigin}`);
   }
@@ -174,7 +175,11 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
   lines.push('## Completeness');
   lines.push('');
   lines.push(`- **Overall:** ${completeness.overallComplete ? 'Complete' : 'Incomplete'}`);
-  lines.push(`- **Four-eyes principle:** ${completeness.fourEyes ? 'Satisfied' : 'Not satisfied'}`);
+  lines.push(
+    `- **Four-eyes principle:** ${
+      completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded'
+    }`,
+  );
   lines.push(`- ${completeness.summary}`);
   lines.push('');
 

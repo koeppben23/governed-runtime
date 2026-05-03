@@ -1489,6 +1489,16 @@ describe('review (standalone flow)', () => {
         });
         expect(ReviewInvocationEvidence.safeParse(inv).success).toBe(true);
       });
+
+      it('reviewCard is present in successful /review response', async () => {
+        const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'approve');
+        expect(result.error).toBeUndefined();
+        expect(result.reviewCard).toBeDefined();
+        expect(typeof result.reviewCard).toBe('string');
+        const card = result.reviewCard as string;
+        expect(card).toContain('# FlowGuard Review Report');
+        expect(card).toContain('Review complete');
+      });
     });
   });
 });
