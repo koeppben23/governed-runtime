@@ -28,7 +28,12 @@ import {
 
 // Rails
 import { executeTicket } from '../../rails/ticket.js';
-import { executeReview, executeReviewFlow, type ReviewExecutors } from '../../rails/review.js';
+import {
+  executeReview,
+  startReviewFlow,
+  type ReviewExecutors,
+} from '../../rails/review.js';
+import { autoAdvance, createPolicyEvalFn } from '../../rails/types.js';
 import { executeAbort } from '../../rails/abort.js';
 
 // Evidence schemas for external reference handling
@@ -313,13 +318,8 @@ export const review: ToolDefinition = {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
 
-      // 1. Execute review flow rail (READY → REVIEW → REVIEW_COMPLETE)
-      //    Pre-set reviewReportPath so the reviewDone guard fires during autoAdvance.
-      const stateWithPath = {
-        ...state,
-        reviewReportPath: reportPath(sessDir),
-      };
-      let result = executeReviewFlow(stateWithPath, ctx);
+      // 1. Transition READY → REVIEW (no autoAdvance — report must be written first, P8b).
+      let result = startReviewFlow(state, ctx);
 
       if (result.kind === 'blocked') {
         return formatRailResult(result);
@@ -613,16 +613,29 @@ export const review: ToolDefinition = {
         };
       }
 
-      // 3. Write report first, then persist state.
-      //    If writeReport fails, the session stays in REVIEW (not REVIEW_COMPLETE)
-      //    — the obligation consumption applied to result.state in memory is
-      //    not persisted. The session is recoverable via re-hydration.
+      // 3. Write report — if this fails, the session stays in REVIEW.
       await writeReport(sessDir, report);
+
+      // 4. Set reviewReportPath on state, then autoAdvance REVIEW → REVIEW_COMPLETE.
+      //    The reviewDone guard (P8b) requires reviewReportPath to be set,
+      //    proving the report was actually persisted before advancing.
       const stateWithReportPath = {
         ...result.state,
         reviewReportPath: reportPath(sessDir),
       };
-      await writeStateWithArtifacts(sessDir, stateWithReportPath);
+      const evalFn = createPolicyEvalFn(ctx);
+      const { state: finalState, transitions: advanceTransitions } = autoAdvance(
+        stateWithReportPath,
+        evalFn,
+        ctx,
+      );
+      // Merge transitions from startReviewFlow + autoAdvance
+      const allTransitions = [
+        ...(result.kind === 'ok' ? result.transitions : []),
+        ...advanceTransitions,
+      ];
+
+      await writeStateWithArtifacts(sessDir, finalState);
 
       // Build the review report card as a markdown presentation layer.
       const assurance = ensureReviewAssurance(result.state.reviewAssurance);
@@ -635,8 +648,8 @@ export const review: ToolDefinition = {
         ? (args.analysisFindings as Record<string, unknown>)
         : undefined;
       const reviewCard = buildReviewReportCard({
-        phase: result.state.phase,
-        phaseLabel: PHASE_LABELS[result.state.phase],
+        phase: finalState.phase,
+        phaseLabel: PHASE_LABELS[finalState.phase],
         overallStatus: report.overallStatus,
         findings: (report.findings ?? []) as Array<{
           severity: string;
@@ -678,7 +691,7 @@ export const review: ToolDefinition = {
       return appendNextAction(
         JSON.stringify({
           reviewCard,
-          phase: result.state.phase,
+          phase: finalState.phase,
           ...(artifactWarning && { artifactWarning }),
           status: 'Review flow complete. Report generated.',
           overallStatus: report.overallStatus,
@@ -699,9 +712,9 @@ export const review: ToolDefinition = {
           validationSummary: report.validationSummary,
           references: report.references,
           inputOrigin: report.inputOrigin,
-          _audit: { transitions: result.transitions },
+          _audit: { transitions: allTransitions },
         }),
-        result.state,
+        finalState,
       );
     } catch (err) {
       return formatError(err);

@@ -288,6 +288,49 @@ export async function executeReview(
 
 // ─── Review Flow Rail ─────────────────────────────────────────────────
 
+/**
+ * Transition from READY to REVIEW phase.
+ * Returns the REVIEW state WITHOUT auto-advancing to REVIEW_COMPLETE.
+ * The caller should generate the review report, write it to disk,
+ * set reviewReportPath on the state, and THEN call autoAdvance.
+ *
+ * Per P8b: the reviewDone guard requires reviewReportPath to be set,
+ * which means the report must be written before autoAdvance runs.
+ */
+export function startReviewFlow(state: SessionState, ctx: RailContext): RailResult {
+  if (!isCommandAllowed(state.phase, Command.REVIEW)) {
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/review',
+      phase: state.phase,
+    });
+  }
+
+  const preTransitions: TransitionRecord[] = [];
+  const at = ctx.now();
+  const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
+  preTransitions.push(tr);
+
+  const reviewState: SessionState = applyTransition(
+    state,
+    'READY',
+    'REVIEW',
+    'REVIEW_SELECTED',
+    at,
+  );
+
+  return {
+    kind: 'ok',
+    state: reviewState,
+    evalResult: { kind: 'pending', phase: 'REVIEW' },
+    transitions: preTransitions,
+  };
+}
+
+/**
+ * Full review flow: READY → REVIEW → REVIEW_COMPLETE (with autoAdvance).
+ * Used when reviewReportPath is already set before calling this function
+ * (e.g. via the tool layer pre-setting it).
+ */
 export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
   if (!isCommandAllowed(state.phase, Command.REVIEW)) {
     return blocked('COMMAND_NOT_ALLOWED', {

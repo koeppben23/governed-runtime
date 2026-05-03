@@ -83,6 +83,11 @@ describe('guards', () => {
       expect(reviewDone(makeState('REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
     });
 
+    it('reviewDone does not fire when REVIEW phase has no report path (P8b)', () => {
+      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
+      expect(reviewDone(makeState('REVIEW'))).toBe(false);
+    });
+
     it('isConverged returns true on iteration limit', () => {
       expect(
         isConverged({

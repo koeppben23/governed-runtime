@@ -202,7 +202,7 @@ export const SessionState = z.object({
   reviewDecision: ReviewDecision.nullable(),
 
   /** Absolute path to the generated review report file (REVIEW phase, P8b). */
-  reviewReportPath: z.string().nullable().optional(),
+  reviewReportPath: z.string().nullable().default(null),
 
   /** Next auto-generated ADR sequence number for /architecture. */
   nextAdrNumber: z.number().int().positive(),
