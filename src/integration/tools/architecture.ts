@@ -36,7 +36,6 @@ import {
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
 import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rails
 import { executeArchitecture } from '../../rails/architecture.js';
