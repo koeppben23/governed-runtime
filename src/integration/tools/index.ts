@@ -49,4 +49,4 @@ export const hydrate = rawHydrate;
 export const plan = rawPlan;
 export const implement = rawImplement;
 export const architecture = rawArchitecture;
-export const continue_flow = rawContinue;
+export const continue_cmd = rawContinue;

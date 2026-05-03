@@ -4,7 +4,7 @@
  *
  * Since tools depend on the OpenCode runtime context (worktree, sessionID, etc.)
  * and interact with the filesystem, these tests validate:
- * - Export shape: all 11 tools exported with the correct ToolDefinition structure
+ * - Export shape: all 12 tools exported with the correct ToolDefinition structure
  * - Descriptions: non-empty, meaningful descriptions for LLM tool discovery
  * - Args schemas: tools that accept parameters have valid Zod schemas
  * - Barrel re-exports: integration/index.ts re-exports all tools correctly
@@ -25,6 +25,7 @@ import {
   implement,
   validate,
   review,
+  continue_cmd,
   abort_session,
   archive,
   architecture,
@@ -34,7 +35,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 11 exported tool names, matching the filenames OpenCode will discover. */
+/** All 12 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -44,6 +45,7 @@ const TOOL_NAMES = [
   'implement',
   'validate',
   'review',
+  'continue_cmd',
   'abort_session',
   'archive',
   'architecture',
@@ -59,6 +61,7 @@ const TOOLS: Record<string, unknown> = {
   implement,
   validate,
   review,
+  continue_cmd,
   abort_session,
   archive,
   architecture,
@@ -86,8 +89,8 @@ const TOOLS_WITHOUT_ARGS = ['archive'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 11 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(11);
+    it('exports exactly 12 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(12);
     });
 
     for (const name of TOOL_NAMES) {
@@ -107,7 +110,7 @@ describe('integration/tools', () => {
       });
     }
 
-    it('barrel re-exports all 11 tools', () => {
+    it('barrel re-exports all 12 tools', () => {
       for (const name of TOOL_NAMES) {
         expect((barrel as Record<string, unknown>)[name]).toBeDefined();
         expect((barrel as Record<string, unknown>)[name]).toBe(TOOLS[name]);
@@ -194,9 +197,9 @@ describe('integration/tools', () => {
       }
     });
 
-    it('barrel has exactly 12 named exports (11 tools + 1 plugin)', () => {
+    it('barrel has exactly 13 named exports (12 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(12);
+      expect(exports.length).toBe(13);
     });
   });
 

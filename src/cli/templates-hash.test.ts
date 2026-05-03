@@ -27,7 +27,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      'c127fa42dd08f79788fe9defde7c6d86290366e44f7dded4d76f1f9d20fa2ad2',
+      'a13d5373021395d37cdfaaad1b1a607070dd5816ac847be5c65e98c992b19d63',
     );
   });
 
@@ -99,7 +99,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '66c2614a6f6bcce55975ca9acb29eedb262ee44bac6bc8d2c7c0228a1f36ed47',
+      '933f94c0ee262e414e569d868f4dfb1b9f94d210ab5dc7eeb4b403a871363cfb',
     );
   });
 

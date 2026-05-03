@@ -11,7 +11,7 @@
  * @version v1
  */
 
-import { withMutableSession, formatBlocked, appendNextAction } from './helpers.js';
+import { withReadOnlySession, formatBlocked, formatError, appendNextAction } from './helpers.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import type { ToolDefinition } from './helpers.js';
 
@@ -26,7 +26,7 @@ const PHASE_GUIDANCE: Record<string, { status: string; command?: string; command
   },
   PLAN: {
     status:
-      'Plan is under review. Use /plan to submit a self-review verdict, or wait for review convergence.',
+      'Plan review is pending. Use /plan with the required review findings when review evidence is available.',
     command: '/plan',
   },
   VALIDATION: {
@@ -38,7 +38,8 @@ const PHASE_GUIDANCE: Record<string, { status: string; command?: string; command
     command: '/implement',
   },
   IMPL_REVIEW: {
-    status: 'Implementation review is pending. Submit a review verdict.',
+    status:
+      'Implementation review is pending. Use /implement with the required review findings when review evidence is available.',
     command: '/implement',
   },
   COMPLETE: {
@@ -55,7 +56,9 @@ export const continue_cmd: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const { state, sessDir } = await withMutableSession(context);
+      const session = await withReadOnlySession(context);
+      if (!session || !session.state) return formatBlocked('NO_SESSION');
+      const { state } = session;
       const { phase } = state;
 
       // User-gate phases require explicit human decision
@@ -115,7 +118,7 @@ export const continue_cmd: ToolDefinition = {
       // Unknown phase — fail closed
       return formatBlocked('CONTINUE_UNKNOWN_PHASE', { phase });
     } catch (err) {
-      return JSON.stringify({ error: true, message: String(err) });
+      return formatError(err);
     }
   },
 };
