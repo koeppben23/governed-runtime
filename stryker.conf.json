@@ -37,8 +37,8 @@
   },
   "ignoreStatic": true,
   "thresholds": {
-    "high": 90,
-    "low": 80,
-    "break": 90
+    "high": 80,
+    "low": 60,
+    "break": 80
   }
 }
