@@ -389,7 +389,7 @@ jobs:
         run: npm ci
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a # github/codeql-action v3
+        uses: github/codeql-action/init@e46ed2cbd01164d986452f91f178727624ae40d7 # github/codeql-action v3
         with:
           languages: typescript
           queries: security-extended
@@ -399,7 +399,7 @@ jobs:
         shell: bash
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a # github/codeql-action v3
+        uses: github/codeql-action/analyze@e46ed2cbd01164d986452f91f178727624ae40d7 # github/codeql-action v3
         with:
           category: '/language:typescript'
 
