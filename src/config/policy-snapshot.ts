@@ -33,6 +33,41 @@ import type {
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
 
+/**
+ * Normalize a legacy or weakened selfReview config to the mandatory strict default.
+ *
+ * FlowGuard requires subagent-enabled, no-fallback, strict-enforcement self-review.
+ * Any deviation (legacy null, partial config, weakened flags) is normalized to the
+ * canonical strict config with a console warning for operator visibility.
+ */
+function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
+  if (value === null || typeof value !== 'object') {
+    console.warn(
+      '[FlowGuard] Legacy selfReview config (null/undefined) normalized to mandatory strict. ' +
+        'Ensure flowguard-reviewer plugin is active.',
+    );
+    return DEFAULT_SELF_REVIEW_CONFIG;
+  }
+
+  const candidate = value as Partial<SelfReviewConfig>;
+  if (
+    candidate.subagentEnabled === true &&
+    candidate.fallbackToSelf === false &&
+    candidate.strictEnforcement === true
+  ) {
+    return DEFAULT_SELF_REVIEW_CONFIG;
+  }
+
+  console.warn(
+    '[FlowGuard] Legacy/weakened selfReview config normalized to mandatory strict. ' +
+      `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
+      `fallbackToSelf=${candidate.fallbackToSelf}, ` +
+      `strictEnforcement=${candidate.strictEnforcement}. ` +
+      'Ensure flowguard-reviewer plugin is active.',
+  );
+  return DEFAULT_SELF_REVIEW_CONFIG;
+}
+
 // ─── Canonical Snapshot Creation ──────────────────────────────────────────────
 
 /**
@@ -122,17 +157,19 @@ export function freezePolicySnapshot(
   resolvedAt: string,
   digestFn: (text: string) => string,
 ): PolicySnapshot {
-  const res = resolution as HydratePolicyResolution;
   return createPolicySnapshot(resolution.policy, resolvedAt, digestFn, {
     requestedMode: resolution.requestedMode,
     effectiveGateBehavior: resolution.effectiveGateBehavior,
     degradedReason: resolution.degradedReason,
-    source: 'effectiveSource' in res ? res.effectiveSource : undefined,
-    resolutionReason: 'resolutionReason' in res ? res.resolutionReason : undefined,
-    centralMinimumMode: 'centralEvidence' in res ? res.centralEvidence?.minimumMode : undefined,
-    policyDigest: 'centralEvidence' in res ? res.centralEvidence?.digest : undefined,
-    policyVersion: 'centralEvidence' in res ? res.centralEvidence?.version : undefined,
-    policyPathHint: 'centralEvidence' in res ? res.centralEvidence?.pathHint : undefined,
+    source: 'effectiveSource' in resolution ? resolution.effectiveSource : undefined,
+    resolutionReason: 'resolutionReason' in resolution ? resolution.resolutionReason : undefined,
+    centralMinimumMode:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.minimumMode : undefined,
+    policyDigest: 'centralEvidence' in resolution ? resolution.centralEvidence?.digest : undefined,
+    policyVersion:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.version : undefined,
+    policyPathHint:
+      'centralEvidence' in resolution ? resolution.centralEvidence?.pathHint : undefined,
   });
 }
 
@@ -283,6 +320,16 @@ export function normalizePolicySnapshotWithMeta(
   };
   if (!rawAudit || typeof rawAudit !== 'object') normalized = true;
 
+  const rawSelfReview = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
+  if (
+    !rawSelfReview ||
+    rawSelfReview.subagentEnabled !== true ||
+    rawSelfReview.fallbackToSelf !== false ||
+    rawSelfReview.strictEnforcement !== true
+  ) {
+    normalized = true;
+  }
+
   return {
     snapshot: {
       mode,
@@ -294,14 +341,8 @@ export function normalizePolicySnapshotWithMeta(
       requestedMode,
       source: typeof s.source === 'string' ? (s.source as PolicySource) : undefined,
       effectiveGateBehavior,
-      degradedReason:
-        typeof s.degradedReason === 'string'
-          ? (s.degradedReason as PolicyDegradedReason)
-          : undefined,
-      resolutionReason:
-        typeof s.resolutionReason === 'string'
-          ? (s.resolutionReason as PolicyResolutionReason)
-          : undefined,
+      degradedReason: typeof s.degradedReason === 'string' ? s.degradedReason : undefined,
+      resolutionReason: typeof s.resolutionReason === 'string' ? s.resolutionReason : undefined,
       centralMinimumMode:
         typeof s.centralMinimumMode === 'string'
           ? (s.centralMinimumMode as CentralMinimumMode)
@@ -322,10 +363,7 @@ export function normalizePolicySnapshotWithMeta(
           ? (s.identityProvider as IdpConfig)
           : undefined,
       identityProviderMode,
-      selfReview:
-        s.selfReview !== null && typeof s.selfReview === 'object'
-          ? (s.selfReview as SelfReviewConfig)
-          : undefined,
+      selfReview: normalizeSelfReviewConfig(rawSelfReview),
     },
     normalized,
     reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -360,7 +398,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
       };
-    default: // team, team-ci, unknown
+    case 'team':
+    case 'team-ci':
       return {
         requireHumanGates: true,
         maxSelfReviewIterations: 3,
@@ -392,13 +431,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
-    selfReview: snapshot.selfReview ?? DEFAULT_SELF_REVIEW_CONFIG,
+    selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     minimumActorAssuranceForApproval:
-      (snapshot.minimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified'
-        | undefined) ??
+      snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {

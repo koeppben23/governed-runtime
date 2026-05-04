@@ -79,9 +79,8 @@ async function writeManifest(name: string, content: string): Promise<void> {
 
 /** Resolve the session directory for state read/write. */
 async function resolveSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessDir } = await import(
-    '../adapters/workspace/index.js'
-  );
+  const { computeFingerprint, sessionDir: resolveSessDir } =
+    await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessDir(fp.fingerprint, ctx.sessionID);
 }

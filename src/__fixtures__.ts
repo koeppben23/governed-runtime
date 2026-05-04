@@ -215,6 +215,7 @@ export function makeState(
     implementation: null,
     implReview: null,
     reviewDecision: null,
+    reviewReportPath: null,
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test_quality', 'rollback_safety'],
@@ -307,6 +308,8 @@ export function makeProgressedState(phase: Phase): SessionState {
     case 'REVIEW':
       return makeState('REVIEW');
     case 'REVIEW_COMPLETE':
-      return makeState('REVIEW_COMPLETE');
+      return makeState('REVIEW_COMPLETE', {
+        reviewReportPath: '/tmp/test-repo/.flowguard/sessions/000-test/review-report.json',
+      });
   }
 }

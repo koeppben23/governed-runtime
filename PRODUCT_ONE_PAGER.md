@@ -22,14 +22,14 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 
 ### Deterministic Workflows
 
-- Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation), Review
+- Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation, ARCH_REVIEW → ARCH_COMPLETE), Review (content-aware, obligation-bound)
 - 14 explicit phases with computed next actions
 - Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
 - External references for `/ticket` and `/review`: link Jira, ADO, GitHub Issues, PRs, branches, commits, and Confluence docs with full audit provenance (type, source, extractedAt)
-- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`) for intuitive daily use; canonical commands remain fully supported
-- Plan Review Card: full plan with metadata and recommended next actions displayed at PLAN_REVIEW
+- Product command facade (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) for intuitive daily use; canonical commands remain fully supported
+- Review Cards: structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Cards are derived presentation artifacts — `session-state.json` remains SSOT
 
 ### Policy Enforcement
 
@@ -49,6 +49,9 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 
 - Regulated mode enforces initiator/reviewer separation
 - Strict independent review uses a hidden `flowguard-reviewer` subagent, SDK `json_schema` structured output, mandate-bound attestation, and fail-closed orchestration in strict mode
+- Independent review is wired for **all three** review-loop tools — `/plan`, `/architecture`, and `/implement` — sharing one orchestration pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
+- Standalone `/review` creates obligation-bound content-review evidence with `review` obligations, strict attestation validation, and explicit host-orchestrated vs agent-submitted evidence source marking
+- Reviewer's `unable_to_review` third verdict consumes the obligation and BLOCKS via `SUBAGENT_UNABLE_TO_REVIEW` instead of fabricating an `approve` or `changes_requested`
 - Minimum actor assurance is policy-bound via `minimumActorAssuranceForApproval` across `best_effort`, `claim_validated`, and `idp_verified`
 - `idp_verified` supports static keys (`identityProvider.mode = static`) and JWKS mode (`identityProvider.mode = jwks`) with exactly one key authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed verification
 - JWT verification is implemented via `jose` `jwtVerify` with FlowGuard-owned key resolution (no remote JWK set in verifier path)
@@ -92,5 +95,5 @@ FlowGuard is an OpenCode-native governance runtime. It runs locally within the A
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
-**Current snapshot: 1.2.0-rc.1**
+**Current snapshot: 1.2.0-rc.2**
 **API Reference:** [TypeDoc-generated](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)

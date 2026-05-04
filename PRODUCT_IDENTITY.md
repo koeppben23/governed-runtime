@@ -33,7 +33,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Deterministic Workflow Control
 
-- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance report)
+- **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
 - **14 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
@@ -108,23 +108,24 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 ### 2. Governed Command Surface
 
-Ten canonical FlowGuard commands map to workflow phases:
+Twelve installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
-| Command            | Purpose                                                                                                           |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Command            | Purpose                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
+| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                      |
 | `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
-| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.             |
+| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
+| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
+| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
 | `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
 | `/implement`       | Execute implementation, record evidence, run review loop                                                       |
 | `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
-| `/architecture`    | Create or revise an Architecture Decision Record (ADR) with self-review loop (ID auto-generated)               |
-| `/review`          | Start standalone compliance review flow. Supports PR URLs, branches, and commit references.                    |
 | `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
 | `/abort`           | Emergency session termination                                                                                  |
 | `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
 
-Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. The Plan Review Card renders the complete plan with version, policy mode, task title, and recommended next actions when self-review converges to PLAN_REVIEW.
+Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
 Each command is tied to phase admissibility rules, evidence requirements, and state transitions.
 
@@ -152,7 +153,37 @@ READY → REVIEW → REVIEW_COMPLETE
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
-**Self-Review Loops**: PLAN phase has a self-review loop (max iterations from policy, digest-stop convergence). IMPL_REVIEW has an implementation review loop (same pattern). ARCHITECTURE has a self-review loop for ADR quality. Both plan and implement tools optionally accept structured `reviewFindings` from an independent review agent (controlled by `selfReview.subagentEnabled` policy). When enabled, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK client (`session.create()` + `session.prompt()` with `json_schema` structured output) — no LLM decision involved for invocation. Non-strict orchestration failures preserve the LLM-driven Task fallback path; strict orchestration failures block fail-closed with explicit error output. Author and reviewer artifacts are stored separately (append-only). 4-level plugin enforcement via `tool.execute.before/after` hooks physically blocks progression: L1 binary gate (`SUBAGENT_REVIEW_NOT_INVOKED`), L2 session-ID match (`SUBAGENT_SESSION_MISMATCH`), L3 prompt integrity (`SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`), L4 findings integrity (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`). Each subagent call satisfies exactly one pending review obligation; plan and implement reviews require independent subagent invocations. See [docs/independent-review.md](./docs/independent-review.md).
+**Independent Review Loops** (subagent-driven, mandatory): three reviewable
+obligation types — `plan`, `architecture`, `implement` — share one orchestration
+pipeline, one ReviewFindings schema, and one fail-closed strict-enforcement model
+(F12 + F13 + P1.3). Each loop runs up to a per-mode iteration limit with
+digest-stop convergence:
+
+- **PLAN phase** — plan review loop (`obligationType: 'plan'`)
+- **ARCHITECTURE phase** — ADR review loop (`obligationType: 'architecture'`)
+  with ADR-specific criteria (Context completeness, Decision concreteness,
+  Consequences honesty, MADR structure)
+- **IMPL_REVIEW phase** — implementation review loop (`obligationType: 'implement'`)
+
+The FlowGuard plugin deterministically invokes the `flowguard-reviewer` subagent
+via the OpenCode SDK client (`session.create()` + `session.prompt()` with
+`json_schema` structured output) — no LLM decision is involved for invocation.
+Self-review is **never** accepted as review evidence in the current release;
+strict orchestration failures BLOCK fail-closed.
+
+Author and reviewer artifacts are stored separately (append-only). 4-level plugin
+enforcement via `tool.execute.before/after` hooks physically blocks progression:
+
+- **L1** (`SUBAGENT_REVIEW_NOT_INVOKED`) — binary gate: subagent must have been called
+- **L2** (`SUBAGENT_SESSION_MISMATCH`) — `reviewedBy.sessionId` matches actual subagent session
+- **L3** (`SUBAGENT_PROMPT_EMPTY`, `SUBAGENT_PROMPT_MISSING_CONTEXT`) — prompt integrity
+- **L4** (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`, `SUBAGENT_FINDINGS_ISSUES_MISMATCH`) — findings integrity
+
+Each subagent call satisfies exactly one pending review obligation; the three
+loop types each require their own subagent invocations. The reviewer's third
+verdict `unable_to_review` consumes the obligation and BLOCKS via
+`SUBAGENT_UNABLE_TO_REVIEW` (P1.3) instead of fabricating an `approve` or
+`changes_requested`. See [docs/independent-review.md](./docs/independent-review.md).
 
 **Backward Transitions**:
 
@@ -343,7 +374,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## Product Facts
 
-- **Version:** 1.2.0-rc.1
+- **Version:** 1.2.0-rc.2
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
@@ -354,8 +385,8 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Custom Tools:** 11 OpenCode tool exports
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
 - **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; all modes default to `best_effort` — stronger thresholds require explicit `minimumActorAssuranceForApproval` config; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic
-- **Self-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
-- **Impl-Review Iterations:** SOLO: 2 | TEAM/REGULATED: 3
+- **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
+- **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
@@ -377,7 +408,7 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 
 ---
 
-**Version:** 1.2.0-rc.1
+**Version:** 1.2.0-rc.2
 _Architecture: TypeScript, OpenCode-native, Zero-Bridge_
 _Distribution: Pre-built proprietary artifact (GitHub Releases)_
 _Last Updated: 2026-04-27_

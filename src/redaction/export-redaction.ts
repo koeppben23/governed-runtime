@@ -19,11 +19,81 @@ export interface RedactionOutcome {
   readonly rawPath: string;
 }
 
-function stableMask(value: string, mode: Exclude<RedactionMode, 'none'>): string {
-  const base = value;
+function stableMask(value: string, mode: RedactionMode): string {
+  if (mode === 'none') return value;
   if (mode === 'basic') return '[REDACTED]';
-  const token = createHash('sha256').update(base).digest('hex').slice(0, 12);
+  const token = createHash('sha256').update(value).digest('hex').slice(0, 12);
   return `[REDACTED:${token}]`;
+}
+
+/**
+ * Redact findings array in the report.
+ */
+function redactFindings(findings: Record<string, unknown>[], mode: RedactionMode): void {
+  for (const finding of findings) {
+    if (typeof finding.message === 'string') {
+      finding.message = stableMask(finding.message, mode);
+    }
+  }
+}
+
+/**
+ * Redact validation summary array in the report.
+ */
+function redactValidationSummary(
+  validationSummary: Record<string, unknown>[],
+  mode: RedactionMode,
+): void {
+  for (const item of validationSummary) {
+    if (typeof item.detail === 'string') {
+      item.detail = stableMask(item.detail, mode);
+    }
+  }
+}
+
+/**
+ * Redact completeness section in the report.
+ */
+function redactCompleteness(completeness: Record<string, unknown>, mode: RedactionMode): void {
+  const fourEyes =
+    typeof completeness.fourEyes === 'object' && completeness.fourEyes !== null
+      ? (completeness.fourEyes as Record<string, unknown>)
+      : null;
+
+  if (fourEyes) {
+    if (typeof fourEyes.initiatedBy === 'string') {
+      fourEyes.initiatedBy = stableMask(fourEyes.initiatedBy, mode);
+    }
+    if (typeof fourEyes.decidedBy === 'string') {
+      fourEyes.decidedBy = stableMask(fourEyes.decidedBy, mode);
+    }
+    if (typeof fourEyes.detail === 'string') {
+      fourEyes.detail = stableMask(fourEyes.detail, mode);
+    }
+  }
+
+  const slots = Array.isArray(completeness.slots)
+    ? (completeness.slots as Array<Record<string, unknown>>)
+    : [];
+  for (const slot of slots) {
+    if (typeof slot.detail === 'string') {
+      slot.detail = stableMask(slot.detail, mode);
+    }
+  }
+}
+
+/**
+ * Redact references array in the report.
+ */
+function redactReferences(references: Record<string, unknown>[], mode: RedactionMode): void {
+  for (const ref of references) {
+    if (typeof ref.ref === 'string') {
+      ref.ref = stableMask(ref.ref, mode);
+    }
+    if (typeof ref.title === 'string') {
+      ref.title = stableMask(ref.title, mode);
+    }
+  }
 }
 
 /**
@@ -38,67 +108,32 @@ export function redactReviewReport(
   const out = structuredClone(payload);
   const report = out;
 
+  // Redact findings
   const findings = Array.isArray(report.findings)
     ? (report.findings as Array<Record<string, unknown>>)
     : [];
-  for (const finding of findings) {
-    if (typeof finding.message === 'string') {
-      finding.message = stableMask(finding.message, mode);
-    }
-  }
+  redactFindings(findings, mode);
 
+  // Redact validation summary
   const validationSummary = Array.isArray(report.validationSummary)
     ? (report.validationSummary as Array<Record<string, unknown>>)
     : [];
-  for (const item of validationSummary) {
-    if (typeof item.detail === 'string') {
-      item.detail = stableMask(item.detail, mode);
-    }
-  }
+  redactValidationSummary(validationSummary, mode);
 
+  // Redact completeness
   const completeness =
     typeof report.completeness === 'object' && report.completeness !== null
       ? (report.completeness as Record<string, unknown>)
       : null;
-
   if (completeness) {
-    const fourEyes =
-      typeof completeness.fourEyes === 'object' && completeness.fourEyes !== null
-        ? (completeness.fourEyes as Record<string, unknown>)
-        : null;
-    if (fourEyes) {
-      if (typeof fourEyes.initiatedBy === 'string') {
-        fourEyes.initiatedBy = stableMask(fourEyes.initiatedBy, mode);
-      }
-      if (typeof fourEyes.decidedBy === 'string') {
-        fourEyes.decidedBy = stableMask(fourEyes.decidedBy, mode);
-      }
-      if (typeof fourEyes.detail === 'string') {
-        fourEyes.detail = stableMask(fourEyes.detail, mode);
-      }
-    }
-
-    const slots = Array.isArray(completeness.slots)
-      ? (completeness.slots as Array<Record<string, unknown>>)
-      : [];
-    for (const slot of slots) {
-      if (typeof slot.detail === 'string') {
-        slot.detail = stableMask(slot.detail, mode);
-      }
-    }
+    redactCompleteness(completeness, mode);
   }
 
+  // Redact references
   const references = Array.isArray(report.references)
     ? (report.references as Array<Record<string, unknown>>)
     : [];
-  for (const ref of references) {
-    if (typeof ref.ref === 'string') {
-      ref.ref = stableMask(ref.ref, mode);
-    }
-    if (typeof ref.title === 'string') {
-      ref.title = stableMask(ref.title, mode);
-    }
-  }
+  redactReferences(references, mode);
 
   return out;
 }

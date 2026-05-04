@@ -21,7 +21,12 @@ import type { SessionState } from '../../state/schema.js';
 export const EVIDENCE_ARTIFACT_SCHEMA_VERSION = 'flowguard-evidence-artifact.v1';
 export const EVIDENCE_ARTIFACTS_DIR = 'artifacts';
 
-type ArtifactType = 'ticket' | 'plan';
+type ArtifactType =
+  | 'ticket'
+  | 'plan'
+  | 'plan-review-card'
+  | 'review-report-card'
+  | 'architecture-review-card';
 
 interface EvidenceArtifactMeta {
   readonly schemaVersion: typeof EVIDENCE_ARTIFACT_SCHEMA_VERSION;
@@ -74,6 +79,128 @@ export async function materializeEvidenceArtifacts(
   } catch (err) {
     await cleanupCreatedArtifacts(createdPaths);
     throw err;
+  }
+}
+
+/**
+ * Materialize a review card as an immutable derived evidence artifact.
+ *
+ * Writes `artifacts/<artifactType>.<contentDigest>.md` and `.json`.
+ *
+ * IMPORTANT: Callers MUST persist state (writeStateWithArtifacts) BEFORE
+ * calling this function. The stateHash is computed from session-state.json
+ * which must reflect the CURRENT phase, not a prior one.
+ *
+ * @param contentDigest - unique digest of the artifact content (planDigest,
+ *   obligationId, or adrDigest). Used as the version identifier in the filename.
+ * @returns null on success, or { code, message } on non-fatal failure
+ */
+export async function materializeReviewCardArtifact(
+  sessionDir: string,
+  artifactType: 'plan-review-card' | 'review-report-card' | 'architecture-review-card',
+  markdown: string,
+  state: SessionState,
+  contentDigest: string,
+): Promise<{ code: string; message: string } | null> {
+  const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
+  const base = `${artifactType}.${contentDigest}`;
+  const mdPath = path.join(artifactsDir, `${base}.md`);
+  const jsonPath = path.join(artifactsDir, `${base}.json`);
+  const persistedContent = markdown.endsWith('\n') ? markdown : `${markdown}\n`;
+  // P0#2: hash is computed from the ACTUAL persisted content (with trailing newline).
+  const markdownSha256 = crypto
+    .createHash('sha256')
+    .update(persistedContent, 'utf-8')
+    .digest('hex');
+
+  try {
+    await fs.mkdir(artifactsDir, { recursive: true });
+    const sourceStateHash = await hashFile(path.join(sessionDir, 'session-state.json'));
+
+    // Immutability: if the file already exists, preserve the original.
+    try {
+      const existing = await fs.readFile(mdPath, 'utf-8');
+      const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
+      if (existingHash === markdownSha256) {
+        // P1#3: verify .json metadata exists and matches. Recreate if missing.
+        await ensureMetaJson(
+          jsonPath,
+          artifactType,
+          state,
+          sourceStateHash,
+          markdownSha256,
+          base,
+          contentDigest,
+        );
+        return null; // no-op
+      }
+      return {
+        code: 'REVIEW_CARD_ARTIFACT_IMMUTABLE',
+        message: `Artifact already exists with different content: ${base}.md`,
+      };
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+
+    const meta = {
+      artifactType,
+      contentDigest,
+      derived: true,
+      source: 'presentation',
+      phase: state.phase,
+      sessionId: state.id,
+      createdAt: new Date().toISOString(),
+      stateHash: sourceStateHash,
+      markdownSha256,
+      path: `${EVIDENCE_ARTIFACTS_DIR}/${base}.md`,
+    };
+
+    const createdPaths: string[] = [];
+    try {
+      await writeImmutableFile(mdPath, persistedContent, createdPaths);
+      await writeImmutableFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', createdPaths);
+      return null;
+    } catch (err) {
+      await cleanupCreatedArtifacts(createdPaths);
+      throw err;
+    }
+  } catch (err) {
+    return {
+      code: 'REVIEW_CARD_ARTIFACT_WRITE_FAILED',
+      message:
+        `Failed to materialize review card artifact ${artifactType}: ` +
+        (err instanceof Error ? err.message : String(err)),
+    };
+  }
+}
+
+/** Ensure the metadata JSON exists. Recreates it if missing after a partial write. */
+async function ensureMetaJson(
+  jsonPath: string,
+  artifactType: string,
+  state: SessionState,
+  stateHash: string,
+  markdownSha256: string,
+  base: string,
+  contentDigest: string,
+): Promise<void> {
+  try {
+    await fs.access(jsonPath);
+  } catch {
+    // .json was lost (crash between .md and .json write). Recreate it.
+    const meta = {
+      artifactType,
+      contentDigest,
+      derived: true,
+      source: 'presentation',
+      phase: state.phase,
+      sessionId: state.id,
+      createdAt: new Date().toISOString(),
+      stateHash,
+      markdownSha256,
+      path: `${EVIDENCE_ARTIFACTS_DIR}/${base}.md`,
+    };
+    await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
   }
 }
 

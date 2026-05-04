@@ -24,7 +24,11 @@ Understanding the 14 workflow phases across 3 flows.
 
 ### [Policies](./policies.md)
 
-Policy modes: Solo, Team, and Regulated.
+Policy modes: Solo, Team, Team-CI, and Regulated.
+
+### [Independent Review](./independent-review.md)
+
+Plugin-orchestrated subagent review pipeline for `/plan`, `/architecture`, and `/implement`.
 
 ### [Profiles](./profiles.md)
 

@@ -7,6 +7,8 @@
  * @version v1
  */
 
+import { defaultReasonRegistry } from '../config/reasons.js';
+
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
  *
@@ -40,18 +42,62 @@ export function parseToolResult(rawOutput: unknown): Record<string, unknown> | n
  * Used when review orchestration fails in strict mode — the output
  * is injected into the tool response to signal the failure to the agent.
  *
+ * Looks up the reason in the default registry to populate `message` and
+ * `recovery`. Falls back to a generic message and empty recovery if the
+ * code is not registered (unknown codes are still surfaced; the block
+ * itself is enforced by the caller, not by the registry).
+ *
  * @param code - Error/reason code (e.g. 'SUBAGENT_MANDATE_MISMATCH')
- * @param detail - Key-value detail map for the error payload
+ * @param detail - Key-value detail map for the error payload (also used for template interpolation)
  * @returns JSON string of the blocked output object
  */
 export function strictBlockedOutput(code: string, detail: Record<string, string>): string {
+  const formatted = defaultReasonRegistry.format(code, detail);
   return JSON.stringify({
     error: true,
-    code,
-    message: `Blocked: ${code}`,
+    code: formatted.code,
+    message: formatted.reason,
     detail,
-    recovery: [],
+    recovery: formatted.recovery,
+    ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
   });
+}
+
+/**
+ * Build a structured FlowGuard enforcement error suitable for throwing
+ * from a plugin hook.
+ *
+ * The OpenCode plugin runtime captures `Error.message` and surfaces it to
+ * the LLM. Encoding the structured payload as JSON in the message gives
+ * the agent actionable recovery guidance instead of an opaque string.
+ *
+ * The error name is set to "FlowGuardEnforcementError" so callers can
+ * branch on `instanceof Error && err.name === 'FlowGuardEnforcementError'`.
+ *
+ * @param code - Reason code from the registry
+ * @param reason - Human-readable reason from the enforcement layer
+ * @param detail - Optional key-value detail map (interpolated into the registry template)
+ * @returns Error instance ready to throw
+ */
+export function buildEnforcementError(
+  code: string,
+  reason: string,
+  detail: Record<string, string> = {},
+): Error {
+  const formatted = defaultReasonRegistry.format(code, detail);
+  const payload = {
+    error: true,
+    code,
+    // Prefer the live enforcement reason (carries dynamic context like session IDs)
+    // over the registry template, but fall back to the registry message when reason is empty.
+    message: reason && reason.length > 0 ? reason : formatted.reason,
+    detail,
+    recovery: formatted.recovery,
+    ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
+  };
+  const err = new Error(`[FlowGuard] ${JSON.stringify(payload)}`);
+  err.name = 'FlowGuardEnforcementError';
+  return err;
 }
 
 /**

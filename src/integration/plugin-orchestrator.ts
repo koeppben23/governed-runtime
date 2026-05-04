@@ -5,7 +5,7 @@
  * Invokes the flowguard-reviewer subagent via the OpenCode SDK client when a
  * FlowGuard tool response signals INDEPENDENT_REVIEW_REQUIRED. Handles:
  * - Review obligation creation + audit
- * - Prompt building (plan or impl)
+ * - Prompt building (plan, architecture, or impl)
  * - Subagent invocation
  * - Structured findings validation (P35 strict / non-strict)
  * - Evidence recording with reuse detection
@@ -26,14 +26,19 @@ import {
   hasEvidenceReuse,
   hashFindings,
   hashText,
+  appendInvocationEvidence,
 } from './review-assurance.js';
 import {
   isReviewRequired,
   extractReviewContext,
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
+  buildArchitectureReviewPrompt,
   invokeReviewer,
   buildMutatedOutput,
+  buildReviewContentPrompt,
+  selectReviewerProfileRules,
+  buildReviewContentMutatedOutput,
   type OrchestratorClient,
 } from './review-orchestrator.js';
 import {
@@ -42,9 +47,16 @@ import {
   parseToolResult,
   strictBlockedOutput,
 } from './plugin-helpers.js';
+import { loadExternalContent } from '../rails/review.js';
+import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { updateObligation } from './plugin-review-state.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
-import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
+import {
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+} from './tool-names.js';
+import { obligationTypeForTool } from './review-obligation-tools.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
@@ -99,7 +111,7 @@ export async function runReviewOrchestration(
 
   const rawOutput = getToolOutput(output);
   let strictEnforcement: boolean | null = null;
-  const inReviewPath = isReviewRequired(rawOutput);
+  const inReviewPath = isReviewRequired(rawOutput, toolName);
   if (!inReviewPath) return;
 
   try {
@@ -132,6 +144,134 @@ export async function runReviewOrchestration(
       return;
     }
 
+    // Host-orchestrated /review content analysis.
+    // When flowguard_review blocks with CONTENT_ANALYSIS_REQUIRED, the
+    // orchestrator loads external content, invokes the subagent, and injects
+    // pluginReviewFindings so the agent can resubmit. If any step fails the
+    // output is unchanged — the agent invokes the subagent manually.
+    if (toolName === TOOL_FLOWGUARD_REVIEW) {
+      strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      const { profileName, profileRules } = selectReviewerProfileRules(
+        sessionState.activeProfile,
+        'REVIEW',
+      );
+      const rawInput = input as Record<string, unknown>;
+      const refInput = {
+        text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
+        prNumber: typeof rawInput.prNumber === 'number' ? rawInput.prNumber : undefined,
+        branch: typeof rawInput.branch === 'string' ? rawInput.branch : undefined,
+        url: typeof rawInput.url === 'string' ? rawInput.url : undefined,
+      };
+      const contentResult = await loadExternalContent(refInput);
+      const content = (contentResult as Record<string, unknown>).content;
+      if (typeof content !== 'string') return;
+
+      const prompt = buildReviewContentPrompt({
+        content,
+        ticketText: sessionState.ticket?.text ?? '',
+        obligationId: reviewCtx.obligationId,
+        mandateDigest: reviewCtx.mandateDigest,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        profileName,
+        profileRules,
+      });
+
+      const reviewerResult = await invokeReviewer(
+        deps.client as OrchestratorClient,
+        prompt,
+        sessionId,
+      );
+      if (!reviewerResult?.findings) return;
+
+      const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
+      if (!parsedFindings.success) {
+        if (strictEnforcement) {
+          output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+            reason: 'reviewer response did not match ReviewFindings schema',
+          });
+        }
+        return;
+      }
+
+      if (strictEnforcement) {
+        const att = parsedFindings.data.attestation;
+        if (!att) return;
+        if (
+          att.toolObligationId !== reviewCtx.obligationId ||
+          att.mandateDigest !== reviewCtx.mandateDigest ||
+          att.criteriaVersion !== reviewCtx.criteriaVersion ||
+          att.reviewedBy !== REVIEWER_SUBAGENT_TYPE
+        )
+          return;
+
+        const promptHash = hashText(prompt);
+        const findingsHash = hashFindings(reviewerResult.findings);
+
+        // Check reuse before creating evidence. If the same subagent session
+        // or findings were already used, block the output and do NOT inject findings.
+        const currentAssurance = ensureReviewAssurance(sessionState.reviewAssurance);
+        if (
+          hasEvidenceReuse(currentAssurance.invocations, reviewerResult.sessionId, findingsHash)
+        ) {
+          await deps.updateReviewAssurance(sessDir, (s) =>
+            updateObligation(s, reviewCtx.obligationId, (item) => ({
+              ...item,
+              status: 'blocked',
+              blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+            })),
+          );
+          output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+            obligationId: reviewCtx.obligationId,
+            reason: 'subagent findings already used for a prior obligation',
+          });
+          return;
+        }
+
+        // Atomically fulfill the obligation and append invocation evidence.
+        const invocation = buildInvocationEvidence({
+          obligationId: reviewCtx.obligationId,
+          obligationType: 'review',
+          parentSessionId: sessionId,
+          childSessionId: reviewerResult.sessionId,
+          promptHash,
+          findingsHash,
+          invokedAt: now,
+          fulfilledAt: now,
+          source: 'host-orchestrated',
+        });
+        await deps.updateReviewAssurance(sessDir, (s) => {
+          const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
+            ...item,
+            status: 'fulfilled',
+            invocationId: invocation.invocationId,
+            fulfilledAt: now,
+          }));
+          return {
+            ...updated,
+            reviewAssurance: appendInvocationEvidence(
+              ensureReviewAssurance(updated.reviewAssurance),
+              invocation,
+            ),
+          };
+        });
+      }
+
+      const mutated = buildReviewContentMutatedOutput(rawOutput, reviewerResult);
+      if (mutated) output.output = mutated;
+      return;
+    }
+
+    const obligationType = obligationTypeForTool(toolName);
+    if (!obligationType) {
+      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        reason: `unsupported reviewable tool for review orchestration: ${toolName}`,
+      });
+      deps.log.warn('orchestrator', 'unsupported reviewable tool — blocked', { tool: toolName });
+      return;
+    }
+
     strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
 
     await deps.updateReviewAssurance(sessDir, (s, now2) =>
@@ -147,7 +287,7 @@ export async function runReviewOrchestration(
       'review:obligation_created',
       {
         obligationId: reviewCtx.obligationId,
-        obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+        obligationType,
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
@@ -159,29 +299,72 @@ export async function runReviewOrchestration(
     const planText = sessionState.plan?.current?.body ?? '';
     const toolArgs = getToolArgs(input);
 
-    const prompt =
-      toolName === TOOL_FLOWGUARD_PLAN
-        ? buildPlanReviewPrompt({
-            planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
-            ticketText,
-            iteration: reviewCtx.iteration,
-            planVersion: reviewCtx.planVersion,
-            obligationId: reviewCtx.obligationId,
-            criteriaVersion: reviewCtx.criteriaVersion,
-            mandateDigest: reviewCtx.mandateDigest,
-          })
-        : buildImplReviewPrompt({
-            changedFiles: Array.isArray(parsedOutput.changedFiles)
-              ? (parsedOutput.changedFiles as string[])
-              : (sessionState.implementation?.changedFiles ?? []),
-            planText,
-            ticketText,
-            iteration: reviewCtx.iteration,
-            planVersion: reviewCtx.planVersion,
-            obligationId: reviewCtx.obligationId,
-            criteriaVersion: reviewCtx.criteriaVersion,
-            mandateDigest: reviewCtx.mandateDigest,
-          });
+    // P9c: select phase-specific stack profile rules for reviewer prompts.
+    // Uses selectReviewerProfileRules helper (phase → rules mapping).
+    const planRules = selectReviewerProfileRules(sessionState.activeProfile, 'PLAN_REVIEW');
+    const implRules = selectReviewerProfileRules(sessionState.activeProfile, 'IMPL_REVIEW');
+    const archRules = selectReviewerProfileRules(sessionState.activeProfile, 'ARCH_REVIEW');
+
+    // F13 slice 6: 3-way prompt selection by reviewable tool.
+    // The previous 2-way ternary defaulted any non-PLAN tool to the
+    // implementation prompt, which would have produced incorrect prompts
+    // for the architecture tool once it routes through this orchestrator
+    // (slice 7). The exhaustive switch surfaces unsupported tools as a
+    // typed error at the bottom rather than silently picking impl.
+    let prompt: string;
+    if (toolName === TOOL_FLOWGUARD_PLAN) {
+      prompt = buildPlanReviewPrompt({
+        planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+        ...planRules,
+      });
+    } else if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+      prompt = buildImplReviewPrompt({
+        changedFiles: Array.isArray(parsedOutput.changedFiles)
+          ? (parsedOutput.changedFiles as string[])
+          : (sessionState.implementation?.changedFiles ?? []),
+        planText,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+        ...implRules,
+      });
+    } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
+      const adrText =
+        typeof toolArgs.adrText === 'string'
+          ? toolArgs.adrText
+          : (sessionState.architecture?.adrText ?? '');
+      const adrTitle =
+        typeof toolArgs.title === 'string'
+          ? toolArgs.title
+          : (sessionState.architecture?.title ?? '');
+      prompt = buildArchitectureReviewPrompt({
+        adrText,
+        adrTitle,
+        ticketText,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        obligationId: reviewCtx.obligationId,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+        ...archRules,
+      });
+    } else {
+      // Unreachable: orchestrator is only entered when isReviewRequired()
+      // classified the tool as reviewable. Defensive fail-closed.
+      deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', {
+        tool: toolName,
+      });
+      return;
+    }
 
     deps.log.info('orchestrator', 'invoking reviewer subagent', {
       tool: toolName,
@@ -220,9 +403,13 @@ export async function runReviewOrchestration(
       } else {
         const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
         if (!parsedFindings.success && strictEnforcement) {
-          output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-            reason: 'reviewer response did not match ReviewFindings schema',
-          });
+          await deps.blockReviewOutcome(
+            { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
+            reviewCtx.obligationId,
+            'STRICT_REVIEW_ORCHESTRATION_FAILED',
+            { reason: 'reviewer response did not match ReviewFindings schema' },
+            output,
+          );
         }
 
         if (strictEnforcement && parsedFindings.success) {
@@ -247,6 +434,23 @@ export async function runReviewOrchestration(
               { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
               reviewCtx.obligationId,
               'SUBAGENT_MANDATE_MISMATCH',
+              { obligationId: reviewCtx.obligationId },
+              output,
+            );
+          } else if (parsedFindings.data.overallVerdict === 'unable_to_review') {
+            // P1.3 slice 4c: subagent declared the artifact unreviewable.
+            // The reviewer mandate has been satisfied (validity-conditions
+            // whitelist enforces preconditions in templates/reviewer-agent),
+            // but no convergence is possible. Per Decision C, the
+            // obligation IS consumed (no retry path) and the tool output
+            // is BLOCKED so that downstream automation cannot fabricate a
+            // converged artifact from an unreviewable verdict. SSOT reason
+            // SUBAGENT_UNABLE_TO_REVIEW (registered in slice 2) carries
+            // the operator-facing copy and recovery guidance.
+            await deps.blockReviewOutcome(
+              { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
+              reviewCtx.obligationId,
+              'SUBAGENT_UNABLE_TO_REVIEW',
               { obligationId: reviewCtx.obligationId },
               output,
             );
@@ -278,7 +482,7 @@ export async function runReviewOrchestration(
 
               const invocation = buildInvocationEvidence({
                 obligationId: reviewCtx.obligationId,
-                obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                obligationType,
                 parentSessionId: sessionId,
                 childSessionId: reviewerResult.sessionId,
                 promptHash,
@@ -286,8 +490,18 @@ export async function runReviewOrchestration(
                 invokedAt: now2,
                 fulfilledAt: now2,
               });
-              assurance.invocations.push(invocation);
-              return updateObligation(s, reviewCtx.obligationId, (item) => ({
+              // Use immutable appendInvocationEvidence instead of
+              // mutating ensureReviewAssurance()'s return via .push().
+              // Combine both operations (append invocation + update obligation)
+              // in a single immutable state build.
+              const withInvocation = {
+                ...s,
+                reviewAssurance: appendInvocationEvidence(
+                  ensureReviewAssurance(s.reviewAssurance),
+                  invocation,
+                ),
+              };
+              return updateObligation(withInvocation, reviewCtx.obligationId, (item) => ({
                 ...item,
                 status: 'fulfilled',
                 invocationId: invocation.invocationId,
@@ -306,7 +520,7 @@ export async function runReviewOrchestration(
                   }
                 : {
                     obligationId: reviewCtx.obligationId,
-                    obligationType: toolName === TOOL_FLOWGUARD_PLAN ? 'plan' : 'implement',
+                    obligationType,
                     parentSessionId: sessionId,
                     childSessionId: reviewerResult.sessionId,
                     agentType: REVIEWER_SUBAGENT_TYPE,

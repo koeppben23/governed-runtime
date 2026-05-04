@@ -1,3 +1,5 @@
+import { GOVERNANCE_RULES } from './shared-rules.js';
+
 export const CHECK_COMMAND = `
 ---
 description: Run validation checks on the current implementation evidence.
@@ -11,26 +13,16 @@ Run automated validation checks for the current implementation.
 
 ## Steps
 
-1. Call \`flowguard_status\` to verify a session exists.
-
-2. Call \`flowguard_validate\` with no arguments.
-
-3. Read the returned JSON and report:
-   - Which checks passed and which failed.
-   - Whether the workflow can proceed to the next governed step.
-   - The next action.
-
-## Constraints
-
-- DO NOT use the \`question\` tool or present selectable choices.
-- DO NOT substitute shell commands or direct file manipulation for FlowGuard tools.
-- DO NOT auto-chain to other FlowGuard commands after validation completes.
-- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
-- Always end your response with exactly one \`Next action:\` line.
-
+1. Call \`flowguard_status\` to verify a session exists and read \`activeChecks\`.
+2. If \`activeChecks\` is empty, report that no validation checks are active and do not call \`flowguard_validate\`.
+3. For each check in \`activeChecks\`, execute the validation and collect results.
+4. Call \`flowguard_validate({ results: [{ checkId: "<checkId>", passed: <true|false>, detail: "<message>" }] })\`.
+5. Report which checks passed, which failed, and whether the workflow can proceed.
+${GOVERNANCE_RULES}
 ## Done-when
 
-- Validation checks are run via flowguard_validate.
-- Check results and next action are reported to the user.
-- Response ends with exactly one \`Next action:\` line.
+- If \`activeChecks\` is empty: report no active checks and do not call flowguard_validate.
+- Validation checks run via flowguard_validate with explicit results.
+- Results and next action reported.
+- Response ends with \`Next action:\` line.
 `;

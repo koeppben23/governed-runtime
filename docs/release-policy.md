@@ -30,8 +30,15 @@ FlowGuard uses [Semantic Versioning](https://semver.org/):
 | Version   | Example | Meaning                                   |
 | --------- | ------- | ----------------------------------------- |
 | **Major** | 2.0.0   | Breaking changes — check release notes    |
-| **Minor** | 1.0.0   | New features — test before production use |
-| **Patch** | 1.0.0   | Bug fixes — typically compatible          |
+| **Minor** | 1.1.0   | New features — test before production use |
+| **Patch** | 1.0.1   | Bug fixes — typically compatible          |
+
+#### Breaking Governance Changes
+
+The following are considered breaking governance semantics changes (major version bump):
+
+- **Mandatory independent subagent review**: Self-review evidence is no longer accepted for governed plan/implementation loops. FlowGuard now requires mandatory independent subagent review by default, and weaker legacy snapshots are normalized to strict mode. (v1.2.0 → v2.0.0 candidate)
+- **Policy snapshot normalization**: Weaker `selfReview` config values (`subagentEnabled: false`, `fallbackToSelf: true`, `strictEnforcement: false`) are normalized to mandatory strict at load time.
 
 ### Version Lifecycle
 
@@ -141,12 +148,14 @@ Organizations should maintain:
 
 ```
 /artifact-store/
-├── flowguard-core-1.2.0
-├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0   (current)
+├── flowguard-core-1.2.0        (previous)
+├── flowguard-core-1.2.0        (rollback)
 ├── checksums.sha256
 └── release-notes/
     ├── v1.2.0.md
-    └── 1.0.0.md
+    ├── v1.1.0.md
+    └── v1.0.0.md
 ```
 
 ---
@@ -160,5 +169,5 @@ For release-related questions:
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

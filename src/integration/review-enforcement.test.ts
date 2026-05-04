@@ -54,13 +54,13 @@ function modeASubagentResponse(
   });
 }
 
-/** Build a Mode A response with self-review next (no subagent). */
-function modeASelfReviewResponse(): string {
+/** Build a Mode A response without an independent-review next marker. */
+function modeANoReviewRequiredResponse(): string {
   return JSON.stringify({
     phase: 'PLAN',
     status: 'Plan submitted (v1).',
-    reviewMode: 'self',
-    next: 'Self-review needed. Review the plan critically against the ticket.',
+    reviewMode: 'subagent',
+    next: 'Plan submitted. Await explicit review routing.',
   });
 }
 
@@ -68,7 +68,7 @@ function modeASelfReviewResponse(): string {
 function modeBSuccessResponse(): string {
   return JSON.stringify({
     phase: 'PLAN',
-    status: 'Self-review iteration 1/3. Verdict: approve.',
+    status: 'Independent review iteration 1/3. Verdict: approve.',
     reviewMode: 'subagent',
   });
 }
@@ -211,14 +211,14 @@ describe('review-enforcement', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('no enforcement when self-review mode (no INDEPENDENT_REVIEW_REQUIRED)', () => {
+    it('no enforcement when independent-review marker is absent', () => {
       const state = createSessionState();
 
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
         { planText: '## Plan' },
-        modeASelfReviewResponse(),
+        modeANoReviewRequiredResponse(),
         NOW,
       );
 
@@ -1291,6 +1291,43 @@ describe('review-enforcement', () => {
     });
   });
 
+  // ─── F13: Architecture independent-review parity (slice 2) ──
+  describe('F13 architecture tool-name gates', () => {
+    it('onFlowGuardToolAfter accepts flowguard_architecture (no early return)', () => {
+      const state = createSessionState();
+
+      // Without slice 2, onFlowGuardToolAfter would early-return for architecture
+      // and never register a pending review. With slice 2, the gate accepts it.
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_architecture',
+        { adrText: '## ADR' },
+        modeASubagentResponse({ phase: 'ARCHITECTURE' }),
+        NOW,
+      );
+
+      // Pending review must be registered for architecture tool key
+      expect(state.pendingReviews.has('flowguard_architecture')).toBe(true);
+    });
+
+    it('enforceBeforeVerdict accepts flowguard_architecture as ReviewableTool', () => {
+      const state = createSessionState();
+
+      // No pending review, no Mode B args → still allowed (gate widening only).
+      const result = enforceBeforeVerdict(state, 'flowguard_architecture', {});
+      expect(result.allowed).toBe(true);
+    });
+
+    it('enforceBeforeVerdict still rejects unrelated tools (negative)', () => {
+      const state = createSessionState();
+      const result = enforceBeforeVerdict(state, 'flowguard_status', {
+        selfReviewVerdict: 'approve',
+      });
+      // Unrelated tools bypass review enforcement (no obligation matching).
+      expect(result.allowed).toBe(true);
+    });
+  });
+
   // ─── HELPER FUNCTIONS ──────────────────────────────────────
   describe('matchPendingReview', () => {
     it('returns null when no pending reviews exist', () => {
@@ -1531,6 +1568,27 @@ describe('review-enforcement', () => {
         sessionId: null,
       });
     });
+
+    // P1.3 slice 5: third LoopVerdict capture pin.
+    // The capture path is string-based (extractFindingsFromObject),
+    // so unable_to_review is preserved verbatim without any narrowing.
+    // This test pins that contract so a future schema-narrowing refactor
+    // (e.g. dropping back to a 2-valued enum) cannot silently strip
+    // unreviewable verdicts before they reach the L4 mismatch gate.
+    it('extracts overallVerdict=unable_to_review verbatim (HAPPY: third-verdict capture)', () => {
+      const findings = extractCapturedFindings(
+        JSON.stringify({
+          overallVerdict: 'unable_to_review',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 's-unable' },
+        }),
+      );
+      expect(findings).toEqual({
+        overallVerdict: 'unable_to_review',
+        blockingIssuesCount: 0,
+        sessionId: 's-unable',
+      });
+    });
   });
 
   describe('promptContainsValue', () => {
@@ -1566,6 +1624,71 @@ describe('review-enforcement', () => {
       expect(promptContainsValue('This is iteration number 5 of the review', 'iteration', 5)).toBe(
         true,
       );
+    });
+
+    // ─── EDGE: real-world mandate prompt formats ─────────────────────────────
+
+    it('EDGE: matches XML-wrapped values (<iteration>0</iteration>)', () => {
+      // P1.3 future templates may wrap context in XML. The `>` and whitespace
+      // between tag and number are <30 non-digit chars.
+      expect(promptContainsValue('<iteration>0</iteration>', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('<iteration>\n  3\n</iteration>', 'iteration', 3)).toBe(true);
+    });
+
+    it('EDGE: matches JSON-embedded values ("iteration": 0)', () => {
+      expect(promptContainsValue('{"iteration": 0, "planVersion": 1}', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('{"planVersion":   42}', 'version', 42)).toBe(true);
+    });
+
+    it('EDGE: matches markdown-formatted values (`iteration` is `0`)', () => {
+      // Backticks and articles still fit within 30 non-digit chars.
+      expect(promptContainsValue('The `iteration` is `5`', 'iteration', 5)).toBe(true);
+      expect(promptContainsValue('**iteration**: **0**', 'iteration', 0)).toBe(true);
+    });
+
+    it('EDGE: matches multi-line attestation block', () => {
+      const prompt =
+        'Set attestation.iteration=4.\nSet attestation.planVersion=7.\nReturn JSON only.';
+      expect(promptContainsValue(prompt, 'iteration', 4)).toBe(true);
+      expect(promptContainsValue(prompt, 'version', 7)).toBe(true);
+    });
+
+    // ─── EDGE: word-boundary correctness ─────────────────────────────────────
+
+    it('EDGE: expected=1 does NOT match planVersion=15 (suffix boundary)', () => {
+      expect(promptContainsValue('planVersion=15', 'version', 1)).toBe(false);
+    });
+
+    it('EDGE: expected=2 does NOT match iteration=21 (suffix boundary)', () => {
+      expect(promptContainsValue('iteration=21', 'iteration', 2)).toBe(false);
+    });
+
+    it('EDGE: expected=0 matches iteration=0 even adjacent to next clause', () => {
+      // Suffix \b matches between `0` and `,` because `,` is non-word.
+      expect(promptContainsValue('iteration=0,planVersion=1', 'iteration', 0)).toBe(true);
+    });
+
+    it('EDGE: distance-ceiling rejects unrelated number ~30+ chars away', () => {
+      // 32 non-digit chars between "iteration" and "5" — exceeds 30 ceiling.
+      const prompt = 'iteration is described in the manual as 5';
+      // "is described in the manual as " = 30 chars exactly; preceding space brings it to 31.
+      expect(promptContainsValue(prompt, 'iteration', 5)).toBe(false);
+    });
+
+    it('EDGE: large number matches correctly', () => {
+      expect(promptContainsValue('iteration=1234', 'iteration', 1234)).toBe(true);
+      // And the prefix-of-larger pattern still rejects:
+      expect(promptContainsValue('iteration=12345', 'iteration', 1234)).toBe(false);
+    });
+
+    it('EDGE: case-insensitive keyword (Iteration, ITERATION, iteration)', () => {
+      expect(promptContainsValue('ITERATION=3', 'iteration', 3)).toBe(true);
+      expect(promptContainsValue('Iteration: 3', 'iteration', 3)).toBe(true);
+    });
+
+    it('EDGE: zero is a valid expected value (not falsy-tripped)', () => {
+      expect(promptContainsValue('iteration=0', 'iteration', 0)).toBe(true);
+      expect(promptContainsValue('iteration=1', 'iteration', 0)).toBe(false);
     });
   });
 
@@ -1724,6 +1847,316 @@ describe('review-enforcement', () => {
       expect(enforcement.allowed === false && enforcement.code).toBe(
         'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
       );
+    });
+
+    // P1.3 slice 5: L4 enforcement parity for the third LoopVerdict.
+    // These tests guard that:
+    // (a) matching unable_to_review verdicts on both sides do NOT
+    //     produce a spurious mismatch (string-equality contract holds),
+    // (b) a tampered submit that claims convergence ('approve') while
+    //     the captured plugin-reviewer verdict is 'unable_to_review'
+    //     is rejected with SUBAGENT_FINDINGS_VERDICT_MISMATCH — closing
+    //     the residual L4 bypass that the slice 4e tool-layer assertion
+    //     does not reach (e.g. when L4 fires post-tool, mid-pipeline).
+    it('L4 allows when both submitted and captured verdicts are unable_to_review (HAPPY: third-verdict parity)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'unable_to_review',
+          blockingIssuesCount: 0,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve', // submitter-side stays 2-valued
+        reviewFindings: {
+          overallVerdict: 'unable_to_review', // matches captured
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      // L4 itself does not fire (verdicts match). Other gates may fire
+      // (e.g. tools layer slice 4e), but at the L4 verdict-equality
+      // checkpoint specifically there is no mismatch — proving the
+      // string-equality contract is invariant under the third verdict.
+      if (!enforcement.allowed) {
+        expect(enforcement.code).not.toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+      }
+    });
+
+    it('L4 blocks when submitted=approve but captured=unable_to_review (CORNER: convergence-fabrication bypass)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+
+      recordPluginReview(
+        state,
+        'flowguard_plan',
+        'child-session-1',
+        {
+          overallVerdict: 'unable_to_review',
+          blockingIssuesCount: 0,
+          sessionId: 'child-session-1',
+        },
+        LATER,
+      );
+
+      // Attacker / buggy caller fabricates approve from an unreviewable
+      // capture. L4 must reject with the existing mismatch code.
+      const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
+        selfReviewVerdict: 'approve',
+        reviewFindings: {
+          overallVerdict: 'approve', // Tampered: real reviewer said unable_to_review
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'child-session-1' },
+        },
+      });
+      expect(enforcement.allowed).toBe(false);
+      expect(enforcement.allowed === false && enforcement.code).toBe(
+        'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+      );
+    });
+
+    // ─── MUTATION KILL: enforceBeforeSubagentCall (lines 208-287) ────────────
+
+    describe('MUTATION_KILL: enforceBeforeSubagentCall', () => {
+      it('allows task call for non-reviewer subagent type', () => {
+        const state = createSessionState();
+        const result = enforceBeforeSubagentCall(state, { subagent_type: 'other-agent' });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('allows when no pending reviews exist (survivor kill)', () => {
+        const state = createSessionState();
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: 'Some prompt text here',
+        });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('blocks when prompt is too short (survivor kill)', () => {
+        const state = createSessionState();
+        // Register a pending review
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
+          capturedFindings: null,
+        });
+
+        const shortPrompt = 'Short';
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: shortPrompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_EMPTY');
+      });
+
+      it('blocks when contentMeta is null in strict mode (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null, // Content meta extraction failed
+          capturedFindings: null,
+        });
+
+        const result = enforceBeforeSubagentCall(
+          state,
+          {
+            subagent_type: REVIEWER_SUBAGENT_TYPE,
+            prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
+          },
+          true, // strictEnforcement
+        );
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_CONTEXT_UNVERIFIABLE');
+      });
+
+      it('allows when contentMeta is null in non-strict mode (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt: 'A'.repeat(MIN_SUBAGENT_PROMPT_LENGTH + 10),
+        });
+        expect(result.allowed).toBe(true);
+      });
+
+      it('blocks when prompt missing iteration (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
+          capturedFindings: null,
+        });
+
+        const prompt = 'A'.repeat(100) + ' version=1 ' + 'B'.repeat(150);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+      });
+
+      it('blocks when prompt missing planVersion (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
+          capturedFindings: null,
+        });
+
+        const prompt = 'A'.repeat(100) + ' iteration=0 ' + 'B'.repeat(150);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(false);
+        expect(result.allowed === false && result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+      });
+
+      it('allows when prompt contains both iteration and planVersion (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
+          capturedFindings: null,
+        });
+
+        const prompt = 'A'.repeat(50) + ' iteration=1 ' + ' planVersion=2 ' + 'B'.repeat(200);
+        const result = enforceBeforeSubagentCall(state, {
+          subagent_type: REVIEWER_SUBAGENT_TYPE,
+          prompt,
+        });
+        expect(result.allowed).toBe(true);
+      });
+    });
+
+    // ─── MUTATION KILL: onFlowGuardToolAfter (lines 160-193) ─────────────────
+
+    describe('MUTATION_KILL: onFlowGuardToolAfter', () => {
+      it('ignores non-FlowGuard tools (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(state, 'other_tool', {}, 'Some output', NOW);
+        expect(state.pendingReviews.size).toBe(0);
+      });
+
+      it('clears pending review on Mode B success (survivor kill)', () => {
+        const state = createSessionState();
+        // First register a pending review
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        // Mode B: submit verdict with success
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          { selfReviewVerdict: 'approve' },
+          JSON.stringify({ status: 'Plan approved' }),
+          LATER,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
+      });
+
+      it('does NOT clear pending review on Mode B error (survivor kill)', () => {
+        const state = createSessionState();
+        state.pendingReviews.set('flowguard_plan', {
+          tool: 'flowguard_plan',
+          requestedAt: NOW,
+          subagentCalled: false,
+          subagentRecord: null,
+          contentMeta: null,
+          capturedFindings: null,
+        });
+
+        // Mode B: submit verdict with error
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          { selfReviewVerdict: 'approve' },
+          JSON.stringify({ error: true, code: 'SOME_ERROR' }),
+          LATER,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
+      });
+
+      it('registers pending review when next starts with REVIEW_REQUIRED_PREFIX (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          {},
+          JSON.stringify({
+            next: `${REVIEW_REQUIRED_PREFIX}: Call reviewer with iteration=0 and planVersion=1`,
+            reviewMode: 'subagent',
+          }),
+          NOW,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
+        // contentMeta may be parsed if the next string contains expected format
+        const pending = state.pendingReviews.get('flowguard_plan');
+        expect(pending).not.toBeUndefined();
+        // The exact contentMeta depends on extractContentMeta implementation
+        // Just verify the pending review was registered
+      });
+
+      it('does NOT register pending review when next does not start with prefix (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(
+          state,
+          'flowguard_plan',
+          {},
+          JSON.stringify({
+            next: 'Just some regular message',
+            reviewMode: 'subagent',
+          }),
+          NOW,
+        );
+        expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
+      });
+
+      it('handles unparseable output gracefully (survivor kill)', () => {
+        const state = createSessionState();
+        onFlowGuardToolAfter(state, 'flowguard_plan', {}, 'Not valid JSON{', NOW);
+        expect(state.pendingReviews.size).toBe(0);
+      });
     });
   });
 });

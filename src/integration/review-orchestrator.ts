@@ -12,7 +12,7 @@
  * hook calls this orchestrator when a FlowGuard tool response signals
  * INDEPENDENT_REVIEW_REQUIRED. The orchestrator:
  *
- * 1. Builds a structured prompt with plan/implementation text and context
+ * 1. Builds a structured prompt with plan/architecture/implementation text and context
  * 2. Creates a child session via client.session.create()
  * 3. Sends the prompt to the flowguard-reviewer agent via client.session.prompt()
  * 4. Parses the reviewer's JSON ReviewFindings response
@@ -36,15 +36,15 @@
  */
 
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
-import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
   properties: {
     iteration: { type: 'integer', minimum: 0 },
     planVersion: { type: 'integer', minimum: 1 },
-    reviewMode: { type: 'string', enum: ['subagent', 'self'] },
-    overallVerdict: { type: 'string', enum: ['approve', 'changes_requested'] },
+    reviewMode: { type: 'string', const: 'subagent' },
+    overallVerdict: { type: 'string', enum: ['approve', 'changes_requested', 'unable_to_review'] },
     blockingIssues: {
       type: 'array',
       items: {
@@ -88,7 +88,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
         actorSource: { type: 'string', enum: ['env', 'git', 'claim', 'unknown'] },
         actorAssurance: {
           type: 'string',
-          enum: ['best_effort', 'claim_validated', 'idp_verified'],
+          enum: ['verified', 'best_effort', 'claim_validated', 'idp_verified'],
         },
       },
       required: ['sessionId'],
@@ -99,7 +99,13 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
       properties: {
         mandateDigest: { type: 'string' },
         criteriaVersion: { type: 'string' },
-        toolObligationId: { type: 'string' },
+        toolObligationId: {
+          type: 'string',
+          // RFC 4122 UUID pattern. Must stay in sync with z.string().uuid() in
+          // src/state/evidence.ts ReviewAttestation.toolObligationId.
+          // Drift guard: src/integration/review-findings-schema-drift.test.ts.
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+        },
         iteration: { type: 'integer', minimum: 0 },
         planVersion: { type: 'integer', minimum: 1 },
         reviewedBy: { type: 'string', const: REVIEWER_SUBAGENT_TYPE },
@@ -186,6 +192,10 @@ export interface PlanReviewPromptOpts {
   readonly criteriaVersion: string;
   /** Strict mandate digest. */
   readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java", "angular-frontend"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for PLAN_REVIEW. P9c. */
+  readonly profileRules?: string;
 }
 
 /** Options for building an implementation review prompt. */
@@ -206,6 +216,38 @@ export interface ImplReviewPromptOpts {
   readonly criteriaVersion: string;
   /** Strict mandate digest. */
   readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for IMPL_REVIEW. P9c. */
+  readonly profileRules?: string;
+}
+
+/** Options for building an architecture (ADR) review prompt. F13 slice 6. */
+export interface ArchitectureReviewPromptOpts {
+  /** The ADR text to review (full MADR markdown body). */
+  readonly adrText: string;
+  /** Short title of the architecture decision. */
+  readonly adrTitle: string;
+  /** The ticket text for context. */
+  readonly ticketText: string;
+  /** The current self-review iteration (0-based). */
+  readonly iteration: number;
+  /**
+   * The plan version number. For architecture obligations there is no plan
+   * artifact; we use planVersion=1 for the initial submission and increment
+   * for revisions, mirroring the plan/architecture/implement convention.
+   */
+  readonly planVersion: number;
+  /** Strict review obligation identifier. */
+  readonly obligationId: string;
+  /** Strict criteria version string. */
+  readonly criteriaVersion: string;
+  /** Strict mandate digest. */
+  readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for ARCH_REVIEW. P9c. */
+  readonly profileRules?: string;
 }
 
 /** Result of a successful reviewer invocation. */
@@ -241,6 +283,46 @@ const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
 /**
+ * Build a Stack Profile section for reviewer prompts.
+ * Returns empty string if no profile data is available (null-safe).
+ *
+ * P9c: injects phase-specific stack guidance so the reviewer receives
+ * stack review rules relevant to the current workflow phase.
+ */
+function buildStackProfileSection(
+  profileName: string | undefined,
+  profileRules: string | undefined,
+): string {
+  if (!profileName && !profileRules) return '';
+  const lines: string[] = [];
+  if (profileName) {
+    lines.push('## Active Stack Profile', '', profileName, '');
+  }
+  if (profileRules) {
+    lines.push('## Stack Review Rules', '', profileRules, '');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Select phase-specific reviewer profile rules from the session state.
+ *
+ * P9c: mapping between workflow phases and phaseRuleContent slots ensures
+ * each reviewer prompt gets the correct stack guidance for PLAN_REVIEW,
+ * IMPL_REVIEW, ARCH_REVIEW, and REVIEW phases.
+ */
+export function selectReviewerProfileRules(
+  activeProfile: { name: string; phaseRuleContent?: Record<string, string> } | null | undefined,
+  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
+): { profileName?: string; profileRules?: string } {
+  if (!activeProfile) return {};
+  return {
+    profileName: activeProfile.name,
+    profileRules: activeProfile.phaseRuleContent?.[phase],
+  };
+}
+
+/**
  * Build a prompt for plan review by the flowguard-reviewer subagent.
  *
  * The prompt includes all context needed for a meaningful review:
@@ -259,7 +341,10 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     obligationId,
     criteriaVersion,
     mandateDigest,
+    profileName,
+    profileRules,
   } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
   return [
     `You are reviewing a plan for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -271,6 +356,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     '',
     planText,
     '',
+    ...(stackSection ? [stackSection, ''] : []),
     '## Instructions',
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
@@ -280,6 +366,8 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
@@ -300,7 +388,10 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     obligationId,
     criteriaVersion,
     mandateDigest,
+    profileName,
+    profileRules,
   } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
   return [
     `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -316,6 +407,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     '',
     changedFiles.map((f) => `- ${f}`).join('\n'),
     '',
+    ...(stackSection ? [stackSection, ''] : []),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
@@ -326,6 +418,67 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     `Set attestation.toolObligationId=${obligationId}.`,
     `Set attestation.criteriaVersion=${criteriaVersion}.`,
     `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
+    'Set attestation.reviewedBy="flowguard-reviewer".',
+  ].join('\n');
+}
+
+/**
+ * Build a prompt for architecture (ADR) review by the flowguard-reviewer subagent.
+ *
+ * F13 slice 6: parity with plan/impl review prompts. The prompt structure
+ * mirrors buildPlanReviewPrompt (no changedFiles section, since an ADR is
+ * a self-contained document) but instructs the subagent to apply the
+ * "For Architecture Decisions (ADRs)" review-criteria section added to
+ * REVIEWER_AGENT in F13 slice 4.
+ *
+ * The ticket text is included for scope-creep verification (Out-of-scope
+ * clarity is a documented ADR review dimension).
+ *
+ * @param opts - Architecture review context
+ * @returns Prompt text string
+ */
+export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts): string {
+  const {
+    adrText,
+    adrTitle,
+    ticketText,
+    iteration,
+    planVersion,
+    obligationId,
+    criteriaVersion,
+    mandateDigest,
+    profileName,
+    profileRules,
+  } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
+  return [
+    `You are reviewing an architecture decision (ADR) for iteration=${iteration}, planVersion=${planVersion}.`,
+    '',
+    '## Ticket',
+    '',
+    ticketText,
+    '',
+    `## ADR to Review: ${adrTitle}`,
+    '',
+    adrText,
+    '',
+    ...(stackSection ? [stackSection, ''] : []),
+    '## Instructions',
+    '',
+    'Review this ADR against the ticket and your review criteria for Architecture',
+    'Decisions (ADRs). Focus on problem framing, alternatives considered, decision',
+    'rationale, consequences, reversibility, compatibility, out-of-scope clarity,',
+    'and verification path. Use the read/glob/grep tools to verify any claims about',
+    'existing files, schemas, or contracts referenced in the ADR.',
+    'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    `Set iteration=${iteration} and planVersion=${planVersion} in your response.`,
+    `Set attestation.toolObligationId=${obligationId}.`,
+    `Set attestation.criteriaVersion=${criteriaVersion}.`,
+    `Set attestation.mandateDigest=${mandateDigest}.`,
+    `Set attestation.iteration=${iteration}.`,
+    `Set attestation.planVersion=${planVersion}.`,
     'Set attestation.reviewedBy="flowguard-reviewer".',
   ].join('\n');
 }
@@ -386,76 +539,23 @@ export async function invokeReviewer(
     return null;
   }
 
+  // Authoritative session ID injection: the subagent cannot reliably know its
+  // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
+  // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
+  // failures caused by the subagent guessing or using a placeholder literal.
+  const findings = info.structured_output as Record<string, unknown>;
+  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
+  if (reviewedBy && typeof reviewedBy === 'object') {
+    reviewedBy.sessionId = childSessionId;
+  } else {
+    findings.reviewedBy = { sessionId: childSessionId };
+  }
+
   return {
     sessionId: childSessionId,
-    rawResponse: JSON.stringify(info.structured_output),
-    findings: info.structured_output as Record<string, unknown>,
+    rawResponse: JSON.stringify(findings),
+    findings,
   };
-}
-
-// ─── Response Parsing ────────────────────────────────────────────────────────
-
-/**
- * Extract text content from response parts array.
- *
- * The SDK returns an array of Part objects. We concatenate all text
- * parts to get the full response. Handles various Part shapes defensively.
- *
- * @param parts - Response parts array from SDK
- * @returns Concatenated text content, or null if no text found
- */
-export function extractResponseText(
-  parts: Array<{ type?: string; text?: string }> | undefined | null,
-): string | null {
-  if (!parts || !Array.isArray(parts)) return null;
-
-  const textParts: string[] = [];
-  for (const part of parts) {
-    if (part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string') {
-      textParts.push(part.text);
-    }
-  }
-
-  const combined = textParts.join('').trim();
-  return combined.length > 0 ? combined : null;
-}
-
-/**
- * Parse ReviewFindings JSON from the reviewer's response text.
- *
- * The reviewer is instructed to return exactly one JSON object.
- * However, the response might contain surrounding text. We try:
- * 1. Direct JSON parse of the full text
- * 2. Find and parse the first JSON block containing overallVerdict
- *
- * @param responseText - Raw response text from the reviewer
- * @returns Parsed findings object, or null if parsing fails
- */
-export function parseReviewerFindings(responseText: string): Record<string, unknown> | null {
-  // Try 1: Direct JSON parse
-  try {
-    const parsed = JSON.parse(responseText) as unknown;
-    if (isValidFindings(parsed)) return parsed as Record<string, unknown>;
-  } catch {
-    // Not clean JSON — try extraction
-  }
-
-  // Try 2: Find JSON block with overallVerdict
-  const jsonMatch = responseText.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
-  if (jsonMatch) {
-    const startIdx = responseText.indexOf(jsonMatch[0]);
-    const candidate = extractJsonBlock(responseText, startIdx);
-    if (candidate) {
-      try {
-        const parsed = JSON.parse(candidate) as unknown;
-        if (isValidFindings(parsed)) return parsed as Record<string, unknown>;
-      } catch {
-        // Parse failed
-      }
-    }
-  }
-
-  return null;
 }
 
 // ─── Output Mutation ─────────────────────────────────────────────────────────
@@ -488,12 +588,46 @@ export function buildMutatedOutput(
     parsed.next =
       `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
       `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-      `_pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
+      `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
       `overallVerdict, and include the reviewFindings object from ` +
-      `_pluginReviewFindings in your flowguard_plan or flowguard_implement call.`;
+      `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
 
     // Inject structured findings
-    parsed._pluginReviewFindings = reviewerResult.findings;
+    parsed.pluginReviewFindings = reviewerResult.findings;
+    parsed._pluginReviewSessionId = reviewerResult.sessionId;
+
+    return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build mutated output for content-aware standalone /review.
+ *
+ * Unlike buildMutatedOutput (which injects a self-review verdict instruction
+ * for /plan, /architecture, /implement), this injects pluginReviewFindings
+ * and instructs the agent to re-call flowguard_review with the same content
+ * input and analysisFindings set to the injected findings.
+ */
+export function buildReviewContentMutatedOutput(
+  originalOutput: string,
+  reviewerResult: ReviewerResult,
+): string | null {
+  if (!reviewerResult.findings) return null;
+
+  try {
+    const parsed = JSON.parse(originalOutput) as Record<string, unknown>;
+
+    parsed.next =
+      `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
+      `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
+      `pluginReviewFindings. Call flowguard_review again with the same content ` +
+      `input (prNumber/branch/url/text) and set analysisFindings to the ` +
+      `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
+      `Include attestation.toolObligationId from requiredReviewAttestation.`;
+
+    parsed.pluginReviewFindings = reviewerResult.findings;
     parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
     return JSON.stringify(parsed);
@@ -510,11 +644,23 @@ export function buildMutatedOutput(
  * @param toolOutput - Raw tool output string
  * @returns true if the output contains the review-required signal
  */
-export function isReviewRequired(toolOutput: string): boolean {
+export function isReviewRequired(toolOutput: string, toolName?: string): boolean {
   try {
     const parsed = JSON.parse(toolOutput) as Record<string, unknown>;
     const next = typeof parsed.next === 'string' ? parsed.next : '';
-    return next.startsWith(REVIEW_REQUIRED_PREFIX);
+    if (next.startsWith(REVIEW_REQUIRED_PREFIX)) return true;
+    // Standalone /review: blocked with CONTENT_ANALYSIS_REQUIRED + requiredReviewAttestation.
+    // Narrow to TOOL_FLOWGUARD_REVIEW only — other tools may return this code
+    // for unrelated reasons.
+    if (
+      toolName === TOOL_FLOWGUARD_REVIEW &&
+      parsed.error === true &&
+      parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+      typeof parsed.requiredReviewAttestation === 'object'
+    ) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -526,7 +672,7 @@ export function isReviewRequired(toolOutput: string): boolean {
  * Parses the iteration and planVersion from the `next` field,
  * and extracts other context needed for prompt building.
  *
- * @param toolName - 'flowguard_plan' or 'flowguard_implement'
+ * @param toolName - 'flowguard_plan', 'flowguard_architecture', or 'flowguard_implement'
  * @param toolOutput - Parsed tool output object
  * @returns Review context or null if extraction fails
  */
@@ -540,7 +686,26 @@ export function extractReviewContext(
   criteriaVersion: string;
   mandateDigest: string;
 } | null {
-  // P1a: Prefer structured reviewObligation object, fall back to flat fields,
+  // Standalone /review: extract review context from requiredReviewAttestation
+  // embedded in the blocked CONTENT_ANALYSIS_REQUIRED response.
+  // iteration and planVersion are the obligation defaults (1/1).
+  if (toolName === TOOL_FLOWGUARD_REVIEW) {
+    const att = toolOutput.requiredReviewAttestation as Record<string, unknown> | undefined;
+    if (!att) return null;
+    const obligationId = typeof att.toolObligationId === 'string' ? att.toolObligationId : '';
+    const mandateDigest = typeof att.mandateDigest === 'string' ? att.mandateDigest : '';
+    const criteriaVersion = typeof att.criteriaVersion === 'string' ? att.criteriaVersion : '';
+    if (!obligationId || !mandateDigest || !criteriaVersion) return null;
+    return {
+      iteration: 1,
+      planVersion: 1,
+      obligationId,
+      criteriaVersion,
+      mandateDigest,
+    };
+  }
+
+  // Generic plan/implement/architecture extraction.
   // then to regex extraction from next text for backward compatibility.
   const obl = toolOutput.reviewObligation as
     | {
@@ -603,53 +768,60 @@ export function extractReviewContext(
   return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
 }
 
-// ─── Internal helpers ────────────────────────────────────────────────────────
-
-/** Check if a parsed object looks like valid ReviewFindings. */
-function isValidFindings(obj: unknown): boolean {
-  if (!obj || typeof obj !== 'object') return false;
-  const record = obj as Record<string, unknown>;
-  return (
-    typeof record.overallVerdict === 'string' &&
-    (record.overallVerdict === 'approve' || record.overallVerdict === 'changes_requested') &&
-    Array.isArray(record.blockingIssues)
-  );
-}
-
 /**
- * Extract a complete JSON block starting from a given index.
- * Counts braces to find the matching closing brace.
+ * Build a review prompt for content-aware standalone /review.
+ * Used by the plugin-orchestrator when it detects a CONTENT_ANALYSIS_REQUIRED
+ * blocked response with requiredReviewAttestation.
+ *
+ * Unlike buildPlanReviewPrompt / buildImplReviewPrompt / buildArchitectureReviewPrompt
+ * which wrap artifact-specific context, this prompt presents arbitrary external
+ * content (PR diff, branch diff, URL content, or manual text) for subagent analysis.
  */
-function extractJsonBlock(text: string, startIdx: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
 
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i]!;
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\' && inString) {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-
-    if (ch === '{') depth++;
-    if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIdx, i + 1);
-      }
-    }
+export function buildReviewContentPrompt(opts: {
+  content: string;
+  ticketText: string;
+  obligationId: string;
+  mandateDigest: string;
+  criteriaVersion: string;
+  iteration: number;
+  planVersion: number;
+  /** Active stack profile name. P9c. */
+  profileName?: string;
+  /** Phase-specific stack review rules for REVIEW. P9c. */
+  profileRules?: string;
+}): string {
+  const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
+  const lines: string[] = [
+    'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',
+    'Review the following content for issues, risks, and missing verification.',
+    'Obligation: ' + opts.obligationId,
+    'Iteration: ' + String(opts.iteration) + ', PlanVersion: ' + String(opts.planVersion),
+    '',
+    'ATTESTATION (include these exact values in your ReviewFindings output):',
+    '  reviewedBy: "' + REVIEWER_SUBAGENT_TYPE + '"',
+    '  mandateDigest: "' + opts.mandateDigest + '"',
+    '  criteriaVersion: "' + opts.criteriaVersion + '"',
+    '  toolObligationId: "' + opts.obligationId + '"',
+    '',
+  ];
+  if (opts.ticketText) {
+    lines.push('Ticket context: ' + opts.ticketText, '');
   }
-
-  return null;
+  if (stackSection) {
+    lines.push(stackSection, '');
+  }
+  lines.push(
+    'CONTENT TO REVIEW:',
+    '```',
+    opts.content,
+    '```',
+    '',
+    'Return a complete ReviewFindings JSON object (no markdown fences, no extra text).',
+    'Fields: reviewMode: "subagent", iteration, planVersion, overallVerdict,',
+    '  blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns,',
+    '  reviewedBy: { sessionId }, reviewedAt, attestation.',
+    'Use ONLY these categories: completeness, correctness, feasibility, risk, quality.',
+  );
+  return lines.join('\n');
 }

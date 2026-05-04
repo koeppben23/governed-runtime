@@ -14,7 +14,10 @@ import {
   emptyReviewAssurance,
   ensureReviewAssurance,
   createReviewObligation,
+  appendReviewObligation,
+  reviewObligationResponseFields,
   findLatestObligation,
+  consumeReviewObligation,
   hashText,
   hashFindings,
   buildInvocationEvidence,
@@ -122,6 +125,44 @@ describe('integration/review-assurance', () => {
     });
   });
 
+  describe('appendReviewObligation', () => {
+    it('appends a pending obligation while preserving invocations', () => {
+      const invocation = makeInvocation();
+      const obligation = makeObligation();
+      const result = appendReviewObligation(
+        { obligations: [], invocations: [invocation] },
+        obligation,
+      );
+
+      expect(result.obligations).toEqual([obligation]);
+      expect(result.invocations).toEqual([invocation]);
+    });
+
+    it('returns ensured assurance unchanged when obligation is null', () => {
+      const result = appendReviewObligation(undefined, null);
+      expect(result).toEqual({ obligations: [], invocations: [] });
+    });
+  });
+
+  describe('reviewObligationResponseFields', () => {
+    it('builds nested and flat compatibility response fields', () => {
+      const obligation = makeObligation({ obligationType: 'architecture', iteration: 2 });
+      const result = reviewObligationResponseFields(obligation);
+
+      expect(result.reviewObligation).toMatchObject({
+        obligationId: obligation.obligationId,
+        obligationType: 'architecture',
+        iteration: 2,
+      });
+      expect(result.reviewObligationId).toBe(obligation.obligationId);
+      expect(result.reviewCriteriaVersion).toBe(obligation.criteriaVersion);
+    });
+
+    it('returns empty fields when obligation is null', () => {
+      expect(reviewObligationResponseFields(null)).toEqual({});
+    });
+  });
+
   describe('findLatestObligation', () => {
     describe('HAPPY', () => {
       it('finds matching obligation by type/iteration/planVersion', () => {
@@ -197,6 +238,33 @@ describe('integration/review-assurance', () => {
 
     it('produces different digests for different input', () => {
       expect(hashText('hello')).not.toBe(hashText('world'));
+    });
+  });
+
+  describe('consumeReviewObligation', () => {
+    it('marks the matching obligation and invocation as consumed', () => {
+      const obligation = {
+        ...makeObligation({ obligationId: '00000000-0000-4000-8000-000000000001' }),
+        invocationId: '00000000-0000-4000-8000-000000000002',
+      };
+      const invocation = {
+        ...makeInvocation(),
+        invocationId: '00000000-0000-4000-8000-000000000002',
+      };
+      const result = consumeReviewObligation(
+        { obligations: [obligation], invocations: [invocation] },
+        obligation,
+        NOW,
+      );
+
+      expect(result.obligations[0]?.status).toBe('consumed');
+      expect(result.obligations[0]?.consumedAt).toBe(NOW);
+      expect(result.invocations[0]?.consumedByObligationId).toBe(obligation.obligationId);
+    });
+
+    it('returns the same assurance when obligation is null', () => {
+      const assurance = { obligations: [makeObligation()], invocations: [] };
+      expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
   });
 

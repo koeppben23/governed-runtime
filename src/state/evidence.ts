@@ -12,6 +12,44 @@ import { z } from 'zod';
 import { IdpConfigSchema } from '../identity/types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
+// ─── Zod Schemas for ReviewReport ────────────────────────────────────
+
+export const EvidenceSlotStatusSchema = z.object({
+  slot: z.string(),
+  label: z.string(),
+  required: z.boolean(),
+  present: z.boolean(),
+  status: z.enum(['complete', 'missing', 'not_yet_required', 'failed']),
+  detail: z.string().optional(),
+  artifactKind: z.string().optional(),
+});
+
+export const FourEyesStatusSchema = z.object({
+  required: z.boolean(),
+  satisfied: z.boolean(),
+  initiatedBy: z.string(),
+  decidedBy: z.string().nullable(),
+  detail: z.string(),
+});
+
+export const CompletenessSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  complete: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  notYetRequired: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+
+export const CompletenessReportSchema = z.object({
+  sessionId: z.string().uuid(),
+  phase: z.string(),
+  policyMode: z.string(),
+  overallComplete: z.boolean(),
+  slots: z.array(EvidenceSlotStatusSchema),
+  fourEyes: FourEyesStatusSchema,
+  summary: CompletenessSummarySchema,
+});
+
 /**
  * P34: Coerce P33 v0 'verified' to 'claim_validated'.
  * Any unknown value falls through to 'best_effort' (safe default for backward compat).
@@ -66,10 +104,25 @@ export const RevisionDelta = z.enum(['none', 'minor', 'major']);
 export type RevisionDelta = z.infer<typeof RevisionDelta>;
 
 /**
- * Self-review / impl-review loop verdict.
- * Only approve or changes_requested — no reject (that's a human-only action).
+ * Plan/implementation review loop verdict — emitted by the reviewer subagent.
+ *
+ * Three values:
+ * - `approve`: the artifact is correct; iteration may converge.
+ * - `changes_requested`: the artifact needs revision; the reviewer documents
+ *   blocking issues. The submitter then revises and resubmits.
+ * - `unable_to_review`: the reviewer cannot honestly evaluate due to a
+ *   tool-failure condition (plan/impl text empty/malformed, missing required
+ *   context references, structured-output schema violation it cannot recover
+ *   from, mandate digest mismatch / corrupted mandate). This is NOT an
+ *   evasion route for substantive findings — for those, the correct verdict
+ *   is `changes_requested`. When emitted, the loop exits BLOCKED (never
+ *   converged); recovery is via fresh /plan or /implement submit (resets
+ *   iteration to 0).
+ *
+ * Note: `reject` is intentionally absent here — that is a human-only action
+ * at User Gates, captured by `ReviewVerdict` above.
  */
-export const LoopVerdict = z.enum(['approve', 'changes_requested']);
+export const LoopVerdict = z.enum(['approve', 'changes_requested', 'unable_to_review']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
 /** Safe opaque OpenCode session ID segment (e.g. `ses_...`). */
@@ -87,12 +140,16 @@ const OpenCodeSessionId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
  * ~/.config/opencode/workspaces/{fingerprint}/. Deterministic and stable
  * across clones of the same remote.
  */
+
+/** Canonical regex for a 24-hex-char repository fingerprint. */
+export const FINGERPRINT_PATTERN = /^[0-9a-f]{24}$/;
+
 export const BindingInfo = z
   .object({
     // OpenCode session IDs are opaque non-UUID identifiers (e.g. "ses_260740c65ffe77...").
     sessionId: OpenCodeSessionId,
     worktree: z.string().min(1),
-    fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
+    fingerprint: z.string().regex(FINGERPRINT_PATTERN),
     resolvedAt: z.string().datetime(),
   })
   .readonly();
@@ -186,6 +243,13 @@ export type ReviewActorInfo = z.infer<typeof ReviewActorInfo>;
 /**
  * P35 strict independent-review attestation.
  * Binds findings to one obligation + mandate version/digest.
+ *
+ * `toolObligationId` identifies the ReviewObligation this attestation is
+ * bound to. All reviewable flows (/plan, /architecture, /implement,
+ * /review) create a ReviewObligation before subagent invocation, so the
+ * UUID is always available.
+ * validateStrictAttestation (review-assurance.ts) and plugin-orchestrator.ts
+ * compare this field against the expected obligationId.
  */
 export const ReviewAttestation = z
   .object({
@@ -207,7 +271,7 @@ export const ReviewFindings = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
-    reviewMode: z.enum(['subagent', 'self']),
+    reviewMode: z.literal('subagent'),
     overallVerdict: LoopVerdict,
     blockingIssues: z.array(Finding),
     majorRisks: z.array(Finding),
@@ -222,7 +286,7 @@ export const ReviewFindings = z
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
 
 /** Independent review obligation type. */
-export const ReviewObligationType = z.enum(['plan', 'implement']);
+export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture', 'review']);
 export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
 
 /** Strict review obligation state. */
@@ -247,6 +311,8 @@ export const ReviewObligation = z.object({
   blockedCode: z.string().nullable(),
   fulfilledAt: z.string().datetime().nullable(),
   consumedAt: z.string().datetime().nullable(),
+  /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
@@ -266,6 +332,8 @@ export const ReviewInvocationEvidence = z
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime(),
     consumedByObligationId: z.string().uuid().nullable(),
+    /** Evidence source: host-orchestrated or agent-submitted-attested. */
+    source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
@@ -415,6 +483,16 @@ export const ArchitectureDecision = z
     createdAt: z.string().datetime(),
     /** SHA-256 digest of the adrText for integrity verification. */
     digest: z.string().min(1),
+    /**
+     * Independent review findings, one entry per review iteration (F13).
+     *
+     * Parallel to plan.reviewFindings and implementation.reviewFindings:
+     * stored append-only as the architecture review loop progresses, so the
+     * full review history is auditable. Optional for backwards-compat with
+     * sessions created before F13 — absent and empty array MUST be treated
+     * equivalently by all consumers.
+     */
+    reviewFindings: z.array(ReviewFindings).optional(),
   })
   .readonly();
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
@@ -669,6 +747,9 @@ export type AuditEvent = z.infer<typeof AuditEvent>;
  * Standalone review report — written as a separate file, NOT embedded in state.
  * Own schema version for independent evolution.
  * Generated by /review (read-only, always available).
+ *
+ * Includes the evidence completeness matrix as a canonical field.
+ * The ExtendedReviewReport interface is removed in PR-C; completeness lives in the base schema.
  */
 export const ReviewReport = z.object({
   schemaVersion: z.literal('flowguard-review-report.v1'),
@@ -689,9 +770,11 @@ export const ReviewReport = z.object({
       severity: z.enum(['info', 'warning', 'error']),
       category: z.string(),
       message: z.string(),
+      location: z.string().optional(),
     }),
   ),
   overallStatus: z.enum(['clean', 'warnings', 'issues']),
+  completeness: CompletenessReportSchema,
   inputOrigin: InputOriginSchema.optional(),
   references: z.array(ExternalReferenceSchema).optional(),
 });

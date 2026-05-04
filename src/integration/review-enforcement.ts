@@ -48,15 +48,14 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  REVIEWER_SUBAGENT_TYPE,
-} from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
 import type { SessionState } from '../state/schema.js';
-
-/** Tools that can trigger independent review. */
-export type ReviewableTool = typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT;
+import {
+  isReviewableTool,
+  obligationTypeForTool,
+  type ReviewableTool,
+} from './review-obligation-tools.js';
+export type { ReviewableTool } from './review-obligation-tools.js';
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
@@ -164,9 +163,9 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return;
+  if (!isReviewableTool(toolName)) return;
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
   const parsed = safeParse(output);
   if (!parsed) return;
 
@@ -399,11 +398,11 @@ export function enforceBeforeVerdict(
   sessionState?: SessionState | null,
   strictEnforcement = false,
 ): EnforcementResult {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) {
+  if (!isReviewableTool(toolName)) {
     return { allowed: true };
   }
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
 
   // Only enforce on Mode B calls (verdict submission)
   const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
@@ -415,10 +414,7 @@ export function enforceBeforeVerdict(
     // P35 Recovery: Reconstruct from session-state.json when transient cache miss
     if (sessionState?.reviewAssurance?.obligations) {
       const pendingObligation = sessionState.reviewAssurance.obligations.find(
-        (o) =>
-          o.status === 'pending' &&
-          ((reviewTool === TOOL_FLOWGUARD_PLAN && o.obligationType === 'plan') ||
-            (reviewTool === TOOL_FLOWGUARD_IMPLEMENT && o.obligationType === 'implement')),
+        (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
       );
       if (pendingObligation) {
         return {
@@ -550,9 +546,9 @@ export function recordPluginReview(
   capturedFindings: CapturedFindings | null,
   now: string,
 ): boolean {
-  if (toolName !== TOOL_FLOWGUARD_PLAN && toolName !== TOOL_FLOWGUARD_IMPLEMENT) return false;
+  if (!isReviewableTool(toolName)) return false;
 
-  const reviewTool = toolName as ReviewableTool;
+  const reviewTool: ReviewableTool = toolName;
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending || pending.subagentCalled) return false;
 
@@ -630,11 +626,33 @@ export function extractCapturedFindings(taskResult: string): CapturedFindings | 
 }
 
 /**
- * Check if a prompt contains an expected numeric value near a keyword.
+ * Check whether a reviewer prompt contains a specific numeric value
+ * associated with a keyword (e.g. "iteration", "version").
  *
- * Uses contextual matching: the keyword (e.g. "iteration") must appear
- * within 30 characters before the expected number. This prevents false
- * positives from matching the number in unrelated contexts.
+ * Used in L3 prompt-context enforcement (`enforceBeforeVerdict` and
+ * `enforceBeforeSubagentCall`) to verify the prompt was constructed
+ * with the runtime's expected iteration/planVersion values, not stale
+ * values from a previous turn.
+ *
+ * Matching rules:
+ * - Case-insensitive keyword match.
+ * - Up to 30 non-digit characters between keyword and number. This
+ *   accommodates all formats currently produced by mandate templates
+ *   (`iteration=0`, `Iteration: 0`, `iteration 0`) plus future XML
+ *   wrappers (`<iteration>0</iteration>` — `>` is a single non-digit
+ *   character) and JSON embeds (`"iteration": 0` — `": ` is 3 chars).
+ * - The 30-char ceiling intentionally rejects long-distance "matches"
+ *   where the number is unrelated to the keyword (e.g. an iteration
+ *   keyword followed by a sentence and then an unrelated number).
+ *
+ * Word-boundary semantics:
+ * - `\b` at the suffix prevents partial-number matches: expected=1
+ *   does NOT match "iteration=12" because `1` is followed by digit
+ *   `2` (no word boundary between two digits).
+ * - The prefix is bounded by the keyword + a non-digit gap (`[^\d]`),
+ *   so a number embedded inside another number cannot be mis-attributed
+ *   (e.g. expected=1 against "iteration=21" — the `[^\d]` separator
+ *   forbids the leading `2` to count as the gap).
  *
  * @param prompt - The full prompt text
  * @param keyword - The keyword to match near (e.g. "iteration", "version")

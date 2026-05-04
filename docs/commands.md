@@ -13,6 +13,15 @@ FlowGuard uses a two-level command surface:
 
 The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
 
+**Naming exceptions** (slash command and tool name differ):
+
+| Slash command      | Tool binding         | Reason                                          |
+| ------------------ | -------------------- | ----------------------------------------------- |
+| `/review-decision` | `flowguard_decision` | Tool kept short; verdict-routing is the surface |
+
+For all other commands, slash and tool names match `1:1` (`/hydrate` →
+`flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
+
 ### Interactive vs Non-Interactive Execution
 
 - Interactive chat sessions may ask one precise follow-up question when required inputs are missing.
@@ -23,11 +32,11 @@ The `/command` syntax invokes the corresponding `flowguard_command` tool interna
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                       | Purpose                                      |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                   |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR) |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance review report          |
+| Flow             | Command         | Phases                                                                                                       | Purpose                                              |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR)         |
+| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance or content-aware review report |
 
 ## Product Commands
 
@@ -46,7 +55,7 @@ Product commands invoke canonical FlowGuard tools. Runtime enforcement remains i
 | `/export`          | `/archive`                           | Export a verifiable audit package                         |
 | `/status`          | `/status`                            | Show current phase, evidence, and next action (same name) |
 | `/why`             | `/status --why-blocked`              | Show why the workflow is blocked                          |
-| `/review`          | `/review`                            | Generate a compliance review report (same name)           |
+| `/review`          | `/review`                            | Generate a compliance/content review report (same name)   |
 | `/architecture`    | `/architecture`                      | Create an ADR (same name)                                 |
 
 Product commands are the recommended surface for daily use. Advanced/canonical commands are documented below and remain fully supported for scripts, CI, and power users.
@@ -125,14 +134,20 @@ Record the task description. Starts the ticket flow from READY or updates ticket
 
 ### /plan
 
-Generate an implementation plan with self-review loop.
+Generate an implementation plan with mandatory independent subagent review.
 
 1. LLM generates plan text
-2. Self-review loop starts
-3. Plan refined until convergence
+2. `flowguard-reviewer` reviews the plan
+3. Plan refined until independent review convergence
 4. Advances to PLAN_REVIEW
 
 **Allowed in:** TICKET, PLAN
+
+When `/plan` advances to PLAN_REVIEW, the Plan Review Card footer renders the available decision commands as explanatory bullets:
+
+- `/approve` — approve the plan if it is complete and acceptable
+- `/request-changes` — send the plan back for revision
+- `/reject` — stop this task
 
 **Derived artifacts:** Every recorded plan revision is materialized as append-only evidence artifacts:
 
@@ -144,6 +159,10 @@ FlowGuard fail-closes governance commands when required ticket/plan artifacts ar
 ### /review-decision
 
 Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).
+The slash command name `review-decision` differs from the tool name; the tool is
+registered as `flowguard_decision`.
+
+**Allowed in:** PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW
 
 **Verdicts:**
 
@@ -151,9 +170,20 @@ Record a human verdict at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REV
 - `changes_requested` → return to previous phase for revision
 - `reject` → restart (TICKET for ticket flow, READY for architecture flow)
 
-**Four-eyes:** In regulated mode, `approve` requires reviewer identity different from session initiator, and both identities must be known.
+**Four-eyes (regulated mode):** `approve` requires reviewer identity different
+from session initiator, and both identities must be known. Same-actor approve
+returns BLOCKED `FOUR_EYES_VIOLATION`.
 
-Every successful `/review-decision` emits a decision receipt in the audit trail (`decision:DEC-xxx`).
+**Actor assurance gate (any mode with `policy.minimumActorAssuranceForApproval`
+set above the default `best_effort`):** the approver's resolved assurance tier
+must be `>=` the configured minimum. Insufficient assurance returns BLOCKED
+`ACTOR_ASSURANCE_INSUFFICIENT`. If `policy.identityProviderMode = required` and
+the approver cannot be IdP-verified, returns BLOCKED `ACTOR_IDP_MODE_REQUIRED`.
+See `docs/policies.md` "Actor Identity & Assurance" for configuration.
+
+Every successful `/review-decision` emits a decision receipt in the audit trail
+(`decision:DEC-xxx`) and a redacted-by-default companion artifact
+`decision-receipts.redacted.v1.json` is written on archive.
 
 ### /validate
 
@@ -169,7 +199,7 @@ Execute the implementation plan.
 
 1. LLM implements using OpenCode tools
 2. Changed files recorded via git
-3. Implementation review loop
+3. Independent implementation review loop
 4. Advances to EVIDENCE_REVIEW
 
 **Allowed in:** IMPLEMENTATION
@@ -180,31 +210,40 @@ Create or revise an Architecture Decision Record (ADR).
 
 Two modes:
 
-- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts self-review loop.
-- **Mode B (self-review):** Provide `selfReviewVerdict`. On convergence, advances to ARCH_REVIEW.
+- **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
+- **Mode B (ADR review):** Provide `selfReviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
+
+ADR review is **subagent-driven by default** in solo, team, and regulated profiles, parity with `/plan` and `/implement`. The plugin invokes the reviewer deterministically; manual self-review is rejected in strict mode (fail-closed). The reviewer applies ADR-specific criteria (Context completeness, Decision concreteness, Consequences honesty, MADR structure) defined in the `flowguard-reviewer` agent body.
 
 **Allowed in:** READY (starts flow), ARCHITECTURE (revise after changes_requested)
 
 ### /review
 
-Start the standalone review flow. Generates a compliance report.
+Start the standalone review flow. Supports content-aware review (PR, branch, URL, text) with subagent-attested findings and an obligation-bound lifecycle.
 
 **Allowed in:** READY
 **Arguments (all optional):**
 
-- `inputOrigin` (optional): Where the review content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
+- `text` (optional): Direct text blob to review.
+- `prNumber` (optional): GitHub PR number — loads PR diff via `gh` CLI.
+- `branch` (optional): Git branch name — loads diff against detected base branch via `git diff`.
+- `url` (optional): URL content to review.
+- `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
+- `analysisFindings` (optional): Complete `ReviewFindings` object from `flowguard-reviewer` subagent. Required when content-aware fields are provided.
 
 **Examples:**
 
-- `/review` — review current workspace (no references)
-- `/review https://github.com/org/repo/pull/42` — agent fetches PR, extracts info, stores URL as reference
-- `/review feature/my-fix` — review based on branch reference
+- `/review` — plain compliance report (no external content)
+- `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
+- `/review prNumber=42 analysisFindings=<ReviewFindings>` — submit subagent findings
 
 **Produces:**
 
+- `requiredReviewAttestation` (blocked response with obligation UUID — content-aware only)
+- `reviewCard` (markdown, display verbatim)
 - Evidence completeness matrix
 - Four-eyes status
 - Validation summary
@@ -217,14 +256,18 @@ Start the standalone review flow. Generates a compliance report.
 Universal routing command. Inspects current phase and does the next appropriate action.
 
 - At user gates: returns "waiting" (use /review-decision)
-- At PLAN/ARCHITECTURE: runs one self-review iteration
-- At IMPL_REVIEW: runs one implementation review iteration
+- At PLAN: runs one independent subagent review iteration
+- At ARCHITECTURE: runs one ADR review iteration
+- At IMPL_REVIEW: runs one independent implementation review iteration
 - At VALIDATION: runs all validation checks
 - At other phases: evaluates and auto-advances if evidence is present
 
 ### /abort
 
-Emergency session termination. Sets phase to COMPLETE with ABORTED marker. Irreversible.
+Emergency session termination. Bypasses the topology and directly sets phase
+to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
+non-terminal phase. Aborted sessions remain identifiable post-mortem via
+`state.error.code === 'ABORTED'`.
 
 ## Operational Tools
 

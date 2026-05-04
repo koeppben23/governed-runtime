@@ -324,6 +324,8 @@ function describeEvent(event: AuditEvent): string {
   const kind = parts[0];
   const detail = parts.slice(1).join(':');
 
+  if (kind === undefined) return event.event;
+
   switch (kind) {
     case 'transition':
       return `State transition: ${event.detail?.from ?? '?'} → ${event.detail?.to ?? '?'} via ${detail}`;

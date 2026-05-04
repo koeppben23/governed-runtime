@@ -81,7 +81,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       const selfFindings = {
         iteration: 1,
         planVersion: 1,
-        reviewMode: 'self' as const,
+        reviewMode: 'subagent' as const,
         overallVerdict: 'changes_requested' as const,
         blockingIssues: [],
         majorRisks: [],
@@ -174,25 +174,30 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
 
       const solo = getPolicyPreset('solo');
       expect(solo.selfReview).toBeDefined();
-      expect(solo.selfReview.subagentEnabled).toBe(false);
+      expect(solo.selfReview.subagentEnabled).toBe(true);
       expect(solo.selfReview.fallbackToSelf).toBe(false);
+      expect(solo.selfReview.strictEnforcement).toBe(true);
 
       const team = getPolicyPreset('team');
       expect(team.selfReview).toBeDefined();
-      expect(team.selfReview.subagentEnabled).toBe(false);
+      expect(team.selfReview.subagentEnabled).toBe(true);
+      expect(team.selfReview.strictEnforcement).toBe(true);
 
       const regulated = getPolicyPreset('regulated');
       expect(regulated.selfReview).toBeDefined();
+      expect(regulated.selfReview.subagentEnabled).toBe(true);
+      expect(regulated.selfReview.strictEnforcement).toBe(true);
     });
 
     it('DEFAULT_SELF_REVIEW_CONFIG has correct defaults', async () => {
       const { DEFAULT_SELF_REVIEW_CONFIG } = await import('../../config/policy.js');
 
-      expect(DEFAULT_SELF_REVIEW_CONFIG.subagentEnabled).toBe(false);
+      expect(DEFAULT_SELF_REVIEW_CONFIG.subagentEnabled).toBe(true);
       expect(DEFAULT_SELF_REVIEW_CONFIG.fallbackToSelf).toBe(false);
+      expect(DEFAULT_SELF_REVIEW_CONFIG.strictEnforcement).toBe(true);
     });
 
-    it('resolvePolicyFromSnapshot preserves selfReview from snapshot', async () => {
+    it('resolvePolicyFromSnapshot normalizes weakened selfReview to mandatory subagent review', async () => {
       const { resolvePolicyFromSnapshot } = await import('../../config/policy.js');
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
@@ -218,18 +223,19 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         selfReview: {
           subagentEnabled: true,
           fallbackToSelf: true,
+          strictEnforcement: false,
         },
       });
 
       const policy = resolvePolicyFromSnapshot(snapshotWithSelfReview);
       expect(policy.selfReview.subagentEnabled).toBe(true);
-      expect(policy.selfReview.fallbackToSelf).toBe(true);
+      expect(policy.selfReview.fallbackToSelf).toBe(false);
+      expect(policy.selfReview.strictEnforcement).toBe(true);
     });
 
     it('resolvePolicyFromSnapshot uses default when snapshot lacks selfReview', async () => {
-      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } = await import(
-        '../../config/policy.js'
-      );
+      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } =
+        await import('../../config/policy.js');
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
       const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({
@@ -284,6 +290,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         selfReview: {
           subagentEnabled: true,
           fallbackToSelf: false,
+          strictEnforcement: true,
         },
       });
 
@@ -320,29 +327,23 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
   });
 });
 
-describe('P34a Foundation: Self-Review Fallback Semantics', () => {
-  it('fallbackToSelf=true enables degraded fallback on subagent failure', async () => {
+describe('P34a Foundation: Mandatory Independent Review Semantics', () => {
+  it('fallbackToSelf=true is not part of the mandatory review default', async () => {
     const { getPolicyPreset } = await import('../../config/policy.js');
 
     const policy = getPolicyPreset('team');
-    const mockPolicy = {
-      ...policy,
-      selfReview: { subagentEnabled: true, fallbackToSelf: true },
-    };
-
-    expect(mockPolicy.selfReview.fallbackToSelf).toBe(true);
+    expect(policy.selfReview.subagentEnabled).toBe(true);
+    expect(policy.selfReview.fallbackToSelf).toBe(false);
+    expect(policy.selfReview.strictEnforcement).toBe(true);
   });
 
-  it('fallbackToSelf=false blocks on subagent failure', async () => {
+  it('regulated policy also requires strict subagent review', async () => {
     const { getPolicyPreset } = await import('../../config/policy.js');
 
     const policy = getPolicyPreset('regulated');
-    const mockPolicy = {
-      ...policy,
-      selfReview: { subagentEnabled: true, fallbackToSelf: false },
-    };
-
-    expect(mockPolicy.selfReview.fallbackToSelf).toBe(false);
+    expect(policy.selfReview.subagentEnabled).toBe(true);
+    expect(policy.selfReview.fallbackToSelf).toBe(false);
+    expect(policy.selfReview.strictEnforcement).toBe(true);
   });
 });
 
@@ -364,7 +365,7 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
   const validReviewFindingsSelf = {
     iteration: 0,
     planVersion: 1,
-    reviewMode: 'self' as const,
+    reviewMode: 'self' as unknown as 'subagent',
     overallVerdict: 'approve' as const,
     blockingIssues: [],
     majorRisks: [],
@@ -381,10 +382,10 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     expect(result.success).toBe(true);
   });
 
-  it('reviewMode=self accepted when subagentEnabled=true and fallbackToSelf=true', async () => {
+  it('ReviewFindings schema rejects self reviewMode', async () => {
     const { ReviewFindings } = await import('../../state/evidence.js');
     const result = ReviewFindings.safeParse(validReviewFindingsSelf);
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('ReviewFindings.planVersion must match expected version', async () => {

@@ -54,6 +54,11 @@ describe('resolveCommandAlias', () => {
       expect(result.canonicalCommand).toBe('archive');
     });
 
+    it('//start normalizes to same as /start', () => {
+      expect(resolveCommandAlias('//start')).toEqual(resolveCommandAlias('/start'));
+      expect(resolveCommandAlias('///start')).toEqual(resolveCommandAlias('/start'));
+    });
+
     it('/why → status with whyBlocked default', () => {
       const result = resolveCommandAlias('why');
       expect(result.canonicalCommand).toBe('status');
@@ -124,6 +129,16 @@ describe('resolveCommandAlias', () => {
 
     it('empty string passes through', () => {
       expect(canonicalCommandName('')).toBe('');
+    });
+
+    it('preserves embedded slashes in unknown commands (kills /\\/+/ anchor mutant)', () => {
+      // Kills the L87 Regex mutant that drops the leading-slash anchor.
+      // Without the ^ anchor, the replace would strip ALL slashes; with anchor,
+      // only the leading slash is stripped.
+      expect(canonicalCommandName('foo/bar')).toBe('foo/bar');
+      expect(canonicalCommandName('a/b/c')).toBe('a/b/c');
+      // Leading slash IS stripped; embedded slashes are preserved.
+      expect(canonicalCommandName('/foo/bar')).toBe('foo/bar');
     });
   });
 });

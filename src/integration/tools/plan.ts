@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/plan
- * @description FlowGuard plan tool — submit plan or record self-review verdict.
+ * @description FlowGuard plan tool — submit plan or record independent review verdict.
  *
  * Agent-Orchestrated Independent Review Persistence Boundary
  *
@@ -14,29 +14,23 @@
  * 2. FlowGuard returns next-action instructing subagent invocation
  * 3. Primary agent calls flowguard-reviewer subagent via Task tool
  * 4. Subagent returns structured ReviewFindings
- * 5. Primary agent submits selfReviewVerdict + reviewFindings to FlowGuard
+ * 5. Primary agent submits review verdict + reviewFindings to FlowGuard
  * 6. FlowGuard validates (mode gating, version binding, iteration binding,
  *    mandatory findings) and persists both (append-only, separate)
- *
- * Flow (subagentEnabled=false, default):
- * 1. Primary agent drafts plan, submits to FlowGuard
- * 2. FlowGuard returns next-action instructing self-review
- * 3. Primary agent reviews own plan, submits selfReviewVerdict
  *
  * Tool responsibilities:
  * - Input validation: reviewFindings vs policy, planVersion binding
  * - Persistence: plan.history (author), plan.reviewFindings (reviewer)
  * - Response: summary of review findings, iteration tracking
- * - Next-action: policy-conditional instructions (subagent or self-review)
+ * - Next-action: independent reviewer instructions
  *
  * Policy config (selfReview):
  * - subagentEnabled: enforces subagent review mode
- * - fallbackToSelf: allows self-review fallback when subagent unavailable
+ * - fallbackToSelf: deprecated compatibility field; self-review fallback is prohibited
  *
  * Validation rules:
- * - reviewMode=subagent + !subagentEnabled → BLOCKED
- * - reviewMode=self + subagentEnabled + !fallbackToSelf → BLOCKED
- * - selfReviewVerdict=approve + subagentEnabled + missing reviewFindings → BLOCKED
+ * - reviewMode=self → BLOCKED
+ * - selfReviewVerdict=approve + missing reviewFindings → BLOCKED
  * - reviewFindings.planVersion mismatch → BLOCKED
  *
  * @version v6
@@ -60,6 +54,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine
@@ -80,11 +75,14 @@ import type {
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with implement.ts)
-import { validateReviewFindings, requireFindingsForApprove } from './review-validation.js';
+import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 import {
+  appendReviewObligation,
+  consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
@@ -99,16 +97,16 @@ function firstLine(text: string | undefined): string | undefined {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_plan — Submit Plan OR Self-Review Verdict (Multi-Mode)
+// flowguard_plan — Submit Plan OR Independent Review Verdict (Multi-Mode)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const plan: ToolDefinition = {
   description:
-    'Submit a plan OR record a self-review verdict. Two modes:\n' +
-    'Mode A (submit plan): provide planText. Records the plan and starts self-review loop.\n' +
-    "Mode B (self-review): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
+    'Submit a plan OR record an independent review verdict. Two modes:\n' +
+    'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
+    "Mode B (review verdict): provide selfReviewVerdict ('approve' or 'changes_requested') with reviewFindings. " +
     "If 'changes_requested', also provide revised planText.\n" +
-    'The self-review loop runs up to maxIterations (from policy). ' +
+    'The independent review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to PLAN_REVIEW.\n' +
     'Optionally accepts reviewFindings from an independent review agent.',
   args: {
@@ -123,7 +121,7 @@ export const plan: ToolDefinition = {
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        'Self-review verdict. Omit for initial plan submission. ' +
+        'Independent review verdict. Omit for initial plan submission. ' +
           "'approve' = plan is good, advance. " +
           "'changes_requested' = plan needs revision, provide updated planText.",
       ),
@@ -158,7 +156,41 @@ export const plan: ToolDefinition = {
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
-      if (args.reviewFindings) {
+      const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
+      const hasVerdict = args.selfReviewVerdict !== undefined;
+      const hasFindings = args.reviewFindings !== undefined;
+      const isInitialSubmission = !hasVerdict;
+
+      // Runtime sequence contract: plan submission and review verdict are separate phases.
+      if (hasPlanText && hasFindings && !hasVerdict) {
+        return formatBlocked('PLAN_SUBMISSION_MIXED_INPUTS');
+      }
+
+      if (hasPlanText && hasVerdict && args.selfReviewVerdict !== 'changes_requested') {
+        return formatBlocked('PLAN_APPROVE_WITH_TEXT');
+      }
+
+      if (isInitialSubmission && hasPlanText && state.phase === 'PLAN' && state.selfReview) {
+        return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
+      }
+
+      if (hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasVerdict && !state.selfReview) {
+        return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict) {
+        return formatBlocked('PLAN_FINDINGS_WITHOUT_VERDICT');
+      }
+
+      if (isInitialSubmission && args.reviewFindings) {
         const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
           subagentEnabled,
           fallbackToSelf,
@@ -168,21 +200,6 @@ export const plan: ToolDefinition = {
         });
         if (blocked) return blocked;
       }
-
-      // Approve requires findings when subagent enabled
-      if (args.selfReviewVerdict === 'approve') {
-        const blocked = requireFindingsForApprove(subagentEnabled, !!args.reviewFindings);
-        if (blocked) return blocked;
-      }
-
-      if (strictEnforcement && subagentEnabled && args.selfReviewVerdict && !args.reviewFindings) {
-        return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-          action: 'strict verdict submission',
-          required: 'reviewFindings',
-        });
-      }
-
-      const isInitialSubmission = !args.selfReviewVerdict;
 
       if (isInitialSubmission) {
         // ── Mode A: Initial plan submission ──────────────────────
@@ -217,7 +234,6 @@ export const plan: ToolDefinition = {
             : state.plan?.reviewFindings,
         };
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
         const nextObligation = subagentEnabled
           ? createReviewObligation({
               obligationType: 'plan',
@@ -238,12 +254,7 @@ export const plan: ToolDefinition = {
             revisionDelta: 'major' as RevisionDelta,
             verdict: 'changes_requested' as LoopVerdict,
           },
-          reviewAssurance: nextObligation
-            ? {
-                obligations: [...assuranceBase.obligations, nextObligation],
-                invocations: assuranceBase.invocations,
-              }
-            : assuranceBase,
+          reviewAssurance: appendReviewObligation(state.reviewAssurance, nextObligation),
           error: null,
         };
 
@@ -260,39 +271,19 @@ export const plan: ToolDefinition = {
           selfReviewIteration: 0,
           maxSelfReviewIterations,
           reviewMode: subagentEnabled ? 'subagent' : 'self',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'plan' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                // Backward-compat flat fields
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
-          next: subagentEnabled
-            ? 'INDEPENDENT_REVIEW_REQUIRED: Before submitting your self-review verdict, ' +
-              'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
-              'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
-              '(1) the full plan text, (2) the ticket text, (3) iteration=0, ' +
-              '(4) planVersion=' +
-              planVersion +
-              '. ' +
-              'Parse the JSON ReviewFindings from the subagent response. ' +
-              'Then call flowguard_plan with selfReviewVerdict based on the findings ' +
-              'overallVerdict, and include the reviewFindings object. ' +
-              'If the subagent returns changes_requested, revise the plan and resubmit.'
-            : 'Self-review needed. Review the plan critically against the ticket. ' +
-              'Check for completeness, correctness, edge cases, and feasibility. ' +
-              'Then call flowguard_plan with selfReviewVerdict.',
+          ...reviewObligationResponseFields(nextObligation),
+          next:
+            'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
+            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
+            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+            '(1) the full plan text, (2) the ticket text, (3) iteration=0, ' +
+            '(4) planVersion=' +
+            planVersion +
+            '. ' +
+            'Parse the JSON ReviewFindings from the subagent response. ' +
+            'Then call flowguard_plan with selfReviewVerdict based on the findings ' +
+            'overallVerdict, and include the reviewFindings object. ' +
+            'If the subagent returns changes_requested, revise the plan and resubmit.',
           _audit: { transitions },
         };
 
@@ -311,7 +302,7 @@ export const plan: ToolDefinition = {
 
         return appendNextAction(JSON.stringify(response), finalState);
       } else {
-        // ── Mode B: Self-review verdict ──────────────────────────
+        // ── Mode B: Independent review verdict ───────────────────
 
         if (!state.selfReview) {
           return formatBlocked('NO_SELF_REVIEW');
@@ -320,19 +311,47 @@ export const plan: ToolDefinition = {
           return formatBlocked('NO_PLAN');
         }
 
+        if (!args.reviewFindings) {
+          const blocked = requireReviewFindings(false);
+          if (blocked) return blocked;
+        }
+
+        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
+        const pendingObligation = [...assuranceBase.obligations]
+          .reverse()
+          .find(
+            (item) =>
+              item.obligationType === 'plan' &&
+              item.status !== 'consumed' &&
+              item.consumedAt == null,
+          );
+        const expectedIteration = pendingObligation?.iteration ?? state.selfReview.iteration;
+        const expectedPlanVersion = pendingObligation?.planVersion ?? state.plan.history.length + 1;
+
         // Validate review findings in Mode B (after state existence check)
         if (args.reviewFindings) {
-          const expectedIteration = state.selfReview.iteration;
           const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
             subagentEnabled,
             fallbackToSelf,
-            expectedPlanVersion: state.plan.history.length + 1,
+            expectedPlanVersion,
             expectedIteration,
             strictEnforcement,
             assurance: state.reviewAssurance,
             obligationType: 'plan',
           });
           if (blocked) return blocked;
+        }
+
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
         }
 
         const iteration = state.selfReview.iteration + 1;
@@ -368,32 +387,20 @@ export const plan: ToolDefinition = {
           ? [...(existingReviewFindings ?? []), args.reviewFindings as ReviewFindings]
           : existingReviewFindings;
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
         const strictObligation = strictEnforcement
           ? findLatestObligation(
               assuranceBase.obligations,
               'plan',
-              state.selfReview.iteration,
-              state.plan.history.length + 1,
+              expectedIteration,
+              expectedPlanVersion,
             )
           : null;
 
-        const consumedObligations = assuranceBase.obligations.map((item) => {
-          if (!strictObligation || item.obligationId !== strictObligation.obligationId) return item;
-          return {
-            ...item,
-            status: 'consumed' as const,
-            consumedAt: ctx.now(),
-          };
-        });
-
-        const consumedInvocations = assuranceBase.invocations.map((inv) => {
-          if (!strictObligation || inv.invocationId !== strictObligation.invocationId) return inv;
-          return {
-            ...inv,
-            consumedByObligationId: strictObligation.obligationId,
-          };
-        });
+        const consumedAssurance = consumeReviewObligation(
+          assuranceBase,
+          strictObligation,
+          ctx.now(),
+        );
 
         const nextState: SessionState = {
           ...state,
@@ -411,8 +418,8 @@ export const plan: ToolDefinition = {
             verdict,
           },
           reviewAssurance: {
-            obligations: consumedObligations,
-            invocations: consumedInvocations,
+            obligations: consumedAssurance.obligations,
+            invocations: consumedAssurance.invocations,
           },
           error: null,
         };
@@ -424,14 +431,26 @@ export const plan: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
 
-        // Check convergence for messaging
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        // Check convergence BEFORE building the next obligation.
+        // Only non-converged Mode B needs a next review obligation.
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
+
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        const converged = approvedConverged;
 
         if (converged && finalState.phase === 'PLAN_REVIEW') {
+          await writeStateWithArtifacts(sessDir, finalState);
           const nextAction = resolveNextAction(finalState.phase, finalState);
           const productNext = buildProductNextAction(nextAction, finalState.phase);
           const reviewCard = buildPlanReviewCard({
@@ -443,25 +462,32 @@ export const plan: ToolDefinition = {
             policyMode: finalState.policySnapshot?.mode,
             taskTitle: firstLine(finalState.ticket?.text),
           });
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Self-review converged at iteration ${iteration}. Plan ready for approval.`,
-              planDigest: currentPlan.digest,
-              selfReviewIteration: iteration,
-              reviewCard,
-              next: formatEval(ev),
-              _audit: { transitions },
-            }),
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'plan-review-card',
+            reviewCard,
             finalState,
+            currentPlan.digest,
           );
+          const response: Record<string, unknown> = {
+            phase: finalState.phase,
+            status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
+            planDigest: currentPlan.digest,
+            selfReviewIteration: iteration,
+            reviewCard,
+            next: formatEval(ev),
+            _audit: { transitions },
+          };
+          if (artifactErr) response.artifactWarning = artifactErr;
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         if (converged) {
+          await writeStateWithArtifacts(sessDir, finalState);
           return appendNextAction(
             JSON.stringify({
               phase: finalState.phase,
-              status: `Self-review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
+              status: `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
               planDigest: currentPlan.digest,
               selfReviewIteration: iteration,
               next: formatEval(ev),
@@ -471,6 +497,7 @@ export const plan: ToolDefinition = {
           );
         }
 
+        // Non-converged: build next obligation and write atomically.
         const nextIteration = iteration;
         const nextPlanVersion = history.length + 1;
         const nextObligation = subagentEnabled
@@ -481,54 +508,35 @@ export const plan: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
-        if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
-        }
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
 
         return appendNextAction(
           JSON.stringify({
             phase: finalState.phase,
-            status: `Self-review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
+            status: `Independent review iteration ${iteration}/${maxSelfReviewIterations}. Verdict: ${verdict}.`,
             planDigest: currentPlan.digest,
             selfReviewIteration: iteration,
             revisionDelta,
-            reviewMode: subagentEnabled ? 'subagent' : 'self',
-            ...(nextObligation
-              ? {
-                  reviewObligation: {
-                    obligationId: nextObligation.obligationId,
-                    obligationType: 'plan' as const,
-                    iteration: nextObligation.iteration,
-                    planVersion: nextObligation.planVersion,
-                    criteriaVersion: nextObligation.criteriaVersion,
-                    mandateDigest: nextObligation.mandateDigest,
-                  },
-                  reviewObligationId: nextObligation.obligationId,
-                  reviewObligationIteration: nextObligation.iteration,
-                  reviewObligationPlanVersion: nextObligation.planVersion,
-                  reviewCriteriaVersion: nextObligation.criteriaVersion,
-                  reviewMandateDigest: nextObligation.mandateDigest,
-                }
-              : {}),
-            next: subagentEnabled
-              ? 'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
-                'to review the revised plan. Use subagent_type "flowguard-reviewer" with a prompt ' +
-                'that includes: (1) the revised plan text, (2) the ticket text, (3) iteration=' +
-                nextIteration +
-                ', (4) planVersion=' +
-                nextPlanVersion +
-                '. ' +
-                'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.'
-              : 'Review the plan again. Check if the revisions address all issues. ' +
-                'Call flowguard_plan with selfReviewVerdict.',
+            reviewMode: 'subagent',
+            ...reviewObligationResponseFields(nextObligation),
+            next:
+              'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
+              'to review the revised plan. Use subagent_type "flowguard-reviewer" with a prompt ' +
+              'that includes: (1) the revised plan text, (2) the ticket text, (3) iteration=' +
+              nextIteration +
+              ', (4) planVersion=' +
+              nextPlanVersion +
+              '. ' +
+              'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.',
             _audit: { transitions },
           }),
-          finalState,
+          stateToPersist,
         );
       }
     } catch (err) {

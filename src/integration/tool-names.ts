@@ -19,6 +19,8 @@ export const TOOL_FLOWGUARD_DECISION = 'flowguard_decision';
 export const TOOL_FLOWGUARD_IMPLEMENT = 'flowguard_implement';
 export const TOOL_FLOWGUARD_VALIDATE = 'flowguard_validate';
 export const TOOL_FLOWGUARD_REVIEW = 'flowguard_review';
+export const TOOL_FLOWGUARD_CONTINUE = 'flowguard_continue';
+export const TOOL_FLOWGUARD_ARCHITECTURE = 'flowguard_architecture';
 export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 

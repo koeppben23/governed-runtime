@@ -133,7 +133,7 @@ describe('evaluate', () => {
     });
 
     it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
-      const state = makeState('REVIEW');
+      const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
@@ -317,6 +317,25 @@ describe('evaluate', () => {
         50,
       );
       expect(result.p99Ms).toBeLessThan(0.1);
+    });
+  });
+
+  // ─── MUTATION KILL: READY phase, fallback string ──────────────
+  describe('MUTATION_KILL', () => {
+    it('READY phase returns pending', () => {
+      const state = makeState('READY');
+      const result = evaluate(state);
+      expect(result.kind).toBe('pending');
+      if (result.kind === 'pending') {
+        expect(result.phase).toBe('READY');
+      }
+    });
+
+    it('READY phase does NOT return terminal or user_gate', () => {
+      const state = makeState('READY');
+      const result = evaluate(state);
+      expect(result.kind).not.toBe('terminal');
+      expect(result.kind).not.toBe('user_gate');
     });
   });
 });

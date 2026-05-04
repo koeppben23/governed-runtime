@@ -15,13 +15,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as crypto from 'node:crypto';
-import { FlowGuardAuditPlugin } from './plugin.js';
+import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { makeState } from '../__fixtures__.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { createTestWorkspace } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {
@@ -540,7 +541,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('blocks with SUBAGENT_MANDATE_MISMATCH when strict reviewer reports self mode', async () => {
+    it('blocks with STRICT_REVIEW_ORCHESTRATION_FAILED when strict reviewer reports self mode', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -595,11 +596,11 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'SUBAGENT_MANDATE_MISMATCH',
+          'STRICT_REVIEW_ORCHESTRATION_FAILED',
         );
       } finally {
         await ws.cleanup();
@@ -822,5 +823,146 @@ describe('integration/plugin', () => {
         await ws.cleanup();
       }
     });
+  });
+});
+
+// ─── isUsableWorktree (fail-closed worktree validation) ─────────────────────
+
+describe('isUsableWorktree', () => {
+  it('rejects undefined and empty strings', () => {
+    expect(isUsableWorktree(undefined)).toBe(false);
+    expect(isUsableWorktree('')).toBe(false);
+  });
+
+  it('rejects the filesystem root', () => {
+    expect(isUsableWorktree('/')).toBe(false);
+  });
+
+  it('rejects a non-repo directory (no .git entry)', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-no-git-'));
+    try {
+      expect(isUsableWorktree(tmp)).toBe(false);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a directory with a .git directory', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-with-git-'));
+    try {
+      await fs.mkdir(path.join(tmp, '.git'), { recursive: true });
+      expect(isUsableWorktree(tmp)).toBe(true);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a directory with a .git file (worktree/submodule pattern)', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-git-file-'));
+    try {
+      await fs.writeFile(path.join(tmp, '.git'), 'gitdir: /elsewhere/.git/worktrees/x', 'utf-8');
+      expect(isUsableWorktree(tmp)).toBe(true);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a path that does not exist', () => {
+    expect(isUsableWorktree('/this/path/does/not/exist/anywhere')).toBe(false);
+  });
+});
+
+// ─── Plugin bootstrap fail-closed: no rogue workspace folder ────────────────
+
+describe('plugin bootstrap fail-closed', () => {
+  /**
+   * Regression for the rogue-fingerprint-folder bug:
+   * When the plugin is loaded with worktree='/' (or any non-repo path),
+   * it MUST NOT materialize a `workspaces/<fp>/` folder under
+   * OPENCODE_CONFIG_DIR. Invariant: one fingerprint folder per repo.
+   */
+  let configDir: string;
+  let originalEnv: string | undefined;
+  let originalGuard: string | undefined;
+
+  beforeEach(async () => {
+    originalEnv = process.env.OPENCODE_CONFIG_DIR;
+    originalGuard = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-rogue-regression-'));
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+  });
+
+  afterEach(async () => {
+    if (originalEnv !== undefined) process.env.OPENCODE_CONFIG_DIR = originalEnv;
+    else delete process.env.OPENCODE_CONFIG_DIR;
+    if (originalGuard !== undefined) process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalGuard;
+    else delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    await fs.rm(configDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('does not create a workspaces/<fp>/ folder when worktree is "/"', async () => {
+    await FlowGuardAuditPlugin(createMockInput({ worktree: '/', directory: '/' }));
+    const workspacesDir = path.join(configDir, 'workspaces');
+    const exists = await fs
+      .stat(workspacesDir)
+      .then((s) => s.isDirectory())
+      .catch(() => false);
+    if (exists) {
+      const entries = await fs.readdir(workspacesDir);
+      expect(entries).toEqual([]);
+    }
+  });
+
+  it('does not create a workspaces/<fp>/ folder when worktree has no .git', async () => {
+    const noRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-no-repo-'));
+    try {
+      await FlowGuardAuditPlugin(createMockInput({ worktree: noRepo, directory: noRepo }));
+      const workspacesDir = path.join(configDir, 'workspaces');
+      const exists = await fs
+        .stat(workspacesDir)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+      if (exists) {
+        const entries = await fs.readdir(workspacesDir);
+        expect(entries).toEqual([]);
+      }
+    } finally {
+      await fs.rm(noRepo, { recursive: true, force: true });
+    }
+  });
+
+  it('does not create a workspaces/<fp>/ folder when worktree and directory are empty', async () => {
+    await FlowGuardAuditPlugin(createMockInput({ worktree: '', directory: '' }));
+    const workspacesDir = path.join(configDir, 'workspaces');
+    const exists = await fs
+      .stat(workspacesDir)
+      .then((s) => s.isDirectory())
+      .catch(() => false);
+    if (exists) {
+      const entries = await fs.readdir(workspacesDir);
+      expect(entries).toEqual([]);
+    }
+  });
+
+  it('creates the workspace folder when worktree is a real repo (happy path)', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-real-repo-'));
+    try {
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      await FlowGuardAuditPlugin(createMockInput({ worktree: repo, directory: repo }));
+      // Logger sink writes asynchronously on the first log entry. Allow the
+      // microtask + I/O queue to flush before asserting.
+      await new Promise((r) => setTimeout(r, 50));
+      const workspacesDir = path.join(configDir, 'workspaces');
+      const entries = await fs.readdir(workspacesDir).catch(() => []);
+      // At least one fingerprint folder must exist.
+      expect(entries.length).toBeGreaterThanOrEqual(1);
+      // Each entry name must be a 24-hex fingerprint.
+      for (const e of entries) {
+        expect(e).toMatch(/^[0-9a-f]{24}$/);
+      }
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
   });
 });
