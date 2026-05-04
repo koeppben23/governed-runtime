@@ -293,6 +293,12 @@ export async function runReviewOrchestration(
     const planText = sessionState.plan?.current?.body ?? '';
     const toolArgs = getToolArgs(input);
 
+    // P9c: extract stack profile rules for reviewer prompt injection.
+    // Only the phase-specific ruleContent is passed (not the full profile).
+    const activeProfile = sessionState.activeProfile;
+    const profileName = activeProfile?.name;
+    const profileRulesByPhase = activeProfile?.phaseRuleContent;
+
     // F13 slice 6: 3-way prompt selection by reviewable tool.
     // The previous 2-way ternary defaulted any non-PLAN tool to the
     // implementation prompt, which would have produced incorrect prompts
@@ -309,6 +315,8 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        profileName,
+        profileRules: profileRulesByPhase?.['PLAN_REVIEW'],
       });
     } else if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
       prompt = buildImplReviewPrompt({
@@ -322,6 +330,8 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        profileName,
+        profileRules: profileRulesByPhase?.['IMPL_REVIEW'],
       });
     } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
       const adrText =
@@ -341,6 +351,8 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        profileName,
+        profileRules: profileRulesByPhase?.['ARCH_REVIEW'],
       });
     } else {
       // Unreachable: orchestrator is only entered when isReviewRequired()

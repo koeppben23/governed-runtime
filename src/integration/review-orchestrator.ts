@@ -192,6 +192,10 @@ export interface PlanReviewPromptOpts {
   readonly criteriaVersion: string;
   /** Strict mandate digest. */
   readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java", "angular-frontend"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for PLAN_REVIEW. P9c. */
+  readonly profileRules?: string;
 }
 
 /** Options for building an implementation review prompt. */
@@ -212,6 +216,10 @@ export interface ImplReviewPromptOpts {
   readonly criteriaVersion: string;
   /** Strict mandate digest. */
   readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for IMPL_REVIEW. P9c. */
+  readonly profileRules?: string;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -236,6 +244,10 @@ export interface ArchitectureReviewPromptOpts {
   readonly criteriaVersion: string;
   /** Strict mandate digest. */
   readonly mandateDigest: string;
+  /** Active stack profile name (e.g. "backend-java"). P9c. */
+  readonly profileName?: string;
+  /** Phase-specific stack review rules for ARCH_REVIEW. P9c. */
+  readonly profileRules?: string;
 }
 
 /** Result of a successful reviewer invocation. */
@@ -271,6 +283,28 @@ const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
 /**
+ * Build a Stack Profile section for reviewer prompts.
+ * Returns empty string if no profile data is available (null-safe).
+ *
+ * P9c: injects stack-specific review rules into the reviewer prompt
+ * so the reviewer has the same domain awareness as the primary agent.
+ */
+function buildStackProfileSection(
+  profileName: string | undefined,
+  profileRules: string | undefined,
+): string {
+  if (!profileName && !profileRules) return '';
+  const lines: string[] = [];
+  if (profileName) {
+    lines.push('## Active Stack Profile', '', profileName, '');
+  }
+  if (profileRules) {
+    lines.push('## Stack Review Rules', '', profileRules, '');
+  }
+  return lines.join('\n');
+}
+
+/**
  * Build a prompt for plan review by the flowguard-reviewer subagent.
  *
  * The prompt includes all context needed for a meaningful review:
@@ -289,7 +323,10 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     obligationId,
     criteriaVersion,
     mandateDigest,
+    profileName,
+    profileRules,
   } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
   return [
     `You are reviewing a plan for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -301,6 +338,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     '',
     planText,
     '',
+    ...(stackSection ? [stackSection, ''] : []),
     '## Instructions',
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
@@ -332,7 +370,10 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     obligationId,
     criteriaVersion,
     mandateDigest,
+    profileName,
+    profileRules,
   } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
   return [
     `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -348,6 +389,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     '',
     changedFiles.map((f) => `- ${f}`).join('\n'),
     '',
+    ...(stackSection ? [stackSection, ''] : []),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
@@ -389,7 +431,10 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     obligationId,
     criteriaVersion,
     mandateDigest,
+    profileName,
+    profileRules,
   } = opts;
+  const stackSection = buildStackProfileSection(profileName, profileRules);
   return [
     `You are reviewing an architecture decision (ADR) for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -401,6 +446,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     '',
     adrText,
     '',
+    ...(stackSection ? [stackSection, ''] : []),
     '## Instructions',
     '',
     'Review this ADR against the ticket and your review criteria for Architecture',
