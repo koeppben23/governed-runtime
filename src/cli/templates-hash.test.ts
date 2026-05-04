@@ -39,20 +39,19 @@ describe('TEMPLATE_HASH_STABILITY', () => {
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '87ca227eb5b8f8b72009e9b39174013cc6d64650201c21bf53b60e9a1b575f05',
+      'e282828517bc7891b2113bd5272377143e2e67eb56d17d44effb3d77d1fd8bdc',
     );
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
-    // Refreshed in F13 slice 4: REVIEWER_AGENT body extended with a
-    // "For Architecture Decisions (ADRs)" subsection under Review Criteria
-    // and minor wording updates ("plan, implementation, or ADR" /
-    // "/plan, /implement, or /architecture") to make the reviewer mandate
-    // applicable to the architecture obligation type introduced in F13 slice 1.
-    // See src/templates/mandates.ts:354-362 (ADR review criteria).
+    // Refreshed in P9a: webfetch contradiction fixed — reviewer frontmatter
+    // has `webfetch: deny` but the Content Review section told reviewers to
+    // use `webfetch`. P9a removed `webfetch` from the Content Review tool list
+    // and replaced it with "provided content and available read, glob, grep".
+    // See src/templates/mandates.ts:369 (Content Review section).
     //
-    // Predecessor: P1.3 slice 3 added the validity-conditions section
-    // (hash 1ce8ec9c…5fc84).
+    // Predecessor: F13 slice 4 extended REVIEWER_AGENT with ADR review criteria.
+    // Predecessor: P1.3 slice 3 added the validity-conditions section.
     //
     // Cross-session compatibility: this hash gates ONLY the template-body
     // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
@@ -60,17 +59,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:24), which
     // is sha256(REVIEWER_AGENT) at module-load time.
     //
-    // This P1 slice modifies REVIEWER_AGENT (the Content Review section of
+    // This P9a slice modifies REVIEWER_AGENT (the Content Review section of
     // mandates.ts), therefore both the template-body hash AND the runtime
     // REVIEW_MANDATE_DIGEST change. Persisted obligations from prior sessions
     // that reference the old mandateDigest will fail validation — the user
     // must re-hydrate or re-create affected sessions.
     //
-    // This is the expected behaviour: the changed text tells subagents to use
-    // schema-allowed categories only, which is a mandatory contract upgrade
-    // for /review.
+    // This is the expected behaviour: the changed text removes the contradictory
+    // webfetch instruction, which is a mandatory contract correction.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '9a4a216d222f86f751d7131d94ba575c33c0d19c15cd7378152d63f8fd16db72',
+      '11b8e2798b5c3cc77cce4e5535d7d72cf3997653076203478ff9461ecec838aa',
     );
   });
 
