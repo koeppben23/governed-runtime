@@ -184,8 +184,16 @@ describe('continue rail', () => {
       expect(result.kind).toBe('ok');
       expect(executors.architectureReview).toHaveBeenCalledTimes(1);
       if (result.kind === 'ok') {
-        // Self-review should be set after the review iteration runs
         expect(result.state.selfReview).not.toBeNull();
+      }
+    });
+
+    it('REVIEW_COMPLETE terminal phase blocks continue', async () => {
+      const state = makeState('REVIEW_COMPLETE');
+      const result = await executeContinue(state, ctx, makeExecutors());
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('COMMAND_NOT_ALLOWED');
       }
     });
   });

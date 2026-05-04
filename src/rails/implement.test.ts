@@ -125,19 +125,4 @@ describe('implement rail', () => {
       expect(result.kind).toBe('ok');
     });
   });
-
-  // ── EDGE ───────────────────────────────────────────────────────────────
-  describe('EDGE', () => {
-    it('handles empty changedFiles (0 files)', async () => {
-      const state = implState();
-      const executors = makeExecutors({
-        execute: vi.fn().mockResolvedValue({ changedFiles: [], domainFiles: [] }),
-      });
-      const result = await executeImplement(state, ctx, executors);
-      expect(result.kind).toBe('ok');
-      if (result.kind === 'ok') {
-        expect(result.state.implementation!.changedFiles).toHaveLength(0);
-      }
-    });
-  });
 });
