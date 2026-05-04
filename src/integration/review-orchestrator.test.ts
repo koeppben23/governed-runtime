@@ -22,6 +22,7 @@ import {
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
   buildReviewContentMutatedOutput,
+  selectReviewerProfileRules,
   invokeReviewer,
   buildMutatedOutput,
   isReviewRequired,
@@ -238,6 +239,122 @@ describe('buildPlanReviewPrompt', () => {
     expect(lines[ticketIdx - 1]).toBe('');
     expect(lines[ticketIdx + 1]).toBe('');
   });
+
+  // P9c: stack profile injection
+  describe('P9c — stack profile (plan)', () => {
+    it('does NOT include Stack Profile section when no profile data provided', () => {
+      const prompt = buildPlanReviewPrompt(baseOpts);
+      expect(prompt).not.toContain('## Active Stack Profile');
+      expect(prompt).not.toContain('## Stack Review Rules');
+    });
+
+    it('includes profile name when profileName is provided', () => {
+      const prompt = buildPlanReviewPrompt({
+        ...baseOpts,
+        profileName: 'backend-java',
+      });
+      expect(prompt).toContain('## Active Stack Profile');
+      expect(prompt).toContain('backend-java');
+    });
+
+    it('includes stack review rules when profileRules is provided', () => {
+      const prompt = buildPlanReviewPrompt({
+        ...baseOpts,
+        profileName: 'backend-java',
+        profileRules: '- Use Spring Boot conventions\n- Validate with JUnit 5',
+      });
+      expect(prompt).toContain('## Stack Review Rules');
+      expect(prompt).toContain('Spring Boot');
+      expect(prompt).toContain('JUnit 5');
+    });
+
+    it('profile section appears before Instructions', () => {
+      const prompt = buildPlanReviewPrompt({
+        ...baseOpts,
+        profileName: 'ts-node',
+        profileRules: 'Use strict TypeScript',
+      });
+      const profileIdx = prompt.indexOf('## Active Stack Profile');
+      const instructionsIdx = prompt.indexOf('## Instructions');
+      expect(profileIdx).toBeLessThan(instructionsIdx);
+    });
+  });
+});
+
+// P9c: phase-specific non-leakage — profileRules are phase-locked.
+describe('P9c — profile rule non-leakage', () => {
+  const makePlanOpts = (profileRules?: string) => ({
+    planText: 'Test plan',
+    ticketText: 'Test ticket',
+    iteration: 0,
+    planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-digest',
+    profileName: 'backend-java',
+    profileRules,
+  });
+
+  it('plan prompt does not contain IMPL_REVIEW, REVIEW, or ARCH_REVIEW rules', () => {
+    const prompt = buildPlanReviewPrompt(makePlanOpts('plan-rule-123'));
+    expect(prompt).toContain('plan-rule-123');
+    expect(prompt).not.toContain('impl-rule-456');
+    expect(prompt).not.toContain('review-rule-789');
+    expect(prompt).not.toContain('arch-rule-abc');
+  });
+
+  it('impl prompt does not contain PLAN_REVIEW or ARCH_REVIEW rules', () => {
+    const prompt = buildImplReviewPrompt({
+      changedFiles: [],
+      planText: 'Test',
+      ticketText: 'Test',
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      profileName: 'backend-java',
+      profileRules: 'impl-rule-456',
+    });
+    expect(prompt).toContain('impl-rule-456');
+    expect(prompt).not.toContain('plan-rule-123');
+    expect(prompt).not.toContain('arch-rule-abc');
+  });
+
+  it('architecture prompt does not contain IMPL_REVIEW or REVIEW rules', () => {
+    const prompt = buildArchitectureReviewPrompt({
+      adrText: '# ADR',
+      adrTitle: 'ADR-1',
+      ticketText: 'Test',
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      profileName: 'backend-java',
+      profileRules: 'arch-rule-abc',
+    });
+    expect(prompt).toContain('arch-rule-abc');
+    expect(prompt).not.toContain('impl-rule-456');
+    expect(prompt).not.toContain('review-rule-789');
+  });
+
+  it('review prompt does not contain PLAN_REVIEW or IMPL_REVIEW rules', () => {
+    const prompt = buildReviewContentPrompt({
+      content: 'test content',
+      ticketText: 'Test',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      mandateDigest: 'test-digest',
+      criteriaVersion: 'p35-v1',
+      iteration: 0,
+      planVersion: 1,
+      profileName: 'backend-java',
+      profileRules: 'review-rule-789',
+    });
+    expect(prompt).toContain('review-rule-789');
+    expect(prompt).not.toContain('plan-rule-123');
+    expect(prompt).not.toContain('impl-rule-456');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -325,6 +442,26 @@ describe('buildImplReviewPrompt', () => {
     });
     expect(prompt).toContain('- a.ts\n- b.ts\n- c.ts');
   });
+
+  // P9c: stack profile injection (impl)
+  describe('P9c — stack profile (impl)', () => {
+    it('does NOT include Stack Profile section when no profile data provided', () => {
+      const prompt = buildImplReviewPrompt(baseOpts);
+      expect(prompt).not.toContain('## Active Stack Profile');
+    });
+
+    it('includes stack profile when provided', () => {
+      const prompt = buildImplReviewPrompt({
+        ...baseOpts,
+        profileName: 'angular-frontend',
+        profileRules: '- Use standalone components\n- Check signal usage',
+      });
+      expect(prompt).toContain('## Active Stack Profile');
+      expect(prompt).toContain('angular-frontend');
+      expect(prompt).toContain('## Stack Review Rules');
+      expect(prompt).toContain('standalone components');
+    });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -401,6 +538,26 @@ describe('buildArchitectureReviewPrompt', () => {
     const prompt = buildArchitectureReviewPrompt({ ...baseOpts, ticketText: '' });
     expect(prompt).toContain('## Ticket');
     expect(prompt).toContain('## ADR to Review:');
+  });
+
+  // P9c: stack profile injection (arch)
+  describe('P9c — stack profile (arch)', () => {
+    it('does NOT include Stack Profile section when no profile data provided', () => {
+      const prompt = buildArchitectureReviewPrompt(baseOpts);
+      expect(prompt).not.toContain('## Active Stack Profile');
+    });
+
+    it('includes stack profile when provided', () => {
+      const prompt = buildArchitectureReviewPrompt({
+        ...baseOpts,
+        profileName: 'backend-java',
+        profileRules: '- Check for JPA usage\n- Validate transaction boundaries',
+      });
+      expect(prompt).toContain('## Active Stack Profile');
+      expect(prompt).toContain('backend-java');
+      expect(prompt).toContain('## Stack Review Rules');
+      expect(prompt).toContain('JPA');
+    });
   });
 });
 
@@ -1090,6 +1247,28 @@ describe('buildReviewContentPrompt edge cases', () => {
     const prompt = buildReviewContentPrompt(base);
     expect(prompt.length).toBeGreaterThan(100);
   });
+
+  // P9c: stack profile injection (review)
+  describe('P9c — stack profile (review)', () => {
+    it('does NOT include Stack Profile section when no profile data provided', () => {
+      const prompt = buildReviewContentPrompt(base);
+      expect(prompt).not.toContain('## Active Stack Profile');
+      expect(prompt).not.toContain('## Stack Review Rules');
+    });
+
+    it('includes profile and rules when provided', () => {
+      const prompt = buildReviewContentPrompt({
+        ...base,
+        profileName: 'backend-java',
+        profileRules: '- Check Spring Boot\n- Validate JPA mappings',
+      });
+      expect(prompt).toContain('## Active Stack Profile');
+      expect(prompt).toContain('backend-java');
+      expect(prompt).toContain('## Stack Review Rules');
+      expect(prompt).toContain('Spring Boot');
+      expect(prompt).toContain('JPA');
+    });
+  });
 });
 
 // ─── isReviewRequired edge cases ──────────────────────────────────────────────
@@ -1206,5 +1385,56 @@ describe('isReviewRequired without toolName', () => {
       requiredReviewAttestation: { toolObligationId: 'x' },
     });
     expect(isReviewRequired(output)).toBe(false);
+  });
+});
+
+// P9c: orchestrator profile rules mapping
+describe('P9c — selectReviewerProfileRules mapping', () => {
+  const profile = {
+    name: 'backend-java',
+    phaseRuleContent: {
+      PLAN_REVIEW: 'plan-review-rules',
+      IMPL_REVIEW: 'impl-review-rules',
+      ARCH_REVIEW: 'arch-review-rules',
+      REVIEW: 'standalone-review-rules',
+    },
+  };
+
+  it('maps PLAN_REVIEW → planReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'PLAN_REVIEW');
+    expect(result.profileName).toBe('backend-java');
+    expect(result.profileRules).toBe('plan-review-rules');
+  });
+
+  it('maps IMPL_REVIEW → implReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'IMPL_REVIEW');
+    expect(result.profileRules).toBe('impl-review-rules');
+  });
+
+  it('maps ARCH_REVIEW → archReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'ARCH_REVIEW');
+    expect(result.profileRules).toBe('arch-review-rules');
+  });
+
+  it('maps REVIEW → standaloneReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'REVIEW');
+    expect(result.profileRules).toBe('standalone-review-rules');
+  });
+
+  it('returns empty when activeProfile is null', () => {
+    const result = selectReviewerProfileRules(null, 'PLAN_REVIEW');
+    expect(result.profileName).toBeUndefined();
+    expect(result.profileRules).toBeUndefined();
+  });
+
+  it('returns empty when phase is not in phaseRuleContent', () => {
+    const result = selectReviewerProfileRules({ name: 'ts-node' }, 'PLAN_REVIEW');
+    expect(result.profileName).toBe('ts-node');
+    expect(result.profileRules).toBeUndefined();
+  });
+
+  it('does not leak IMPL_REVIEW rules into PLAN_REVIEW result', () => {
+    const result = selectReviewerProfileRules(profile, 'PLAN_REVIEW');
+    expect(result.profileRules).not.toBe('impl-review-rules');
   });
 });
