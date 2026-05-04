@@ -436,22 +436,8 @@ export const architecture: ToolDefinition = {
             adrDigest: currentAdr.digest,
             iteration,
             overallVerdict: reviewFindings?.overallVerdict as string | undefined,
-            blockingIssues: f?.blockingIssues as
-              | Array<{
-                  severity: string;
-                  category: string;
-                  message: string;
-                  location?: string;
-                }>
-              | undefined,
-            majorRisks: f?.majorRisks as
-              | Array<{
-                  severity: string;
-                  category: string;
-                  message: string;
-                  location?: string;
-                }>
-              | undefined,
+            blockingIssues: f?.blockingIssues,
+            majorRisks: f?.majorRisks,
             missingVerification: f?.missingVerification,
             scopeCreep: f?.scopeCreep,
             unknowns: f?.unknowns,

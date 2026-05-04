@@ -166,7 +166,7 @@ export function validateReviewFindings(
       });
     }
 
-    const submittedFindingsHash = hashFindings(findings as unknown as Record<string, unknown>);
+    const submittedFindingsHash = hashFindings(findings);
     if (submittedFindingsHash !== invocation.findingsHash) {
       return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
         obligationId: obligation.obligationId,

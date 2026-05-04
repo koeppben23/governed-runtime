@@ -207,9 +207,8 @@ describe('archive', () => {
         await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
         await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace/index.js'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -255,9 +254,8 @@ describe('archive', () => {
       await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -279,9 +277,8 @@ describe('archive', () => {
   describe('CORNER', () => {
     it.skipIf(!tarOk)('archives from ARCH_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -305,9 +302,8 @@ describe('archive', () => {
 
     it.skipIf(!tarOk)('archives from REVIEW_COMPLETE', async () => {
       await hydrateSession();
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
@@ -356,9 +352,8 @@ describe('cross-cutting', () => {
     it('idempotent hydrate on workspace level', async () => {
       // First hydrate
       await hydrateSession();
-      const { computeFingerprint, readWorkspaceInfo } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, readWorkspaceInfo } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const info1 = await readWorkspaceInfo(fp.fingerprint);
 
