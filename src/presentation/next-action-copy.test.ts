@@ -80,4 +80,73 @@ describe('buildProductNextAction', () => {
       expect(product.commands).toEqual(['/cmd']);
     });
   });
+
+  describe('MUTATION_KILL — exact PRODUCT_GUIDANCE values', () => {
+    it('CHOOSE_FLOW text and commands are exact', () => {
+      const action = { code: 'CHOOSE_FLOW', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'READY');
+      expect(product.text).toBe(
+        'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
+      );
+      expect(product.commands).toEqual(['/task', '/architecture', '/review']);
+    });
+
+    it('RUN_TICKET text and commands are exact', () => {
+      const action = { code: 'RUN_TICKET', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'TICKET');
+      expect(product.text).toBe('Describe your governed task with /task');
+      expect(product.commands).toEqual(['/task']);
+    });
+
+    it('RUN_PLAN text and commands are exact', () => {
+      const action = { code: 'RUN_PLAN', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'PLAN');
+      expect(product.text).toBe('Task captured. Generate an implementation plan with /plan');
+      expect(product.commands).toEqual(['/plan']);
+    });
+
+    it('RUN_REVIEW_DECISION text and commands are exact', () => {
+      const action = { code: 'RUN_REVIEW_DECISION', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'PLAN_REVIEW');
+      expect(product.text).toBe(
+        'Review gate active. Run /approve to accept, /request-changes to revise, or /reject to discard.',
+      );
+      expect(product.commands).toEqual(['/approve', '/request-changes', '/reject']);
+    });
+
+    it('RUN_VALIDATE text and commands are exact', () => {
+      const action = { code: 'RUN_VALIDATE', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'VALIDATION');
+      expect(product.text).toBe('Run validation checks with /check');
+      expect(product.commands).toEqual(['/check']);
+    });
+
+    it('RUN_CONTINUE text and commands are exact', () => {
+      const action = { code: 'RUN_CONTINUE', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'PLAN');
+      expect(product.text).toBe('Run /continue to proceed');
+      expect(product.commands).toEqual(['/continue']);
+    });
+
+    it('RUN_IMPLEMENT text and commands are exact', () => {
+      const action = { code: 'RUN_IMPLEMENT', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'IMPLEMENTATION');
+      expect(product.text).toBe('Execute the approved plan with /implement');
+      expect(product.commands).toEqual(['/implement']);
+    });
+
+    it('SESSION_COMPLETE text enriched with phase label', () => {
+      const action = { code: 'SESSION_COMPLETE', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'COMPLETE');
+      expect(product.text).toBe('Complete. Run /export to create a verifiable audit package.');
+      expect(product.commands).toEqual(['/export']);
+    });
+
+    it('RUN_ARCHITECTURE text and commands are exact', () => {
+      const action = { code: 'RUN_ARCHITECTURE', text: '', commands: [] as string[] };
+      const product = buildProductNextAction(action, 'ARCHITECTURE');
+      expect(product.text).toBe('Submit your Architecture Decision Record with /architecture');
+      expect(product.commands).toEqual(['/architecture']);
+    });
+  });
 });
