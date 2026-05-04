@@ -15,7 +15,6 @@ import {
   FIXED_TIME,
   TICKET,
   PLAN_RECORD,
-  IMPL_EVIDENCE,
   ARCHITECTURE_DECISION,
 } from '../__fixtures__.js';
 import type { RailContext } from './types.js';
