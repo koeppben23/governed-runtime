@@ -37,6 +37,7 @@ import {
   invokeReviewer,
   buildMutatedOutput,
   buildReviewContentPrompt,
+  selectReviewerProfileRules,
   buildReviewContentMutatedOutput,
   type OrchestratorClient,
 } from './review-orchestrator.js';
@@ -150,6 +151,10 @@ export async function runReviewOrchestration(
     // output is unchanged — the agent invokes the subagent manually.
     if (toolName === TOOL_FLOWGUARD_REVIEW) {
       strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      const { profileName, profileRules } = selectReviewerProfileRules(
+        sessionState.activeProfile,
+        'REVIEW',
+      );
       const rawInput = input as Record<string, unknown>;
       const refInput = {
         text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
@@ -163,13 +168,14 @@ export async function runReviewOrchestration(
 
       const prompt = buildReviewContentPrompt({
         content,
-        // Ticket text may be empty for standalone /review and architecture flows.
         ticketText: sessionState.ticket?.text ?? '',
         obligationId: reviewCtx.obligationId,
         mandateDigest: reviewCtx.mandateDigest,
         criteriaVersion: reviewCtx.criteriaVersion,
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
+        profileName,
+        profileRules,
       });
 
       const reviewerResult = await invokeReviewer(
@@ -293,6 +299,12 @@ export async function runReviewOrchestration(
     const planText = sessionState.plan?.current?.body ?? '';
     const toolArgs = getToolArgs(input);
 
+    // P9c: select phase-specific stack profile rules for reviewer prompts.
+    // Uses selectReviewerProfileRules helper (phase → rules mapping).
+    const planRules = selectReviewerProfileRules(sessionState.activeProfile, 'PLAN_REVIEW');
+    const implRules = selectReviewerProfileRules(sessionState.activeProfile, 'IMPL_REVIEW');
+    const archRules = selectReviewerProfileRules(sessionState.activeProfile, 'ARCH_REVIEW');
+
     // F13 slice 6: 3-way prompt selection by reviewable tool.
     // The previous 2-way ternary defaulted any non-PLAN tool to the
     // implementation prompt, which would have produced incorrect prompts
@@ -309,6 +321,7 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        ...planRules,
       });
     } else if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
       prompt = buildImplReviewPrompt({
@@ -322,6 +335,7 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        ...implRules,
       });
     } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
       const adrText =
@@ -341,6 +355,7 @@ export async function runReviewOrchestration(
         obligationId: reviewCtx.obligationId,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        ...archRules,
       });
     } else {
       // Unreachable: orchestrator is only entered when isReviewRequired()
