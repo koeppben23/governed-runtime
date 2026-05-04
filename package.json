@@ -53,8 +53,8 @@
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",
-    "preversion": "node scripts/sync-version.js && node scripts/generate-docs.js",
-    "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ && git commit -m 'chore: sync version from VERSION to package.json and docs'"
+    "preversion": "node scripts/sync-version.js && node scripts/cut-changelog-release.js && node scripts/generate-docs.js",
+    "postversion": "git add package.json README.md PRODUCT_IDENTITY.md docs/ CHANGELOG.md VERSION && git commit --no-verify -m 'chore(release): cut v{version} from VERSION to package.json, docs, and changelog'"
   },
   "engines": {
     "node": ">=20"

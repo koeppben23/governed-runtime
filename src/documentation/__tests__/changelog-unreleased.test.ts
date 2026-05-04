@@ -1,9 +1,9 @@
 /**
  * @module documentation/__tests__/changelog-unreleased
- * @description Guard for current-work entries in CHANGELOG.md Unreleased section.
+ * @description Guard for CHANGELOG.md section structure.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- * @version v1
+ * @test-policy HAPPY, BAD, CORNER, EDGE
+ * @version v2 (P10b: updated for rc.2 section while keeping Unreleased guard)
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,26 +25,40 @@ function unreleasedSection(): string {
   return afterMarker!.split(/\n## \[/)[0];
 }
 
-describe('documentation/changelog-unreleased', () => {
-  describe('HAPPY — Unreleased is the active section', () => {
+function rc2Section(): string {
+  const marker = '## [1.2.0-rc.2] - 2026-05-03\n';
+  const afterMarker = readChangelog().split(marker)[1];
+  expect(afterMarker, 'CHANGELOG.md must contain a [1.2.0-rc.2] section').toBeTruthy();
+  return afterMarker!.split(/\n## \[/)[0];
+}
+
+describe('documentation/changelog-sections', () => {
+  describe('HAPPY — Unreleased and rc.2 sections exist', () => {
     it('starts with the Unreleased heading after the preamble', () => {
       expect(readChangelog()).toMatch(/^## \[Unreleased\]/m);
     });
-  });
 
-  describe('BAD — current PR work must be represented', () => {
-    it('documents PR-0b documentation drift guards in Unreleased', () => {
-      const section = unreleasedSection();
-      expect(section).toContain('Documentation drift guards (PR-0b)');
-      expect(section).toContain('runtime SSOTs');
+    it('contains a [1.2.0-rc.2] section', () => {
+      expect(readChangelog()).toContain('## [1.2.0-rc.2] - 2026-05-03');
+    });
+
+    it('contains a [1.2.0-rc.1] referrer section', () => {
+      expect(readChangelog()).toContain('## [1.2.0-rc.1] - 2026-04-23');
     });
   });
 
-  describe('CORNER — entry is categorized', () => {
-    it('places the PR-0b entry under an allowed Keep a Changelog category', () => {
+  describe('BAD — current Unreleased work must be represented', () => {
+    it('documents P10b rail unit tests in Unreleased', () => {
       const section = unreleasedSection();
+      expect(section).toContain('Rail unit tests for 6 untested rails (P10b)');
+    });
+  });
+
+  describe('CORNER — rc.2 entries are categorized', () => {
+    it('places the PR-0b entry under Added in rc.2 section', () => {
+      const section = rc2Section();
       const addedSection = section.match(/### Added\n([\s\S]*?)(?=\n### |$)/);
-      expect(addedSection, 'Unreleased must contain an Added category').toBeTruthy();
+      expect(addedSection, 'rc.2 must contain an Added category').toBeTruthy();
       expect(addedSection![1]).toContain('Documentation drift guards (PR-0b)');
     });
   });

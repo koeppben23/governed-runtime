@@ -23,10 +23,10 @@ function readDoc(relativePath: string): string {
   return readFileSync(join(REPO_ROOT, relativePath), 'utf-8');
 }
 
-function unreleasedSection(): string {
-  const marker = '## [Unreleased]\n';
+function rc2Section(): string {
+  const marker = '## [1.2.0-rc.2] - 2026-05-03\n';
   const afterMarker = readDoc('CHANGELOG.md').split(marker)[1];
-  expect(afterMarker, 'CHANGELOG.md must contain an [Unreleased] section').toBeTruthy();
+  expect(afterMarker, 'CHANGELOG.md must contain a [1.2.0-rc.2] section').toBeTruthy();
   return afterMarker!.split(/\n## \[/)[0];
 }
 
@@ -35,40 +35,40 @@ describe('documentation/review-capabilities-doc-drift', () => {
   // HAPPY — CHANGELOG documents current review capabilities
   // =========================================================================
   describe('HAPPY — CHANGELOG documents review capabilities', () => {
-    it('Unreleased mentions obligation-bound /review (P2)', () => {
-      const section = unreleasedSection();
+    it('RC2 mentions obligation-bound /review (P2)', () => {
+      const section = rc2Section();
       expect(section).toContain('ReviewObligation');
       expect(section).toContain('obligationType');
       expect(section).toContain('review');
     });
 
-    it('Unreleased mentions invocation evidence (P3)', () => {
-      expect(unreleasedSection()).toContain('ReviewInvocationEvidence');
+    it('RC2 mentions invocation evidence (P3)', () => {
+      expect(rc2Section()).toContain('ReviewInvocationEvidence');
     });
 
-    it('Unreleased mentions host-orchestrated /review (P4)', () => {
-      const section = unreleasedSection();
+    it('RC2 mentions host-orchestrated /review (P4)', () => {
+      const section = rc2Section();
       expect(section).toContain('CONTENT_ANALYSIS_REQUIRED');
       expect(section).toContain('pluginReviewFindings');
     });
 
-    it('Unreleased mentions review cards (P5)', () => {
-      const section = unreleasedSection();
+    it('RC2 mentions review cards (P5)', () => {
+      const section = rc2Section();
       expect(section).toContain('Review Report Card');
       expect(section).toContain('Architecture Review Card');
     });
 
-    it('Unreleased mentions card artifact persistence (P6)', () => {
-      expect(unreleasedSection()).toContain('sourceStateHash');
+    it('RC2 mentions card artifact persistence (P6)', () => {
+      expect(rc2Section()).toContain('sourceStateHash');
     });
 
-    it('Unreleased mentions fix correctness (P0/P1)', () => {
-      const section = unreleasedSection();
+    it('RC2 mentions fix correctness (P0/P1)', () => {
+      const section = rc2Section();
       expect(section).toContain('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
     });
 
-    it('Unreleased mentions MAX_REVIEW_ITERATIONS_REACHED', () => {
-      expect(unreleasedSection()).toContain('MAX_REVIEW_ITERATIONS_REACHED');
+    it('RC2 mentions MAX_REVIEW_ITERATIONS_REACHED', () => {
+      expect(rc2Section()).toContain('MAX_REVIEW_ITERATIONS_REACHED');
     });
   });
 
@@ -122,7 +122,7 @@ describe('documentation/review-capabilities-doc-drift', () => {
     });
 
     it('CHANGELOG PR-E entry does not claim branch review requires gh CLI', () => {
-      const section = unreleasedSection();
+      const section = rc2Section();
       expect(section).toMatch(/branch.*git diff/i);
       expect(section).not.toMatch(/PR\/branch.*gh|gh.*PR\/branch/i);
     });
@@ -194,7 +194,7 @@ describe('documentation/review-capabilities-doc-drift', () => {
     });
 
     it('CHANGELOG does not contradict content-aware URL loading', () => {
-      const section = unreleasedSection();
+      const section = rc2Section();
       expect(section).not.toContain('FlowGuard itself never fetches URLs');
     });
 
