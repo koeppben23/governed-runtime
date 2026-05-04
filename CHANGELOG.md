@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Rail unit tests for 6 untested rails (P10b)**: 37 rail unit tests added for `abort`, `ticket`, `plan`, `validate`, `implement`, and `continue` rails. Tests cover fail-closed behavior (wrong-phase rejection, missing evidence, empty input), convergence guards (iteration limits, no infinite loops), user-gate short-circuits (ARCH_REVIEW, EVIDENCE_REVIEW, PLAN_REVIEW return waiting), terminal-phase blocking (COMPLETE, REVIEW_COMPLETE), and phase-specific guidance (TICKET routing, VALIDATION auto-advance, ARCHITECTURE review iteration). All 6 rails previously lacked direct `*.test.ts` files; coverage was integration-only.
+
+### Removed
+
+- **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` from `src/config/profile.ts`. These executors were dead code — never called by any production path — but their presence implied FlowGuard executes validation. FlowGuard does not execute validation; it gates agent-reported evidence. The `activeChecks` list (`['test_quality', 'rollback_safety']`) remains as guidance for the agent. The `CheckExecutor` interface and `checks` field were removed from `FlowGuardProfile`. Validation metadata fields (`evidenceType`, `command`, `evidenceSummary`) added to `ValidationResult` schema to record how each check was actually executed. Validate template updated: "FlowGuard does not execute validation checks for you."
+
 ### Fixed
 
 - **ReviewReport Zod schema completeness field (PR-C)**: `ReviewReport` Zod schema in `evidence.ts` now includes `completeness: CompletenessReportSchema`. Previously `ReviewReport.safeParse()` stripped the `completeness` matrix when persisting or reading `review-report.json` (H1 defect). `CompletenessReportSchema` is imported from `audit/completeness.js` where it is defined alongside the existing interfaces. `ExtendedReviewReport` type removed from `review.ts`; `executeReview` now returns `ReviewReport` directly. Tests in `state.test.ts`, `adapters.test.ts`, and `review.test.ts` updated for the new schema.
