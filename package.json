@@ -70,8 +70,8 @@
     "@opentelemetry/sdk-node": "^0.216.0"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.0.0",
-    "@commitlint/config-conventional": "^20.5.3",
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^19.0.0",
     "@eslint/js": "^9.37.0",
     "@opencode-ai/plugin": "^1.14.33",
     "@stryker-mutator/core": "^9.6.1",
