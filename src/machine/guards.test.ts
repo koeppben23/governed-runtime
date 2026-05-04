@@ -420,10 +420,55 @@ describe('guards', () => {
       expect(archGuards.length).toBe(planGuards.length);
       expect(archGuards.map((g) => g.event)).toEqual(planGuards.map((g) => g.event));
     });
+
+    // MUTATION_KILL: Assert exact events per phase to kill ArrayDeclaration → [] mutations
+    it('TICKET guards contain exactly ERROR and PLAN_READY', () => {
+      expect(GUARDS.get('TICKET')!.map((g) => g.event)).toEqual(['ERROR', 'PLAN_READY']);
+    });
+
+    it('PLAN guards contain exactly ERROR, SELF_REVIEW_MET, SELF_REVIEW_PENDING', () => {
+      expect(GUARDS.get('PLAN')!.map((g) => g.event)).toEqual([
+        'ERROR',
+        'SELF_REVIEW_MET',
+        'SELF_REVIEW_PENDING',
+      ]);
+    });
+
+    it('VALIDATION guards contain exactly ERROR, ALL_PASSED, CHECK_FAILED', () => {
+      expect(GUARDS.get('VALIDATION')!.map((g) => g.event)).toEqual([
+        'ERROR',
+        'ALL_PASSED',
+        'CHECK_FAILED',
+      ]);
+    });
+
+    it('IMPLEMENTATION guards contain exactly ERROR and IMPL_COMPLETE', () => {
+      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual(['ERROR', 'IMPL_COMPLETE']);
+    });
+
+    it('IMPL_REVIEW guards contain exactly ERROR, REVIEW_MET, REVIEW_PENDING', () => {
+      expect(GUARDS.get('IMPL_REVIEW')!.map((g) => g.event)).toEqual([
+        'ERROR',
+        'REVIEW_MET',
+        'REVIEW_PENDING',
+      ]);
+    });
+
+    it('REVIEW guards contain exactly ERROR and REVIEW_DONE', () => {
+      expect(GUARDS.get('REVIEW')!.map((g) => g.event)).toEqual(['ERROR', 'REVIEW_DONE']);
+    });
   });
 
   // ─── MUTATION KILL: implReviewPending ───────────────────────
   describe('MUTATION_KILL', () => {
+    it('reviewDone: false when phase is REVIEW but reportPath null (kills conditional→true)', () => {
+      expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
+    });
+
+    it('reviewDone: false when phase is not REVIEW (kills conditional→true)', () => {
+      expect(reviewDone(makeState('PLAN', { reviewReportPath: '/report.json' }))).toBe(false);
+    });
+
     it('implReviewPending: true when implReview non-null and not converged', () => {
       // implReview present but verdict != 'converged' → pending
       const state = makeState('IMPLEMENTATION', {

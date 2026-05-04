@@ -2159,4 +2159,169 @@ describe('review-enforcement', () => {
       });
     });
   });
+
+  // ─── MUTATION KILL: P35 recovery and strict enforcement paths ────────────
+  describe('MUTATION_KILL: enforceBeforeVerdict P35 recovery path', () => {
+    it('P35: blocks when sessionState has pending obligation but no transient state', () => {
+      const state = createSessionState();
+      // No pending review in transient state
+      const sessionState = {
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '00000000-0000-4000-8000-000000000001',
+              obligationType: 'plan' as const,
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: 'v1',
+              mandateDigest: 'digest-abc',
+              createdAt: NOW,
+              pluginHandshakeAt: null,
+              status: 'pending' as const,
+              invocationId: null,
+              blockedCode: null,
+              fulfilledAt: null,
+              consumedAt: null,
+            },
+          ],
+        },
+      } as any;
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { selfReviewVerdict: 'approve' },
+        sessionState,
+      );
+      expect(result.allowed).toBe(false);
+      if (!result.allowed) {
+        expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+        expect(result.reason).toContain('recovered from session state');
+        expect(result.reason).toContain('00000000-0000-4000-8000-000000000001');
+      }
+    });
+
+    it('P35: allows when sessionState has no pending obligations', () => {
+      const state = createSessionState();
+      const sessionState = {
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '00000000-0000-4000-8000-000000000002',
+              obligationType: 'plan' as const,
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: 'v1',
+              mandateDigest: 'digest-abc',
+              createdAt: NOW,
+              pluginHandshakeAt: null,
+              status: 'fulfilled' as const,
+              invocationId: '00000000-0000-4000-8000-000000000003',
+              blockedCode: null,
+              fulfilledAt: NOW,
+              consumedAt: null,
+            },
+          ],
+        },
+      } as any;
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { selfReviewVerdict: 'approve' },
+        sessionState,
+      );
+      expect(result.allowed).toBe(true);
+    });
+
+    it('P35: strict enforcement blocks when no transient state and no sessionState', () => {
+      const state = createSessionState();
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { selfReviewVerdict: 'approve' },
+        null,
+        true, // strictEnforcement
+      );
+      expect(result.allowed).toBe(false);
+      if (!result.allowed) {
+        expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
+        expect(result.reason).toContain('strict mode');
+      }
+    });
+
+    it('P35: non-strict allows when no transient state and no sessionState', () => {
+      const state = createSessionState();
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { selfReviewVerdict: 'approve' },
+        null,
+        false,
+      );
+      expect(result.allowed).toBe(true);
+    });
+  });
+
+  // ─── MUTATION KILL: extractCapturedFindings with embedded JSON ───────────
+  describe('MUTATION_KILL: extractCapturedFindings embedded JSON extraction', () => {
+    it('extracts findings from text with embedded JSON containing reviewedBy', () => {
+      const embedded =
+        'Some prefix text\n' +
+        JSON.stringify({
+          overallVerdict: 'approve',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'ses_abc123' },
+        }) +
+        '\nSome suffix text';
+      const findings = extractCapturedFindings(embedded);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('approve');
+      expect(findings!.sessionId).toBe('ses_abc123');
+    });
+
+    it('handles nested braces in embedded JSON correctly', () => {
+      const embedded = JSON.stringify({
+        overallVerdict: 'changes_requested',
+        blockingIssues: [{ title: 'Missing {test} coverage', severity: 'error' }],
+        reviewedBy: { sessionId: 'ses_nested' },
+      });
+      const findings = extractCapturedFindings(embedded);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('changes_requested');
+      expect(findings!.blockingIssuesCount).toBe(1);
+    });
+
+    it('handles escaped quotes in embedded JSON', () => {
+      const obj = {
+        overallVerdict: 'approve',
+        blockingIssues: [],
+        summary: 'Code looks "fine"',
+        reviewedBy: { sessionId: 'ses_escaped' },
+      };
+      const findings = extractCapturedFindings(JSON.stringify(obj));
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('approve');
+    });
+
+    it('returns null for text without valid JSON structure', () => {
+      const findings = extractCapturedFindings('Not JSON at all { broken }');
+      expect(findings).toBeNull();
+    });
+  });
+
+  // ─── MUTATION KILL: promptContainsValue regex edge cases ─────────────────
+  describe('MUTATION_KILL: promptContainsValue boundary cases', () => {
+    it('multi-digit iteration values match correctly', () => {
+      expect(promptContainsValue('iteration=10 is here', 'iteration', 10)).toBe(true);
+      expect(promptContainsValue('iteration=10 is here', 'iteration', 1)).toBe(false);
+    });
+
+    it('multi-digit planVersion values match correctly', () => {
+      expect(promptContainsValue('planVersion=12 version', 'planVersion', 12)).toBe(true);
+      expect(promptContainsValue('planVersion=12 version', 'planVersion', 1)).toBe(false);
+    });
+
+    it('does not match partial number at boundary', () => {
+      expect(promptContainsValue('iteration=123', 'iteration', 12)).toBe(false);
+    });
+  });
 });

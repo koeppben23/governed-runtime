@@ -120,6 +120,26 @@ async function ensureDir(dir: string): Promise<void> {
 // -- Atomic Write -------------------------------------------------------------
 
 /**
+ * Rename with retry for Windows EPERM/EBUSY transient failures.
+ * Antivirus and file indexers can briefly lock files on NTFS.
+ */
+async function renameWithRetry(src: string, dest: string, attempts = 3): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fs.rename(src, dest);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if ((code === 'EPERM' || code === 'EBUSY') && i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 50 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
  * Write a file atomically: serialize -> temp file -> rename.
  *
  * The temp file is placed in the same directory as the target.
@@ -136,7 +156,7 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
 
   try {
     await fs.writeFile(tempPath, content, 'utf-8');
-    await fs.rename(tempPath, filePath);
+    await renameWithRetry(tempPath, filePath);
   } catch (err) {
     // Best-effort cleanup of temp file
     try {
