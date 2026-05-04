@@ -20,8 +20,9 @@ export const LEGACY_INSTRUCTION_ENTRY = 'AGENTS.md';
  * The header (version + digest) is prepended at install time by
  * `buildMandatesContent()`.
  *
- * FLOWGUARD_MANDATES_BODY extends AGENTS.md with installed runtime and
- * reviewer-specific mandate sections. The shared base sections
+ * FLOWGUARD_MANDATES_BODY extends AGENTS.md with installed runtime mandate
+ * sections. REVIEWER_AGENT contains reviewer-specific mandate sections.
+ * The shared base sections
  * (## 1. Mission through ## 12. Extended Guidance) must remain aligned
  * with AGENTS.md. Changes to those shared sections in AGENTS.md
  * must be reflected here.

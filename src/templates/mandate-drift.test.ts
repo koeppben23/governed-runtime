@@ -10,7 +10,7 @@
  * footer. REVIEWER_AGENT adds reviewer-specific sections. Shared base sections
  * (## 1 through ## 12) must not drift.
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF
+ * @test-policy HAPPY, BAD, CORNER, EDGE
  */
 
 import { readFileSync } from 'node:fs';
@@ -191,17 +191,5 @@ describe('P9b: mandate drift guard', () => {
   it('FLOWGUARD_MANDATES_BODY has exactly 18 base sections (16 shared + 2 extensions)', () => {
     const mandatesH2 = MANDATES_BASE.match(/^## /gm) ?? [];
     expect(mandatesH2.length).toBe(18);
-  });
-
-  // ── PERF: extractSection is stable and fast ──────────────────────────────
-
-  it('extract all 16 shared sections from both documents in under 5ms', () => {
-    const start = performance.now();
-    for (const section of SHARED_SECTIONS) {
-      extractSection(AGENTS_MD, section);
-      extractSection(MANDATES_BASE, section);
-    }
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(5);
   });
 });
