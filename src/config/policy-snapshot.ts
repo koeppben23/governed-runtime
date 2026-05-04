@@ -341,14 +341,8 @@ export function normalizePolicySnapshotWithMeta(
       requestedMode,
       source: typeof s.source === 'string' ? (s.source as PolicySource) : undefined,
       effectiveGateBehavior,
-      degradedReason:
-        typeof s.degradedReason === 'string'
-          ? (s.degradedReason as PolicyDegradedReason)
-          : undefined,
-      resolutionReason:
-        typeof s.resolutionReason === 'string'
-          ? (s.resolutionReason as PolicyResolutionReason)
-          : undefined,
+      degradedReason: typeof s.degradedReason === 'string' ? s.degradedReason : undefined,
+      resolutionReason: typeof s.resolutionReason === 'string' ? s.resolutionReason : undefined,
       centralMinimumMode:
         typeof s.centralMinimumMode === 'string'
           ? (s.centralMinimumMode as CentralMinimumMode)
@@ -439,11 +433,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     minimumActorAssuranceForApproval:
-      (snapshot.minimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified'
-        | undefined) ??
+      snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {

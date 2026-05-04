@@ -647,12 +647,7 @@ export const review: ToolDefinition = {
         phase: finalState.phase,
         phaseLabel: PHASE_LABELS[finalState.phase],
         overallStatus: report.overallStatus,
-        findings: (report.findings ?? []) as Array<{
-          severity: string;
-          category: string;
-          message: string;
-          location?: string;
-        }>,
+        findings: report.findings ?? [],
         completeness: {
           overallComplete: report.completeness.overallComplete,
           fourEyes: report.completeness.fourEyes?.satisfied ?? false,

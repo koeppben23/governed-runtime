@@ -20,8 +20,12 @@ export const LEGACY_INSTRUCTION_ENTRY = 'AGENTS.md';
  * The header (version + digest) is prepended at install time by
  * `buildMandatesContent()`.
  *
- * IMPORTANT: This content mirrors AGENTS.md in the repo root.
- * Changes to AGENTS.md must be reflected here.
+ * FLOWGUARD_MANDATES_BODY extends AGENTS.md with installed runtime mandate
+ * sections. REVIEWER_AGENT contains reviewer-specific mandate sections.
+ * The shared base sections
+ * (## 1. Mission through ## 12. Extended Guidance) must remain aligned
+ * with AGENTS.md. Changes to those shared sections in AGENTS.md
+ * must be reflected here.
  */
 export const FLOWGUARD_MANDATES_BODY = `\
 # FlowGuard Agent Rules
@@ -54,6 +58,7 @@ When instructions conflict, follow this order:
 6. Verbosity preferences.
 
 Higher-priority rules override lower-priority rules.
+Repository convention or local style must not override quality gates, SSOT, schemas, or fail-closed behavior.
 
 ## 3. Task Class Router
 
@@ -91,6 +96,7 @@ These are prohibited across all task classes:
   Instead: mark unverified claims as \`NOT_VERIFIED\`.
 
 Examples:
+
 - Do not recover invalid policy by falling back to team mode.
 - Do not treat derived artifacts as SSOT.
 - Do not claim install verification without testing the generated tarball.
@@ -148,6 +154,17 @@ Runtime behavior claims remain \`NOT_VERIFIED\` until execution evidence exists.
 - Standard ambiguity: proceed only if contracts stay clear; otherwise ask one precise question.
 - High-risk ambiguity: ask or return \`BLOCKED\` before implementation.
 - Never encode an assumption as runtime fact.
+
+### Non-Interactive Runtime Rule
+
+For non-interactive/headless execution contexts (for example \`flowguard run\` and \`flowguard serve\`
+automation paths), agents MUST NOT rely on asking follow-up questions.
+
+- If required input is missing or ambiguity is safety-relevant, return \`BLOCKED\` with:
+  - exact missing value(s),
+  - smallest safe recovery step,
+  - no speculative continuation.
+- Never replace missing operator input with guessed defaults in non-interactive mode.
 
 ## 8. Output Contract
 
@@ -366,7 +383,7 @@ the author missed. You review falsification-first: try to break it before approv
 
 When the prompt contains PR diff, branch diff, URL content, or manual text to review:
 
-1. **Analyze the content** for issues using the read, glob, grep, and webfetch tools.
+1. **Analyze the content** for issues using the provided content and available read, glob, and grep tools.
    Use the schema-allowed \`severity\` values only: \`"critical" | "major" | "minor" | "info"\`.
    Use the schema-allowed \`category\` values only:
    \`"completeness" | "correctness" | "feasibility" | "risk" | "quality"\`.

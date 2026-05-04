@@ -234,9 +234,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
     });
 
     it('resolvePolicyFromSnapshot uses default when snapshot lacks selfReview', async () => {
-      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } = await import(
-        '../../config/policy.js'
-      );
+      const { resolvePolicyFromSnapshot, DEFAULT_SELF_REVIEW_CONFIG } =
+        await import('../../config/policy.js');
       const { PolicySnapshotSchema } = await import('../../state/evidence.js');
 
       const snapshotWithoutSelfReview = PolicySnapshotSchema.parse({

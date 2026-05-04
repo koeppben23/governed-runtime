@@ -158,7 +158,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
       return cs.lastHash;
     }
     const { events } = await readAuditTrail(sessDir);
-    cs.lastHash = getLastChainHash(events as unknown as Array<Record<string, unknown>>);
+    cs.lastHash = getLastChainHash(events);
     cs.initialized = true;
     return cs.lastHash;
   }

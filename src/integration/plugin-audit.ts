@@ -122,9 +122,7 @@ export async function runAudit(
     let success = true;
     let errorMessage: string | undefined;
     const parsed = parseToolResult(
-      typeof output === 'object' && output !== null && 'output' in output
-        ? (output as { output: unknown }).output
-        : output,
+      typeof output === 'object' && output !== null && 'output' in output ? output.output : output,
     );
     if (parsed) {
       phase = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
@@ -312,7 +310,7 @@ export async function runAudit(
           sessionId,
           {
             action: 'session_completed',
-            finalPhase: 'COMPLETE' as Phase,
+            finalPhase: 'COMPLETE',
           },
           now,
           'machine',

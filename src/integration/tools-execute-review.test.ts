@@ -198,9 +198,8 @@ async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> 
 }
 
 async function currentSessionDir(): Promise<string> {
-  const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-    '../adapters/workspace/index.js'
-  );
+  const { computeFingerprint, sessionDir: resolveSessionDir } =
+    await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
@@ -305,9 +304,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     const reviewFindings = await fulfillPlanReview(0, 'approve');
     await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
@@ -325,9 +323,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     const reviewFindings = await fulfillPlanReview(0, 'approve');
     await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
@@ -411,9 +408,8 @@ describe('P34a: Policy-Driven Branches', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -438,9 +434,8 @@ describe('P34a: Policy-Driven Branches', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -467,9 +462,8 @@ describe('P34a: Policy-Driven Branches', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -496,9 +490,8 @@ describe('P34a: Policy-Driven Branches', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -522,9 +515,8 @@ describe('P34a: Policy-Driven Branches', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-    const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-      '../adapters/workspace/index.js'
-    );
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
@@ -596,9 +588,8 @@ describe('decision', () => {
     it('fail-closes when derived plan artifacts are missing', async () => {
       await reachPlanReview();
 
-      const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-        '../adapters/workspace/index.js'
-      );
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
@@ -1378,9 +1369,8 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBeUndefined();
 
         // Read state and verify invocation evidence was created.
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace/index.js'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -1405,9 +1395,8 @@ describe('review (standalone flow)', () => {
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace/index.js'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -1422,9 +1411,8 @@ describe('review (standalone flow)', () => {
       });
 
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
-        const { consumeReviewObligation, ensureReviewAssurance } = await import(
-          './review-assurance.js'
-        );
+        const { consumeReviewObligation, ensureReviewAssurance } =
+          await import('./review-assurance.js');
         const assurance = ensureReviewAssurance(undefined);
         const obligation = {
           obligationId: '00000000-0000-0000-0000-000000000001',
@@ -1459,9 +1447,8 @@ describe('review (standalone flow)', () => {
         const result = await submitContentReview({ prNumber: 48, inputOrigin: 'pr' }, 'approve');
         expect(result.error).toBeUndefined();
 
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace/index.js'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
@@ -1500,9 +1487,8 @@ describe('review (standalone flow)', () => {
         expect(card).toContain('Review complete');
 
         // Verify the card was persisted as an artifact.
-        const { computeFingerprint, sessionDir: resolveSessionDir } = await import(
-          '../adapters/workspace/index.js'
-        );
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const artifactsDir = `${sessDir}/artifacts`;

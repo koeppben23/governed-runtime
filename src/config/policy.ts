@@ -391,10 +391,7 @@ export async function loadCentralPolicyEvidence(
   try {
     raw = await readFileFn(absolutePath);
   } catch (err) {
-    const code =
-      err && typeof err === 'object' && 'code' in err
-        ? String((err as { code: unknown }).code)
-        : '';
+    const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
     const message = err instanceof Error ? err.message : String(err);
     throw new PolicyConfigurationError(
       code === 'ENOENT' ? 'CENTRAL_POLICY_MISSING' : 'CENTRAL_POLICY_UNREADABLE',
