@@ -53,4 +53,21 @@ describe('PHASE_LABELS', () => {
   it('label count matches phase count', () => {
     expect(Object.keys(PHASE_LABELS)).toHaveLength(ALL_PHASES.length);
   });
+
+  it('each phase maps to the correct product-oriented label', () => {
+    expect(PHASE_LABELS.READY).toBe('Ready');
+    expect(PHASE_LABELS.TICKET).toBe('Task captured');
+    expect(PHASE_LABELS.PLAN).toBe('Planning');
+    expect(PHASE_LABELS.PLAN_REVIEW).toBe('Ready for plan approval');
+    expect(PHASE_LABELS.VALIDATION).toBe('Validation');
+    expect(PHASE_LABELS.IMPLEMENTATION).toBe('Implementation in progress');
+    expect(PHASE_LABELS.IMPL_REVIEW).toBe('Ready for evidence review');
+    expect(PHASE_LABELS.EVIDENCE_REVIEW).toBe('Ready for final review');
+    expect(PHASE_LABELS.COMPLETE).toBe('Complete');
+    expect(PHASE_LABELS.ARCHITECTURE).toBe('Architecture in progress');
+    expect(PHASE_LABELS.ARCH_REVIEW).toBe('Ready for architecture review');
+    expect(PHASE_LABELS.ARCH_COMPLETE).toBe('Architecture complete');
+    expect(PHASE_LABELS.REVIEW).toBe('Compliance review');
+    expect(PHASE_LABELS.REVIEW_COMPLETE).toBe('Review complete');
+  });
 });

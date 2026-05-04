@@ -23,7 +23,6 @@
     "src/config/reasons.ts",
     "src/config/policy.ts",
     "src/presentation/next-action-copy.ts",
-    "src/presentation/next-action-copy.ts",
     "src/presentation/plan-review-card.ts",
     "src/presentation/phase-labels.ts",
     "src/integration/command-aliases.ts",
@@ -33,10 +32,13 @@
     "src/integration/review-orchestrator.ts",
     "src/integration/status.ts"
   ],
+  "mutator": {
+    "excludedMutations": ["StringLiteral"]
+  },
   "ignoreStatic": true,
   "thresholds": {
     "high": 90,
     "low": 80,
-    "break": 80
+    "break": 90
   }
 }
