@@ -411,6 +411,35 @@ export async function loadCentralPolicyEvidence(
   };
 }
 
+/** Apply user-level config overrides (iteration limits, assurance, IdP) to a base policy. */
+function applyConfigOverrides(
+  basePolicy: FlowGuardPolicy,
+  opts: {
+    configMaxSelfReviewIterations?: number;
+    configMaxImplReviewIterations?: number;
+    configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+    configRequireVerifiedActorsForApproval?: boolean;
+    configIdentityProvider?: IdpConfig;
+    configIdentityProviderMode?: IdentityProviderMode;
+  },
+): FlowGuardPolicy {
+  return {
+    ...basePolicy,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    minimumActorAssuranceForApproval:
+      opts.configMinimumActorAssuranceForApproval ??
+      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
+      basePolicy.minimumActorAssuranceForApproval,
+    requireVerifiedActorsForApproval:
+      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
+    identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
+    identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
+  };
+}
+
 export async function resolvePolicyForHydrate(opts: {
   explicitMode?: PolicyMode;
   repoMode?: PolicyMode;
@@ -435,28 +464,7 @@ export async function resolvePolicyForHydrate(opts: {
   const requestedResolution = resolvePolicyWithContext(requestedMode, opts.ciContext);
 
   // Apply config iteration-limit overrides over the selected policy preset.
-  const basePolicy = requestedResolution.policy;
-  const policyWithOverrides: FlowGuardPolicy = {
-    ...basePolicy,
-    maxSelfReviewIterations:
-      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations:
-      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
-    // P34: Translate legacy requireVerifiedActorsForApproval to minimumActorAssuranceForApproval
-    // Priority: explicit new config > legacy bool true > preset value > default
-    minimumActorAssuranceForApproval:
-      (opts.configMinimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified') ??
-      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
-      basePolicy.minimumActorAssuranceForApproval,
-    requireVerifiedActorsForApproval:
-      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
-    // P35a: Wire IdP configuration through
-    identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
-    identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
-  };
+  const policyWithOverrides = applyConfigOverrides(requestedResolution.policy, opts);
 
   if (opts.centralPolicyPath === undefined) {
     return {
@@ -504,26 +512,7 @@ export async function resolvePolicyForHydrate(opts: {
 
   const centralResolution = resolvePolicyWithContext(centralEvidence.minimumMode, opts.ciContext);
   // Apply config overrides to central policy as well
-  const centralPolicyWithOverrides: FlowGuardPolicy = {
-    ...centralResolution.policy,
-    maxSelfReviewIterations:
-      opts.configMaxSelfReviewIterations ?? centralResolution.policy.maxSelfReviewIterations,
-    maxImplReviewIterations:
-      opts.configMaxImplReviewIterations ?? centralResolution.policy.maxImplReviewIterations,
-    minimumActorAssuranceForApproval:
-      (opts.configMinimumActorAssuranceForApproval as
-        | 'best_effort'
-        | 'claim_validated'
-        | 'idp_verified') ??
-      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
-      centralResolution.policy.minimumActorAssuranceForApproval,
-    requireVerifiedActorsForApproval:
-      opts.configRequireVerifiedActorsForApproval ??
-      centralResolution.policy.requireVerifiedActorsForApproval,
-    identityProvider: opts.configIdentityProvider ?? centralResolution.policy.identityProvider,
-    identityProviderMode:
-      opts.configIdentityProviderMode ?? centralResolution.policy.identityProviderMode,
-  };
+  const centralPolicyWithOverrides = applyConfigOverrides(centralResolution.policy, opts);
   return {
     requestedMode,
     requestedSource,
@@ -561,11 +550,10 @@ export function resolvePolicyWithContext(
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
-    const degradedPolicy = {
+    const degradedPolicy: FlowGuardPolicy = {
       ...TEAM_CI_POLICY,
       requireHumanGates: true,
-      effectiveModeOverride: 'team',
-    } as FlowGuardPolicy & { effectiveModeOverride?: string };
+    };
     return {
       requestedMode,
       effectiveMode: 'team',

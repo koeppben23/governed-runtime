@@ -201,6 +201,9 @@ export const SessionState = z.object({
   /** Human review decision at PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW. */
   reviewDecision: ReviewDecision.nullable(),
 
+  /** Absolute path to the generated review report file (REVIEW phase, P8b). */
+  reviewReportPath: z.string().nullable().default(null),
+
   /** Next auto-generated ADR sequence number for /architecture. */
   nextAdrNumber: z.number().int().positive(),
 
@@ -252,14 +255,14 @@ export const SessionState = z.object({
   /**
    * Structured initiator identity for regulated approval (P30).
    * Persists actor identity at session creation for four-eyes proof.
-   * Required for regulated mode; absent for pre-P30 sessions.
+   * Required for regulated mode.
    */
   initiatedByIdentity: DecisionIdentitySchema.optional(),
 
   /**
    * Resolved actor identity at hydrate time (P27).
    * Best-effort operator identity — NOT an authentication claim.
-   * Absent for sessions created before P27.
+   * Absent when no actor identity was resolved; null is not a valid state value.
    */
   actorInfo: ActorInfoSchema.optional(),
 

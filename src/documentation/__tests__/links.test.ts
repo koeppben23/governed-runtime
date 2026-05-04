@@ -457,7 +457,11 @@ describe('docs/delivery-scope.md', () => {
     it('should document workflow engine features', async () => {
       const content = await fs.readFile(DELIVERY_SCOPE_PATH, 'utf-8');
       expect(content).toContain('14 explicit phases');
-      expect(content).toContain('3 policy modes');
+      // 4 policy modes per src/config/policy.ts: solo, team, team-ci, regulated.
+      // The previous '3 policy modes' pin was a drift artifact (corrected in
+      // slice 0a.2). Pinning the corrected reality here keeps the doc-vs-code
+      // SSOT alignment enforced in CI.
+      expect(content).toContain('4 policy modes');
       expect(content).toContain('4 built-in profiles');
     });
 

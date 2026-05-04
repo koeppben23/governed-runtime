@@ -18,9 +18,8 @@
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
-import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
-import { autoAdvance } from './types.js';
+import { autoAdvance, createPolicyEvalFn, buildFlowSelectionTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -71,9 +70,8 @@ export function executeTicket(
   let baseTransition = state.transition;
 
   if (state.phase === 'READY') {
-    const at = ctx.now();
-    basePhase = 'TICKET';
-    const tr: TransitionRecord = { from: 'READY', to: 'TICKET', event: 'TICKET_SELECTED', at };
+    const tr = buildFlowSelectionTransition('TICKET', 'TICKET_SELECTED', ctx.now());
+    basePhase = tr.to;
     preTransitions.push(tr);
     baseTransition = { from: tr.from, to: tr.to, event: tr.event, at: tr.at };
   }
@@ -93,7 +91,7 @@ export function executeTicket(
   };
 
   // 5. Auto-advance (policy-aware)
-  const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+  const evalFn = createPolicyEvalFn(ctx);
   const {
     state: finalState,
     evalResult: result,

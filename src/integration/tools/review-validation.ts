@@ -15,7 +15,11 @@
 
 import type { ReviewFindings } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
-import { findLatestObligation, validateStrictAttestation } from '../review-assurance.js';
+import {
+  findLatestObligation,
+  hashFindings,
+  validateStrictAttestation,
+} from '../review-assurance.js';
 import type { ReviewAssuranceState, ReviewObligationType } from '../../state/evidence.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
@@ -57,17 +61,28 @@ export function validateReviewFindings(
     });
   }
 
-  const strictMatchedObligation =
-    ctx.strictEnforcement && ctx.assurance && ctx.obligationType
-      ? findLatestObligation(
-          ctx.assurance.obligations,
-          ctx.obligationType,
-          findings.iteration,
-          findings.planVersion,
-        )
-      : null;
-  const expectedIteration = strictMatchedObligation?.iteration ?? ctx.expectedIteration;
-  const expectedPlanVersion = strictMatchedObligation?.planVersion ?? ctx.expectedPlanVersion;
+  // P1.3 slice 4e: third-verdict tool-layer assertion.
+  // The schema (slice 1) accepts overallVerdict='unable_to_review' so
+  // that the subagent can declare the artifact unreviewable. However,
+  // there is NO legitimate tool-submit path that consumes such findings:
+  // - In strict mode, the plugin orchestrator (slice 4c) routes
+  //   unable_to_review to BLOCKED before the tool ever sees the findings.
+  // - In non-strict / submit-driven flows, a caller passing such findings
+  //   would otherwise cause rails to advance state on a 2-valued
+  //   selfReviewVerdict ('approve' or 'changes_requested') while the
+  //   findings declare the verdict unreviewable — a fabrication-of-
+  //   convergence bypass.
+  // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)
+  // and Decision G (BLOCKED is the only legitimate outcome on this
+  // verdict), this layer fail-closes with the SSOT reason from slice 2.
+  if ((findings as { overallVerdict?: unknown }).overallVerdict === 'unable_to_review') {
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: ctx.obligationType ?? 'review',
+    });
+  }
+
+  const expectedIteration = ctx.expectedIteration;
+  const expectedPlanVersion = ctx.expectedPlanVersion;
 
   // Rule 3: planVersion binding
   if (findings.planVersion !== expectedPlanVersion) {
@@ -135,6 +150,26 @@ export function validateReviewFindings(
     if (!invocation) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         invocationId: obligation.invocationId,
+      });
+    }
+
+    if (invocation.obligationId !== obligation.obligationId) {
+      return formatBlocked('SUBAGENT_MANDATE_MISMATCH', {
+        obligationId: obligation.obligationId,
+      });
+    }
+
+    if (findings.reviewedBy.sessionId !== invocation.childSessionId) {
+      return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
+        provided: findings.reviewedBy.sessionId,
+        expected: invocation.childSessionId,
+      });
+    }
+
+    const submittedFindingsHash = hashFindings(findings as unknown as Record<string, unknown>);
+    if (submittedFindingsHash !== invocation.findingsHash) {
+      return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
+        obligationId: obligation.obligationId,
       });
     }
 

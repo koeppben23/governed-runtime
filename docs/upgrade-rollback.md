@@ -81,18 +81,28 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo
 
 ### State Schema Compatibility
 
-| From Version | To Version | Recommendation                           |
-| ------------ | ---------- | ---------------------------------------- |
-| 1.x          | 1.y        | Test before production use               |
-| 1.x          | 2.0        | Check release notes for breaking changes |
+FlowGuard is **pre-1.0**. The persisted session-state schema is locked at
+`schemaVersion: 'v1'` and there is **no migration infrastructure** in this
+release. See [`docs/architecture/schema-migration.md`](./architecture/schema-migration.md)
+for the design proposal.
 
-**FlowGuard validates state on read.** If a version change introduces incompatible state format, FlowGuard will reject the state and block operations.
+| From Version | To Version | Compatibility                                                                               |
+| ------------ | ---------- | ------------------------------------------------------------------------------------------- |
+| pre-1.0 dev  | pre-1.0    | Sessions from earlier development releases are **not supported** — `/archive` and re-create |
+| 1.0+         | 1.x        | Same `schemaVersion: 'v1'` — sessions readable; full forward-compatibility guaranteed       |
+| 1.x          | 2.0        | Major version bump may bump `schemaVersion`. Check release notes; archive before upgrading  |
+
+**FlowGuard validates state on read.** If a future version introduces an
+incompatible `schemaVersion`, FlowGuard will reject the state at hydrate time
+with an explicit BLOCKED `SCHEMA_VALIDATION_FAILED` and require the operator to
+archive the old session and start fresh.
 
 **Customer Responsibility:**
 
+- Archive sessions before upgrading (always recoverable from archives)
 - Test upgrade in non-production
-- Archive sessions before upgrading
-- Verify state readability after upgrade
+- Treat any `schemaVersion` change as a breaking change until migration
+  infrastructure ships (tracked in `docs/architecture/schema-migration.md`)
 
 ### Archive Compatibility
 
@@ -148,11 +158,14 @@ flowguard doctor
 
 ### Artifact Storage Recommendations
 
+Maintain at least the current and previous two release tarballs alongside their
+checksums:
+
 ```
 /artifact-store/
-├── flowguard-core-1.2.0
-├── flowguard-core-1.2.0
-├── flowguard-core-1.2.0
+├── flowguard-core-1.2.0   (current)
+├── flowguard-core-1.2.0        (previous)
+├── flowguard-core-1.2.0        (rollback target)
 └── checksums.sha256
 ```
 
@@ -230,5 +243,5 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

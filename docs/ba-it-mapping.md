@@ -18,7 +18,7 @@ How FlowGuard capabilities map to BAIT (Bankenaufsichtliche Anforderungen an die
 
 | BAIT Section | Requirement Area       | Relevance      | FlowGuard Contribution                              |
 | ------------ | ---------------------- | -------------- | --------------------------------------------------- |
-| § 8          | IT Governance          | Partial        | Policy-bound execution, explicit workflow phases    |
+| § 8          | IT Governance          | Partial        | Policy-bound execution, 14 explicit workflow phases |
 | § 9          | IT Strategic Planning  | Partial        | Evidence-based workflow forces documentation        |
 | § 10         | IT Risk Management     | **Direct**     | Structured change workflow, risk documentation      |
 | § 11         | Information Security   | **Direct**     | Four-eyes principle, audit trail, approval workflow |
@@ -178,7 +178,7 @@ BAIT § 14 requires structured system development processes.
 
 **Development Workflow:**
 
-- 14 explicit phases across 3 flows
+- 14 explicit workflow phases across 3 flows
 - Ticket → Plan → Validation → Implementation → IMPL_REVIEW → EVIDENCE_REVIEW → Complete
 - Phase gates require evidence before progression
 
@@ -235,7 +235,7 @@ FlowGuard integrates with BAIT compliance programs through:
 | § 10(3) Risk documentation  | Ticket + Plan evidence                       |
 | § 11(2) Authorization       | Four-eyes principle (regulated mode)         |
 | § 11(5) Dual control        | Review decisions with human gates            |
-| § 14(2) Development process | Structured 8-phase workflow                  |
+| § 14(2) Development process | Structured 14-phase governed workflow        |
 | § 14(3) Testing             | Validation phase (test quality)              |
 | § 14(4) Changes             | Versioned plan history, backward transitions |
 | § 14(5) Approval            | Decision receipts                            |
@@ -244,4 +244,4 @@ FlowGuard integrates with BAIT compliance programs through:
 
 _Last Updated: 2026-04-19_
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2

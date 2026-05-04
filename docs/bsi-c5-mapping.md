@@ -39,7 +39,7 @@ Relevance levels:
 | HR        | Human Resources                      | Not Applicable | —                                                                                 |
 | AM        | Asset Management                     | Partial        | Release artifact checksums, minimal supply chain                                  |
 | PS        | Physical Security                    | Not Applicable | —                                                                                 |
-| RB        | Operational Procedures               | **Direct**     | 8-phase change workflow, evidence gates, audit trail                              |
+| RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                           |
 | IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                     |
 | CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                |
 | KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                            |
@@ -77,7 +77,7 @@ The RB domain covers change management, operational documentation, logging, and 
 
 - Hash-chained audit trail: SHA-256 linked events in JSONL append-only format
 - Tamper-evident design: each event's hash includes the previous event's hash
-- 4 structured event kinds: `transition`, `tool_call`, `error`, `lifecycle`
+- 5 structured event kinds: `transition`, `tool_call`, `error`, `lifecycle`, `decision`
 - Automated compliance summary generation from audit trail (7-check assessment)
 - Policy snapshot: immutable, SHA-256 hashed copy of the active policy frozen at session creation
 
@@ -310,5 +310,5 @@ The following FlowGuard artifacts provide verifiable evidence for the mappings a
 ---
 
 _Reference: BSI C5:2020 — Cloud Computing Compliance Criteria Catalogue_
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

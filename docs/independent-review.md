@@ -1,6 +1,6 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
+FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
 
 ---
 
@@ -10,8 +10,10 @@ FlowGuard's independent review system enables structured, policy-governed review
 ┌─────────────────────────────────────────────────────────┐
 │                 OpenCode Primary Agent                  │
 │                                                         │
-│  1. Draft plan / implement code                         │
-│  2. Submit to FlowGuard (flowguard_plan/implement)      │
+│  1. Draft plan / ADR / implement code                   │
+│  2. Submit to FlowGuard                                 │
+│     (flowguard_plan / flowguard_architecture /          │
+│      flowguard_implement)                               │
 │  3. Read tool response:                                 │
 │     → INDEPENDENT_REVIEW_COMPLETED: findings injected   │
 │       (plugin invoked reviewer automatically)           │
@@ -23,23 +25,27 @@ FlowGuard's independent review system enables structured, policy-governed review
                      │
           ┌──────────▼──────────┐
           │   FlowGuard Tool    │     ┌───────────────────────┐
-          │  (plan / implement) │     │    FlowGuard Plugin   │
-          │                     │     │  (tool.execute.after)  │
-          │  • Validate         │────►│                        │
-          │  • Persist          │     │  Detects REVIEW_REQ'd  │
-          │  • Respond with     │     │  → session.create()    │
-          │    REVIEW_REQUIRED  │     │  → session.prompt()    │
-          └─────────────────────┘     │  → Mutates output to   │
-                                      │    REVIEW_COMPLETED    │
-                                      │  → Updates enforcement │
+          │  (plan / arch /     │     │    FlowGuard Plugin   │
+          │   implement)        │     │  (tool.execute.after) │
+          │                     │     │                       │
+          │  • Validate         │────►│  Detects REVIEW_REQ'd │
+          │  • Persist          │     │  → session.create()   │
+          │  • Respond with     │     │  → session.prompt()   │
+          │    REVIEW_REQUIRED  │     │  → Mutates output to  │
+          └─────────────────────┘     │    REVIEW_COMPLETED   │
+                                      │  → Updates enforcement│
                                       └───────────────────────┘
 
 Separation of concerns:
-  Author artifacts:   plan.history, implementation
-  Reviewer artifacts: plan.reviewFindings, implReviewFindings
+  Author artifacts:   plan.history, architecture.adrText, implementation
+  Reviewer artifacts: plan.reviewFindings,
+                      architecture.reviewFindings,
+                      implReviewFindings
 ```
 
 **Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer in the primary path — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. In strict mode, unparseable responses and orchestration failures are BLOCKED. If a tool response preserves `INDEPENDENT_REVIEW_REQUIRED`, the LLM must invoke `flowguard-reviewer` via the Task tool; self-review is never valid review evidence.
+
+The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` supports both host-orchestrated invocation (when the plugin is active) and manual subagent invocation as fallback.
 
 ---
 
@@ -49,7 +55,7 @@ Separation of concerns:
 
 When the primary agent submits a plan or implementation to FlowGuard, the tool response includes a `reviewMode` field and a `next` field:
 
-- **Plugin-completed path:** `next` says `INDEPENDENT_REVIEW_COMPLETED` and includes `_pluginReviewFindings`.
+- **Plugin-completed path:** `next` says `INDEPENDENT_REVIEW_COMPLETED` and includes `pluginReviewFindings`.
 - **Manual subagent path:** `next` says `INDEPENDENT_REVIEW_REQUIRED`; the agent must call `flowguard-reviewer` via the Task tool and submit those findings.
 - **Blocked path:** strict orchestration or evidence failures return BLOCKED. The agent must stop and report the recovery action.
 
@@ -62,7 +68,7 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 3. **Creates a child session** via `client.session.create({ parentID })` for traceability
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ agent: "flowguard-reviewer" })`
 5. **Parses ReviewFindings** from the reviewer's response
-6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `_pluginReviewFindings` injected (only when structured ReviewFindings are available)
+6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` injected (only when structured ReviewFindings are available)
 7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
 The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
@@ -80,6 +86,25 @@ If deterministic invocation has not completed but the tool response remains `IND
 > **Enforcement note:** The manual Task path is still enforcement-bound. In strict mode, manually obtained findings are accepted only when the FlowGuard plugin records matching invocation evidence and mandate attestation. Without plugin enforcement, verdict submission blocks with `REVIEW_FINDINGS_REQUIRED`. The plugin's `tool.execute.after` hook must observe the Task tool invocation and write invocation evidence to the session state for the findings to be accepted.
 
 Self-review is not a fallback. Strict orchestration and parsing failures return BLOCKED (`STRICT_REVIEW_ORCHESTRATION_FAILED`).
+
+### Reviewer Verdict Outcomes
+
+The reviewer subagent returns one of three `overallVerdict` values:
+
+| Verdict             | Outcome                                                                                                                                                                                                                                                                                                          | Loop status                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `approve`           | Findings accepted; if no blocking issues, the review loop converges to PLAN_REVIEW / EVIDENCE_REVIEW.                                                                                                                                                                                                            | converged                     |
+| `changes_requested` | Findings recorded; agent revises the artifact and resubmits. Loop continues until convergence or `maxIterations`.                                                                                                                                                                                                | continues                     |
+| `unable_to_review`  | The reviewer declares the artifact unreviewable (e.g., contradictory inputs, missing prerequisites, scope ambiguity that prevents critique). The tool returns BLOCKED with code `SUBAGENT_UNABLE_TO_REVIEW`. The pending review obligation is consumed — retrying the review with the same artifact is rejected. | BLOCKED (obligation consumed) |
+
+`unable_to_review` is enforced fail-closed at every layer:
+
+- **Tool layer (`review-validation.ts`):** rejects findings.overallVerdict='unable_to_review' regardless of submitted `selfReviewVerdict` / `reviewVerdict`.
+- **Orchestrator (`plugin-orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
+- **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
+- **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
+
+Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planText })` with clearer scope) or address the prerequisite that made the artifact unreviewable (e.g., file a new ticket). A fresh artifact submission starts a new review obligation.
 
 ### Fail-Closed Enforcement
 
@@ -206,7 +231,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   iteration:            number    // 0-based, must match expected iteration
   planVersion:          number    // positive integer, must match current plan version
   reviewMode:           'subagent'
-  overallVerdict:       'approve' | 'changes_requested'
+  overallVerdict:       'approve' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]
@@ -217,13 +242,23 @@ Independent subagent review is the default FlowGuard policy configuration:
   attestation?: {
     mandateDigest:      string    // must match runtime review mandate digest
     criteriaVersion:    string    // must match runtime review criteria version
-    toolObligationId:   string    // must match strict review obligation id
+    toolObligationId:   string    // RFC 4122 UUID; must match strict review obligation id
     iteration:          number    // must match expected iteration
     planVersion:        number    // must match expected plan version
     reviewedBy:         string    // expected: flowguard-reviewer
   }
 }
 ```
+
+> **Attestation in subagent mode:** the `attestation` field is declared
+> optional in the Zod `ReviewFindings` schema (so self-review and legacy
+> findings remain shape-compatible) but the OpenCode SDK
+> `REVIEW_FINDINGS_JSON_SCHEMA` sent to the reviewer subagent declares
+> all six attestation fields as required. In strict subagent mode the
+> reviewer agent MUST emit a complete attestation block; missing fields
+> fail closed at SDK structured-output validation time, before the
+> findings ever reach plugin enforcement. `validateStrictAttestation`
+> in `review-assurance.ts` is the second-line runtime check.
 
 ---
 
@@ -246,18 +281,19 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Strict enforcement   | attestation mismatch                 | `SUBAGENT_MANDATE_MISMATCH`          |
 | Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
-Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by both `/plan` and `/implement` tools.
+Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
 **Plugin-level enforcement (`review-enforcement.ts`):**
 
-| Level | Rule               | Condition                                                           | BLOCKED Code                         | Hook Point       |
-| ----- | ------------------ | ------------------------------------------------------------------- | ------------------------------------ | ---------------- |
-| L1    | Subagent invoked   | Pending review + no Task call to `flowguard-reviewer`               | `SUBAGENT_REVIEW_NOT_INVOKED`        | before FG Mode B |
-| L2    | Session ID match   | `reviewedBy.sessionId` does not match actual subagent session ID    | `SUBAGENT_SESSION_MISMATCH`          | before FG Mode B |
-| L3    | Prompt substantive | Task prompt < 200 chars                                             | `SUBAGENT_PROMPT_EMPTY`              | before task call |
-| L3    | Prompt has context | Task prompt missing expected iteration or planVersion               | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call |
-| L4    | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict     | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B |
-| L4    | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B |
+| Level   | Rule               | Condition                                                                                   | BLOCKED Code                         | Hook Point                |
+| ------- | ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------- |
+| L1      | Subagent invoked   | Pending review + no Task call to `flowguard-reviewer`                                       | `SUBAGENT_REVIEW_NOT_INVOKED`        | before FG Mode B          |
+| L2      | Session ID match   | `reviewedBy.sessionId` does not match actual subagent session ID                            | `SUBAGENT_SESSION_MISMATCH`          | before FG Mode B          |
+| L3      | Prompt substantive | Task prompt < 200 chars                                                                     | `SUBAGENT_PROMPT_EMPTY`              | before task call          |
+| L3      | Prompt has context | Task prompt missing expected iteration or planVersion                                       | `SUBAGENT_PROMPT_MISSING_CONTEXT`    | before task call          |
+| L4      | Verdict integrity  | Submitted `overallVerdict` differs from actual subagent verdict                             | `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | before FG Mode B          |
+| L4      | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count                         | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B          |
+| L4/Tool | Reviewability      | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
 Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 
@@ -267,20 +303,38 @@ Enforcement logic is implemented in `src/integration/review-enforcement.ts` and 
 
 Author and reviewer artifacts are stored in parallel, never mixed:
 
-| Tool         | Author artifacts                           | Reviewer artifacts          |
-| ------------ | ------------------------------------------ | --------------------------- |
-| `/plan`      | `state.plan.current`, `state.plan.history` | `state.plan.reviewFindings` |
-| `/implement` | `state.implementation`                     | `state.implReviewFindings`  |
+| Tool            | Author artifacts                                     | Reviewer artifacts                                |
+| --------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| `/plan`         | `state.plan.current`, `state.plan.history`           | `state.plan.reviewFindings`                       |
+| `/architecture` | `state.architecture.decisions[id].adrText` + history | `state.architecture.decisions[id].reviewFindings` |
+| `/implement`    | `state.implementation`                               | `state.implReviewFindings`                        |
 
-Both reviewer artifact arrays are **append-only**. Each review submission adds to the array; no entries are ever removed or overwritten.
+Reviewer findings for `/plan`, `/architecture`, and `/implement` are **append-only** in their respective state locations. Each review submission adds to the array; no entries are ever removed or overwritten. ADR review findings are scoped per-decision-id (one append-only array per ADR), parity with how plan history is iteration-scoped. Standalone `/review` records accepted findings in the generated review report, invocation evidence, and derived review-card artifacts — these are evidence surfaces, not runtime authority.
+
+### Standalone /review Obligation Lifecycle
+
+Standalone `/review` creates its own obligation lifecycle (obligationType `review`), independent of plan/architecture/implement obligations:
+
+1. Content-aware `/review` without findings → blocked with `CONTENT_ANALYSIS_REQUIRED` + `requiredReviewAttestation` (containing the obligation UUID)
+2. Subagent invoked (plugin-orchestrated or manual)
+3. `/review` with `analysisFindings` matching the obligation UUID → validated via `validateStrictAttestation`
+4. Obligation consumed on success (single-use enforcement)
+
+Invocation evidence carries source marking:
+
+- `host-orchestrated` — plugin invoked the subagent (stronger evidence: real `childSessionId`, real `promptHash`)
+- `agent-submitted-attested` — agent manually invoked subagent (attested but reconstructed evidence)
+
+Both paths are validated through the same `validateStrictAttestation` gate. Manual fallback is accepted only when subagent-attested and obligation-bound.
 
 ---
 
 ## Status Projections
 
-`flowguard_status` exposes the latest review summary for both tools:
+`flowguard_status` exposes the latest review summary for all three reviewable tools:
 
 - `latestReview` — latest plan review findings (iteration, planVersion, overallVerdict, counts, reviewMode, reviewedAt)
+- `latestArchitectureReview` — latest architecture (ADR) review findings. planVersion is a compatibility binding for the ADR review subject and must not be interpreted as the task plan version.
 - `latestImplementationReview` — latest implementation review findings (same shape without planVersion)
 
 ---
@@ -338,5 +392,5 @@ Mandatory by default. The default policy enables strict subagent review, blocks 
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-24_

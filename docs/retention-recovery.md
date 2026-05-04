@@ -72,12 +72,18 @@ FlowGuard manages several types of data with different retention requirements. T
 ### Archive Contents
 
 ```
-session-{sessionId}-{timestamp}.tar.gz
-├── archive-manifest.json      # Session metadata, file inventory, digests
-├── state.json                 # Final session state
-├── audit.jsonl                # Complete audit trail
-├── discovery.json             # Repository discovery snapshot
-└── {evidence-files}...        # Tickets, plans, reviews
+{sessionId}.tar.gz
+├── archive-manifest.json              # Session metadata, file inventory, digests
+├── session-state.json                 # Final session state
+├── audit.jsonl                        # Complete audit trail
+├── discovery.json                     # Repository discovery snapshot
+├── decision-receipts.redacted.v1.json # Redacted decision receipts (default)
+├── review-report.json                 # Compliance review report (if /review was run)
+├── artifacts/                         # Append-only ticket/plan artifacts
+│   ├── ticket.v*.{md,json}
+│   └── plan.v*.{md,json}
+└── adr/                               # Accepted ADRs (if architecture flow ran)
+    └── ADR-*.md
 ```
 
 ### Archive Verification
@@ -216,5 +222,5 @@ session-{sessionId}-{timestamp}.tar.gz
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

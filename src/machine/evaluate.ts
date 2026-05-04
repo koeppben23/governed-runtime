@@ -2,7 +2,7 @@
  * @module evaluate
  * @description Pure evaluator — determines the next event/phase from current state.
  *
- *              Three variants:
+ *              Two variants:
  *              - evaluate():          Guard-based phases (machine decides autonomously)
  *              - evaluateWithEvent(): User-gate phases (human provides explicit event)
  *              Both support optional policy parameter for mode-aware behavior.
@@ -64,6 +64,8 @@ export interface EvalTerminal {
 export interface EvalPending {
   readonly kind: 'pending';
   readonly phase: Phase;
+  /** Set when pending is caused by an internal inconsistency rather than normal flow. */
+  readonly diagnostic?: string;
 }
 
 export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPending;
@@ -142,9 +144,13 @@ export function evaluate(
     if (guard(state)) {
       const target = resolveTransition(phase, event);
       if (target === undefined) {
-        // Topology gap — guards and topology are misaligned.
-        // This IS a bug (unlike pending). Log and treat as pending.
-        return { kind: 'pending', phase };
+        // Topology gap — guard fired but no transition defined for (phase, event).
+        // Fail-closed: treat as pending so the machine stops rather than advancing incorrectly.
+        return {
+          kind: 'pending',
+          phase,
+          diagnostic: `TOPOLOGY_GAP: guard fired event '${event}' at phase '${phase}' but no transition is defined`,
+        };
       }
       return { kind: 'transition', event, target };
     }

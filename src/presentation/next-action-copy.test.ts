@@ -47,6 +47,29 @@ describe('buildProductNextAction', () => {
       // Canonical action still uses /ticket
       expect(action.commands).toEqual(['/ticket']);
     });
+
+    it('RUN_PLAN (TICKET, ticket captured)', () => {
+      const state = makeState('TICKET', {
+        ticket: { title: 'Test', body: 'Fix bug', createdAt: new Date().toISOString() },
+      });
+      const action = resolveNextAction('TICKET', state);
+      const product = buildProductNextAction(action, 'TICKET');
+      expect(product.commands).toEqual(['/plan']);
+    });
+
+    it('SESSION_COMPLETE (ARCH_COMPLETE) gets phase-enriched text', () => {
+      const action = resolveNextAction('ARCH_COMPLETE', makeProgressedState('ARCH_COMPLETE'));
+      const product = buildProductNextAction(action, 'ARCH_COMPLETE');
+      expect(product.commands).toEqual(['/export']);
+      expect(product.text).toContain('Architecture complete');
+    });
+
+    it('SESSION_COMPLETE (REVIEW_COMPLETE) gets phase-enriched text', () => {
+      const action = resolveNextAction('REVIEW_COMPLETE', makeProgressedState('REVIEW_COMPLETE'));
+      const product = buildProductNextAction(action, 'REVIEW_COMPLETE');
+      expect(product.commands).toEqual(['/export']);
+      expect(product.text).toContain('Review complete');
+    });
   });
 
   describe('CORNER — unknown codes fall back to canonical', () => {

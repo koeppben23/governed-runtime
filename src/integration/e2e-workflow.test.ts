@@ -763,6 +763,29 @@ describe('e2e-workflow', () => {
       expect(state!.selfReview).not.toBeNull();
     });
 
+    it('latestArchitectureReview appears in status (F13 slice 9)', async () => {
+      // F13 slice 9: status projection parity. After a converged architecture
+      // review, status MUST expose a latestArchitectureReview summary parallel
+      // to latestReview (plan) and latestImplementationReview, so consumers
+      // (CLI, dashboards) can surface the most recent ADR review verdict
+      // without parsing reviewFindings arrays themselves.
+      await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
+      const adrText =
+        '## Context\nAuth model.\n\n## Decision\nUse OAuth2.\n\n## Consequences\nNeed IdP integration.';
+      await callOk(architecture, { title: 'OAuth2 for auth', adrText });
+      await callOk(architecture, { selfReviewVerdict: 'approve' });
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.latestArchitectureReview).toBeDefined();
+      expect(result.latestArchitectureReview).not.toBeNull();
+      const arch = result.latestArchitectureReview as Record<string, unknown>;
+      expect(arch.reviewMode).toBe('subagent');
+      expect(arch.overallVerdict).toBe('approve');
+      expect(typeof arch.iteration).toBe('number');
+      expect(typeof arch.reviewedAt).toBe('string');
+      expect(arch.blockingIssueCount).toBe(0);
+    });
+
     it('architecture team flow with explicit decisions', async () => {
       // 1. Hydrate (team mode — requires explicit gate decisions)
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });

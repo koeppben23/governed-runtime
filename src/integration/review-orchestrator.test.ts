@@ -19,9 +19,10 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
+  buildArchitectureReviewPrompt,
+  buildReviewContentPrompt,
+  buildReviewContentMutatedOutput,
   invokeReviewer,
-  extractResponseText,
-  parseReviewerFindings,
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
@@ -32,6 +33,7 @@ import {
   type ReviewerResult,
 } from './review-orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,6 +191,53 @@ describe('buildPlanReviewPrompt', () => {
     // MIN_SUBAGENT_PROMPT_LENGTH is 200 chars
     expect(prompt.length).toBeGreaterThan(200);
   });
+
+  // SURVIVOR_KILL: pin every literal phrase emitted by the prompt builder so that
+  // string-literal mutations cannot survive.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildPlanReviewPrompt({
+      ...baseOpts,
+      iteration: 5,
+      planVersion: 7,
+      obligationId: 'OBL-42',
+      criteriaVersion: 'CRIT-v9',
+      mandateDigest: 'MD-deadbeef',
+    });
+    expect(prompt).toContain('You are reviewing a plan for iteration=5, planVersion=7.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Plan to Review');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain(
+      'Review this plan against the ticket requirements. Follow your review criteria',
+    );
+    expect(prompt).toContain(
+      'for plans. Return your findings as a single JSON object matching the',
+    );
+    expect(prompt).toContain(
+      'ReviewFindings schema. Use the exact iteration and planVersion values above.',
+    );
+    expect(prompt).toContain('Set iteration=5 and planVersion=7 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-42.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-v9.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-deadbeef.');
+    expect(prompt).toContain('Set attestation.iteration=5.');
+    expect(prompt).toContain('Set attestation.planVersion=7.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
+  });
+
+  it('joins prompt lines with "\\n" (kills join-char string mutant)', () => {
+    const prompt = buildPlanReviewPrompt(baseOpts);
+    const lines = prompt.split('\n');
+    // Empty join would collapse to 1 line; canonical prompt has many.
+    expect(lines.length).toBeGreaterThan(15);
+    // First line must be the canonical opening.
+    expect(lines[0]).toBe('You are reviewing a plan for iteration=0, planVersion=1.');
+    // Section headings must appear on their own lines surrounded by blanks.
+    const ticketIdx = lines.indexOf('## Ticket');
+    expect(ticketIdx).toBeGreaterThan(-1);
+    expect(lines[ticketIdx - 1]).toBe('');
+    expect(lines[ticketIdx + 1]).toBe('');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -236,169 +285,122 @@ describe('buildImplReviewPrompt', () => {
     expect(prompt).toContain('- src/my file.ts');
     expect(prompt).toContain('- src/@scope/pkg.ts');
   });
-});
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// extractResponseText
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('extractResponseText', () => {
-  // HAPPY: single text part
-  it('extracts text from a single TextPart', () => {
-    const parts = [{ type: 'text', text: 'Hello world' }];
-    expect(extractResponseText(parts)).toBe('Hello world');
+  // SURVIVOR_KILL: pin every literal phrase emitted by the impl prompt builder.
+  it('emits every canonical instruction phrase verbatim', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      iteration: 4,
+      planVersion: 6,
+      obligationId: 'OBL-99',
+      criteriaVersion: 'CRIT-impl-v3',
+      mandateDigest: 'MD-cafebabe',
+    });
+    expect(prompt).toContain('You are reviewing an implementation for iteration=4, planVersion=6.');
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## Approved Plan');
+    expect(prompt).toContain('## Changed Files');
+    expect(prompt).toContain('## Instructions');
+    expect(prompt).toContain('Review this implementation against the approved plan and ticket.');
+    expect(prompt).toContain(
+      'Read the changed files using the read/glob/grep tools to verify correctness.',
+    );
+    expect(prompt).toContain('Follow your review criteria for implementations.');
+    expect(prompt).toContain(
+      'Return your findings as a single JSON object matching the ReviewFindings schema.',
+    );
+    expect(prompt).toContain('Set iteration=4 and planVersion=6 in your response.');
+    expect(prompt).toContain('Set attestation.toolObligationId=OBL-99.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=CRIT-impl-v3.');
+    expect(prompt).toContain('Set attestation.mandateDigest=MD-cafebabe.');
+    expect(prompt).toContain('Set attestation.iteration=4.');
+    expect(prompt).toContain('Set attestation.planVersion=6.');
+    expect(prompt).toContain('Set attestation.reviewedBy="flowguard-reviewer".');
   });
 
-  // HAPPY: multiple text parts are concatenated
-  it('concatenates multiple text parts', () => {
-    const parts = [
-      { type: 'text', text: 'Part 1 ' },
-      { type: 'text', text: 'Part 2' },
-    ];
-    expect(extractResponseText(parts)).toBe('Part 1 Part 2');
-  });
-
-  // HAPPY: non-text parts are filtered out
-  it('filters out non-text parts', () => {
-    const parts = [
-      { type: 'reasoning', text: 'Thinking...' },
-      { type: 'text', text: 'Response text' },
-      { type: 'tool', text: 'tool output' },
-    ];
-    expect(extractResponseText(parts)).toBe('Response text');
-  });
-
-  // BAD: null parts
-  it('returns null for null parts', () => {
-    expect(extractResponseText(null)).toBeNull();
-  });
-
-  // BAD: undefined parts
-  it('returns null for undefined parts', () => {
-    expect(extractResponseText(undefined)).toBeNull();
-  });
-
-  // BAD: empty array
-  it('returns null for empty array', () => {
-    expect(extractResponseText([])).toBeNull();
-  });
-
-  // EDGE: only whitespace text
-  it('returns null when text is only whitespace', () => {
-    const parts = [{ type: 'text', text: '   \n  ' }];
-    expect(extractResponseText(parts)).toBeNull();
-  });
-
-  // CORNER: parts with missing type or text
-  it('skips parts with missing type', () => {
-    const parts = [
-      { text: 'no type' } as { type?: string; text?: string },
-      { type: 'text', text: 'valid' },
-    ];
-    expect(extractResponseText(parts)).toBe('valid');
-  });
-
-  it('skips parts with missing text', () => {
-    const parts = [
-      { type: 'text' } as { type?: string; text?: string },
-      { type: 'text', text: 'valid' },
-    ];
-    expect(extractResponseText(parts)).toBe('valid');
+  it('joins changed files with "\\n" using "- " bullet prefix', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      changedFiles: ['a.ts', 'b.ts', 'c.ts'],
+    });
+    expect(prompt).toContain('- a.ts\n- b.ts\n- c.ts');
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// parseReviewerFindings
+// buildArchitectureReviewPrompt (F13 slice 6)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('parseReviewerFindings', () => {
-  // HAPPY: clean JSON
-  it('parses clean JSON ReviewFindings', () => {
-    const json = validFindings();
-    const result = parseReviewerFindings(json);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
-    expect(result!.blockingIssues).toEqual([]);
+describe('buildArchitectureReviewPrompt', () => {
+  const baseOpts = {
+    adrText: '## Context\nFoo.\n\n## Decision\nBar.\n\n## Consequences\nBaz.',
+    adrTitle: 'ADR-001 Use X over Y',
+    ticketText: 'Pick X or Y for the auth flow',
+    iteration: 0,
+    planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-mandate-digest',
+  };
+
+  it('includes ADR title in the section heading', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## ADR to Review: ADR-001 Use X over Y');
   });
 
-  // HAPPY: changes_requested verdict with blocking issues
-  it('parses changes_requested findings', () => {
-    const json = validFindings({
-      overallVerdict: 'changes_requested',
-      blockingIssues: [
-        { severity: 'critical', category: 'correctness', message: 'Bug found', location: 'foo.ts' },
-      ],
+  it('includes the full ADR text', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## Context\nFoo.');
+    expect(prompt).toContain('## Decision\nBar.');
+    expect(prompt).toContain('## Consequences\nBaz.');
+  });
+
+  it('embeds iteration and planVersion in the body and attestation lines', () => {
+    const prompt = buildArchitectureReviewPrompt({
+      ...baseOpts,
+      iteration: 2,
+      planVersion: 3,
     });
-    const result = parseReviewerFindings(json);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('changes_requested');
-    expect(Array.isArray(result!.blockingIssues)).toBe(true);
-    expect((result!.blockingIssues as unknown[]).length).toBe(1);
+    expect(prompt).toContain('iteration=2, planVersion=3');
+    expect(prompt).toContain('Set iteration=2 and planVersion=3');
+    expect(prompt).toContain('Set attestation.iteration=2.');
+    expect(prompt).toContain('Set attestation.planVersion=3.');
   });
 
-  // HAPPY: JSON embedded in surrounding text
-  it('extracts JSON embedded in text', () => {
-    const text = `Here are my findings:\n${validFindings()}\n\nThat concludes my review.`;
-    const result = parseReviewerFindings(text);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
+  it('embeds obligationId, criteriaVersion, and mandateDigest in attestation block', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.criteriaVersion=p35-v1.');
+    expect(prompt).toContain('Set attestation.mandateDigest=test-mandate-digest.');
   });
 
-  // BAD: completely invalid text
-  it('returns null for completely invalid text', () => {
-    expect(parseReviewerFindings('This is not JSON at all')).toBeNull();
+  it('includes the ticket text for scope-creep verification', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('Pick X or Y for the auth flow');
   });
 
-  // BAD: valid JSON but missing overallVerdict
-  it('returns null for JSON without overallVerdict', () => {
-    const json = JSON.stringify({ blockingIssues: [], iteration: 0 });
-    expect(parseReviewerFindings(json)).toBeNull();
+  it('instructs the reviewer to use ADR-specific review criteria', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    // Anchors the prompt to the REVIEWER_AGENT body section added in F13 slice 4.
+    expect(prompt).toContain('Architecture');
+    expect(prompt).toContain('problem framing');
+    expect(prompt).toContain('alternatives considered');
+    expect(prompt).toContain('reversibility');
+    expect(prompt).toContain('out-of-scope clarity');
   });
 
-  // BAD: valid JSON but invalid verdict value
-  it('returns null for JSON with invalid verdict value', () => {
-    const json = JSON.stringify({
-      overallVerdict: 'maybe',
-      blockingIssues: [],
-    });
-    expect(parseReviewerFindings(json)).toBeNull();
+  it('does NOT include a Changed Files section (ADR is a self-contained document)', () => {
+    const prompt = buildArchitectureReviewPrompt(baseOpts);
+    expect(prompt).not.toContain('## Changed Files');
   });
 
-  // BAD: valid JSON but missing blockingIssues array
-  it('returns null for JSON without blockingIssues', () => {
-    const json = JSON.stringify({ overallVerdict: 'approve' });
-    expect(parseReviewerFindings(json)).toBeNull();
-  });
-
-  // EDGE: empty string
-  it('returns null for empty string', () => {
-    expect(parseReviewerFindings('')).toBeNull();
-  });
-
-  // CORNER: JSON wrapped in markdown code fences
-  it('extracts JSON from markdown code fences', () => {
-    const text = '```json\n' + validFindings() + '\n```';
-    const result = parseReviewerFindings(text);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('approve');
-  });
-
-  // CORNER: nested JSON objects (findings within findings-like structure)
-  it('handles nested JSON correctly', () => {
-    const findings = validFindings({
-      blockingIssues: [
-        {
-          severity: 'major',
-          category: 'correctness',
-          message: 'Object {foo: "bar"} is wrong',
-          location: 'src/x.ts:10',
-        },
-      ],
-      overallVerdict: 'changes_requested',
-    });
-    const result = parseReviewerFindings(findings);
-    expect(result).not.toBeNull();
-    expect(result!.overallVerdict).toBe('changes_requested');
+  it('handles empty ticket text without throwing', () => {
+    const prompt = buildArchitectureReviewPrompt({ ...baseOpts, ticketText: '' });
+    expect(prompt).toContain('## Ticket');
+    expect(prompt).toContain('## ADR to Review:');
   });
 });
 
@@ -507,9 +509,9 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: reviewer returns valid findings with session ID
-  it('captures session ID from reviewer findings', async () => {
-    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-ses-42' } });
+  // CORNER: runtime authoritatively overwrites reviewedBy.sessionId with childSessionId (B3)
+  it('overwrites findings.reviewedBy.sessionId with authoritative childSessionId', async () => {
+    const findingsJson = validFindings({ reviewedBy: { sessionId: 'reviewer-guessed-id' } });
     const client = mockClient({
       promptResult: {
         data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
@@ -520,7 +522,53 @@ describe('invokeReviewer', () => {
     expect(result).not.toBeNull();
     expect(result!.findings).not.toBeNull();
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-    expect(reviewedBy.sessionId).toBe('reviewer-ses-42');
+    // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
+    expect(reviewedBy.sessionId).toBe('child-session-1');
+  });
+
+  // CORNER: missing reviewedBy is reconstructed from authoritative childSessionId
+  it('reconstructs reviewedBy when subagent omits it', async () => {
+    const findingsJson = validFindings();
+    const parsed = JSON.parse(findingsJson) as Record<string, unknown>;
+    delete parsed.reviewedBy;
+    const client = mockClient({
+      promptResult: {
+        data: { info: { structured_output: parsed } },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.sessionId).toBe('child-session-1');
+  });
+
+  // P1.3 slice 4c: third LoopVerdict propagation through invokeReviewer.
+  // Pins that subagent-emitted overallVerdict='unable_to_review' is
+  // preserved verbatim through ReviewFindings parsing and authoritative
+  // reviewedBy reconstruction. The downstream consumer
+  // (plugin-orchestrator.ts) reads parsedFindings.data.overallVerdict
+  // for the BLOCKED-routing branch; this test fixes that contract.
+  it('propagates overallVerdict=unable_to_review verbatim (HAPPY: third verdict end-to-end)', async () => {
+    const findingsJson = validFindings({
+      overallVerdict: 'unable_to_review',
+      blockingIssues: [],
+      majorRisks: [],
+    });
+    const client = mockClient({
+      promptResult: {
+        data: { info: { structured_output: JSON.parse(findingsJson) as Record<string, unknown> } },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    expect(result!.findings).not.toBeNull();
+    expect(result!.findings!.overallVerdict).toBe('unable_to_review');
+    // Confirm reviewedBy is still authoritatively set; the unreviewable
+    // verdict must NOT bypass childSessionId enforcement.
+    const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.sessionId).toBe('child-session-1');
   });
 });
 
@@ -548,8 +596,8 @@ describe('buildMutatedOutput', () => {
     expect((parsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
 
     // Findings should be injected
-    expect(parsed._pluginReviewFindings).toBeDefined();
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    expect(parsed.pluginReviewFindings).toBeDefined();
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('approve');
 
     // Session ID should be injected
@@ -581,7 +629,7 @@ describe('buildMutatedOutput', () => {
     expect(mutated).not.toBeNull();
 
     const parsed = JSON.parse(mutated!) as Record<string, unknown>;
-    const findings = parsed._pluginReviewFindings as Record<string, unknown>;
+    const findings = parsed.pluginReviewFindings as Record<string, unknown>;
     expect(findings.overallVerdict).toBe('changes_requested');
   });
 
@@ -770,7 +818,7 @@ describe('end-to-end orchestration flow', () => {
     // Verify mutated output
     const mutatedParsed = JSON.parse(mutated!) as Record<string, unknown>;
     expect((mutatedParsed.next as string).startsWith(REVIEW_COMPLETED_PREFIX)).toBe(true);
-    expect(mutatedParsed._pluginReviewFindings).toBeDefined();
+    expect(mutatedParsed.pluginReviewFindings).toBeDefined();
     expect(mutatedParsed._pluginReviewSessionId).toBe('child-session-1');
     // Original fields preserved
     expect(mutatedParsed.phase).toBe('PLAN');
@@ -805,5 +853,358 @@ describe('end-to-end orchestration flow', () => {
     expect(result).toBeNull();
 
     expect(isReviewRequired(original)).toBe(true);
+  });
+});
+
+// ─── buildReviewContentPrompt ────────────────────────────────────────────────
+describe('buildReviewContentPrompt', () => {
+  const opts = {
+    content: 'PR diff content',
+    ticketText: 'Fix auth bug',
+    obligationId: '00000000-0000-0000-0000-000000000001',
+    mandateDigest: 'a'.repeat(64),
+    criteriaVersion: 'p35-v1',
+    iteration: 1,
+    planVersion: 1,
+  };
+
+  it('includes content, ticket, and attestation values', () => {
+    const prompt = buildReviewContentPrompt(opts);
+    expect(prompt).toContain('PR diff content');
+    expect(prompt).toContain('Fix auth bug');
+    expect(prompt).toContain(opts.obligationId);
+    expect(prompt).toContain(opts.mandateDigest);
+    expect(prompt).toContain(opts.criteriaVersion);
+    expect(prompt).toContain(REVIEWER_SUBAGENT_TYPE);
+  });
+
+  it('includes iteration and planVersion', () => {
+    const prompt = buildReviewContentPrompt(opts);
+    expect(prompt).toContain('1');
+    expect(prompt).toContain('PlanVersion: 1');
+  });
+
+  it('handles empty ticket text', () => {
+    const prompt = buildReviewContentPrompt({ ...opts, ticketText: '' });
+    expect(prompt).not.toContain('Ticket context');
+  });
+
+  it('includes schema-allowed category guidance', () => {
+    const prompt = buildReviewContentPrompt(opts);
+    expect(prompt).toContain('completeness');
+    expect(prompt).toContain('correctness');
+    expect(prompt).toContain('feasibility');
+    expect(prompt).toContain('risk');
+    expect(prompt).toContain('quality');
+  });
+
+  it('includes output format instructions', () => {
+    const prompt = buildReviewContentPrompt(opts);
+    expect(prompt).toContain('ReviewFindings');
+    expect(prompt).toContain('reviewMode');
+    expect(prompt).toContain('no markdown fences');
+  });
+});
+
+// ─── buildReviewContentMutatedOutput ─────────────────────────────────────────
+describe('buildReviewContentMutatedOutput', () => {
+  const findings = JSON.parse(
+    JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'child-1' },
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+      attestation: {
+        mandateDigest: 'a'.repeat(64),
+        criteriaVersion: 'p35-v1',
+        toolObligationId: '00000000-0000-0000-0000-000000000001',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
+    }),
+  );
+
+  it('returns null when findings are missing', () => {
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 'child-1',
+      findings: null as never,
+      rawResponse: '',
+    });
+    expect(result).toBeNull();
+  });
+
+  it('injects pluginReviewFindings and review-specific next instruction', () => {
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 'child-1',
+      findings,
+      rawResponse: '',
+    });
+    expect(result).toBeDefined();
+    const parsed = JSON.parse(result!);
+    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed.next).toContain('flowguard_review');
+    expect(parsed.next).toContain('analysisFindings');
+    expect(parsed.next).toContain('pluginReviewFindings');
+    expect(parsed._pluginReviewSessionId).toBe('child-1');
+  });
+
+  it('does not contain plan/implement/architecture next instruction', () => {
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 'child-1',
+      findings,
+      rawResponse: '',
+    });
+    const parsed = JSON.parse(result!);
+    expect(parsed.next).not.toContain('flowguard_plan');
+    expect(parsed.next).not.toContain('selfReviewVerdict');
+  });
+
+  it('returns null on parse failure', () => {
+    const result = buildReviewContentMutatedOutput('not-json', {
+      sessionId: 'child-1',
+      findings,
+      rawResponse: '',
+    });
+    expect(result).toBeNull();
+  });
+});
+
+// ─── isReviewRequired with /review detection ─────────────────────────────────
+describe('isReviewRequired for /review', () => {
+  it('detects CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation for flowguard_review', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'CONTENT_ANALYSIS_REQUIRED',
+      requiredReviewAttestation: {
+        reviewedBy: 'flowguard-reviewer',
+        mandateDigest: 'a'.repeat(64),
+        criteriaVersion: 'p35-v1',
+        toolObligationId: '00000000-0000-0000-0000-000000000001',
+      },
+    });
+    expect(isReviewRequired(output, TOOL_FLOWGUARD_REVIEW)).toBe(true);
+  });
+
+  it('does not detect CONTENT_ANALYSIS_REQUIRED for non-review tools', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'CONTENT_ANALYSIS_REQUIRED',
+      requiredReviewAttestation: { reviewedBy: 'flowguard-reviewer' },
+    });
+    expect(isReviewRequired(output, 'flowguard_plan')).toBe(false);
+  });
+
+  it('still detects INDEPENDENT_REVIEW_REQUIRED prefix', () => {
+    const output = JSON.stringify({
+      next: 'INDEPENDENT_REVIEW_REQUIRED: call the reviewer',
+    });
+    expect(isReviewRequired(output)).toBe(true);
+  });
+
+  it('returns false for invalid JSON', () => {
+    expect(isReviewRequired('not-json')).toBe(false);
+  });
+});
+
+// ─── extractReviewContext for /review ────────────────────────────────────────
+describe('extractReviewContext for /review', () => {
+  it('extracts context from requiredReviewAttestation', () => {
+    const result = extractReviewContext(TOOL_FLOWGUARD_REVIEW, {
+      requiredReviewAttestation: {
+        toolObligationId: '00000000-0000-0000-0000-000000000001',
+        mandateDigest: 'a'.repeat(64),
+        criteriaVersion: 'p35-v1',
+      },
+    });
+    expect(result).toBeDefined();
+    expect(result?.obligationId).toBe('00000000-0000-0000-0000-000000000001');
+    expect(result?.iteration).toBe(1);
+    expect(result?.planVersion).toBe(1);
+  });
+
+  it('returns null when requiredReviewAttestation is missing', () => {
+    const result = extractReviewContext(TOOL_FLOWGUARD_REVIEW, {});
+    expect(result).toBeNull();
+  });
+
+  it('returns null when toolObligationId is missing', () => {
+    const result = extractReviewContext(TOOL_FLOWGUARD_REVIEW, {
+      requiredReviewAttestation: { mandateDigest: 'a', criteriaVersion: 'b' },
+    });
+    expect(result).toBeNull();
+  });
+});
+
+// ─── buildReviewContentPrompt edge cases ─────────────────────────────────────
+describe('buildReviewContentPrompt edge cases', () => {
+  const base = {
+    content: 'test diff',
+    ticketText: '',
+    obligationId: '00000000-0000-0000-0000-000000000001',
+    mandateDigest: 'a'.repeat(64),
+    criteriaVersion: 'p35-v1',
+    iteration: 0,
+    planVersion: 1,
+  };
+
+  it('handles zero iteration', () => {
+    const prompt = buildReviewContentPrompt({ ...base, iteration: 0 });
+    expect(prompt).toContain('Iteration: 0');
+  });
+
+  it('handles multiline content', () => {
+    const prompt = buildReviewContentPrompt({
+      ...base,
+      content: 'line1\nline2\nline3',
+      ticketText: 'fix auth',
+    });
+    expect(prompt).toContain('line1');
+    expect(prompt).toContain('line2');
+    expect(prompt).toContain('fix auth');
+  });
+
+  it('includes reviewMode: subagent instruction', () => {
+    const prompt = buildReviewContentPrompt(base);
+    expect(prompt).toContain('reviewMode');
+    expect(prompt).toContain('subagent');
+  });
+
+  it('includes attestation fields in output', () => {
+    const prompt = buildReviewContentPrompt(base);
+    expect(prompt).toContain('ATTESTATION');
+    expect(prompt).toContain('reviewedBy');
+    expect(prompt).toContain('mandateDigest');
+    expect(prompt).toContain('criteriaVersion');
+    expect(prompt).toContain('toolObligationId');
+  });
+
+  it('produces non-empty output', () => {
+    const prompt = buildReviewContentPrompt(base);
+    expect(prompt.length).toBeGreaterThan(100);
+  });
+});
+
+// ─── isReviewRequired edge cases ──────────────────────────────────────────────
+describe('isReviewRequired edge cases', () => {
+  it('returns false for empty string', () => {
+    expect(isReviewRequired('')).toBe(false);
+  });
+
+  it('returns false for object without error field', () => {
+    expect(isReviewRequired(JSON.stringify({ code: 'OTHER' }), TOOL_FLOWGUARD_REVIEW)).toBe(false);
+  });
+
+  it('returns false for CONTENT_ANALYSIS_REQUIRED without attestation', () => {
+    expect(
+      isReviewRequired(
+        JSON.stringify({ error: true, code: 'CONTENT_ANALYSIS_REQUIRED' }),
+        TOOL_FLOWGUARD_REVIEW,
+      ),
+    ).toBe(false);
+  });
+});
+
+// ─── extractReviewContext edge cases ──────────────────────────────────────────
+describe('extractReviewContext edge cases', () => {
+  it('returns null for non-review tool without reviewObligation', () => {
+    const result = extractReviewContext(TOOL_FLOWGUARD_REVIEW, {
+      someField: 'value',
+    });
+    expect(result).toBeNull();
+  });
+
+  it('returns null when toolObligationId is empty string', () => {
+    const result = extractReviewContext(TOOL_FLOWGUARD_REVIEW, {
+      requiredReviewAttestation: {
+        toolObligationId: '',
+        mandateDigest: 'a',
+        criteriaVersion: 'b',
+      },
+    });
+    expect(result).toBeNull();
+  });
+});
+// ─── buildReviewContentMutatedOutput extra edge cases ────────────────────────
+describe('buildReviewContentMutatedOutput edge cases', () => {
+  const findings = JSON.parse(
+    JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'child-1' },
+      reviewedAt: '2026-01-01T00:00:00.000Z',
+      attestation: {
+        mandateDigest: 'a'.repeat(64),
+        criteriaVersion: 'p35-v1',
+        toolObligationId: '00000000-0000-0000-0000-000000000001',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
+    }),
+  );
+
+  it('preserves original fields from the blocked output', () => {
+    const original = JSON.stringify({ code: 'CONTENT_ANALYSIS_REQUIRED', error: true });
+    const result = buildReviewContentMutatedOutput(original, {
+      sessionId: 's1',
+      findings,
+      rawResponse: '',
+    });
+    const parsed = JSON.parse(result!);
+    expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    expect(parsed.error).toBe(true);
+  });
+
+  it('includes requiredReviewAttestation next instruction', () => {
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 's1',
+      findings,
+      rawResponse: '',
+    });
+    const parsed = JSON.parse(result!);
+    expect(parsed.next).toContain('analysisFindings');
+    expect(parsed.next).toContain('pluginReviewFindings');
+  });
+
+  it('sets _pluginReviewSessionId correctly', () => {
+    const result = buildReviewContentMutatedOutput('{}', {
+      sessionId: 'child-session-xyz',
+      findings,
+      rawResponse: '',
+    });
+    const parsed = JSON.parse(result!);
+    expect(parsed._pluginReviewSessionId).toBe('child-session-xyz');
+  });
+});
+
+// ─── isReviewRequired with no toolName ────────────────────────────────────────
+describe('isReviewRequired without toolName', () => {
+  it('returns true for INDEPENDENT_REVIEW_REQUIRED without toolName arg', () => {
+    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: test' });
+    expect(isReviewRequired(output)).toBe(true);
+  });
+
+  it('returns false for CONTENT_ANALYSIS_REQUIRED without toolName arg', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'CONTENT_ANALYSIS_REQUIRED',
+      requiredReviewAttestation: { toolObligationId: 'x' },
+    });
+    expect(isReviewRequired(output)).toBe(false);
   });
 });

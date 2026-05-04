@@ -6,7 +6,7 @@
  *
  * 1. Report generator (executeReview): Pure read-only report generation.
  *    Always available, does NOT mutate state.
- *    Produces an ExtendedReviewReport with completeness matrix and findings.
+ *    Produces a ReviewReport with completeness matrix and findings.
  *
  * 2. Flow mode (executeReviewFlow): Standalone review flow.
  *    READY → REVIEW → REVIEW_COMPLETE.
@@ -19,83 +19,70 @@
 import type { SessionState } from '../state/schema.js';
 import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
-import { evaluate } from '../machine/evaluate.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import type { CompletenessReport } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
-import { autoAdvance, applyTransition } from './types.js';
+import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 
-// ─── Executor Interface ───────────────────────────────────────────────────────
+// ─── Content Loading Helpers ──────────────────────────────────────
+
+/** Fetch content from URL using native fetch. Throws on failure. */
+async function fetchUrlContent(url: string): Promise<string> {
+  const resp = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`);
+  }
+  return resp.text();
+}
+
+// ─── Executor Interface ───────────────────────────────────────────────
 
 export interface ReviewExecutors {
   /**
    * Generate analysis findings via LLM. Optional.
    * If not provided, only mechanical checks are included in the report.
+   *
+   * @param state - Current session state
+   * @param content - Optional external content (text blob, PR diff, branch diff, URL content)
    */
   analyze?: (
     state: SessionState,
+    content?: string,
   ) => Promise<
     Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>
   >;
 }
 
-// ─── Review Reference Input ───────────────────────────────────────────────────
+// ─── Review Reference Input ───────────────────────────────────────────
 
-/**
- * Optional external references and input origin for the review report.
- * Passed through to the generated report for audit provenance.
- */
 export interface ReviewReferenceInput {
   readonly inputOrigin?: InputOrigin;
   readonly references?: ExternalReference[];
+  /** Direct text blob for content analysis. */
+  readonly text?: string;
+  /** GitHub PR number — requires `gh` CLI. */
+  readonly prNumber?: number;
+  /** Git branch name — requires `gh` CLI. */
+  readonly branch?: string;
+  /** URL to fetch content from. */
+  readonly url?: string;
+  /** Skip external content loading (when analysisFindings provided by subagent). */
+  readonly skipExternalContentLoad?: boolean;
 }
 
-// ─── Extended Review Report ───────────────────────────────────────────────────
+// ─── Mechanical Findings ──────────────────────────────────────
 
-/**
- * Extended review report with completeness matrix.
- * Extends the base ReviewReport with evidence completeness and four-eyes data.
- */
-export interface ExtendedReviewReport extends ReviewReport {
-  /** Evidence completeness matrix — per-slot status for all evidence. */
-  completeness: CompletenessReport;
-}
-
-// ─── Report Generator ─────────────────────────────────────────────────────────
-
-/**
- * Generate an ExtendedReviewReport from the current state.
- * Pure read — does NOT mutate state, does NOT produce RailResult.
- *
- * The caller is responsible for:
- * - Writing the report to the session directory (review-report.json)
- * - NOT persisting any state changes (there are none)
- */
-export async function executeReview(
+function buildMechanicalFindings(
   state: SessionState,
-  now: string,
-  executors?: ReviewExecutors,
-  refInput?: ReviewReferenceInput,
-): Promise<ExtendedReviewReport> {
-  // 1. Collect validation summary from state
-  const validationSummary = state.validation.map((v) => ({
-    checkId: v.checkId,
-    passed: v.passed,
-    detail: v.detail,
-  }));
-
-  // 2. Evaluate evidence completeness (mechanical, deterministic)
-  const completeness = evaluateCompleteness(state);
-
-  // 3. Generate findings (LLM or mechanical)
-  let findings: Array<{
+  completeness: ReturnType<typeof evaluateCompleteness>,
+): Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }> {
+  const findings: Array<{
     severity: 'info' | 'warning' | 'error';
     category: string;
     message: string;
   }> = [];
 
-  // Mechanical findings (always)
   if (!state.ticket) {
     findings.push({ severity: 'warning', category: 'completeness', message: 'No ticket evidence' });
   }
@@ -118,7 +105,6 @@ export async function executeReview(
     });
   }
 
-  // Four-eyes findings
   if (completeness.fourEyes.required && !completeness.fourEyes.satisfied) {
     if (completeness.fourEyes.decidedBy === null) {
       findings.push({
@@ -135,7 +121,6 @@ export async function executeReview(
     }
   }
 
-  // Evidence completeness findings
   for (const slot of completeness.slots) {
     if (slot.status === 'missing') {
       findings.push({
@@ -152,21 +137,84 @@ export async function executeReview(
     }
   }
 
-  // LLM findings (optional, additive)
-  if (executors?.analyze) {
-    const llmFindings = await executors.analyze(state);
-    findings = [...findings, ...llmFindings];
+  return findings;
+}
+
+// ─── Load External Content ───────────────────────────────────
+
+export async function loadExternalContent(
+  refInput: ReviewReferenceInput,
+): Promise<{ content: string } | ReviewReport> {
+  if (refInput.prNumber !== undefined) return loadPrContent(refInput);
+  if (refInput.branch !== undefined) return loadBranchContent(refInput);
+  if (refInput.url !== undefined) return loadUrlContent(refInput);
+  if (refInput.text !== undefined) return { content: refInput.text };
+  return { content: '' };
+}
+
+function loadPrContent(refInput: ReviewReferenceInput): { content: string } | ReviewReport {
+  if (!hasGhCli()) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
+    }) as unknown as ReviewReport;
   }
+  try {
+    return { content: loadPrDiff(refInput.prNumber!) };
+  } catch (err) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to load PR #${refInput.prNumber}: ${err instanceof Error ? err.message : String(err)}`,
+    }) as unknown as ReviewReport;
+  }
+}
 
-  // 4. Determine overall status
-  const hasErrors = findings.some((f) => f.severity === 'error');
-  const hasWarnings = findings.some((f) => f.severity === 'warning');
-  const overallStatus = hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
+function loadBranchContent(refInput: ReviewReferenceInput): { content: string } | ReviewReport {
+  if (!hasGhCli()) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
+    }) as unknown as ReviewReport;
+  }
+  try {
+    return { content: loadBranchDiff(refInput.branch!) };
+  } catch (err) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to load branch '${refInput.branch}': ${err instanceof Error ? err.message : String(err)}`,
+    }) as unknown as ReviewReport;
+  }
+}
 
-  // 5. Build report
-  const refs =
-    refInput?.references && refInput.references.length > 0 ? refInput.references : undefined;
+async function loadUrlContent(
+  refInput: ReviewReferenceInput,
+): Promise<{ content: string } | ReviewReport> {
+  try {
+    const content = await fetchUrlContent(refInput.url!);
+    return { content };
+  } catch (err) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to fetch URL ${refInput.url}: ${err instanceof Error ? err.message : String(err)}`,
+    }) as unknown as ReviewReport;
+  }
+}
 
+// ─── Build Report ──────────────────────────────────────────
+
+interface BuildReportOptions {
+  state: SessionState;
+  now: string;
+  validationSummary: Array<{ checkId: string; passed: boolean; detail: string }>;
+  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>;
+  completeness: ReturnType<typeof evaluateCompleteness>;
+  refInput?: ReviewReferenceInput;
+}
+
+function buildReport(opts: BuildReportOptions): ReviewReport {
+  const { state, now, validationSummary, findings, completeness, refInput } = opts;
+  const overallStatus = computeOverallStatus(findings);
+  const refs = computeRefs(refInput);
   return {
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
@@ -183,22 +231,73 @@ export async function executeReview(
   };
 }
 
-// ─── Review Flow Rail ─────────────────────────────────────────────────────────
+function computeOverallStatus(
+  findings: Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }>,
+): 'issues' | 'clean' | 'warnings' {
+  const hasErrors = findings.some((f) => f.severity === 'error');
+  const hasWarnings = findings.some((f) => f.severity === 'warning');
+  return hasErrors ? 'issues' : hasWarnings ? 'warnings' : 'clean';
+}
+
+function computeRefs(refInput?: ReviewReferenceInput): ExternalReference[] | undefined {
+  return refInput?.references && refInput.references.length > 0 ? refInput.references : undefined;
+}
+
+// ─── Report Generator ─────────────────────────────────────────
+
+export async function executeReview(
+  state: SessionState,
+  now: string,
+  executors?: ReviewExecutors,
+  refInput?: ReviewReferenceInput,
+): Promise<ReviewReport> {
+  const validationSummary = state.validation.map((v) => ({
+    checkId: v.checkId,
+    passed: v.passed,
+    detail: v.detail,
+  }));
+
+  const completeness = evaluateCompleteness(state);
+  const findings = buildMechanicalFindings(state, completeness);
+
+  let externalContent: string | undefined;
+  if (refInput && !refInput.skipExternalContentLoad) {
+    const result = await loadExternalContent(refInput);
+    if ('content' in result) {
+      // Treat empty string as no content
+      externalContent = result.content || undefined;
+    } else {
+      return result; // BLOCKED
+    }
+  }
+
+  if (executors?.analyze) {
+    const llmFindings = await executors.analyze(state, externalContent);
+    findings.push(...llmFindings);
+  }
+
+  return buildReport({
+    state,
+    now,
+    validationSummary,
+    findings,
+    completeness,
+    refInput,
+  });
+}
+
+// ─── Review Flow Rail ─────────────────────────────────────────────────
 
 /**
- * Execute the standalone review flow: READY → REVIEW → REVIEW_COMPLETE.
+ * Transition from READY to REVIEW phase.
+ * Returns the REVIEW state WITHOUT auto-advancing to REVIEW_COMPLETE.
+ * The caller should generate the review report, write it to disk,
+ * set reviewReportPath on the state, and THEN call autoAdvance.
  *
- * This is a state-mutating rail (unlike executeReview which is read-only).
- * The caller (tool layer) generates the actual report after this rail returns.
- *
- * Behavior:
- * 1. Admissibility: must be in READY
- * 2. Pre-transition: READY → REVIEW (REVIEW_SELECTED event)
- * 3. autoAdvance: REVIEW → REVIEW_COMPLETE (reviewDone guard fires immediately)
- * 4. Returns RailResult with terminal state
+ * Per P8b: the reviewDone guard requires reviewReportPath to be set,
+ * which means the report must be written before autoAdvance runs.
  */
-export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
-  // 1. Admissibility
+export function startReviewFlow(state: SessionState, ctx: RailContext): RailResult {
   if (!isCommandAllowed(state.phase, Command.REVIEW)) {
     return blocked('COMMAND_NOT_ALLOWED', {
       command: '/review',
@@ -206,7 +305,6 @@ export function executeReviewFlow(state: SessionState, ctx: RailContext): RailRe
     });
   }
 
-  // 2. Pre-transition: READY → REVIEW
   const preTransitions: TransitionRecord[] = [];
   const at = ctx.now();
   const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
@@ -220,8 +318,42 @@ export function executeReviewFlow(state: SessionState, ctx: RailContext): RailRe
     at,
   );
 
-  // 3. autoAdvance: REVIEW → REVIEW_COMPLETE (reviewDone guard fires immediately)
-  const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+  return {
+    kind: 'ok',
+    state: reviewState,
+    evalResult: { kind: 'pending', phase: 'REVIEW' },
+    transitions: preTransitions,
+  };
+}
+
+/**
+ * Full review flow: READY → REVIEW → REVIEW_COMPLETE (with autoAdvance).
+ * Used only by tests or callers that already have persisted report evidence
+ * and intentionally pass a state with reviewReportPath set.
+ * The tool layer must use startReviewFlow + writeReport + autoAdvance instead.
+ */
+export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
+  if (!isCommandAllowed(state.phase, Command.REVIEW)) {
+    return blocked('COMMAND_NOT_ALLOWED', {
+      command: '/review',
+      phase: state.phase,
+    });
+  }
+
+  const preTransitions: TransitionRecord[] = [];
+  const at = ctx.now();
+  const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
+  preTransitions.push(tr);
+
+  const reviewState: SessionState = applyTransition(
+    state,
+    'READY',
+    'REVIEW',
+    'REVIEW_SELECTED',
+    at,
+  );
+
+  const evalFn = createPolicyEvalFn(ctx);
   const {
     state: finalState,
     evalResult,

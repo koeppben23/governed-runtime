@@ -99,7 +99,7 @@ Expected `doctor` output:
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (10 command files)
+  ... (20 command files — 12 canonical + 8 product aliases)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
@@ -188,5 +188,5 @@ chmod 755 ~/.config/opencode/
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

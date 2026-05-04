@@ -52,19 +52,20 @@ These properties are guaranteed by the implementation and cannot be circumvented
 
 ## Currently Delivered
 
-These features are available in FlowGuard 1.0.0.
+These features are available in FlowGuard 1.2.0.
 
 ### Workflow Engine
 
-| Feature                  | Status    | Notes                                                                                                 |
-| ------------------------ | --------- | ----------------------------------------------------------------------------------------------------- |
-| **14 explicit phases**   | Delivered | 3 flows: Ticket (READY→COMPLETE), Architecture (READY→ARCH_COMPLETE), Review (READY→REVIEW_COMPLETE)  |
-| **3 policy modes**       | Delivered | Solo, Team, Regulated                                                                                 |
-| **4 built-in profiles**  | Delivered | Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node                                               |
-| **4-phase review loops** | Delivered | independent plan/implementation review, ADR review, iteration limit, digest convergence, verdict loop |
-| **10 commands**          | Delivered | hydrate, ticket, plan, continue, implement, validate, review-decision, architecture, review, abort    |
-| **11 custom tools**      | Delivered | OpenCode tool exports (+ archive operational tool)                                                    |
-| **4 event kinds**        | Delivered | transition, tool_call, error, lifecycle                                                               |
+| Feature                   | Status    | Notes                                                                                                                    |
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **14 explicit phases**    | Delivered | 3 flows: Ticket (READY→COMPLETE), Architecture (READY→ARCH_COMPLETE), Review (READY→REVIEW_COMPLETE)                     |
+| **4 policy modes**        | Delivered | Solo, Team, Team-CI, Regulated                                                                                           |
+| **4 built-in profiles**   | Delivered | Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node                                                                  |
+| **3 review loops**        | Delivered | Plan, Architecture (ADR), Implementation — all subagent-driven by default with iteration limit + digest-stop convergence |
+| **10 canonical commands** | Delivered | hydrate, ticket, plan, continue, implement, validate, review-decision, architecture, review, abort                       |
+| **8 product commands**    | Delivered | start, task, approve, request-changes, reject, check, export, why (+ status read-only)                                   |
+| **11 custom tools**       | Delivered | OpenCode tool exports (+ archive operational tool)                                                                       |
+| **5 event kinds**         | Delivered | transition, tool_call, error, lifecycle, decision                                                                        |
 
 ### Audit & Compliance
 
@@ -172,5 +173,5 @@ FlowGuard provides **building blocks** for regulated workflows:
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

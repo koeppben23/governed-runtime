@@ -186,7 +186,12 @@ Records the task description. Validates that the task is clear and actionable.
 **Entry:** From TICKET
 **Exit:** Automatic (independent review convergence advances to PLAN_REVIEW)
 
-Generates an implementation plan and requires independent subagent review before the plan can advance.
+Generates an implementation plan and requires independent subagent review before
+the plan can advance. The reviewer subagent returns one of three verdicts:
+`approve`, `changes_requested`, or `unable_to_review`. The first two drive
+normal loop progression. `unable_to_review` consumes the obligation and BLOCKS
+via `SUBAGENT_UNABLE_TO_REVIEW` — the agent must produce a substantively-new
+plan to start a fresh obligation. See `docs/independent-review.md`.
 
 ### PLAN_REVIEW
 
@@ -220,9 +225,13 @@ Use `/implement` to record evidence and auto-advance.
 **Entry:** Automatic from IMPLEMENTATION (after `/implement`)
 **Exit:** Automatic (review convergence)
 
-The reviewer subagent reviews the implementation against the plan. This is an independent review loop,
-not a human gate. The LLM submits the subagent ReviewFindings with `flowguard_implement` to record each iteration.
-On convergence, auto-advances to EVIDENCE_REVIEW.
+The reviewer subagent reviews the implementation against the plan. This is an
+**independent review gate, not a human gate** (USER_GATES = {PLAN_REVIEW,
+EVIDENCE_REVIEW, ARCH_REVIEW}). The LLM submits the subagent ReviewFindings with
+`flowguard_implement` to record each iteration. The reviewer's three verdicts
+(`approve`, `changes_requested`, `unable_to_review`) follow the same semantics
+as the PLAN loop. On `approve` convergence, auto-advances to EVIDENCE_REVIEW;
+on `unable_to_review`, BLOCKED via `SUBAGENT_UNABLE_TO_REVIEW`.
 
 ### EVIDENCE_REVIEW
 
@@ -247,7 +256,14 @@ Ticket flow complete. Can be archived with `/archive`.
 **Entry:** `/architecture` from READY (or re-entry after `changes_requested` at ARCH_REVIEW)
 **Exit:** Automatic (ADR review convergence advances to ARCH_REVIEW)
 
-Creates an Architecture Decision Record (ADR) in MADR format. The ADR must include `## Context`, `## Decision`, and `## Consequences` sections. The ADR review loop refines the ADR until convergence.
+Creates an Architecture Decision Record (ADR) in MADR format. The ADR must
+include `## Context`, `## Decision`, and `## Consequences` sections. The ADR
+review loop runs through the **same plugin-orchestrated subagent pipeline** as
+PLAN and IMPL_REVIEW (F13 parity): the reviewer evaluates Context completeness,
+Decision concreteness, Consequences honesty, and MADR structure. Three
+verdicts (`approve`, `changes_requested`, `unable_to_review`) follow uniform
+semantics; `unable_to_review` consumes the obligation and BLOCKS via
+`SUBAGENT_UNABLE_TO_REVIEW`.
 
 ### ARCH_REVIEW
 

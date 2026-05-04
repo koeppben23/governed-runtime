@@ -1,6 +1,8 @@
+import { GOVERNANCE_RULES } from './shared-rules.js';
+
 export const REVIEW_COMMAND = `
 ---
-description: Start the standalone compliance review flow (READY → REVIEW → REVIEW_COMPLETE).
+description: Start the standalone compliance review flow (READY -> REVIEW -> REVIEW_COMPLETE).
 ---
 
 You are managing a FlowGuard-controlled development workflow.
@@ -11,85 +13,82 @@ Start the compliance review flow for the current FlowGuard session.
 
 ## Steps
 
-1. Call \`flowguard_status\` to verify a session exists and is in the READY phase.
-   - If no session exists, report this and stop.
-   - If the session is not in READY phase, report the current phase and stop.
+1. Call \`flowguard_status\` to verify a session exists in READY phase.
+    - If not in READY: report the current phase and stop.
 
-2. **External Reference Resolution (PR URLs, branches, commits, etc.)**:
-   If the user provides a PR URL, branch name, commit SHA, or other reference:
-   - **PR URL** (e.g. \`https://github.com/org/repo/pull/42\`):
-     - Use \`webfetch\` to extract the PR title and description.
-     - Add an \`ExternalReference\` with \`ref\`: URL, \`type\`: \`"pr"\`, \`title\`: extracted title, \`source\`: platform (github, gitlab, etc.).
-     - Set \`extractedAt\` if content was actually extracted.
-     - Set \`inputOrigin\` to \`"pr"\`.
-   - **Branch name** (e.g. \`feature/my-fix\`):
-     - Add an \`ExternalReference\` with \`ref\`: branch name, \`type\`: \`"branch"\`, \`source\`: \`"local"\`.
-     - Set \`inputOrigin\` to \`"branch"\`. Do NOT set \`extractedAt\` (no content extraction for bare branch names).
-   - **Commit SHA** (e.g. \`abc123def\`):
-     - Add an \`ExternalReference\` with \`ref\`: commit SHA, \`type\`: \`"commit"\`, \`source\`: \`"local"\`.
-     - Set \`inputOrigin\` to \`"external_reference"\`.
-   - **Generic URL or document**:
-     - Use \`webfetch\` if available.
-     - Add \`ExternalReference\` with appropriate \`type\` and \`source\`.
-   - **Multiple references**: Include all references in the array.
-   - If the user provides BOTH text/instructions AND a reference:
-     - Set \`inputOrigin\` to \`"mixed"\`.
-   - If the user provides no reference: proceed as before — do NOT include \`references\` or \`inputOrigin\`.
-   Always preserve the original URL/reference — never lose the source.
+2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
+    If the user provides a reference:
+    - **PR number**: Load PR diff via \`webfetch\` or \`gh pr view <number> --json diff\`. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
+    - **Branch name**: Load branch diff via \`gh pr diff <branch>\`. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`.
+    - **URL**: Fetch content via \`webfetch\`. Set \`inputOrigin: "external_reference"\`.
+    - **Manual text**: Use the supplied text directly. Set \`inputOrigin: "manual_text"\`.
+    - **Commit SHA**: Add ExternalReference with type \`"commit"\`, source \`"local"\`, set \`inputOrigin: "external_reference"\`.
+    - **Both text AND reference**: Set \`inputOrigin: "mixed"\`.
+    - **No reference**: Proceed without \`references\` or \`inputOrigin\`.
+    Always preserve the original URL/reference.
 
-3. Call \`flowguard_review\` with:
-   - \`inputOrigin\` (optional): \`"pr"\`, \`"branch"\`, \`"external_reference"\`, \`"mixed"\`, \`"manual_text"\`, etc.
-   - \`references\` (optional): Array of \`ExternalReference\` objects as described above (omit if no references).
+3. **Subagent Review** (content-aware only):
+    If the blocked response contains \`pluginReviewFindings\`, use those findings
+    directly — the FlowGuard orchestration plugin has already invoked the
+    \`flowguard-reviewer\` subagent for you and injected the results.
+    If the response contains \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\`
+    and NO \`pluginReviewFindings\`, manually call the \`flowguard-reviewer\` subagent
+    via Task tool:
+    - Use \`subagent_type: "flowguard-reviewer"\`
+    - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
+    - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
+    - Parse the response as \`ReviewFindings\` object — preserve all fields
+    - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
+      (FlowGuard provides this UUID for every content-aware /review)
+    Both paths converge at step 4.
 
-4. The tool transitions the session from READY → REVIEW → REVIEW_COMPLETE and generates a compliance report.
+    - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the
+      content was unparseable), do NOT submit \`analysisFindings\`. Report the reason to the user.
+      The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
+      Only submit \`analysisFindings\` when the subagent returns \`approve\` or \`changes_requested\`.
 
-5. Read the response and present the report to the user:
-   - **Overall status**: clean, warnings, or issues.
-   - **Findings**: List each finding with severity (info/warning/error), category, and message.
-   - **Validation summary**: Show which checks passed or failed.
-   - **External references** (if any): List the references that were used.
-   - **Current phase**: Should be REVIEW_COMPLETE.
+4. Call \`flowguard_review\` with:
+    - The matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`)
+    - Optional \`inputOrigin\` and \`references\`
+    - \`analysisFindings\`: the complete \`ReviewFindings\` object returned by the subagent
+      (REQUIRED when content was provided). Pass the object as-is — no mapping, no array.
+    Do not call content-aware \`flowguard_review\` without \`analysisFindings\`; the tool blocks fail-closed.
 
-6. If there are warnings or issues, explain what actions could address them.
+5. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
+
+6. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
+
+7. Present the report:
+    - If the response contains a \`reviewCard\` field, display its markdown verbatim.
+    - It contains the formatted review report with findings, completeness, and evidence.
 
 ## Verification Review Check
 
-When reviewing implementation evidence or plan verification, check:
-
+When reviewing evidence, verify:
 - Were verificationCandidates from flowguard_status used when available?
-- Were generic commands (e.g., "npm test") suggested despite more specific repo-native candidates existing?
-- Were executed checks clearly distinguished from planned checks?
-- Are unexecuted checks marked as NOT_VERIFIED?
-
-If generic commands are used when specific candidates exist, flag this as a defect in the report.
+- Were generic commands suggested despite specific repo-native candidates existing?
+- Are executed checks distinguished from planned checks?
+- Are unexecuted checks marked NOT_VERIFIED?
+If generic commands are suggested despite specific candidates existing, flag this as a defect.
 
 ## ExternalReference Format
 
-Each reference in the \`references\` array has:
-- \`ref\` (required): URL, branch name, commit SHA, or reference string
-- \`type\` (optional): \`ticket\` | \`issue\` | \`pr\` | \`branch\` | \`commit\` | \`url\` | \`doc\` | \`other\`
-- \`title\` (optional): Human-readable title extracted from the reference
-- \`source\` (optional): Platform identifier (jira, github, gitlab, confluence, local, etc.)
-- \`extractedAt\` (optional): ISO timestamp — ONLY set if content was actually extracted from the URL
+- \`ref\` (required): URL, branch name, commit SHA
+- \`type\` (optional): ticket | issue | pr | branch | commit | url | doc | other
+- \`title\` (optional): Human-readable title
+- \`source\` (optional): Platform identifier
+- \`extractedAt\` (optional): ISO timestamp — only when content was actually extracted
 
-## Constraints
+## Rules
 
-- This command starts a standalone flow. It transitions the session through READY → REVIEW → REVIEW_COMPLETE.
-- This command is only available in the READY phase.
-- DO NOT modify any FlowGuard state or files other than the report.
-- DO NOT infer or assume session state beyond what the FlowGuard tools return.
-- DO NOT auto-chain to any other FlowGuard command after generating the report.
+- This command is only available in READY phase (it starts a standalone flow).
 - Present the report clearly and concisely.
-- Natural-language prompts like "review it", "check the status", "how does it look", or "is it ready" are NOT command invocations. Only an explicit \`/review\` triggers this command. If the user sends free-text implying a review, respond conversationally without calling FlowGuard tools.
-- If any FlowGuard tool returns a failed, blocked, malformed, or nonconforming response, apply the Tool Error Classification from FlowGuard mandates: report the specific reason, exactly one recovery action, and stop.
-- Always end your response with a \`Next action:\` line based on the current phase and report findings.
-
+${GOVERNANCE_RULES}
 ## Done-when
 
-- Compliance report is generated and presented to the user.
-- External references are captured with full audit provenance.
-- Verification review checked for repo-native candidates vs generic command mismatches.
-- Findings and actionable recommendations are shown.
+- Compliance report generated and presented.
+- External references captured with audit provenance.
+- Verification review checked for repo-native candidates vs generic mismatches.
 - Phase has reached REVIEW_COMPLETE.
 - Response ends with a \`Next action:\` line.
 `;

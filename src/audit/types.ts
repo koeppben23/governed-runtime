@@ -28,12 +28,8 @@ import type { ReviewVerdict } from '../state/evidence.js';
 
 // P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
 // Re-exported here for backward compatibility — all existing consumers continue to work.
-import type {
-  ActorInfo as _ActorInfo,
-  ActorVerificationMeta as _ActorVerificationMeta,
-} from '../state/evidence.js';
-export type ActorInfo = _ActorInfo;
-export type ActorVerificationMeta = _ActorVerificationMeta;
+import type { ActorInfo, ActorVerificationMeta } from '../state/evidence.js';
+export type { ActorInfo, ActorVerificationMeta };
 
 // ─── Event Kind ───────────────────────────────────────────────────────────────
 
@@ -343,9 +339,12 @@ export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEven
 
 // ─── Arg Summarizer ───────────────────────────────────────────────────────────
 
+/** Maximum string length before truncation in arg summaries. */
+const ARG_SUMMARY_TRUNCATION_LIMIT = 100;
+
 /**
  * Summarize tool args for audit (no sensitive data).
- * Only includes keys and scalar values (strings truncated to 100 chars).
+ * Only includes keys and scalar values (strings truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars).
  * Objects/arrays are replaced with type indicator.
  */
 export function summarizeArgs(args: Record<string, unknown>): Record<string, string> {
@@ -354,7 +353,10 @@ export function summarizeArgs(args: Record<string, unknown>): Record<string, str
     if (value === null || value === undefined) {
       summary[key] = 'null';
     } else if (typeof value === 'string') {
-      summary[key] = value.length > 100 ? value.slice(0, 100) + '...' : value;
+      summary[key] =
+        value.length > ARG_SUMMARY_TRUNCATION_LIMIT
+          ? value.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
+          : value;
     } else if (typeof value === 'number' || typeof value === 'boolean') {
       summary[key] = String(value);
     } else if (Array.isArray(value)) {

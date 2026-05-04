@@ -93,10 +93,12 @@ export const validate: ToolDefinition = {
         }),
       );
 
+      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
       const nextState: SessionState = {
         ...state,
         validation: validationResults,
         error: null,
+        ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
       };
 
       // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
@@ -108,7 +110,6 @@ export const validate: ToolDefinition = {
       } = autoAdvance(nextState, evalFn, ctx);
       await writeStateWithArtifacts(sessDir, finalState);
 
-      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
       const failedChecks = validationResults
         .filter((r: ValidationResult) => !r.passed)
         .map((r: ValidationResult) => r.checkId);

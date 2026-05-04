@@ -19,9 +19,8 @@
 import type { SessionState } from '../state/schema.js';
 import type { CheckId, ValidationResult } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
-import { evaluate } from '../machine/evaluate.js';
 import type { RailResult, RailContext } from './types.js';
-import { autoAdvance } from './types.js';
+import { autoAdvance, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
@@ -76,11 +75,17 @@ export async function executeValidate(
     ...state,
     validation: results,
     error: null,
-    ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+    ...(allPassed
+      ? {}
+      : {
+          selfReview: null,
+          reviewDecision: null,
+          plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
+        }),
   };
 
   // 5. Auto-advance (ALL_PASSED → IMPLEMENTATION, or CHECK_FAILED → PLAN) — policy-aware
-  const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+  const evalFn = createPolicyEvalFn(ctx);
   const { state: finalState, evalResult, transitions } = autoAdvance(nextState, evalFn, ctx);
 
   return { kind: 'ok', state: finalState, evalResult, transitions };

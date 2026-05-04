@@ -145,6 +145,12 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
   process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
   assertTestConfigDir();
 
+  // Make tmpDir look like a real worktree so the plugin's `isUsableWorktree`
+  // check (fail-closed: rejects non-repo paths to avoid creating rogue
+  // workspace folders) accepts it. Tests that pass `worktree: ws.tmpDir` to
+  // the plugin rely on this marker.
+  await fs.mkdir(path.join(tmpDir, '.git'), { recursive: true });
+
   return {
     tmpDir,
     cleanup: async () => {
@@ -393,15 +399,34 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   const state = await readState(sessDir);
   if (!state) return args;
 
-  const obligationType: ReviewObligationType = planVerdict ? 'plan' : 'implement';
-  const obligation = [...(state.reviewAssurance?.obligations ?? [])]
-    .reverse()
-    .find(
-      (item) =>
-        item.obligationType === obligationType &&
-        item.status !== 'consumed' &&
-        item.consumedAt == null,
-    );
+  // F13 slice 7c: selfReviewVerdict is shared between plan and architecture
+  // tools. Distinguish by inspecting the active obligation: if a pending
+  // architecture obligation exists, route as 'architecture'; otherwise
+  // default to 'plan'. The reviewVerdict path remains 'implement'.
+  const allObligations = state.reviewAssurance?.obligations ?? [];
+  const findPending = (type: ReviewObligationType) =>
+    [...allObligations]
+      .reverse()
+      .find(
+        (item) =>
+          item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
+      );
+
+  let obligationType: ReviewObligationType;
+  let obligation;
+  if (planVerdict) {
+    const archPending = findPending('architecture');
+    if (archPending) {
+      obligationType = 'architecture';
+      obligation = archPending;
+    } else {
+      obligationType = 'plan';
+      obligation = findPending('plan');
+    }
+  } else {
+    obligationType = 'implement';
+    obligation = findPending('implement');
+  }
   if (!obligation) return args;
 
   const reviewFindings = await fulfillStrictReviewObligation(sessDir, {

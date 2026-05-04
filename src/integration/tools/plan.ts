@@ -54,6 +54,7 @@ import {
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine
@@ -76,9 +77,12 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js'
 // Review findings validation (shared with implement.ts)
 import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
 import {
+  appendReviewObligation,
+  consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
@@ -152,7 +156,39 @@ export const plan: ToolDefinition = {
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
-      const isInitialSubmission = !args.selfReviewVerdict;
+      const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
+      const hasVerdict = args.selfReviewVerdict !== undefined;
+      const hasFindings = args.reviewFindings !== undefined;
+      const isInitialSubmission = !hasVerdict;
+
+      // Runtime sequence contract: plan submission and review verdict are separate phases.
+      if (hasPlanText && hasFindings && !hasVerdict) {
+        return formatBlocked('PLAN_SUBMISSION_MIXED_INPUTS');
+      }
+
+      if (hasPlanText && hasVerdict && args.selfReviewVerdict !== 'changes_requested') {
+        return formatBlocked('PLAN_APPROVE_WITH_TEXT');
+      }
+
+      if (isInitialSubmission && hasPlanText && state.phase === 'PLAN' && state.selfReview) {
+        return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
+      }
+
+      if (hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasVerdict && !state.selfReview) {
+        return formatBlocked('PLAN_REVIEW_LOOP_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict && !state.plan) {
+        return formatBlocked('PLAN_SUBMISSION_REQUIRED');
+      }
+
+      if (hasFindings && !hasVerdict) {
+        return formatBlocked('PLAN_FINDINGS_WITHOUT_VERDICT');
+      }
 
       if (isInitialSubmission && args.reviewFindings) {
         const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
@@ -198,7 +234,6 @@ export const plan: ToolDefinition = {
             : state.plan?.reviewFindings,
         };
 
-        const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
         const nextObligation = subagentEnabled
           ? createReviewObligation({
               obligationType: 'plan',
@@ -219,12 +254,7 @@ export const plan: ToolDefinition = {
             revisionDelta: 'major' as RevisionDelta,
             verdict: 'changes_requested' as LoopVerdict,
           },
-          reviewAssurance: nextObligation
-            ? {
-                obligations: [...assuranceBase.obligations, nextObligation],
-                invocations: assuranceBase.invocations,
-              }
-            : assuranceBase,
+          reviewAssurance: appendReviewObligation(state.reviewAssurance, nextObligation),
           error: null,
         };
 
@@ -241,24 +271,7 @@ export const plan: ToolDefinition = {
           selfReviewIteration: 0,
           maxSelfReviewIterations,
           reviewMode: subagentEnabled ? 'subagent' : 'self',
-          ...(nextObligation
-            ? {
-                reviewObligation: {
-                  obligationId: nextObligation.obligationId,
-                  obligationType: 'plan' as const,
-                  iteration: nextObligation.iteration,
-                  planVersion: nextObligation.planVersion,
-                  criteriaVersion: nextObligation.criteriaVersion,
-                  mandateDigest: nextObligation.mandateDigest,
-                },
-                // Backward-compat flat fields
-                reviewObligationId: nextObligation.obligationId,
-                reviewObligationIteration: nextObligation.iteration,
-                reviewObligationPlanVersion: nextObligation.planVersion,
-                reviewCriteriaVersion: nextObligation.criteriaVersion,
-                reviewMandateDigest: nextObligation.mandateDigest,
-              }
-            : {}),
+          ...reviewObligationResponseFields(nextObligation),
           next:
             'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
             'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
@@ -329,6 +342,18 @@ export const plan: ToolDefinition = {
           if (blocked) return blocked;
         }
 
+        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
+        if (
+          args.reviewFindings &&
+          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
+          args.reviewFindings.overallVerdict !== 'unable_to_review'
+        ) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            submittedVerdict: args.selfReviewVerdict,
+            findingsVerdict: args.reviewFindings.overallVerdict,
+          });
+        }
+
         const iteration = state.selfReview.iteration + 1;
         const verdict = args.selfReviewVerdict as LoopVerdict;
         const prevDigest = state.plan.current.digest;
@@ -371,22 +396,11 @@ export const plan: ToolDefinition = {
             )
           : null;
 
-        const consumedObligations = assuranceBase.obligations.map((item) => {
-          if (!strictObligation || item.obligationId !== strictObligation.obligationId) return item;
-          return {
-            ...item,
-            status: 'consumed' as const,
-            consumedAt: ctx.now(),
-          };
-        });
-
-        const consumedInvocations = assuranceBase.invocations.map((inv) => {
-          if (!strictObligation || inv.invocationId !== strictObligation.invocationId) return inv;
-          return {
-            ...inv,
-            consumedByObligationId: strictObligation.obligationId,
-          };
-        });
+        const consumedAssurance = consumeReviewObligation(
+          assuranceBase,
+          strictObligation,
+          ctx.now(),
+        );
 
         const nextState: SessionState = {
           ...state,
@@ -404,8 +418,8 @@ export const plan: ToolDefinition = {
             verdict,
           },
           reviewAssurance: {
-            obligations: consumedObligations,
-            invocations: consumedInvocations,
+            obligations: consumedAssurance.obligations,
+            invocations: consumedAssurance.invocations,
           },
           error: null,
         };
@@ -417,14 +431,26 @@ export const plan: ToolDefinition = {
           evalResult: ev,
           transitions,
         } = autoAdvance(nextState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
 
-        // Check convergence for messaging
-        const converged =
-          iteration >= maxSelfReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
+        // Check convergence BEFORE building the next obligation.
+        // Only non-converged Mode B needs a next review obligation.
+        const approvedConverged = revisionDelta === 'none' && verdict === 'approve';
+        const maxReached = iteration >= maxSelfReviewIterations;
+
+        // Max iterations reached without approval: fail-closed, not converged.
+        if (maxReached && !approvedConverged) {
+          await writeStateWithArtifacts(sessDir, finalState);
+          return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
+            iteration: String(iteration),
+            maxIterations: String(maxSelfReviewIterations),
+            lastVerdict: verdict,
+          });
+        }
+
+        const converged = approvedConverged;
 
         if (converged && finalState.phase === 'PLAN_REVIEW') {
+          await writeStateWithArtifacts(sessDir, finalState);
           const nextAction = resolveNextAction(finalState.phase, finalState);
           const productNext = buildProductNextAction(nextAction, finalState.phase);
           const reviewCard = buildPlanReviewCard({
@@ -436,21 +462,28 @@ export const plan: ToolDefinition = {
             policyMode: finalState.policySnapshot?.mode,
             taskTitle: firstLine(finalState.ticket?.text),
           });
-          return appendNextAction(
-            JSON.stringify({
-              phase: finalState.phase,
-              status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
-              planDigest: currentPlan.digest,
-              selfReviewIteration: iteration,
-              reviewCard,
-              next: formatEval(ev),
-              _audit: { transitions },
-            }),
+          const artifactErr = await materializeReviewCardArtifact(
+            sessDir,
+            'plan-review-card',
+            reviewCard,
             finalState,
+            currentPlan.digest,
           );
+          const response: Record<string, unknown> = {
+            phase: finalState.phase,
+            status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
+            planDigest: currentPlan.digest,
+            selfReviewIteration: iteration,
+            reviewCard,
+            next: formatEval(ev),
+            _audit: { transitions },
+          };
+          if (artifactErr) response.artifactWarning = artifactErr;
+          return appendNextAction(JSON.stringify(response), finalState);
         }
 
         if (converged) {
+          await writeStateWithArtifacts(sessDir, finalState);
           return appendNextAction(
             JSON.stringify({
               phase: finalState.phase,
@@ -464,6 +497,7 @@ export const plan: ToolDefinition = {
           );
         }
 
+        // Non-converged: build next obligation and write atomically.
         const nextIteration = iteration;
         const nextPlanVersion = history.length + 1;
         const nextObligation = subagentEnabled
@@ -474,14 +508,13 @@ export const plan: ToolDefinition = {
               now: ctx.now(),
             })
           : null;
-        const nextAssurance = ensureReviewAssurance(finalState.reviewAssurance);
-        if (nextObligation) {
-          nextAssurance.obligations.push(nextObligation);
-          await writeStateWithArtifacts(sessDir, {
-            ...finalState,
-            reviewAssurance: nextAssurance,
-          });
-        }
+        const stateToPersist = nextObligation
+          ? {
+              ...finalState,
+              reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
+            }
+          : finalState;
+        await writeStateWithArtifacts(sessDir, stateToPersist);
 
         return appendNextAction(
           JSON.stringify({
@@ -491,23 +524,7 @@ export const plan: ToolDefinition = {
             selfReviewIteration: iteration,
             revisionDelta,
             reviewMode: 'subagent',
-            ...(nextObligation
-              ? {
-                  reviewObligation: {
-                    obligationId: nextObligation.obligationId,
-                    obligationType: 'plan' as const,
-                    iteration: nextObligation.iteration,
-                    planVersion: nextObligation.planVersion,
-                    criteriaVersion: nextObligation.criteriaVersion,
-                    mandateDigest: nextObligation.mandateDigest,
-                  },
-                  reviewObligationId: nextObligation.obligationId,
-                  reviewObligationIteration: nextObligation.iteration,
-                  reviewObligationPlanVersion: nextObligation.planVersion,
-                  reviewCriteriaVersion: nextObligation.criteriaVersion,
-                  reviewMandateDigest: nextObligation.mandateDigest,
-                }
-              : {}),
+            ...reviewObligationResponseFields(nextObligation),
             next:
               'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
               'to review the revised plan. Use subagent_type "flowguard-reviewer" with a prompt ' +
@@ -519,7 +536,7 @@ export const plan: ToolDefinition = {
               'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.',
             _audit: { transitions },
           }),
-          finalState,
+          stateToPersist,
         );
       }
     } catch (err) {

@@ -262,5 +262,5 @@ User → Installation Owner → FlowGuard Maintainer (via GitHub)
 
 ---
 
-FlowGuard Version: 1.2.0-rc.1
+FlowGuard Version: 1.2.0-rc.2
 _Last Updated: 2026-04-15_

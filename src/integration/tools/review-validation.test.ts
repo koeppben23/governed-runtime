@@ -5,7 +5,11 @@ import {
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from '../review-assurance.js';
+import {
+  hashFindings,
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+} from '../review-assurance.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -42,7 +46,22 @@ function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
 }
 
-function strictAssuranceFixture() {
+function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
+  return makeFindings({
+    reviewedBy: { sessionId: 'ses_child' },
+    attestation: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      toolObligationId: '11111111-1111-4111-8111-111111111111',
+      iteration: 0,
+      planVersion: 1,
+      reviewedBy: 'flowguard-reviewer',
+    },
+    ...overrides,
+  });
+}
+
+function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
   return {
     obligations: [
       {
@@ -72,7 +91,7 @@ function strictAssuranceFixture() {
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
-        findingsHash: 'def',
+        findingsHash: hashFindings(findings),
         invokedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
         consumedByObligationId: null,
@@ -263,23 +282,13 @@ describe('validateReviewFindings', () => {
 
   describe('strict assurance', () => {
     it('accepts when strict evidence and attestation match', () => {
-      const findings = makeFindings({
-        reviewMode: 'subagent',
-        attestation: {
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          toolObligationId: '11111111-1111-4111-8111-111111111111',
-          iteration: 0,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
-        },
-      });
+      const findings = strictFindings();
       const result = validateReviewFindings(
         findings,
         makeCtx({
           subagentEnabled: true,
           strictEnforcement: true,
-          assurance: strictAssuranceFixture(),
+          assurance: strictAssuranceFixture(findings),
           obligationType: 'plan',
         }),
       );
@@ -305,17 +314,7 @@ describe('validateReviewFindings', () => {
       const assurance = strictAssuranceFixture();
       assurance.obligations[0]!.status = 'blocked';
       assurance.obligations[0]!.blockedCode = 'STRICT_REVIEW_ORCHESTRATION_FAILED';
-      const findings = makeFindings({
-        reviewMode: 'subagent',
-        attestation: {
-          mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: REVIEW_CRITERIA_VERSION,
-          toolObligationId: '11111111-1111-4111-8111-111111111111',
-          iteration: 0,
-          planVersion: 1,
-          reviewedBy: 'flowguard-reviewer',
-        },
-      });
+      const findings = strictFindings();
       const result = validateReviewFindings(
         findings,
         makeCtx({
@@ -327,6 +326,167 @@ describe('validateReviewFindings', () => {
       );
       expect(result).not.toBeNull();
       expect(parseBlocked(result!).code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    });
+
+    it('blocks stale findings before selecting a matching stale obligation', () => {
+      const findings = strictFindings({ iteration: 1 });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          expectedIteration: 0,
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(findings),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_ITERATION_MISMATCH');
+    });
+
+    it('blocks when submitted findings content differs from invocation hash', () => {
+      const original = strictFindings();
+      const tampered = { ...original, overallVerdict: 'changes_requested' as const };
+      const result = validateReviewFindings(
+        tampered,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(original),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
+    it('blocks when submitted findings session differs from invocation child session', () => {
+      const findings = strictFindings({ reviewedBy: { sessionId: 'ses_other' } });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: strictAssuranceFixture(strictFindings()),
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
+    });
+  });
+
+  // ─── P1.3 slice 4e: third-verdict tool-layer assertion ───────────────
+  describe('Rule 5: overallVerdict=unable_to_review fails closed', () => {
+    it('blocks with SUBAGENT_UNABLE_TO_REVIEW (HAPPY: third-verdict pin)', () => {
+      // Even with otherwise-valid subagent findings, an
+      // overallVerdict='unable_to_review' must fail closed at the tool
+      // layer. The orchestrator (slice 4c) handles strict-mode by
+      // routing BLOCKED before tools see findings; this tool-layer
+      // guard catches the residual non-strict / submit-driven path.
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks before planVersion/iteration mismatch checks (CORNER: precedence)', () => {
+      // Even when planVersion/iteration are wrong, unable_to_review
+      // takes precedence — there is no convergence path regardless of
+      // binding correctness, and the operator-facing recovery copy
+      // (slice 2 reason) is the right starting point.
+      const findings = makeFindings({
+        overallVerdict: 'unable_to_review',
+        planVersion: 999, // would otherwise trigger REVIEW_PLAN_VERSION_MISMATCH
+        iteration: 999, // would otherwise trigger REVIEW_ITERATION_MISMATCH
+      });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('blocks before strict-mode mandate checks (CORNER: precedence over strict)', () => {
+      // unable_to_review must fail closed regardless of strict-mode
+      // mandate state. Even if assurance is missing/inconsistent,
+      // the unreviewable verdict is the dominant signal.
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          strictEnforcement: true,
+          assurance: undefined, // would otherwise trigger PLUGIN_ENFORCEMENT_UNAVAILABLE
+          obligationType: 'plan',
+        }),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it('does NOT block when overallVerdict=approve (HAPPY: regression guard)', () => {
+      // The new gate must NOT capture the normal path. With approve,
+      // validation proceeds to existing rules; on a fully-valid
+      // findings + ctx the result is null (validation pass).
+      const findings = makeFindings({ overallVerdict: 'approve' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).toBeNull();
+    });
+
+    it('does NOT block when overallVerdict=changes_requested (HAPPY: regression guard)', () => {
+      // Symmetric guard for the second 2-valued LoopVerdict.
+      const findings = makeFindings({ overallVerdict: 'changes_requested' });
+      const result = validateReviewFindings(findings, makeCtx());
+      expect(result).toBeNull();
+    });
+  });
+
+  // ─── F13: architecture obligationType (slice 3) ──────────────
+  describe('F13 architecture obligationType', () => {
+    it("accepts obligationType: 'architecture' (non-strict path)", () => {
+      const findings = makeFindings({ overallVerdict: 'approve' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).toBeNull();
+    });
+
+    it("third-verdict precedence still wins for obligationType: 'architecture'", () => {
+      const findings = makeFindings({ overallVerdict: 'unable_to_review' });
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).not.toBeNull();
+      const parsed = parseBlocked(result!);
+      expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+
+    it("strict assurance accepts obligationType: 'architecture' when attestation matches", () => {
+      const findings = strictFindings();
+      const archAssurance = {
+        ...strictAssuranceFixture(findings),
+        obligations: strictAssuranceFixture(findings).obligations.map((o) => ({
+          ...o,
+          obligationType: 'architecture' as const,
+        })),
+        invocations: strictAssuranceFixture(findings).invocations.map((i) => ({
+          ...i,
+          obligationType: 'architecture' as const,
+        })),
+      };
+      const result = validateReviewFindings(
+        findings,
+        makeCtx({
+          subagentEnabled: true,
+          strictEnforcement: true,
+          assurance: archAssurance,
+          obligationType: 'architecture',
+        }),
+      );
+      expect(result).toBeNull();
     });
   });
 });

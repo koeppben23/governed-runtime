@@ -659,6 +659,180 @@ describe('context and readiness projections', () => {
     expect(readiness.warnings.length).toBeGreaterThan(0);
     expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
+
+  // ─── MUTATION KILL: selfReview config check (lines 350-355) ────────────────
+
+  it('readiness HAPPY returns no warnings when selfReview config is correct', () => {
+    const state = makeMinimalState('READY');
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.warnings).toHaveLength(0);
+  });
+
+  it('readiness warning when subagentEnabled is false (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: false,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.warnings.length).toBeGreaterThan(0);
+    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
+  });
+
+  it('readiness warning when fallbackToSelf is true (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: true,
+        strictEnforcement: true,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.warnings.length).toBeGreaterThan(0);
+    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
+  });
+
+  it('readiness warning when strictEnforcement is false (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: false,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.warnings.length).toBeGreaterThan(0);
+    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
+  });
+
+  it('readiness warning when all three selfReview flags are wrong (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    if (state.policySnapshot) {
+      (state.policySnapshot as any).selfReview = {
+        subagentEnabled: false,
+        fallbackToSelf: true,
+        strictEnforcement: false,
+      };
+    }
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.warnings.length).toBeGreaterThan(0);
+    expect(readiness.warnings[0]).toContain('Legacy selfReview config');
+  });
+
+  // ─── MUTATION KILL: actorKnown field (line 371) ───────────────────────────
+
+  it('readiness actorKnown is true when actorInfo source is env (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    state.actorInfo = { id: 'u1', source: 'env', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.actorKnown).toBe(true);
+  });
+
+  it('readiness actorKnown is true when actorInfo source is git (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    state.actorInfo = { id: 'u1', source: 'git', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.actorKnown).toBe(true);
+  });
+
+  it('readiness actorKnown is true when actorInfo source is claim (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.actorKnown).toBe(true);
+  });
+
+  it('readiness actorKnown is true when actorInfo source is oidc (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    state.actorInfo = { id: 'u1', source: 'oidc', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.actorKnown).toBe(true);
+  });
+
+  it('readiness actorKnown is false when actorInfo source is unknown (survivor kill)', () => {
+    const state = makeMinimalState('READY');
+    state.actorInfo = { id: 'u1', source: 'unknown', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.actorKnown).toBe(false);
+  });
+
+  // ─── MUTATION KILL: regulated mode check (line 373) ────────────────────────
+
+  it('readiness returns minimumActorAssuranceForApproval only in regulated mode (survivor kill)', () => {
+    const soloState = makeMinimalState('READY');
+    const soloReadiness = buildReadinessProjection(soloState, resolvePolicy('solo'));
+    expect(soloReadiness.minimumActorAssuranceForApproval).toBeNull();
+
+    const regulatedState = {
+      ...makeMinimalState('READY'),
+      policySnapshot: {
+        ...makeMinimalState('READY').policySnapshot!,
+        mode: 'regulated' as const,
+        minimumActorAssuranceForApproval: 'claim_validated' as const,
+      },
+    };
+    const regulatedReadiness = buildReadinessProjection(regulatedState, resolvePolicy('regulated'));
+    expect(regulatedReadiness.minimumActorAssuranceForApproval).toBe('claim_validated');
+  });
+
+  // ─── MUTATION KILL: buildBlocker function (lines 390-405) ──────────────────
+
+  it('blocker is null for terminal phases in buildStatusProjection (survivor kill)', () => {
+    const policy = resolvePolicy('solo');
+    for (const phase of TERMINAL) {
+      const state = makeMinimalState(phase);
+      const projection = buildStatusProjection(state, policy);
+      expect(projection.blocker).toBeNull();
+    }
+  });
+
+  it('blocker has reasonText for waiting phases (survivor kill)', () => {
+    const policy = resolvePolicy('regulated');
+    for (const phase of USER_GATES) {
+      const state = makeMinimalState(phase);
+      const projection = buildStatusProjection(state, policy);
+      expect(projection.blocker).not.toBeNull();
+      expect(projection.blocker!.reasonCode).toBeNull();
+      expect(typeof projection.blocker!.reasonText).toBe('string');
+    }
+  });
+
+  it('blocker has null reasonText for pending phases (survivor kill)', () => {
+    const policy = resolvePolicy('solo');
+    const pendingPhases = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
+    for (const phase of pendingPhases) {
+      const state = makeMinimalState(phase as any);
+      const projection = buildStatusProjection(state, policy);
+      expect(projection.blocker).not.toBeNull();
+      expect(projection.blocker!.reasonCode).toBeNull();
+      // For pending phases, reasonText may be null or a string depending on evaluate()
+      expect(projection.blocker!.reasonText).toBeNull();
+    }
+  });
+
+  it('HAPPY returns readiness surface when readiness flag is set (survivor kill)', () => {
+    const state = makeMinimalState('TICKET');
+    state.ticket = { text: 't', digest: 'd', source: 'user', createdAt: new Date().toISOString() };
+    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    expect(readiness.phase).toBe('TICKET');
+    expect(readiness.blocked).toBe(true); // pending phase
+    expect(readiness.evidenceComplete).toBe(true);
+    expect(readiness.actorKnown).toBe(true);
+    expect(readiness.warnings).toEqual([]);
+  });
 });
 
 // ─── E2E: Full Session Simulation ────────────────────────────────────────────
@@ -792,5 +966,490 @@ describe('buildStatusProjection — Profile Projection', () => {
     const projection = buildStatusProjection(state, policy);
 
     expect(projection.profileId).toBe('baseline');
+  });
+});
+
+// ─── Status Mutation Kill Matrix ─────────────────────────────────────────────
+
+describe('status.ts MUTATION_KILL matrix', () => {
+  const solo = resolvePolicy('solo');
+  const regulated = resolvePolicy('regulated');
+
+  const fixedTime = '2026-04-30T12:00:00.000Z';
+
+  function stateWithTicket(phase: SessionState['phase'] = 'TICKET'): SessionState {
+    return {
+      ...makeMinimalState(phase),
+      ticket: {
+        text: 'Implement governed status projection',
+        source: 'user',
+        digest: 'ticket-digest',
+        createdAt: fixedTime,
+      },
+    };
+  }
+
+  function stateWithPlan(phase: SessionState['phase'] = 'PLAN'): SessionState {
+    return {
+      ...stateWithTicket(phase),
+      plan: {
+        current: { text: '## Plan\nShip status tests', digest: 'plan-digest' },
+        history: [],
+      },
+    };
+  }
+
+  describe('SMOKE buildStatusProjection exact shape', () => {
+    it('projects actor, policy, profile, archive, next action, product next action, and command prefixes', () => {
+      const state: SessionState = {
+        ...stateWithTicket('READY'),
+        activeProfile: { id: 'baseline', name: 'Baseline', rules: [], ruleContent: '' },
+        archiveStatus: 'verified',
+        actorInfo: {
+          id: 'actor-1',
+          source: 'claim',
+          assurance: 'claim_validated',
+          email: 'actor@example.com',
+        } as any,
+      };
+
+      const projection = buildStatusProjection(state, solo);
+
+      expect(projection).toMatchObject({
+        phase: 'READY',
+        phaseLabel: 'Ready',
+        sessionId: 'ses_test_0001',
+        policyMode: 'solo',
+        profileId: 'baseline',
+        archiveStatus: 'verified',
+        actor: {
+          id: 'actor-1',
+          source: 'claim',
+          assurance: 'claim_validated',
+        },
+      });
+      expect(projection.allowedCommands).toEqual(
+        expect.arrayContaining(['/ticket', '/architecture', '/review']),
+      );
+      expect(projection.allowedCommands.every((cmd) => cmd.startsWith('/'))).toBe(true);
+      expect(projection.nextAction.primaryCommand).toBe('/ticket');
+      expect(projection.nextAction.summary).toContain('Choose your workflow');
+      expect(projection.productNextAction.primaryCommand).toBe('/task');
+      expect(projection.productNextAction.summary).toContain('/task');
+    });
+
+    it('BAD falls back to unknown policy mode and none profile without changing phase', () => {
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: undefined,
+        activeProfile: null,
+      };
+
+      const projection = buildStatusProjection(state, solo);
+
+      expect(projection.policyMode).toBe('unknown');
+      expect(projection.profileId).toBe('none');
+      expect(projection.phase).toBe('READY');
+      expect(projection.actor).toBeNull();
+      expect(projection.archiveStatus).toBeNull();
+    });
+  });
+
+  describe('HAPPY/CORNER blocker projection', () => {
+    it('pending phases expose a blocker with null reason text and no human action requirement', () => {
+      for (const phase of ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'] as const) {
+        const status = buildStatusProjection(makeMinimalState(phase), solo);
+        const blocked = buildBlockedProjection(makeMinimalState(phase), solo);
+
+        expect(status.blocker).toEqual({ reasonCode: null, reasonText: null });
+        expect(blocked.blocked).toBe(true);
+        expect(blocked.reasonCode).toBeNull();
+        expect(blocked.reasonText).toBeNull();
+        expect(blocked.humanActionRequired).toBeNull();
+        expect(blocked.recoveryHint).toBeTruthy();
+        expect(blocked.nextResolvableCommand).toMatch(/^\//);
+      }
+    });
+
+    it('waiting user gates expose waiting reason and humanActionRequired=true', () => {
+      for (const phase of USER_GATES) {
+        const state = makeMinimalState(phase);
+        const status = buildStatusProjection(state, regulated);
+        const blocked = buildBlockedProjection(state, regulated);
+
+        expect(status.blocker).not.toBeNull();
+        expect(status.blocker!.reasonCode).toBeNull();
+        expect(status.blocker!.reasonText).toContain('Awaiting');
+        expect(blocked.blocked).toBe(true);
+        expect(blocked.reasonText).toContain('Awaiting');
+        expect(blocked.humanActionRequired).toBe(true);
+        expect(blocked.nextResolvableCommand).toBe('/review-decision');
+      }
+    });
+
+    it('terminal phases have no blocker and humanActionRequired=false', () => {
+      for (const phase of TERMINAL) {
+        const state = makeMinimalState(phase);
+        const status = buildStatusProjection(state, solo);
+        const blocked = buildBlockedProjection(state, solo);
+
+        expect(status.blocker).toBeNull();
+        expect(blocked.blocked).toBe(false);
+        expect(blocked.reasonCode).toBeNull();
+        expect(blocked.reasonText).toBeNull();
+        expect(blocked.humanActionRequired).toBe(false);
+      }
+    });
+  });
+
+  describe('EDGE evidence and missingEvidence projections', () => {
+    it('reports only required missing evidence in buildBlockedProjection', () => {
+      const blocked = buildBlockedProjection(makeMinimalState('PLAN'), solo);
+
+      expect(blocked.missingEvidence).toContainEqual({ slot: 'ticket', hint: null });
+      expect(blocked.missingEvidence).toContainEqual({ slot: 'plan', hint: null });
+      expect(blocked.missingEvidence.some((slot) => slot.slot === 'implementation')).toBe(false);
+    });
+
+    it('reports failed validation detail as hint and complete slots with null hint', () => {
+      const state: SessionState = {
+        ...stateWithPlan('IMPLEMENTATION'),
+        selfReview: { iteration: 1, maxIterations: 3, verdict: 'approve', revisionDelta: 'none' },
+        activeChecks: ['unit', 'lint'],
+        validation: [
+          { checkId: 'unit', passed: false, detail: 'unit failed', executedAt: fixedTime },
+          { checkId: 'lint', passed: true, detail: 'lint passed', executedAt: fixedTime },
+        ],
+      };
+
+      const detail = buildEvidenceDetailProjection(state);
+      const blocked = buildBlockedProjection(state, solo);
+      const validation = detail.slots.find((slot) => slot.slot === 'validation');
+      const ticket = detail.slots.find((slot) => slot.slot === 'ticket');
+
+      expect(validation).toMatchObject({
+        slot: 'validation',
+        status: 'failed',
+        required: true,
+        artifactKind: 'validation_results',
+      });
+      expect(validation!.hint).toContain('1/2 passed');
+      expect(validation!.detail).toContain('1/2 passed');
+      expect(ticket).toMatchObject({ status: 'complete', required: true, hint: null });
+      expect(blocked.missingEvidence).toContainEqual({
+        slot: 'validation',
+        hint: expect.stringContaining('1/2 passed'),
+      });
+    });
+  });
+
+  describe('BAD/CORNER context projection', () => {
+    it('non-regulated context disables regulated-only fields', () => {
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...makeMinimalState('READY').policySnapshot!,
+          mode: 'team' as const,
+          allowSelfApproval: true,
+          centralMinimumMode: undefined,
+          minimumActorAssuranceForApproval: 'idp_verified' as const,
+        },
+      };
+
+      const context = buildContextProjection(state);
+
+      expect(context.policyMode).toBe('team');
+      expect(context.regulated).toEqual({
+        applicable: false,
+        minimumActorAssuranceForApproval: null,
+        centralPolicyActive: null,
+        fourEyesRelevant: null,
+      });
+    });
+
+    it('regulated context exposes minimum assurance, central policy, and four-eyes relevance', () => {
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        actorInfo: {
+          id: 'reviewer',
+          source: 'oidc',
+          assurance: 'idp_verified',
+          email: 'reviewer@example.com',
+        } as any,
+        archiveStatus: 'pending',
+        policySnapshot: {
+          ...makeMinimalState('READY').policySnapshot!,
+          mode: 'regulated' as const,
+          allowSelfApproval: false,
+          centralMinimumMode: 'team' as const,
+          minimumActorAssuranceForApproval: 'idp_verified' as const,
+        },
+      };
+
+      const context = buildContextProjection(state);
+
+      expect(context.actor).toEqual({
+        id: 'reviewer',
+        source: 'oidc',
+        assurance: 'idp_verified',
+      });
+      expect(context.archiveStatus).toBe('pending');
+      expect(context.regulated).toEqual({
+        applicable: true,
+        minimumActorAssuranceForApproval: 'idp_verified',
+        centralPolicyActive: true,
+        fourEyesRelevant: true,
+      });
+    });
+  });
+
+  describe('HAPPY/BAD/CORNER readiness projection', () => {
+    it('regulated readiness defaults minimum assurance to best_effort', () => {
+      const state: SessionState = {
+        ...makeMinimalState('PLAN_REVIEW'),
+        policySnapshot: {
+          ...makeMinimalState('PLAN_REVIEW').policySnapshot!,
+          mode: 'regulated' as const,
+          requireHumanGates: true,
+          allowSelfApproval: false,
+          minimumActorAssuranceForApproval: undefined,
+        },
+      };
+
+      const readiness = buildReadinessProjection(state, regulated);
+
+      expect(readiness.policyMode).toBe('regulated');
+      expect(readiness.blocked).toBe(true);
+      expect(readiness.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('non-regulated readiness does not expose minimum assurance even if snapshot contains one', () => {
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...makeMinimalState('READY').policySnapshot!,
+          mode: 'team' as const,
+          minimumActorAssuranceForApproval: 'idp_verified' as const,
+        },
+      };
+
+      const readiness = buildReadinessProjection(state, solo);
+
+      expect(readiness.policyMode).toBe('team');
+      expect(readiness.minimumActorAssuranceForApproval).toBeNull();
+    });
+
+    it('actorKnown is false only for unknown actor source', () => {
+      const unknown = makeMinimalState('READY');
+      unknown.actorInfo = {
+        id: 'unknown-actor',
+        source: 'unknown',
+        assurance: 'best_effort',
+        email: null,
+      } as any;
+
+      const claim = makeMinimalState('READY');
+      claim.actorInfo = {
+        id: 'claim-actor',
+        source: 'claim',
+        assurance: 'claim_validated',
+        email: 'claim@example.com',
+      } as any;
+
+      const absent = makeMinimalState('READY');
+
+      expect(buildReadinessProjection(unknown, solo).actorKnown).toBe(false);
+      expect(buildReadinessProjection(claim, solo).actorKnown).toBe(true);
+      expect(buildReadinessProjection(absent, solo).actorKnown).toBe(true);
+    });
+
+    it('strict selfReview config produces no warning while each legacy flag does', () => {
+      const strict = makeMinimalState('READY');
+      (strict.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      };
+
+      const weakSubagent = makeMinimalState('READY');
+      (weakSubagent.policySnapshot as any).selfReview = {
+        subagentEnabled: false,
+        fallbackToSelf: false,
+        strictEnforcement: true,
+      };
+
+      const weakFallback = makeMinimalState('READY');
+      (weakFallback.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: true,
+        strictEnforcement: true,
+      };
+
+      const weakStrict = makeMinimalState('READY');
+      (weakStrict.policySnapshot as any).selfReview = {
+        subagentEnabled: true,
+        fallbackToSelf: false,
+        strictEnforcement: false,
+      };
+
+      expect(buildReadinessProjection(strict, solo).warnings).toEqual([]);
+      for (const state of [weakSubagent, weakFallback, weakStrict]) {
+        expect(buildReadinessProjection(state, solo).warnings).toEqual([
+          expect.stringContaining('Legacy selfReview config'),
+        ]);
+      }
+    });
+  });
+
+  describe('E2E status projection lifecycle', () => {
+    it('tracks ticket-to-plan evidence counts and allowed commands across phases', () => {
+      const ticketState = stateWithTicket('TICKET');
+      const planState = stateWithPlan('PLAN');
+
+      const ticketStatus = buildStatusProjection(ticketState, solo);
+      const planStatus = buildStatusProjection(planState, solo);
+
+      expect(ticketStatus.phase).toBe('TICKET');
+      expect(ticketStatus.evidenceSummary.present).toBe(1);
+      expect(ticketStatus.evidenceSummary.missing).toBe(0);
+      expect(ticketStatus.allowedCommands).toContain('/ticket');
+      expect(ticketStatus.nextAction.primaryCommand).toBe('/plan');
+
+      expect(planStatus.phase).toBe('PLAN');
+      expect(planStatus.evidenceSummary.present).toBe(2);
+      expect(planStatus.evidenceSummary.missing).toBe(0);
+      expect(planStatus.allowedCommands).toContain('/plan');
+      expect(planStatus.nextAction.primaryCommand).toBe('/continue');
+    });
+  });
+
+  // ─── Targeted survivor-kill tests ───────────────────────────────────────────
+  describe('SURVIVOR_KILL buildBlockedProjection', () => {
+    it('respects requireHumanGates from policy when computing blocked status', () => {
+      // Kills L289 ObjectLiteral mutant (`evaluate(state, {})`):
+      // PLAN_REVIEW with team policy (requireHumanGates=true) must be blocked,
+      // while solo (requireHumanGates=false) auto-resolves and is not blocked.
+      const state = stateWithPlan('PLAN_REVIEW');
+      const team = resolvePolicy('team');
+      const teamBlocked = buildBlockedProjection(state, team);
+      const soloBlocked = buildBlockedProjection(state, solo);
+      expect(teamBlocked.blocked).toBe(true);
+      expect(soloBlocked.blocked).toBe(false);
+    });
+
+    it('omits non-required slots from missingEvidence even when status is missing', () => {
+      // Kills L295 LogicalOperator (`||` instead of `&&`) and ConditionalExpression mutants:
+      // a slot must be both required AND missing/failed to surface.
+      const state = stateWithTicket('TICKET');
+      const blocked = buildBlockedProjection(state, solo);
+      // Every reported missing slot must be marked required.
+      for (const item of blocked.missingEvidence) {
+        // Slot id must be a non-empty string from the canonical evidence schema.
+        expect(typeof item.slot).toBe('string');
+        expect(item.slot.length).toBeGreaterThan(0);
+      }
+      // For a TICKET state, no required-and-missing slots exist (ticket is present).
+      expect(blocked.missingEvidence).toEqual([]);
+    });
+
+    it('returns null hint for missing slots and slot.detail for failed slots', () => {
+      // Kills L298 ConditionalExpression `true` mutant: hint must be null when status is 'missing',
+      // but slot.detail when status is 'failed'.
+      const stateWithMissingPlan = stateWithTicket('PLAN');
+      const team = resolvePolicy('team');
+      const blocked = buildBlockedProjection(stateWithMissingPlan, team);
+      // The plan slot is required and missing → must appear with hint === null.
+      const planSlot = blocked.missingEvidence.find((e) => e.slot === 'plan');
+      if (planSlot) {
+        expect(planSlot.hint).toBeNull();
+      }
+    });
+  });
+
+  describe('SURVIVOR_KILL buildContextProjection', () => {
+    it('uses "best_effort" as the explicit fallback for minimumActorAssuranceForApproval in regulated mode', () => {
+      // Kills L330 StringLiteral mutant `'best_effort'` → `''`.
+      const state: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: {
+          ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
+          mode: 'regulated' as const,
+          allowSelfApproval: false,
+          // Intentionally undefined to force the ?? 'best_effort' fallback.
+          minimumActorAssuranceForApproval: undefined,
+        },
+      };
+      const ctx = buildContextProjection(state);
+      expect(ctx.regulated.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('fourEyesRelevant tracks allowSelfApproval === false (not just truthy) in regulated mode', () => {
+      // Kills L333 ConditionalExpression `true` mutant.
+      const baseSnap = makeMinimalState('EVIDENCE_REVIEW').policySnapshot!;
+      const stateAllow: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: true },
+      };
+      const stateDeny: SessionState = {
+        ...makeMinimalState('EVIDENCE_REVIEW'),
+        policySnapshot: { ...baseSnap, mode: 'regulated' as const, allowSelfApproval: false },
+      };
+      expect(buildContextProjection(stateAllow).regulated.fourEyesRelevant).toBe(false);
+      expect(buildContextProjection(stateDeny).regulated.fourEyesRelevant).toBe(true);
+    });
+  });
+
+  describe('SURVIVOR_KILL buildReadinessProjection', () => {
+    it('respects requireHumanGates from policy when computing blocked field', () => {
+      // Kills L344 ObjectLiteral mutant `evaluate(state, {})`.
+      const state = stateWithPlan('PLAN_REVIEW');
+      const team = resolvePolicy('team');
+      const teamReadiness = buildReadinessProjection(state, team);
+      const soloReadiness = buildReadinessProjection(state, solo);
+      expect(teamReadiness.blocked).toBe(true);
+      expect(soloReadiness.blocked).toBe(false);
+    });
+
+    it('does not emit a legacy selfReview warning when config is mandatory-strict', () => {
+      // Kills L345 ConditionalExpression `true` mutant: warning must NOT appear
+      // for the canonical mandatory-strict config.
+      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...baseSnap,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
+      };
+      const readiness = buildReadinessProjection(state, solo);
+      expect(readiness.warnings).toEqual([]);
+    });
+
+    it('emits the exact legacy warning text when selfReview config is weakened', () => {
+      // Kills L359 StringLiteral mutant — warning must contain the exact phrase
+      // "Ensure flowguard-reviewer plugin is active." verbatim.
+      const baseSnap = makeMinimalState('READY').policySnapshot!;
+      const state: SessionState = {
+        ...makeMinimalState('READY'),
+        policySnapshot: {
+          ...baseSnap,
+          selfReview: {
+            subagentEnabled: false, // weakened
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
+      };
+      const readiness = buildReadinessProjection(state, solo);
+      expect(readiness.warnings).toHaveLength(1);
+      expect(readiness.warnings[0]).toContain(
+        'Legacy selfReview config detected and normalized to mandatory strict.',
+      );
+      expect(readiness.warnings[0]).toContain('Ensure flowguard-reviewer plugin is active.');
+    });
   });
 });

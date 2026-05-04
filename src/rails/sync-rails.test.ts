@@ -1226,3 +1226,61 @@ describe('MUTATION: review-decision blocked reason detail', () => {
     }
   });
 });
+
+// ─── MUTATION KILL: ticket conditional spreads and phase transition ───────────
+
+describe('MUTATION_KILL ticket', () => {
+  it('inputOrigin NOT present when not provided (conditional spread)', () => {
+    const state = makeState('TICKET');
+    const result = executeTicket(state, { text: 'Fix auth', source: 'user' }, ctx);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      // Must NOT have inputOrigin key at all (not undefined value)
+      expect('inputOrigin' in result.state.ticket!).toBe(false);
+    }
+  });
+
+  it('references NOT present when not provided (conditional spread)', () => {
+    const state = makeState('TICKET');
+    const result = executeTicket(state, { text: 'Fix auth', source: 'user' }, ctx);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect('references' in result.state.ticket!).toBe(false);
+    }
+  });
+
+  it('references NOT present when empty array provided (empty guard)', () => {
+    const state = makeState('TICKET');
+    const result = executeTicket(state, { text: 'Fix auth', source: 'user', references: [] }, ctx);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect('references' in result.state.ticket!).toBe(false);
+    }
+  });
+
+  it('from READY phase: transitions to TICKET with TICKET_SELECTED', () => {
+    const state = makeState('READY');
+    const result = executeTicket(state, { text: 'Fix auth', source: 'user' }, ctx);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.phase).toBe('TICKET');
+      expect(result.transitions.length).toBeGreaterThan(0);
+      expect(result.transitions[0]!.event).toBe('TICKET_SELECTED');
+      expect(result.transitions[0]!.from).toBe('READY');
+      expect(result.transitions[0]!.to).toBe('TICKET');
+    }
+  });
+
+  it('from TICKET phase: no TICKET_SELECTED transition (already in phase)', () => {
+    const state = makeState('TICKET');
+    const result = executeTicket(state, { text: 'Fix auth', source: 'user' }, ctx);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      // No pre-transition from READY → TICKET
+      const ticketSelectedTransitions = result.transitions.filter(
+        (t) => t.event === 'TICKET_SELECTED',
+      );
+      expect(ticketSelectedTransitions).toHaveLength(0);
+    }
+  });
+});
