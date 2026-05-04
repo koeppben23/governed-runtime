@@ -551,17 +551,15 @@ describe('JwtStaticTokenVerifier', () => {
       expect(result.displayName).toBe('Padded Name');
     });
 
-    it('non-IdpError during signature verification is wrapped', async () => {
-      // Create a verifier with a valid key resolver but tamper with the token
-      // so that crypto.verify throws a non-IdpError
+    it('malformed signature token is rejected (jose v6: JOSEError)', async () => {
       const verifier = makeVerifier();
-      // Malformed signature that causes crypto.verify to throw
       const header = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
       const payload = base64url(validRsaPayload());
-      // Use invalid base64url for signature to trigger a crypto error
+      // Use invalid base64url for signature — jose v6 throws JOSEError
+      // (not JWSSignatureVerificationFailed) for unparseable signatures.
       const token = `${header}.${payload}.!!!invalid-signature!!!`;
       await expect(verifier.verify(token)).rejects.toMatchObject({
-        code: 'IDP_SIGNATURE_INVALID',
+        code: 'IDP_TOKEN_INVALID',
       });
     });
 
