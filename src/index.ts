@@ -105,7 +105,6 @@ export type {
 export {
   type RepoSignals,
   type ProfileDetectionInput,
-  type CheckExecutor,
   type FlowGuardProfile,
   ProfileRegistry,
   baselineProfile,

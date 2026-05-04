@@ -29,12 +29,11 @@ import {
   extractBaseInstructions,
   extractByPhaseInstructions,
 } from '../config/profile.js';
-import type { RepoSignals, PhaseInstructions, CheckExecutor } from '../config/profile.js';
+import type { RepoSignals, PhaseInstructions } from '../config/profile.js';
 import { BlockedReasonRegistry, defaultReasonRegistry, blocked } from '../config/reasons.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { makeState, makeProgressedState, PLAN_RECORD, IMPL_EVIDENCE } from '../__fixtures__.js';
 import type { SessionState } from '../state/schema.js';
-import type { PlanEvidence, PlanRecord } from '../state/evidence.js';
 
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 
@@ -1381,8 +1380,8 @@ describe('config/profile', () => {
 
     it('register overwrites existing profile', () => {
       const registry = new ProfileRegistry();
-      registry.register({ id: 'test', name: 'Test 1', activeChecks: [], checks: new Map() });
-      registry.register({ id: 'test', name: 'Test 2', activeChecks: [], checks: new Map() });
+      registry.register({ id: 'test', name: 'Test 1', activeChecks: [] });
+      registry.register({ id: 'test', name: 'Test 2', activeChecks: [] });
       expect(registry.get('test')?.name).toBe('Test 2');
       expect(registry.size).toBe(1);
     });
@@ -1392,7 +1391,7 @@ describe('config/profile', () => {
   describe('EDGE', () => {
     it('profile without detect function cannot be auto-detected', () => {
       const registry = new ProfileRegistry();
-      registry.register({ id: 'manual', name: 'Manual', activeChecks: [], checks: new Map() });
+      registry.register({ id: 'manual', name: 'Manual', activeChecks: [] });
       const signals: RepoSignals = { files: [], packageFiles: [], configFiles: [] };
       expect(registry.detect({ repoSignals: signals })).toBeUndefined();
     });
@@ -1591,7 +1590,7 @@ describe('config/profile/phase-instructions', () => {
         id: 'test-phase-aware',
         name: 'Test Phase-Aware',
         activeChecks: [],
-        checks: new Map(),
+
         instructions: phaseInstructions,
       });
       const profile = registry.get('test-phase-aware');
@@ -2348,219 +2347,6 @@ describe('config/profile/detected-stack-instruction', () => {
   });
 });
 
-describe('config/check-executors', () => {
-  const testQuality = baselineProfile.checks.get('test_quality')!;
-  const rollbackSafety = baselineProfile.checks.get('rollback_safety')!;
-
-  /** Helper: make a plan record with custom body. */
-  function planWith(body: string): PlanRecord {
-    return {
-      current: {
-        body,
-        digest: 'd',
-        sections: [],
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
-      history: [],
-    };
-  }
-
-  // ─── HAPPY ─────────────────────────────────────────────────
-  describe('HAPPY', () => {
-    it('test_quality passes when plan mentions tests', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add unit tests for the service'),
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(true);
-      expect(result.checkId).toBe('test_quality');
-      expect(result.executedAt).toBeDefined();
-    });
-
-    it('rollback_safety passes for low-risk plan', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Rename variable in utils'),
-      });
-      const result = await rollbackSafety.execute(state);
-      expect(result.passed).toBe(true);
-      expect(result.detail).toContain('No high-risk signals');
-    });
-
-    it('rollback_safety passes for high-risk plan with rollback mention', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add database migration\n2. Rollback script included'),
-      });
-      const result = await rollbackSafety.execute(state);
-      expect(result.passed).toBe(true);
-      expect(result.detail).toContain('rollback safety');
-    });
-
-    it('executors are registered in BASELINE_CHECKS for all profiles', () => {
-      for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
-        expect(profile.checks.get('test_quality')).toBeDefined();
-        expect(profile.checks.get('rollback_safety')).toBeDefined();
-      }
-    });
-  });
-
-  // ─── BAD ───────────────────────────────────────────────────
-  describe('BAD', () => {
-    it('test_quality fails when plan has no test-related content', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Refactor module structure'),
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(false);
-      expect(result.detail).toContain('does not address test quality');
-    });
-
-    it('rollback_safety fails for high-risk plan without rollback mention', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Change authentication flow\n2. Update database schema'),
-      });
-      const result = await rollbackSafety.execute(state);
-      expect(result.passed).toBe(false);
-      expect(result.detail).toContain('high-risk signals');
-      expect(result.detail).toContain('rollback');
-    });
-
-    it('test_quality fails when plan is empty (null plan)', async () => {
-      const state = makeState('VALIDATION', { plan: null });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(false);
-    });
-  });
-
-  // ─── CORNER ────────────────────────────────────────────────
-  describe('CORNER', () => {
-    it('test_quality fails when implementation has files but no test files', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add test coverage'),
-        implementation: {
-          changedFiles: ['src/auth.ts', 'src/config.ts'],
-          domainFiles: ['src/auth.ts'],
-          digest: 'd',
-          executedAt: '2026-01-01T00:00:00.000Z',
-        },
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(false);
-      expect(result.detail).toContain('none appear to be test files');
-    });
-
-    it('test_quality passes when implementation includes test files', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add test coverage'),
-        implementation: IMPL_EVIDENCE, // has src/auth.test.ts
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(true);
-    });
-
-    it('test_quality passes when implementation has no changed files (empty array)', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add test coverage'),
-        implementation: {
-          changedFiles: [],
-          domainFiles: [],
-          digest: 'd',
-          executedAt: '2026-01-01T00:00:00.000Z',
-        },
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(true);
-    });
-
-    it('rollback_safety detects various high-risk keywords', async () => {
-      const keywords = [
-        'database',
-        'schema',
-        'migration',
-        'auth',
-        'security',
-        'payment',
-        'messaging',
-        'queue',
-      ];
-      for (const keyword of keywords) {
-        const state = makeState('VALIDATION', { plan: planWith(`Plan: change ${keyword} logic`) });
-        const result = await rollbackSafety.execute(state);
-        expect(result.passed).toBe(false);
-      }
-    });
-
-    it('rollback_safety accepts various rollback keywords', async () => {
-      const rollbackKeywords = [
-        'rollback',
-        'backward compat',
-        'feature flag',
-        'revert',
-        'reversible',
-      ];
-      for (const keyword of rollbackKeywords) {
-        const state = makeState('VALIDATION', {
-          plan: planWith(`Plan: change database logic. ${keyword} strategy included.`),
-        });
-        const result = await rollbackSafety.execute(state);
-        expect(result.passed).toBe(true);
-      }
-    });
-  });
-
-  // ─── EDGE ─────────────────────────────────────────────────
-  describe('EDGE', () => {
-    it('test_quality detects spec files as test files', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Add test'),
-        implementation: {
-          changedFiles: ['src/auth.ts', 'src/auth.spec.ts'],
-          domainFiles: ['src/auth.ts'],
-          digest: 'd',
-          executedAt: '2026-01-01T00:00:00.000Z',
-        },
-      });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(true);
-    });
-
-    it('test_quality is case-insensitive for signal detection', async () => {
-      const state = makeState('VALIDATION', { plan: planWith('## Plan\n1. Run TESTING suite') });
-      const result = await testQuality.execute(state);
-      expect(result.passed).toBe(true);
-    });
-
-    it('rollback_safety is case-insensitive for signal detection', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('## Plan\n1. Change DATABASE schema\n2. ROLLBACK plan included'),
-      });
-      const result = await rollbackSafety.execute(state);
-      expect(result.passed).toBe(true);
-    });
-
-    it('all executors return ISO datetime in executedAt', async () => {
-      const state = makeState('VALIDATION', { plan: planWith('Add test for auth') });
-      const tqResult = await testQuality.execute(state);
-      const rsResult = await rollbackSafety.execute(state);
-      expect(tqResult.executedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      expect(rsResult.executedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-    });
-  });
-
-  // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
-    it('both executors complete in < 5ms', async () => {
-      const state = makeState('VALIDATION', {
-        plan: planWith('Add unit tests for database migration with rollback'),
-      });
-      const start = performance.now();
-      await testQuality.execute(state);
-      await rollbackSafety.execute(state);
-      const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(5);
-    });
-  });
-});
-
 describe('config/reasons', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -2880,5 +2666,26 @@ describe('cli/templates/verification-output-contract', () => {
       const reviewTemplate = COMMANDS['review.md'];
       expect(reviewTemplate).toMatch(/flag this as a defect/i);
     });
+  });
+});
+
+// P10a: profiles expose activeChecks but no heuristic check executors
+describe('config/P10a — no heuristic executors', () => {
+  it('baselineProfile.activeChecks contains test_quality and rollback_safety', () => {
+    expect(baselineProfile.activeChecks).toContain('test_quality');
+    expect(baselineProfile.activeChecks).toContain('rollback_safety');
+    expect(baselineProfile.activeChecks).toHaveLength(2);
+  });
+
+  it('baselineProfile has no checks property', () => {
+    expect(baselineProfile).not.toHaveProperty('checks');
+  });
+
+  it('all profiles have activeChecks but no checks', () => {
+    for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
+      expect(profile.activeChecks).toBeDefined();
+      expect(profile.activeChecks.length).toBeGreaterThanOrEqual(2);
+      expect(profile).not.toHaveProperty('checks');
+    }
   });
 });
