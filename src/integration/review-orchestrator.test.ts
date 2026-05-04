@@ -280,6 +280,82 @@ describe('buildPlanReviewPrompt', () => {
   });
 });
 
+// P9c: phase-specific non-leakage — profileRules are phase-locked.
+describe('P9c — profile rule non-leakage', () => {
+  const makePlanOpts = (profileRules?: string) => ({
+    planText: 'Test plan',
+    ticketText: 'Test ticket',
+    iteration: 0,
+    planVersion: 1,
+    obligationId: '11111111-1111-4111-8111-111111111111',
+    criteriaVersion: 'p35-v1',
+    mandateDigest: 'test-digest',
+    profileName: 'backend-java',
+    profileRules,
+  });
+
+  it('plan prompt does not contain IMPL_REVIEW, REVIEW, or ARCH_REVIEW rules', () => {
+    const prompt = buildPlanReviewPrompt(makePlanOpts('plan-rule-123'));
+    expect(prompt).toContain('plan-rule-123');
+    expect(prompt).not.toContain('impl-rule-456');
+    expect(prompt).not.toContain('review-rule-789');
+    expect(prompt).not.toContain('arch-rule-abc');
+  });
+
+  it('impl prompt does not contain PLAN_REVIEW or ARCH_REVIEW rules', () => {
+    const prompt = buildImplReviewPrompt({
+      changedFiles: [],
+      planText: 'Test',
+      ticketText: 'Test',
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      profileName: 'backend-java',
+      profileRules: 'impl-rule-456',
+    });
+    expect(prompt).toContain('impl-rule-456');
+    expect(prompt).not.toContain('plan-rule-123');
+    expect(prompt).not.toContain('arch-rule-abc');
+  });
+
+  it('architecture prompt does not contain IMPL_REVIEW or REVIEW rules', () => {
+    const prompt = buildArchitectureReviewPrompt({
+      adrText: '# ADR',
+      adrTitle: 'ADR-1',
+      ticketText: 'Test',
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      profileName: 'backend-java',
+      profileRules: 'arch-rule-abc',
+    });
+    expect(prompt).toContain('arch-rule-abc');
+    expect(prompt).not.toContain('impl-rule-456');
+    expect(prompt).not.toContain('review-rule-789');
+  });
+
+  it('review prompt does not contain PLAN_REVIEW or IMPL_REVIEW rules', () => {
+    const prompt = buildReviewContentPrompt({
+      content: 'test content',
+      ticketText: 'Test',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      mandateDigest: 'test-digest',
+      criteriaVersion: 'p35-v1',
+      iteration: 0,
+      planVersion: 1,
+      profileName: 'backend-java',
+      profileRules: 'review-rule-789',
+    });
+    expect(prompt).toContain('review-rule-789');
+    expect(prompt).not.toContain('plan-rule-123');
+    expect(prompt).not.toContain('impl-rule-456');
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // buildImplReviewPrompt
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1169,6 +1245,28 @@ describe('buildReviewContentPrompt edge cases', () => {
   it('produces non-empty output', () => {
     const prompt = buildReviewContentPrompt(base);
     expect(prompt.length).toBeGreaterThan(100);
+  });
+
+  // P9c: stack profile injection (review)
+  describe('P9c — stack profile (review)', () => {
+    it('does NOT include Stack Profile section when no profile data provided', () => {
+      const prompt = buildReviewContentPrompt(base);
+      expect(prompt).not.toContain('## Active Stack Profile');
+      expect(prompt).not.toContain('## Stack Review Rules');
+    });
+
+    it('includes profile and rules when provided', () => {
+      const prompt = buildReviewContentPrompt({
+        ...base,
+        profileName: 'backend-java',
+        profileRules: '- Check Spring Boot\n- Validate JPA mappings',
+      });
+      expect(prompt).toContain('## Active Stack Profile');
+      expect(prompt).toContain('backend-java');
+      expect(prompt).toContain('## Stack Review Rules');
+      expect(prompt).toContain('Spring Boot');
+      expect(prompt).toContain('JPA');
+    });
   });
 });
 

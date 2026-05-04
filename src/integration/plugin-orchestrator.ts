@@ -150,6 +150,8 @@ export async function runReviewOrchestration(
     // output is unchanged — the agent invokes the subagent manually.
     if (toolName === TOOL_FLOWGUARD_REVIEW) {
       strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+      const profileName = sessionState.activeProfile?.name;
+      const profileRulesByPhase = sessionState.activeProfile?.phaseRuleContent;
       const rawInput = input as Record<string, unknown>;
       const refInput = {
         text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
@@ -163,13 +165,14 @@ export async function runReviewOrchestration(
 
       const prompt = buildReviewContentPrompt({
         content,
-        // Ticket text may be empty for standalone /review and architecture flows.
         ticketText: sessionState.ticket?.text ?? '',
         obligationId: reviewCtx.obligationId,
         mandateDigest: reviewCtx.mandateDigest,
         criteriaVersion: reviewCtx.criteriaVersion,
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
+        profileName,
+        profileRules: profileRulesByPhase?.['REVIEW'],
       });
 
       const reviewerResult = await invokeReviewer(

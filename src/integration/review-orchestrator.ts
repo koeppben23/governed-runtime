@@ -768,7 +768,12 @@ export function buildReviewContentPrompt(opts: {
   criteriaVersion: string;
   iteration: number;
   planVersion: number;
+  /** Active stack profile name. P9c. */
+  profileName?: string;
+  /** Phase-specific stack review rules for REVIEW. P9c. */
+  profileRules?: string;
 }): string {
+  const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const lines: string[] = [
     'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',
     'Review the following content for issues, risks, and missing verification.',
@@ -784,6 +789,9 @@ export function buildReviewContentPrompt(opts: {
   ];
   if (opts.ticketText) {
     lines.push('Ticket context: ' + opts.ticketText, '');
+  }
+  if (stackSection) {
+    lines.push(stackSection, '');
   }
   lines.push(
     'CONTENT TO REVIEW:',
