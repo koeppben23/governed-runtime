@@ -58,7 +58,7 @@ export async function resolvePluginSessionPolicy(
 
   // Case 2: Check if state file exists BEFORE reading
   // This distinguishes "missing state" from "corrupt state"
-  let stateFileExists = false;
+  let stateFileExists: boolean;
   try {
     const fs = await import('node:fs/promises');
     await fs.access(sessDir + '/session-state.json');
@@ -77,7 +77,7 @@ export async function resolvePluginSessionPolicy(
 
   // Case 2b: State file exists - try to read
   // Any error here is a state integrity problem → fail closed
-  let state: SessionState | null = null;
+  let state: SessionState | null;
   try {
     const { readState } = await import('../adapters/persistence.js');
     state = await readState(sessDir);

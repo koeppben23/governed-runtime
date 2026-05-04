@@ -85,6 +85,7 @@ export async function writeMadrArtifact(
     }
     throw new Error(
       `Failed to write MADR artifact: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 
