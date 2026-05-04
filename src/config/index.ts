@@ -14,7 +14,6 @@
 // ── Profile ──────────────────────────────────────────────────────────────────
 export {
   type RepoSignals,
-  type CheckExecutor,
   type FlowGuardProfile,
   ProfileRegistry,
   baselineProfile,

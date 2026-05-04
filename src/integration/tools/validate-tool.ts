@@ -51,6 +51,18 @@ export const validate: ToolDefinition = {
             .describe('Which validation check this result is for (must match activeChecks).'),
           passed: z.boolean().describe('Whether the check passed.'),
           detail: z.string().describe('Detailed explanation of the check result.'),
+          evidenceType: z
+            .enum(['command_output', 'ci_run', 'manual_review', 'external_reference'])
+            .optional()
+            .describe('How this check was executed (P10a: evidence metadata).'),
+          command: z
+            .string()
+            .optional()
+            .describe('The command that was run (if evidenceType is command_output).'),
+          evidenceSummary: z
+            .string()
+            .optional()
+            .describe('Summary of the evidence (test output, CI URL, review notes).'),
         }),
       )
       .describe('Array of validation check results. Must cover all activeChecks for the session.'),
@@ -82,14 +94,26 @@ export const validate: ToolDefinition = {
         });
       }
 
-      // Record results with timestamps
+      // Record results with timestamps and evidence metadata (P10a)
       const now = ctx.now();
       const validationResults = args.results.map(
-        (r: { checkId: string; passed: boolean; detail: string }) => ({
+        (r: {
+          checkId: string;
+          passed: boolean;
+          detail: string;
+          evidenceType?: string;
+          command?: string;
+          evidenceSummary?: string;
+        }) => ({
           checkId: r.checkId,
           passed: r.passed,
           detail: r.detail,
           executedAt: now,
+          ...(r.evidenceType
+            ? { evidenceType: r.evidenceType as ValidationResult['evidenceType'] }
+            : {}),
+          ...(r.command ? { command: r.command } : {}),
+          ...(r.evidenceSummary ? { evidenceSummary: r.evidenceSummary } : {}),
         }),
       );
 

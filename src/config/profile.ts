@@ -1,30 +1,28 @@
 /**
  * @module config/profile
- * @description FlowGuard profile — tech-stack-aware validation configuration.
+ * @description FlowGuard profile — tech-stack-aware check configuration.
  *
- * Profiles configure which validation checks run, how they run, and
+ * Profiles declare which validation checks are active (activeChecks) and
  * optionally detect the right profile for a repository automatically.
+ *
+ * P10a: No heuristic check executors. FlowGuard does not execute validation.
+ * The activeChecks list tells the agent WHAT to validate. Agents must run
+ * real tooling (CLI commands, manual review, CI verification) and submit
+ * actual results. FlowGuard gates the evidence — it does not pretend to
+ * execute validation.
  *
  * Extension point:
  * - Register custom profiles for specific tech stacks (Java, .NET, Python, etc.)
- * - Each profile defines its own CheckExecutors with real validation logic
  * - Profiles can auto-detect based on repository signals (file patterns, config)
  * - LLM instructions can be specialized per profile
  *
- * The baseline profile provides two universal checks:
+ * The baseline profile provides two universal check IDs:
  * - test_quality: Verify test coverage and quality for changed code
  * - rollback_safety: Verify the implementation can be safely rolled back
- *
- * Both baseline executors analyze session state evidence (plan body,
- * implementation changedFiles) for quality and safety signals.
- * Tech-stack-specific profiles may override these with deeper analysis.
- *
- * Dependency: imports types from state/evidence (ValidationResult) and state/schema (SessionState).
  *
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
 import type { Phase } from '../state/schema.js';
 import type { DiscoveryResult } from '../discovery/types.js';
 import { profileRuleContent as javaRuleContent } from './profiles/content/java.js';
@@ -135,51 +133,22 @@ export interface ProfileDetectionInput {
 }
 
 /**
- * A validation check executor.
- *
- * Runs a single validation check and returns a result.
- * The result type matches the ValidationResult evidence schema.
- *
- * Executors are async to support:
- * - File system analysis (test file scanning)
- * - Git history analysis (rollback safety)
- * - External tool integration (linters, SAST)
- */
-export interface CheckExecutor {
-  /** Check identifier. Must match the activeChecks entry. */
-  readonly id: string;
-  /** Human-readable description of what this check verifies. */
-  readonly description: string;
-  /**
-   * Execute the check against the current session state.
-   * Returns { checkId, passed, detail, executedAt }.
-   */
-  readonly execute: (state: SessionState) => Promise<{
-    checkId: string;
-    passed: boolean;
-    detail: string;
-    executedAt: string;
-  }>;
-}
-
-/**
  * A FlowGuard profile — tech-stack-aware validation configuration.
  *
  * Profiles determine:
- * - Which checks are active for a session
- * - How each check is executed
- * - Whether the profile matches a given repository
- * - Additional LLM instructions for the tech stack
+ * - Which checks are active for a session (activeChecks)
+ * - Whether the profile matches a given repository (detect)
+ * - Additional LLM instructions for the tech stack (instructions)
+ *
+ * P10a: No heuristic executors. The agent must run real tooling.
  */
 export interface FlowGuardProfile {
   /** Unique profile identifier (e.g., "baseline", "backend-java", "frontend-react"). */
   readonly id: string;
   /** Human-readable profile name. */
   readonly name: string;
-  /** Check IDs that are active in this profile. */
+  /** Check IDs that are active in this profile. P10a: no heuristic executors — agent must run real validation. */
   readonly activeChecks: readonly string[];
-  /** Check executors, keyed by check ID. */
-  readonly checks: ReadonlyMap<string, CheckExecutor>;
   /**
    * Auto-detection function.
    * Returns a confidence score (0-1) for how well this profile matches the repo.
@@ -256,180 +225,19 @@ export class ProfileRegistry {
   }
 }
 
-// ─── Baseline Checks (shared across all built-in profiles) ───────────────────
-
-/**
- * Test-quality signal patterns.
- * Used by the test_quality executor to scan plan and implementation evidence.
- * Lowercase for case-insensitive matching.
- */
-const TEST_QUALITY_SIGNALS = [
-  'test',
-  'testing',
-  'test plan',
-  'test coverage',
-  'unit test',
-  'integration test',
-  'test case',
-  'assertion',
-  'spec',
-] as const;
-
-/**
- * Rollback-safety signal patterns.
- * Used by the rollback_safety executor to scan plan evidence.
- */
-const ROLLBACK_SIGNALS = [
-  'rollback',
-  'backward compat',
-  'backwards compat',
-  'feature flag',
-  'revert',
-  'undo',
-  'reversible',
-] as const;
-
-/**
- * High-risk signal patterns.
- * When these appear in the plan but no rollback signals are found,
- * rollback_safety fails.
- */
-const HIGH_RISK_SIGNALS = [
-  'database',
-  'schema',
-  'migration',
-  'auth',
-  'security',
-  'payment',
-  'messaging',
-  'async',
-  'queue',
-] as const;
-
-/**
- * Check if text contains any of the given signal patterns (case-insensitive).
- */
-function containsSignal(text: string, signals: readonly string[]): boolean {
-  const lower = text.toLowerCase();
-  return signals.some((s) => lower.includes(s));
-}
-
-/**
- * Baseline check: test_quality.
- *
- * Analyzes session state evidence for test quality signals:
- * - Plan body must address testing (mentions test-related keywords).
- * - If implementation evidence exists, checks for test file presence
- *   in changedFiles (files containing "test" or "spec" in the path).
- *
- * Fails when the plan has no test-related content — the plan must
- * demonstrate that test quality was considered before implementation.
- */
-const baselineTestQuality: CheckExecutor = {
-  id: 'test_quality',
-  description: 'Verify test coverage and quality for changed code',
-  execute: async (state) => {
-    const now = new Date().toISOString();
-    const planBody = state.plan?.current?.body ?? '';
-
-    // Check 1: Plan addresses testing
-    if (!containsSignal(planBody, [...TEST_QUALITY_SIGNALS])) {
-      return {
-        checkId: 'test_quality',
-        passed: false,
-        detail:
-          'Plan does not address test quality. ' +
-          'The plan body should describe the test strategy, expected test types, ' +
-          'or specific test cases for the changed behavior.',
-        executedAt: now,
-      };
-    }
-
-    // Check 2: If implementation exists, verify test files are included
-    if (state.implementation) {
-      const changedFiles = state.implementation.changedFiles ?? [];
-      const hasTestFiles = changedFiles.some((f) => /test|spec/i.test(f));
-      if (changedFiles.length > 0 && !hasTestFiles) {
-        return {
-          checkId: 'test_quality',
-          passed: false,
-          detail:
-            `Implementation has ${changedFiles.length} changed files but none appear to be test files. ` +
-            "Changed files should include test files (paths containing 'test' or 'spec').",
-          executedAt: now,
-        };
-      }
-    }
-
-    return {
-      checkId: 'test_quality',
-      passed: true,
-      detail:
-        'Plan addresses test quality' +
-        (state.implementation ? ' and implementation includes test files.' : '.'),
-      executedAt: now,
-    };
-  },
-};
-
-/**
- * Baseline check: rollback_safety.
- *
- * Analyzes session state evidence for rollback safety:
- * - If the plan contains high-risk signals (database, auth, migration, etc.),
- *   the plan must also address rollback/revert/backward compatibility.
- * - Low-risk plans (no high-risk signals) pass automatically.
- *
- * Fails when high-risk changes are planned without rollback consideration.
- */
-const baselineRollbackSafety: CheckExecutor = {
-  id: 'rollback_safety',
-  description: 'Verify rollback safety for the implementation',
-  execute: async (state) => {
-    const now = new Date().toISOString();
-    const planBody = state.plan?.current?.body ?? '';
-
-    const hasHighRisk = containsSignal(planBody, [...HIGH_RISK_SIGNALS]);
-    const hasRollback = containsSignal(planBody, [...ROLLBACK_SIGNALS]);
-
-    if (hasHighRisk && !hasRollback) {
-      return {
-        checkId: 'rollback_safety',
-        passed: false,
-        detail:
-          'Plan contains high-risk signals (database, auth, migration, etc.) ' +
-          'but does not address rollback safety. ' +
-          'Add a rollback plan, backward compatibility analysis, or feature flag strategy.',
-        executedAt: now,
-      };
-    }
-
-    return {
-      checkId: 'rollback_safety',
-      passed: true,
-      detail: hasHighRisk
-        ? 'Plan addresses rollback safety for high-risk changes.'
-        : 'No high-risk signals detected; rollback safety is acceptable.',
-      executedAt: now,
-    };
-  },
-};
+// ─── Active Checks (shared across all built-in profiles) ────────────────────
 
 /**
  * Shared baseline active check IDs.
  * All built-in profiles use these two checks by default.
  * Tech-specific profiles may extend this list with additional checks.
+ *
+ * P10a: No heuristic executors. The activeChecks list tells the agent WHAT to
+ * validate. The agent must run real tooling (CLI commands, manual review, CI
+ * verification) and submit actual ValidationResults. FlowGuard gates the
+ * evidence — it does not pretend to execute validation.
  */
 const BASELINE_ACTIVE_CHECKS: readonly string[] = ['test_quality', 'rollback_safety'];
-
-/**
- * Shared baseline check executor map.
- * ReadonlyMap — safe to share across profiles (no mutation possible).
- */
-const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, CheckExecutor>([
-  ['test_quality', baselineTestQuality],
-  ['rollback_safety', baselineRollbackSafety],
-]);
 
 // ─── Baseline Profile ─────────────────────────────────────────────────────────
 
@@ -437,8 +245,8 @@ const BASELINE_CHECKS: ReadonlyMap<string, CheckExecutor> = new Map<string, Chec
  * The baseline FlowGuard profile.
  *
  * Universal profile that works for any tech stack.
- * Provides two state-based validation checks (test_quality, rollback_safety)
- * that analyze plan and implementation evidence for quality signals.
+ * Defines active validation checks (test_quality, rollback_safety) the agent
+ * must execute with real tooling. P10a: no heuristic executors.
  *
  * Auto-detection: always returns 0.1 (lowest priority).
  * Any tech-specific profile will score higher and take precedence.
@@ -447,7 +255,6 @@ export const baselineProfile: FlowGuardProfile = {
   id: 'baseline',
   name: 'Baseline FlowGuard',
   activeChecks: BASELINE_ACTIVE_CHECKS,
-  checks: BASELINE_CHECKS,
   detect: (_input) => 0.1,
   instructions: baselineRuleContent,
 };
@@ -461,15 +268,12 @@ export const baselineProfile: FlowGuardProfile = {
  * - pom.xml in packageFiles → Maven-based Java project
  * - build.gradle / build.gradle.kts in packageFiles → Gradle-based Java project
  *
- * Provides the same two baseline checks (stubs) — real implementations
- * can be registered separately. The value is in the instructions (profile rules)
- * that guide the LLM on Java-specific conventions.
+ * Uses the same baseline active checks (test_quality, rollback_safety).
  */
 export const javaProfile: FlowGuardProfile = {
   id: 'backend-java',
   name: 'Java / Spring Boot',
   activeChecks: BASELINE_ACTIVE_CHECKS,
-  checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
     const hasJavaBuild = input.repoSignals.packageFiles.some(
       (f) => f === 'pom.xml' || f === 'build.gradle' || f === 'build.gradle.kts',
@@ -495,7 +299,6 @@ export const angularProfile: FlowGuardProfile = {
   id: 'frontend-angular',
   name: 'Angular / Nx',
   activeChecks: BASELINE_ACTIVE_CHECKS,
-  checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
     const hasAngular = input.repoSignals.configFiles.some(
       (f) => f === 'angular.json' || f === 'nx.json',
@@ -521,7 +324,6 @@ export const typescriptProfile: FlowGuardProfile = {
   id: 'typescript',
   name: 'TypeScript / Node.js',
   activeChecks: BASELINE_ACTIVE_CHECKS,
-  checks: BASELINE_CHECKS,
   detect: (input: ProfileDetectionInput): number => {
     const hasTs = input.repoSignals.configFiles.some((f) => f === 'tsconfig.json');
     return hasTs ? 0.7 : 0;

@@ -187,6 +187,9 @@ export const status: ToolDefinition = {
           validationResults: state.validation.map((v) => ({
             checkId: v.checkId,
             passed: v.passed,
+            ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
+            ...(v.command ? { command: v.command } : {}),
+            ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
           })),
           hasImplementation: state.implementation !== null,
           implReviewIteration: state.implReview?.iteration ?? null,

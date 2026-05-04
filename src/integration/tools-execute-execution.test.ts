@@ -820,6 +820,46 @@ describe('validate', () => {
       expect(vr).toHaveLength(2);
       expect(vr[0].passed).toBe(true);
     });
+
+    // P10a: evidence metadata is preserved in validation results
+    it('preserves evidence metadata (evidenceType, command, evidenceSummary)', async () => {
+      await reachValidation();
+      await validate.execute(
+        {
+          results: [
+            {
+              checkId: 'test_quality',
+              passed: true,
+              detail: 'Tests pass',
+              evidenceType: 'command_output',
+              command: 'npm test',
+              evidenceSummary: 'All 42 tests pass',
+            },
+            {
+              checkId: 'rollback_safety',
+              passed: true,
+              detail: 'Safe',
+              evidenceType: 'manual_review',
+              evidenceSummary: 'Reviewed migration scripts',
+            },
+          ],
+        },
+        ctx,
+      );
+      const s = parseToolResult(await status.execute({}, ctx));
+      const vr = s.validationResults as Array<{
+        checkId: string;
+        passed: boolean;
+        evidenceType?: string;
+        command?: string;
+        evidenceSummary?: string;
+      }>;
+      expect(vr).toHaveLength(2);
+      expect(vr[0].evidenceType).toBe('command_output');
+      expect(vr[0].command).toBe('npm test');
+      expect(vr[0].evidenceSummary).toBe('All 42 tests pass');
+      expect(vr[1].evidenceType).toBe('manual_review');
+    });
   });
 });
 
