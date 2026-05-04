@@ -286,8 +286,8 @@ const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
  * Build a Stack Profile section for reviewer prompts.
  * Returns empty string if no profile data is available (null-safe).
  *
- * P9c: injects stack-specific review rules into the reviewer prompt
- * so the reviewer has the same domain awareness as the primary agent.
+ * P9c: injects phase-specific stack guidance so the reviewer receives
+ * stack review rules relevant to the current workflow phase.
  */
 function buildStackProfileSection(
   profileName: string | undefined,
@@ -302,6 +302,24 @@ function buildStackProfileSection(
     lines.push('## Stack Review Rules', '', profileRules, '');
   }
   return lines.join('\n');
+}
+
+/**
+ * Select phase-specific reviewer profile rules from the session state.
+ *
+ * P9c: mapping between workflow phases and phaseRuleContent slots ensures
+ * each reviewer prompt gets the correct stack guidance for PLAN_REVIEW,
+ * IMPL_REVIEW, ARCH_REVIEW, and REVIEW phases.
+ */
+export function selectReviewerProfileRules(
+  activeProfile: { name: string; phaseRuleContent?: Record<string, string> } | null | undefined,
+  phase: 'PLAN_REVIEW' | 'IMPL_REVIEW' | 'ARCH_REVIEW' | 'REVIEW',
+): { profileName?: string; profileRules?: string } {
+  if (!activeProfile) return {};
+  return {
+    profileName: activeProfile.name,
+    profileRules: activeProfile.phaseRuleContent?.[phase],
+  };
 }
 
 /**

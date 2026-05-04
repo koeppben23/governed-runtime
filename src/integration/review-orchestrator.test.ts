@@ -22,6 +22,7 @@ import {
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
   buildReviewContentMutatedOutput,
+  selectReviewerProfileRules,
   invokeReviewer,
   buildMutatedOutput,
   isReviewRequired,
@@ -1384,5 +1385,56 @@ describe('isReviewRequired without toolName', () => {
       requiredReviewAttestation: { toolObligationId: 'x' },
     });
     expect(isReviewRequired(output)).toBe(false);
+  });
+});
+
+// P9c: orchestrator profile rules mapping
+describe('P9c — selectReviewerProfileRules mapping', () => {
+  const profile = {
+    name: 'backend-java',
+    phaseRuleContent: {
+      PLAN_REVIEW: 'plan-review-rules',
+      IMPL_REVIEW: 'impl-review-rules',
+      ARCH_REVIEW: 'arch-review-rules',
+      REVIEW: 'standalone-review-rules',
+    },
+  };
+
+  it('maps PLAN_REVIEW → planReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'PLAN_REVIEW');
+    expect(result.profileName).toBe('backend-java');
+    expect(result.profileRules).toBe('plan-review-rules');
+  });
+
+  it('maps IMPL_REVIEW → implReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'IMPL_REVIEW');
+    expect(result.profileRules).toBe('impl-review-rules');
+  });
+
+  it('maps ARCH_REVIEW → archReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'ARCH_REVIEW');
+    expect(result.profileRules).toBe('arch-review-rules');
+  });
+
+  it('maps REVIEW → standaloneReviewRules', () => {
+    const result = selectReviewerProfileRules(profile, 'REVIEW');
+    expect(result.profileRules).toBe('standalone-review-rules');
+  });
+
+  it('returns empty when activeProfile is null', () => {
+    const result = selectReviewerProfileRules(null, 'PLAN_REVIEW');
+    expect(result.profileName).toBeUndefined();
+    expect(result.profileRules).toBeUndefined();
+  });
+
+  it('returns empty when phase is not in phaseRuleContent', () => {
+    const result = selectReviewerProfileRules({ name: 'ts-node' }, 'PLAN_REVIEW');
+    expect(result.profileName).toBe('ts-node');
+    expect(result.profileRules).toBeUndefined();
+  });
+
+  it('does not leak IMPL_REVIEW rules into PLAN_REVIEW result', () => {
+    const result = selectReviewerProfileRules(profile, 'PLAN_REVIEW');
+    expect(result.profileRules).not.toBe('impl-review-rules');
   });
 });
