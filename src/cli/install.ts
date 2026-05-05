@@ -221,7 +221,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
         : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
 
-    // 9. Config.json (required artifact — flat path, no fingerprint)
+    // 9. flowguard.json (required artifact — flat path, no fingerprint)
     // Persists args.policyMode as config.policy.defaultMode so /hydrate
     // without explicit mode uses the installer's intent.
     // Global: ~/.config/opencode/flowguard.json

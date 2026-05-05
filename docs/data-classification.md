@@ -103,7 +103,7 @@ Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests 
 
 **Currently Delivered:**
 
-- Configuration stored in `flowguard.json` (materialized by install/hydrate as a required artifact)
+- Configuration stored in `flowguard.json` (materialized by flowguard install as a required artifact)
 - Profile auto-detection from repository signals
 
 ### Installation Artifacts

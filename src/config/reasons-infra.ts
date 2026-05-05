@@ -37,15 +37,15 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     ],
   },
 
-  {
-    code: 'CONFIG_WRITE_FAILED',
-    category: 'adapter',
-    messageTemplate: 'Config file could not be written: {message}',
-    recoverySteps: [
-      'Ensure workspace directory is writable',
-      'Re-run /hydrate after fixing filesystem permissions or disk issues',
-    ],
-  },
+   {
+     code: 'CONFIG_WRITE_FAILED',
+     category: 'adapter',
+     messageTemplate: 'Config file could not be written: {message}',
+     recoverySteps: [
+       'Ensure the target directory is writable',
+       'Re-run flowguard install after fixing filesystem permissions or disk issues',
+     ],
+   },
 
   {
     code: 'CENTRAL_POLICY_UNREADABLE',
