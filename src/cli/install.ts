@@ -78,19 +78,17 @@ export {
 
 // ─── Package Manager Detection ───────────────────────────────────────────────
 
-/**
- * Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm.
- * Returns null if neither is available.
- */
+/** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
 export function detectPackageManager(): 'bun' | 'npm' | null {
+  const cmd = (bin: string) => (process.platform === 'win32' ? `${bin}.cmd` : bin);
   try {
-    execFileSync('bun', ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    execFileSync(cmd('bun'), ['--version'], { stdio: 'ignore', timeout: 5_000 });
     return 'bun';
   } catch {
     // bun not available
   }
   try {
-    execFileSync('npm', ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    execFileSync(cmd('npm'), ['--version'], { stdio: 'ignore', timeout: 5_000 });
     return 'npm';
   } catch {
     // npm not available
@@ -275,7 +273,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     try {
-      execFileSync(pm, ['install'], {
+      const pmCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
+      execFileSync(pmCmd, ['install'], {
         cwd: configTargetDir,
         stdio: 'pipe',
         timeout: 60_000,
