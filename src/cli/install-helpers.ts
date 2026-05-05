@@ -358,6 +358,19 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     // Ensure build agent has task permission for flowguard-reviewer subagent
     mergeReviewerTaskPermission(parsed);
 
+    // P12: Compatibility workaround — register plugin in opencode.json for
+    // OpenCode versions that do not reliably auto-load local plugins from
+    // the plugins/ directory. Per OpenCode docs, local plugins in
+    // ~/.config/opencode/plugins/ should auto-load on startup; this
+    // explicit registration provides a safety net. The entry uses the
+    // plugin file basename without path, which OpenCode resolves against
+    // its plugins/ directory.
+    if (!Array.isArray(parsed['plugin'])) {
+      parsed['plugin'] = ['flowguard-audit'];
+    } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
+      (parsed['plugin'] as string[]).push('flowguard-audit');
+    }
+
     if (!parsed['$schema']) {
       parsed['$schema'] = 'https://opencode.ai/config.json';
     }

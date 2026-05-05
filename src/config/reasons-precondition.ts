@@ -359,4 +359,18 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
     ],
   },
+
+  {
+    code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'FlowGuard plugin enforcement hooks are not active. Tools run but mandatory review orchestration is unavailable.',
+    recoverySteps: [
+      'Verify ~/.config/opencode/plugins/flowguard-audit.ts exists',
+      'Run npm install in ~/.config/opencode',
+      'Restart OpenCode after installing FlowGuard',
+      'Run flowguard doctor to verify plugin importability',
+      'Check session state for pluginHandshakeAt timestamp',
+    ],
+  },
 ];

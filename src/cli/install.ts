@@ -7,10 +7,11 @@
  * This module contains only CLI entry-point logic.
  */
 
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync } from 'node:fs';
 import { writeFile, copyFile, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
+import { homedir } from 'node:os';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
@@ -673,6 +674,108 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
   checks.push(...(await checkWorkspaceConfig()));
+  checks.push(...(await checkPluginActivation(target)));
+  checks.push(...(await checkLastSessionHandshake()));
+  return checks;
+}
+
+/** P12: Verify FlowGuard plugin file, dependencies, and importability. */
+async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const pluginFile = join(target, 'plugins', 'flowguard-audit.ts');
+  const integrationPkg = join(target, 'node_modules', '@flowguard', 'core', 'integration');
+
+  // 1. Plugin file exists
+  if (!existsSync(pluginFile)) {
+    checks.push({
+      file: pluginFile,
+      status: 'missing',
+      detail: 'Plugin file not installed — run flowguard install',
+    });
+    return checks;
+  }
+
+  // 2. Dependencies exist
+  if (!existsSync(join(integrationPkg, 'plugin.js'))) {
+    checks.push({
+      file: pluginFile,
+      status: 'error',
+      detail: 'Plugin dependencies missing — run npm install in ' + target,
+    });
+    return checks;
+  }
+
+  // 3. ESM import smoke test — proves package is importable
+  try {
+    execSync(`node --input-type=module -e "import('@flowguard/core/integration/plugin')"`, {
+      cwd: target,
+      stdio: 'pipe',
+      timeout: 10_000,
+    });
+    checks.push({
+      file: pluginFile,
+      status: 'ok',
+      detail: 'Plugin package importable (import smoke passed)',
+    });
+  } catch {
+    checks.push({
+      file: pluginFile,
+      status: 'error',
+      detail:
+        'Plugin package not importable — verify @flowguard/core is installed and npm install completed',
+    });
+  }
+
+  return checks;
+}
+
+/** P12: Check if the last session has a pending review obligation without plugin handshake. */
+async function checkLastSessionHandshake(): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const pointerPath = join(
+    process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode'),
+    'SESSION_POINTER.json',
+  );
+
+  try {
+    const raw = readFileSync(pointerPath, 'utf-8');
+    const pointer = JSON.parse(raw) as { sessionId?: string; worktree?: string };
+    if (!pointer.sessionId || !pointer.worktree) return checks;
+
+    const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
+    const { sessionDir } = await import('../adapters/workspace/init.js');
+    const fp = await computeFingerprint(pointer.worktree);
+    const sessDir = sessionDir(fp.fingerprint, pointer.sessionId);
+
+    if (!existsSync(join(sessDir, 'session-state.json'))) return checks;
+
+    const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
+    const state = JSON.parse(stateRaw) as Record<string, unknown>;
+    const assurance = state.reviewAssurance as
+      | { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> }
+      | undefined;
+
+    const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
+    if (!pendingObligation) return checks;
+
+    if (pendingObligation.pluginHandshakeAt == null) {
+      checks.push({
+        file: pointerPath,
+        status: 'error',
+        detail:
+          'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Restart OpenCode and verify flowguard-audit plugin loads.',
+      });
+    } else {
+      checks.push({
+        file: pointerPath,
+        status: 'ok',
+        detail: 'Last session plugin handshake present',
+      });
+    }
+  } catch {
+    // Non-critical — session pointer may not exist or be unreadable
+  }
+
   return checks;
 }
 
