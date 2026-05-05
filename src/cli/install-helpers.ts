@@ -414,7 +414,7 @@ export async function removeFromOpencodeJson(
     if (hasPluginField || hasDesktopInstructions) {
       // Desktop app owns this config — only remove FlowGuard entries
       const entry = mandatesInstructionEntry(scope);
-      const before = parsed['instructions'] as string[];
+      const before = existingInstructions;
       const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
       const removedInstruction = after.length !== before.length;
 

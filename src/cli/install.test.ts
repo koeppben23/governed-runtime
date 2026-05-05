@@ -1671,15 +1671,13 @@ describe('cli/uninstall', () => {
     });
 
     it('uninstall removes flowguard-audit from plugin-only config', async () => {
-      const tarball = await createMockTarball();
-      // opencode.json with only plugin field, no instructions
+      // opencode.json with only plugin field, no instructions — no preceding install
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
         JSON.stringify({ plugin: ['flowguard-audit'] }, null, 2),
         'utf-8',
       );
 
-      await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));
 
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
