@@ -674,7 +674,6 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
   checks.push(...(await checkWorkspaceConfig()));
   return checks;
-  return checks;
 }
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────

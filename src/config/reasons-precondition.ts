@@ -12,7 +12,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Config file is missing: {message}',
     recoverySteps: [
-      'Run /hydrate to re-read config defaults',
+      'Run flowguard install to create the default config',
       'If it still fails, run flowguard install --force and retry',
     ],
   },

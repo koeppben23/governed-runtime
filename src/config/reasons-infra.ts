@@ -32,8 +32,8 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Failed to persist profile-resolution artifacts: {message}',
     recoverySteps: [
-      'Ensure workspace/session directories are writable',
-      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+      'Ensure the target directory is writable',
+      'Re-run flowguard install after fixing filesystem permissions or disk issues',
     ],
   },
 

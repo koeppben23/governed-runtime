@@ -91,7 +91,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'Config file is invalid: {message}',
     recoverySteps: [
       'Fix flowguard.json to match FlowGuard schema',
-      'If unsure, remove flowguard.json and re-run /hydrate to re-materialize defaults',
+      'If unsure, remove flowguard.json and re-run flowguard install to create defaults',
     ],
   },
 

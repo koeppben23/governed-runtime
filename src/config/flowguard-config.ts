@@ -1,17 +1,21 @@
 /**
  * @module config/flowguard-config
- * @description FlowGuard per-worktree configuration schema and defaults.
+ * @description FlowGuard configuration schema and defaults.
  *
- * Configuration file: {workspaceDir}/flowguard.json
+ * Configuration locations:
+ *   Global: ~/.config/opencode/flowguard.json
+ *   Repo:   {worktree}/.opencode/flowguard.json
+ *   Runtime workspace state: ~/.config/opencode/workspaces/{fingerprint}/...
+ *
+ * Named flowguard.json to avoid collision with OpenCode's config.json.
  *
  * Priority chain (highest → lowest):
- *   Tool arguments > Config file > Policy preset > Built-in defaults
+ *   Tool arguments > Repo config > Global config > Policy preset > Built-in defaults
  *
  * Design:
  * - Zod schema with .default() on every nested object — readConfig() always
  *   returns a fully normalized object, even when the file is missing.
  * - schemaVersion is a literal "v1" for forward-compatible parsing.
- * - No YAML, no env-var overrides, no global config in v1.
  *
  * @version v1
  */
