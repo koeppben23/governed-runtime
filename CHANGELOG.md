@@ -11,15 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` from `src/config/profile.ts`. These executors were dead code — never called by any production path — but their presence implied FlowGuard executes validation. FlowGuard does not execute validation; it gates agent-reported evidence. The `activeChecks` list (`['test_quality', 'rollback_safety']`) remains as guidance for the agent. The `CheckExecutor` interface and `checks` field were removed from `FlowGuardProfile`. Validation metadata fields (`evidenceType`, `command`, `evidenceSummary`) added to `ValidationResult` schema to record how each check was actually executed. Validate template updated: "FlowGuard does not execute validation checks for you."
 
-
 ### Added
+
+- **Installer auto-install (P11)**: `flowguard install` now automatically runs `bun install` or `npm install` after writing files, eliminating the manual dependency-install step. The installer detects the available package manager (preferring bun), verifies `node_modules/@flowguard/core` exists after install, and emits a restart warning since OpenCode loads plugins once at startup.
 
 - **Rail unit tests for 6 untested rails (P10b)**: 37 rail unit tests for `abort`, `ticket`, `plan`, `validate`, `implement`, and `continue` rails covering fail-closed gates, iteration limits, and phase guidance.
 
 ### Changed
 
 - **Reasons registry split (P10c)**: Split `reasons.ts` (1204 lines) into 3 category modules: `reasons-precondition.ts` (33 codes), `reasons-validation.ts` (43 codes), `reasons-infra.ts` (27 codes). Public API unchanged via barrel exports.
+
 ## [1.2.0-rc.2] - 2026-05-03
+
 ### Fixed
 
 - **ReviewReport Zod schema completeness field (PR-C)**: `ReviewReport` Zod schema in `evidence.ts` now includes `completeness: CompletenessReportSchema`. Previously `ReviewReport.safeParse()` stripped the `completeness` matrix when persisting or reading `review-report.json` (H1 defect). `CompletenessReportSchema` is imported from `audit/completeness.js` where it is defined alongside the existing interfaces. `ExtendedReviewReport` type removed from `review.ts`; `executeReview` now returns `ReviewReport` directly. Tests in `state.test.ts`, `adapters.test.ts`, and `review.test.ts` updated for the new schema.
@@ -72,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`promptContainsValue` contract documentation + edge tests (PR #73)**: Comprehensive JSDoc on the L3 prompt-context regex documenting matching rules, the 30-character non-digit ceiling rationale, and word-boundary semantics. 11 new EDGE tests cover XML-wrapped values, JSON embeds, markdown-formatted values, multi-line attestation blocks, partial-number rejection (1 vs 15, 2 vs 21), distance-ceiling rejection, large numbers, case-insensitive keywords, and zero as a non-falsy expected value.
 
-- **Installer workspace initialization fix**: The installer now uses `ensureWorkspace()` — the same SSOT workspace-root path as the runtime — instead of writing `config.json` in isolation. Every `flowguard install` now creates a complete workspace with `workspace.json`, `sessions/`, and `discovery/`. The doctor detects config-only workspace directories left behind by older installs.
+- **Installer workspace initialization fix**: The installer now uses `ensureWorkspace()` — the same SSOT workspace-root path as the runtime — instead of writing config in isolation. Every `flowguard install` now creates a complete workspace with `workspace.json`, `sessions/`, and `discovery/`. The doctor detects config-only workspace directories left behind by older installs.
 - **E2E workspace isolation**: The independent-review E2E script now sets `OPENCODE_CONFIG_DIR` to a temporary directory when spawning the OpenCode server and running tests, preventing workspace registry writes into the production `~/.config/opencode/workspaces/` during CI/local verification.
 - **Test workspace safety guard**: Added `assertTestConfigDir()` and `FLOWGUARD_REQUIRE_TEST_CONFIG_DIR` environment variable guard in `workspacesHome()`. When active, workspace operations are blocked unless `OPENCODE_CONFIG_DIR` points to a temporary directory. `createTestWorkspace()` sets this guard automatically.
 - **Workspace log directory consolidation**: Removed the unused `logs/` subdirectory from workspace initialisation. FlowGuard's file logging writes to `.opencode/logs/` exclusively; the duplicate empty `logs/` artefact is no longer created.
@@ -134,12 +137,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TypeScript module resolution moved from Bundler to NodeNext. Source imports now use explicit Node ESM specifiers (`.js` / `/index.js`) and build no longer rewrites compiled output post-`tsc`.
 - ESM integrity verification now uses `scripts/check-esm-imports.js` as a strict dist validation step.
 - Product and README collateral now align with verified-claim actor attribution semantics (`claim` verified; `env`/`git`/`unknown` best-effort) and headless fail-closed behavior.
-- Documentation and product collateral were aligned to runtime SSOT: command allowlists, configuration path terminology (`workspace .../config.json`), and external-facing wording now match current FlowGuard behavior.
+- Documentation and product collateral were aligned to runtime SSOT: command allowlists, configuration path terminology (`flowguard.json`), and external-facing wording now match current FlowGuard behavior.
 - CI install smoke tests now use a real packed tarball (`npm pack`) instead of a mock tarball, so install verification exercises the actual artifact path.
 - SOLO_POLICY now allows 2 self-review iterations (up from 1), enabling single revision after initial review before convergence. Team remains at 3.
 - `/hydrate` now enforces a fail-closed discovery contract for new sessions: READY is emitted only when discovery and profile-resolution artifacts are successfully persisted and `discoveryDigest`/`discoverySummary` are non-null.
-- Workspace `config.json` is now materialized as a required artifact (install + hydrate self-heal) and doctor reports missing config as an error instead of silently accepting defaults.
-- `/hydrate` now fail-closes on invalid existing workspace `config.json` (`WORKSPACE_CONFIG_INVALID`) instead of proceeding with implicit defaults.
+- `flowguard.json` is now materialized as a required artifact (install + hydrate self-heal) and doctor reports missing config as an error instead of silently accepting defaults.
+- `/hydrate` now fail-closes on invalid existing `flowguard.json` (`CONFIG_INVALID`) instead of proceeding with implicit defaults.
 - Governance commands now fail-closed when required derived ticket/plan artifacts are missing, malformed, or content/hash-inconsistent with ticket/plan evidence digests (`EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`).
 - State + artifact persistence now performs best-effort rollback semantics (state rollback + cleanup of newly created artifact files) on materialization failures.
 - Compliance mapping filename corrected to `docs/marisk-mapping.md` and documentation index now links all compliance mappings and agent-guidance docs.
@@ -161,10 +164,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strict audit verification in regulated paths**: Archive verification (`verifyArchive`) now verifies audit chain integrity. When `manifest.policyMode === "regulated"`, strict mode rejects unchained legacy events. Non-regulated modes remain legacy-tolerant for backward compatibility. New finding code `audit_chain_invalid` reports chain breaks and strict-mode violations with diagnostic counts. This is the first production call-site for `verifyChain`.
 - **Regulated archive completion semantics**: Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires synchronous archive creation and verification success. New `archiveStatus` field on `SessionState` tracks the archive lifecycle (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Non-regulated sessions retain existing fire-and-forget auto-archive behavior. Aborted sessions are excluded from the archive guarantee.
 
-
 ## [1.2.0-rc.1] - 2026-04-23
 
 See release notes: https://github.com/koeppben23/governed-runtime/releases/tag/v1.2.0-rc.1
+
 ## [1.1.0] - 2026-04-17
 
 ### Added

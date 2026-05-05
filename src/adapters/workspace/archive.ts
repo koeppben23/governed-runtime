@@ -35,7 +35,7 @@ import {
 } from '../../redaction/export-redaction.js';
 
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
-import { workspacesHome, sessionDir, workspaceDir } from './init.js';
+import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 
@@ -78,7 +78,6 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   const validSessionId = validateSessionId(sessionId);
 
   const sessDir = sessionDir(fingerprint, validSessionId);
-  const wsDir = workspaceDir(fingerprint);
   const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
   const archivePath = path.join(archiveDir, `${validSessionId}.tar.gz`);
   const checksumPath = `${archivePath}.sha256`;
@@ -111,7 +110,11 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     }
   }
 
-  const config = await readConfig(wsDir);
+  // Archive redaction uses GLOBAL config only (no worktree param). Rationale:
+  // Archives are stored in the centralized workspace store (~/.config/opencode/workspaces/).
+  // The originating worktree may no longer exist at archive time. Redaction policy
+  // is a platform-level concern, not a per-repo override.
+  const config = await readConfig();
   const redactionMode = config.archive.redaction.mode;
   const includeRaw = config.archive.redaction.includeRaw;
 

@@ -103,7 +103,7 @@ Expected `doctor` output:
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
-  [ok] config.json — config valid (defaults only)
+  [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
 ```
@@ -183,7 +183,7 @@ chmod 755 ~/.config/opencode/
 ## Security Considerations
 
 - **Always verify checksums** before and after transfer. The checksums file uses SHA-256.
-- **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library) that is installed via the local package manager when running `npm install` in the `.opencode/` directory.
+- **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library) that is automatically installed by the FlowGuard installer.
 - **Offline-first**: FlowGuard makes no outbound network calls after installation.
 
 ---

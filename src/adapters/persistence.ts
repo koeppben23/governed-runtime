@@ -3,12 +3,14 @@
  * @description Atomic file I/O for FlowGuard session and workspace data.
  *
  * This is the ONLY module that touches the filesystem for FlowGuard state.
- * All FlowGuard files live under the workspace registry:
  *
+ * Config files (read by readConfig, written by writeRepoConfig / writeGlobalConfig):
+ *   {worktree}/.opencode/flowguard.json      # Repo-scoped config (takes priority)
+ *   ~/.config/opencode/flowguard.json        # Global config (fallback)
+ *
+ * Session and workspace data (paths resolved by workspace.ts):
  *   ~/.config/opencode/workspaces/{fingerprint}/
  *   +-- workspace.json          # Workspace metadata (managed by workspace.ts)
- *   +-- config.json             # Per-workspace configuration
- *   +-- logs/                   # Per-workspace logs
  *   +-- discovery/              # Business rules etc. (future)
  *   +-- sessions/
  *       +-- {sessionId}/
@@ -43,6 +45,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { SessionState } from '../state/schema.js';
 import { AuditEvent, ReviewReport } from '../state/evidence.js';
@@ -63,7 +66,7 @@ import {
 const STATE_FILE = 'session-state.json';
 const REPORT_FILE = 'review-report.json';
 const AUDIT_FILE = 'audit.jsonl';
-const CONFIG_FILE = 'config.json';
+const CONFIG_FILE = 'flowguard.json';
 
 // -- Path Helpers -------------------------------------------------------------
 
@@ -82,13 +85,16 @@ export function auditPath(sessionDir: string): string {
   return path.join(sessionDir, AUDIT_FILE);
 }
 
-/** Resolve the config file path within a workspace directory. */
-export function configPath(workspaceDir: string): string {
-  return path.join(workspaceDir, CONFIG_FILE);
+/** Resolve the global config file path (~/.config/opencode/flowguard.json). */
+export function globalConfigPath(): string {
+  const base = process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), '.config', 'opencode');
+  return path.join(base, CONFIG_FILE);
 }
 
-// -- Error --------------------------------------------------------------------
-
+/** Resolve the repo-scoped config file path ({worktree}/.opencode/flowguard.json). */
+export function repoConfigPath(worktree: string): string {
+  return path.join(worktree, '.opencode', CONFIG_FILE);
+}
 /**
  * Typed persistence error.
  * Codes:
@@ -397,81 +403,94 @@ export async function readAuditTrail(
 // -- Config Operations --------------------------------------------------------
 
 /**
- * Read the FlowGuard config from {workspaceDir}/config.json.
+ * Read the FlowGuard config. Resolves deterministically:
+ *   1. {worktree}/.opencode/flowguard.json (repo override, if worktree provided)
+ *   2. ~/.config/opencode/flowguard.json (global default)
+ *   3. DEFAULT_CONFIG (built-in fallback)
  *
- * Always returns a fully normalized FlowGuardConfig:
- * - If the file does not exist -> returns DEFAULT_CONFIG (all defaults applied).
- * - If the file exists and is valid -> returns Zod-parsed config (defaults filled).
- * - If the file exists but is invalid JSON -> throws PersistenceError(PARSE_FAILED).
- * - If the file exists but fails schema validation -> throws PersistenceError(SCHEMA_VALIDATION_FAILED).
- * - If the file cannot be read -> throws PersistenceError(READ_FAILED).
+ * Config is stored as a flat file — no longer under workspace fingerprint folders.
  *
- * Design: readConfig never returns null. Every caller sees a complete config
- * object with all fields populated -- no defensive checks needed downstream.
- *
- * @param workspaceDir - Absolute path to the workspace directory.
+ * @param worktree - Optional git worktree root for repo-scoped config.
+ * @returns Fully normalized FlowGuardConfig (never null).
  */
-export async function readConfig(workspaceDir: string): Promise<FlowGuardConfig> {
-  const filePath = configPath(workspaceDir);
+export async function readConfig(worktree?: string): Promise<FlowGuardConfig> {
+  // Repo-scoped config: {worktree}/.opencode/flowguard.json
+  if (worktree) {
+    const repoPath = repoConfigPath(worktree);
+    try {
+      const raw = await fs.readFile(repoPath, 'utf-8');
+      let json: unknown;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        throw new PersistenceError(
+          'PARSE_FAILED',
+          `Repo config file is not valid JSON: ${repoPath}`,
+        );
+      }
+      const result = FlowGuardConfigSchema.safeParse(json);
+      if (!result.success) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          `Repo config failed schema validation: ${result.error.message}`,
+        );
+      }
+      return result.data;
+    } catch (err) {
+      if (err instanceof PersistenceError) throw err;
+      if (isEnoent(err)) {
+        // Repo config not found — fall through to global
+      } else {
+        throw new PersistenceError(
+          'READ_FAILED',
+          `Failed to read repo config: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
 
-  let raw: string;
+  // Fallback: global config
+  const globalPath = globalConfigPath();
   try {
-    raw = await fs.readFile(filePath, 'utf-8');
+    const raw = await fs.readFile(globalPath, 'utf-8');
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      throw new PersistenceError(
+        'PARSE_FAILED',
+        `Global config file is not valid JSON: ${globalPath}`,
+      );
+    }
+    const result = FlowGuardConfigSchema.safeParse(json);
+    if (!result.success) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Global config failed schema validation: ${result.error.message}`,
+      );
+    }
+    return result.data;
   } catch (err: unknown) {
-    if (isEnoent(err)) return DEFAULT_CONFIG;
+    if (err instanceof PersistenceError) throw err;
+    if (isEnoent(err)) return structuredClone(DEFAULT_CONFIG);
     throw new PersistenceError(
       'READ_FAILED',
-      `Failed to read config file: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to read global config: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new PersistenceError('PARSE_FAILED', `Config file is not valid JSON: ${filePath}`);
-  }
-
-  const result = FlowGuardConfigSchema.safeParse(json);
-  if (!result.success) {
-    throw new PersistenceError(
-      'SCHEMA_VALIDATION_FAILED',
-      `Config file failed schema validation: ${result.error.message}`,
-    );
-  }
-
-  return result.data;
 }
 
 /**
- * Write the default config file to {workspaceDir}/config.json.
- *
- * Intended for the installer -- creates a well-commented initial config.
- * Uses atomic write for consistency with all other FlowGuard file operations.
- *
- * @param workspaceDir - Absolute path to the workspace directory.
- * @throws PersistenceError if the write fails.
- */
-export async function writeDefaultConfig(workspaceDir: string): Promise<void> {
-  await ensureDir(workspaceDir);
-  const json = JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n';
-  await atomicWrite(configPath(workspaceDir), json);
-}
-
-/**
- * Write a FlowGuard config to {workspaceDir}/config.json.
+ * Write a FlowGuard config to a target directory.
  *
  * Schema-validated before write (fail-closed — never persist invalid config).
- * Uses atomic write for consistency with all other FlowGuard file operations.
+ * Internal only — callers must use writeRepoConfig or writeGlobalConfig.
  *
- * Used by the installer to persist user-specified policy mode into the config,
- * and by any future config update paths that need to write arbitrary config.
- *
- * @param workspaceDir - Absolute path to the workspace directory.
+ * @param targetDir - The directory containing flowguard.json.
  * @param config - The FlowGuardConfig to persist.
  * @throws PersistenceError if validation or write fails.
  */
-export async function writeConfig(workspaceDir: string, config: FlowGuardConfig): Promise<void> {
+async function writeConfig(targetDir: string, config: FlowGuardConfig): Promise<void> {
   const parsed = FlowGuardConfigSchema.safeParse(config);
   if (!parsed.success) {
     throw new PersistenceError(
@@ -479,9 +498,23 @@ export async function writeConfig(workspaceDir: string, config: FlowGuardConfig)
       `Config failed schema validation: ${parsed.error.message}`,
     );
   }
-  await ensureDir(workspaceDir);
+  await ensureDir(targetDir);
   const json = JSON.stringify(parsed.data, null, 2) + '\n';
-  await atomicWrite(configPath(workspaceDir), json);
+  await atomicWrite(path.join(targetDir, CONFIG_FILE), json);
+}
+
+/**
+ * Write a repo-scoped config to {worktree}/.opencode/flowguard.json.
+ */
+export async function writeRepoConfig(worktree: string, config: FlowGuardConfig): Promise<void> {
+  return writeConfig(path.join(worktree, '.opencode'), config);
+}
+
+/**
+ * Write the global config to ~/.config/opencode/flowguard.json.
+ */
+export async function writeGlobalConfig(config: FlowGuardConfig): Promise<void> {
+  return writeConfig(path.dirname(globalConfigPath()), config);
 }
 
 // -- Discovery Operations -----------------------------------------------------

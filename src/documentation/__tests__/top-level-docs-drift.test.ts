@@ -27,7 +27,7 @@ const TOP_LEVEL_DOCS = ['README.md', 'PRODUCT_IDENTITY.md', 'PRODUCT_ONE_PAGER.m
 const PRODUCT_DOCS = ['PRODUCT_IDENTITY.md', 'PRODUCT_ONE_PAGER.md'] as const;
 
 function readDoc(relativePath: string): string {
-  return readFileSync(join(REPO_ROOT, relativePath), 'utf-8');
+  return readFileSync(join(REPO_ROOT, relativePath), 'utf-8').replace(/\r\n/g, '\n');
 }
 
 function slash(name: string): string {

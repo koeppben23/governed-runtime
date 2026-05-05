@@ -83,7 +83,7 @@ compliance-report flow (READY only). Use `/status` or `/why` instead.
 
 1. Verify config has correct mode:
    ```bash
-   cat ~/.config/opencode/workspaces/{fingerprint}/config.json
+   cat ~/.config/opencode/flowguard.json
    ```
 2. Recreate session with correct mode:
    ```bash
@@ -104,8 +104,8 @@ real, registered reason.
 | `MISSING_SESSION_ID`       | Tool call missing session id                | Re-invoke via OpenCode (the runtime injects sessionId)    |
 | `MISSING_WORKTREE`         | Workspace fingerprint cannot be resolved    | Run from inside a git worktree                            |
 | `INVALID_FINGERPRINT`      | Workspace fingerprint mismatch              | Run `flowguard doctor`                                    |
-| `WORKSPACE_CONFIG_MISSING` | `workspace.json` is absent                  | Re-run `flowguard install` for this workspace             |
-| `WORKSPACE_CONFIG_INVALID` | `workspace.json` failed schema validation   | Restore from a trusted backup or re-install               |
+| `CONFIG_MISSING`           | Config file is absent                       | Re-run `flowguard install` for this workspace             |
+| `CONFIG_INVALID`           | Config file failed schema validation        | Restore from a trusted backup or re-install               |
 | `SCHEMA_VALIDATION_FAILED` | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported |
 
 ### Command & Phase
@@ -280,9 +280,9 @@ TICKET_REQUIRED
 TOOL_ERROR
 VALIDATION_INCOMPLETE
 VERIFIED_ACTOR_REQUIRED
-WORKSPACE_CONFIG_INVALID
-WORKSPACE_CONFIG_MISSING
-WORKSPACE_CONFIG_WRITE_FAILED
+CONFIG_INVALID
+CONFIG_MISSING
+CONFIG_WRITE_FAILED
 WORKTREE_MISMATCH
 WRITE_FAILED
 WRONG_PHASE
@@ -300,7 +300,7 @@ Enable verbose logging via workspace config:
 }
 ```
 
-Config file location: `~/.config/opencode/workspaces/{fingerprint}/config.json` or `.opencode/config.json` in the project.
+Config file location: `~/.config/opencode/flowguard.json` (global) or `.opencode/flowguard.json` in the project.
 
 ## Test Troubleshooting
 

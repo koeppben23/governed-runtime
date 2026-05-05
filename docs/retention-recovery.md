@@ -161,11 +161,11 @@ FlowGuard manages several types of data with different retention requirements. T
 
 ### Installation Data Disposal
 
-| Data              | Disposal Method                | Notes                                                                        |
-| ----------------- | ------------------------------ | ---------------------------------------------------------------------------- |
-| **CLI**           | `flowguard uninstall`          | Removes installed files                                                      |
-| **Configuration** | Delete workspace `config.json` | Must be re-materialized; doctor reports missing config as an integrity error |
-| **Mandates**      | Overwritten on update          | Content-digested                                                             |
+| Data              | Disposal Method         | Notes                                                                        |
+| ----------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| **CLI**           | `flowguard uninstall`   | Removes installed files                                                      |
+| **Configuration** | Delete `flowguard.json` | Must be re-materialized; doctor reports missing config as an integrity error |
+| **Mandates**      | Overwritten on update   | Content-digested                                                             |
 
 ### Secure Disposal
 

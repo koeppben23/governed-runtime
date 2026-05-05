@@ -7,8 +7,9 @@
  * This module contains only CLI entry-point logic.
  */
 
-import { existsSync, realpathSync, statSync } from 'node:fs';
-import { writeFile, copyFile, rm, readdir } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
+import { writeFile, copyFile, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import {
   TOOL_WRAPPER,
@@ -25,15 +26,14 @@ import {
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
 } from './templates.js';
-import { configPath, readConfig, writeConfig } from '../adapters/persistence.js';
+import {
+  readConfig,
+  writeRepoConfig,
+  writeGlobalConfig,
+  globalConfigPath,
+} from '../adapters/persistence.js';
 import { PersistenceError } from '../adapters/persistence.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
-import {
-  ensureWorkspace,
-  workspacesHome,
-  computeFingerprint,
-  workspaceDir as resolveWorkspaceDir,
-} from '../adapters/workspace/index.js';
 import {
   type InstallScope,
   type PolicyMode,
@@ -76,7 +76,28 @@ export {
   mergeReviewerTaskPermission,
 } from './install-helpers.js';
 
-// ─── Install ──────────────────────────────────────────────────────────────────
+// ─── Package Manager Detection ───────────────────────────────────────────────
+
+/**
+ * Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm.
+ * Returns null if neither is available.
+ */
+export function detectPackageManager(): 'bun' | 'npm' | null {
+  try {
+    execFileSync('bun', ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    return 'bun';
+  } catch {
+    // bun not available
+  }
+  try {
+    execFileSync('npm', ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    return 'npm';
+  } catch {
+    // npm not available
+  }
+  return null;
+}
+
 // ─── Install ──────────────────────────────────────────────────────────────────
 
 /**
@@ -202,30 +223,84 @@ export async function install(args: CliArgs): Promise<CliResult> {
         : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
 
-    // 9. Workspace config.json (required artifact)
-    // Persists args.policyMode as config.policy.defaultMode so that
-    // /hydrate without explicit mode uses the installer's intent.
-    // Priority: existing config preserved (unless --force), new config written with policyMode.
-    const { workspaceDir: wsDir } = await ensureWorkspace(resolve('.'));
-    const cfgPath = configPath(wsDir);
+    // 9. Config.json (required artifact — flat path, no fingerprint)
+    // Persists args.policyMode as config.policy.defaultMode so /hydrate
+    // without explicit mode uses the installer's intent.
+    // Global: ~/.config/opencode/flowguard.json
+    // Repo:   {worktree}/.opencode/flowguard.json
+    const configTargetDir =
+      args.installScope === 'global'
+        ? dirname(globalConfigPath())
+        : join(resolve('.'), '.opencode');
+    const cfgPath = join(configTargetDir, 'flowguard.json');
     if (!existsSync(cfgPath)) {
       const config = {
         ...DEFAULT_CONFIG,
         policy: { ...DEFAULT_CONFIG.policy, defaultMode: args.policyMode },
       };
-      await writeConfig(wsDir, config);
+      if (args.installScope === 'global') {
+        await writeGlobalConfig(config);
+      } else {
+        await writeRepoConfig(resolve('.'), config);
+      }
       if (!existsSync(cfgPath)) {
-        throw new Error(
-          `WORKSPACE_CONFIG_WRITE_FAILED: workspace config is required but missing at ${cfgPath}`,
-        );
+        throw new Error(`CONFIG_WRITE_FAILED: config is required but missing at ${cfgPath}`);
       }
       ops.push({ path: cfgPath, action: 'written' });
     } else if (args.force) {
-      const existing = await readConfig(wsDir);
+      const existing = await readConfig(args.installScope === 'repo' ? resolve('.') : undefined);
       existing.policy.defaultMode = args.policyMode;
-      await writeConfig(wsDir, existing);
+      if (args.installScope === 'global') {
+        await writeGlobalConfig(existing);
+      } else {
+        await writeRepoConfig(resolve('.'), existing);
+      }
       ops.push({ path: cfgPath, action: 'merged', reason: 'policy mode updated via --force' });
     }
+
+    // ── Auto-install dependencies ──────────────────────────────────────────
+    // Detect package manager and run install in the target directory so the
+    // user does not need a manual `npm install` step.
+    // configTargetDir already resolved above for config writing.
+
+    const pm = detectPackageManager();
+    if (pm === null) {
+      errors.push(
+        'ERROR: Neither bun nor npm found in PATH.\n' +
+          `  FlowGuard files were installed, but dependencies could not be resolved.\n` +
+          `  Install bun (https://bun.sh) or Node.js/npm, then run:\n` +
+          `    cd ${configTargetDir} && npm install`,
+      );
+      return { target, ops, errors, warnings };
+    }
+
+    try {
+      execFileSync(pm, ['install'], {
+        cwd: configTargetDir,
+        stdio: 'pipe',
+        timeout: 60_000,
+      });
+      ops.push({ path: join(configTargetDir, 'node_modules'), action: 'written' });
+
+      // Verify @flowguard/core was resolved
+      const corePath = join(configTargetDir, 'node_modules', '@flowguard', 'core');
+      if (!existsSync(corePath)) {
+        errors.push(
+          `ERROR: ${pm} install succeeded but @flowguard/core not found in node_modules.\n` +
+            `  Expected: ${corePath}\n` +
+            `  Verify package.json references the tarball correctly.`,
+        );
+      }
+    } catch (err) {
+      errors.push(
+        `ERROR: '${pm} install' failed in ${configTargetDir}.\n` +
+          `  ${err instanceof Error ? err.message : String(err)}\n` +
+          `  Run manually: cd ${configTargetDir} && ${pm} install`,
+      );
+    }
+
+    // Emit restart reminder as a warning (always shown, even on success)
+    warnings.push('Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).');
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
   }
@@ -533,24 +608,20 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
-/** Check workspace config.json. */
+/** Check FlowGuard config (flat path). */
 async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
 
   try {
-    // Read-only: doctor must not materialize workspace directories.
-    const fpResult = await computeFingerprint(resolve('.'));
-    const wsDir = resolveWorkspaceDir(fpResult.fingerprint);
-    const cfgPath = configPath(wsDir);
+    const isRepo = existsSync(join(resolve('.'), '.opencode', 'flowguard.json'));
+    const cfgPath = isRepo ? join(resolve('.'), '.opencode', 'flowguard.json') : globalConfigPath();
     try {
-      const config = await readConfig(wsDir);
-      const fileExists = existsSync(cfgPath);
-      if (!fileExists) {
+      const config = await readConfig(resolve('.'));
+      if (!existsSync(cfgPath)) {
         checks.push({
           file: cfgPath,
           status: 'error',
-          detail:
-            'WORKSPACE_CONFIG_MISSING: workspace config is required; run /hydrate or reinstall',
+          detail: 'CONFIG_MISSING: FlowGuard config not found; run flowguard install first',
         });
       } else {
         const hasCustom =
@@ -587,59 +658,10 @@ async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
     }
   } catch (err) {
     checks.push({
-      file: 'config.json',
+      file: 'flowguard.json',
       status: 'error',
       detail: `cannot resolve workspace: ${err instanceof Error ? err.message : String(err)}`,
     });
-  }
-
-  return checks;
-}
-
-/** Check for config-only workspace directories missing workspace.json. */
-async function checkWorkspaceMetadata(): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-
-  try {
-    const wsHome = workspacesHome();
-    let entries: string[];
-    try {
-      entries = await readdir(wsHome);
-    } catch {
-      return checks;
-    }
-
-    for (const entry of entries) {
-      if (!/^[0-9a-f]{24}$/.test(entry)) continue;
-      const wsDir = join(wsHome, entry);
-      const hasConfig = existsSync(join(wsDir, 'config.json'));
-      const hasWorkspaceJson = existsSync(join(wsDir, 'workspace.json'));
-
-      if (hasConfig && !hasWorkspaceJson) {
-        let ageDays: number | undefined;
-        try {
-          const st = statSync(join(wsDir, 'config.json'));
-          ageDays = Math.round((Date.now() - st.mtimeMs) / (24 * 60 * 60 * 1000));
-        } catch {
-          // stat failed — omit age
-        }
-        checks.push({
-          file: join(wsDir, 'config.json'),
-          status: 'warn',
-          detail: [
-            'WORKSPACE_METADATA_MISSING: config.json present but workspace.json missing.',
-            ageDays !== undefined ? `Age: ${ageDays} days.` : '',
-            'This workspace was not fully initialised.',
-            'Repair is not automatic. Reinstall from the intended repository root after the fix,',
-            'or remove stale config-only directories manually after verification.',
-          ]
-            .filter(Boolean)
-            .join(' '),
-        });
-      }
-    }
-  } catch {
-    // Non-critical — if we can't scan, don't fail the doctor
   }
 
   return checks;
@@ -652,7 +674,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
   checks.push(...(await checkWorkspaceConfig()));
-  checks.push(...(await checkWorkspaceMetadata()));
+  return checks;
   return checks;
 }
 
@@ -891,8 +913,6 @@ export async function main(argv: string[]): Promise<number> {
       console.log('');
       console.log(formatResult(result));
       if (result.errors.length > 0) return 1;
-      console.log('');
-      console.log(`  Run 'npm install' in ${targetLabel} to install dependencies.`);
       return 0;
     }
 

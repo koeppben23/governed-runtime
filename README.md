@@ -13,7 +13,7 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 1. Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases)
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
-3. Install dependencies: `cd ~/.config/opencode && npm install`
+3. Restart OpenCode (plugins are loaded once at startup)
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
@@ -82,8 +82,8 @@ subagent attestation, and the `/review` evidence model.
 | **Database Detection**            | Detects repo database engines (PostgreSQL, MySQL, MariaDB, MongoDB, Redis, H2, SQLite, Oracle, SQL Server) from manifest evidence                                                                                                                                |
 | **Audit Trail**                   | Hash-chained, tamper-evident                                                                                                                                                                                                                                     |
 | **Decision Receipts**             | Append-only `decision:DEC-xxx` events for every `/review-decision`                                                                                                                                                                                               |
-| **Review Cards**                  | Structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Derived presentation artifacts — `session-state.json` remains SSOT                                                                                |
-| **Content-Aware /review**         | Single `/review` call supports text, PR number, branch name, or URL input with subagent-attested content analysis                                                                                                                             |
+| **Review Cards**                  | Structured markdown cards (Plan Review Card, Architecture Review Card, Review Report Card) injected at review gates. Derived presentation artifacts — `session-state.json` remains SSOT                                                                          |
+| **Content-Aware /review**         | Single `/review` call supports text, PR number, branch name, or URL input with subagent-attested content analysis                                                                                                                                                |
 | **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                                                                                                    |
 | **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                                                                                                              |
 | **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
@@ -93,20 +93,20 @@ subagent attestation, and the `/review` evidence model.
 
 ## Documentation
 
-| Document                                                        | Description                                      |
-| --------------------------------------------------------------- | ------------------------------------------------ |
-| [Installation](./docs/installation.md)                          | Install and configure FlowGuard                  |
-| [Commands](./docs/commands.md)                                  | Command reference                                |
-| [Phases](./docs/phases.md)                                      | Workflow phases and gates                        |
-| [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes             |
+| Document                                                        | Description                                                            |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Installation](./docs/installation.md)                          | Install and configure FlowGuard                                        |
+| [Commands](./docs/commands.md)                                  | Command reference                                                      |
+| [Phases](./docs/phases.md)                                      | Workflow phases and gates                                              |
+| [Policies](./docs/policies.md)                                  | Solo, Team, Team-CI, Regulated modes                                   |
 | [Independent Review](./docs/independent-review.md)              | Review obligations, subagent attestation, and `/review` evidence model |
-| [Profiles](./docs/profiles.md)                                  | Tech stack profiles                              |
-| [Archive](./docs/archive.md)                                    | Session archiving                                |
-| [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries |
-| [Configuration](./docs/configuration.md)                        | Configuration reference                          |
-| [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                           |
-| [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets         |
-| [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages) |
+| [Profiles](./docs/profiles.md)                                  | Tech stack profiles                                                    |
+| [Archive](./docs/archive.md)                                    | Session archiving                                                      |
+| [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries                       |
+| [Configuration](./docs/configuration.md)                        | Configuration reference                                                |
+| [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                                                 |
+| [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets                               |
+| [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages)                       |
 
 ---
 

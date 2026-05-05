@@ -24,7 +24,7 @@ import { FLOWGUARD_MANDATES_BODY, REVIEWER_AGENT } from './index.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
 
-const AGENTS_MD = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
+const AGENTS_MD = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf-8').replace(/\r\n/g, '\n');
 
 /**
  * Version footer appended to FLOWGUARD_MANDATES_BODY after the shared sections.

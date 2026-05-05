@@ -110,12 +110,15 @@ function main() {
 
   console.error('GitHub Actions pinning check failed:');
   for (const finding of findings) {
-    const relativeFile = path.relative(process.cwd(), finding.file);
+    const relativeFile = path.relative(process.cwd(), finding.file).replace(/\\/g, '/');
     console.error(`- ${relativeFile}:${finding.line} uses ${finding.value}: ${finding.reason}`);
   }
   process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  import.meta.url === new URL(`file://${process.argv[1]}`).href ||
+  import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`
+) {
   main();
 }

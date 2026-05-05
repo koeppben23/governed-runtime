@@ -94,7 +94,7 @@ For compliance-required environments (banks, healthcare, etc.).
 
 ### Via Configuration
 
-In `config.json`:
+In `flowguard.json`:
 
 ```json
 {
@@ -175,7 +175,7 @@ All policy modes default to `minimumActorAssuranceForApproval: best_effort`. Thi
 
 ### Configuring Stronger Assurance
 
-To require verified identity for approvals, set both fields in `config.json`:
+To require verified identity for approvals, set both fields in `flowguard.json`:
 
 ```json
 {

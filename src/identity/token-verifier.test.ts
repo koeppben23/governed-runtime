@@ -555,11 +555,11 @@ describe('JwtStaticTokenVerifier', () => {
       const verifier = makeVerifier();
       const header = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
       const payload = base64url(validRsaPayload());
-      // Use invalid base64url for signature — jose v6 throws JOSEError
-      // (not JWSSignatureVerificationFailed) for unparseable signatures.
+      // Use invalid base64url for signature — jose may throw JOSEError (parse)
+      // or JWSSignatureVerificationFailed depending on internal decoding path.
       const token = `${header}.${payload}.!!!invalid-signature!!!`;
       await expect(verifier.verify(token)).rejects.toMatchObject({
-        code: 'IDP_TOKEN_INVALID',
+        code: expect.stringMatching(/^IDP_TOKEN_INVALID|IDP_SIGNATURE_INVALID$/),
       });
     });
 

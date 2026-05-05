@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 /**
  * @module integration/tools-execute-hydrate.test
  * @description Execution tests for the hydrate tool (session creation, P31 Config, P27 Actor).
@@ -85,6 +86,24 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
   };
 });
 
+// ─── Windows EBUSY Cleanup Helper ────────────────────────────────────────────
+/** Retry fs.rm on EBUSY (Windows file lock after workspace ops). */
+async function rmWithRetry(dir: string, retries = 3): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await fs.rm(dir, { recursive: true, force: true });
+      return;
+    } catch (err: unknown) {
+      if (i < retries - 1 && (err as NodeJS.ErrnoException).code === 'EBUSY') {
+        await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+      } else {
+        // Best-effort on final attempt
+        return;
+      }
+    }
+  }
+}
+
 // ─── Actor Mock (P27) ────────────────────────────────────────────────────────
 // Mock resolveActor to return a deterministic actor for integration tests.
 // Prevents dependency on real env vars or git config.
@@ -122,6 +141,21 @@ let ctx: TestToolContext;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
+  // Ensure clean config state (no stale global/repo config from other test files)
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -147,6 +181,14 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   delete process.env.FLOWGUARD_POLICY_PATH;
+  // Clean up config written by tests (P11: config at repo path)
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -274,7 +316,6 @@ describe('hydrate', () => {
 
       await expect(fs.access(wsDir)).resolves.toBeUndefined();
       await expect(fs.access(sessDir)).resolves.toBeUndefined();
-      await expect(fs.access(`${wsDir}/config.json`)).resolves.toBeUndefined();
       await expect(fs.access(`${wsDir}/discovery/discovery.json`)).resolves.toBeUndefined();
       await expect(
         fs.access(`${wsDir}/discovery/profile-resolution.json`),
@@ -298,18 +339,26 @@ describe('hydrate', () => {
       expect(result.error).toBe(true);
     });
 
-    it('fails closed when existing workspace config is invalid', async () => {
+    it('fails closed when existing repo config is invalid JSON', async () => {
+      // First hydrate to create workspace
       await hydrateSession();
 
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
+      // Corrupt the repo config
+      const cfgDir = path.join(ws.tmpDir, '.opencode');
+      await fs.mkdir(cfgDir, { recursive: true });
+      const cfgPath = path.join(cfgDir, 'flowguard.json');
       await fs.writeFile(cfgPath, '{invalid{{{', 'utf-8');
 
-      const result = await hydrateSession();
+      // New session — readConfig must throw PARSE_FAILED
+      const ctx2 = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx2);
+      const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('WORKSPACE_CONFIG_INVALID');
-      expect(result.message).toContain('invalid');
+      expect(result.code).toBe('PARSE_FAILED');
     });
 
     it('fails closed when FLOWGUARD_POLICY_PATH is set but file is missing', async () => {
@@ -380,51 +429,59 @@ describe('hydrate', () => {
       expect(result.code).toBe('EXISTING_POLICY_WEAKER_THAN_CENTRAL');
     });
 
-    /**
-     * Rehydrate fail-closed: legacy session-state.json on disk with missing
-     * required snapshot fields must cause /hydrate to return an error.
-     *
-     * Proves the end-to-end path: file on disk → readState() → Zod reject →
-     * PersistenceError → formatError → { error: true }.
-     *
-     * This is the "no Legacy" proof the reviewer requires.
-     */
-    async function corruptSnapshotField(field: string): Promise<Record<string, unknown>> {
-      // 1. Create a valid session via /hydrate
+    it('rehydrate rejects legacy snapshot missing actorClassification', async () => {
       await hydrateSession();
 
-      // 2. Locate session dir on disk
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
 
-      // 3. Read valid state, strip the required field, write raw JSON
-      //    (bypasses writeState validation — simulates legacy file on disk)
       const state = await readState(sessDir);
       const raw = JSON.parse(JSON.stringify(state));
-      delete raw.policySnapshot[field];
+      delete raw.policySnapshot.actorClassification;
       await fs.writeFile(`${sessDir}/session-state.json`, JSON.stringify(raw));
 
-      // 4. Re-hydrate the same session — readState must reject
       const output = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx);
-      return parseToolResult(output);
-    }
-
-    it('rehydrate rejects legacy snapshot missing actorClassification', async () => {
-      const result = await corruptSnapshotField('actorClassification');
+      const result = parseToolResult(output);
       expect(result.error).toBe(true);
       expect(result.message).toMatch(/actorClassification/);
     });
 
     it('rehydrate rejects legacy snapshot missing effectiveGateBehavior', async () => {
-      const result = await corruptSnapshotField('effectiveGateBehavior');
+      await hydrateSession();
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+      const state = await readState(sessDir);
+      const raw = JSON.parse(JSON.stringify(state));
+      delete raw.policySnapshot.effectiveGateBehavior;
+      await fs.writeFile(`${sessDir}/session-state.json`, JSON.stringify(raw));
+
+      const output = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(output);
       expect(result.error).toBe(true);
       expect(result.message).toMatch(/effectiveGateBehavior/);
     });
 
     it('rehydrate rejects legacy snapshot missing requestedMode', async () => {
-      const result = await corruptSnapshotField('requestedMode');
+      await hydrateSession();
+
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+
+      const state = await readState(sessDir);
+      const raw = JSON.parse(JSON.stringify(state));
+      delete raw.policySnapshot.requestedMode;
+      await fs.writeFile(`${sessDir}/session-state.json`, JSON.stringify(raw));
+
+      const output = await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx);
+      const result = parseToolResult(output);
       expect(result.error).toBe(true);
       expect(result.message).toMatch(/requestedMode/);
     });
@@ -543,12 +600,12 @@ describe('hydrate', () => {
         workspaceDir,
         sessionDir: resolveSessionDir,
       } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
       config.policy.defaultMode = 'solo';
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
 
       // 2. Central minimum: regulated
       const centralPath = `${ws.tmpDir}/central-policy.json`;
@@ -609,12 +666,12 @@ describe('hydrate', () => {
 
       // 2. Write config with regulated as defaultMode
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
       config.policy.defaultMode = 'regulated';
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
 
       // 3. Create a NEW session (new sessionID) WITHOUT explicit policyMode
       const ctx2 = createToolContext({
@@ -645,12 +702,12 @@ describe('hydrate', () => {
 
       // 2. Set config default to regulated
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
       config.policy.defaultMode = 'regulated';
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
 
       // 3. New session with explicit solo — explicit arg wins over config
       const ctx2 = createToolContext({
@@ -667,9 +724,22 @@ describe('hydrate', () => {
     });
 
     it('hydrate falls back to solo when config has no defaultMode', async () => {
-      // Config has no defaultMode set (fresh workspace with DEFAULT_CONFIG)
-      // New session without explicit mode → should default to 'solo'
-      const raw = await hydrate.execute({ profileId: 'baseline' }, ctx);
+      // Config has no defaultMode set — remove repo config so DEFAULT_CONFIG is used.
+      // DEFAULT_CONFIG has no defaultMode → hydrate defaults to 'solo'.
+      try {
+        await import('node:fs/promises').then((fs) =>
+          fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
+        );
+      } catch {
+        /* ok */
+      }
+      // Fresh context so no existing session is found
+      const freshCtx = createToolContext({
+        worktree: ws.tmpDir,
+        directory: ws.tmpDir,
+        sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+      });
+      const raw = await hydrate.execute({ profileId: 'baseline' }, freshCtx);
       const result = parseToolResult(raw);
 
       expect(result.phase).toBe('READY');
@@ -684,12 +754,12 @@ describe('hydrate', () => {
 
       // 2. Set config default to team
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
       config.policy.defaultMode = 'team';
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
 
       // 3. New session without explicit mode
       const ctx2 = createToolContext({
@@ -781,37 +851,6 @@ describe('hydrate', () => {
 
       spy.mockRestore();
     });
-
-    it('re-materializes missing workspace config on hydrate', async () => {
-      await hydrateSession();
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
-      await fs.unlink(cfgPath);
-
-      const result = await hydrateSession();
-      expect(result.phase).toBe('READY');
-      await expect(fs.access(cfgPath)).resolves.toBeUndefined();
-    });
-
-    it('fails closed when workspace config cannot be written', async () => {
-      const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const fp = await computeFingerprint(ws.tmpDir);
-      const cfgPath = `${workspaceDir(fp.fingerprint)}/config.json`;
-      // Ensure config is missing so hydrate must write it.
-      await fs.rm(cfgPath, { force: true });
-
-      const spy = vi
-        .spyOn(persistence, 'writeDefaultConfig')
-        .mockRejectedValueOnce(new Error('config write denied'));
-
-      const result = await hydrateSession();
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('WORKSPACE_CONFIG_WRITE_FAILED');
-      expect(result.message).toContain('config write denied');
-
-      spy.mockRestore();
-    });
   });
 
   // ── P31: Config as Runtime Authority ────────────────────────────────────────────
@@ -824,11 +863,11 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
-        const baseConfig = await readConfig(wsDir);
-        await writeConfig(wsDir, {
+        const baseConfig = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           profile: { ...baseConfig.profile, defaultId: 'typescript' },
         });
@@ -846,7 +885,7 @@ describe('hydrate', () => {
         expect(state).not.toBeNull();
         expect(state!.activeProfile?.id).toBe('typescript');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -858,13 +897,13 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
-        const baseConfig = await readConfig(wsDir);
+        const baseConfig = await readConfig(tmpDir);
         // Set config default to baseline, then override explicitly to typescript.
-        await writeConfig(wsDir, {
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           profile: { ...baseConfig.profile, defaultId: 'baseline' },
         });
@@ -884,7 +923,7 @@ describe('hydrate', () => {
         expect(state).not.toBeNull();
         expect(state!.activeProfile?.id).toBe('typescript');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -896,13 +935,13 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
-        const baseConfig = await readConfig(wsDir);
+        const baseConfig = await readConfig(tmpDir);
         // Set config default to typescript, but explicitly request baseline.
-        await writeConfig(wsDir, {
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           profile: { ...baseConfig.profile, defaultId: 'typescript' },
         });
@@ -923,7 +962,7 @@ describe('hydrate', () => {
         expect(state).not.toBeNull();
         expect(state!.activeProfile?.id).toBe('baseline');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -935,13 +974,13 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
         const { readState } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
-        const baseConfig = await readConfig(wsDir);
-        await writeConfig(wsDir, { ...baseConfig });
+        const baseConfig = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, { ...baseConfig });
 
         // Create first session with baseline.
         const ctx1 = createToolContext({
@@ -974,7 +1013,7 @@ describe('hydrate', () => {
         const state2 = await readState(sessDir1);
         expect(state2!.activeProfile?.id).toBe('baseline');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -987,13 +1026,13 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
         const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
 
-        const baseConfig = await readConfig(wsDir);
-        await writeConfig(wsDir, {
+        const baseConfig = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           policy: {
             ...baseConfig.policy,
@@ -1014,7 +1053,7 @@ describe('hydrate', () => {
         expect(state!.policySnapshot.maxSelfReviewIterations).toBe(5);
         expect(state!.policySnapshot.maxImplReviewIterations).toBe(7);
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -1026,13 +1065,13 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
         const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
 
-        const baseConfig = await readConfig(wsDir);
-        await writeConfig(wsDir, {
+        const baseConfig = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           policy: {
             ...baseConfig.policy,
@@ -1051,7 +1090,7 @@ describe('hydrate', () => {
         const state = await readState(sessDir);
         expect(state!.policySnapshot.requireVerifiedActorsForApproval).toBe(true);
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -1063,9 +1102,9 @@ describe('hydrate', () => {
         const wsDir = workspaceDir(fp.fingerprint);
 
         // Set up any config (not needed for explicit override)
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
-        const config = await readConfig(wsDir);
-        await writeConfig(wsDir, { ...config });
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const config = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, { ...config });
 
         // Explicit unknown profile should fail
         const result = parseToolResult(
@@ -1081,7 +1120,7 @@ describe('hydrate', () => {
         expect(result.error).toBe(true);
         expect(result.code).toBe('INVALID_PROFILE');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
@@ -1089,11 +1128,11 @@ describe('hydrate', () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-c-');
       try {
         const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-        const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
-        const baseConfig = await readConfig(wsDir);
-        await writeConfig(wsDir, {
+        const baseConfig = await readConfig(tmpDir);
+        await writeRepoConfig(tmpDir, {
           ...baseConfig,
           profile: { ...baseConfig.profile, defaultId: 'nonexistent-profile-xyz' },
         });
@@ -1110,19 +1149,19 @@ describe('hydrate', () => {
         expect(result.error).toBe(true);
         expect(result.code).toBe('INVALID_PROFILE');
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
+        await rmWithRetry(tmpDir);
       }
     });
 
     it('config.profile.activeChecks overrides selected profile defaults', async () => {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
 
       // Write config with custom activeChecks
-      const baseConfig = await readConfig(wsDir);
-      await writeConfig(wsDir, {
+      const baseConfig = await readConfig(ws.tmpDir);
+      await writeRepoConfig(ws.tmpDir, {
         ...baseConfig,
         profile: {
           ...baseConfig.profile,
@@ -1158,7 +1197,7 @@ describe('hydrate', () => {
         workspaceDir,
         sessionDir: resolveSessionDir,
       } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
 
       const fp = await computeFingerprint(tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
@@ -1169,8 +1208,8 @@ describe('hydrate', () => {
       });
 
       // First hydrate with explicit config limits
-      const config1 = await readConfig(wsDir);
-      await writeConfig(wsDir, {
+      const config1 = await readConfig(tmpDir);
+      await writeRepoConfig(tmpDir, {
         ...config1,
         policy: { ...config1.policy, maxSelfReviewIterations: 2 },
       });
@@ -1182,8 +1221,8 @@ describe('hydrate', () => {
       expect(before!.policySnapshot.maxSelfReviewIterations).toBe(2);
 
       // Change config and re-hydrate same session
-      const config2 = await readConfig(wsDir);
-      await writeConfig(wsDir, {
+      const config2 = await readConfig(tmpDir);
+      await writeRepoConfig(tmpDir, {
         ...config2,
         policy: { ...config2.policy, maxSelfReviewIterations: 5 },
       });
@@ -1194,7 +1233,7 @@ describe('hydrate', () => {
       expect(after!.policySnapshot.maxSelfReviewIterations).toBe(2);
       expect(after!.policySnapshot.maxSelfReviewIterations).not.toBe(5);
     } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true });
+      await rmWithRetry(tmpDir);
     }
   });
 

@@ -67,7 +67,7 @@ flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo
 | **Session state** | Yes       | File-based, readable after reinstall |
 | **Audit trails**  | Yes       | File-based                           |
 | **Archives**      | Yes       | File-based                           |
-| **Configuration** | Yes       | Workspace `config.json` unchanged    |
+| **Configuration** | Yes       | `flowguard.json` unchanged           |
 
 **Customer Responsibility:**
 

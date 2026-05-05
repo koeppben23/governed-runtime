@@ -38,9 +38,9 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'WORKSPACE_CONFIG_WRITE_FAILED',
+    code: 'CONFIG_WRITE_FAILED',
     category: 'adapter',
-    messageTemplate: 'Workspace config.json could not be written: {message}',
+    messageTemplate: 'Config file could not be written: {message}',
     recoverySteps: [
       'Ensure workspace directory is writable',
       'Re-run /hydrate after fixing filesystem permissions or disk issues',
