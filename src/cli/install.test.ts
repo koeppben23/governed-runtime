@@ -1868,8 +1868,6 @@ describe('cli/doctor', () => {
       process.env.OPENCODE_CONFIG_DIR = configDir;
 
       try {
-        const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
-        const fp = await computeFingerprint(path.resolve(tmpDir));
         const sessionId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
 
         await fs.writeFile(

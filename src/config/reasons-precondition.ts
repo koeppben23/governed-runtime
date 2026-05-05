@@ -369,7 +369,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Verify ~/.config/opencode/plugins/flowguard-audit.ts exists',
       'Run npm install in ~/.config/opencode',
       'Restart OpenCode after installing FlowGuard',
-      'Run flowguard doctor to verify plugin importability',
+      'Run flowguard doctor to verify plugin importability and handshake',
       'Check session state for pluginHandshakeAt timestamp',
     ],
   },
