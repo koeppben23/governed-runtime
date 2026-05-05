@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Reasons registry split (P10c)**: Split `reasons.ts` (1204 lines) into 3 category modules: `reasons-precondition.ts` (33 codes), `reasons-validation.ts` (43 codes), `reasons-infra.ts` (27 codes). Public API unchanged via barrel exports.
 
-## [1.2.0] - 2026-05-03
+## [1.2.0-rc.2] - 2026-05-03
 
 ### Fixed
 
@@ -164,7 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strict audit verification in regulated paths**: Archive verification (`verifyArchive`) now verifies audit chain integrity. When `manifest.policyMode === "regulated"`, strict mode rejects unchained legacy events. Non-regulated modes remain legacy-tolerant for backward compatibility. New finding code `audit_chain_invalid` reports chain breaks and strict-mode violations with diagnostic counts. This is the first production call-site for `verifyChain`.
 - **Regulated archive completion semantics**: Regulated clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) now requires synchronous archive creation and verification success. New `archiveStatus` field on `SessionState` tracks the archive lifecycle (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Non-regulated sessions retain existing fire-and-forget auto-archive behavior. Aborted sessions are excluded from the archive guarantee.
 
-## [1.2.0] - 2026-04-23
+## [1.2.0-rc.1] - 2026-04-23
 
 See release notes: https://github.com/koeppben23/governed-runtime/releases/tag/v1.2.0
 
