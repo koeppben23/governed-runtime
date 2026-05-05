@@ -364,9 +364,10 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     // Ensure build agent has task permission for flowguard-reviewer subagent
     mergeReviewerTaskPermission(parsed);
 
-    // Compatibility workaround. OpenCode officially auto-loads local plugin
-    // files from plugins/ directories and uses "plugin" for npm packages.
-    // Keep this entry only if verified against the supported OpenCode version.
+    // Register flowguard-audit plugin name. OpenCode auto-loads local plugin
+    // files from plugins/ directories; the "plugin" field in config.json is
+    // documented for npm packages. This entry acts as a compatibility safety
+    // net alongside the auto-discovery path.
     if (!Array.isArray(parsed['plugin'])) {
       parsed['plugin'] = ['flowguard-audit'];
     } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
@@ -417,13 +418,14 @@ export async function removeFromOpencodeJson(
       const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
       const removedInstruction = after.length !== before.length;
 
+      let removedPlugin = false;
       if (Array.isArray(parsed['plugin'])) {
-        (parsed['plugin'] as string[]) = (parsed['plugin'] as string[]).filter(
-          (p) => p !== 'flowguard-audit',
-        );
+        const beforePlugin = parsed['plugin'] as string[];
+        parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
+        removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
       }
 
-      if (!removedInstruction && !hasPluginField) {
+      if (!removedInstruction && !removedPlugin) {
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       }
 
@@ -441,13 +443,14 @@ export async function removeFromOpencodeJson(
     const before = parsed['instructions'] as string[];
     const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
 
+    let removedPlugin = false;
     if (Array.isArray(parsed['plugin'])) {
-      (parsed['plugin'] as string[]) = (parsed['plugin'] as string[]).filter(
-        (p) => p !== 'flowguard-audit',
-      );
+      const beforePlugin = parsed['plugin'] as string[];
+      parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
+      removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
     }
 
-    if (after.length === before.length) {
+    if (after.length === before.length && !removedPlugin) {
       return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
     }
 
