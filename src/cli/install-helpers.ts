@@ -364,7 +364,9 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     // Ensure build agent has task permission for flowguard-reviewer subagent
     mergeReviewerTaskPermission(parsed);
 
-    // Register plugin entry as a compatibility safety net.
+    // Compatibility workaround. OpenCode officially auto-loads local plugin
+    // files from plugins/ directories and uses "plugin" for npm packages.
+    // Keep this entry only if verified against the supported OpenCode version.
     if (!Array.isArray(parsed['plugin'])) {
       parsed['plugin'] = ['flowguard-audit'];
     } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
