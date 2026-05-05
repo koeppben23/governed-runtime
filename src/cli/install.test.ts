@@ -57,25 +57,35 @@ import {
 import { measureAsync } from '../test-policy.js';
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
-// Mock execFileSync so install() auto-install step succeeds with mock tarballs.
-// The mock simulates `npm install` by creating node_modules/@flowguard/core.
+// Mock execFileSync + execSync so install() auto-install step succeeds with mock tarballs.
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
+  const mockImpl = (
+    cmd: string,
+    args?: string[] | { cwd?: string; stdio?: unknown; timeout?: number },
+    opts?: { cwd?: string; stdio?: unknown; timeout?: number },
+  ) => {
+    // For execSync: cmd is "bun --version" or "npm install"
+    // For execFileSync: args[0] is "--version" or "install"
+    const isVersion =
+      typeof cmd === 'string' &&
+      (cmd.includes('--version') || (Array.isArray(args) && args[0] === '--version'));
+    if (isVersion) return Buffer.from('1.0.0\n');
+    // Package manager install: create node_modules/@flowguard/core
+    const cwd =
+      (typeof opts === 'object' && opts?.cwd) ||
+      (typeof args === 'object' && !Array.isArray(args) && args?.cwd);
+    if (cwd) {
+      const corePath = path.join(cwd, 'node_modules', '@flowguard', 'core');
+      mkdirSync(corePath, { recursive: true });
+      return Buffer.from('');
+    }
+    return Buffer.from('');
+  };
   return {
     ...original,
-    execFileSync: vi.fn(
-      (cmd: string, args: string[], opts?: { cwd?: string; stdio?: unknown; timeout?: number }) => {
-        // Package manager detection: --version calls
-        if (args?.[0] === '--version') return Buffer.from('1.0.0\n');
-        // Package manager install: create node_modules/@flowguard/core
-        if (args?.[0] === 'install' && opts?.cwd) {
-          const corePath = path.join(opts.cwd, 'node_modules', '@flowguard', 'core');
-          mkdirSync(corePath, { recursive: true });
-          return Buffer.from('');
-        }
-        return Buffer.from('');
-      },
-    ),
+    execFileSync: vi.fn(mockImpl),
+    execSync: vi.fn(mockImpl),
   };
 });
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1011,12 +1021,12 @@ describe('cli/install', () => {
     });
 
     it('BAD: reports error when package manager install fails', async () => {
-      const { execFileSync: mockExec } = await import('node:child_process');
+      const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, args: string[], opts?: unknown) => {
-        const a = args as string[];
-        if (a?.[0] === 'install') throw new Error('ENOMEM: not enough memory');
-        return originalImpl(cmd, args, opts);
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+        if (typeof cmd === 'string' && cmd.includes('install'))
+          throw new Error('ENOMEM: not enough memory');
+        return originalImpl(cmd, opts);
       });
 
       try {
@@ -1030,10 +1040,10 @@ describe('cli/install', () => {
     });
 
     it('BAD: reports error when no package manager is available', async () => {
-      const { execFileSync: mockExec } = await import('node:child_process');
+      const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, args: string[]) => {
-        if (args?.[0] === '--version') throw new Error('ENOENT');
+      vi.mocked(mockExec).mockImplementation((cmd: string) => {
+        if (typeof cmd === 'string' && cmd.includes('--version')) throw new Error('ENOENT');
         throw new Error('unexpected call');
       });
 
@@ -1048,12 +1058,12 @@ describe('cli/install', () => {
     });
 
     it('EDGE: detects bun before npm (prefers bun)', async () => {
-      const { execFileSync: mockExec } = await import('node:child_process');
+      const { execSync: mockExec } = await import('node:child_process');
       const calls: string[] = [];
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, args: string[], opts?: unknown) => {
-        if (args?.[0] === 'install') calls.push(cmd);
-        return originalImpl(cmd, args, opts);
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) calls.push(cmd.split(' ')[0]);
+        return originalImpl(cmd, opts);
       });
 
       try {
