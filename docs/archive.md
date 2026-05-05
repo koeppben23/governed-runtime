@@ -42,6 +42,13 @@ Archives are stored at:
 ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
 ```
 
+### Configuration Scope
+
+Archive creation calls `readConfig()` without a worktree argument intentionally.
+The originating worktree may no longer exist at archive time. Archive/redaction
+uses global config or default config. Repo config overrides do not apply to
+archives unless a future policy-snapshot change is introduced.
+
 ## Manifest
 
 Each archive includes an `archive-manifest.json`:
