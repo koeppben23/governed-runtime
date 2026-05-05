@@ -114,17 +114,36 @@ export const FLOWGUARD_OWNED_FILES = [
   'vendor',
 ] as const;
 
+/**
+ * Instruction entries that are FlowGuard-owned (not desktop-owned indicators).
+ * Used by desktop-owned heuristic: any instruction NOT in this list signals desktop ownership.
+ */
+export const FLOWGUARD_INSTRUCTION_ENTRIES: readonly string[] = [
+  MANDATES_FILENAME,
+  `.opencode/${MANDATES_FILENAME}`,
+  LEGACY_INSTRUCTION_ENTRY,
+];
+
+/**
+ * True if the instructions array contains entries not owned by FlowGuard.
+ * This signals the config is desktop-owned (e.g. Cursor, Windsurf).
+ */
+export function hasNonFlowGuardInstructions(instructions: string[]): boolean {
+  return instructions.some((i) => !FLOWGUARD_INSTRUCTION_ENTRIES.includes(i));
+}
+
 // ─── Path Resolution ──────────────────────────────────────────────────────────
 
 /**
  * Resolve the target directory for install/uninstall.
  *
- * @param scope - "global" resolves to ~/.config/opencode/. "repo" resolves to ./.opencode/.
+ * @param scope - "global" resolves to $OPENCODE_CONFIG_DIR or ~/.config/opencode/.
+ *                "repo" resolves to ./.opencode/.
  * @returns Absolute path to the target directory.
  */
 export function resolveTarget(scope: InstallScope): string {
   if (scope === 'global') {
-    return join(homedir(), '.config', 'opencode');
+    return process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode');
   }
   return resolve('.opencode');
 }
@@ -321,9 +340,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     const existingInstructions = Array.isArray(parsed['instructions'])
       ? (parsed['instructions'] as string[])
       : [];
-    const hasDesktopInstructions = existingInstructions.some(
-      (i) => !i.includes('flowguard-mandates') && !i.includes('AGENTS.md'),
-    );
+    const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
 
     if (hasPluginField || hasDesktopInstructions) {
       // Desktop app owns this config — only add our entries
@@ -403,15 +420,16 @@ export async function removeFromOpencodeJson(
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
     // touch desktop app's instruction configuration beyond removing our own entries)
-    const hasPluginField = 'plugin' in parsed;
     const existingInstructions = Array.isArray(parsed['instructions'])
       ? (parsed['instructions'] as string[])
       : [];
-    const hasDesktopInstructions = existingInstructions.some(
-      (i) => !i.includes('flowguard-mandates') && !i.includes('AGENTS.md'),
-    );
+    const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
+    // A plugin array with ONLY 'flowguard-audit' was added by the installer itself —
+    // not a desktop-owned signal. Desktop-owned = has foreign plugins.
+    const pluginArr = Array.isArray(parsed['plugin']) ? (parsed['plugin'] as string[]) : [];
+    const hasForeignPlugins = pluginArr.some((p) => p !== 'flowguard-audit');
 
-    if (hasPluginField || hasDesktopInstructions) {
+    if (hasDesktopInstructions || hasForeignPlugins) {
       // Desktop app owns this config — only remove FlowGuard entries
       const entry = mandatesInstructionEntry(scope);
       const hadInstructions = Array.isArray(parsed['instructions']);
@@ -424,6 +442,9 @@ export async function removeFromOpencodeJson(
         const beforePlugin = parsed['plugin'] as string[];
         parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
         removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
+        if ((parsed['plugin'] as string[]).length === 0) {
+          delete parsed['plugin'];
+        }
       }
 
       if (!removedInstruction && !removedPlugin) {
@@ -438,26 +459,60 @@ export async function removeFromOpencodeJson(
     }
 
     // Standard removal for FlowGuard-only configs
-    if (!Array.isArray(parsed['instructions'])) {
-      return { path: filePath, action: 'skipped', reason: 'no instructions array' };
-    }
-
     const entry = mandatesInstructionEntry(scope);
-    const before = parsed['instructions'] as string[];
+    const hasInstructions = Array.isArray(parsed['instructions']);
+    const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
     const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+    const removedInstruction = after.length !== before.length;
 
     let removedPlugin = false;
     if (Array.isArray(parsed['plugin'])) {
       const beforePlugin = parsed['plugin'] as string[];
       parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
       removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
+      // Clean up empty plugin array
+      if ((parsed['plugin'] as string[]).length === 0) {
+        delete parsed['plugin'];
+      }
     }
 
-    if (after.length === before.length && !removedPlugin) {
+    // Remove FlowGuard-owned task-hardening entries only, preserve foreign task permissions
+    let removedTaskHardening = false;
+    if (parsed['agent'] && typeof parsed['agent'] === 'object') {
+      const agent = parsed['agent'] as Record<string, unknown>;
+      if (agent['build'] && typeof agent['build'] === 'object') {
+        const build = agent['build'] as Record<string, unknown>;
+        if (build['permission'] && typeof build['permission'] === 'object') {
+          const permission = build['permission'] as Record<string, unknown>;
+          if (permission['task'] && typeof permission['task'] === 'object') {
+            const task = permission['task'] as Record<string, unknown>;
+            // Remove only FlowGuard-owned entries
+            if (task['flowguard-reviewer'] === 'allow') {
+              delete task['flowguard-reviewer'];
+              removedTaskHardening = true;
+            }
+            // Remove wildcard deny only if no foreign task entries remain
+            if (task['*'] === 'deny' && Object.keys(task).filter((k) => k !== '*').length === 0) {
+              delete task['*'];
+              removedTaskHardening = true;
+            }
+            // Clean up empty task object
+            if (Object.keys(task).length === 0) delete permission['task'];
+          }
+          if (Object.keys(permission).length === 0) delete build['permission'];
+        }
+        if (Object.keys(build).length === 0) delete agent['build'];
+      }
+      if (Object.keys(agent).length === 0) delete parsed['agent'];
+    }
+
+    if (!removedInstruction && !removedPlugin && !removedTaskHardening) {
       return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
     }
 
-    parsed['instructions'] = after;
+    if (hasInstructions) {
+      parsed['instructions'] = after;
+    }
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
     return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
   } catch {

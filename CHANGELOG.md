@@ -7,11 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
+### Fixed
 
-- **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` from `src/config/profile.ts`. These executors were dead code — never called by any production path — but their presence implied FlowGuard executes validation. FlowGuard does not execute validation; it gates agent-reported evidence. The `activeChecks` list (`['test_quality', 'rollback_safety']`) remains as guidance for the agent. The `CheckExecutor` interface and `checks` field were removed from `FlowGuardProfile`. Validation metadata fields (`evidenceType`, `command`, `evidenceSummary`) added to `ValidationResult` schema to record how each check was actually executed. Validate template updated: "FlowGuard does not execute validation checks for you."
+- **Doctor scope-aware config check (#106)**: `checkWorkspaceConfig(scope)` now checks only the relevant config for the given scope. Global scope checks `~/.config/opencode/flowguard.json` without worktree; repo scope checks `{cwd}/.opencode/flowguard.json` without fallback to global. Previously, doctor could report a false positive "ok" by reading the wrong config.
+
+- **Doctor exit code treats warnings as non-failing (#12)**: `flowguard doctor` now returns exit 0 when only `warn` checks are present (e.g. desktop task-hardening advisory). Only real errors/missing artifacts cause exit 1. Previously, warnings broke CI pipelines.
+
+- **Uninstall removes flowguard.json (#7)**: `flowguard uninstall` now removes the `flowguard.json` config file. Previously, the config persisted after uninstall, causing re-install to inherit stale settings.
+
+- **Uninstall removes task-hardening from opencode.json (#11)**: `flowguard uninstall` now removes `agent.build.permission.task` (deny/allow rules) and cleans up empty `plugin` arrays. Previously, uninstalled task-deny rules would block agent Tasks in a post-uninstall environment.
+
+- **Uninstall removes package.json when FlowGuard-only (#9)**: If `package.json` contains only FlowGuard-managed dependencies (no scripts, no devDependencies, no foreign deps), uninstall deletes the file entirely instead of leaving an empty shell.
+
+- **Desktop-owned heuristic uses exact match (#17)**: The desktop-owned config detection now uses exact-match against known FlowGuard instruction entries instead of substring `includes()`. A file named `my-flowguard-mandates-notes.md` is now correctly treated as a desktop-owned instruction.
+
+- **`resolveTarget` respects `OPENCODE_CONFIG_DIR` (#19)**: `resolveTarget('global')` now uses `$OPENCODE_CONFIG_DIR` when set, consistent with `persistence.ts` and `checkLastSessionHandshake`. Previously, install/uninstall would write to `~/.config/opencode/` even when the runtime reads from a custom path.
+
+- **`detectCustomConfig` no longer false-positives on fresh install (#1)**: The doctor "customized" heuristic no longer considers `defaultMode` as a customization signal, since the installer always sets it. Fresh installs now correctly report "config valid (defaults only)".
 
 ### Added
+
+- **Desktop task-hardening warning (#107)**: `flowguard doctor` emits a `warn` when a desktop-owned config (detected via `hasPluginField || hasDesktopInstructions`) lacks FlowGuard reviewer task hardening. The installer does not enforce task permissions on desktop-owned configs; this warning makes the gap visible.
+
+- **Shared `hasNonFlowGuardInstructions()` utility**: Extracted desktop-owned detection into a reusable utility with `FLOWGUARD_INSTRUCTION_ENTRIES` constant. Used in 3 callsites (mergeOpencodeJson, removeFromOpencodeJson, checkOpencodeInstructions).
+
+- **Install test decomposition**: Split `install.test.ts` (2196 LOC) into 6 focused test files: `install-test-helpers.test.ts`, `install-parseargs.test.ts`, `install-templates.test.ts`, `install-install.test.ts`, `install-doctor.test.ts`, `install-cli.test.ts`. Coverage-preserving: 174 original tests + 31 new tests.
 
 - **Installer auto-install (P11)**: `flowguard install` now automatically runs `bun install` or `npm install` after writing files, eliminating the manual dependency-install step. The installer detects the available package manager (preferring bun), verifies `node_modules/@flowguard/core` exists after install, and emits a restart warning since OpenCode loads plugins once at startup.
 
@@ -20,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Reasons registry split (P10c)**: Split `reasons.ts` (1204 lines) into 3 category modules: `reasons-precondition.ts` (33 codes), `reasons-validation.ts` (43 codes), `reasons-infra.ts` (27 codes). Public API unchanged via barrel exports.
+
+### Removed
+
+- **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` from `src/config/profile.ts`. These executors were dead code — never called by any production path — but their presence implied FlowGuard executes validation. FlowGuard does not execute validation; it gates agent-reported evidence. The `activeChecks` list (`['test_quality', 'rollback_safety']`) remains as guidance for the agent. The `CheckExecutor` interface and `checks` field were removed from `FlowGuardProfile`. Validation metadata fields (`evidenceType`, `command`, `evidenceSummary`) added to `ValidationResult` schema to record how each check was actually executed. Validate template updated: "FlowGuard does not execute validation checks for you."
 
 ## [1.2.0-rc.2] - 2026-05-03
 

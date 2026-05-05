@@ -57,6 +57,7 @@ import {
   mergePackageJson,
   mergeOpencodeJson,
   removeFromOpencodeJson,
+  hasNonFlowGuardInstructions,
 } from './install-helpers.js';
 
 // ─── Re-exports for backward compatibility ─────────────────────────────────
@@ -75,6 +76,8 @@ export {
   sha256,
   computeMandatesDigest,
   mergeReviewerTaskPermission,
+  hasNonFlowGuardInstructions,
+  FLOWGUARD_INSTRUCTION_ENTRIES,
 } from './install-helpers.js';
 
 // ─── Package Manager Detection ───────────────────────────────────────────────
@@ -373,7 +376,7 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       });
     }
 
-    // Remove @flowguard/core from package.json
+    // Remove @flowguard/core from package.json (or remove file entirely if FlowGuard-only)
     const pkgPath = join(target, 'package.json');
     const pkgContent = await safeRead(pkgPath);
     if (pkgContent) {
@@ -381,10 +384,35 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
         const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
         const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
         delete deps['@flowguard/core'];
-        delete deps['@opencode-ai/plugin']; // Clean up legacy dep too
-        parsed['dependencies'] = deps;
-        await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-        ops.push({ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' });
+        delete deps['@opencode-ai/plugin'];
+
+        const hasScripts = parsed['scripts'] != null && Object.keys(parsed['scripts']).length > 0;
+        const hasDevDeps =
+          parsed['devDependencies'] != null && Object.keys(parsed['devDependencies']).length > 0;
+        // Check remaining deps BEFORE removing zod — zod is only removed
+        // when the file is proven FlowGuard-only (no foreign content)
+        const depsWithoutZod = Object.keys(deps).filter((k) => k !== 'zod');
+        const knownMetaKeys = new Set([
+          'name',
+          'version',
+          'private',
+          'type',
+          'dependencies',
+          'description',
+        ]);
+        const hasForeignFields = Object.keys(parsed).some((k) => !knownMetaKeys.has(k));
+
+        if (!hasScripts && !hasDevDeps && depsWithoutZod.length === 0 && !hasForeignFields) {
+          // Proven FlowGuard-only minimal file — safe to remove entirely
+          await safeUnlink(pkgPath);
+          ops.push({ path: pkgPath, action: 'removed', reason: 'no non-FlowGuard content' });
+        } else {
+          // Foreign content exists — only remove FlowGuard deps, preserve zod
+          parsed['dependencies'] = deps;
+          if (Object.keys(deps).length === 0) delete parsed['dependencies'];
+          await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+          ops.push({ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' });
+        }
       } catch {
         ops.push({ path: pkgPath, action: 'skipped', reason: 'malformed JSON' });
       }
@@ -396,6 +424,14 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
         ? join(target, 'opencode.json')
         : join(resolve('.'), 'opencode.json');
     ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
+
+    // Remove flowguard.json config file
+    const cfgPath =
+      args.installScope === 'global'
+        ? globalConfigPath()
+        : join(resolve('.'), '.opencode', 'flowguard.json');
+    const removedCfg = await safeUnlink(cfgPath);
+    ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
   }
@@ -601,6 +637,28 @@ async function checkOpencodeInstructions(
     if (!hasIssue) {
       checks.push({ file: opencodeJsonPath, status: 'ok' });
     }
+
+    // #107: Detect desktop-owned config without task hardening
+    // Desktop-owned = has plugin field OR has non-FlowGuard instructions (mirrors installer logic)
+    const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
+    const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
+    if (hasPluginField || hasDesktopInstructions) {
+      const agent = parsed['agent'] as Record<string, unknown> | undefined;
+      const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.[
+        'permission'
+      ] as Record<string, unknown> | undefined;
+      const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
+      const hasTaskHardening =
+        taskPerms?.['*'] === 'deny' && taskPerms?.['flowguard-reviewer'] === 'allow';
+      if (!hasTaskHardening) {
+        checks.push({
+          file: opencodeJsonPath,
+          status: 'warn',
+          detail:
+            'desktop-owned OpenCode config does not include FlowGuard reviewer task hardening; installer does not modify task permissions for desktop-owned configs',
+        });
+      }
+    }
   } catch {
     checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
   }
@@ -608,52 +666,55 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
-/** Check FlowGuard config (flat path). */
-async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
+/** Check FlowGuard config (flat path). Scope-aware: checks only the relevant config for the scope. */
+async function checkWorkspaceConfig(scope: InstallScope): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
+  const cwd = resolve('.');
 
   try {
-    const isRepo = existsSync(join(resolve('.'), '.opencode', 'flowguard.json'));
-    const cfgPath = isRepo ? join(resolve('.'), '.opencode', 'flowguard.json') : globalConfigPath();
-    try {
-      const config = await readConfig(resolve('.'));
+    if (scope === 'global') {
+      const cfgPath = globalConfigPath();
       if (!existsSync(cfgPath)) {
         checks.push({
           file: cfgPath,
           status: 'error',
-          detail: 'CONFIG_MISSING: FlowGuard config not found; run flowguard install first',
+          detail: 'CONFIG_MISSING: FlowGuard global config not found; run flowguard install first',
         });
-      } else {
-        const hasCustom =
-          config.logging.level !== 'info' ||
-          config.policy.defaultMode !== undefined ||
-          config.policy.maxSelfReviewIterations !== undefined ||
-          config.policy.maxImplReviewIterations !== undefined ||
-          config.profile.defaultId !== undefined ||
-          config.profile.activeChecks !== undefined;
+        return checks;
+      }
+      try {
+        const config = await readConfig(); // no worktree = global only
+        const hasCustom = detectCustomConfig(config);
         checks.push({
           file: cfgPath,
           status: 'ok',
           detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
         });
+      } catch (err) {
+        pushConfigError(checks, cfgPath, err);
       }
-    } catch (err) {
-      if (err instanceof PersistenceError) {
-        if (err.code === 'PARSE_FAILED' || err.code === 'SCHEMA_VALIDATION_FAILED') {
-          checks.push({ file: cfgPath, status: 'error', detail: err.message });
-        } else {
-          checks.push({
-            file: cfgPath,
-            status: 'error',
-            detail: `cannot read config: ${err.message}`,
-          });
-        }
-      } else {
+    } else {
+      // scope === 'repo': check only repo config, NO fallback to global
+      const cfgPath = join(cwd, '.opencode', 'flowguard.json');
+      if (!existsSync(cfgPath)) {
         checks.push({
           file: cfgPath,
           status: 'error',
-          detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}`,
+          detail:
+            'CONFIG_MISSING: FlowGuard repo config not found; run flowguard install --install-scope repo first',
         });
+        return checks;
+      }
+      try {
+        const config = await readConfig(cwd);
+        const hasCustom = detectCustomConfig(config);
+        checks.push({
+          file: cfgPath,
+          status: 'ok',
+          detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
+        });
+      } catch (err) {
+        pushConfigError(checks, cfgPath, err);
       }
     }
   } catch (err) {
@@ -667,13 +728,49 @@ async function checkWorkspaceConfig(): Promise<DoctorCheck[]> {
   return checks;
 }
 
+/** Detect if config has been customized beyond installer defaults. */
+function detectCustomConfig(config: {
+  logging: { level: string };
+  policy: Record<string, unknown>;
+  profile: Record<string, unknown>;
+}): boolean {
+  return (
+    config.logging.level !== 'info' ||
+    config.policy.maxSelfReviewIterations !== undefined ||
+    config.policy.maxImplReviewIterations !== undefined ||
+    config.profile.defaultId !== undefined ||
+    config.profile.activeChecks !== undefined
+  );
+}
+
+/** Push a config-read error check. */
+function pushConfigError(checks: DoctorCheck[], cfgPath: string, err: unknown): void {
+  if (err instanceof PersistenceError) {
+    if (err.code === 'PARSE_FAILED' || err.code === 'SCHEMA_VALIDATION_FAILED') {
+      checks.push({ file: cfgPath, status: 'error', detail: err.message });
+    } else {
+      checks.push({
+        file: cfgPath,
+        status: 'error',
+        detail: `cannot read config: ${err.message}`,
+      });
+    }
+  } else {
+    checks.push({
+      file: cfgPath,
+      status: 'error',
+      detail: `unexpected error: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+}
+
 export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   const target = resolveTarget(args.installScope);
   const checks: DoctorCheck[] = [];
   checks.push(...(await checkManagedArtifacts(target)));
   checks.push(...(await checkDependencies(target)));
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
-  checks.push(...(await checkWorkspaceConfig()));
+  checks.push(...(await checkWorkspaceConfig(args.installScope)));
   checks.push(...(await checkPluginActivation(target)));
   checks.push(...(await checkLastSessionHandshake(args.installScope)));
   return checks;
@@ -1046,8 +1143,8 @@ export async function main(argv: string[]): Promise<number> {
       console.log(`Checking FlowGuard installation at ${targetLabel}...`);
       console.log('');
       console.log(formatDoctor(checks));
-      const allOk = checks.every((c) => c.status === 'ok');
-      return allOk ? 0 : 1;
+      const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+      return hasFailure ? 1 : 0;
     }
 
     case 'run': {
