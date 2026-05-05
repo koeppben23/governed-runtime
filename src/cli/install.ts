@@ -717,7 +717,7 @@ export async function checkPluginActivation(target: string): Promise<DoctorCheck
 }
 
 /** Check if the last session has a pending review obligation without plugin handshake. */
-async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorCheck[]> {
+export async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   // Session pointer lives in the global config dir only — not relevant for repo-scope doctor.
   if (scope !== 'global') return checks;
@@ -762,8 +762,18 @@ async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorChe
         detail: 'Last session plugin handshake present',
       });
     }
-  } catch {
-    // Non-critical — session pointer may not exist or be unreadable
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      // Session pointer file doesn't exist — normal, no report
+    } else {
+      checks.push({
+        file: pointerPath,
+        status: 'warn',
+        detail:
+          'Cannot check session handshake: ' + (err instanceof Error ? err.message : String(err)),
+      });
+    }
   }
 
   return checks;

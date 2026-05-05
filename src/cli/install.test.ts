@@ -28,6 +28,8 @@ import {
   install,
   uninstall,
   doctor,
+  checkPluginActivation,
+  checkLastSessionHandshake,
   sha256,
   computeMandatesDigest,
   mergeReviewerTaskPermission,
@@ -1784,6 +1786,60 @@ describe('cli/doctor', () => {
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const pluginCheck = checks.find((c) => c.file.includes('flowguard-audit.ts'));
       expect(pluginCheck?.status).toBe('missing');
+    });
+
+    it('P12: pending obligation without handshake reports error', async () => {
+      // Set up a fake global OpenCode config dir
+      const configDir = path.join(tmpDir, '.config', 'opencode');
+      await fs.mkdir(configDir, { recursive: true });
+      const prevDir = process.env.OPENCODE_CONFIG_DIR;
+      process.env.OPENCODE_CONFIG_DIR = configDir;
+
+      try {
+        // Use the real fingerprint function to get the correct fingerprint
+        const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
+        const fp = await computeFingerprint(path.resolve(tmpDir));
+        const sessionId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+        // sessionDir uses workspacesHome() which appends /workspaces
+        const sessionPath = path.join(
+          configDir,
+          'workspaces',
+          fp.fingerprint,
+          'sessions',
+          sessionId,
+        );
+        await fs.mkdir(sessionPath, { recursive: true });
+
+        // Pending obligation without pluginHandshakeAt
+        await fs.writeFile(
+          path.join(sessionPath, 'session-state.json'),
+          JSON.stringify({
+            reviewAssurance: {
+              obligations: [{ status: 'pending' }],
+            },
+          }),
+          'utf-8',
+        );
+
+        // SESSION_POINTER.json pointing to the test worktree
+        await fs.writeFile(
+          path.join(configDir, 'SESSION_POINTER.json'),
+          JSON.stringify({ sessionId, worktree: path.resolve(tmpDir) }),
+          'utf-8',
+        );
+
+        const checks = await checkLastSessionHandshake('global');
+        expect(checks.length).toBeGreaterThan(0);
+        expect(checks[0].status).toBe('error');
+        expect(checks[0].detail).toContain('plugin handshake');
+      } finally {
+        process.env.OPENCODE_CONFIG_DIR = prevDir;
+      }
+    });
+
+    it('P12: checkLastSessionHandshake returns empty for repo scope', async () => {
+      const checks = await checkLastSessionHandshake('repo');
+      expect(checks).toEqual([]);
     });
 
     it('detects modified flowguard-mandates.md (digest mismatch)', async () => {
