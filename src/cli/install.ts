@@ -9,7 +9,7 @@
 
 import { existsSync, realpathSync } from 'node:fs';
 import { writeFile, copyFile, rm } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import {
   TOOL_WRAPPER,
@@ -80,15 +80,16 @@ export {
 
 /** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
 export function detectPackageManager(): 'bun' | 'npm' | null {
-  const cmd = (bin: string) => (process.platform === 'win32' ? `${bin}.cmd` : bin);
+  // Uses execSync (shell) for reliable PATH resolution across all platforms.
+  const opts = { stdio: 'ignore' as const, timeout: 5_000 };
   try {
-    execFileSync(cmd('bun'), ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    execSync('bun --version', opts);
     return 'bun';
   } catch {
     // bun not available
   }
   try {
-    execFileSync(cmd('npm'), ['--version'], { stdio: 'ignore', timeout: 5_000 });
+    execSync('npm --version', opts);
     return 'npm';
   } catch {
     // npm not available
@@ -273,8 +274,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     try {
-      const pmCmd = process.platform === 'win32' ? `${pm}.cmd` : pm;
-      execFileSync(pmCmd, ['install'], {
+      execSync(`${pm} install`, {
         cwd: configTargetDir,
         stdio: 'pipe',
         timeout: 60_000,

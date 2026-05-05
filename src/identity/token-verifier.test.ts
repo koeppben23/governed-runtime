@@ -559,7 +559,7 @@ describe('JwtStaticTokenVerifier', () => {
       // or JWSSignatureVerificationFailed depending on internal decoding path.
       const token = `${header}.${payload}.!!!invalid-signature!!!`;
       await expect(verifier.verify(token)).rejects.toMatchObject({
-        code: expect.stringMatching(/^IDP_TOKEN_INVALID|IDP_SIGNATURE_INVALID$/),
+        code: expect.stringMatching(/^(IDP_TOKEN_INVALID|IDP_SIGNATURE_INVALID)$/),
       });
     });
 
