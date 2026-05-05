@@ -326,12 +326,18 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     );
 
     if (hasPluginField || hasDesktopInstructions) {
-      // Desktop app owns this config — only add our mandates entry if absent
+      // Desktop app owns this config — only add our entries
       const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
       if (!instructions.includes(entry)) {
         instructions.push(entry);
       }
       parsed['instructions'] = instructions;
+
+      if (!Array.isArray(parsed['plugin'])) {
+        parsed['plugin'] = ['flowguard-audit'];
+      } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
+        (parsed['plugin'] as string[]).push('flowguard-audit');
+      }
 
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
       return {
@@ -358,13 +364,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     // Ensure build agent has task permission for flowguard-reviewer subagent
     mergeReviewerTaskPermission(parsed);
 
-    // P12: Compatibility workaround — register plugin in opencode.json for
-    // OpenCode versions that do not reliably auto-load local plugins from
-    // the plugins/ directory. Per OpenCode docs, local plugins in
-    // ~/.config/opencode/plugins/ should auto-load on startup; this
-    // explicit registration provides a safety net. The entry uses the
-    // plugin file basename without path, which OpenCode resolves against
-    // its plugins/ directory.
+    // Register plugin entry as a compatibility safety net.
     if (!Array.isArray(parsed['plugin'])) {
       parsed['plugin'] = ['flowguard-audit'];
     } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
@@ -399,7 +399,7 @@ export async function removeFromOpencodeJson(
     const parsed = JSON.parse(existing) as Record<string, unknown>;
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
-    // touch desktop app's plugin/instruction configuration)
+    // touch desktop app's instruction configuration beyond removing our own entries)
     const hasPluginField = 'plugin' in parsed;
     const existingInstructions = Array.isArray(parsed['instructions'])
       ? (parsed['instructions'] as string[])
@@ -409,18 +409,25 @@ export async function removeFromOpencodeJson(
     );
 
     if (hasPluginField || hasDesktopInstructions) {
-      // Desktop app owns this config — only remove FlowGuard mandates entry
+      // Desktop app owns this config — only remove FlowGuard entries
       const entry = mandatesInstructionEntry(scope);
       const before = parsed['instructions'] as string[];
       const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+      const removedInstruction = after.length !== before.length;
 
-      if (after.length === before.length) {
+      if (Array.isArray(parsed['plugin'])) {
+        (parsed['plugin'] as string[]) = (parsed['plugin'] as string[]).filter(
+          (p) => p !== 'flowguard-audit',
+        );
+      }
+
+      if (!removedInstruction && !hasPluginField) {
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       }
 
       parsed['instructions'] = after;
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-      return { path: filePath, action: 'merged', reason: 'removed FlowGuard mandates entry' };
+      return { path: filePath, action: 'merged', reason: 'removed FlowGuard entries' };
     }
 
     // Standard removal for FlowGuard-only configs
@@ -431,6 +438,12 @@ export async function removeFromOpencodeJson(
     const entry = mandatesInstructionEntry(scope);
     const before = parsed['instructions'] as string[];
     const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+
+    if (Array.isArray(parsed['plugin'])) {
+      (parsed['plugin'] as string[]) = (parsed['plugin'] as string[]).filter(
+        (p) => p !== 'flowguard-audit',
+      );
+    }
 
     if (after.length === before.length) {
       return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };

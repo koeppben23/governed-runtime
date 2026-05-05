@@ -524,6 +524,7 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["${instructionEntry}"],
+  "plugin": ["flowguard-audit"],
   "agent": {
     "build": {
       "permission": {

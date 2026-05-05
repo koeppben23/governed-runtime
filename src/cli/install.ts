@@ -675,17 +675,15 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
   checks.push(...(await checkWorkspaceConfig()));
   checks.push(...(await checkPluginActivation(target)));
-  checks.push(...(await checkLastSessionHandshake()));
+  checks.push(...(await checkLastSessionHandshake(args.installScope)));
   return checks;
 }
 
-/** P12: Verify FlowGuard plugin file, dependencies, and importability. */
+/** Verify plugin file exists and @flowguard/core is ESM-importable. */
 async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const pluginFile = join(target, 'plugins', 'flowguard-audit.ts');
-  const integrationPkg = join(target, 'node_modules', '@flowguard', 'core', 'integration');
 
-  // 1. Plugin file exists
   if (!existsSync(pluginFile)) {
     checks.push({
       file: pluginFile,
@@ -695,17 +693,6 @@ async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
     return checks;
   }
 
-  // 2. Dependencies exist
-  if (!existsSync(join(integrationPkg, 'plugin.js'))) {
-    checks.push({
-      file: pluginFile,
-      status: 'error',
-      detail: 'Plugin dependencies missing — run npm install in ' + target,
-    });
-    return checks;
-  }
-
-  // 3. ESM import smoke test — proves package is importable
   try {
     execSync(`node --input-type=module -e "import('@flowguard/core/integration/plugin')"`, {
       cwd: target,
@@ -715,23 +702,26 @@ async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
     checks.push({
       file: pluginFile,
       status: 'ok',
-      detail: 'Plugin package importable (import smoke passed)',
+      detail: 'Plugin package importable',
     });
   } catch {
     checks.push({
       file: pluginFile,
       status: 'error',
       detail:
-        'Plugin package not importable — verify @flowguard/core is installed and npm install completed',
+        'Plugin package not importable — verify @flowguard/core is installed and dependencies are present',
     });
   }
 
   return checks;
 }
 
-/** P12: Check if the last session has a pending review obligation without plugin handshake. */
-async function checkLastSessionHandshake(): Promise<DoctorCheck[]> {
+/** Check if the last session has a pending review obligation without plugin handshake. */
+async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
+  // Session pointer lives in the global config dir only — not relevant for repo-scope doctor.
+  if (scope !== 'global') return checks;
+
   const pointerPath = join(
     process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode'),
     'SESSION_POINTER.json',

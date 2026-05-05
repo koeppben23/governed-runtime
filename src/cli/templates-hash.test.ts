@@ -75,7 +75,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('OPENCODE_JSON_TEMPLATE matches compiled output hash', () => {
     const template = OPENCODE_JSON_TEMPLATE('flowguard-mandates.md');
     expect(sha256(template)).toBe(
-      '1fc84e2ee553df018b6ee1af2c2beeaf9b11f86f82f43ee0019e09afa5afd45b',
+      '4294d65f4c3cbe1c2f28f82ef289dd26de7aa28587b7a9ffafc4674e6d22cf70',
     );
   });
 
