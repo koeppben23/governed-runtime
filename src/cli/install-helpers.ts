@@ -365,7 +365,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     mergeReviewerTaskPermission(parsed);
 
     // Register flowguard-audit plugin name. OpenCode auto-loads local plugin
-    // files from plugins/ directories; the "plugin" field in config.json is
+    // files from plugins/ directories; the "plugin" field in opencode.json is
     // documented for npm packages. FlowGuard sets this as a standard
     // installation default alongside the auto-discovery path.
     if (!Array.isArray(parsed['plugin'])) {
@@ -414,6 +414,7 @@ export async function removeFromOpencodeJson(
     if (hasPluginField || hasDesktopInstructions) {
       // Desktop app owns this config — only remove FlowGuard entries
       const entry = mandatesInstructionEntry(scope);
+      const hadInstructions = Array.isArray(parsed['instructions']);
       const before = existingInstructions;
       const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
       const removedInstruction = after.length !== before.length;
@@ -429,7 +430,9 @@ export async function removeFromOpencodeJson(
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       }
 
-      parsed['instructions'] = after;
+      if (hadInstructions || after.length > 0) {
+        parsed['instructions'] = after;
+      }
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
       return { path: filePath, action: 'merged', reason: 'removed FlowGuard entries' };
     }

@@ -1840,6 +1840,54 @@ describe('cli/doctor', () => {
       expect(checks).toEqual([]);
     });
 
+    it('P12: invalid pointer (missing sessionId) reports warn', async () => {
+      const configDir = path.join(tmpDir, '.config', 'opencode');
+      await fs.mkdir(configDir, { recursive: true });
+      const prevDir = process.env.OPENCODE_CONFIG_DIR;
+      process.env.OPENCODE_CONFIG_DIR = configDir;
+
+      try {
+        await fs.writeFile(
+          path.join(configDir, 'SESSION_POINTER.json'),
+          JSON.stringify({ worktree: '/tmp/test' }),
+          'utf-8',
+        );
+        const checks = await checkLastSessionHandshake('global');
+        expect(checks.length).toBe(1);
+        expect(checks[0].status).toBe('warn');
+        expect(checks[0].detail).toContain('sessionId');
+      } finally {
+        process.env.OPENCODE_CONFIG_DIR = prevDir;
+      }
+    });
+
+    it('P12: valid pointer but missing session-state reports warn', async () => {
+      const configDir = path.join(tmpDir, '.config', 'opencode');
+      await fs.mkdir(configDir, { recursive: true });
+      const prevDir = process.env.OPENCODE_CONFIG_DIR;
+      process.env.OPENCODE_CONFIG_DIR = configDir;
+
+      try {
+        const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
+        const fp = await computeFingerprint(path.resolve(tmpDir));
+        const sessionId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+
+        await fs.writeFile(
+          path.join(configDir, 'SESSION_POINTER.json'),
+          JSON.stringify({ sessionId, worktree: path.resolve(tmpDir) }),
+          'utf-8',
+        );
+        // NO session-state.json created — pointer valid, state missing
+
+        const checks = await checkLastSessionHandshake('global');
+        expect(checks.length).toBe(1);
+        expect(checks[0].status).toBe('warn');
+        expect(checks[0].detail).toContain('Session state');
+      } finally {
+        process.env.OPENCODE_CONFIG_DIR = prevDir;
+      }
+    });
+
     it('detects modified flowguard-mandates.md (digest mismatch)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));

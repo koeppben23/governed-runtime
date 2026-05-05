@@ -730,14 +730,28 @@ export async function checkLastSessionHandshake(scope: InstallScope): Promise<Do
   try {
     const raw = readFileSync(pointerPath, 'utf-8');
     const pointer = JSON.parse(raw) as { sessionId?: string; worktree?: string };
-    if (!pointer.sessionId || !pointer.worktree) return checks;
+    if (!pointer.sessionId || !pointer.worktree) {
+      checks.push({
+        file: pointerPath,
+        status: 'warn',
+        detail: 'SESSION_POINTER.json missing sessionId or worktree — cannot verify handshake',
+      });
+      return checks;
+    }
 
     const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
     const { sessionDir } = await import('../adapters/workspace/init.js');
     const fp = await computeFingerprint(pointer.worktree);
     const sessDir = sessionDir(fp.fingerprint, pointer.sessionId);
 
-    if (!existsSync(join(sessDir, 'session-state.json'))) return checks;
+    if (!existsSync(join(sessDir, 'session-state.json'))) {
+      checks.push({
+        file: pointerPath,
+        status: 'warn',
+        detail: 'Session state file not found — cannot verify handshake',
+      });
+      return checks;
+    }
 
     const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
     const state = JSON.parse(stateRaw) as Record<string, unknown>;
