@@ -1665,9 +1665,24 @@ describe('cli/uninstall', () => {
 
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed.plugin)) {
-        expect(parsed.plugin).not.toContain('flowguard-audit');
-      }
+      expect(parsed.plugin ?? []).not.toContain('flowguard-audit');
+    });
+
+    it('uninstall removes flowguard-audit from plugin-only config', async () => {
+      const tarball = await createMockTarball();
+      // opencode.json with only plugin field, no instructions
+      await fs.writeFile(
+        path.join(tmpDir, 'opencode.json'),
+        JSON.stringify({ plugin: ['flowguard-audit'] }, null, 2),
+        'utf-8',
+      );
+
+      await install(repoArgs({ coreTarball: tarball }));
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
+      const parsed = JSON.parse(content);
+      expect(parsed.plugin ?? []).not.toContain('flowguard-audit');
     });
 
     it('uninstall preserves other plugins when removing flowguard-audit', async () => {
@@ -1683,17 +1698,11 @@ describe('cli/uninstall', () => {
       );
 
       await install(repoArgs({ coreTarball: tarball }));
-      // After install, flowguard-audit is in plugins (deduped).
-      // After uninstall, it should be gone but others preserved.
       await uninstall(repoArgs({ action: 'uninstall' }));
 
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed.plugin)) {
-        expect(parsed.plugin).not.toContain('flowguard-audit');
-        expect(parsed.plugin).toContain('existing-plugin');
-        expect(parsed.plugin).toContain('another-plugin');
-      }
+      expect(parsed.plugin).toEqual(['existing-plugin', 'another-plugin']);
     });
   });
 
@@ -1775,19 +1784,6 @@ describe('cli/doctor', () => {
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const pluginCheck = checks.find((c) => c.file.includes('flowguard-audit.ts'));
       expect(pluginCheck?.status).toBe('missing');
-    });
-
-    it('P12: checkPluginActivation has ok/error/missing pathways', () => {
-      // Structural verification: the function has three branches:
-      // - plugin file missing → status 'missing' (tested above)
-      // - ESM import succeeds → status 'ok' (tested in HAPPY all checks pass)
-      // - ESM import fails → status 'error' (catch block, verified by typecheck)
-      //
-      // The error path cannot be triggered through the global execSync mock
-      // because the mock always returns success for non-package-manager
-      // commands. The catch clause is verified correct by TypeScript:
-      // status is typed as DoctorCheckStatus (which includes 'error').
-      expect(true).toBe(true);
     });
 
     it('detects modified flowguard-mandates.md (digest mismatch)', async () => {

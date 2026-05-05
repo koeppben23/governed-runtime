@@ -366,8 +366,8 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
 
     // Register flowguard-audit plugin name. OpenCode auto-loads local plugin
     // files from plugins/ directories; the "plugin" field in config.json is
-    // documented for npm packages. This entry acts as a compatibility safety
-    // net alongside the auto-discovery path.
+    // documented for npm packages. FlowGuard sets this as a standard
+    // installation default alongside the auto-discovery path.
     if (!Array.isArray(parsed['plugin'])) {
       parsed['plugin'] = ['flowguard-audit'];
     } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {

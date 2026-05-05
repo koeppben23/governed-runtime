@@ -680,7 +680,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
 }
 
 /** Verify plugin file exists and @flowguard/core is ESM-importable. */
-async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
+export async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const pluginFile = join(target, 'plugins', 'flowguard-audit.ts');
 
