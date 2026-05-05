@@ -63,7 +63,9 @@ function replaceVersion(content) {
     `FlowGuard Version: ${version}`,
   );
   // Second: repair broken multi-suffix patterns like "1.2.0-rc.1-rc.1-rc.1" → "1.2.0-rc.1"
-  content = content.replace(/([\d]+\.[\d]+\.[\d]+)(?:-[a-zA-Z0-9.]+)+\b/g, '$1');
+  // Must not match single suffixes (e.g. 1.2.0-rc.2) — only fixes repeated stacking.
+  // Also skips CHANGELOG section headers (## [X.Y.Z...]).
+  content = content.replace(/^(?!## \[)([\d]+\.[\d]+\.[\d]+)(-[a-zA-Z0-9.]+){2,}\b/gm, '$1');
   // Now apply normal replacements with the correct version
   content = content.replace(
     new RegExp(`FlowGuard Version: [\\d.]+(?:-[a-zA-Z0-9.]+)?`, 'g'),

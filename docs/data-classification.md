@@ -103,7 +103,7 @@ Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests 
 
 **Currently Delivered:**
 
-- Configuration stored in workspace `config.json` (materialized by install/hydrate as a required workspace artifact)
+- Configuration stored in `flowguard.json` (materialized by flowguard install as a required artifact)
 - Profile auto-detection from repository signals
 
 ### Installation Artifacts
@@ -176,11 +176,11 @@ For GoBD-relevant deployments (for example DATEV/accounting-adjacent change evid
 
 ### Installation Data Retention
 
-| Data Type            | Retention         | Notes                                                 |
-| -------------------- | ----------------- | ----------------------------------------------------- |
-| **CLI installation** | Until uninstalled | Can be reinstalled from artifact                      |
-| **Configuration**    | Until changed     | Workspace `config.json` (required workspace artifact) |
-| **Mandates**         | Until updated     | Content-digested, versioned                           |
+| Data Type            | Retention         | Notes                                |
+| -------------------- | ----------------- | ------------------------------------ |
+| **CLI installation** | Until uninstalled | Can be reinstalled from artifact     |
+| **Configuration**    | Until changed     | `flowguard.json` (required artifact) |
+| **Mandates**         | Until updated     | Content-digested, versioned          |
 
 ---
 

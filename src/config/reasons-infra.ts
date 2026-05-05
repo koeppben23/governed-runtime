@@ -32,18 +32,18 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
     category: 'adapter',
     messageTemplate: 'Failed to persist profile-resolution artifacts: {message}',
     recoverySteps: [
-      'Ensure workspace/session directories are writable',
-      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+      'Ensure the target directory is writable',
+      'Re-run flowguard install after fixing filesystem permissions or disk issues',
     ],
   },
 
   {
-    code: 'WORKSPACE_CONFIG_WRITE_FAILED',
+    code: 'CONFIG_WRITE_FAILED',
     category: 'adapter',
-    messageTemplate: 'Workspace config.json could not be written: {message}',
+    messageTemplate: 'Config file could not be written: {message}',
     recoverySteps: [
-      'Ensure workspace directory is writable',
-      'Re-run /hydrate after fixing filesystem permissions or disk issues',
+      'Ensure the target directory is writable',
+      'Re-run flowguard install after fixing filesystem permissions or disk issues',
     ],
   },
 

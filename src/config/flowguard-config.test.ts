@@ -18,8 +18,8 @@ import * as path from 'node:path';
 import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import {
   readConfig,
-  writeDefaultConfig,
-  configPath,
+  globalConfigPath,
+  repoConfigPath,
   PersistenceError,
 } from '../adapters/persistence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
@@ -40,10 +40,11 @@ async function cleanTmpDir(dir: string): Promise<void> {
   }
 }
 
-/** Write a raw string to the config file location. */
+/** Write a raw string to the config file at the repo path (P11: {worktree}/.opencode/flowguard.json). */
 async function writeRawConfig(worktree: string, content: string): Promise<void> {
-  await fs.mkdir(worktree, { recursive: true });
-  await fs.writeFile(configPath(worktree), content, 'utf-8');
+  const dir = path.join(worktree, '.opencode');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(repoConfigPath(worktree), content, 'utf-8');
 }
 
 // =============================================================================
@@ -513,10 +514,15 @@ describe('DEFAULT_CONFIG', () => {
 // configPath
 // =============================================================================
 
-describe('configPath', () => {
-  it('resolves to config.json under workspace directory', () => {
-    const p = configPath('/some/project');
-    expect(p).toBe(path.join('/some/project', 'config.json'));
+describe('config paths', () => {
+  it('repoConfigPath resolves to {worktree}/.opencode/flowguard.json', () => {
+    expect(repoConfigPath('/some/project')).toBe(
+      path.join('/some/project', '.opencode', 'flowguard.json'),
+    );
+  });
+
+  it('globalConfigPath resolves under OPENCODE_CONFIG_DIR or ~/.config/opencode', () => {
+    expect(globalConfigPath()).toContain('flowguard.json');
   });
 });
 
@@ -616,7 +622,7 @@ describe('readConfig', () => {
 // writeDefaultConfig
 // =============================================================================
 
-describe('writeDefaultConfig', () => {
+describe('config file I/O', () => {
   beforeEach(async () => {
     tmpDir = await createTmpWorktree();
   });
@@ -628,14 +634,24 @@ describe('writeDefaultConfig', () => {
   // ── HAPPY ──────────────────────────────────────────────────────────────
 
   it('creates a config file that round-trips through readConfig', async () => {
-    await writeDefaultConfig(tmpDir);
+    await fs.mkdir(path.join(tmpDir, '.opencode'), { recursive: true });
+    await fs.writeFile(
+      repoConfigPath(tmpDir),
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n',
+      'utf-8',
+    );
     const config = await readConfig(tmpDir);
     expect(config).toEqual(DEFAULT_CONFIG);
   });
 
-  it('creates the workspace directory if missing', async () => {
-    await writeDefaultConfig(tmpDir);
-    const stat = await fs.stat(tmpDir);
+  it('creates the repo .opencode directory if missing', async () => {
+    await fs.mkdir(path.join(tmpDir, '.opencode'), { recursive: true });
+    await fs.writeFile(
+      repoConfigPath(tmpDir),
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n',
+      'utf-8',
+    );
+    const stat = await fs.stat(path.join(tmpDir, '.opencode'));
     expect(stat.isDirectory()).toBe(true);
   });
 
@@ -650,7 +666,11 @@ describe('writeDefaultConfig', () => {
     );
 
     // Now overwrite with default
-    await writeDefaultConfig(tmpDir);
+    await fs.writeFile(
+      repoConfigPath(tmpDir),
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n',
+      'utf-8',
+    );
     const config = await readConfig(tmpDir);
     expect(config.logging.level).toBe('info'); // back to default
   });
@@ -658,16 +678,25 @@ describe('writeDefaultConfig', () => {
   // ── CORNER ─────────────────────────────────────────────────────────────
 
   it('written file is pretty-printed JSON with trailing newline', async () => {
-    await writeDefaultConfig(tmpDir);
-    const raw = await fs.readFile(configPath(tmpDir), 'utf-8');
+    await fs.mkdir(path.join(tmpDir, '.opencode'), { recursive: true });
+    await fs.writeFile(
+      repoConfigPath(tmpDir),
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n',
+      'utf-8',
+    );
+    const raw = await fs.readFile(repoConfigPath(tmpDir), 'utf-8');
     expect(raw.endsWith('\n')).toBe(true);
-    // Pretty-printed = contains newlines within the JSON
     expect(raw.split('\n').length).toBeGreaterThan(2);
   });
 
   it('written file content is valid JSON', async () => {
-    await writeDefaultConfig(tmpDir);
-    const raw = await fs.readFile(configPath(tmpDir), 'utf-8');
+    await fs.mkdir(path.join(tmpDir, '.opencode'), { recursive: true });
+    await fs.writeFile(
+      repoConfigPath(tmpDir),
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n',
+      'utf-8',
+    );
+    const raw = await fs.readFile(repoConfigPath(tmpDir), 'utf-8');
     expect(() => JSON.parse(raw)).not.toThrow();
   });
 });

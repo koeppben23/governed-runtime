@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 /**
  * @module integration/tools-execute.test
  * @description Execution tests for all 10 FlowGuard tool execute() functions.
@@ -636,11 +637,11 @@ describe('decision', () => {
 
     it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const baseConfig = await readConfig(wsDir);
-      await writeConfig(wsDir, {
+      const baseConfig = await readConfig();
+      await writeRepoConfig(ws.tmpDir, {
         ...baseConfig,
         policy: {
           ...baseConfig.policy,

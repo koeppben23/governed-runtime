@@ -1,11 +1,12 @@
 # Configuration
 
-FlowGuard supports per-repository configuration via `config.json`.
+FlowGuard supports per-repository configuration via `flowguard.json`.
 
 ## Config File Location
 
 ```
-~/.config/opencode/workspaces/{fingerprint}/config.json
+~/.config/opencode/flowguard.json              # Global (fallback)
+{worktree}/.opencode/flowguard.json            # Repo-scoped (takes priority)
 ```
 
 ## Configuration Schema
@@ -55,7 +56,7 @@ Sets the default policy mode for new sessions when `/hydrate` is called without 
 **Resolution priority chain:**
 
 1. Explicit `/hydrate` tool argument (`policyMode`)
-2. `config.json` → `policy.defaultMode`
+2. `flowguard.json` → `policy.defaultMode`
 3. Built-in default: `solo`
 
 **Central minimum policy (optional):**

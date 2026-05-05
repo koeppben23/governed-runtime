@@ -230,7 +230,7 @@ describe('plugin-logging', () => {
       try {
         // Write invalid JSON config (missing required fields)
         await fs.writeFile(
-          path.join(tmpDir, 'config.json'),
+          path.join(tmpDir, 'flowguard.json'),
           JSON.stringify({ schemaVersion: 'invalid' }),
         );
         const { config } = await createPluginLogger(undefined, tmpDir, undefined, null);

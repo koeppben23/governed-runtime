@@ -33,10 +33,7 @@ import { executeHydrate } from '../../rails/hydrate.js';
 import { readState } from '../../adapters/persistence.js';
 import { listRepoSignals } from '../../adapters/git.js';
 import {
-  configPath,
   readConfig,
-  PersistenceError,
-  writeDefaultConfig,
   writeDiscovery,
   writeProfileResolution,
   writeDiscoverySnapshot,
@@ -70,43 +67,6 @@ import {
 
 function throwHydrateError(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
-}
-
-async function ensureWorkspaceConfig(wsDir: string): Promise<void> {
-  const filePath = configPath(wsDir);
-  if (existsSync(filePath)) {
-    try {
-      await readConfig(wsDir);
-    } catch (err) {
-      if (err instanceof PersistenceError) {
-        throwHydrateError(
-          'WORKSPACE_CONFIG_INVALID',
-          `Workspace config is invalid at ${filePath}: ${err.message}`,
-        );
-      }
-      throwHydrateError(
-        'WORKSPACE_CONFIG_INVALID',
-        `Workspace config is invalid at ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    return;
-  }
-
-  try {
-    await writeDefaultConfig(wsDir);
-  } catch (err) {
-    throwHydrateError(
-      'WORKSPACE_CONFIG_WRITE_FAILED',
-      `Failed to write workspace config at ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  if (!existsSync(filePath)) {
-    throwHydrateError(
-      'WORKSPACE_CONFIG_MISSING',
-      `Workspace config is required but missing at ${filePath}`,
-    );
-  }
 }
 
 function requireDiscoveryContract(
@@ -154,7 +114,7 @@ export const hydrate: ToolDefinition = {
       .enum(['solo', 'team', 'team-ci', 'regulated'])
       .optional()
       .describe(
-        'FlowGuard policy mode. When omitted, reads from workspace config ' +
+        'FlowGuard policy mode. When omitted, reads from repo config ' +
           "(policy.defaultMode), then falls back to 'solo'. " +
           "Priority: explicit arg > config > 'solo'.",
       ),
@@ -171,15 +131,8 @@ export const hydrate: ToolDefinition = {
       const wsResult = await initWorkspace(worktree, context.sessionID);
       const { fingerprint, sessionDir: sessDir, workspaceDir: wsDir } = wsResult;
 
-      // Workspace config must be materialized and editable.
-      await ensureWorkspaceConfig(wsDir);
-
-      // ── Policy mode resolution ─────────────────────────────────
-      // P29 precedence (requested): explicit tool arg > repo config > default.
-      // Optional central minimum via FLOWGUARD_POLICY_PATH:
-      // - If set: file must exist/read/validate (fail-closed)
-      // - If unset: no central override
-      const config = await readConfig(wsDir);
+      // Resolve config — repo or global, never writes.
+      const config = await readConfig(worktree);
 
       const existing = await readState(sessDir);
 

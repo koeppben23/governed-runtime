@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 
@@ -8,7 +9,7 @@ import {
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
 } from '../config/policy-snapshot.js';
-import { readState, readConfig, writeConfig } from '../adapters/persistence.js';
+import { readState, readConfig, writeRepoConfig } from '../adapters/persistence.js';
 import { computeFingerprint, sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import {
   createToolContext,
@@ -157,7 +158,7 @@ describe('policy snapshot regression', () => {
 
     const fp = await computeFingerprint(ws.tmpDir);
     const wsDir = workspaceDir(fp.fingerprint);
-    const config = await readConfig(wsDir);
+    const config = await readConfig();
     config.policy.minimumActorAssuranceForApproval = 'claim_validated';
     config.policy.identityProviderMode = 'required';
     config.policy.identityProvider = {
@@ -174,7 +175,7 @@ describe('policy snapshot regression', () => {
         },
       ],
     } as unknown as typeof config.policy.identityProvider;
-    await writeConfig(wsDir, config);
+    await writeRepoConfig(ws.tmpDir, config);
 
     const ctx2 = createToolContext({
       worktree: ws.tmpDir,

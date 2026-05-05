@@ -63,9 +63,9 @@ export function buildLogSinks(
 }
 
 /**
- * Create the plugin logger with sinks based on workspace config.
+ * Create the plugin logger with sinks based on repo/global config.
  *
- * Reads FlowGuardConfig from the workspace directory. Falls back to
+ * Reads FlowGuardConfig from the repo or global config file. Falls back to
  * DEFAULT_CONFIG if the directory is unavailable or the config is unreadable.
  *
  * @param client - OpenCode plugin client (for UI logging)
@@ -88,8 +88,8 @@ export async function createPluginLogger(
   // Read config once at plugin init. Failures fall back to defaults — never block.
   let config: FlowGuardConfig;
   try {
-    if (workspaceDir) {
-      config = await readConfig(workspaceDir);
+    if (workspaceDir || worktree) {
+      config = await readConfig(worktree);
     } else {
       config = DEFAULT_CONFIG;
     }

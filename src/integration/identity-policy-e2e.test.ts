@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 /**
  * @module integration/identity-policy-e2e.test
  * @description E2E tests for identity-policy chain:
@@ -95,6 +96,21 @@ let _prevTokenPath: string | undefined;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
+  // Ensure clean config state
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -131,6 +147,14 @@ afterEach(async () => {
     process.env.FLOWGUARD_ACTOR_TOKEN_PATH = _prevTokenPath;
   }
   vi.clearAllMocks();
+  // Clean up config written by tests (P11)
+  try {
+    await import('node:fs/promises').then((fs) =>
+      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
+    );
+  } catch {
+    /* ok */
+  }
   await ws.cleanup();
 });
 
@@ -203,15 +227,15 @@ describe('identity-policy-e2e', () => {
 
   describe('BAD — config identityProvider flows to snapshot', () => {
     it('identityProviderMode=required from config persists in policySnapshot', async () => {
-      // First hydrate creates workspace config
+      // First hydrate bootstraps repo config directory
       await hydrateSession({ policyMode: 'solo' });
 
       // Write config with idpMode=required + identityProvider
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
       config.policy.identityProviderMode = 'required';
       config.policy.identityProvider = {
         mode: 'static',
@@ -227,10 +251,10 @@ describe('identity-policy-e2e', () => {
           },
         ],
       } as unknown as typeof config.policy.identityProvider;
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
 
       // Verify config write succeeded
-      const verifyConfig = await readConfig(wsDir);
+      const verifyConfig = await readConfig(ws.tmpDir);
       expect(verifyConfig.policy.identityProviderMode).toBe('required');
 
       // New session picks up config
@@ -268,14 +292,14 @@ describe('identity-policy-e2e', () => {
       identityProvider?: Record<string, unknown>;
       minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
     }): Promise<void> {
-      // Bootstrap workspace config directory
+      // Bootstrap repo config directory
       await hydrateSession({ policyMode: 'solo' });
 
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
-      const config = await readConfig(wsDir);
+      const config = await readConfig(ws.tmpDir);
 
       if (overrides.identityProviderMode !== undefined) {
         config.policy.identityProviderMode = overrides.identityProviderMode;
@@ -287,7 +311,7 @@ describe('identity-policy-e2e', () => {
         config.policy.identityProvider =
           overrides.identityProvider as typeof config.policy.identityProvider;
       }
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(ws.tmpDir, config);
     }
 
     /**

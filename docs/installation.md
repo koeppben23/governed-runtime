@@ -28,7 +28,6 @@ The approved local tarball is the authoritative package source. npm/npx may use 
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz
-cd ~/.config/opencode && npm install
 
 # Verify
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
@@ -51,7 +50,7 @@ Expected output:
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json
-  [ok] config.json — config valid (defaults only)
+  [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
 ```
@@ -78,12 +77,12 @@ npm run flowguard:doctor
 
 ## Installation Options
 
-| Option                                         | Description                                          |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| `--install-scope global`                       | Install to `~/.config/opencode/` (default)           |
-| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)          |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `config.json`) |
-| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz` |
+| Option                                         | Description                                             |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `--install-scope global`                       | Install to `~/.config/opencode/` (default)              |
+| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)             |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`) |
+| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`    |
 
 ## How It Works
 

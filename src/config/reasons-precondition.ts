@@ -8,11 +8,11 @@ import type { BlockedReason } from './reasons.js';
 
 export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
-    code: 'WORKSPACE_CONFIG_MISSING',
+    code: 'CONFIG_MISSING',
     category: 'precondition',
-    messageTemplate: 'Workspace config.json is missing: {message}',
+    messageTemplate: 'Config file is missing: {message}',
     recoverySteps: [
-      'Run /hydrate to materialize workspace config defaults',
+      'Run flowguard install to create the default config',
       'If it still fails, run flowguard install --force and retry',
     ],
   },

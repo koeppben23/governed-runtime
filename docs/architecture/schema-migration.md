@@ -8,7 +8,7 @@
 ## 1. Problem Statement
 
 FlowGuard is a compliance audit tool. Sessions produce persistent state artifacts
-(`session-state.json`, `config.json`, `policy-snapshot.json`, audit trails) that must
+(`session-state.json`, `flowguard.json`, `policy-snapshot.json`, audit trails) that must
 remain valid across schema evolution for the retention window (≥7 years in regulated
 mode).
 

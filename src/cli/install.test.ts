@@ -16,11 +16,11 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   parseArgs,
@@ -34,6 +34,7 @@ import {
   formatResult,
   formatDoctor,
   main,
+  detectPackageManager,
   type CliArgs,
   type CliResult,
   type DoctorCheck,
@@ -55,6 +56,38 @@ import {
 } from './templates.js';
 import { measureAsync } from '../test-policy.js';
 
+// ─── Mock: child_process ──────────────────────────────────────────────────────
+// Mock execFileSync + execSync so install() auto-install step succeeds with mock tarballs.
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>();
+  const mockImpl = (
+    cmd: string,
+    args?: string[] | { cwd?: string; stdio?: unknown; timeout?: number },
+    opts?: { cwd?: string; stdio?: unknown; timeout?: number },
+  ) => {
+    // For execSync: cmd is "bun --version" or "npm install"
+    // For execFileSync: args[0] is "--version" or "install"
+    const isVersion =
+      typeof cmd === 'string' &&
+      (cmd.includes('--version') || (Array.isArray(args) && args[0] === '--version'));
+    if (isVersion) return Buffer.from('1.0.0\n');
+    // Package manager install: create node_modules/@flowguard/core
+    const cwd =
+      (typeof opts === 'object' && opts?.cwd) ||
+      (typeof args === 'object' && !Array.isArray(args) && args?.cwd);
+    if (cwd) {
+      const corePath = path.join(cwd, 'node_modules', '@flowguard', 'core');
+      mkdirSync(corePath, { recursive: true });
+      return Buffer.from('');
+    }
+    return Buffer.from('');
+  };
+  return {
+    ...original,
+    execFileSync: vi.fn(mockImpl),
+    execSync: vi.fn(mockImpl),
+  };
+});
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
@@ -822,7 +855,9 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
-      expect(result.warnings).toEqual([]);
+      expect(result.warnings).toEqual([
+        'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
+      ]);
 
       const oc = path.join(tmpDir, '.opencode');
       // flowguard-mandates.md
@@ -841,11 +876,9 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(true);
       // vendor directory with tarball
       expect(existsSync(path.join(oc, 'vendor', `flowguard-core-${VERSION}.tgz`))).toBe(true);
-      // workspace config materialized for current workspace
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      expect(existsSync(path.join(wsDir, 'config.json'))).toBe(true);
-      expect(existsSync(path.join(wsDir, 'workspace.json'))).toBe(true);
+      // workspace config materialized as flat config (P11)
+      expect(existsSync(path.join(tmpDir, '.opencode', 'flowguard.json'))).toBe(true);
+      // workspace.json is NOT created by installer (only by /hydrate)
     });
 
     it('install --policy-mode regulated persists defaultMode to config', async () => {
@@ -853,10 +886,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
       expect(result.errors).toEqual([]);
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
       const { readConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      const config = await readConfig(wsDir);
+      const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('regulated');
     });
 
@@ -865,10 +896,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
       expect(result.errors).toEqual([]);
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
       const { readConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      const config = await readConfig(wsDir);
+      const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('solo');
     });
 
@@ -877,10 +906,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'team' }));
       expect(result.errors).toEqual([]);
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
       const { readConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      const config = await readConfig(wsDir);
+      const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('team');
     });
 
@@ -968,6 +995,85 @@ describe('cli/install', () => {
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
       expect(parsed.instructions).not.toContain(LEGACY_INSTRUCTION_ENTRY);
+    });
+  });
+
+  // ─── AUTO-INSTALL (dependency resolution) ──────────────────
+  describe('auto-install', () => {
+    it('HAPPY: runs package manager install and creates node_modules op', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+      // node_modules op is present
+      const nodeModulesOp = result.ops.find((op) => op.path.includes('node_modules'));
+      expect(nodeModulesOp).toBeDefined();
+      expect(nodeModulesOp!.action).toBe('written');
+      // @flowguard/core directory exists
+      const corePath = path.join(tmpDir, '.opencode', 'node_modules', '@flowguard', 'core');
+      expect(existsSync(corePath)).toBe(true);
+    });
+
+    it('HAPPY: emits restart warning on success', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toContainEqual(expect.stringContaining('Restart OpenCode'));
+    });
+
+    it('BAD: reports error when package manager install fails', async () => {
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+        if (typeof cmd === 'string' && cmd.includes('install'))
+          throw new Error('ENOMEM: not enough memory');
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain("install' failed");
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('BAD: reports error when no package manager is available', async () => {
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string) => {
+        if (typeof cmd === 'string' && cmd.includes('--version')) throw new Error('ENOENT');
+        throw new Error('unexpected call');
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain('Neither bun nor npm found');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('EDGE: detects bun before npm (prefers bun)', async () => {
+      const { execSync: mockExec } = await import('node:child_process');
+      const calls: string[] = [];
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) calls.push(cmd.split(' ')[0]);
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        await install(repoArgs({ coreTarball: tarball }));
+        // bun detected first (mock returns success for both), so install uses bun
+        expect(calls[0]).toBe('bun');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
     });
   });
 
@@ -1252,11 +1358,9 @@ describe('cli/install', () => {
       // Re-install with solo (without --force) — config should NOT be overwritten
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
       const { readConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      const config = await readConfig(wsDir);
-      // Still regulated — config.json already existed, no --force
+      const config = await readConfig(tmpDir);
+      // Still regulated — flowguard.json already existed, no --force
       expect(config.policy.defaultMode).toBe('regulated');
     });
 
@@ -1268,10 +1372,8 @@ describe('cli/install', () => {
       // Re-install with --force and regulated
       await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
       const { readConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      const config = await readConfig(wsDir);
+      const config = await readConfig(tmpDir);
       // Updated to regulated — --force updates config
       expect(config.policy.defaultMode).toBe('regulated');
     });
@@ -1281,18 +1383,16 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
 
       // Manually set a non-policy config field
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
-      const { readConfig, writeConfig } = await import('../adapters/persistence.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
 
-      const config = await readConfig(wsDir);
+      const config = await readConfig(tmpDir);
       config.logging.level = 'debug';
-      await writeConfig(wsDir, config);
+      await writeRepoConfig(tmpDir, config);
 
       // Re-install with --force and different policy mode
       await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
 
-      const updated = await readConfig(wsDir);
+      const updated = await readConfig(tmpDir);
       expect(updated.policy.defaultMode).toBe('regulated');
       // Non-policy field preserved
       expect(updated.logging.level).toBe('debug');
@@ -1317,8 +1417,8 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       const commandCount = Object.keys(COMMANDS).length;
-      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 agent + 1 package.json + 1 opencode.json + 1 config.json
-      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1;
+      // 1 tarball + 1 mandates + 1 tool + 1 plugin + N commands + 1 agent + 1 package.json + 1 opencode.json + 1 flowguard.json + 1 node_modules
+      const expectedOps = 1 + 1 + 1 + 1 + commandCount + 1 + 1 + 1 + 1 + 1;
       expect(result.ops.length).toBe(expectedOps);
     });
 
@@ -1661,21 +1761,22 @@ describe('cli/doctor', () => {
       expect(staleCheck?.detail).toContain('AGENTS.md');
     });
 
-    it('reports missing workspace config as error', async () => {
+    it('reports missing config as error', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
 
-      const { ensureWorkspace } = await import('../adapters/workspace/index.js');
-      const { workspaceDir: wsDir } = await ensureWorkspace(process.cwd());
-      await fs.unlink(path.join(wsDir, 'config.json'));
+      // Delete the repo config file (P11: config at {tmpDir}/.opencode/flowguard.json)
+      await fs.unlink(path.join(tmpDir, '.opencode', 'flowguard.json'));
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const configCheck = checks.find((c) => c.file.replace(/\\/g, '/').endsWith('/config.json'));
+      const configCheck = checks.find((c) =>
+        c.file.replace(/\\/g, '/').endsWith('/flowguard.json'),
+      );
       expect(configCheck?.status).toBe('error');
-      expect(configCheck?.detail).toContain('WORKSPACE_CONFIG_MISSING');
+      expect(configCheck?.detail).toContain('CONFIG_MISSING');
     });
 
-    it('does not create workspace.json when only config.json is missing', async () => {
+    it('does not create workspace.json when only flowguard.json is missing', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
 

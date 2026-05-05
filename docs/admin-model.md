@@ -39,7 +39,7 @@ FlowGuard has a flat ownership model:
 **Currently Delivered:**
 
 - CLI with upgrade, uninstall, doctor commands
-- Workspace `config.json` configuration artifact (materialized by install/hydrate; missing config is an integrity error in doctor)
+- `flowguard.json` configuration artifact (materialized by flowguard install; missing config is an integrity error in doctor)
 - Archive management
 
 **Customer Responsibility:**
@@ -186,11 +186,11 @@ For teams sharing a single installation:
 
 ### Repository-Scoped Deployment
 
-| Feature                   | Status                      | Notes                                              |
-| ------------------------- | --------------------------- | -------------------------------------------------- |
-| **Per-repo installation** | **Currently Delivered**     | `--install-scope repo`                             |
-| **Repo-specific config**  | **Currently Delivered**     | Workspace `config.json` per repository fingerprint |
-| **Team-wide policies**    | **Customer Responsibility** | Git hooks, CI enforcement                          |
+| Feature                   | Status                      | Notes                           |
+| ------------------------- | --------------------------- | ------------------------------- |
+| **Per-repo installation** | **Currently Delivered**     | `--install-scope repo`          |
+| **Repo-specific config**  | **Currently Delivered**     | `flowguard.json` per repository |
+| **Team-wide policies**    | **Customer Responsibility** | Git hooks, CI enforcement       |
 
 ---
 

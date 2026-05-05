@@ -86,12 +86,12 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'WORKSPACE_CONFIG_INVALID',
+    code: 'CONFIG_INVALID',
     category: 'input',
-    messageTemplate: 'Workspace config.json is invalid: {message}',
+    messageTemplate: 'Config file is invalid: {message}',
     recoverySteps: [
-      'Fix config.json to match FlowGuard schema',
-      'If unsure, remove config.json and re-run /hydrate to re-materialize defaults',
+      'Fix flowguard.json to match FlowGuard schema',
+      'If unsure, remove flowguard.json and re-run flowguard install to create defaults',
     ],
   },
 
@@ -142,7 +142,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Register the profile in the profile registry',
       'Use an explicit profileId with /hydrate',
-      'Remove config.profile.defaultId from config.json',
+      'Remove config.profile.defaultId from flowguard.json',
     ],
   },
 
