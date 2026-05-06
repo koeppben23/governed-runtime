@@ -720,6 +720,85 @@ describe('audit integrity', () => {
       expect(result.reason).toContain('chainHash mismatch');
     });
 
+    // ── Constant-time comparison tests for safeHashEqual ────────
+
+    it('verifyEvent fails on equal-length prevHash mismatch', () => {
+      const event = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      // Same string length as GENESIS_HASH (64 chars) but different value
+      const wrongPrevHash = 'a'.repeat(64);
+      const result = verifyEvent(event, wrongPrevHash, 0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('prevHash mismatch');
+    });
+
+    it('verifyEvent fails safely on different-length prevHash', () => {
+      const event = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      // Different string length than GENESIS_HASH (64 chars)
+      const shortPrevHash = 'short';
+      const result = verifyEvent(event, shortPrevHash, 0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('prevHash mismatch');
+    });
+
+    it('verifyEvent fails safely on different-length chainHash', () => {
+      const event = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      // Set chainHash to different string length than computed hash
+      const tampered: ChainedAuditEvent = { ...event, chainHash: 'short' };
+      const result = verifyEvent(tampered, GENESIS_HASH, 0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('chainHash mismatch');
+    });
+
+    it('verifyEvent fails safely on same string length but different byte length (Unicode edge)', () => {
+      const event = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      // 'ä' is 2 bytes in UTF-8, so 64 chars = 128 bytes
+      // A hex hash is 64 ASCII chars = 64 bytes
+      // Same JS string length (64) but different byte lengths → tests buffer-length check
+      const tamperedChainHash = 'ä'.repeat(64); // 64 chars, 128 bytes
+      const tampered: ChainedAuditEvent = { ...event, chainHash: tamperedChainHash };
+      const result = verifyEvent(tampered, GENESIS_HASH, 0);
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('chainHash mismatch');
+    });
+
+    it('verifyEvent passes with matching hash', () => {
+      const event = createTransitionEvent(
+        SESSION_ID,
+        'PLAN',
+        { from: 'TICKET', to: 'PLAN', event: 'PLAN_READY', autoAdvanced: false, chainIndex: -1 },
+        TS1,
+        GENESIS_HASH,
+      );
+      // Use the actual correct prevHash
+      const result = verifyEvent(event, GENESIS_HASH, 0);
+      expect(result.valid).toBe(true);
+      expect(result.reason).toBeNull();
+    });
+
     it('verifyChain detects a break in the middle', () => {
       const chain = buildChain(5);
       // Tamper event #2 by modifying its detail

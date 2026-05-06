@@ -27,7 +27,20 @@
  * @version v1
  */
 
+import { timingSafeEqual } from 'node:crypto';
 import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types.js';
+
+/**
+ * Constant-time string comparison for security-sensitive hash validation.
+ * Compares buffer byte lengths first (not string lengths) to avoid
+ * throwing when equal-length strings have different UTF-8 byte lengths.
+ */
+function safeHashEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
 
 // ─── Verification Options ─────────────────────────────────────────────────────
 
@@ -108,8 +121,8 @@ export function verifyEvent(
   expectedPrevHash: string,
   index: number,
 ): EventVerification {
-  // Check prevHash matches expected
-  if (event.prevHash !== expectedPrevHash) {
+  // Check prevHash matches expected (constant-time comparison)
+  if (!safeHashEqual(event.prevHash, expectedPrevHash)) {
     return {
       index,
       eventId: event.id,
@@ -118,11 +131,11 @@ export function verifyEvent(
     };
   }
 
-  // Recompute chainHash and compare
+  // Recompute chainHash and compare (constant-time comparison)
   const { chainHash, ...eventWithoutHash } = event;
   const recomputed = computeChainHash(event.prevHash, eventWithoutHash);
 
-  if (recomputed !== chainHash) {
+  if (!safeHashEqual(recomputed, chainHash)) {
     return {
       index,
       eventId: event.id,
