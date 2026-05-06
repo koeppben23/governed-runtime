@@ -545,15 +545,43 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
  */
 // ─── Doctor Phase Helpers ─────────────────────────────────────────────────────
 
+/**
+ * Read a file for doctor inspection. Returns content or null.
+ *
+ * Pushes a DoctorCheck automatically:
+ * - 'missing' when file does not exist (ENOENT)
+ * - 'error' when file cannot be read (EACCES, EPERM, etc.)
+ * Callers can check `if (!content) return/continue` without further checks.
+ */
+async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<string | null> {
+  try {
+    const content = await safeRead(filePath);
+    if (content === null) {
+      checks.push({ file: filePath, status: 'missing' });
+    }
+    return content;
+  } catch (err: unknown) {
+    const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : undefined;
+    const msg = err instanceof Error ? err.message : String(err);
+    const detail = code ? `Cannot read (${code}): ${msg}` : `Cannot read: ${msg}`;
+    checks.push({
+      file: filePath,
+      status: 'error',
+      detail,
+    });
+    return null;
+  }
+}
+
 /** Check managed artifacts: mandates.md, tool wrapper, plugin wrapper, commands. */
 async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
 
   // 1. flowguard-mandates.md (digest verification)
   const mandatesPath = join(target, MANDATES_FILENAME);
-  const mandatesContent = await safeRead(mandatesPath);
+  const mandatesContent = await checkedRead(mandatesPath, checks);
   if (!mandatesContent) {
-    checks.push({ file: mandatesPath, status: 'missing' });
+    // checkedRead already pushed missing or error
   } else if (!isManagedArtifact(mandatesContent)) {
     checks.push({ file: mandatesPath, status: 'unmanaged', detail: 'no managed-artifact header' });
   } else {
@@ -593,9 +621,9 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
 
   // 2. Tool wrapper
   const toolPath = join(target, 'tools', 'flowguard.ts');
-  const toolContent = await safeRead(toolPath);
+  const toolContent = await checkedRead(toolPath, checks);
   if (!toolContent) {
-    checks.push({ file: toolPath, status: 'missing' });
+    // checkedRead already pushed missing or error
   } else if (toolContent.trim() !== TOOL_WRAPPER.trim()) {
     checks.push({ file: toolPath, status: 'modified', detail: 'content differs from template' });
   } else {
@@ -604,9 +632,9 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
 
   // 3. Plugin wrapper
   const pluginPath = join(target, 'plugins', 'flowguard-audit.ts');
-  const pluginContent = await safeRead(pluginPath);
+  const pluginContent = await checkedRead(pluginPath, checks);
   if (!pluginContent) {
-    checks.push({ file: pluginPath, status: 'missing' });
+    // checkedRead already pushed missing or error
   } else if (pluginContent.trim() !== PLUGIN_WRAPPER.trim()) {
     checks.push({ file: pluginPath, status: 'modified', detail: 'content differs from template' });
   } else {
@@ -616,9 +644,9 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   // 4. Command files
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
     const cmdPath = join(target, 'commands', name);
-    const cmdContent = await safeRead(cmdPath);
+    const cmdContent = await checkedRead(cmdPath, checks);
     if (!cmdContent) {
-      checks.push({ file: cmdPath, status: 'missing' });
+      // checkedRead already pushed missing or error
     } else if (cmdContent.trim() !== expectedContent.trim()) {
       checks.push({ file: cmdPath, status: 'modified', detail: 'content differs from template' });
     } else {
@@ -635,10 +663,9 @@ async function checkDependencies(target: string): Promise<DoctorCheck[]> {
 
   // 5. package.json (A1 model validation)
   const pkgPath = join(target, 'package.json');
-  const pkgContent = await safeRead(pkgPath);
-  if (!pkgContent) {
-    checks.push({ file: pkgPath, status: 'missing' });
-  } else {
+  const pkgContent = await checkedRead(pkgPath, checks);
+  if (!pkgContent) return checks;
+  else {
     try {
       const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
       const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
@@ -689,7 +716,7 @@ async function checkOpencodeInstructions(
 
   const opencodeJsonPath =
     scope === 'global' ? join(target, 'opencode.json') : join(resolve('.'), 'opencode.json');
-  const opencodeContent = await safeRead(opencodeJsonPath);
+  const opencodeContent = await checkedRead(opencodeJsonPath, checks);
   if (!opencodeContent) return checks;
 
   try {

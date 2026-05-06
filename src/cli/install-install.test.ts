@@ -59,6 +59,15 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
+    unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
+  };
+});
+
 setupCliTestEnvironment();
 
 // ─── install ──────────────────────────────────────────────────────────────────
@@ -909,6 +918,36 @@ describe('cli/uninstall', () => {
       expect(result.errors).toEqual([]);
       const notFound = result.ops.filter((op) => op.action === 'not_found');
       expect(notFound.length).toBeGreaterThan(0);
+    });
+
+    it('uninstall reports error when file cannot be removed (EPERM)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const realImpl = vi.mocked(fs.unlink).getMockImplementation()!;
+      vi.mocked(fs.unlink).mockImplementation(((...args: Parameters<typeof fs.unlink>) => {
+        const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
+        if (p.includes('tools/flowguard.ts'))
+          return Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+        return realImpl(...args);
+      }) as typeof fs.unlink);
+
+      try {
+        const result = await uninstall(repoArgs({ action: 'uninstall' }));
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(
+          result.errors.some((e) => e.includes('EPERM') || e.includes('operation not permitted')),
+        ).toBe(true);
+
+        // The permission-blocked file must NOT be reported as removed or not_found
+        const toolOps = result.ops.filter((o) => o.path.includes('tools/flowguard.ts'));
+        const removedOrNotFound = toolOps.filter(
+          (o) => o.action === 'removed' || o.action === 'not_found',
+        );
+        expect(removedOrNotFound).toHaveLength(0);
+      } finally {
+        vi.mocked(fs.unlink).mockImplementation(realImpl);
+      }
     });
   });
 

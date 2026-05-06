@@ -62,6 +62,15 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
+    unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
+  };
+});
+
 setupCliTestEnvironment();
 
 // ─── doctor ───────────────────────────────────────────────────────────────────
@@ -92,6 +101,131 @@ describe('cli/doctor', () => {
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const missing = checks.filter((c) => c.status === 'missing');
       expect(missing.length).toBeGreaterThan(0);
+    });
+
+    it('reports error not missing when tool wrapper is unreadable (EACCES)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
+      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
+      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+        const p =
+          args[0] instanceof Buffer
+            ? args[0].toString()
+            : typeof args[0] === 'string'
+              ? args[0]
+              : (args[0] as URL).pathname;
+        if (p.includes('tools/flowguard.ts'))
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        return realImpl(...args);
+      }) as typeof fs.readFile);
+
+      try {
+        const checks = await doctor(repoArgs({ action: 'doctor' }));
+        const toolCheck = checks.find(
+          (c) => c.file === toolPath || c.file.includes('tools/flowguard.ts'),
+        );
+        expect(toolCheck).toBeDefined();
+        expect(toolCheck!.status).toBe('error');
+      } finally {
+        vi.mocked(fs.readFile).mockImplementation(realImpl);
+      }
+    });
+
+    it('reports error not missing when plugin wrapper is unreadable (EACCES)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const pluginPath = path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts');
+      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
+      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+        const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
+        if (p.includes('plugins/flowguard-audit.ts'))
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        return realImpl(...args);
+      }) as typeof fs.readFile);
+
+      try {
+        const checks = await doctor(repoArgs({ action: 'doctor' }));
+        const pluginCheck = checks.find(
+          (c) => c.file && c.file.includes('plugins/flowguard-audit.ts'),
+        );
+        expect(pluginCheck).toBeDefined();
+        expect(pluginCheck!.status).toBe('error');
+      } finally {
+        vi.mocked(fs.readFile).mockImplementation(realImpl);
+      }
+    });
+
+    it('reports error not missing when package.json is unreadable (EACCES)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
+      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
+      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+        const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
+        if (p.includes('.opencode/package.json'))
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        return realImpl(...args);
+      }) as typeof fs.readFile);
+
+      try {
+        const checks = await doctor(repoArgs({ action: 'doctor' }));
+        const pkgCheck = checks.find((c) => c.file && c.file.includes('.opencode/package.json'));
+        expect(pkgCheck).toBeDefined();
+        expect(pkgCheck!.status).toBe('error');
+      } finally {
+        vi.mocked(fs.readFile).mockImplementation(realImpl);
+      }
+    });
+
+    it('reports error not missing when command wrapper is unreadable (EACCES)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const cmdPath = path.join(tmpDir, '.opencode', 'commands', 'plan.md');
+      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
+      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+        const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
+        if (p.includes('commands/plan.md'))
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        return realImpl(...args);
+      }) as typeof fs.readFile);
+
+      try {
+        const checks = await doctor(repoArgs({ action: 'doctor' }));
+        const cmdCheck = checks.find((c) => c.file && c.file.includes('commands/plan.md'));
+        expect(cmdCheck).toBeDefined();
+        expect(cmdCheck!.status).toBe('error');
+      } finally {
+        vi.mocked(fs.readFile).mockImplementation(realImpl);
+      }
+    });
+
+    it('reports error not missing when opencode.json is unreadable (EACCES)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const opencodePath = path.join(tmpDir, 'opencode.json');
+      const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
+      vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
+        const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
+        // Match opencode.json at project root, not inside .opencode/
+        if (p.endsWith('/opencode.json') && !p.includes('.opencode/') && !p.includes('.opencode\\'))
+          return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+        return realImpl(...args);
+      }) as typeof fs.readFile);
+
+      try {
+        const checks = await doctor(repoArgs({ action: 'doctor' }));
+        const ocCheck = checks.find((c) => c.file && c.file.includes('opencode.json'));
+        expect(ocCheck).toBeDefined();
+        expect(ocCheck!.status).toBe('error');
+      } finally {
+        vi.mocked(fs.readFile).mockImplementation(realImpl);
+      }
     });
   });
 
