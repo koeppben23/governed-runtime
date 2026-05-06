@@ -18,6 +18,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { atomicWrite } from '../persistence.js';
 import { readAuditTrail, readConfig, readState } from '../persistence.js';
 import { verifyChain } from '../../audit/integrity.js';
 import {
@@ -133,10 +134,9 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     count: receipts.length,
     receipts,
   };
-  await fs.writeFile(
+  await atomicWrite(
     path.join(sessDir, 'decision-receipts.v1.json'),
     JSON.stringify(receiptsPayload, null, 2) + '\n',
-    'utf-8',
   );
 
   const redactedArtifacts: string[] = [];
@@ -180,7 +180,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     riskFlags,
   });
   const manifestJson = JSON.stringify(manifest, null, 2) + '\n';
-  await fs.writeFile(path.join(sessDir, 'archive-manifest.json'), manifestJson, 'utf-8');
+  await atomicWrite(path.join(sessDir, 'archive-manifest.json'), manifestJson);
 
   // Create archive directory
   try {
@@ -223,7 +223,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   try {
     const archiveBuffer = await fs.readFile(archivePath);
     const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
-    await fs.writeFile(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`, 'utf-8');
+    await atomicWrite(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`);
   } catch (err) {
     // Regulated: sidecar failure is fatal — archive is not externally verifiable.
     // Policy derived from state already in scope (line 89), not a call parameter.
@@ -628,11 +628,7 @@ async function writeRedactedExportArtifact(
     );
   }
 
-  await fs.writeFile(
-    path.join(sessDir, redactedFile),
-    JSON.stringify(redacted, null, 2) + '\n',
-    'utf-8',
-  );
+  await atomicWrite(path.join(sessDir, redactedFile), JSON.stringify(redacted, null, 2) + '\n');
 }
 
 /** Check if a file exists (non-throwing). */

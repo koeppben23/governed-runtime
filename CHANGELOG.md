@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Atomic write pattern for evidence and archive sidecar/manifest files (#116)**: `atomicWrite()` exported from `persistence.ts`. Evidence artifact metadata and archive manifest/checksum/redacted-export files now use atomic writes (temp file + rename). Session state and review report atomicity verified with rename-failure tests.
+
 - **Transactional install rollback (#115)**: When dependency installation fails during `flowguard install`, FlowGuard-owned artifacts are automatically rolled back to leave a clean state. Doctor detects "files installed but dependencies unresolved" broken state. Recovery plan is emitted on errors.
 
 - **Redact token segments from verification errors (#114)**: `token-verifier.ts` no longer includes base64 token content in error messages. Jose error passthrough removed for safety. Diagnostics preserved via structured error codes.

@@ -152,10 +152,13 @@ async function renameWithRetry(src: string, dest: string, attempts = 3): Promise
  * This guarantees same-filesystem, which is required for atomic rename
  * on both NTFS (Windows) and POSIX (Linux/macOS).
  *
+ * Exported for adapter-internal reuse (evidence-artifacts, archive).
+ * Not part of the public FlowGuard API surface.
+ *
  * @param filePath - Absolute path to the target file.
  * @param content - String content to write.
  */
-async function atomicWrite(filePath: string, content: string): Promise<void> {
+export async function atomicWrite(filePath: string, content: string): Promise<void> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
   const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
