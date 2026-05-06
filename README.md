@@ -105,6 +105,7 @@ subagent attestation, and the `/review` evidence model.
 | [Enterprise Readiness](./docs/enterprise-readiness.md)          | Consolidated threat model and control boundaries                       |
 | [Configuration](./docs/configuration.md)                        | Configuration reference                                                |
 | [Troubleshooting](./docs/troubleshooting.md)                    | FAQ and error handling                                                 |
+| [Architecture](./docs/architecture/architecture-diagram.md)     | Architecture layers, three governed flows, SSOT, proof surfaces        |
 | [Testing Strategy](./docs/testing-strategy.md)                  | Test tiers, CI jobs, performance budgets                               |
 | [API Reference](https://koeppben23.github.io/governed-runtime/) | TypeScript API reference (TypeDoc, GitHub Pages)                       |
 
