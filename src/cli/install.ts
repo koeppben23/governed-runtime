@@ -8,7 +8,7 @@
  */
 
 import { existsSync, realpathSync, readFileSync } from 'node:fs';
-import { writeFile, readFile, copyFile, rm } from 'node:fs/promises';
+import { writeFile, readFile, readdir, copyFile, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -399,6 +399,11 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
 // ─── Uninstall ────────────────────────────────────────────────────────────────
 
+/** True if a vendor entry is a FlowGuard-owned tarball. */
+function isFlowGuardVendorArtifact(entry: string): boolean {
+  return entry.startsWith('flowguard-core-') && entry.endsWith('.tgz');
+}
+
 /**
  * Uninstall FlowGuard from the target directory.
  *
@@ -439,12 +444,31 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
         }
       }
 
-      // Handle vendor directory specially (recursively remove)
+      // Handle vendor directory specially (remove only FlowGuard tarballs)
       if (relPath === 'vendor') {
         try {
           if (existsSync(fullPath)) {
-            await rm(fullPath, { recursive: true, force: true });
-            ops.push({ path: fullPath, action: 'removed' });
+            const entries = await readdir(fullPath);
+            let removedCount = 0;
+            for (const entry of entries) {
+              if (isFlowGuardVendorArtifact(entry)) {
+                await safeUnlink(join(fullPath, entry));
+                removedCount++;
+                ops.push({ path: join(fullPath, entry), action: 'removed' });
+              }
+            }
+            // Remove vendor dir if empty after cleanup
+            const remaining = await readdir(fullPath);
+            if (remaining.length === 0) {
+              await rm(fullPath, { recursive: true, force: true });
+              ops.push({ path: fullPath, action: 'removed', reason: 'empty vendor directory' });
+            } else if (removedCount === 0) {
+              ops.push({
+                path: fullPath,
+                action: 'skipped',
+                reason: 'no FlowGuard tarballs in vendor',
+              });
+            }
           } else {
             ops.push({ path: fullPath, action: 'not_found' });
           }

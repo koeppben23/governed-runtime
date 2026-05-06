@@ -949,6 +949,60 @@ describe('cli/uninstall', () => {
         vi.mocked(fs.unlink).mockImplementation(realImpl);
       }
     });
+
+    it('foreign file in vendor survives while FlowGuard tarball is removed', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
+      const tarballPath = path.join(vendorDir, `flowguard-core-${VERSION}.tgz`);
+      const foreignPath = path.join(vendorDir, 'user-file.bin');
+
+      // Both FlowGuard tarball and foreign file exist
+      expect(existsSync(tarballPath)).toBe(true);
+      await fs.writeFile(foreignPath, 'user content', 'utf-8');
+
+      const result = await uninstall(repoArgs({ action: 'uninstall' }));
+      expect(result.errors).toEqual([]);
+
+      // FlowGuard tarball must be removed
+      expect(existsSync(tarballPath)).toBe(false);
+
+      // Foreign file must survive
+      expect(existsSync(foreignPath)).toBe(true);
+      const content = await fs.readFile(foreignPath, 'utf-8');
+      expect(content).toBe('user content');
+
+      // Vendor directory must still exist (foreign file keeps it)
+      expect(existsSync(vendorDir)).toBe(true);
+    });
+
+    it('FlowGuard tarball in vendor is removed on uninstall', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
+      const tarballPath = path.join(vendorDir, `flowguard-core-${VERSION}.tgz`);
+      expect(existsSync(tarballPath)).toBe(true);
+
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      // FlowGuard tarball must be removed
+      expect(existsSync(tarballPath)).toBe(false);
+    });
+
+    it('vendor with no FlowGuard tarballs reports skipped, not not_found', async () => {
+      // Create vendor dir with only foreign content (no tarball)
+      const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
+      mkdirSync(vendorDir, { recursive: true });
+      await fs.writeFile(path.join(vendorDir, 'other.txt'), 'x', 'utf-8');
+
+      const result = await uninstall(repoArgs({ action: 'uninstall' }));
+      const vendorOps = result.ops.filter((o) => o.path.includes('vendor'));
+      // Must be 'skipped', not 'not_found' — vendor exists, just has no FlowGuard files
+      expect(vendorOps.some((o) => o.action === 'skipped')).toBe(true);
+      expect(vendorOps.some((o) => o.action === 'not_found')).toBe(false);
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
