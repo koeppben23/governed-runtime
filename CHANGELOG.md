@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Architecture diagram (#135)**: Layered Mermaid architecture diagram at `docs/architecture/architecture-diagram.md` showing CLI, integration, rails, config, machine, state (SSOT), audit, archive, and presentation layers. Three governed flows labeled. `session-state.json` marked as SSOT; audit/archive/cards marked as proof surfaces.
+
 - **Desktop task-hardening warning (#107)**: `flowguard doctor` emits a `warn` when a desktop-owned config (detected via `hasPluginField || hasDesktopInstructions`) lacks FlowGuard reviewer task hardening. The installer does not enforce task permissions on desktop-owned configs; this warning makes the gap visible.
 
 - **Shared `hasNonFlowGuardInstructions()` utility**: Extracted desktop-owned detection into a reusable utility with `FLOWGUARD_INSTRUCTION_ENTRIES` constant. Used in 3 callsites (mergeOpencodeJson, removeFromOpencodeJson, checkOpencodeInstructions).
