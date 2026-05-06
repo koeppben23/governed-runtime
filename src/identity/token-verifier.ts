@@ -19,9 +19,6 @@ import { IdpError, type IdpErrorCode } from './errors.js';
 import type { IdpConfig, VerifiedToken } from './types.js';
 import type { KeyResolver } from './key-resolver.js';
 
-/** Default token TTL when exp claim is absent (1 hour). */
-const DEFAULT_TOKEN_TTL_SECONDS = 3600;
-
 interface JwtHeader extends JWTHeaderParameters {
   alg: string;
 }
@@ -89,10 +86,9 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
         ? [verifiedPayload.aud]
         : [];
 
-    const exp =
-      typeof verifiedPayload.exp === 'number'
-        ? verifiedPayload.exp
-        : Math.floor(Date.now() / 1000) + DEFAULT_TOKEN_TTL_SECONDS;
+    if (typeof verifiedPayload.exp !== 'number') {
+      throw new IdpError('IDP_TOKEN_INVALID', 'IdP token missing required exp claim');
+    }
 
     return {
       subject,
@@ -104,7 +100,7 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
         typeof verifiedPayload.iat === 'number' ? new Date(verifiedPayload.iat * 1000) : null,
       notBefore:
         typeof verifiedPayload.nbf === 'number' ? new Date(verifiedPayload.nbf * 1000) : null,
-      expiresAt: new Date(exp * 1000),
+      expiresAt: new Date(verifiedPayload.exp * 1000),
       keyId: kid,
       algorithm: header.alg,
       rawClaims: verifiedPayload as Record<string, unknown>,
