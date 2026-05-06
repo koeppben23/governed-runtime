@@ -367,7 +367,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
       execSync(`${pm} install`, {
         cwd: configTargetDir,
         stdio: 'pipe',
-        timeout: 60_000,
+        timeout: 300_000,
       });
       ops.push({ path: join(configTargetDir, 'node_modules'), action: 'written' });
 
