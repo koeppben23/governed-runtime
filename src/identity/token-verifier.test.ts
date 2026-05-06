@@ -180,7 +180,7 @@ describe('JwtStaticTokenVerifier', () => {
       expect(result.audience).toEqual(['flowguard']);
       expect(result.keyId).toBe('rsa-key-1');
       expect(result.algorithm).toBe('RS256');
-      expect(result.expiresAt).toBeInstanceOf(Date);
+      expect(result.expiresAt).toEqual(new Date((NOW + 3600) * 1000));
       expect(result.rawClaims).toHaveProperty('sub', 'user-123');
     });
 
@@ -488,13 +488,21 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toThrow(/audience/i);
     });
 
-    it('provides default expiresAt when exp claim is missing', async () => {
+    it('rejects token when exp claim is missing', async () => {
       const verifier = makeVerifier();
       const token = await validRsaToken({ exp: undefined });
-      const result = await verifier.verify(token);
-      // Implementation falls back to now + 3600
-      expect(result.expiresAt).toBeInstanceOf(Date);
-      expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+      try {
+        await verifier.verify(token);
+        throw new Error('Expected missing exp claim to be rejected');
+      } catch (err) {
+        expect(err).toMatchObject({
+          code: 'IDP_TOKEN_INVALID',
+          message: 'IdP token missing required exp claim',
+        });
+        expect(err).toBeInstanceOf(IdpError);
+        expect((err as Error).message).not.toContain(token);
+      }
     });
 
     it('returns null issuedAt when iat claim is absent', async () => {
