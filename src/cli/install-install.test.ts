@@ -236,7 +236,7 @@ describe('cli/install', () => {
         const tarball = await createMockTarball();
         const result = await install(repoArgs({ coreTarball: tarball }));
         expect(result.errors.length).toBeGreaterThan(0);
-        expect(result.errors[0]).toContain("install' failed");
+        expect(result.errors[0]).toContain('Dependency install failed');
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }
@@ -310,6 +310,237 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain('Version mismatch');
+    });
+
+    it('rollback removes newly created FlowGuard files and restores pre-existing opencode.json', async () => {
+      // Setup: pre-existing opencode.json with foreign plugin (user-owned)
+      const opencodeJsonPath = path.join(tmpDir, 'opencode.json');
+      const preExistingOpencode =
+        JSON.stringify({ plugins: [{ path: './custom-plugin.ts' }], instructions: [] }, null, 2) +
+        '\n';
+      mkdirSync(path.dirname(opencodeJsonPath), { recursive: true });
+      await fs.writeFile(opencodeJsonPath, preExistingOpencode);
+
+      // Setup: pre-existing package.json with foreign dep
+      const pkgPath = path.join(tmpDir, '.opencode', 'package.json');
+      mkdirSync(path.dirname(pkgPath), { recursive: true });
+      await fs.writeFile(
+        pkgPath,
+        JSON.stringify({ dependencies: { lodash: '^4.0.0' }, scripts: { build: 'tsc' } }, null, 2) +
+          '\n',
+      );
+
+      // Simulate npm install failure
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated npm install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain('Dependency install failed');
+
+        // FlowGuard-owned files removed
+        const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
+        expect(existsSync(mandatesPath)).toBe(false);
+
+        // Pre-existing opencode.json restored to original content (no FlowGuard plugin added)
+        expect(existsSync(opencodeJsonPath)).toBe(true);
+        const restoredOpencode = await fs.readFile(opencodeJsonPath, 'utf-8');
+        expect(restoredOpencode).toBe(preExistingOpencode);
+
+        // Pre-existing package.json restored to original content (no @flowguard/core dep added)
+        expect(existsSync(pkgPath)).toBe(true);
+        const restoredPkg = await fs.readFile(pkgPath, 'utf-8');
+        expect(restoredPkg).toContain('lodash');
+        expect(restoredPkg).not.toContain('@flowguard/core');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('restores pre-existing tarball byte-for-byte on rollback', async () => {
+      // Create pre-existing vendor tarball with binary-ish bytes
+      const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
+      mkdirSync(vendorDir, { recursive: true });
+      const tarballName = `flowguard-core-${VERSION}.tgz`;
+      const vendorTarballPath = path.join(vendorDir, tarballName);
+      const originalBytes = Buffer.from([0x1f, 0x8b, 0x08, ...Array(100).fill(0x00)]);
+      await fs.writeFile(vendorTarballPath, originalBytes);
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated npm install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.length).toBeGreaterThan(0);
+
+        // Tarball must be restored byte-for-byte (not corrupted by UTF-8 encoding)
+        expect(existsSync(vendorTarballPath)).toBe(true);
+        const restoredBytes = await fs.readFile(vendorTarballPath);
+        expect(restoredBytes.length).toBe(originalBytes.length);
+        expect(Buffer.compare(restoredBytes, originalBytes)).toBe(0);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('rollback preserves unrelated user-owned files', async () => {
+      // Create unrelated user file before install
+      const userFilePath = path.join(tmpDir, '.opencode', 'user-config.json');
+      mkdirSync(path.dirname(userFilePath), { recursive: true });
+      await fs.writeFile(userFilePath, 'user data');
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated npm install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+
+        expect(result.errors.length).toBeGreaterThan(0);
+
+        // Unrelated user file untouched
+        expect(existsSync(userFilePath)).toBe(true);
+        const content = await fs.readFile(userFilePath, 'utf-8');
+        expect(content).toBe('user data');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('failed reinstall over existing install preserves pre-existing managed files', async () => {
+      // Phase 1: Successful install
+      const tarball = await createMockTarball();
+      const firstResult = await install(repoArgs({ coreTarball: tarball }));
+      expect(firstResult.errors).toEqual([]);
+
+      // Capture pre-existing managed file content
+      const mandatesPath = path.join(tmpDir, '.opencode', MANDATES_FILENAME);
+      const toolPath = path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts');
+      const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
+
+      expect(existsSync(mandatesPath)).toBe(true);
+      const preExistingMandates = await fs.readFile(mandatesPath, 'utf-8');
+      const preExistingTool = existsSync(toolPath) ? await fs.readFile(toolPath, 'utf-8') : null;
+
+      // Phase 2: Failed reinstall (npm install fails)
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated reinstall failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      const tarball2 = await createMockTarball();
+      try {
+        const result = await install(repoArgs({ coreTarball: tarball2 }));
+        expect(result.errors.length).toBeGreaterThan(0);
+
+        // Managed files must still exist with their ORIGINAL content
+        expect(existsSync(mandatesPath)).toBe(true);
+        const restoredMandates = await fs.readFile(mandatesPath, 'utf-8');
+        expect(restoredMandates).toBe(preExistingMandates);
+
+        if (preExistingTool) {
+          expect(existsSync(toolPath)).toBe(true);
+          const restoredTool = await fs.readFile(toolPath, 'utf-8');
+          expect(restoredTool).toBe(preExistingTool);
+        }
+
+        // Vendor directory with tarball must still exist
+        expect(existsSync(vendorDir)).toBe(true);
+
+        // Rollback operations must include restorations
+        const restorations = result.ops.filter((o) => o.reason?.includes('restored'));
+        expect(restorations.length).toBeGreaterThan(0);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('preserves pre-existing node_modules on rollback', async () => {
+      // Create pre-existing node_modules before install
+      const nmPath = path.join(tmpDir, '.opencode', 'node_modules', 'some-package');
+      mkdirSync(nmPath, { recursive: true });
+      await fs.writeFile(path.join(nmPath, 'index.js'), 'module.exports = 1;');
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated npm install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.length).toBeGreaterThan(0);
+
+        // Pre-existing node_modules must survive
+        expect(existsSync(nmPath)).toBe(true);
+        const content = await fs.readFile(path.join(nmPath, 'index.js'), 'utf-8');
+        expect(content).toBe('module.exports = 1;');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('removes newly created node_modules on rollback (npm install ran but failed)', async () => {
+      // No pre-existing node_modules for this test
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          // Simulate partial npm install that creates something then throws
+          const cwd =
+            opts && typeof opts === 'object' && 'cwd' in opts
+              ? (opts as { cwd: string }).cwd
+              : undefined;
+          if (cwd) {
+            mkdirSync(path.join(cwd, 'node_modules', '.package-lock.json'), { recursive: true });
+          }
+          throw new Error('Simulated npm install failure mid-way');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.length).toBeGreaterThan(0);
+
+        // Newly created node_modules should be removed
+        const nmPath = path.join(tmpDir, '.opencode', 'node_modules');
+        expect(existsSync(nmPath)).toBe(false);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
     });
   });
 
