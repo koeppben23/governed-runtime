@@ -9,25 +9,50 @@ export type KeyKind = 'jwk' | 'pem';
 
 export type KeyAlgorithm = 'RS256' | 'ES256';
 
-export const JwkKeySchema = z.object({
-  kind: z.literal('jwk'),
-  kid: z.string().min(1),
-  alg: z.enum(['RS256', 'ES256']),
-  jwk: z.object({
-    kty: z.enum(['RSA', 'EC']),
-    n: z.string().optional(),
-    e: z.string().optional(),
-    d: z.string().optional(),
-    p: z.string().optional(),
-    q: z.string().optional(),
-    dp: z.string().optional(),
-    dq: z.string().optional(),
-    qi: z.string().optional(),
-    x: z.string().optional(),
-    y: z.string().optional(),
-    crv: z.string().optional(),
-  }),
-});
+const JwkRsaSchema = z
+  .object({
+    kty: z.literal('RSA'),
+    n: z.string().min(1),
+    e: z.string().min(1),
+  })
+  .strict();
+
+const JwkEcSchema = z
+  .object({
+    kty: z.literal('EC'),
+    x: z.string().min(1),
+    y: z.string().min(1),
+    crv: z.string().min(1),
+  })
+  .strict();
+
+const JwkFieldsSchema = z.discriminatedUnion('kty', [JwkRsaSchema, JwkEcSchema]);
+
+export const JwkKeySchema = z
+  .object({
+    kind: z.literal('jwk'),
+    kid: z.string().min(1),
+    alg: z.enum(['RS256', 'ES256']),
+    jwk: JwkFieldsSchema,
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    // Enforce alg ↔ kty consistency
+    if (data.alg === 'RS256' && data.jwk.kty !== 'RSA') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'RS256 requires RSA key (kty=RSA)',
+        path: ['alg'],
+      });
+    }
+    if (data.alg === 'ES256' && data.jwk.kty !== 'EC') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ES256 requires EC key (kty=EC)',
+        path: ['alg'],
+      });
+    }
+  });
 
 export const PemKeySchema = z.object({
   kind: z.literal('pem'),
