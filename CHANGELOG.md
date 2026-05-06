@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Avoid deleting user files inside vendor directory on uninstall (#118)**: Uninstall now removes only FlowGuard-owned tarballs (`flowguard-core-*.tgz`) from `vendor/`. Non-FlowGuard files are preserved. Empty vendor directory is cleaned up after tarball removal.
+
 - **Stop swallowing permission errors in safeRead/safeUnlink (#117)**: `safeRead` and `safeUnlink` now only swallow ENOENT. Permission errors (EACCES/EPERM) are surfaced to callers. Doctor reports permission-blocked files as `error` instead of `missing`. Uninstall reports actual errors instead of silent `not_found`.
 
 - **Atomic write pattern for evidence and archive sidecar/manifest files (#116)**: `atomicWrite()` exported from `persistence.ts`. Evidence artifact metadata and archive manifest/checksum/redacted-export files now use atomic writes (temp file + rename). Session state and review report atomicity verified with rename-failure tests.
