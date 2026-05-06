@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reject private key material in JWK configuration (#113)**: `JwkKeySchema` now uses `z.discriminatedUnion('kty', [JwkRsaSchema, JwkEcSchema])` with `.strict()` mode. Private key fields (`d`, `p`, `q`, `dp`, `dq`, `qi`) are rejected. Public RSA/EC JWKs remain accepted.
+
 - **Doctor scope-aware config check (#106)**: `checkWorkspaceConfig(scope)` now checks only the relevant config for the given scope. Global scope checks `~/.config/opencode/flowguard.json` without worktree; repo scope checks `{cwd}/.opencode/flowguard.json` without fallback to global. Previously, doctor could report a false positive "ok" by reading the wrong config.
 
 - **Doctor exit code treats warnings as non-failing (#12)**: `flowguard doctor` now returns exit 0 when only `warn` checks are present (e.g. desktop task-hardening advisory). Only real errors/missing artifacts cause exit 1. Previously, warnings broke CI pipelines.
