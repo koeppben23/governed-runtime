@@ -17,6 +17,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { SessionState } from '../../state/schema.js';
+import { atomicWrite } from '../persistence.js';
 
 export const EVIDENCE_ARTIFACT_SCHEMA_VERSION = 'flowguard-evidence-artifact.v1';
 export const EVIDENCE_ARTIFACTS_DIR = 'artifacts';
@@ -200,7 +201,7 @@ async function ensureMetaJson(
       markdownSha256,
       path: `${EVIDENCE_ARTIFACTS_DIR}/${base}.md`,
     };
-    await fs.writeFile(jsonPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8');
+    await atomicWrite(jsonPath, JSON.stringify(meta, null, 2) + '\n');
   }
 }
 
@@ -589,7 +590,7 @@ async function writeImmutableFile(
     );
   } catch (err) {
     if (isNotFound(err)) {
-      await fs.writeFile(filePath, content, 'utf-8');
+      await atomicWrite(filePath, content);
       createdPaths.push(filePath);
       return;
     }
