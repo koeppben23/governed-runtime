@@ -155,7 +155,20 @@ export async function runReviewOrchestration(
         sessionState.activeProfile,
         'REVIEW',
       );
-      const rawInput = input as Record<string, unknown>;
+      const wrappedArgs = (input as { args?: unknown })?.args;
+      const rawInput =
+        wrappedArgs && typeof wrappedArgs === 'object' && !Array.isArray(wrappedArgs)
+          ? (wrappedArgs as Record<string, unknown>)
+          : (input as Record<string, unknown>);
+      const blockStrictReviewContent = async (code: string, detail: Record<string, string>) => {
+        await deps.blockReviewOutcome(
+          { sessDir, sessionId, phase: String(parsedOutput.phase ?? sessionState.phase) },
+          reviewCtx.obligationId,
+          code,
+          detail,
+          output,
+        );
+      };
       const refInput = {
         text: typeof rawInput.text === 'string' ? rawInput.text : undefined,
         prNumber: typeof rawInput.prNumber === 'number' ? rawInput.prNumber : undefined,
@@ -164,7 +177,15 @@ export async function runReviewOrchestration(
       };
       const contentResult = await loadExternalContent(refInput);
       const content = (contentResult as Record<string, unknown>).content;
-      if (typeof content !== 'string') return;
+      if (typeof content !== 'string') {
+        if (strictEnforcement) {
+          await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+            obligationId: reviewCtx.obligationId,
+            reason: 'external review content could not be loaded',
+          });
+        }
+        return;
+      }
 
       const prompt = buildReviewContentPrompt({
         content,
@@ -183,12 +204,21 @@ export async function runReviewOrchestration(
         prompt,
         sessionId,
       );
-      if (!reviewerResult?.findings) return;
+      if (!reviewerResult?.findings) {
+        if (strictEnforcement) {
+          await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+            obligationId: reviewCtx.obligationId,
+            reason: 'reviewer response was not parseable as ReviewFindings',
+          });
+        }
+        return;
+      }
 
       const parsedFindings = ReviewFindingsSchema.safeParse(reviewerResult.findings);
       if (!parsedFindings.success) {
         if (strictEnforcement) {
-          output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+          await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+            obligationId: reviewCtx.obligationId,
             reason: 'reviewer response did not match ReviewFindings schema',
           });
         }
@@ -197,14 +227,26 @@ export async function runReviewOrchestration(
 
       if (strictEnforcement) {
         const att = parsedFindings.data.attestation;
-        if (!att) return;
+        if (!att) {
+          await blockStrictReviewContent('SUBAGENT_MANDATE_MISSING', {
+            obligationId: reviewCtx.obligationId,
+          });
+          return;
+        }
         if (
+          parsedFindings.data.reviewMode !== 'subagent' ||
           att.toolObligationId !== reviewCtx.obligationId ||
           att.mandateDigest !== reviewCtx.mandateDigest ||
           att.criteriaVersion !== reviewCtx.criteriaVersion ||
+          att.iteration !== reviewCtx.iteration ||
+          att.planVersion !== reviewCtx.planVersion ||
           att.reviewedBy !== REVIEWER_SUBAGENT_TYPE
-        )
+        ) {
+          await blockStrictReviewContent('SUBAGENT_MANDATE_MISMATCH', {
+            obligationId: reviewCtx.obligationId,
+          });
           return;
+        }
 
         const promptHash = hashText(prompt);
         const findingsHash = hashFindings(reviewerResult.findings);
