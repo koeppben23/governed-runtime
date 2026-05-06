@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Redact token segments from verification errors (#114)**: `token-verifier.ts` no longer includes base64 token content in error messages. Jose error passthrough removed for safety. Diagnostics preserved via structured error codes.
+
 - **Reject private key material in JWK configuration (#113)**: `JwkKeySchema` now uses `z.discriminatedUnion('kty', [JwkRsaSchema, JwkEcSchema])` with `.strict()` mode. Private key fields (`d`, `p`, `q`, `dp`, `dq`, `qi`) are rejected. Public RSA/EC JWKs remain accepted.
 
 - **Doctor scope-aware config check (#106)**: `checkWorkspaceConfig(scope)` now checks only the relevant config for the given scope. Global scope checks `~/.config/opencode/flowguard.json` without worktree; repo scope checks `{cwd}/.opencode/flowguard.json` without fallback to global. Previously, doctor could report a false positive "ok" by reading the wrong config.

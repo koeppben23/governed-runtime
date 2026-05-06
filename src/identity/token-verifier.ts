@@ -112,7 +112,7 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       const json = Buffer.from(b64, 'base64url').toString('utf-8');
       return JSON.parse(json) as T;
     } catch {
-      throw new IdpError(errorCode, `Failed to decode base64url segment: ${b64}`);
+      throw new IdpError(errorCode, 'Failed to decode token segment');
     }
   }
 
@@ -161,20 +161,20 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 
   private mapJoseError(err: unknown): IdpError {
     if (err instanceof JWTExpired) {
-      return new IdpError('IDP_EXPIRED', `IdP token expired: ${err.message}`);
+      return new IdpError('IDP_EXPIRED', 'IdP token expired');
     }
 
     if (err instanceof JWTClaimValidationFailed) {
       if (err.claim === 'iss') {
-        return new IdpError('IDP_ISSUER_MISMATCH', `Token issuer mismatch: ${err.message}`);
+        return new IdpError('IDP_ISSUER_MISMATCH', 'Token issuer mismatch');
       }
       if (err.claim === 'aud') {
-        return new IdpError('IDP_AUDIENCE_MISMATCH', `Token audience mismatch: ${err.message}`);
+        return new IdpError('IDP_AUDIENCE_MISMATCH', 'Token audience mismatch');
       }
       if (err.claim === 'nbf') {
-        return new IdpError('IDP_NOT_YET_VALID', `IdP token not yet valid: ${err.message}`);
+        return new IdpError('IDP_NOT_YET_VALID', 'IdP token not yet valid');
       }
-      return new IdpError('IDP_TOKEN_INVALID', `Token claim validation failed: ${err.message}`);
+      return new IdpError('IDP_TOKEN_INVALID', 'Token claim validation failed');
     }
 
     if (err instanceof JWSSignatureVerificationFailed) {
@@ -183,18 +183,12 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
 
     if (err instanceof JOSEError) {
       if (err.code === 'ERR_JOSE_ALG_NOT_ALLOWED') {
-        return new IdpError(
-          'IDP_ALGORITHM_NOT_ALLOWED',
-          `Token algorithm not allowed: ${err.message}`,
-        );
+        return new IdpError('IDP_ALGORITHM_NOT_ALLOWED', 'Token algorithm not allowed');
       }
-      return new IdpError('IDP_TOKEN_INVALID', `Token verification failed: ${err.message}`);
+      return new IdpError('IDP_TOKEN_INVALID', 'Token verification failed');
     }
 
-    return new IdpError(
-      'IDP_SIGNATURE_INVALID',
-      `Signature verification error: ${(err as Error).message}`,
-    );
+    return new IdpError('IDP_SIGNATURE_INVALID', 'Signature verification error');
   }
 
   private extractClaim(payload: JwtPayload, claimName: string): string | null {

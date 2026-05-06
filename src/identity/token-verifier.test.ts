@@ -221,6 +221,19 @@ describe('JwtStaticTokenVerifier', () => {
   // ── BAD ────────────────────────────────────────────────────────────────
 
   describe('BAD: malformed and invalid tokens', () => {
+    it('BAD: malformed token error does not contain raw segment', async () => {
+      expect.assertions(2);
+      const verifier = makeVerifier();
+      const malformedToken = 'raw.unencoded.token';
+      try {
+        await verifier.verify(malformedToken);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'IDP_TOKEN_HEADER_INVALID' });
+        const errStr = String(err);
+        expect(errStr).not.toContain(malformedToken);
+      }
+    });
+
     it('rejects token with wrong number of parts', async () => {
       const verifier = makeVerifier();
       await expect(verifier.verify('only.two')).rejects.toThrow(IdpError);
@@ -235,24 +248,34 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify('')).rejects.toThrow(IdpError);
     });
 
-    it('rejects token with invalid base64url header', async () => {
+    it('rejects token with invalid base64url header without raw segment in error', async () => {
+      expect.assertions(3);
       const verifier = makeVerifier();
-      await expect(verifier.verify('!!!.abc.def')).rejects.toThrow(IdpError);
-      await expect(verifier.verify('!!!.abc.def')).rejects.toMatchObject({
-        code: 'IDP_TOKEN_HEADER_INVALID',
-      });
-      await expect(verifier.verify('!!!.abc.def')).rejects.toThrow(
-        /Failed to decode base64url segment/,
-      );
+      const malformedToken = '!!!.abc.def';
+      try {
+        await verifier.verify(malformedToken);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'IDP_TOKEN_HEADER_INVALID' });
+        const errStr = String(err);
+        expect(errStr).not.toContain(malformedToken);
+        expect(errStr).not.toContain('!!!');
+      }
     });
 
-    it('rejects token with invalid payload segment', async () => {
+    it('EDGE: invalid payload segment does not leak decoded content', async () => {
+      expect.assertions(3);
       const verifier = makeVerifier();
       const headerB64 = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
-      const token = `${headerB64}.!!!.abc`;
-      await expect(verifier.verify(token)).rejects.toMatchObject({
-        code: 'IDP_TOKEN_INVALID',
-      });
+      const invalidPayloadB64 = Buffer.from('not-json').toString('base64url');
+      const token = `${headerB64}.${invalidPayloadB64}.fakesig`;
+      try {
+        await verifier.verify(token);
+      } catch (err) {
+        expect(err).toMatchObject({ code: 'IDP_TOKEN_INVALID' });
+        const errStr = String(err);
+        expect(errStr).not.toContain(invalidPayloadB64);
+        expect(errStr).not.toContain('not-json');
+      }
     });
 
     it('rejects expired token', async () => {
@@ -291,7 +314,6 @@ describe('JwtStaticTokenVerifier', () => {
       const tampered = `${parts[0]}.${tamperedPayload}.${parts[2]}`;
       await expect(verifier.verify(tampered)).rejects.toMatchObject({
         code: 'IDP_SIGNATURE_INVALID',
-        message: 'IdP token signature verification failed',
       });
     });
 
@@ -314,7 +336,6 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_ALGORITHM_NOT_ALLOWED',
       });
-      await expect(verifier.verify(token)).rejects.toThrow(/does not match key algorithm/);
     });
 
     it('rejects token with alg none', async () => {
@@ -338,7 +359,6 @@ describe('JwtStaticTokenVerifier', () => {
       const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_KID_MISSING',
-        message: 'IdP token header missing kid',
       });
     });
 
@@ -349,7 +369,6 @@ describe('JwtStaticTokenVerifier', () => {
       const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_TOKEN_HEADER_INVALID',
-        message: 'IdP token header missing alg',
       });
     });
 
@@ -367,7 +386,6 @@ describe('JwtStaticTokenVerifier', () => {
       const token = await validRsaToken({ sub: undefined });
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: 'IDP_SUBJECT_MISSING',
-        message: 'Required subject claim missing in token',
       });
     });
 
@@ -569,6 +587,20 @@ describe('JwtStaticTokenVerifier', () => {
       await expect(verifier.verify(token)).rejects.toMatchObject({
         code: expect.stringMatching(/^(IDP_TOKEN_INVALID|IDP_SIGNATURE_INVALID)$/),
       });
+    });
+
+    it('JOSEError message content is not passed through', async () => {
+      expect.assertions(1);
+      const verifier = makeVerifier();
+      const header = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
+      const payload = base64url(validRsaPayload());
+      const token = `${header}.${payload}.!!!invalid-signature!!!`;
+      try {
+        await verifier.verify(token);
+      } catch (err) {
+        const errStr = String(err);
+        expect(errStr).not.toContain('ERR_JOSE');
+      }
     });
 
     it('does not perform remote key fetch in verifier path', async () => {
