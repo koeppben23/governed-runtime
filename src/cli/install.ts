@@ -8,7 +8,7 @@
  */
 
 import { existsSync, realpathSync, readFileSync } from 'node:fs';
-import { writeFile, copyFile, rm } from 'node:fs/promises';
+import { writeFile, readFile, copyFile, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -116,6 +116,76 @@ export function detectPackageManager(): 'bun' | 'npm' | null {
  * @param args - Parsed CLI arguments.
  * @returns Result with file operations, warnings, and any errors.
  */
+
+// ─── Transactional Rollback ───────────────────────────────────────────────────
+
+/** Pre-install snapshot for transactional rollback. */
+interface RollbackEntry {
+  path: string;
+  existed: boolean;
+  originalContent?: Buffer;
+}
+
+/**
+ * Snapshot a file path before any modification.
+ * Reads original content as Buffer so binary artifacts (e.g. tarball) are preserved exactly.
+ */
+async function snapshotForRollback(filePath: string): Promise<RollbackEntry> {
+  if (existsSync(filePath)) {
+    try {
+      const content = await readFile(filePath);
+      return { path: filePath, existed: true, originalContent: content };
+    } catch {
+      return { path: filePath, existed: true };
+    }
+  }
+  return { path: filePath, existed: false };
+}
+
+/**
+ * Rollback install artifacts after a failed auto-install step.
+ *
+ * Uniform semantics:
+ * - existed before install (has originalContent) → restore original content
+ * - existed before install (no content, e.g. directory) → leave untouched
+ * - did not exist before install → delete (remove file/directory)
+ */
+async function rollbackArtifacts(
+  entries: RollbackEntry[],
+  ops: FileOp[],
+  warnings: string[],
+): Promise<void> {
+  for (const entry of [...entries].reverse()) {
+    try {
+      if (entry.existed && entry.originalContent !== undefined) {
+        // Pre-existing content → restore original (byte-safe for binary files)
+        await writeFile(entry.path, entry.originalContent);
+        ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
+      } else if (entry.existed) {
+        // Pre-existing directory or unreadable file → leave untouched
+        continue;
+      } else if (existsSync(entry.path)) {
+        // Newly created → delete
+        await rm(entry.path, { recursive: true, force: true });
+        ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
+      }
+    } catch (rollbackErr) {
+      warnings.push(
+        `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Install FlowGuard into the target OpenCode config directory.
+ *
+ * Writes managed artifacts and merge-managed files, then auto-installs
+ * dependencies. On failure, rolls back written artifacts to leave a clean state.
+ *
+ * @param args - Parsed CLI arguments.
+ * @returns Result with file operations, warnings, and any errors.
+ */
 export async function install(args: CliArgs): Promise<CliResult> {
   const target = resolveTarget(args.installScope);
   const ops: FileOp[] = [];
@@ -173,17 +243,50 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, 'commands'));
     await ensureDir(join(target, 'agents'));
 
-    // 1. Copy tarball to vendor directory (fixed path for A1 model)
+    // ── Transactional rollback: resolve paths + snapshot BEFORE any file write ──
     const vendorPath = join(target, 'vendor');
-    await ensureDir(vendorPath);
     const vendorTarballPath = join(vendorPath, tarballName);
+    const mandatesPath = join(target, MANDATES_FILENAME);
+
+    const configTargetDir =
+      args.installScope === 'global'
+        ? dirname(globalConfigPath())
+        : join(resolve('.'), '.opencode');
+    const pkgPath = join(target, 'package.json');
+    const opencodeJsonPath =
+      args.installScope === 'global'
+        ? join(target, 'opencode.json')
+        : join(resolve('.'), 'opencode.json');
+    const cfgPath = join(configTargetDir, 'flowguard.json');
+
+    // Snapshot ALL paths that will be touched — before any file is modified
+    const rollbackEntries: RollbackEntry[] = [
+      await snapshotForRollback(pkgPath),
+      await snapshotForRollback(opencodeJsonPath),
+      await snapshotForRollback(cfgPath),
+      await snapshotForRollback(mandatesPath),
+      await snapshotForRollback(vendorTarballPath),
+      await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
+      await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
+      await snapshotForRollback(join(target, 'agents', REVIEWER_AGENT_FILENAME)),
+      ...(await Promise.all(
+        Object.keys(COMMANDS).map((name) => snapshotForRollback(join(target, 'commands', name))),
+      )),
+      // node_modules: only remove if it was created by this install
+      {
+        path: join(configTargetDir, 'node_modules'),
+        existed: existsSync(join(configTargetDir, 'node_modules')),
+      },
+    ];
+
+    // 1. Copy tarball to vendor directory
+    await ensureDir(vendorPath);
     await copyFile(tarballPath, vendorTarballPath);
     ops.push({ path: vendorTarballPath, action: 'written' });
 
     // 2. flowguard-mandates.md (always replace — managed artifact)
     const digest = computeMandatesDigest();
     const mandatesContent = buildMandatesContent(PACKAGE_VERSION(), digest);
-    const mandatesPath = join(target, MANDATES_FILENAME);
     await ensureDir(dirname(mandatesPath));
     await writeFile(mandatesPath, mandatesContent, 'utf-8');
     ops.push({ path: mandatesPath, action: 'written' });
@@ -215,27 +318,12 @@ export async function install(args: CliArgs): Promise<CliResult> {
     );
 
     // 7. package.json (merge) — now uses @flowguard/opencode-runtime with file:-dependency
-    ops.push(await mergePackageJson(join(target, 'package.json'), PACKAGE_VERSION()));
+    ops.push(await mergePackageJson(pkgPath, PACKAGE_VERSION()));
 
     // 8. opencode.json (merge with migration)
-    //    - global: merge into ~/.config/opencode/opencode.json
-    //    - repo: merge into ./opencode.json (project root, parent of .opencode/)
-    const opencodeJsonPath =
-      args.installScope === 'global'
-        ? join(target, 'opencode.json')
-        : join(resolve('.'), 'opencode.json');
     ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
 
     // 9. flowguard.json (required artifact — flat path, no fingerprint)
-    // Persists args.policyMode as config.policy.defaultMode so /hydrate
-    // without explicit mode uses the installer's intent.
-    // Global: ~/.config/opencode/flowguard.json
-    // Repo:   {worktree}/.opencode/flowguard.json
-    const configTargetDir =
-      args.installScope === 'global'
-        ? dirname(globalConfigPath())
-        : join(resolve('.'), '.opencode');
-    const cfgPath = join(configTargetDir, 'flowguard.json');
     if (!existsSync(cfgPath)) {
       const config = {
         ...DEFAULT_CONFIG,
@@ -262,17 +350,15 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     // ── Auto-install dependencies ──────────────────────────────────────────
-    // Detect package manager and run install in the target directory so the
-    // user does not need a manual `npm install` step.
-    // configTargetDir already resolved above for config writing.
 
     const pm = detectPackageManager();
     if (pm === null) {
+      await rollbackArtifacts(rollbackEntries, ops, warnings);
       errors.push(
         'ERROR: Neither bun nor npm found in PATH.\n' +
-          `  FlowGuard files were installed, but dependencies could not be resolved.\n` +
-          `  Install bun (https://bun.sh) or Node.js/npm, then run:\n` +
-          `    cd ${configTargetDir} && npm install`,
+          `  FlowGuard artifacts were rolled back. Recovery:\n` +
+          `    1. Install bun (https://bun.sh) or Node.js/npm.\n` +
+          `    2. Re-run: flowguard install --force`,
       );
       return { target, ops, errors, warnings };
     }
@@ -288,17 +374,17 @@ export async function install(args: CliArgs): Promise<CliResult> {
       // Verify @flowguard/core was resolved
       const corePath = join(configTargetDir, 'node_modules', '@flowguard', 'core');
       if (!existsSync(corePath)) {
+        await rollbackArtifacts(rollbackEntries, ops, warnings);
         errors.push(
-          `ERROR: ${pm} install succeeded but @flowguard/core not found in node_modules.\n` +
-            `  Expected: ${corePath}\n` +
-            `  Verify package.json references the tarball correctly.`,
+          'ERROR: Dependencies installed but @flowguard/core not found.\n' +
+            '  FlowGuard artifacts were rolled back. The package.json may need manual review.',
         );
       }
     } catch (err) {
+      await rollbackArtifacts(rollbackEntries, ops, warnings);
       errors.push(
-        `ERROR: '${pm} install' failed in ${configTargetDir}.\n` +
-          `  ${err instanceof Error ? err.message : String(err)}\n` +
-          `  Run manually: cd ${configTargetDir} && ${pm} install`,
+        `ERROR: Dependency install failed: ${err instanceof Error ? err.message : String(err)}\n` +
+          '  FlowGuard artifacts were rolled back. Recovery: re-run `flowguard install --force`.',
       );
     }
 
@@ -773,6 +859,28 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkWorkspaceConfig(args.installScope)));
   checks.push(...(await checkPluginActivation(target)));
   checks.push(...(await checkLastSessionHandshake(args.installScope)));
+  checks.push(...(await checkBrokenInstall(target)));
+  return checks;
+}
+
+/**
+ * Detect "files installed but dependencies unresolved" broken state.
+ * This happens when a previous install failed after writing assets but
+ * before resolving dependencies.
+ */
+async function checkBrokenInstall(target: string): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const mandatesPath = join(target, MANDATES_FILENAME);
+  const corePath = join(target, 'node_modules', '@flowguard', 'core');
+
+  if (existsSync(mandatesPath) && !existsSync(corePath)) {
+    checks.push({
+      file: mandatesPath,
+      status: 'error',
+      detail:
+        'FlowGuard files installed but dependencies unresolved — run `flowguard install --force` to repair, or `flowguard uninstall` to remove completely.',
+    });
+  }
   return checks;
 }
 
@@ -1028,6 +1136,11 @@ export function formatResult(result: CliResult): string {
     for (const err of result.errors) {
       lines.push(`  [error] ${err}`);
     }
+    lines.push('');
+    lines.push('  Recovery plan:');
+    lines.push('    flowguard doctor          → diagnose remaining issues');
+    lines.push('    flowguard install --force → repair incomplete install');
+    lines.push('    flowguard uninstall       → remove FlowGuard completely');
   }
 
   return lines.join('\n');
