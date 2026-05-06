@@ -178,23 +178,37 @@ export async function ensureDir(dir: string): Promise<void> {
 /**
  * Safely read a file. Returns null if the file doesn't exist.
  */
+// ─── Error Discrimination ────────────────────────────────────────────────────
+
+/** Type-safe ENOENT check. Only file-not-found is safe to ignore. */
+function isEnoent(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
+}
+
+/**
+ * Safely read a file. Returns content or null if file does not exist.
+ * Throws on permission errors (EACCES/EPERM) and other unexpected errors.
+ */
 export async function safeRead(filePath: string): Promise<string | null> {
   try {
     return await readFile(filePath, 'utf-8');
-  } catch {
-    return null;
+  } catch (err: unknown) {
+    if (isEnoent(err)) return null;
+    throw err;
   }
 }
 
 /**
  * Safely delete a file. Returns true if deleted, false if not found.
+ * Throws on permission errors (EACCES/EPERM) and other unexpected errors.
  */
 export async function safeUnlink(filePath: string): Promise<boolean> {
   try {
     await unlink(filePath);
     return true;
-  } catch {
-    return false;
+  } catch (err: unknown) {
+    if (isEnoent(err)) return false;
+    throw err;
   }
 }
 

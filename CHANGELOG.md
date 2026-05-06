@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stop swallowing permission errors in safeRead/safeUnlink (#117)**: `safeRead` and `safeUnlink` now only swallow ENOENT. Permission errors (EACCES/EPERM) are surfaced to callers. Doctor reports permission-blocked files as `error` instead of `missing`. Uninstall reports actual errors instead of silent `not_found`.
+
 - **Atomic write pattern for evidence and archive sidecar/manifest files (#116)**: `atomicWrite()` exported from `persistence.ts`. Evidence artifact metadata and archive manifest/checksum/redacted-export files now use atomic writes (temp file + rename). Session state and review report atomicity verified with rename-failure tests.
 
 - **Transactional install rollback (#115)**: When dependency installation fails during `flowguard install`, FlowGuard-owned artifacts are automatically rolled back to leave a clean state. Doctor detects "files installed but dependencies unresolved" broken state. Recovery plan is emitted on errors.
