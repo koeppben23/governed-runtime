@@ -15,7 +15,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE — all categories present.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
@@ -32,6 +32,7 @@ import {
   type PlanReviewPromptOpts,
   type ImplReviewPromptOpts,
   type ReviewerResult,
+  _resetAgentResolutionCache,
 } from './review-orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
@@ -79,9 +80,17 @@ function mockClient(
       };
       error?: unknown;
     };
+    agentsResult?: { data?: Array<Record<string, unknown>>; error?: unknown };
   } = {},
 ): OrchestratorClient {
   return {
+    app: {
+      agents: vi.fn().mockResolvedValue(
+        opts.agentsResult ?? {
+          data: [{ id: 'flowguard-reviewer', name: 'flowguard-reviewer' }],
+        },
+      ),
+    },
     session: {
       create: vi
         .fn()
@@ -567,6 +576,10 @@ describe('buildArchitectureReviewPrompt', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('invokeReviewer', () => {
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+  });
+
   const PROMPT = buildPlanReviewPrompt({
     planText: 'Test plan',
     ticketText: 'Test ticket',
@@ -641,11 +654,24 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // BAD: prompt returns no structured output
-  it('returns null when prompt returns no structured output', async () => {
+  // CORNER: prompt returns no structured output but valid JSON in text parts (TextPart fallback)
+  it('extracts findings from text parts when structured_output is absent', async () => {
     const client = mockClient({
       promptResult: {
         data: { parts: [{ type: 'text', text: validFindings() }] },
+        error: undefined,
+      },
+    });
+    const result = await invokeReviewer(client, PROMPT, 'parent-1');
+    expect(result).not.toBeNull();
+    expect(result!.findings!.overallVerdict).toBe('approve');
+  });
+
+  // BAD: prompt returns no structured output AND no valid JSON in parts
+  it('returns null when neither structured_output nor text parts have valid JSON', async () => {
+    const client = mockClient({
+      promptResult: {
+        data: { parts: [{ type: 'text', text: 'I cannot review this.' }] },
         error: undefined,
       },
     });

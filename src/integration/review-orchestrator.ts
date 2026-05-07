@@ -148,6 +148,9 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
  * has zero runtime SDK dependency — testable with plain mocks.
  */
 export interface OrchestratorClient {
+  app: {
+    agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
+  };
   session: {
     create(opts: {
       body?: { parentID?: string; title?: string };
@@ -156,6 +159,7 @@ export interface OrchestratorClient {
       path: { id: string };
       body: {
         agent?: string;
+        system?: string;
         parts: Array<{ type: string; text: string }>;
         format?: {
           type: 'json_schema';
@@ -280,6 +284,149 @@ export const REVIEW_COMPLETED_PREFIX = 'INDEPENDENT_REVIEW_COMPLETED';
 
 /** Title for the reviewer child session. */
 const REVIEWER_SESSION_TITLE = 'FlowGuard Independent Review';
+
+// ─── Agent Resolution ────────────────────────────────────────────────────────
+
+/**
+ * Primary agent: 'flowguard-reviewer' — a custom subagent registered by the
+ * FlowGuard installer in .opencode/agents/flowguard-reviewer.md.
+ *
+ * The installer writes this file and sets agent.build.permission.task
+ * to allow only flowguard-reviewer. After OpenCode restart, the agent is
+ * available via the registered agent name.
+ */
+export const REVIEWER_AGENT_PRIMARY = REVIEWER_SUBAGENT_TYPE; // 'flowguard-reviewer'
+
+/**
+ * Fallback agent: 'general' — used when the custom agent is not available
+ * (e.g., before restart after install, or in environments without the agent file).
+ * In fallback mode, REVIEWER_SYSTEM_DIRECTIVE is injected as system prompt.
+ */
+export const REVIEWER_AGENT_FALLBACK = 'general';
+
+/**
+ * System directive injected ONLY in fallback mode (agent: 'general').
+ *
+ * When 'flowguard-reviewer' is registered, its markdown prompt serves as the
+ * system prompt — this directive is NOT sent to avoid conflict.
+ * When falling back to 'general', this directive provides the reviewer persona.
+ */
+export const REVIEWER_SYSTEM_DIRECTIVE =
+  'You are a governance reviewer subagent for FlowGuard. ' +
+  'Your ONLY job is to review the provided content and return a SINGLE valid JSON object ' +
+  'conforming to the ReviewFindings schema. ' +
+  'Do NOT include markdown fences, commentary, explanations, or any text outside the JSON object. ' +
+  'The JSON must contain: iteration, planVersion, reviewMode ("subagent"), overallVerdict, ' +
+  'blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, ' +
+  'reviewedAt (ISO 8601), and attestation.';
+
+/**
+ * Cached result of the agent resolution probe. null = not yet probed.
+ * Module-level cache: valid for the process lifetime (OpenCode loads agents
+ * once at startup — registry changes require restart = new process = new cache).
+ */
+let cachedResolvedAgent: string | null = null;
+
+/**
+ * Lazily probe whether 'flowguard-reviewer' is registered in OpenCode's agent
+ * registry. Result is cached for process lifetime.
+ *
+ * - If found: returns REVIEWER_AGENT_PRIMARY ('flowguard-reviewer')
+ * - If not found or probe fails: returns REVIEWER_AGENT_FALLBACK ('general')
+ *
+ * Uses try/catch for maximum resilience — unknown API shape, network errors,
+ * or SDK breaking changes must never block the review flow.
+ */
+export async function resolveReviewerAgent(client: OrchestratorClient): Promise<string> {
+  if (cachedResolvedAgent !== null) return cachedResolvedAgent;
+
+  try {
+    const result = await client.app.agents();
+    const agents = result.data ?? [];
+    const found = agents.some(
+      (a: Record<string, unknown>) =>
+        a.id === REVIEWER_AGENT_PRIMARY || a.name === REVIEWER_AGENT_PRIMARY,
+    );
+    cachedResolvedAgent = found ? REVIEWER_AGENT_PRIMARY : REVIEWER_AGENT_FALLBACK;
+  } catch {
+    // Probe failure (network, unknown API shape, etc.) — degrade gracefully
+    cachedResolvedAgent = REVIEWER_AGENT_FALLBACK;
+  }
+
+  return cachedResolvedAgent;
+}
+
+/**
+ * Reset the agent resolution cache. Test-only utility.
+ * @internal
+ */
+export function _resetAgentResolutionCache(): void {
+  cachedResolvedAgent = null;
+}
+
+// ─── Text Extraction Utility ─────────────────────────────────────────────────
+
+/**
+ * Extract JSON from unstructured text response.
+ *
+ * Belt-and-suspenders fallback when info.structured_output is absent.
+ * Tries three strategies in order:
+ * 1. Direct JSON.parse (response is pure JSON)
+ * 2. Strip markdown code fences and parse
+ * 3. Extract outermost brace-delimited block and parse
+ *
+ * Returns null if no valid JSON object can be extracted.
+ */
+export function extractJsonFromText(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Strategy 1: direct parse
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // not pure JSON — try next strategy
+  }
+
+  // Strategy 2: strip markdown fences
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1]!.trim());
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // fence content not valid JSON
+    }
+  }
+
+  // Strategy 3: outermost brace extraction
+  const firstBrace = trimmed.indexOf('{');
+  if (firstBrace >= 0) {
+    let depth = 0;
+    let lastBrace = -1;
+    for (let i = firstBrace; i < trimmed.length; i++) {
+      if (trimmed[i] === '{') depth++;
+      else if (trimmed[i] === '}') {
+        depth--;
+        if (depth === 0) {
+          lastBrace = i;
+          break;
+        }
+      }
+    }
+    if (lastBrace > firstBrace) {
+      try {
+        const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch {
+        // brace content not valid JSON
+      }
+    }
+  }
+
+  return null;
+}
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
 
@@ -534,6 +681,9 @@ export async function invokeReviewer(
   const { maxRetries, baseDelayMs, _sleepFn: sleep } = { ...DEFAULT_INVOKE_OPTIONS, ...options };
   const maxAttempts = maxRetries + 1;
 
+  // Lazy agent resolution (cached for process lifetime after first probe)
+  const agent = await resolveReviewerAgent(client);
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // Exponential backoff before retry (not before first attempt)
     if (attempt > 1) {
@@ -555,14 +705,29 @@ export async function invokeReviewer(
 
     const childSessionId = createResult.data.id;
 
-    // 2. Send the prompt to the reviewer agent and wait for response
+    // 2. Build prompt body — dual-path:
+    //    Primary: 'flowguard-reviewer' registered agent (has its own system prompt)
+    //    Fallback: 'general' with injected system directive
+    const body: {
+      agent: string;
+      system?: string;
+      parts: Array<{ type: string; text: string }>;
+      format: { type: 'json_schema'; schema: Record<string, unknown> };
+    } = {
+      agent,
+      parts: [{ type: 'text', text: prompt }],
+      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+    };
+
+    // Inject system directive only in fallback mode — the registered agent's
+    // markdown prompt already provides the reviewer persona.
+    if (agent === REVIEWER_AGENT_FALLBACK) {
+      body.system = REVIEWER_SYSTEM_DIRECTIVE;
+    }
+
     const promptResult = await client.session.prompt({
       path: { id: childSessionId },
-      body: {
-        agent: REVIEWER_SUBAGENT_TYPE,
-        parts: [{ type: 'text', text: prompt }],
-        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
-      },
+      body,
     });
 
     if (promptResult.error || !promptResult.data) {
@@ -578,7 +743,28 @@ export async function invokeReviewer(
       return null;
     }
 
-    if (!info?.structured_output) {
+    // ── Response parsing: primary path (structured_output) ──
+    let findings: Record<string, unknown> | null = null;
+
+    if (info?.structured_output && typeof info.structured_output === 'object') {
+      findings = info.structured_output as Record<string, unknown>;
+    }
+
+    // ── Response parsing: TextPart fallback ──
+    // Belt-and-suspenders: if structured_output is absent, attempt to extract
+    // JSON from the response text parts. This handles providers/models that
+    // don't fully support the format field.
+    if (!findings && promptResult.data.parts) {
+      const textContent = promptResult.data.parts
+        .filter((p) => p.type === 'text' && p.text)
+        .map((p) => p.text!)
+        .join('\n');
+      if (textContent) {
+        findings = extractJsonFromText(textContent);
+      }
+    }
+
+    if (!findings) {
       if (attempt < maxAttempts) continue; // retry missing structured output
       return null;
     }
@@ -587,7 +773,6 @@ export async function invokeReviewer(
     // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
     // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
     // failures caused by the subagent guessing or using a placeholder literal.
-    const findings = info.structured_output as Record<string, unknown>;
     const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
     if (reviewedBy && typeof reviewedBy === 'object') {
       reviewedBy.sessionId = childSessionId;

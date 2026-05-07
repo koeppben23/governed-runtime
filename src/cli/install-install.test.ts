@@ -927,7 +927,7 @@ describe('cli/uninstall', () => {
       const realImpl = vi.mocked(fs.unlink).getMockImplementation()!;
       vi.mocked(fs.unlink).mockImplementation(((...args: Parameters<typeof fs.unlink>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.includes('tools/flowguard.ts'))
+        if (p.replace(/\\/g, '/').includes('tools/flowguard.ts'))
           return Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
         return realImpl(...args);
       }) as typeof fs.unlink);
@@ -940,7 +940,9 @@ describe('cli/uninstall', () => {
         ).toBe(true);
 
         // The permission-blocked file must NOT be reported as removed or not_found
-        const toolOps = result.ops.filter((o) => o.path.includes('tools/flowguard.ts'));
+        const toolOps = result.ops.filter((o) =>
+          o.path.replace(/\\/g, '/').includes('tools/flowguard.ts'),
+        );
         const removedOrNotFound = toolOps.filter(
           (o) => o.action === 'removed' || o.action === 'not_found',
         );
