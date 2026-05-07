@@ -497,66 +497,113 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
  * @param parentSessionId - Parent session ID for child session linkage
  * @returns ReviewerResult on success, null on failure
  */
+/** Options for controlling retry behavior of reviewer invocation. */
+export interface InvokeReviewerOptions {
+  /** Maximum number of retry attempts after the first failure (default: 2). */
+  readonly maxRetries?: number;
+  /** Base delay in milliseconds for exponential backoff (default: 1000). */
+  readonly baseDelayMs?: number;
+  /**
+   * Sleep function for backoff delays. Injected for testability.
+   * @internal — consumers should not set this; used only in tests.
+   */
+  readonly _sleepFn?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Sleep utility for retry backoff. Exported for testability.
+ * @internal
+ */
+export function retrySleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Default retry configuration. */
+const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
+  maxRetries: 2,
+  baseDelayMs: 1000,
+  _sleepFn: retrySleep,
+};
+
 export async function invokeReviewer(
   client: OrchestratorClient,
   prompt: string,
   parentSessionId: string,
+  options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  // 1. Create a child session linked to the parent
-  const createResult = await client.session.create({
-    body: {
-      parentID: parentSessionId,
-      title: REVIEWER_SESSION_TITLE,
-    },
-  });
+  const { maxRetries, baseDelayMs, _sleepFn: sleep } = { ...DEFAULT_INVOKE_OPTIONS, ...options };
+  const maxAttempts = maxRetries + 1;
 
-  if (createResult.error || !createResult.data?.id) {
-    return null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Exponential backoff before retry (not before first attempt)
+    if (attempt > 1) {
+      await sleep(baseDelayMs * Math.pow(2, attempt - 2));
+    }
+
+    // 1. Create a child session linked to the parent
+    const createResult = await client.session.create({
+      body: {
+        parentID: parentSessionId,
+        title: REVIEWER_SESSION_TITLE,
+      },
+    });
+
+    if (createResult.error || !createResult.data?.id) {
+      if (attempt < maxAttempts) continue; // retry transient session creation failure
+      return null;
+    }
+
+    const childSessionId = createResult.data.id;
+
+    // 2. Send the prompt to the reviewer agent and wait for response
+    const promptResult = await client.session.prompt({
+      path: { id: childSessionId },
+      body: {
+        agent: REVIEWER_SUBAGENT_TYPE,
+        parts: [{ type: 'text', text: prompt }],
+        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+      },
+    });
+
+    if (promptResult.error || !promptResult.data) {
+      if (attempt < maxAttempts) continue; // retry transient prompt failure
+      return null;
+    }
+
+    const info = promptResult.data.info;
+
+    // StructuredOutputError is deterministic — the LLM cannot fulfill the schema.
+    // Retrying will produce the same failure. Fail immediately.
+    if (info?.error && info.error.name === 'StructuredOutputError') {
+      return null;
+    }
+
+    if (!info?.structured_output) {
+      if (attempt < maxAttempts) continue; // retry missing structured output
+      return null;
+    }
+
+    // Authoritative session ID injection: the subagent cannot reliably know its
+    // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
+    // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
+    // failures caused by the subagent guessing or using a placeholder literal.
+    const findings = info.structured_output as Record<string, unknown>;
+    const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
+    if (reviewedBy && typeof reviewedBy === 'object') {
+      reviewedBy.sessionId = childSessionId;
+    } else {
+      findings.reviewedBy = { sessionId: childSessionId };
+    }
+
+    return {
+      sessionId: childSessionId,
+      rawResponse: JSON.stringify(findings),
+      findings,
+    };
   }
 
-  const childSessionId = createResult.data.id;
-
-  // 2. Send the prompt to the reviewer agent and wait for response
-  const promptResult = await client.session.prompt({
-    path: { id: childSessionId },
-    body: {
-      agent: REVIEWER_SUBAGENT_TYPE,
-      parts: [{ type: 'text', text: prompt }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
-    },
-  });
-
-  if (promptResult.error || !promptResult.data) {
-    return null;
-  }
-
-  const info = promptResult.data.info;
-
-  if (info?.error && info.error.name === 'StructuredOutputError') {
-    return null;
-  }
-
-  if (!info?.structured_output) {
-    return null;
-  }
-
-  // Authoritative session ID injection: the subagent cannot reliably know its
-  // own session ID, so the runtime overwrites findings.reviewedBy.sessionId
-  // with the verified childSessionId. This prevents SUBAGENT_SESSION_MISMATCH
-  // failures caused by the subagent guessing or using a placeholder literal.
-  const findings = info.structured_output as Record<string, unknown>;
-  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
-  if (reviewedBy && typeof reviewedBy === 'object') {
-    reviewedBy.sessionId = childSessionId;
-  } else {
-    findings.reviewedBy = { sessionId: childSessionId };
-  }
-
-  return {
-    sessionId: childSessionId,
-    rawResponse: JSON.stringify(findings),
-    findings,
-  };
+  // Unreachable under normal control flow, but TypeScript needs a return.
+  return null;
 }
 
 // ─── Output Mutation ─────────────────────────────────────────────────────────

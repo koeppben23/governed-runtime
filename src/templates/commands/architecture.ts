@@ -42,6 +42,8 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
    - If review converged: Report the result.
    - If another iteration is needed: Repeat from step 5 (max iterations from policy.maxSelfReviewIterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
+   - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-submit the ADR: call \`flowguard_architecture({ title: <same title>, adrText: <same ADR text> })\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-submissions are allowed.
+   - If the tool returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: The review orchestration has failed on multiple consecutive attempts. Report this to the user with the recovery steps from the error payload and stop.
 
 6. Report the ADR title, ID, current phase, and whether human review is needed.
 

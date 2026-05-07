@@ -86,6 +86,8 @@ If generic commands are suggested despite specific candidates existing, flag thi
 
 - This command is only available in READY phase (it starts a standalone flow).
 - Present the report clearly and concisely.
+- If \`flowguard_review\` returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-run the /review command to retry. This is NOT a permanent failure — the orchestration retries automatically on each fresh invocation.
+- If \`flowguard_review\` returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: Report this to the user with the recovery steps and stop.
 ${GOVERNANCE_RULES}
 ## Done-when
 

@@ -139,7 +139,28 @@ export const architecture: ToolDefinition = {
         state.phase === 'ARCHITECTURE' &&
         state.selfReview
       ) {
-        return formatBlocked('ADR_REVIEW_IN_PROGRESS');
+        // Recovery: if the last architecture obligation is blocked (orchestration failed),
+        // allow re-submission to create a fresh obligation and retry.
+        // Max-cap: if >=3 architecture obligations are blocked, report permanent failure.
+        const assurance = ensureReviewAssurance(state.reviewAssurance);
+        const blockedArchObligations = assurance.obligations.filter(
+          (o) => o.obligationType === 'architecture' && o.status === 'blocked',
+        );
+        const lastArchObligation = [...assurance.obligations]
+          .reverse()
+          .find((o) => o.obligationType === 'architecture');
+
+        if (lastArchObligation?.status === 'blocked') {
+          if (blockedArchObligations.length >= 3) {
+            return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
+              attempts: String(blockedArchObligations.length),
+            });
+          }
+          // Fall through to Mode A — treat as fresh submission.
+          // selfReview will be reset by executeArchitecture() rail.
+        } else {
+          return formatBlocked('ADR_REVIEW_IN_PROGRESS');
+        }
       }
 
       if (isInitialSubmission) {

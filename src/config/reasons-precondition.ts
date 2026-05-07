@@ -379,10 +379,22 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     category: 'precondition',
     messageTemplate: 'Internal review orchestration failed while processing FlowGuard tool output.',
     recoverySteps: [
-      'Run flowguard doctor to verify plugin installation and handshake',
-      'Preserve session-state.json and retry after updating FlowGuard',
+      'Re-run the command to create a fresh review obligation and retry orchestration',
+      'If repeated failures: run flowguard doctor to verify plugin installation',
+      'Check network connectivity to the OpenCode SDK (session.create/prompt)',
       'Ensure the FlowGuard tool output format matches the expected contract',
-      'Check that no other tooling modifies FlowGuard tool responses',
+    ],
+  },
+
+  {
+    code: 'ORCHESTRATION_PERMANENTLY_FAILED',
+    category: 'precondition',
+    messageTemplate:
+      'Review orchestration failed on {attempts} consecutive attempts. Manual intervention required.',
+    recoverySteps: [
+      'Run flowguard doctor to verify plugin installation and reviewer agent availability',
+      'Check network connectivity and OpenCode SDK health',
+      'Use /abort to terminate this session and start fresh if infrastructure cannot be repaired',
     ],
   },
 ];

@@ -46,6 +46,8 @@ Implement the approved plan and obtain mandatory independent implementation revi
    - If review converged: Report the final status.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
+   - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-record the implementation: call \`flowguard_implement({})\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-recordings are allowed.
+   - If the tool returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: The review orchestration has failed on multiple consecutive attempts. Report this to the user with the recovery steps from the error payload and stop.
 
 ## Rules
 

@@ -88,6 +88,7 @@ import {
   appendReviewObligation,
   consumeReviewObligation,
   createReviewObligation,
+  ensureReviewAssurance,
   findLatestObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
@@ -172,10 +173,40 @@ export const implement: ToolDefinition = {
       if (isRecordImpl) {
         // ── Mode A: Record implementation evidence ───────────────
         if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
-          return formatBlocked('COMMAND_NOT_ALLOWED', {
-            command: '/implement',
-            phase: state.phase,
-          });
+          // Recovery: if phase is IMPL_REVIEW and the last implement obligation
+          // is blocked (orchestration failed), allow re-recording to create a
+          // fresh obligation and retry. The agent re-records implementation
+          // evidence which resets the review loop.
+          // Max-cap: if >=3 implement obligations are blocked, report permanent failure.
+          if (state.phase === 'IMPL_REVIEW') {
+            const assurance = ensureReviewAssurance(state.reviewAssurance);
+            const blockedImplObligations = assurance.obligations.filter(
+              (o) => o.obligationType === 'implement' && o.status === 'blocked',
+            );
+            const lastImplObligation = [...assurance.obligations]
+              .reverse()
+              .find((o) => o.obligationType === 'implement');
+
+            if (lastImplObligation?.status === 'blocked') {
+              if (blockedImplObligations.length >= 3) {
+                return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
+                  attempts: String(blockedImplObligations.length),
+                });
+              }
+              // Fall through to Mode A — treat as fresh implementation recording.
+              // The state will be reset below (implementation, implReview, etc.).
+            } else {
+              return formatBlocked('COMMAND_NOT_ALLOWED', {
+                command: '/implement',
+                phase: state.phase,
+              });
+            }
+          } else {
+            return formatBlocked('COMMAND_NOT_ALLOWED', {
+              command: '/implement',
+              phase: state.phase,
+            });
+          }
         }
 
         if (!state.ticket) {
