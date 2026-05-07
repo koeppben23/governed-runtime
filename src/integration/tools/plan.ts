@@ -171,7 +171,29 @@ export const plan: ToolDefinition = {
       }
 
       if (isInitialSubmission && hasPlanText && state.phase === 'PLAN' && state.selfReview) {
-        return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
+        // Recovery: if the last plan obligation is blocked (orchestration failed),
+        // allow re-submission to create a fresh obligation and retry.
+        // Max-cap: if >=3 plan obligations are blocked, the orchestration is
+        // permanently broken — report to user instead of infinite retry loop.
+        const assurance = ensureReviewAssurance(state.reviewAssurance);
+        const blockedPlanObligations = assurance.obligations.filter(
+          (o) => o.obligationType === 'plan' && o.status === 'blocked',
+        );
+        const lastPlanObligation = [...assurance.obligations]
+          .reverse()
+          .find((o) => o.obligationType === 'plan');
+
+        if (lastPlanObligation?.status === 'blocked') {
+          if (blockedPlanObligations.length >= 3) {
+            return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
+              attempts: String(blockedPlanObligations.length),
+            });
+          }
+          // Fall through to Mode A — treat as fresh submission.
+          // selfReview will be reset at line 249 below.
+        } else {
+          return formatBlocked('PLAN_REVIEW_IN_PROGRESS');
+        }
       }
 
       if (hasVerdict && !state.plan) {
