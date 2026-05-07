@@ -90,7 +90,7 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1 + 1;
+      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1 + 1 + 1;
       expect(checks.length).toBe(expectedChecks);
     });
   });
@@ -116,7 +116,7 @@ describe('cli/doctor', () => {
             : typeof args[0] === 'string'
               ? args[0]
               : (args[0] as URL).pathname;
-        if (p.includes('tools/flowguard.ts'))
+        if (p.replace(/\\/g, '/').includes('tools/flowguard.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       }) as typeof fs.readFile);
@@ -124,7 +124,7 @@ describe('cli/doctor', () => {
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
         const toolCheck = checks.find(
-          (c) => c.file === toolPath || c.file.includes('tools/flowguard.ts'),
+          (c) => c.file === toolPath || c.file.replace(/\\/g, '/').includes('tools/flowguard.ts'),
         );
         expect(toolCheck).toBeDefined();
         expect(toolCheck!.status).toBe('error');
@@ -141,7 +141,7 @@ describe('cli/doctor', () => {
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.includes('plugins/flowguard-audit.ts'))
+        if (p.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       }) as typeof fs.readFile);
@@ -149,7 +149,7 @@ describe('cli/doctor', () => {
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
         const pluginCheck = checks.find(
-          (c) => c.file && c.file.includes('plugins/flowguard-audit.ts'),
+          (c) => c.file && c.file.replace(/\\/g, '/').includes('plugins/flowguard-audit.ts'),
         );
         expect(pluginCheck).toBeDefined();
         expect(pluginCheck!.status).toBe('error');
@@ -166,14 +166,16 @@ describe('cli/doctor', () => {
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.includes('.opencode/package.json'))
+        if (p.replace(/\\/g, '/').includes('.opencode/package.json'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       }) as typeof fs.readFile);
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
-        const pkgCheck = checks.find((c) => c.file && c.file.includes('.opencode/package.json'));
+        const pkgCheck = checks.find(
+          (c) => c.file && c.file.replace(/\\/g, '/').includes('.opencode/package.json'),
+        );
         expect(pkgCheck).toBeDefined();
         expect(pkgCheck!.status).toBe('error');
       } finally {
@@ -189,14 +191,16 @@ describe('cli/doctor', () => {
       const realImpl = vi.mocked(fs.readFile).getMockImplementation()!;
       vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
-        if (p.includes('commands/plan.md'))
+        if (p.replace(/\\/g, '/').includes('commands/plan.md'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       }) as typeof fs.readFile);
 
       try {
         const checks = await doctor(repoArgs({ action: 'doctor' }));
-        const cmdCheck = checks.find((c) => c.file && c.file.includes('commands/plan.md'));
+        const cmdCheck = checks.find(
+          (c) => c.file && c.file.replace(/\\/g, '/').includes('commands/plan.md'),
+        );
         expect(cmdCheck).toBeDefined();
         expect(cmdCheck!.status).toBe('error');
       } finally {
@@ -213,7 +217,8 @@ describe('cli/doctor', () => {
       vi.mocked(fs.readFile).mockImplementation(((...args: Parameters<typeof fs.readFile>) => {
         const p = typeof args[0] === 'string' ? args[0] : String(args[0]);
         // Match opencode.json at project root, not inside .opencode/
-        if (p.endsWith('/opencode.json') && !p.includes('.opencode/') && !p.includes('.opencode\\'))
+        const norm = p.replace(/\\/g, '/');
+        if (norm.endsWith('/opencode.json') && !norm.includes('.opencode/'))
           return Promise.reject(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
         return realImpl(...args);
       }) as typeof fs.readFile);

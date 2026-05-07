@@ -678,6 +678,26 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
     }
   }
 
+  // 5. Reviewer agent definition (warn, not error — system degrades gracefully)
+  const agentPath = join(target, 'agents', REVIEWER_AGENT_FILENAME);
+  const agentContent = await checkedRead(agentPath, checks);
+  if (!agentContent) {
+    // checkedRead pushed missing or error — override 'missing' to 'warn'
+    const last = checks[checks.length - 1];
+    if (last && last.file === agentPath && last.status === 'missing') {
+      last.status = 'warn';
+      last.detail = 'reviewer agent not installed — run flowguard install --force to restore';
+    }
+  } else if (!agentContent.startsWith('---')) {
+    checks.push({
+      file: agentPath,
+      status: 'warn',
+      detail: 'agent file missing frontmatter — run flowguard install --force to restore',
+    });
+  } else {
+    checks.push({ file: agentPath, status: 'ok' });
+  }
+
   return checks;
 }
 

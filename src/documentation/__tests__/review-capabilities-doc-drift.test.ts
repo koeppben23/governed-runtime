@@ -20,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
 
 function readDoc(relativePath: string): string {
-  return readFileSync(join(REPO_ROOT, relativePath), 'utf-8');
+  return readFileSync(join(REPO_ROOT, relativePath), 'utf-8').replace(/\r\n/g, '\n');
 }
 
 function rc2Section(): string {
