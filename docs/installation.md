@@ -55,6 +55,51 @@ Expected output:
   N/N checks passed
 ```
 
+## Install from Local Source Checkout
+
+Use this path when testing FlowGuard from a local repository checkout without publishing a package. The `npm pack → vendor/` pipeline is the same one used by the release path, which means you test the real installer, rollback, and vendor ownership behaviour — not a symlink-based `npm link`.
+
+```bash
+cd ~/work/governed-runtime
+
+npm ci
+npm run build
+
+TARBALL="$(npm pack --silent | tail -n 1)"
+
+npx --yes --package "./$TARBALL" flowguard install \
+  --core-tarball "./$TARBALL" \
+  --install-scope global \
+  --force
+
+npx --yes --package "./$TARBALL" flowguard doctor \
+  --install-scope global
+```
+
+After installation, restart OpenCode so the FlowGuard plugin is loaded from `~/.config/opencode/plugins`.
+
+Expected global installation location:
+
+```
+~/.config/opencode/
+  flowguard.json
+  opencode.json
+  plugins/flowguard-audit.ts
+  commands/
+  agents/
+  tools/
+  vendor/
+  node_modules/
+```
+
+If plugin review orchestration fails after installation, run:
+
+```bash
+npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
+```
+
+and restart OpenCode again.
+
 ## Project-Bound Installation (Recommended for Teams)
 
 For teams that want FlowGuard integrated into their project workflow:

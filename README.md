@@ -18,6 +18,51 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 
+### Developer / Dogfood Install from Source
+
+Use this path when testing FlowGuard from a local repository checkout without publishing a package. This exercises the same `npm pack → vendor/ → install` pipeline as the release path.
+
+```bash
+cd ~/work/governed-runtime
+
+npm ci
+npm run build
+
+TARBALL="$(npm pack --silent | tail -n 1)"
+
+npx --yes --package "./$TARBALL" flowguard install \
+  --core-tarball "./$TARBALL" \
+  --install-scope global \
+  --force
+
+npx --yes --package "./$TARBALL" flowguard doctor \
+  --install-scope global
+```
+
+After installation, restart OpenCode so the FlowGuard plugin is loaded from `~/.config/opencode/plugins`.
+
+Expected global installation location:
+
+```
+~/.config/opencode/
+  flowguard.json
+  opencode.json
+  plugins/flowguard-audit.ts
+  commands/
+  agents/
+  tools/
+  vendor/
+  node_modules/
+```
+
+If plugin review orchestration fails after installation, run:
+
+```bash
+npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
+```
+
+and restart OpenCode again.
+
 In headless/non-interactive execution, FlowGuard does not rely on follow-up questions: missing safety-critical inputs fail closed with explicit blocked reasons.
 
 > [!NOTE] > **Headless operation is separate from the interactive plugin:**
