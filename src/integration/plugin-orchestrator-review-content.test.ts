@@ -32,6 +32,7 @@ import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import type { SessionState } from '../state/schema.js';
 
 const PARENT_SESSION_ID = 'parent-session-review-1';
 const CHILD_SESSION_ID = 'child-session-review-1';
@@ -40,17 +41,19 @@ const SESS_DIR = '/tmp/fg-review-content-sess-dir';
 const NOW = '2026-05-06T12:00:00.000Z';
 
 function contentAnalysisRequiredOutput(): string {
-  return JSON.stringify({
-    error: true,
-    code: 'CONTENT_ANALYSIS_REQUIRED',
-    phase: 'REVIEW',
-    requiredReviewAttestation: {
-      toolObligationId: OBLIGATION_ID,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewedBy: 'flowguard-reviewer',
-    },
-  });
+  return (
+    JSON.stringify({
+      error: true,
+      code: 'CONTENT_ANALYSIS_REQUIRED',
+      phase: 'REVIEW',
+      requiredReviewAttestation: {
+        toolObligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        reviewedBy: 'flowguard-reviewer',
+      },
+    }) + '\nNext action: Run /continue'
+  );
 }
 
 function buildFindings(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -132,7 +135,10 @@ function buildSessionState(strictEnforcement = true) {
   });
 }
 
-function buildDeps(client: unknown): {
+function buildDeps(
+  client: unknown,
+  stateRef: { current: SessionState },
+): {
   deps: OrchestratorDeps;
   blockReviewOutcome: ReturnType<typeof vi.fn>;
   updateReviewAssurance: ReturnType<typeof vi.fn>;
@@ -150,7 +156,9 @@ function buildDeps(client: unknown): {
         output.output = JSON.stringify({ error: true, code, detail });
       },
     );
-  const updateReviewAssurance = vi.fn().mockResolvedValue(undefined);
+  const updateReviewAssurance = vi.fn().mockImplementation(async (_sessDir, update) => {
+    stateRef.current = update(stateRef.current, NOW);
+  });
   return {
     deps: {
       resolveFingerprint: vi.fn().mockResolvedValue('fingerprint-review-1'),
@@ -172,9 +180,12 @@ function buildDeps(client: unknown): {
 async function runReviewContent(
   findings: Record<string, unknown> | null,
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+  strictEnforcement = true,
 ) {
   const client = buildClient(findings);
-  const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client);
+  const stateRef = { current: buildSessionState(strictEnforcement) };
+  vi.mocked(readState).mockResolvedValue(stateRef.current);
+  const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
   const output = { output: contentAnalysisRequiredOutput() };
   const event: ToolCallEvent = {
     toolName: TOOL_FLOWGUARD_REVIEW,
@@ -186,13 +197,12 @@ async function runReviewContent(
 
   await runReviewOrchestration(deps, event);
 
-  return { output, blockReviewOutcome, updateReviewAssurance };
+  return { output, blockReviewOutcome, updateReviewAssurance, state: stateRef.current, client };
 }
 
 describe('runReviewOrchestration strict /review content analysis', () => {
   beforeEach(() => {
     vi.mocked(readState).mockReset();
-    vi.mocked(readState).mockResolvedValue(buildSessionState());
     vi.mocked(loadExternalContent).mockReset();
     vi.mocked(loadExternalContent).mockResolvedValue({ content: 'diff content' } as never);
   });
@@ -263,11 +273,33 @@ describe('runReviewOrchestration strict /review content analysis', () => {
   });
 
   it('injects pluginReviewFindings and records evidence when strict /review attestation is valid', async () => {
-    const { output, blockReviewOutcome, updateReviewAssurance } =
+    const { output, blockReviewOutcome, updateReviewAssurance, state, client } =
       await runReviewContent(buildFindings());
 
+    expect(client.session.create).toHaveBeenCalledOnce();
+    expect(client.session.prompt).toHaveBeenCalledOnce();
     expect(blockReviewOutcome).not.toHaveBeenCalled();
     expect(updateReviewAssurance).toHaveBeenCalledOnce();
+    const obligation = state.reviewAssurance?.obligations[0];
+    expect(obligation).toMatchObject({
+      obligationId: OBLIGATION_ID,
+      obligationType: 'review',
+      pluginHandshakeAt: NOW,
+      status: 'fulfilled',
+      fulfilledAt: NOW,
+    });
+    const invocation = state.reviewAssurance?.invocations[0];
+    expect(invocation).toMatchObject({
+      obligationId: OBLIGATION_ID,
+      obligationType: 'review',
+      parentSessionId: PARENT_SESSION_ID,
+      childSessionId: CHILD_SESSION_ID,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      fulfilledAt: NOW,
+      source: 'host-orchestrated',
+    });
+    expect(invocation?.invocationId).toBe(obligation?.invocationId);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -300,7 +332,6 @@ describe('runReviewOrchestration strict /review content analysis', () => {
   });
 
   it('preserves non-strict /review fallback by injecting findings without blocking mismatch', async () => {
-    vi.mocked(readState).mockResolvedValue(buildSessionState(false));
     const findings = buildFindings({
       attestation: {
         mandateDigest: 'wrong-digest-value',
@@ -312,7 +343,11 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       },
     });
 
-    const { output, blockReviewOutcome, updateReviewAssurance } = await runReviewContent(findings);
+    const { output, blockReviewOutcome, updateReviewAssurance } = await runReviewContent(
+      findings,
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      false,
+    );
 
     expect(blockReviewOutcome).not.toHaveBeenCalled();
     expect(updateReviewAssurance).not.toHaveBeenCalled();

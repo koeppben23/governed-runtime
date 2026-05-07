@@ -410,6 +410,9 @@ When the prompt contains PR diff, branch diff, URL content, or manual text to re
    ReviewFindings object to \`flowguard_review\` as \`analysisFindings\`. Do NOT convert
    to an array and do NOT drop \`reviewMode\`, \`reviewedBy\`, \`reviewedAt\`, \`attestation\`,
    \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
+   In strict governance, copied JSON or attestation fields alone are diagnostic
+   context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` for
+   the obligation before submitted findings satisfy governance.
 
 4. **toolObligationId is always provided.** Include \`attestation.toolObligationId\`
     exactly as provided by FlowGuard in \`requiredReviewAttestation\`. This UUID binds

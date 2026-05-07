@@ -37,6 +37,7 @@
 
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
+import { parseToolResult } from './plugin-helpers.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
@@ -578,28 +579,23 @@ export function buildMutatedOutput(
   originalOutput: string,
   reviewerResult: ReviewerResult,
 ): string | null {
-  // Fail-closed: COMPLETED requires structured findings
   if (!reviewerResult.findings) return null;
 
-  try {
-    const parsed = JSON.parse(originalOutput) as Record<string, unknown>;
+  const parsed = parseToolResult(originalOutput);
+  if (!parsed || Array.isArray(parsed)) return null;
 
-    // Replace the next field
-    parsed.next =
-      `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
-      `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-      `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
-      `overallVerdict, and include the reviewFindings object from ` +
-      `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
+  parsed.next =
+    `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
+    `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
+    `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
+    `overallVerdict, and include the reviewFindings object from ` +
+    `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
 
-    // Inject structured findings
-    parsed.pluginReviewFindings = reviewerResult.findings;
-    parsed._pluginReviewSessionId = reviewerResult.sessionId;
+  // Inject structured findings
+  parsed.pluginReviewFindings = reviewerResult.findings;
+  parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
-    return JSON.stringify(parsed);
-  } catch {
-    return null;
-  }
+  return JSON.stringify(parsed);
 }
 
 /**
@@ -616,24 +612,21 @@ export function buildReviewContentMutatedOutput(
 ): string | null {
   if (!reviewerResult.findings) return null;
 
-  try {
-    const parsed = JSON.parse(originalOutput) as Record<string, unknown>;
+  const parsed = parseToolResult(originalOutput);
+  if (!parsed || Array.isArray(parsed)) return null;
 
-    parsed.next =
-      `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
-      `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-      `pluginReviewFindings. Call flowguard_review again with the same content ` +
-      `input (prNumber/branch/url/text) and set analysisFindings to the ` +
-      `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
-      `Include attestation.toolObligationId from requiredReviewAttestation.`;
+  parsed.next =
+    `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
+    `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
+    `pluginReviewFindings. Call flowguard_review again with the same content ` +
+    `input (prNumber/branch/url/text) and set analysisFindings to the ` +
+    `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
+    `Include attestation.toolObligationId from requiredReviewAttestation.`;
 
-    parsed.pluginReviewFindings = reviewerResult.findings;
-    parsed._pluginReviewSessionId = reviewerResult.sessionId;
+  parsed.pluginReviewFindings = reviewerResult.findings;
+  parsed._pluginReviewSessionId = reviewerResult.sessionId;
 
-    return JSON.stringify(parsed);
-  } catch {
-    return null;
-  }
+  return JSON.stringify(parsed);
 }
 
 // ─── Orchestration Entry Point ───────────────────────────────────────────────
@@ -645,25 +638,19 @@ export function buildReviewContentMutatedOutput(
  * @returns true if the output contains the review-required signal
  */
 export function isReviewRequired(toolOutput: string, toolName?: string): boolean {
-  try {
-    const parsed = JSON.parse(toolOutput) as Record<string, unknown>;
-    const next = typeof parsed.next === 'string' ? parsed.next : '';
-    if (next.startsWith(REVIEW_REQUIRED_PREFIX)) return true;
-    // Standalone /review: blocked with CONTENT_ANALYSIS_REQUIRED + requiredReviewAttestation.
-    // Narrow to TOOL_FLOWGUARD_REVIEW only — other tools may return this code
-    // for unrelated reasons.
-    if (
-      toolName === TOOL_FLOWGUARD_REVIEW &&
-      parsed.error === true &&
-      parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
-      typeof parsed.requiredReviewAttestation === 'object'
-    ) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
+  const parsed = parseToolResult(toolOutput);
+  if (!parsed || Array.isArray(parsed)) return false;
+  const next = typeof parsed.next === 'string' ? parsed.next : '';
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX)) return true;
+  if (
+    toolName === TOOL_FLOWGUARD_REVIEW &&
+    parsed.error === true &&
+    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+    typeof parsed.requiredReviewAttestation === 'object'
+  ) {
+    return true;
   }
+  return false;
 }
 
 /**

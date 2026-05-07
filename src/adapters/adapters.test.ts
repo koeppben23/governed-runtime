@@ -573,59 +573,70 @@ describe('persistence', () => {
     });
 
     it('ARCHIVE: rename failure during archiveSession preserves pre-existing sidecar files', async () => {
-      const worktree = path.resolve('.');
+      const worktree = tmpDir;
+      const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
+      const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
       const sessionId = `archive-atomic-${Date.now()}`;
-      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-      await writeState(sessDir, makeState('COMPLETE'));
-
-      // Pre-create valid decision-receipts and archive-manifest with known content
-      const receiptsPath = path.join(sessDir, 'decision-receipts.v1.json');
-      const originalReceipts =
-        JSON.stringify(
-          {
-            schemaVersion: 'decision-receipts.v1',
-            sessionId,
-            generatedAt: new Date().toISOString(),
-            count: 0,
-            receipts: [],
-          },
-          null,
-          2,
-        ) + '\n';
-      await fs.writeFile(receiptsPath, originalReceipts, 'utf-8');
-
-      const manifestPath = path.join(sessDir, 'archive-manifest.json');
-      const originalManifest =
-        JSON.stringify(
-          { schemaVersion: 'archive-manifest.v1', files: [], redactionMode: 'basic' },
-          null,
-          2,
-        ) + '\n';
-      await fs.writeFile(manifestPath, originalManifest, 'utf-8');
-
       try {
+        process.env.OPENCODE_CONFIG_DIR = configDir;
+
+        const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+        await writeState(sessDir, makeState('COMPLETE'));
+
+        // Pre-create valid decision-receipts and archive-manifest with known content
+        const receiptsPath = path.join(sessDir, 'decision-receipts.v1.json');
+        const originalReceipts =
+          JSON.stringify(
+            {
+              schemaVersion: 'decision-receipts.v1',
+              sessionId,
+              generatedAt: new Date().toISOString(),
+              count: 0,
+              receipts: [],
+            },
+            null,
+            2,
+          ) + '\n';
+        await fs.writeFile(receiptsPath, originalReceipts, 'utf-8');
+
+        const manifestPath = path.join(sessDir, 'archive-manifest.json');
+        const originalManifest =
+          JSON.stringify(
+            { schemaVersion: 'archive-manifest.v1', files: [], redactionMode: 'basic' },
+            null,
+            2,
+          ) + '\n';
+        await fs.writeFile(manifestPath, originalManifest, 'utf-8');
+
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
-        await archiveSession(fingerprint, sessionId);
-      } catch (err) {
-        expect(err).toBeInstanceOf(PersistenceError);
+        await expect(archiveSession(fingerprint, sessionId)).rejects.toBeInstanceOf(
+          PersistenceError,
+        );
+        restoreRename();
+
+        // decision-receipts: must exist and be exactly the original content
+        expect(existsSync(receiptsPath)).toBe(true);
+        const afterReceipts = await fs.readFile(receiptsPath, 'utf-8');
+        expect(afterReceipts).toBe(originalReceipts);
+
+        // archive-manifest: must exist and be exactly the original content
+        expect(existsSync(manifestPath)).toBe(true);
+        const afterManifest = await fs.readFile(manifestPath, 'utf-8');
+        expect(afterManifest).toBe(originalManifest);
+
+        // No orphan .tmp files in session directory
+        const entries = await fs.readdir(sessDir);
+        const tmpFiles = entries.filter((e) => e.includes('.tmp'));
+        expect(tmpFiles).toHaveLength(0);
       } finally {
         restoreRename();
+        if (previousConfigDir === undefined) {
+          delete process.env.OPENCODE_CONFIG_DIR;
+        } else {
+          process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
+        }
+        await cleanTmpDir(configDir);
       }
-
-      // decision-receipts: must exist and be exactly the original content
-      expect(existsSync(receiptsPath)).toBe(true);
-      const afterReceipts = await fs.readFile(receiptsPath, 'utf-8');
-      expect(afterReceipts).toBe(originalReceipts);
-
-      // archive-manifest: must exist and be exactly the original content
-      expect(existsSync(manifestPath)).toBe(true);
-      const afterManifest = await fs.readFile(manifestPath, 'utf-8');
-      expect(afterManifest).toBe(originalManifest);
-
-      // No orphan .tmp files in session directory
-      const entries = await fs.readdir(sessDir);
-      const tmpFiles = entries.filter((e) => e.includes('.tmp'));
-      expect(tmpFiles).toHaveLength(0);
     });
   });
 });

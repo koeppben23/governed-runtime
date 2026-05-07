@@ -513,3 +513,74 @@ describe('requireReviewFindings', () => {
     expect(parsed.recovery).toBeTruthy();
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Anti-forgery: manual findings without persisted evidence
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('anti-forgery — manual findings without persisted evidence', () => {
+  it('NOT_PROVIDED_BY_RUNTIME attestation values are rejected', () => {
+    const findings = strictFindings({
+      attestation: {
+        mandateDigest: 'NOT_PROVIDED_BY_RUNTIME',
+        criteriaVersion: 'NOT_PROVIDED_BY_RUNTIME',
+        toolObligationId: 'NOT_PROVIDED_BY_RUNTIME',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
+    });
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: strictAssuranceFixture(strictFindings()),
+        obligationType: 'plan',
+      }),
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+  });
+
+  it('correct-looking attestation without fulfilled obligation is rejected', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0]!.status = 'pending';
+    assurance.obligations[0]!.invocationId = null;
+    assurance.obligations[0]!.fulfilledAt = null;
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
+  it('correct attestation without matching invocation evidence is rejected', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.invocations = [];
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({ strictEnforcement: true, assurance, obligationType: 'plan' }),
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
+  it('accepts matching fulfilled obligation and matching invocation evidence', () => {
+    const findings = strictFindings();
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: strictAssuranceFixture(findings),
+        obligationType: 'plan',
+      }),
+    );
+    expect(result).toBeNull();
+  });
+});

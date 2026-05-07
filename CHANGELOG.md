@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fix review orchestrator parsing for NextAction footer outputs (#157)**: `isReviewRequired`, `buildMutatedOutput`, and `buildReviewContentMutatedOutput` now use `parseToolResult()` instead of raw `JSON.parse()`. Restores detection of `INDEPENDENT_REVIEW_REQUIRED` and output mutation when tool output contains `\nNext action:` footer. Plugin-orchestrator raw parse replaced with footer-tolerant parser and `STRICT_REVIEW_ORCHESTRATION_FAILED` reason code.
+
 - **Avoid deleting user files inside vendor directory on uninstall (#118)**: Uninstall now removes only FlowGuard-owned tarballs (`flowguard-core-*.tgz`) from `vendor/`. Non-FlowGuard files are preserved. Empty vendor directory is cleaned up after tarball removal.
 
 - **Stop swallowing permission errors in safeRead/safeUnlink (#117)**: `safeRead` and `safeUnlink` now only swallow ENOENT. Permission errors (EACCES/EPERM) are surfaced to callers. Doctor reports permission-blocked files as `error` instead of `missing`. Uninstall reports actual errors instead of silent `not_found`.

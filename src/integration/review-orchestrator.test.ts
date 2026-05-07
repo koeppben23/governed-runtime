@@ -35,6 +35,7 @@ import {
 } from './review-orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
+import { parseToolResult } from './plugin-helpers.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -810,6 +811,61 @@ describe('buildMutatedOutput', () => {
   it('returns null for empty original output', () => {
     expect(buildMutatedOutput('', reviewerResult)).toBeNull();
   });
+
+  // BAD: footer format — mutates JSON with NextAction footer
+  it('mutates output with NextAction footer', () => {
+    const output =
+      JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: review me' }) +
+      '\nNext action: Run /continue';
+    const mutated = buildMutatedOutput(output, reviewerResult);
+    expect(mutated).not.toBeNull();
+    const parsed = JSON.parse(mutated!);
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed.pluginReviewFindings).toBeDefined();
+    expect(parsed._pluginReviewSessionId).toBeDefined();
+  });
+
+  // BAD: /plan footer mutation
+  it('mutates /plan footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+    const output =
+      JSON.stringify({
+        phase: 'PLAN',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      }) + '\nNext action: Run /continue';
+    const mutated = buildMutatedOutput(output, reviewerResult);
+    expect(mutated).not.toBeNull();
+    const parsed = JSON.parse(mutated!);
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed.pluginReviewFindings).toBeDefined();
+  });
+
+  // BAD: /implement footer mutation
+  it('mutates /implement footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+    const output =
+      JSON.stringify({
+        phase: 'IMPLEMENTATION',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      }) + '\nNext action: Run /continue';
+    const mutated = buildMutatedOutput(output, reviewerResult);
+    expect(mutated).not.toBeNull();
+    const parsed = JSON.parse(mutated!);
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed.pluginReviewFindings).toBeDefined();
+  });
+
+  // BAD: /architecture footer mutation
+  it('mutates /architecture footer output to INDEPENDENT_REVIEW_COMPLETED', () => {
+    const output =
+      JSON.stringify({
+        phase: 'ARCHITECTURE',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer',
+      }) + '\nNext action: Run /continue';
+    const mutated = buildMutatedOutput(output, reviewerResult);
+    expect(mutated).not.toBeNull();
+    const parsed = JSON.parse(mutated!);
+    expect(parsed.next).toContain('INDEPENDENT_REVIEW_COMPLETED');
+    expect(parsed.pluginReviewFindings).toBeDefined();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -845,6 +901,79 @@ describe('isReviewRequired', () => {
   // EDGE: next field is not a string
   it('returns false when next is not a string', () => {
     expect(isReviewRequired(JSON.stringify({ next: 42 }))).toBe(false);
+  });
+
+  // BAD: footer format — JSON + "\nNext action: ..."
+  it('detects INDEPENDENT_REVIEW_REQUIRED with NextAction footer', () => {
+    const output =
+      JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer' }) +
+      '\nNext action: Run /continue';
+    expect(isReviewRequired(output)).toBe(true);
+  });
+
+  // REGRESSION: clean JSON still detected
+  it('still detects INDEPENDENT_REVIEW_REQUIRED without footer', () => {
+    const output = JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: call reviewer' });
+    expect(isReviewRequired(output)).toBe(true);
+  });
+
+  // BAD: /plan footer format
+  it('detects /plan footer output', () => {
+    const raw =
+      JSON.stringify({
+        phase: 'PLAN',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+        reviewObligationId: 'test-obl-id',
+      }) + '\nNext action: Run /continue';
+    expect(isReviewRequired(raw)).toBe(true);
+  });
+
+  // BAD: /implement footer format
+  it('detects /implement footer output', () => {
+    const raw =
+      JSON.stringify({
+        phase: 'IMPLEMENTATION',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+        reviewObligationId: 'test-obl-id',
+      }) + '\nNext action: Run /continue';
+    expect(isReviewRequired(raw)).toBe(true);
+  });
+
+  // BAD: /architecture footer format
+  it('detects /architecture footer output', () => {
+    const raw =
+      JSON.stringify({
+        phase: 'ARCHITECTURE',
+        next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer',
+        reviewObligationId: 'test-obl-id',
+      }) + '\nNext action: Run /continue';
+    expect(isReviewRequired(raw)).toBe(true);
+  });
+
+  // BAD: /review CONTENT_ANALYSIS_REQUIRED + footer
+  it('detects /review CONTENT_ANALYSIS_REQUIRED with footer', () => {
+    const raw =
+      JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: {
+          toolObligationId: 'test-obl-id',
+          mandateDigest: 'test-digest',
+          criteriaVersion: 'v1',
+          reviewedBy: 'flowguard-reviewer',
+        },
+      }) + '\nNext action: Run /continue';
+    expect(isReviewRequired(raw, TOOL_FLOWGUARD_REVIEW)).toBe(true);
+  });
+
+  // REGRESSION: parseToolResult and isReviewRequired agree
+  it('parseToolResult and isReviewRequired agree on footer output', () => {
+    const raw =
+      JSON.stringify({ next: 'INDEPENDENT_REVIEW_REQUIRED: review me' }) +
+      '\nNext action: Run /continue';
+    const parsed = parseToolResult(raw);
+    expect(parsed?.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
+    expect(isReviewRequired(raw)).toBe(true);
   });
 });
 
@@ -1131,6 +1260,46 @@ describe('buildReviewContentMutatedOutput', () => {
       rawResponse: '',
     });
     expect(result).toBeNull();
+  });
+
+  // BAD: footer format mutates /review output
+  it('mutates /review output with NextAction footer', () => {
+    const output =
+      JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: {
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: 'a'.repeat(64),
+          criteriaVersion: 'v1',
+          toolObligationId: 'obl-1',
+        },
+      }) + '\nNext action: Run /continue';
+    const result = buildReviewContentMutatedOutput(output, {
+      sessionId: 'child-1',
+      findings: {
+        overallVerdict: 'approve' as const,
+        blockingIssues: [],
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        reviewedBy: { sessionId: 'child-1', actorId: 'r' },
+        attestation: {
+          mandateDigest: 'a'.repeat(64),
+          criteriaVersion: 'v1',
+          toolObligationId: 'obl-1',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+      },
+      rawResponse: '{}',
+    });
+    expect(result).not.toBeNull();
+    const parsed = JSON.parse(result!);
+    expect(parsed.next).toContain('PLUGIN_REVIEW_COMPLETED');
+    expect(parsed.pluginReviewFindings).toBeDefined();
   });
 });
 

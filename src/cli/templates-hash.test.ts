@@ -65,10 +65,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // that reference the old mandateDigest will fail validation — the user
     // must re-hydrate or re-create affected sessions.
     //
-    // This is the expected behaviour: the changed text removes the contradictory
-    // webfetch instruction, which is a mandatory contract correction.
+    // This is the expected behaviour: the changed text hardens the manual
+    // fallback contract so copied attestation fields are diagnostic only until
+    // FlowGuard persists matching ReviewInvocationEvidence.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '11b8e2798b5c3cc77cce4e5535d7d72cf3997653076203478ff9461ecec838aa',
+      'ee23516a1270fd82f5ccdd07d686d12a8e5b950030a93f38da3924679be7c480',
     );
   });
 
@@ -87,17 +88,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed in P2 (obligation-binding): review.ts step 3 now tells the agent to
-    // include attestation.toolObligationId exactly as provided by FlowGuard
-    // (every content-aware /review now creates a real ReviewObligation with a
-    // canonical UUID). The P1 "omit for standalone /review" guidance is removed.
+    // Refreshed for strict manual fallback hardening: command templates now state
+    // that copied JSON/attestation fields are diagnostic only until FlowGuard
+    // persists matching ReviewInvocationEvidence.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'a42bd2aa1d258bbf867a865105fe227e192562c35493d6afefb1f31d1bc2e70f',
+      '618eb6c41390372dedea7607a77d7dd3af70fc81fb75016ac706fb82282a9745',
     );
   });
 
