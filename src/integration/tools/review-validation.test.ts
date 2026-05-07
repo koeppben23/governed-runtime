@@ -513,3 +513,152 @@ describe('requireReviewFindings', () => {
     expect(parsed.recovery).toBeTruthy();
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Anti-forgery: manual findings without persisted evidence
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('anti-forgery — manual findings without persisted evidence', () => {
+  it('NOT_PROVIDED_BY_RUNTIME attestation values are rejected', () => {
+    const result = validateReviewFindings(
+      {
+        overallVerdict: 'approve',
+        blockingIssues: [],
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        attestation: {
+          mandateDigest: 'NOT_PROVIDED_BY_RUNTIME',
+          criteriaVersion: 'NOT_PROVIDED_BY_RUNTIME',
+          toolObligationId: 'NOT_PROVIDED_BY_RUNTIME',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+        reviewedBy: {
+          sessionId: 'session-1',
+          actorId: 'a',
+          actorSource: 'env' as const,
+          actorAssurance: 'verified' as const,
+        },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        mode: 'strict',
+        toolName: 'flowguard_plan',
+        assurance: {
+          obligations: [
+            {
+              obligationId: 'obl-1',
+              obligationType: 'plan' as const,
+              status: 'pending',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          invocations: [],
+        },
+      },
+      1,
+      1,
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBeDefined();
+    expect(blocked.code).not.toBe('');
+  });
+
+  it('correct-looking attestation without fulfilled obligation is rejected', () => {
+    const result = validateReviewFindings(
+      {
+        overallVerdict: 'approve',
+        blockingIssues: [],
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        attestation: {
+          mandateDigest: 'valid-digest',
+          criteriaVersion: 'v1',
+          toolObligationId: 'obl-1',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+        reviewedBy: {
+          sessionId: 'session-1',
+          actorId: 'a',
+          actorSource: 'env' as const,
+          actorAssurance: 'verified' as const,
+        },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        mode: 'strict',
+        toolName: 'flowguard_plan',
+        assurance: {
+          obligations: [
+            {
+              obligationId: 'obl-1',
+              obligationType: 'plan' as const,
+              status: 'pending', // not fulfilled!
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          invocations: [],
+        },
+      },
+      1,
+      1,
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBeDefined();
+  });
+
+  it('correct attestation without matching invocation evidence is rejected', () => {
+    const result = validateReviewFindings(
+      {
+        overallVerdict: 'approve',
+        blockingIssues: [],
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent',
+        attestation: {
+          mandateDigest: 'valid-digest',
+          criteriaVersion: 'v1',
+          toolObligationId: 'obl-1',
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
+        reviewedBy: {
+          sessionId: 'session-1',
+          actorId: 'a',
+          actorSource: 'env' as const,
+          actorAssurance: 'verified' as const,
+        },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        mode: 'strict',
+        toolName: 'flowguard_plan',
+        assurance: {
+          obligations: [
+            {
+              obligationId: 'obl-1',
+              obligationType: 'plan' as const,
+              status: 'fulfilled',
+              invocationId: 'inv-1',
+              createdAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+          invocations: [], // empty — no matching invocation!
+        },
+      },
+      1,
+      1,
+    );
+    expect(result).not.toBeNull();
+    const blocked = JSON.parse(result!);
+    expect(blocked.code).toBeDefined();
+  });
+});

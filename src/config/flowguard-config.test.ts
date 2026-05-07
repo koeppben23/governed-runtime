@@ -533,9 +533,11 @@ describe('config paths', () => {
 describe('readConfig', () => {
   beforeEach(async () => {
     tmpDir = await createTmpWorktree();
+    process.env.OPENCODE_CONFIG_DIR = tmpDir;
   });
 
   afterEach(async () => {
+    delete process.env.OPENCODE_CONFIG_DIR;
     await cleanTmpDir(tmpDir);
   });
 

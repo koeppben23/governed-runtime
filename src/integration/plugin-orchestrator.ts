@@ -132,7 +132,13 @@ export async function runReviewOrchestration(
       return;
     }
 
-    const parsedOutput = JSON.parse(rawOutput) as Record<string, unknown>;
+    const parsedOutput = parseToolResult(rawOutput);
+    if (!parsedOutput || Array.isArray(parsedOutput)) {
+      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+        reason: 'review-required tool output could not be parsed for strict orchestration',
+      });
+      return;
+    }
     const reviewCtx = extractReviewContext(toolName, parsedOutput);
     if (!reviewCtx) {
       strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;

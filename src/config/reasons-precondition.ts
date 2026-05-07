@@ -373,4 +373,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Check session state for pluginHandshakeAt timestamp',
     ],
   },
+
+  {
+    code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+    category: 'precondition',
+    messageTemplate: 'Internal review orchestration failed while processing FlowGuard tool output.',
+    recoverySteps: [
+      'Run flowguard doctor to verify plugin installation and handshake',
+      'Preserve session-state.json and retry after updating FlowGuard',
+      'Ensure the FlowGuard tool output format matches the expected contract',
+      'Check that no other tooling modifies FlowGuard tool responses',
+    ],
+  },
 ];
