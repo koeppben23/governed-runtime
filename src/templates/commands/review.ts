@@ -40,6 +40,9 @@ Start the compliance review flow for the current FlowGuard session.
     - Parse the response as \`ReviewFindings\` object — preserve all fields
     - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
       (FlowGuard provides this UUID for every content-aware /review)
+    Strict governance is not satisfied by copied JSON or attestation fields alone.
+    Those fields are diagnostic/context only until FlowGuard persists matching
+    \`ReviewInvocationEvidence\` for the obligation.
     Both paths converge at step 4.
 
     - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the

@@ -292,6 +292,7 @@ export async function runReviewOrchestration(
         await deps.updateReviewAssurance(sessDir, (s) => {
           const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
             ...item,
+            pluginHandshakeAt: now,
             status: 'fulfilled',
             invocationId: invocation.invocationId,
             fulfilledAt: now,
@@ -537,6 +538,7 @@ export async function runReviewOrchestration(
                 findingsHash,
                 invokedAt: now2,
                 fulfilledAt: now2,
+                source: 'host-orchestrated',
               });
               // Use immutable appendInvocationEvidence instead of
               // mutating ensureReviewAssurance()'s return via .push().

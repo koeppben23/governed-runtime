@@ -228,7 +228,7 @@ function buildRequiredReviewAttestationPayload(obligationId: string): {
       'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
       'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
       'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
-      'Re-run flowguard_review with analysisFindings set to the complete ReviewFindings object.',
+      'Re-run flowguard_review with analysisFindings set to the complete ReviewFindings object. In strict mode, copied attestation fields alone are diagnostic context only; FlowGuard must persist matching ReviewInvocationEvidence before the findings satisfy governance.',
     ],
   };
 }
@@ -245,7 +245,7 @@ function formatBlockedWithAttestation(code: string, message: string, obligationI
 function formatMissingContentAnalysis(obligationId: string): string {
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
-    'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object.',
+    'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.',
     obligationId,
   );
 }
@@ -253,7 +253,7 @@ function formatMissingContentAnalysis(obligationId: string): string {
 function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the flowguard-reviewer subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object.`,
+    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the flowguard-reviewer subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }

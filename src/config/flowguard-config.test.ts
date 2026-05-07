@@ -521,6 +521,7 @@ describe('config paths', () => {
     );
   });
 
+  // Keep this path assertion side-effect free; readConfig tests below isolate OPENCODE_CONFIG_DIR.
   it('globalConfigPath resolves under OPENCODE_CONFIG_DIR or ~/.config/opencode', () => {
     expect(globalConfigPath()).toContain('flowguard.json');
   });
