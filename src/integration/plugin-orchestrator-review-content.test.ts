@@ -135,7 +135,10 @@ function buildSessionState(strictEnforcement = true) {
   });
 }
 
-function buildDeps(client: unknown, stateRef: { current: SessionState }): {
+function buildDeps(
+  client: unknown,
+  stateRef: { current: SessionState },
+): {
   deps: OrchestratorDeps;
   blockReviewOutcome: ReturnType<typeof vi.fn>;
   updateReviewAssurance: ReturnType<typeof vi.fn>;

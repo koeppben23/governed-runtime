@@ -83,12 +83,17 @@ function buildClient(findings: Record<string, unknown>) {
   return {
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
-      prompt: vi.fn().mockResolvedValue({ data: { info: { structured_output: findings } }, error: undefined }),
+      prompt: vi
+        .fn()
+        .mockResolvedValue({ data: { info: { structured_output: findings } }, error: undefined }),
     },
   };
 }
 
-function buildState(phase: ReviewableCase['phase'], obligationType: ReviewableCase['obligationType']) {
+function buildState(
+  phase: ReviewableCase['phase'],
+  obligationType: ReviewableCase['obligationType'],
+) {
   return makeState(phase, {
     ticket: TICKET,
     plan: PLAN_RECORD,
@@ -155,9 +160,11 @@ function buildDeps(client: unknown, stateRef: { current: SessionState }): Orches
     updateReviewAssurance: vi.fn().mockImplementation(async (_sessDir, update) => {
       stateRef.current = update(stateRef.current, NOW);
     }),
-    blockReviewOutcome: vi.fn().mockImplementation(async (_ctx, _obligationId, code, detail, output) => {
-      output.output = JSON.stringify({ error: true, code, detail });
-    }),
+    blockReviewOutcome: vi
+      .fn()
+      .mockImplementation(async (_ctx, _obligationId, code, detail, output) => {
+        output.output = JSON.stringify({ error: true, code, detail });
+      }),
     getEnforcementState: vi.fn().mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
     log: { info: vi.fn(), warn: vi.fn() },
     client,
@@ -244,9 +251,9 @@ describe('runReviewOrchestration strict independent review with footer output', 
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
 
-      const pendingReview = deps.getEnforcementState(PARENT_SESSION_ID).pendingReviews.get(
-        testCase.toolName,
-      );
+      const pendingReview = deps
+        .getEnforcementState(PARENT_SESSION_ID)
+        .pendingReviews.get(testCase.toolName);
       expect(pendingReview).toMatchObject({
         subagentCalled: true,
         subagentRecord: { sessionId: CHILD_SESSION_ID, completedAt: NOW },

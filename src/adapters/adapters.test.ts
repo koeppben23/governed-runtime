@@ -609,7 +609,9 @@ describe('persistence', () => {
         await fs.writeFile(manifestPath, originalManifest, 'utf-8');
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
-        await expect(archiveSession(fingerprint, sessionId)).rejects.toBeInstanceOf(PersistenceError);
+        await expect(archiveSession(fingerprint, sessionId)).rejects.toBeInstanceOf(
+          PersistenceError,
+        );
         restoreRename();
 
         // decision-receipts: must exist and be exactly the original content
