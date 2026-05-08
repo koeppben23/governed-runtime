@@ -221,10 +221,15 @@ describe('integration/plugin', () => {
       expect(hooks).toBeDefined();
     });
 
-    it('returns only the tool.execute.after hook (no other hooks)', async () => {
+    it('returns all expected hooks (tool + event + compaction)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
-      expect(keys).toEqual(['tool.execute.after', 'tool.execute.before']);
+      expect(keys).toEqual([
+        'event',
+        'experimental.session.compacting',
+        'tool.execute.after',
+        'tool.execute.before',
+      ]);
     });
   });
 

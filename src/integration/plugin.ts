@@ -24,6 +24,8 @@ import {
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
+import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
@@ -277,6 +279,32 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           });
         }
       });
+    },
+
+    // ÔöÇÔöÇ Event Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    event: async ({ event }) => {
+      const eventDeps: EventHandlerDeps = {
+        log,
+        cleanupSession: (sessionId: string) => {
+          ws.invalidateChainState(sessionId);
+        },
+      };
+      await handleEvent(eventDeps, event);
+    },
+
+    // ÔöÇÔöÇ Compaction Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    'experimental.session.compacting': async (input, output) => {
+      const sessionId = input?.sessionID ?? '';
+      if (!sessionId) return;
+
+      const compactionDeps: CompactionDeps = {
+        getSessionDir: ws.getSessionDir,
+        log,
+      };
+      const context = await buildCompactionContext(compactionDeps, sessionId);
+      if (context) {
+        output.context.push(context);
+      }
     },
   };
 };

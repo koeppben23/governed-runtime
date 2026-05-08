@@ -1,0 +1,69 @@
+warning: in the working copy of 'src/integration/plugin.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/integration/plugin.ts', LF will be replaced by CRLF the next time Git touches it
+diff --git a/src/integration/plugin.test.ts b/src/integration/plugin.test.ts
+index 660b467..d534ed5 100644
+--- a/src/integration/plugin.test.ts
++++ b/src/integration/plugin.test.ts
+@@ -221,10 +221,15 @@ describe('integration/plugin', () => {
+       expect(hooks).toBeDefined();
+     });
+ 
+-    it('returns only the tool.execute.after hook (no other hooks)', async () => {
++    it('returns all expected hooks (tool + event + compaction)', async () => {
+       const hooks = await FlowGuardAuditPlugin(createMockInput());
+       const keys = Object.keys(hooks).sort();
+-      expect(keys).toEqual(['tool.execute.after', 'tool.execute.before']);
++      expect(keys).toEqual([
++        'event',
++        'experimental.session.compacting',
++        'tool.execute.after',
++        'tool.execute.before',
++      ]);
+     });
+   });
+ 
+diff --git a/src/integration/plugin.ts b/src/integration/plugin.ts
+index 335c55e..0915363 100644
+--- a/src/integration/plugin.ts
++++ b/src/integration/plugin.ts
+@@ -24,6 +24,8 @@ import {
+ import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
+ import { createWorkspace } from './plugin-workspace.js';
+ import { resolvePluginSessionPolicy } from './plugin-policy.js';
++import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
++import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
+ import type { SessionState } from '../state/schema.js';
+ import type { FlowGuardPolicy } from '../config/policy.js';
+ 
+@@ -278,5 +280,31 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
+         }
+       });
+     },
++
++    // ÔöÇÔöÇ Event Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    event: async ({ event }) => {
++      const eventDeps: EventHandlerDeps = {
++        log,
++        cleanupSession: (sessionId: string) => {
++          ws.invalidateChainState(sessionId);
++        },
++      };
++      await handleEvent(eventDeps, event);
++    },
++
++    // ÔöÇÔöÇ Compaction Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
++    'experimental.session.compacting': async (input, output) => {
++      const sessionId = input?.sessionID ?? '';
++      if (!sessionId) return;
++
++      const compactionDeps: CompactionDeps = {
++        getSessionDir: ws.getSessionDir,
++        log,
++      };
++      const context = await buildCompactionContext(compactionDeps, sessionId);
++      if (context) {
++        output.context.push(context);
++      }
++    },
+   };
+ };
