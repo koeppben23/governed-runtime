@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JSONC conformance — full trailing comma and comment support**: Replaced `strip-json-comments` with `jsonc-parser` for complete JSONC compatibility including single-line comments, block comments, and trailing commas — matching OpenCode's documented config parser semantics. `parseJsonc()` is the central parse function used by `mergeOpencodeJson`, `removeFromOpencodeJson`, and doctor. Trailing commas are now HAPPY-path; truly malformed content still triggers backup-and-overwrite fallback.
+
+- **OpenCode config resolver prefers `opencode.jsonc`**: Added `resolveOpencodeConfigPath()` and `findParallelOpencodeConfig()`. The installer and doctor now check for `opencode.jsonc` first, falling back to `opencode.json`. On uninstall, both parallel config files are cleaned to prevent FlowGuard remnants in stale legacy files.
+
+- **Plugin event and compaction hooks wired**: `FlowGuardAuditPlugin` now registers all four hooks: `event`, `tool.execute.before`, `tool.execute.after`, and `experimental.session.compacting`. Event and compaction handlers (`plugin-events.ts`, `plugin-compaction.ts`) are injected from the plugin composition root. Fixed unused-import lint errors from prior partial wiring.
+
+- **Plugin hook types aligned with OpenCode SDK**: Renamed `ToolHookInput` → `ToolHookBeforeInput` (added `callID`), added `ToolHookAfterInput` and `ToolHookAfterOutput`. After-hook output now includes `title` and `metadata` fields matching the SDK definition. Plugins use these typed interfaces instead of anonymous `unknown` casts with inline shape assumptions. SDK contract test (`sdk-contract.test.ts`) enforces type compatibility at build time.
+
+- **Structured field priority aligned with SDK docs**: `invokeReviewer` now prefers `info.structured_output` (canonical docs field) over `info.structured` (server alias). When both are present, `structured_output` wins. The `info.structured` alias fallback test was updated to match the new non-null behavior.
+
+- **Docs synced to `opencode.jsonc`**: Installation, distribution model, and independent review docs now reference `opencode.jsonc` for FlowGuard-managed config artifacts. Fallback contexts explicitly mentioning `.json` kept where applicable. Deleted stale 0-byte `opencode.json` from repository root (would crash OpenCode parse on startup).
+
+- **Type narrowing documented in `types.ts`**: JSDoc now explains the intentional narrowing from SDK `any` to `Record<string, unknown>` and `readonly` modifiers — a compile-time fail-closed safety net. SDK contractually guarantees object shapes at runtime; the narrowing catches accidental mutations without changing runtime behavior.
+
+- **`PluginEvent` documented as intentional SDK subset**: `plugin-events.ts` now clarifies that `PluginEvent { type, properties }` is a conscious subset of the SDK `Event` type, avoiding a runtime dependency on `@opencode-ai/sdk`. New SDK Event fields added upstream would be silently ignored — safe for audit-logging use case.
+
+- **Compaction hook input contract hardened**: Removed optional chaining (`input?.sessionID → input.sessionID`) from the `experimental.session.compacting` hook. The SDK guarantees `{ sessionID: string }` — the `?` signaled contract uncertainty. Added SMOKE test verifying the hook reads `input.sessionID` and pushes context.
+
+- **Merge semantics documented**: `distribution-model.md` now explains that FlowGuard's installer follows OpenCode's merge semantics (merge, never replace) when adding instruction entries and task permissions to existing config.
+
+- **`@subagent` bypass claim marked NOT_VERIFIED**: The claim in `independent-review.md` that `@subagent` direct calls bypass `permission.task` is now explicitly marked `NOT_VERIFIED` — it has not been confirmed against the OpenCode permissions implementation.
+
+### Added
+
+- **SDK contract test + type snapshot baseline**: `sdk-contract.test.ts` verifies 10 compile-time and 6 runtime assertions against `.opencode-sdk-baseline/` (snapshots of `@opencode-ai/plugin` type definitions). Build-time guard prevents silent SDK type drift without explicit baseline update via `scripts/sdk-type-snapshot.mjs`.
+
+- **Docs drift + SDK compat CI workflows**: `.github/workflows/docs-drift.yml` (Monday 07:00 UTC) and `.github/workflows/sdk-compat.yml` run documentation SSOT guards and SDK type snapshot validation. Dependabot grouping isolates `@opencode-ai/*` updates into a dedicated PR group.
+
+### Changed
+
+- **Lint cleanup**: Removed unnecessary type assertions (`as Record<string, unknown>` on `parseJsonc` results) and unused imports from plugin composition.
+
+### Removed
+
+- **Stale empty `opencode.json`**: Deleted 0-byte `opencode.json` from repository root. The canonical config file is `opencode.jsonc`.
+
 - **Fix review orchestrator parsing for NextAction footer outputs (#157)**: `isReviewRequired`, `buildMutatedOutput`, and `buildReviewContentMutatedOutput` now use `parseToolResult()` instead of raw `JSON.parse()`. Restores detection of `INDEPENDENT_REVIEW_REQUIRED` and output mutation when tool output contains `\nNext action:` footer. Plugin-orchestrator raw parse replaced with footer-tolerant parser and `STRICT_REVIEW_ORCHESTRATION_FAILED` reason code.
 
 - **Avoid deleting user files inside vendor directory on uninstall (#118)**: Uninstall now removes only FlowGuard-owned tarballs (`flowguard-core-*.tgz`) from `vendor/`. Non-FlowGuard files are preserved. Empty vendor directory is cleaned up after tarball removal.
