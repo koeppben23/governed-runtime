@@ -189,6 +189,12 @@ export interface OrchestratorClient {
       error?: unknown;
     }>;
   };
+  /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
+  tui?: {
+    showToast(opts: {
+      body: { message: string; variant?: 'info' | 'success' | 'error' };
+    }): Promise<unknown>;
+  };
 }
 
 /** Options for building a plan review prompt. */
@@ -372,6 +378,36 @@ export async function resolveReviewerAgent(client: OrchestratorClient): Promise<
  */
 export function _resetAgentResolutionCache(): void {
   cachedResolvedAgent = null;
+}
+
+// ─── Model Capability Cache ──────────────────────────────────────────────────
+
+/**
+ * Tracks whether the session model supports structured output (tool_choice/function calling).
+ *
+ * - 'unknown': not yet determined (first invocation will probe)
+ * - 'supported': model accepts format field (primary path)
+ * - 'unsupported': model rejects tool_choice (format-free path used directly)
+ *
+ * Cached for process lifetime — model capability is deterministic per provider/model pair.
+ * A restart clears the cache (new process = fresh state).
+ */
+let modelCapabilityCache: 'unknown' | 'supported' | 'unsupported' = 'unknown';
+
+/**
+ * Reset the model capability cache. Test-only utility.
+ * @internal
+ */
+export function _resetModelCapabilityCache(): void {
+  modelCapabilityCache = 'unknown';
+}
+
+/**
+ * Get current model capability cache value. Test-only utility.
+ * @internal
+ */
+export function _getModelCapabilityCache(): 'unknown' | 'supported' | 'unsupported' {
+  return modelCapabilityCache;
 }
 
 // ─── Text Extraction Utility ─────────────────────────────────────────────────
@@ -680,6 +716,7 @@ export interface InvokeReviewerOptions {
       | 'structured_output_error'
       | 'info_error'
       | 'model_capability_incompatible'
+      | 'format_free_retry_session_create'
       | 'format_free_retry_failed'
       | 'format_free_retry_empty'
       | 'format_free_retry_parse_failed'
@@ -704,6 +741,113 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   _sleepFn: retrySleep,
   _onAttemptFailed: () => {},
 };
+
+/**
+ * Execute a format-free prompt on a child session and extract JSON findings.
+ *
+ * Shared between:
+ * - First-time model_capability_incompatible detection (new session for retry)
+ * - Cached 'unsupported' model (direct format-free on fresh session)
+ *
+ * Returns ReviewerResult on success, null on any failure (fail-closed).
+ * All failure steps are surfaced via onFailed callback for diagnostics.
+ *
+ * @internal
+ */
+async function executeFormatFreePrompt(
+  client: OrchestratorClient,
+  agent: string,
+  prompt: string,
+  sessionId: string,
+  attempt: number,
+  onFailed: (info: {
+    attempt: number;
+    step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
+    error?: unknown;
+    details?: Record<string, unknown>;
+  }) => void,
+): Promise<ReviewerResult | null> {
+  const formatFreeBody: {
+    agent: string;
+    parts: Array<{ type: 'text'; text: string }>;
+    system?: string;
+  } = {
+    agent,
+    parts: [{ type: 'text' as const, text: prompt }],
+    // NO format field — forces plain text response, bypasses tool_choice
+  };
+
+  // Inject system directive only in fallback mode
+  if (agent === REVIEWER_AGENT_FALLBACK) {
+    formatFreeBody.system = REVIEWER_SYSTEM_DIRECTIVE;
+  }
+
+  const formatFreeResult = await client.session.prompt({
+    path: { id: sessionId },
+    body: formatFreeBody,
+  });
+
+  if (formatFreeResult.error || !formatFreeResult.data) {
+    onFailed({
+      attempt,
+      step: 'format_free_retry_failed',
+      error: formatFreeResult.error,
+      details: { agent, childSessionId: sessionId },
+    });
+    return null;
+  }
+
+  // Extract text content from response parts
+  const textContent = (formatFreeResult.data.parts ?? [])
+    .filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
+    .map((p: { type?: string; text?: string }) => p.text!)
+    .join('');
+
+  if (!textContent) {
+    onFailed({
+      attempt,
+      step: 'format_free_retry_empty',
+      error: null,
+      details: {
+        agent,
+        childSessionId: sessionId,
+        partsCount: formatFreeResult.data.parts?.length ?? 0,
+      },
+    });
+    return null;
+  }
+
+  // Parse JSON from text using existing multi-strategy extraction
+  const extractedFindings = extractJsonFromText(textContent);
+  if (!extractedFindings) {
+    onFailed({
+      attempt,
+      step: 'format_free_retry_parse_failed',
+      error: null,
+      details: {
+        agent,
+        childSessionId: sessionId,
+        textLength: textContent.length,
+        textPreview: textContent.slice(0, 200),
+      },
+    });
+    return null;
+  }
+
+  // Success: inject authoritative sessionId
+  const reviewedBy = extractedFindings.reviewedBy as Record<string, unknown> | undefined;
+  if (reviewedBy && typeof reviewedBy === 'object') {
+    reviewedBy.sessionId = sessionId;
+  } else {
+    extractedFindings.reviewedBy = { sessionId: sessionId };
+  }
+
+  return {
+    sessionId,
+    rawResponse: JSON.stringify(extractedFindings),
+    findings: extractedFindings,
+  };
+}
 
 export async function invokeReviewer(
   client: OrchestratorClient,
@@ -752,15 +896,37 @@ export async function invokeReviewer(
 
     const childSessionId = createResult.data.id;
 
-    // 2. Build prompt body — dual-path:
+    // ── Model Capability Cache: skip format prompt if model is known-unsupported ──
+    // When cached as 'unsupported', go directly to format-free path on this session.
+    // This avoids the session.error flash in the UI on subsequent calls.
+    if (modelCapabilityCache === 'unsupported') {
+      // Toast notification (non-blocking, TUI may not be available)
+      try {
+        await client.tui?.showToast({
+          body: {
+            message: 'FlowGuard Reviewer: running (format-free mode)',
+            variant: 'info',
+          },
+        });
+      } catch {
+        /* TUI unavailable in headless/CLI — ignore */
+      }
+
+      const result = await executeFormatFreePrompt(
+        client,
+        agent,
+        prompt,
+        childSessionId,
+        attempt,
+        onFailed,
+      );
+      if (result) return result;
+      return null; // format-free failed — fail closed
+    }
+
+    // 2. Build prompt body with format (structured output)
     //    Primary: 'flowguard-reviewer' registered agent (has its own system prompt)
     //    Fallback: 'general' with injected system directive
-    //
-    // SDK TYPE LAG: @opencode-ai/sdk@1.14.41 (latest) does not include `format`
-    // in SessionPromptData.body types, but the field IS documented in the official
-    // OpenCode SDK docs: https://opencode.ai/docs/sdk/#structured-output
-    // The server accepts and processes it correctly at runtime.
-    // Track: SDK type definitions need update to include format field.
     const body = {
       agent,
       parts: [{ type: 'text' as const, text: prompt }],
@@ -773,12 +939,6 @@ export async function invokeReviewer(
       (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
     }
 
-    // NOTE: body.format passes TypeScript compilation because the body variable's
-    // excess properties are not checked when passed as a pre-declared variable
-    // (excess property checking only applies to inline object literals).
-    // The format field IS in the documented API (https://opencode.ai/docs/sdk/#structured-output)
-    // but NOT in SDK types (@opencode-ai/sdk@1.14.41). This is a known SDK type lag.
-    // When the SDK adds format to SessionPromptData.body, this comment can be removed.
     const promptResult = await client.session.prompt({
       path: { id: childSessionId },
       body,
@@ -786,8 +946,6 @@ export async function invokeReviewer(
 
     if (promptResult.error || !promptResult.data) {
       // Detect deterministic API errors — retrying will produce an identical failure.
-      // DeepSeek R1 returns { isRetryable: false, statusCode: 400, message: "..." }
-      // when the model does not support tool_choice / function calling.
       const promptErrObj =
         typeof promptResult.error === 'object' && promptResult.error !== null
           ? (promptResult.error as Record<string, unknown>)
@@ -821,12 +979,6 @@ export async function invokeReviewer(
     }
 
     // Non-StructuredOutputError in info.error — surface for diagnostics.
-    // The error may be transient (rate limit, timeout) or deterministic
-    // (agent not found, model unavailable). We surface it via onFailed but
-    // do NOT return immediately — structured_output might still be present
-    // alongside an error (e.g., partial completion with warning). If no
-    // findings are found below, the retry loop handles it and the error
-    // value is also included in the no_findings diagnostic (infoError field).
     if (info?.error) {
       const errorObj =
         typeof info.error === 'object' && info.error !== null
@@ -848,14 +1000,9 @@ export async function invokeReviewer(
         },
       });
 
-      // ── Model capability incompatibility: fail closed ──
+      // ── Model capability incompatibility detection ──
       // Detect deterministic model-level errors where the session model does
       // not support structured output (tool_choice / function calling).
-      // This is an infrastructure/config failure, NOT a reviewer verdict.
-      // Must NOT consume review obligations — the reviewer never ran.
-      //
-      // Case-insensitive match against known error patterns.
-      // Unknown patterns fall through to no_findings / retry as before.
       const errMsgRaw =
         typeof errorObj.message === 'string'
           ? errorObj.message
@@ -877,6 +1024,9 @@ export async function invokeReviewer(
           errMsgLower.includes('function calling') ||
           errMsgLower.includes('structured output'))
       ) {
+        // Cache: this model deterministically cannot handle structured output
+        modelCapabilityCache = 'unsupported';
+
         onFailed({
           attempt,
           step: 'model_capability_incompatible',
@@ -885,105 +1035,62 @@ export async function invokeReviewer(
             agent,
             reason:
               'Session model does not support structured output (tool_choice/function calling). ' +
-              'Attempting format-free retry on same child session.',
+              'Creating new child session for format-free retry.',
             detectedPattern: errMsgLower.trim(),
           },
         });
 
-        // ── Format-free retry: re-prompt on SAME child session WITHOUT format ──
-        // The model rejected the tool_choice protocol feature but CAN produce JSON
-        // as natural text. Re-use the existing child session, strip the format field,
-        // extract JSON from text response, and let downstream Zod + attestation
-        // validation enforce structural correctness identically to the primary path.
-        //
-        // Governance invariant preserved: downstream validation in plugin-orchestrator.ts
-        // (ReviewFindingsSchema.safeParse + validateStrictAttestation) is transport-agnostic.
-        // Whether findings arrive via info.structured_output or text extraction is irrelevant
-        // to governance authority — the validation pipeline is identical.
-        const formatFreeBody: {
-          agent: string;
-          parts: Array<{ type: 'text'; text: string }>;
-          system?: string;
-        } = {
-          agent,
-          parts: [{ type: 'text' as const, text: prompt }],
-          // NO format field — forces plain text response, bypasses tool_choice
-        };
-
-        // Inject system directive only in fallback mode (same logic as primary path)
-        if (agent === REVIEWER_AGENT_FALLBACK) {
-          formatFreeBody.system = REVIEWER_SYSTEM_DIRECTIVE;
+        // Toast notification (non-blocking)
+        try {
+          await client.tui?.showToast({
+            body: {
+              message: 'FlowGuard Reviewer: falling back to format-free mode',
+              variant: 'info',
+            },
+          });
+        } catch {
+          /* TUI unavailable — ignore */
         }
 
-        const formatFreeResult = await client.session.prompt({
-          path: { id: childSessionId },
-          body: formatFreeBody,
+        // ── Create NEW child session for format-free retry ──
+        // The original child session already received a session.error event,
+        // which causes the UI to close/collapse its panel. A fresh session
+        // ensures the UI shows a new visible subagent panel during the retry.
+        const retryCreateResult = await client.session.create({
+          body: {
+            parentID: parentSessionId,
+            title: REVIEWER_SESSION_TITLE + ' (format-free)',
+          },
         });
 
-        if (formatFreeResult.error || !formatFreeResult.data) {
+        if (retryCreateResult.error || !retryCreateResult.data?.id) {
           onFailed({
             attempt,
-            step: 'format_free_retry_failed',
-            error: formatFreeResult.error,
-            details: { agent, childSessionId },
+            step: 'format_free_retry_session_create',
+            error: retryCreateResult.error,
+            details: { agent, originalSessionId: childSessionId },
           });
-          return null; // both paths exhausted — fail closed
+          return null; // cannot create retry session — fail closed
         }
 
-        // Extract text content from response parts
-        const retryTextContent = (formatFreeResult.data.parts ?? [])
-          .filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
-          .map((p: { type?: string; text?: string }) => p.text!)
-          .join('');
+        const retrySessionId = retryCreateResult.data.id;
 
-        if (!retryTextContent) {
-          onFailed({
-            attempt,
-            step: 'format_free_retry_empty',
-            error: null,
-            details: {
-              agent,
-              childSessionId,
-              partsCount: formatFreeResult.data.parts?.length ?? 0,
-            },
-          });
-          return null; // no text produced — fail closed
-        }
-
-        // Parse JSON from text using existing multi-strategy extraction
-        const extractedFindings = extractJsonFromText(retryTextContent);
-        if (!extractedFindings) {
-          onFailed({
-            attempt,
-            step: 'format_free_retry_parse_failed',
-            error: null,
-            details: {
-              agent,
-              childSessionId,
-              textLength: retryTextContent.length,
-              textPreview: retryTextContent.slice(0, 200),
-            },
-          });
-          return null; // text not parseable as JSON — fail closed
-        }
-
-        // Success: inject authoritative sessionId (identical to primary path)
-        const extractedReviewedBy = extractedFindings.reviewedBy as
-          | Record<string, unknown>
-          | undefined;
-        if (extractedReviewedBy && typeof extractedReviewedBy === 'object') {
-          extractedReviewedBy.sessionId = childSessionId;
-        } else {
-          extractedFindings.reviewedBy = { sessionId: childSessionId };
-        }
-
-        return {
-          sessionId: childSessionId,
-          rawResponse: JSON.stringify(extractedFindings),
-          findings: extractedFindings,
-        };
+        const result = await executeFormatFreePrompt(
+          client,
+          agent,
+          prompt,
+          retrySessionId,
+          attempt,
+          onFailed,
+        );
+        if (result) return result;
+        return null; // format-free failed — fail closed
       }
     }
+
+    // ── Primary path succeeded: cache model as supporting structured output ──
+    // (Only set if we reach here = no model_capability_incompatible)
+    modelCapabilityCache = 'supported';
 
     // ── Response parsing: primary path (structured output) ──
     // SDK docs field name (canonical): info.structured_output

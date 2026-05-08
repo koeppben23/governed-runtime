@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 import {
   resolveReviewerAgent,
   _resetAgentResolutionCache,
+  _resetModelCapabilityCache,
+  _getModelCapabilityCache,
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
@@ -143,6 +145,7 @@ describe('Agent Resolution Constants', () => {
 describe('resolveReviewerAgent', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
@@ -426,6 +429,7 @@ describe('extractJsonFromText', () => {
 describe('invokeReviewer — agent resolution integration', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY: Primary path ───────────────────────────────────────────────────
@@ -742,6 +746,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const client1 = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
       await invokeReviewer(client1, PROMPT, 'p1', { _sleepFn: NO_SLEEP });
       _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
 
       // Fallback path
       const client2 = makeClient({ agents: [] });
@@ -1160,7 +1165,10 @@ describe('invokeReviewer — agent resolution integration', () => {
   // ─── isRetryable === false: non-retryable API error early exit ──────────────
 
   describe('NON-RETRYABLE — isRetryable === false early exit', () => {
-    beforeEach(() => _resetAgentResolutionCache());
+    beforeEach(() => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+    });
 
     it('T1: returns null immediately when promptResult.error.isRetryable === false', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
@@ -1291,7 +1299,10 @@ describe('invokeReviewer — agent resolution integration', () => {
   // ─── model_capability_incompatible: fail-closed detection ───────────────────
 
   describe('MODEL CAPABILITY — model_capability_incompatible fail-closed', () => {
-    beforeEach(() => _resetAgentResolutionCache());
+    beforeEach(() => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+    });
 
     it('T5: returns null with model_capability_incompatible when tool_choice not supported', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
@@ -1416,6 +1427,7 @@ describe('invokeReviewer — agent resolution integration', () => {
 
       for (const pattern of patterns) {
         _resetAgentResolutionCache();
+        _resetModelCapabilityCache();
         const diagnostics: Array<Record<string, unknown>> = [];
         const client = makeClient({
           agents: [{ id: 'flowguard-reviewer' }],
@@ -1625,13 +1637,19 @@ describe('invokeReviewer — format-free retry fallback', () => {
         }),
       },
       session: {
-        create: vi.fn().mockResolvedValue({ data: { id: 'child-session-1' }, error: undefined }),
+        create: vi
+          .fn()
+          .mockResolvedValueOnce({ data: { id: 'child-session-1' }, error: undefined })
+          .mockResolvedValueOnce({ data: { id: 'retry-session-1' }, error: undefined }),
         prompt: promptFn,
       },
     };
   }
 
-  beforeEach(() => _resetAgentResolutionCache());
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
+  });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
@@ -1646,7 +1664,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
+      expect(result!.sessionId).toBe('retry-session-1');
       expect(result!.findings.overallVerdict).toBe('approve');
       expect(result!.findings.reviewMode).toBe('subagent');
     });
@@ -1717,7 +1735,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(result).not.toBeNull();
       // Authoritative injection overwrites subagent's guess
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
-        'child-session-1',
+        'retry-session-1',
       );
     });
 
@@ -1741,7 +1759,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       expect(result).not.toBeNull();
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
-        'child-session-1',
+        'retry-session-1',
       );
     });
 
@@ -1794,7 +1812,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(retryFailed).toBeDefined();
       expect(retryFailed!.error).toEqual({ message: 'rate limit exceeded', statusCode: 429 });
       expect((retryFailed!.details as Record<string, unknown>).childSessionId).toBe(
-        'child-session-1',
+        'retry-session-1',
       );
     });
 
@@ -1967,6 +1985,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
     it('T19: format-free retry injects system directive for fallback agent', async () => {
       _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
       // No 'flowguard-reviewer' in agents list → falls back to 'general'
       const promptFn = vi
         .fn()
@@ -2062,7 +2081,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(result).not.toBeNull();
       const parsed = JSON.parse(result!.rawResponse);
       expect(parsed.overallVerdict).toBe('approve');
-      expect(parsed.reviewedBy.sessionId).toBe('child-session-1');
+      expect(parsed.reviewedBy.sessionId).toBe('retry-session-1');
     });
   });
 
@@ -2162,7 +2181,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
     });
 
-    it('T25: format-free retry uses same childSessionId as primary attempt', async () => {
+    it('T25: format-free retry uses NEW childSessionId (separate from primary attempt)', async () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
@@ -2171,9 +2190,10 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       const promptFn = client.session.prompt as ReturnType<typeof vi.fn>;
-      // Both calls use same session ID
+      // First call: original session
       expect(promptFn.mock.calls[0]![0].path.id).toBe('child-session-1');
-      expect(promptFn.mock.calls[1]![0].path.id).toBe('child-session-1');
+      // Second call: NEW retry session (different ID for UI visibility)
+      expect(promptFn.mock.calls[1]![0].path.id).toBe('retry-session-1');
     });
 
     it('T26: format-free retry uses same prompt text as original call', async () => {
@@ -2223,7 +2243,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       // Success
       expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
+      expect(result!.sessionId).toBe('retry-session-1');
       expect(result!.findings.overallVerdict).toBe('changes_requested');
       expect(result!.findings.blockingIssues).toHaveLength(1);
 
@@ -2232,13 +2252,14 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(diagnostics[0]!.step).toBe('info_error');
       expect(diagnostics[1]!.step).toBe('model_capability_incompatible');
 
-      // Session reuse: create called once, prompt called twice
-      expect(client.session.create).toHaveBeenCalledTimes(1);
+      // New architecture: create called TWICE (original + retry session), prompt called twice
+      expect(client.session.create).toHaveBeenCalledTimes(2);
       expect(client.session.prompt).toHaveBeenCalledTimes(2);
     });
 
     it('T28: complete flow with fallback agent (general) and system directive', async () => {
       _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
       const diagnostics: Array<Record<string, unknown>> = [];
 
       const promptFn = vi
@@ -2306,12 +2327,14 @@ describe('invokeReviewer — format-free retry fallback', () => {
         'structured_output_error',
         'info_error',
         'model_capability_incompatible',
+        'format_free_retry_session_create',
         'format_free_retry_failed',
         'format_free_retry_empty',
         'format_free_retry_parse_failed',
         'no_findings',
       ];
       // Every format_free_retry step is in the valid set
+      expect(validSteps).toContain('format_free_retry_session_create');
       expect(validSteps).toContain('format_free_retry_failed');
       expect(validSteps).toContain('format_free_retry_empty');
       expect(validSteps).toContain('format_free_retry_parse_failed');
@@ -2337,10 +2360,456 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
       expect(parseFailed).toBeDefined();
       expect((parseFailed!.details as Record<string, unknown>).childSessionId).toBe(
-        'child-session-1',
+        'retry-session-1',
       );
       expect((parseFailed!.details as Record<string, unknown>).textLength).toBeGreaterThan(0);
       expect((parseFailed!.details as Record<string, unknown>).textPreview).toBeDefined();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODEL CAPABILITY CACHE — lifecycle, transitions, and UI behavior
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Model Capability Cache — lifecycle and UI behavior', () => {
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
+  });
+
+  // ─── HAPPY: Cache API ─────────────────────────────────────────────────────
+
+  describe('HAPPY — cache API contract', () => {
+    it('starts as unknown after reset', () => {
+      expect(_getModelCapabilityCache()).toBe('unknown');
+    });
+
+    it('transitions to supported after successful structured output', async () => {
+      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
+      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(_getModelCapabilityCache()).toBe('supported');
+    });
+
+    it('transitions to unsupported after model_capability_incompatible', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+      expect(_getModelCapabilityCache()).toBe('unsupported');
+    });
+
+    it('_resetModelCapabilityCache resets to unknown', async () => {
+      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
+      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(_getModelCapabilityCache()).toBe('supported');
+      _resetModelCapabilityCache();
+      expect(_getModelCapabilityCache()).toBe('unknown');
+    });
+  });
+
+  // ─── HAPPY: Cached unsupported skips format ───────────────────────────────
+
+  describe('HAPPY — cached unsupported skips format prompt', () => {
+    it('skips format prompt and goes directly to format-free on cached unsupported', async () => {
+      // First call: detect incompatibility → cache as unsupported
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+      expect(_getModelCapabilityCache()).toBe('unsupported');
+
+      // Second call: should skip format entirely, go directly format-free
+      const formatFreeResult = {
+        data: {
+          parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+          info: {},
+        },
+        error: undefined,
+      };
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({
+            data: [{ id: 'flowguard-reviewer' }],
+          }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'session-2' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue(formatFreeResult),
+        },
+      };
+
+      const result = await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+      // Only 1 prompt call (format-free), no format prompt
+      expect(client2.session.prompt).toHaveBeenCalledTimes(1);
+      const promptBody = (client2.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+        .body;
+      expect(promptBody.format).toBeUndefined(); // no format field
+    });
+
+    it('cached unsupported path creates only 1 session (no retry session needed)', async () => {
+      // Pre-set cache by triggering incompatibility
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Now invoke again — cached path
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'cached-session' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue({
+            data: {
+              parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+              info: {},
+            },
+            error: undefined,
+          }),
+        },
+      };
+
+      await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Only 1 create call (cached path — no retry session needed)
+      expect(client2.session.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── CORNER: New session for retry ────────────────────────────────────────
+
+  describe('CORNER — new session for format-free retry (UI visibility)', () => {
+    it('creates a NEW session for format-free retry on first incompatibility detection', async () => {
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 'original-session' }, error: undefined })
+            .mockResolvedValueOnce({ data: { id: 'retry-session' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      // Result comes from the RETRY session
+      expect(result!.sessionId).toBe('retry-session');
+      // Create called twice: original + retry
+      expect(client.session.create).toHaveBeenCalledTimes(2);
+      // First prompt on original, second on retry
+      expect(promptFn.mock.calls[0]![0].path.id).toBe('original-session');
+      expect(promptFn.mock.calls[1]![0].path.id).toBe('retry-session');
+    });
+
+    it('retry session title includes (format-free) suffix', async () => {
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 's1' }, error: undefined })
+            .mockResolvedValueOnce({ data: { id: 's2' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      const createFn = client.session.create as ReturnType<typeof vi.fn>;
+      // Second create has (format-free) in title
+      const secondCreateBody = createFn.mock.calls[1]![0].body;
+      expect(secondCreateBody.title).toContain('(format-free)');
+      expect(secondCreateBody.parentID).toBe('parent-1');
+    });
+
+    it('returns null when retry session create fails', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const promptFn = vi.fn().mockResolvedValue({
+        data: {
+          parts: [],
+          info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+        },
+        error: undefined,
+      });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 'original' }, error: undefined })
+            .mockResolvedValueOnce({ error: { message: 'rate limited' }, data: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const createFailed = diagnostics.find((d) => d.step === 'format_free_retry_session_create');
+      expect(createFailed).toBeDefined();
+      expect((createFailed!.details as Record<string, unknown>).originalSessionId).toBe('original');
+    });
+  });
+
+  // ─── EDGE: Toast notifications ────────────────────────────────────────────
+
+  describe('EDGE — toast notifications', () => {
+    it('shows toast on format-free fallback (first detection)', async () => {
+      const toastFn = vi.fn().mockResolvedValue(undefined);
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+        tui: { showToast: toastFn },
+      };
+
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(toastFn).toHaveBeenCalledTimes(1);
+      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+      expect(toastFn.mock.calls[0]![0].body.variant).toBe('info');
+    });
+
+    it('shows toast on cached unsupported path', async () => {
+      // Pre-set cache
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Now call with TUI available
+      const toastFn = vi.fn().mockResolvedValue(undefined);
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-2' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue({
+            data: {
+              parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+              info: {},
+            },
+            error: undefined,
+          }),
+        },
+        tui: { showToast: toastFn },
+      };
+
+      await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(toastFn).toHaveBeenCalledTimes(1);
+      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+    });
+
+    it('does not throw when tui is undefined (headless mode)', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      // client.tui is undefined by default in makeClient
+
+      // Should not throw
+      await expect(
+        invokeReviewer(client, PROMPT, 'parent-1', {
+          maxRetries: 0,
+          _sleepFn: NO_SLEEP,
+          _onAttemptFailed: () => {},
+        }),
+      ).resolves.not.toThrow();
+    });
+
+    it('does not throw when tui.showToast rejects', async () => {
+      const toastFn = vi.fn().mockRejectedValue(new Error('TUI crashed'));
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+        tui: { showToast: toastFn },
+      };
+
+      // Should not throw even though toast rejects
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(toastFn).toHaveBeenCalled();
     });
   });
 });
