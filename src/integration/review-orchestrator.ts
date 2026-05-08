@@ -420,12 +420,10 @@ export function extractJsonFromText(text: string): Record<string, unknown> | nul
   return extractJsonFromTextWithMethod(text)?.value ?? null;
 }
 
-export function extractJsonFromTextWithMethod(text: string):
-  | {
-      value: Record<string, unknown>;
-      extractionMethod: 'direct_json' | 'json_fence' | 'outermost_braces';
-    }
-  | null {
+export function extractJsonFromTextWithMethod(text: string): {
+  value: Record<string, unknown>;
+  extractionMethod: 'direct_json' | 'json_fence' | 'outermost_braces';
+} | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
@@ -1202,7 +1200,9 @@ export function buildMutatedOutput(
     reviewOutputMode: reviewerResult.reviewOutputMode,
     structuredOutputUsed: reviewerResult.structuredOutputUsed,
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    ...(reviewerResult.extractionMethod ? { extractionMethod: reviewerResult.extractionMethod } : {}),
+    ...(reviewerResult.extractionMethod
+      ? { extractionMethod: reviewerResult.extractionMethod }
+      : {}),
     ...(reviewerResult.modelCapabilityError
       ? { modelCapabilityError: reviewerResult.modelCapabilityError }
       : {}),
@@ -1242,7 +1242,9 @@ export function buildReviewContentMutatedOutput(
     reviewOutputMode: reviewerResult.reviewOutputMode,
     structuredOutputUsed: reviewerResult.structuredOutputUsed,
     reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
-    ...(reviewerResult.extractionMethod ? { extractionMethod: reviewerResult.extractionMethod } : {}),
+    ...(reviewerResult.extractionMethod
+      ? { extractionMethod: reviewerResult.extractionMethod }
+      : {}),
     ...(reviewerResult.modelCapabilityError
       ? { modelCapabilityError: reviewerResult.modelCapabilityError }
       : {}),

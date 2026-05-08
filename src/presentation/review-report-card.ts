@@ -193,7 +193,11 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
 
   // ── Evidence ────────────────────────────────────────────────────
   const hasEvidence =
-    obligationId || invocationSource || reviewerSessionId || reviewOutputMode || reviewAssuranceLevel;
+    obligationId ||
+    invocationSource ||
+    reviewerSessionId ||
+    reviewOutputMode ||
+    reviewAssuranceLevel;
   if (hasEvidence) {
     lines.push('---');
     lines.push('');

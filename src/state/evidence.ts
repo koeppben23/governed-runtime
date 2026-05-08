@@ -339,7 +339,9 @@ export const ReviewInvocationEvidence = z
     /** True only when OpenCode SDK structured_output was present and used. */
     structuredOutputUsed: z.boolean().default(true),
     /** Review-output assurance tier, distinct from actor identity assurance. */
-    reviewAssuranceLevel: z.enum(['structured_high', 'text_compat_lower']).default('structured_high'),
+    reviewAssuranceLevel: z
+      .enum(['structured_high', 'text_compat_lower'])
+      .default('structured_high'),
     /** JSON extraction strategy used for text compatibility mode only. */
     extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
     /** Original model capability error that caused text compatibility mode. */

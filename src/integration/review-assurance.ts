@@ -246,8 +246,11 @@ export function buildInvocationEvidence(input: {
   modelCapabilityError?: string;
 }): ReviewInvocationEvidence {
   const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
-  const structuredOutputUsed = input.structuredOutputUsed ?? reviewOutputMode === 'structured_output';
-  const reviewAssuranceLevel = input.reviewAssuranceLevel ?? (reviewOutputMode === 'text_compat' ? 'text_compat_lower' : 'structured_high');
+  const structuredOutputUsed =
+    input.structuredOutputUsed ?? reviewOutputMode === 'structured_output';
+  const reviewAssuranceLevel =
+    input.reviewAssuranceLevel ??
+    (reviewOutputMode === 'text_compat' ? 'text_compat_lower' : 'structured_high');
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,

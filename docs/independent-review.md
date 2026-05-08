@@ -81,12 +81,12 @@ The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the ve
 
 `reviewOutputPolicy` is frozen in the policy snapshot at session creation:
 
-| Mode        | Default policy          | Rationale                                                |
-| ----------- | ----------------------- | -------------------------------------------------------- |
-| `solo`      | `text_compat_allowed`   | Maximizes OpenCode model compatibility for local use.    |
-| `team`      | `text_compat_allowed`   | Keeps team workflows compatible, with audit visibility.  |
-| `team-ci`   | `structured_required`   | CI needs reproducible, machine-validated evidence.       |
-| `regulated` | `structured_required`   | Regulated evidence must use structured high assurance.   |
+| Mode        | Default policy        | Rationale                                               |
+| ----------- | --------------------- | ------------------------------------------------------- |
+| `solo`      | `text_compat_allowed` | Maximizes OpenCode model compatibility for local use.   |
+| `team`      | `text_compat_allowed` | Keeps team workflows compatible, with audit visibility. |
+| `team-ci`   | `structured_required` | CI needs reproducible, machine-validated evidence.      |
+| `regulated` | `structured_required` | Regulated evidence must use structured high assurance.  |
 
 When `structured_required` is active, a reviewer model that cannot use structured output blocks the deterministic path. Recovery is to configure the `flowguard-reviewer` agent with a structured-output-capable model.
 

@@ -210,7 +210,8 @@ export async function runReviewOrchestration(
         prompt,
         sessionId,
         {
-          reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+          reviewOutputPolicy:
+            sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
           _onAttemptFailed: (info) => {
             deps.log.warn(
               'orchestrator',
@@ -448,9 +449,9 @@ export async function runReviewOrchestration(
       deps.client as OrchestratorClient,
       prompt,
       sessionId,
-        {
-          reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
-          _onAttemptFailed: (info) => {
+      {
+        reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+        _onAttemptFailed: (info) => {
           deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
             tool: toolName,
             sessionId,
