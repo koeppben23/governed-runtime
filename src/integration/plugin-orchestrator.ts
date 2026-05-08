@@ -209,6 +209,22 @@ export async function runReviewOrchestration(
         deps.client as OrchestratorClient,
         prompt,
         sessionId,
+        {
+          _onAttemptFailed: (info) => {
+            deps.log.warn(
+              'orchestrator',
+              `reviewer attempt ${info.attempt} failed at ${info.step}`,
+              {
+                tool: toolName,
+                sessionId,
+                step: info.step,
+                attempt: info.attempt,
+                error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
+                ...(info.details ?? {}),
+              },
+            );
+          },
+        },
       );
       if (!reviewerResult?.findings) {
         if (strictEnforcement) {
@@ -426,6 +442,18 @@ export async function runReviewOrchestration(
       deps.client as OrchestratorClient,
       prompt,
       sessionId,
+      {
+        _onAttemptFailed: (info) => {
+          deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
+            tool: toolName,
+            sessionId,
+            step: info.step,
+            attempt: info.attempt,
+            error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
+            ...(info.details ?? {}),
+          });
+        },
+      },
     );
 
     if (reviewerResult) {

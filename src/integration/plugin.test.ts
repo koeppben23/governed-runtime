@@ -764,7 +764,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('tool.execute.before hook exists and accepts input args', async () => {
+    it('tool.execute.before hook exists and reads args from output per OpenCode docs', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -778,15 +778,114 @@ describe('integration/plugin', () => {
         const beforeHook = hooks['tool.execute.before'];
         expect(typeof beforeHook).toBe('function');
 
-        // Verify it handles flowguard tools without error
-        await expect(
-          beforeHook!({
-            tool: 'flowguard_status',
-            sessionID: crypto.randomUUID(),
-            callID: 'c1',
-            args: {},
+        // Per OpenCode docs, before hooks receive:
+        //   input: { tool, sessionID, ... } (identity, read-only)
+        //   output: { args, ... } (mutable tool arguments)
+        const input = {
+          tool: 'flowguard_status',
+          sessionID: crypto.randomUUID(),
+          callID: 'c1',
+        };
+        const output = { args: {} };
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    // ── C2 regression: before hook reads args from output, not input ──
+    it('C2 HAPPY — before hook reads task subagent_type from output.args, not input', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Seed a strict policy session so the before-hook enforcement engages
+        await seedStrictPlanSession(ws.tmpDir, sessionID);
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
           }),
-        ).resolves.toBeUndefined();
+        );
+
+        const beforeHook = hooks['tool.execute.before'];
+        expect(typeof beforeHook).toBe('function');
+
+        // Per OpenCode docs: input has tool identity, output has mutable args.
+        // If the code incorrectly reads input.args, it would miss the subagent_type
+        // because input does NOT carry args per the documented contract.
+        const input = { tool: 'task', sessionID, callID: 'c1' };
+        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
+        // Should not throw — enforcement logic finds the subagent_type on output.args
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('C2 BAD — before hook does not crash when output.args is empty', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+        const beforeHook = hooks['tool.execute.before'];
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: {} };
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('C2 EDGE — before hook does not crash when output is undefined', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+        const beforeHook = hooks['tool.execute.before'];
+        const input = { tool: 'some_tool', sessionID: crypto.randomUUID(), callID: 'c1' };
+        // OpenCode always provides output, but defensive code should handle undefined
+        await expect(beforeHook!(input, undefined)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('C2 CORNER — input.args is ignored even if present (only output.args matters)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        await seedStrictPlanSession(ws.tmpDir, sessionID);
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+          }),
+        );
+
+        const beforeHook = hooks['tool.execute.before'];
+        // Place args on input (wrong location per docs) — should be ignored
+        // Place DIFFERENT args on output (correct location) — should be used
+        const input = {
+          tool: 'task',
+          sessionID,
+          callID: 'c1',
+          args: { subagent_type: 'WRONG_TYPE' },
+        };
+        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
+        // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
+        // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }

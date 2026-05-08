@@ -321,6 +321,7 @@ description: Independent reviewer for FlowGuard plan, implementation, and archit
 mode: subagent
 hidden: true
 temperature: 0.1
+steps: 10
 permission:
   edit: deny
   bash: deny
@@ -454,8 +455,10 @@ review loop will exit and the user must submit a fresh /plan, /implement, or
 
 ## Output Format
 
-Return EXACTLY one JSON object matching this schema. Do NOT wrap it in markdown code fences.
-Do NOT include any text before or after the JSON.
+Your response must conform to the following JSON schema. When structured output is
+active, use the StructuredOutput tool provided by the runtime to return the object.
+If structured output is unavailable, return a single JSON object without markdown
+fences or surrounding text.
 
 {
   "iteration": <number>,
@@ -527,7 +530,6 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["${instructionEntry}"],
-  "plugin": ["flowguard-audit"],
   "agent": {
     "build": {
       "permission": {

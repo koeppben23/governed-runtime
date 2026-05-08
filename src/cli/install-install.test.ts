@@ -617,16 +617,17 @@ describe('cli/install', () => {
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('adds flowguard-audit to plugin array in opencode.json', async () => {
+    it('does not add flowguard-audit to plugin array in opencode.json', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.plugin).toBeDefined();
-      expect(parsed.plugin).toContain('flowguard-audit');
+      // OpenCode plugin array is for npm packages only — local discovery
+      // via .opencode/plugins/ is the correct mechanism per OpenCode docs.
+      expect(parsed.plugin).toBeUndefined();
     });
 
-    it('preserves existing plugins when adding flowguard-audit', async () => {
+    it('preserves existing plugins without injecting flowguard-audit', async () => {
       const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
@@ -636,21 +637,18 @@ describe('cli/install', () => {
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
+      // Desktop-owned config detected (has plugin field) — preserved as-is
       expect(parsed.plugin).toContain('existing-plugin');
-      expect(parsed.plugin).toContain('flowguard-audit');
-      expect(parsed.plugin[0]).toBe('existing-plugin');
+      expect(parsed.plugin).not.toContain('flowguard-audit');
     });
 
-    it('does not duplicate flowguard-audit on re-install', async () => {
+    it('does not add plugin array on re-install', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await install(repoArgs({ coreTarball: tarball }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      const count = (parsed.plugin as string[]).filter(
-        (p: string) => p === 'flowguard-audit',
-      ).length;
-      expect(count).toBe(1);
+      expect(parsed.plugin).toBeUndefined();
     });
 
     it('mergeReviewerTaskPermission enforces *.deny + flowguard-reviewer.allow (P35)', () => {
@@ -1095,36 +1093,34 @@ describe('cli/uninstall', () => {
       expect(result.errors).toEqual([]);
     });
 
-    it('uninstall removes flowguard-audit from opencode.json plugins', async () => {
+    it('uninstall handles opencode.json without plugin array', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.plugin ?? []).not.toContain('flowguard-audit');
+      // No plugin array was added during install, so none to remove
+      expect(parsed.plugin).toBeUndefined();
     });
 
-    it('uninstall removes flowguard-audit from plugin-only config', async () => {
+    it('uninstall does not touch foreign plugin array', async () => {
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
-        JSON.stringify({ plugin: ['flowguard-audit'] }, null, 2),
+        JSON.stringify({ plugin: ['some-npm-plugin'] }, null, 2),
         'utf-8',
       );
       await uninstall(repoArgs({ action: 'uninstall' }));
       const content = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const parsed = JSON.parse(content);
-      expect(parsed.plugin ?? []).not.toContain('flowguard-audit');
+      // Desktop-owned config — foreign plugins preserved
+      expect(parsed.plugin).toEqual(['some-npm-plugin']);
     });
 
-    it('uninstall preserves other plugins when removing flowguard-audit', async () => {
+    it('uninstall preserves other plugins in desktop-owned config', async () => {
       const tarball = await createMockTarball();
       await fs.writeFile(
         path.join(tmpDir, 'opencode.json'),
-        JSON.stringify(
-          { plugin: ['existing-plugin', 'flowguard-audit', 'another-plugin'] },
-          null,
-          2,
-        ),
+        JSON.stringify({ plugin: ['existing-plugin', 'another-plugin'] }, null, 2),
         'utf-8',
       );
       await install(repoArgs({ coreTarball: tarball }));
@@ -1157,7 +1153,7 @@ describe('cli/uninstall', () => {
       expect(afterParsed.agent).toBeUndefined();
     });
 
-    it('uninstall removes empty plugin array from opencode.json', async () => {
+    it('uninstall does not create plugin field when none existed', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       await uninstall(repoArgs({ action: 'uninstall' }));

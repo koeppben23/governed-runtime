@@ -357,18 +357,14 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
 
     if (hasPluginField || hasDesktopInstructions) {
-      // Desktop app owns this config — only add our entries
+      // Desktop app owns this config — only add our entries.
+      // The plugin array is NOT modified: OpenCode's plugin field is for npm
+      // packages only. Local discovery via .opencode/plugins/ handles loading.
       const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
       if (!instructions.includes(entry)) {
         instructions.push(entry);
       }
       parsed['instructions'] = instructions;
-
-      if (!Array.isArray(parsed['plugin'])) {
-        parsed['plugin'] = ['flowguard-audit'];
-      } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
-        (parsed['plugin'] as string[]).push('flowguard-audit');
-      }
 
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
       return {
@@ -395,15 +391,9 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     // Ensure build agent has task permission for flowguard-reviewer subagent
     mergeReviewerTaskPermission(parsed);
 
-    // Register flowguard-audit plugin name. OpenCode auto-loads local plugin
-    // files from plugins/ directories; the "plugin" field in opencode.json is
-    // documented for npm packages. FlowGuard sets this as a standard
-    // installation default alongside the auto-discovery path.
-    if (!Array.isArray(parsed['plugin'])) {
-      parsed['plugin'] = ['flowguard-audit'];
-    } else if (!(parsed['plugin'] as string[]).includes('flowguard-audit')) {
-      (parsed['plugin'] as string[]).push('flowguard-audit');
-    }
+    // Plugin loading: OpenCode auto-loads local plugin files from
+    // .opencode/plugins/. The "plugin" field in opencode.json is documented
+    // for npm packages only — FlowGuard relies on auto-discovery exclusively.
 
     if (!parsed['$schema']) {
       parsed['$schema'] = 'https://opencode.ai/config.json';
@@ -438,12 +428,10 @@ export async function removeFromOpencodeJson(
       ? (parsed['instructions'] as string[])
       : [];
     const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
-    // A plugin array with ONLY 'flowguard-audit' was added by the installer itself —
-    // not a desktop-owned signal. Desktop-owned = has foreign plugins.
-    const pluginArr = Array.isArray(parsed['plugin']) ? (parsed['plugin'] as string[]) : [];
-    const hasForeignPlugins = pluginArr.some((p) => p !== 'flowguard-audit');
+    // Desktop-owned = has a plugin field (npm packages) or non-FlowGuard instructions.
+    const hasPluginField = 'plugin' in parsed;
 
-    if (hasDesktopInstructions || hasForeignPlugins) {
+    if (hasDesktopInstructions || hasPluginField) {
       // Desktop app owns this config — only remove FlowGuard entries
       const entry = mandatesInstructionEntry(scope);
       const hadInstructions = Array.isArray(parsed['instructions']);
@@ -451,17 +439,7 @@ export async function removeFromOpencodeJson(
       const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
       const removedInstruction = after.length !== before.length;
 
-      let removedPlugin = false;
-      if (Array.isArray(parsed['plugin'])) {
-        const beforePlugin = parsed['plugin'] as string[];
-        parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
-        removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
-        if ((parsed['plugin'] as string[]).length === 0) {
-          delete parsed['plugin'];
-        }
-      }
-
-      if (!removedInstruction && !removedPlugin) {
+      if (!removedInstruction) {
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
       }
 
@@ -478,17 +456,6 @@ export async function removeFromOpencodeJson(
     const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
     const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
     const removedInstruction = after.length !== before.length;
-
-    let removedPlugin = false;
-    if (Array.isArray(parsed['plugin'])) {
-      const beforePlugin = parsed['plugin'] as string[];
-      parsed['plugin'] = beforePlugin.filter((p) => p !== 'flowguard-audit');
-      removedPlugin = (parsed['plugin'] as string[]).length !== beforePlugin.length;
-      // Clean up empty plugin array
-      if ((parsed['plugin'] as string[]).length === 0) {
-        delete parsed['plugin'];
-      }
-    }
 
     // Remove FlowGuard-owned task-hardening entries only, preserve foreign task permissions
     let removedTaskHardening = false;
@@ -520,7 +487,7 @@ export async function removeFromOpencodeJson(
       if (Object.keys(agent).length === 0) delete parsed['agent'];
     }
 
-    if (!removedInstruction && !removedPlugin && !removedTaskHardening) {
+    if (!removedInstruction && !removedTaskHardening) {
       return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
     }
 

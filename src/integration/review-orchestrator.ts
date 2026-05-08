@@ -164,6 +164,7 @@ export interface OrchestratorClient {
         format?: {
           type: 'json_schema';
           schema: Record<string, unknown>;
+          retryCount?: number;
         };
       };
     }): Promise<{
@@ -171,8 +172,17 @@ export interface OrchestratorClient {
         | {
             parts?: Array<{ type?: string; text?: string }>;
             info?: {
+              // v2 SDK field name (canonical): AssistantMessage.structured
+              structured?: unknown;
+              // v1 docs field name (legacy alias): kept for forward-compat
               structured_output?: unknown;
-              error?: { name: string; message: string };
+              error?: {
+                name: string;
+                // v1 shape
+                message?: string;
+                // v2 shape: StructuredOutputError wraps in data.message
+                data?: { message?: string; retries?: number };
+              };
             };
           }
         | undefined;
@@ -655,6 +665,22 @@ export interface InvokeReviewerOptions {
    * @internal — consumers should not set this; used only in tests.
    */
   readonly _sleepFn?: (ms: number) => Promise<void>;
+  /**
+   * Diagnostic callback invoked on each attempt failure.
+   * Provides the step that failed and error details for logging/debugging.
+   * @internal — consumers wire this to their logger.
+   */
+  readonly _onAttemptFailed?: (info: {
+    attempt: number;
+    step:
+      | 'agent_probe'
+      | 'session_create'
+      | 'session_prompt'
+      | 'structured_output_error'
+      | 'no_findings';
+    error?: unknown;
+    details?: Record<string, unknown>;
+  }) => void;
 }
 
 /**
@@ -670,6 +696,7 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   maxRetries: 2,
   baseDelayMs: 1000,
   _sleepFn: retrySleep,
+  _onAttemptFailed: () => {},
 };
 
 export async function invokeReviewer(
@@ -678,7 +705,15 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  const { maxRetries, baseDelayMs, _sleepFn: sleep } = { ...DEFAULT_INVOKE_OPTIONS, ...options };
+  const {
+    maxRetries,
+    baseDelayMs,
+    _sleepFn: sleep,
+    _onAttemptFailed: onFailed,
+  } = {
+    ...DEFAULT_INVOKE_OPTIONS,
+    ...options,
+  };
   const maxAttempts = maxRetries + 1;
 
   // Lazy agent resolution (cached for process lifetime after first probe)
@@ -699,6 +734,12 @@ export async function invokeReviewer(
     });
 
     if (createResult.error || !createResult.data?.id) {
+      onFailed({
+        attempt,
+        step: 'session_create',
+        error: createResult.error,
+        details: { hasData: !!createResult.data },
+      });
       if (attempt < maxAttempts) continue; // retry transient session creation failure
       return null;
     }
@@ -712,11 +753,11 @@ export async function invokeReviewer(
       agent: string;
       system?: string;
       parts: Array<{ type: string; text: string }>;
-      format: { type: 'json_schema'; schema: Record<string, unknown> };
+      format: { type: 'json_schema'; schema: Record<string, unknown>; retryCount: number };
     } = {
       agent,
       parts: [{ type: 'text', text: prompt }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
     };
 
     // Inject system directive only in fallback mode — the registered agent's
@@ -731,6 +772,12 @@ export async function invokeReviewer(
     });
 
     if (promptResult.error || !promptResult.data) {
+      onFailed({
+        attempt,
+        step: 'session_prompt',
+        error: promptResult.error,
+        details: { hasData: !!promptResult.data, agent, hasFormat: true },
+      });
       if (attempt < maxAttempts) continue; // retry transient prompt failure
       return null;
     }
@@ -740,18 +787,29 @@ export async function invokeReviewer(
     // StructuredOutputError is deterministic — the LLM cannot fulfill the schema.
     // Retrying will produce the same failure. Fail immediately.
     if (info?.error && info.error.name === 'StructuredOutputError') {
+      onFailed({
+        attempt,
+        step: 'structured_output_error',
+        error: info.error,
+        details: { agent, retries: info.error.data?.retries },
+      });
       return null;
     }
 
-    // ── Response parsing: primary path (structured_output) ──
+    // ── Response parsing: primary path (structured output) ──
+    // v2 SDK types: AssistantMessage.structured (canonical field name)
+    // v1 SDK docs: info.structured_output (legacy alias — may appear in
+    // older server versions or future naming changes)
+    // Defensive: check both field names to ensure forward and backward compat.
     let findings: Record<string, unknown> | null = null;
 
-    if (info?.structured_output && typeof info.structured_output === 'object') {
-      findings = info.structured_output as Record<string, unknown>;
+    const structuredRaw = info?.structured ?? info?.structured_output;
+    if (structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)) {
+      findings = structuredRaw as Record<string, unknown>;
     }
 
     // ── Response parsing: TextPart fallback ──
-    // Belt-and-suspenders: if structured_output is absent, attempt to extract
+    // Belt-and-suspenders: if structured output is absent, attempt to extract
     // JSON from the response text parts. This handles providers/models that
     // don't fully support the format field.
     if (!findings && promptResult.data.parts) {
@@ -765,6 +823,22 @@ export async function invokeReviewer(
     }
 
     if (!findings) {
+      onFailed({
+        attempt,
+        step: 'no_findings',
+        details: {
+          agent,
+          hasInfo: !!info,
+          hasStructured: info ? 'structured' in info : false,
+          hasStructuredOutput: info ? 'structured_output' in info : false,
+          infoKeys: info ? Object.keys(info) : [],
+          partsCount: promptResult.data.parts?.length ?? 0,
+          textPartsLength:
+            promptResult.data.parts
+              ?.filter((p) => p.type === 'text' && p.text)
+              .reduce((sum, p) => sum + (p.text?.length ?? 0), 0) ?? 0,
+        },
+      });
       if (attempt < maxAttempts) continue; // retry missing structured output
       return null;
     }
