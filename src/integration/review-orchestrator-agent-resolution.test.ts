@@ -767,25 +767,7 @@ describe('invokeReviewer — agent resolution integration', () => {
   // ─── CRITICAL: structured field name compatibility (v2 SDK) ────────────────
 
   describe('CRITICAL — structured vs structured_output field name', () => {
-    it('reads findings from info.structured (canonical v2 field)', async () => {
-      const findings = validFindings();
-      const client = makeClient({
-        agents: [{ id: 'flowguard-reviewer' }],
-        promptResult: {
-          data: {
-            parts: [],
-            info: { structured: findings },
-          },
-          error: undefined,
-        },
-      });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
-      expect(result!.findings!.reviewMode).toBe('subagent');
-    });
-
-    it('reads findings from info.structured_output (legacy v1 field)', async () => {
+    it('reads findings from info.structured_output (canonical docs field)', async () => {
       const findings = validFindings();
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -800,25 +782,43 @@ describe('invokeReviewer — agent resolution integration', () => {
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
       expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.reviewMode).toBe('subagent');
     });
 
-    it('prefers info.structured over info.structured_output when both present', async () => {
-      const canonicalFindings = validFindings({ overallVerdict: 'changes_requested' });
-      const legacyFindings = validFindings({ overallVerdict: 'approve' });
+    it('reads findings from info.structured (server alias fallback)', async () => {
+      const findings = validFindings();
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
           data: {
             parts: [],
-            info: { structured: canonicalFindings, structured_output: legacyFindings },
+            info: { structured: findings },
           },
           error: undefined,
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      // Must use the canonical field (structured), not the legacy one
-      expect(result!.findings!.overallVerdict).toBe('changes_requested');
+      expect(result!.findings!.overallVerdict).toBe('approve');
+    });
+
+    it('prefers info.structured_output over info.structured when both present', async () => {
+      const canonicalFindings = validFindings({ overallVerdict: 'approve' });
+      const aliasFallback = validFindings({ overallVerdict: 'changes_requested' });
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured_output: canonicalFindings, structured: aliasFallback },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      // Must use the canonical docs field (structured_output), not the server alias
+      expect(result!.findings!.overallVerdict).toBe('approve');
     });
 
     it('falls through to TextPart when both structured and structured_output are absent', async () => {
@@ -1021,21 +1021,20 @@ describe('invokeReviewer — agent resolution integration', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('extractJsonFromText JSDoc', () => {
-  it('SMOKE — JSDoc references info.structured (not stale structured_output)', async () => {
+  it('SMOKE — JSDoc references info.structured_output (canonical docs field)', async () => {
     const orchestratorPath = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
       'review-orchestrator.ts',
     );
     const source = await fs.readFile(orchestratorPath, 'utf-8');
 
-    // The extractJsonFromText JSDoc should reference the canonical field name
-    // "info.structured", not the stale "info.structured_output".
+    // The extractJsonFromText JSDoc should reference the canonical docs field name
+    // "info.structured_output", not the server alias "info.structured".
     const jsdocMatch = source.match(
       /\/\*\*[\s\S]*?Extract JSON from unstructured text response[\s\S]*?\*\//,
     );
     expect(jsdocMatch).not.toBeNull();
     const jsdoc = jsdocMatch![0];
-    expect(jsdoc).toContain('info.structured');
-    expect(jsdoc).not.toContain('info.structured_output');
+    expect(jsdoc).toContain('info.structured_output');
   });
 });

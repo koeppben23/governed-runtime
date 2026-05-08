@@ -172,10 +172,10 @@ export interface OrchestratorClient {
         | {
             parts?: Array<{ type?: string; text?: string }>;
             info?: {
-              // v2 SDK field name (canonical): AssistantMessage.structured
-              structured?: unknown;
-              // v1 docs field name (legacy alias): kept for forward-compat
+              // SDK docs field name (canonical): info.structured_output
               structured_output?: unknown;
+              // Possible server alias — kept for forward-compat
+              structured?: unknown;
               error?: {
                 name: string;
                 // v1 shape
@@ -379,7 +379,7 @@ export function _resetAgentResolutionCache(): void {
 /**
  * Extract JSON from unstructured text response.
  *
- * Belt-and-suspenders fallback when info.structured is absent or the
+ * Belt-and-suspenders fallback when info.structured_output is absent or the
  * provider does not support the format field.
  * Tries three strategies in order:
  * 1. Direct JSON.parse (response is pure JSON)
@@ -798,13 +798,12 @@ export async function invokeReviewer(
     }
 
     // ── Response parsing: primary path (structured output) ──
-    // v2 SDK types: AssistantMessage.structured (canonical field name)
-    // v1 SDK docs: info.structured_output (legacy alias — may appear in
-    // older server versions or future naming changes)
+    // SDK docs field name (canonical): info.structured_output
+    // Server may also return info.structured — kept as fallback
     // Defensive: check both field names to ensure forward and backward compat.
     let findings: Record<string, unknown> | null = null;
 
-    const structuredRaw = info?.structured ?? info?.structured_output;
+    const structuredRaw = info?.structured_output ?? info?.structured;
     if (structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)) {
       findings = structuredRaw as Record<string, unknown>;
     }
@@ -830,8 +829,8 @@ export async function invokeReviewer(
         details: {
           agent,
           hasInfo: !!info,
-          hasStructured: info ? 'structured' in info : false,
           hasStructuredOutput: info ? 'structured_output' in info : false,
+          hasStructured: info ? 'structured' in info : false,
           infoKeys: info ? Object.keys(info) : [],
           partsCount: promptResult.data.parts?.length ?? 0,
           textPartsLength:
