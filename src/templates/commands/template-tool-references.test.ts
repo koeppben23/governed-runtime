@@ -64,6 +64,46 @@ describe('command templates: tool reference integrity', () => {
 });
 
 /**
+ * OpenCode SDK conformity guard: commands that invoke the review orchestration
+ * pipeline (which spawns flowguard-reviewer via Task tool) MUST pin `agent: build`
+ * in their frontmatter. Without this, running the command under a different primary
+ * agent (e.g. plan) would bypass agent.build.permission.task restrictions.
+ *
+ * See: https://opencode.ai/docs/commands/#agent
+ */
+describe('command templates: agent pinning for review-orchestration commands', () => {
+  const COMMANDS_REQUIRING_BUILD_AGENT = [
+    'plan.md',
+    'implement.md',
+    'review.md',
+    'architecture.md',
+  ] as const;
+
+  for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
+    it(`${cmd} must pin agent: build in frontmatter`, () => {
+      const body = COMMANDS[cmd];
+      expect(body).toBeDefined();
+      // Frontmatter is between --- delimiters
+      const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+      expect(frontmatterMatch).not.toBeNull();
+      const frontmatter = frontmatterMatch![1];
+      expect(frontmatter).toMatch(/^agent:\s*build$/m);
+    });
+  }
+
+  it('commands without review orchestration do NOT require agent pinning', () => {
+    // Smoke test: status.md should work without agent pin
+    const body = COMMANDS['status.md'];
+    expect(body).toBeDefined();
+    const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
+    expect(frontmatterMatch).not.toBeNull();
+    const frontmatter = frontmatterMatch![1];
+    // status.md does NOT need agent: build (it only calls flowguard_status)
+    expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
+  });
+});
+
+/**
  * P1.3 slice 6 — narrative drift guard.
  *
  * The third LoopVerdict 'unable_to_review' is part of the runtime contract

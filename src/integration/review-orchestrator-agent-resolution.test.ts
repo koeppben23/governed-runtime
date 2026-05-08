@@ -8,7 +8,7 @@
  * - HAPPY: Fallback path (general agent with system directive)
  * - BAD: Probe failures (throws, error response, undefined data)
  * - CORNER: Cache behavior (single probe, sticky result, reset)
- * - CORNER: TextPart fallback (JSON extraction from text parts)
+ * - CORNER: Fail-closed — no text fallback when structured_output absent
  * - EDGE: Concurrent resolution, empty agent list
  * - E2E: Full review flow with both paths
  * - SMOKE: extractJsonFromText strategies
@@ -505,10 +505,10 @@ describe('invokeReviewer — agent resolution integration', () => {
     });
   });
 
-  // ─── CORNER: TextPart fallback ─────────────────────────────────────────────
+  // ─── CORNER: Fail-closed — text fallback removed ─────────────────────────
 
-  describe('CORNER — TextPart fallback when structured_output is absent', () => {
-    it('extracts findings from text parts when structured_output is missing', async () => {
+  describe('CORNER — fail-closed: no text fallback when structured_output is absent', () => {
+    it('returns null when structured_output is missing even if text parts contain valid JSON', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -520,11 +520,11 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: text content is NOT accepted as structured output substitute
+      expect(result).toBeNull();
     });
 
-    it('extracts findings from fenced JSON in text parts', async () => {
+    it('returns null when text parts contain fenced JSON but no structured_output', async () => {
       const fenced = '```json\n' + JSON.stringify(validFindings()) + '\n```';
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -537,11 +537,11 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: fenced JSON in text is NOT accepted
+      expect(result).toBeNull();
     });
 
-    it('returns null when text parts contain no valid JSON', async () => {
+    it('returns null when text parts contain no valid JSON (unchanged behavior)', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -568,11 +568,8 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(result).toBeNull();
     });
 
-    it('concatenates multiple text parts for extraction', async () => {
-      // Split JSON at a natural boundary (between complete lines)
-      const findings = validFindings();
-      const json = JSON.stringify(findings, null, 0);
-      // Use prose + JSON split: text before JSON + JSON itself
+    it('returns null when multiple text parts contain JSON but no structured_output', async () => {
+      const json = JSON.stringify(validFindings(), null, 0);
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -587,7 +584,8 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
+      // Fail-closed: even concatenated text with valid JSON is NOT accepted
+      expect(result).toBeNull();
     });
   });
 
@@ -821,7 +819,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(result!.findings!.overallVerdict).toBe('approve');
     });
 
-    it('falls through to TextPart when both structured and structured_output are absent', async () => {
+    it('returns null when both structured and structured_output are absent (fail-closed)', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -833,8 +831,8 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: no text fallback — must return null even though text parts have valid JSON
+      expect(result).toBeNull();
     });
 
     it('returns null when info.structured is an array (not an object)', async () => {

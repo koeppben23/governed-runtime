@@ -750,23 +750,30 @@ export async function invokeReviewer(
     // 2. Build prompt body — dual-path:
     //    Primary: 'flowguard-reviewer' registered agent (has its own system prompt)
     //    Fallback: 'general' with injected system directive
-    const body: {
-      agent: string;
-      system?: string;
-      parts: Array<{ type: string; text: string }>;
-      format: { type: 'json_schema'; schema: Record<string, unknown>; retryCount: number };
-    } = {
+    //
+    // SDK TYPE LAG: @opencode-ai/sdk@1.14.41 (latest) does not include `format`
+    // in SessionPromptData.body types, but the field IS documented in the official
+    // OpenCode SDK docs: https://opencode.ai/docs/sdk/#structured-output
+    // The server accepts and processes it correctly at runtime.
+    // Track: SDK type definitions need update to include format field.
+    const body = {
       agent,
-      parts: [{ type: 'text', text: prompt }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+      parts: [{ type: 'text' as const, text: prompt }],
+      format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
     };
 
     // Inject system directive only in fallback mode — the registered agent's
     // markdown prompt already provides the reviewer persona.
     if (agent === REVIEWER_AGENT_FALLBACK) {
-      body.system = REVIEWER_SYSTEM_DIRECTIVE;
+      (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
     }
 
+    // NOTE: body.format passes TypeScript compilation because the body variable's
+    // excess properties are not checked when passed as a pre-declared variable
+    // (excess property checking only applies to inline object literals).
+    // The format field IS in the documented API (https://opencode.ai/docs/sdk/#structured-output)
+    // but NOT in SDK types (@opencode-ai/sdk@1.14.41). This is a known SDK type lag.
+    // When the SDK adds format to SessionPromptData.body, this comment can be removed.
     const promptResult = await client.session.prompt({
       path: { id: childSessionId },
       body,
@@ -808,19 +815,12 @@ export async function invokeReviewer(
       findings = structuredRaw as Record<string, unknown>;
     }
 
-    // ── Response parsing: TextPart fallback ──
-    // Belt-and-suspenders: if structured output is absent, attempt to extract
-    // JSON from the response text parts. This handles providers/models that
-    // don't fully support the format field.
-    if (!findings && promptResult.data.parts) {
-      const textContent = promptResult.data.parts
-        .filter((p) => p.type === 'text' && p.text)
-        .map((p) => p.text!)
-        .join('\n');
-      if (textContent) {
-        findings = extractJsonFromText(textContent);
-      }
-    }
+    // ── Response parsing: TextPart fallback REMOVED (fail-closed) ──
+    // Previously: extracted JSON from text parts when structured_output was absent.
+    // This violated FlowGuard's fail-closed invariant — accepting heuristically-parsed
+    // content that was NOT SDK-validated. The retry loop below handles the absence
+    // of structured output by retrying up to maxAttempts, then returning null.
+    // See: https://opencode.ai/docs/sdk/#error-handling
 
     if (!findings) {
       onFailed({

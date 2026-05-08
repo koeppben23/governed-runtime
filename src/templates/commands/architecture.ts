@@ -3,6 +3,7 @@ import { GOVERNANCE_RULES } from './shared-rules.js';
 export const ARCHITECTURE_COMMAND = `
 ---
 description: Create or revise an Architecture Decision Record (ADR) with mandatory independent subagent review.
+agent: build
 ---
 
 You are managing a FlowGuard-controlled development workflow.
