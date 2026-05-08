@@ -49,6 +49,7 @@ import {
   resolveTarget,
   sha256,
   computeMandatesDigest,
+  buildReviewerAgentContent,
   ensureDir,
   safeRead,
   safeUnlink,
@@ -310,10 +311,13 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     // 6. Review subagent definition (write if absent, --force to replace)
+    //    FLOWGUARD_REVIEWER_MODEL env var injects model: into frontmatter
+    //    when set — allows configurable reviewer model override without
+    //    hardcoding a default in the template constant.
     ops.push(
       await writeIfAbsent(
         join(target, 'agents', REVIEWER_AGENT_FILENAME),
-        REVIEWER_AGENT,
+        buildReviewerAgentContent(REVIEWER_AGENT),
         args.force,
       ),
     );

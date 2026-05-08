@@ -166,6 +166,71 @@ export function computeMandatesDigest(): string {
   return sha256(FLOWGUARD_MANDATES_BODY);
 }
 
+// ─── Reviewer Agent Model Override ───────────────────────────────────────────
+
+/**
+ * Conservative pattern for valid model identifiers.
+ * Allows alphanumeric, dots, slashes, @, colons, and hyphens.
+ * Rejects everything else to prevent YAML injection.
+ */
+const VALID_MODEL_ID_PATTERN = /^[A-Za-z0-9._/@:-]+$/;
+
+/**
+ * Environment variable name for reviewer model override.
+ * Follows the established FLOWGUARD_* naming convention
+ * (see FLOWGUARD_POLICY_PATH, FLOWGUARD_ACTOR_ID, etc.).
+ */
+export const FLOWGUARD_REVIEWER_MODEL_ENV = 'FLOWGUARD_REVIEWER_MODEL';
+
+/**
+ * Build the reviewer agent file content, optionally injecting a model override
+ * from the FLOWGUARD_REVIEWER_MODEL environment variable.
+ *
+ * The REVIEWER_AGENT constant in mandates.ts is the canonical template and
+ * does NOT hardcode a model — the reviewer inherits the session model by default.
+ * When FLOWGUARD_REVIEWER_MODEL is set, the installer injects `model: <value>`
+ * into the YAML frontmatter before writing the agent file.
+ *
+ * The REVIEW_MANDATE_DIGEST (sha256 of the constant) remains stable because
+ * it is computed from the template constant, not the installed file.
+ *
+ * @param template - The REVIEWER_AGENT template constant
+ * @returns The template with model injected, or unchanged if env var is absent
+ * @throws If FLOWGUARD_REVIEWER_MODEL contains newlines or invalid characters
+ */
+export function buildReviewerAgentContent(template: string): string {
+  const raw = process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
+  if (!raw) return template;
+
+  const model = raw.trim();
+  if (!model) return template;
+
+  // Reject newline characters — prevents YAML injection across lines
+  if (/[\r\n]/.test(model)) {
+    throw new Error(
+      `${FLOWGUARD_REVIEWER_MODEL_ENV} contains newline characters — ` +
+        'rejected to prevent YAML injection.',
+    );
+  }
+
+  // Reject invalid characters — conservative allowlist only
+  if (!VALID_MODEL_ID_PATTERN.test(model)) {
+    throw new Error(
+      `${FLOWGUARD_REVIEWER_MODEL_ENV} contains invalid characters: "${model}" — ` +
+        'only alphanumeric, dots, slashes, @, colons, and hyphens are allowed.',
+    );
+  }
+
+  // Inject model: after the opening --- line in YAML frontmatter.
+  // The template starts with "---\ndescription: ...".
+  const firstNewline = template.indexOf('\n');
+  if (firstNewline < 0) return template; // defensive: malformed template
+
+  return (
+    template.slice(0, firstNewline + 1) + `model: ${model}\n` + template.slice(firstNewline + 1)
+  );
+}
+
 const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
 
 /** Resolve the OpenCode config file FlowGuard should update for the given scope. */

@@ -679,6 +679,7 @@ export interface InvokeReviewerOptions {
       | 'session_prompt'
       | 'structured_output_error'
       | 'info_error'
+      | 'model_capability_incompatible'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -781,12 +782,23 @@ export async function invokeReviewer(
     });
 
     if (promptResult.error || !promptResult.data) {
+      // Detect deterministic API errors — retrying will produce an identical failure.
+      // DeepSeek R1 returns { isRetryable: false, statusCode: 400, message: "..." }
+      // when the model does not support tool_choice / function calling.
+      const promptErrObj =
+        typeof promptResult.error === 'object' && promptResult.error !== null
+          ? (promptResult.error as Record<string, unknown>)
+          : null;
+      const isNonRetryable = promptErrObj?.isRetryable === false;
+
       onFailed({
         attempt,
         step: 'session_prompt',
         error: promptResult.error,
-        details: { hasData: !!promptResult.data, agent, hasFormat: true },
+        details: { hasData: !!promptResult.data, agent, hasFormat: true, isNonRetryable },
       });
+
+      if (isNonRetryable) return null; // deterministic — retries produce identical failure
       if (attempt < maxAttempts) continue; // retry transient prompt failure
       return null;
     }
@@ -832,6 +844,53 @@ export async function invokeReviewer(
                 : undefined,
         },
       });
+
+      // ── Model capability incompatibility: fail closed ──
+      // Detect deterministic model-level errors where the session model does
+      // not support structured output (tool_choice / function calling).
+      // This is an infrastructure/config failure, NOT a reviewer verdict.
+      // Must NOT consume review obligations — the reviewer never ran.
+      //
+      // Case-insensitive match against known error patterns.
+      // Unknown patterns fall through to no_findings / retry as before.
+      const errMsgRaw =
+        typeof errorObj.message === 'string'
+          ? errorObj.message
+          : typeof errorObj.value === 'string'
+            ? errorObj.value
+            : '';
+      const errDataMsg =
+        typeof errorObj.data === 'object' &&
+        errorObj.data !== null &&
+        typeof (errorObj.data as Record<string, unknown>).message === 'string'
+          ? ((errorObj.data as Record<string, unknown>).message as string)
+          : '';
+      const errMsgLower = `${errMsgRaw} ${errDataMsg}`.toLowerCase();
+
+      if (
+        errMsgLower.includes('does not support') &&
+        (errMsgLower.includes('tool_choice') ||
+          errMsgLower.includes('tools') ||
+          errMsgLower.includes('function calling') ||
+          errMsgLower.includes('structured output'))
+      ) {
+        onFailed({
+          attempt,
+          step: 'model_capability_incompatible',
+          error: info.error,
+          details: {
+            agent,
+            reason:
+              'Session model does not support structured output (tool_choice/function calling). ' +
+              'This is an infrastructure/config failure, not a reviewer verdict.',
+            recovery:
+              'Set FLOWGUARD_REVIEWER_MODEL to a structured-output-capable model, ' +
+              'reinstall FlowGuard, and open a fresh session.',
+            detectedPattern: errMsgLower.trim(),
+          },
+        });
+        return null; // fail closed — model capability is deterministic, retries won't help
+      }
     }
 
     // ── Response parsing: primary path (structured output) ──
