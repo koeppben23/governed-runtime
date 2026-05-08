@@ -61,6 +61,7 @@ export type {
   CentralPolicyEvidence,
   HydratePolicyResolution,
   PolicyResolutionReason,
+  ReviewOutputPolicy,
 } from './policy-types.js';
 export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
@@ -135,6 +136,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 1,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'text_compat_allowed',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -164,6 +166,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'text_compat_allowed',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -193,6 +196,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'structured_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -231,6 +235,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: false,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'structured_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

@@ -47,6 +47,10 @@ export interface ReviewReportCardInput {
   invocationSource?: string;
   /** Subagent session ID from invocation evidence. */
   reviewerSessionId?: string;
+  reviewOutputMode?: string;
+  structuredOutputUsed?: boolean;
+  reviewAssuranceLevel?: string;
+  extractionMethod?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -105,6 +109,10 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     obligationId,
     invocationSource,
     reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+    extractionMethod,
   } = input;
 
   const lines: string[] = [];
@@ -184,7 +192,8 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
   lines.push('');
 
   // ── Evidence ────────────────────────────────────────────────────
-  const hasEvidence = obligationId || invocationSource || reviewerSessionId;
+  const hasEvidence =
+    obligationId || invocationSource || reviewerSessionId || reviewOutputMode || reviewAssuranceLevel;
   if (hasEvidence) {
     lines.push('---');
     lines.push('');
@@ -193,6 +202,12 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     if (obligationId) lines.push(`- **Obligation:** \`${obligationId}\``);
     if (invocationSource) lines.push(`- **Invocation source:** ${invocationSource}`);
     if (reviewerSessionId) lines.push(`- **Reviewer session:** \`${reviewerSessionId}\``);
+    if (reviewOutputMode) lines.push(`- **Review output mode:** ${reviewOutputMode}`);
+    if (typeof structuredOutputUsed === 'boolean') {
+      lines.push(`- **Structured output used:** ${structuredOutputUsed ? 'yes' : 'no'}`);
+    }
+    if (reviewAssuranceLevel) lines.push(`- **Review assurance:** ${reviewAssuranceLevel}`);
+    if (extractionMethod) lines.push(`- **Extraction method:** ${extractionMethod}`);
     lines.push('');
   }
 

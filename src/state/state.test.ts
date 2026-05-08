@@ -444,6 +444,7 @@ describe('state schemas', () => {
           emitToolCalls: true,
           enableChainHash: true,
         },
+        reviewOutputPolicy: 'text_compat_allowed',
         actorClassification: {
           flowguard_decision: 'human',
         },
@@ -464,6 +465,7 @@ describe('state schemas', () => {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
+        reviewOutputPolicy: 'text_compat_allowed',
         identityProvider: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
@@ -536,6 +538,7 @@ describe('state schemas', () => {
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
         requireVerifiedActorsForApproval: false,
+        reviewOutputPolicy: 'structured_required',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,

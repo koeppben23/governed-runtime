@@ -334,6 +334,16 @@ export const ReviewInvocationEvidence = z
     consumedByObligationId: z.string().uuid().nullable(),
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
+    /** Reviewer output transport used to obtain the findings. */
+    reviewOutputMode: z.enum(['structured_output', 'text_compat']).default('structured_output'),
+    /** True only when OpenCode SDK structured_output was present and used. */
+    structuredOutputUsed: z.boolean().default(true),
+    /** Review-output assurance tier, distinct from actor identity assurance. */
+    reviewAssuranceLevel: z.enum(['structured_high', 'text_compat_lower']).default('structured_high'),
+    /** JSON extraction strategy used for text compatibility mode only. */
+    extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
+    /** Original model capability error that caused text compatibility mode. */
+    modelCapabilityError: z.string().optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
@@ -647,6 +657,8 @@ export const PolicySnapshotSchema = z
         strictEnforcement: z.boolean().default(false),
       })
       .optional(),
+    /** Frozen review output policy for structured vs text-compatible evidence. */
+    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']).optional(),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),

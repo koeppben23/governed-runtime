@@ -41,6 +41,9 @@ export interface SelfReviewConfig {
   readonly strictEnforcement: boolean;
 }
 
+/** Controls which reviewer output modes may satisfy governance evidence. */
+export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
+
 /** Mandatory independent review configuration for FlowGuardPolicy. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   subagentEnabled: true,
@@ -87,6 +90,9 @@ export interface FlowGuardPolicy {
 
   /** Independent review configuration. */
   readonly selfReview: SelfReviewConfig;
+
+  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
+  readonly reviewOutputPolicy: ReviewOutputPolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

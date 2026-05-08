@@ -463,6 +463,30 @@ export const review: ToolDefinition = {
             (inv) =>
               inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
           );
+          const submittedReviewOutput = findings.pluginReviewOutput as
+            | Record<string, unknown>
+            | undefined;
+
+          if (submittedReviewOutput?.reviewOutputMode === 'text_compat') {
+            if (hostInvForObligation?.reviewOutputMode !== 'text_compat') {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_MANDATE_MISMATCH',
+                'Submitted text-compat findings require matching host-orchestrated ReviewInvocationEvidence with reviewOutputMode: text_compat.',
+                obligation.obligationId,
+              );
+            }
+            if (
+              hostInvForObligation.reviewAssuranceLevel !== 'text_compat_lower' ||
+              hostInvForObligation.structuredOutputUsed !== false ||
+              !hostInvForObligation.extractionMethod
+            ) {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_MANDATE_MISMATCH',
+                'Submitted text-compat findings require complete lower-assurance invocation metadata.',
+                obligation.obligationId,
+              );
+            }
+          }
 
           if (hostInvForObligation) {
             // Host-orchestrated evidence exists for this obligation.
@@ -659,6 +683,10 @@ export const review: ToolDefinition = {
         references: args.references as Array<{ ref: string; type: string }> | undefined,
         obligationId: validatedReviewObligation?.obligationId,
         invocationSource: boundInvocation?.source,
+        reviewOutputMode: boundInvocation?.reviewOutputMode,
+        structuredOutputUsed: boundInvocation?.structuredOutputUsed,
+        reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
+        extractionMethod: boundInvocation?.extractionMethod,
         reviewerSessionId:
           boundInvocation?.childSessionId ??
           ((findingsForCard?.reviewedBy as Record<string, unknown>)?.sessionId as

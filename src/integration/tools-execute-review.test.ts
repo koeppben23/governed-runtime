@@ -1411,6 +1411,35 @@ describe('review (standalone flow)', () => {
         expect(consumed?.invocationId).toMatch(/^[0-9a-f-]{36}$/);
       });
 
+      it('blocks text-compat findings without matching host invocation metadata', async () => {
+        const uuid = await obtainObligationUuid({ prNumber: 44, inputOrigin: 'pr' });
+        const findings = {
+          ...buildAnalysisFindings('approve', uuid),
+          pluginReviewOutput: {
+            reviewOutputMode: 'text_compat',
+            structuredOutputUsed: false,
+            reviewAssuranceLevel: 'text_compat_lower',
+            extractionMethod: 'direct_json',
+          },
+        };
+
+        const raw = await review.execute(
+          { prNumber: 44, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('SUBAGENT_MANDATE_MISMATCH');
+
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      });
+
       it('E3: consumeReviewObligation accepts fulfilled obligation (fulfilled -> consumed transition)', async () => {
         const { consumeReviewObligation, ensureReviewAssurance } =
           await import('./review-assurance.js');

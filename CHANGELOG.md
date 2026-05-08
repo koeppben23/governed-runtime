@@ -33,11 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Policy-gated review output assurance**: Added frozen `reviewOutputPolicy` defaults (`solo`/`team`: `text_compat_allowed`, `team-ci`/`regulated`: `structured_required`) and persisted review-output metadata on `ReviewInvocationEvidence` (`reviewOutputMode`, `structuredOutputUsed`, `reviewAssuranceLevel`, text extraction details). Text compatibility is now explicit lower-assurance governance evidence instead of an implicit structured-output substitute.
+
 - **SDK contract test + type snapshot baseline**: `sdk-contract.test.ts` verifies 10 compile-time and 6 runtime assertions against `.opencode-sdk-baseline/` (snapshots of `@opencode-ai/plugin` type definitions). Build-time guard prevents silent SDK type drift without explicit baseline update via `scripts/sdk-type-snapshot.mjs`.
 
 - **Docs drift + SDK compat CI workflows**: `.github/workflows/docs-drift.yml` (Monday 07:00 UTC) and `.github/workflows/sdk-compat.yml` run documentation SSOT guards and SDK type snapshot validation. Dependabot grouping isolates `@opencode-ai/*` updates into a dedicated PR group.
 
 ### Changed
+
+- **Reviewer fallback formalized**: Reviewer model structured-output incompatibility now blocks under `structured_required` policy and retries in text compatibility mode only when policy allows it. The global model capability cache was removed to avoid provider/model/agent leakage; capability is evaluated per invocation.
 
 - **Lint cleanup**: Removed unnecessary type assertions (`as Record<string, unknown>` on `parseJsonc` results) and unused imports from plugin composition.
 

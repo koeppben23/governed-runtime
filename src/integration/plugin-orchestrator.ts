@@ -210,6 +210,7 @@ export async function runReviewOrchestration(
         prompt,
         sessionId,
         {
+          reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
           _onAttemptFailed: (info) => {
             deps.log.warn(
               'orchestrator',
@@ -304,6 +305,11 @@ export async function runReviewOrchestration(
           invokedAt: now,
           fulfilledAt: now,
           source: 'host-orchestrated',
+          reviewOutputMode: reviewerResult.reviewOutputMode,
+          structuredOutputUsed: reviewerResult.structuredOutputUsed,
+          reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+          extractionMethod: reviewerResult.extractionMethod,
+          modelCapabilityError: reviewerResult.modelCapabilityError,
         });
         await deps.updateReviewAssurance(sessDir, (s) => {
           const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
@@ -442,8 +448,9 @@ export async function runReviewOrchestration(
       deps.client as OrchestratorClient,
       prompt,
       sessionId,
-      {
-        _onAttemptFailed: (info) => {
+        {
+          reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+          _onAttemptFailed: (info) => {
           deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
             tool: toolName,
             sessionId,
@@ -567,6 +574,11 @@ export async function runReviewOrchestration(
                 invokedAt: now2,
                 fulfilledAt: now2,
                 source: 'host-orchestrated',
+                reviewOutputMode: reviewerResult.reviewOutputMode,
+                structuredOutputUsed: reviewerResult.structuredOutputUsed,
+                reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+                extractionMethod: reviewerResult.extractionMethod,
+                modelCapabilityError: reviewerResult.modelCapabilityError,
               });
               // Use immutable appendInvocationEvidence instead of
               // mutating ensureReviewAssurance()'s return via .push().
@@ -606,6 +618,15 @@ export async function runReviewOrchestration(
                     mandateDigest: REVIEW_MANDATE_DIGEST,
                     criteriaVersion: REVIEW_CRITERIA_VERSION,
                     findingsHash,
+                    reviewOutputMode: reviewerResult.reviewOutputMode,
+                    structuredOutputUsed: reviewerResult.structuredOutputUsed,
+                    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+                    ...(reviewerResult.extractionMethod
+                      ? { extractionMethod: reviewerResult.extractionMethod }
+                      : {}),
+                    ...(reviewerResult.modelCapabilityError
+                      ? { modelCapabilityError: reviewerResult.modelCapabilityError }
+                      : {}),
                   },
             );
             if (!reusedEvidence) {

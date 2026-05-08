@@ -29,6 +29,7 @@ import type {
   CentralMinimumMode,
   PolicyResolution,
   SelfReviewConfig,
+  ReviewOutputPolicy,
 } from './policy.js';
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
@@ -131,6 +132,7 @@ export function createPolicySnapshot(
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
     ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
+    reviewOutputPolicy: policy.reviewOutputPolicy,
   };
 }
 
@@ -203,6 +205,10 @@ function isValidIdpMode(v: unknown): v is IdentityProviderMode {
 /** Validate actor assurance tier. */
 function isValidAssurance(v: unknown): v is 'best_effort' | 'claim_validated' | 'idp_verified' {
   return typeof v === 'string' && ['best_effort', 'claim_validated', 'idp_verified'].includes(v);
+}
+
+function isValidReviewOutputPolicy(v: unknown): v is ReviewOutputPolicy {
+  return v === 'structured_required' || v === 'text_compat_allowed';
 }
 
 /**
@@ -330,6 +336,12 @@ export function normalizePolicySnapshotWithMeta(
     normalized = true;
   }
 
+  const rawReviewOutputPolicy = s.reviewOutputPolicy;
+  const reviewOutputPolicy: ReviewOutputPolicy = isValidReviewOutputPolicy(rawReviewOutputPolicy)
+    ? rawReviewOutputPolicy
+    : modeDefaults.reviewOutputPolicy;
+  if (!isValidReviewOutputPolicy(rawReviewOutputPolicy)) normalized = true;
+
   return {
     snapshot: {
       mode,
@@ -364,6 +376,7 @@ export function normalizePolicySnapshotWithMeta(
           : undefined,
       identityProviderMode,
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
+      reviewOutputPolicy,
     },
     normalized,
     reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -378,6 +391,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly allowSelfApproval: boolean;
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly effectiveGateBehavior: EffectiveGateBehavior;
+  readonly reviewOutputPolicy: ReviewOutputPolicy;
 } {
   switch (mode) {
     case 'solo':
@@ -388,6 +402,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'auto_approve',
+        reviewOutputPolicy: 'text_compat_allowed',
       };
     case 'regulated':
       return {
@@ -397,8 +412,18 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: false,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'structured_required',
       };
     case 'team':
+      return {
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'text_compat_allowed',
+      };
     case 'team-ci':
       return {
         requireHumanGates: true,
@@ -407,6 +432,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'structured_required',
       };
   }
 }
@@ -432,6 +458,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
+    reviewOutputPolicy: snapshot.reviewOutputPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),

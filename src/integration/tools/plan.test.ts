@@ -214,6 +214,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -251,6 +252,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -281,6 +283,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -314,6 +317,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,

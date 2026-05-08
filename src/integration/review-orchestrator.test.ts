@@ -707,6 +707,10 @@ describe('invokeReviewer', () => {
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
     expect(result).not.toBeNull();
     expect(result!.findings).not.toBeNull();
+    expect(result!.reviewOutputMode).toBe('structured_output');
+    expect(result!.structuredOutputUsed).toBe(true);
+    expect(result!.reviewAssuranceLevel).toBe('structured_high');
+    expect(result!.extractionMethod).toBeUndefined();
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
     // Authoritative override: real SDK childSessionId, NOT subagent-supplied guess.
     expect(reviewedBy.sessionId).toBe('child-session-1');

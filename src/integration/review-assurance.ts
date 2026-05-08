@@ -239,7 +239,15 @@ export function buildInvocationEvidence(input: {
   invokedAt: string;
   fulfilledAt: string;
   source?: 'host-orchestrated' | 'agent-submitted-attested';
+  reviewOutputMode?: 'structured_output' | 'text_compat';
+  structuredOutputUsed?: boolean;
+  reviewAssuranceLevel?: 'structured_high' | 'text_compat_lower';
+  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
+  modelCapabilityError?: string;
 }): ReviewInvocationEvidence {
+  const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
+  const structuredOutputUsed = input.structuredOutputUsed ?? reviewOutputMode === 'structured_output';
+  const reviewAssuranceLevel = input.reviewAssuranceLevel ?? (reviewOutputMode === 'text_compat' ? 'text_compat_lower' : 'structured_high');
   return {
     invocationId: randomUUID(),
     obligationId: input.obligationId,
@@ -255,6 +263,11 @@ export function buildInvocationEvidence(input: {
     fulfilledAt: input.fulfilledAt,
     consumedByObligationId: null,
     source: input.source,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+    ...(input.extractionMethod ? { extractionMethod: input.extractionMethod } : {}),
+    ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
   };
 }
 
