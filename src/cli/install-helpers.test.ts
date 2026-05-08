@@ -367,7 +367,7 @@ describe('install-helpers', () => {
       expect(content.instructions).toContain('existing.md');
     });
 
-    it('BAD: trailing commas still cause fallback (strip-json-comments does not handle them)', async () => {
+    it('HAPPY: parses trailing commas (full JSONC compat per OpenCode docs)', async () => {
       const filePath = path.join(tmpDir, 'opencode.json');
       const jsoncContent = `{
   "$schema": "https://opencode.ai/config.json",
@@ -375,12 +375,12 @@ describe('install-helpers', () => {
 }`;
       await fs.writeFile(filePath, jsoncContent, 'utf-8');
 
-      // Trailing commas cause JSON.parse to fail even after stripping comments.
-      // The catch block should create a backup and write the template.
+      // jsonc-parser handles trailing commas — file parses and merges successfully
       const result = await mergeOpencodeJson(filePath, 'repo');
-      expect(result.action).toBe('written');
-      expect(result.reason).toContain('malformed JSON/JSONC');
-      expect(result.reason).toContain('backup');
+      expect(result.action).toBe('merged');
+
+      const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+      expect(content.model).toBe('anthropic/claude-sonnet-4-5');
     });
 
     it('BAD: truly malformed content creates backup before overwriting', async () => {

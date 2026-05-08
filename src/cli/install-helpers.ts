@@ -11,10 +11,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import stripJsonComments from 'strip-json-comments';
+import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
 import {
   COMMANDS,
   REVIEWER_AGENT_FILENAME,
@@ -164,6 +164,56 @@ export function sha256(content: string): string {
  */
 export function computeMandatesDigest(): string {
   return sha256(FLOWGUARD_MANDATES_BODY);
+}
+
+const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
+
+/** Resolve the OpenCode config file FlowGuard should update for the given scope. */
+export function resolveOpencodeConfigPath(
+  scope: InstallScope,
+  target = resolveTarget(scope),
+  projectRoot = resolve('.'),
+): string {
+  const dir = scope === 'global' ? target : projectRoot;
+  for (const filename of OPENCODE_CONFIG_FILENAMES) {
+    const candidate = join(dir, filename);
+    if (existsSync(candidate)) return candidate;
+  }
+  return join(dir, 'opencode.json');
+}
+
+/**
+ * Find a parallel OpenCode config file that co-exists with the preferred one.
+ * Returns null if no parallel file exists.
+ */
+export function findParallelOpencodeConfig(preferredPath: string): string | null {
+  const dir = dirname(preferredPath);
+  const preferredName = basename(preferredPath);
+  for (const name of OPENCODE_CONFIG_FILENAMES) {
+    if (name !== preferredName) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse JSONC content. Uses jsonc-parser which handles
+ * single-line comments, block comments, and trailing commas —
+ * matching OpenCode's config parser semantics.
+ *
+ * Parse errors (e.g. truly malformed input) are surfaced as thrown errors
+ * to preserve fail-closed behavior.
+ */
+export function parseJsonc<T = Record<string, unknown>>(content: string): T {
+  const errors: ParseError[] = [];
+  const result = jsoncParse(content, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    const first = errors[0]!;
+    throw new SyntaxError(`JSONC parse error at offset ${first.offset}: error code ${first.error}`);
+  }
+  return result as T;
 }
 
 // ─── File Helpers ─────────────────────────────────────────────────────────────
@@ -348,7 +398,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   try {
     // OpenCode officially supports JSONC (JSON with Comments) — strip before parse.
     // See: https://opencode.ai/docs/config/#format
-    const parsed = JSON.parse(stripJsonComments(existing)) as Record<string, unknown>;
+    const parsed = parseJsonc(existing) as Record<string, unknown>;
 
     // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
     // Desktop app owns its own plugin/instruction config — do NOT touch it.
@@ -435,7 +485,7 @@ export async function removeFromOpencodeJson(
   }
 
   try {
-    const parsed = JSON.parse(stripJsonComments(existing)) as Record<string, unknown>;
+    const parsed = parseJsonc(existing) as Record<string, unknown>;
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
     // touch desktop app's instruction configuration beyond removing our own entries)

@@ -57,6 +57,9 @@ import {
   mergePackageJson,
   mergeOpencodeJson,
   removeFromOpencodeJson,
+  resolveOpencodeConfigPath,
+  findParallelOpencodeConfig,
+  parseJsonc,
   hasNonFlowGuardInstructions,
 } from './install-helpers.js';
 
@@ -77,6 +80,7 @@ export {
   computeMandatesDigest,
   mergeReviewerTaskPermission,
   hasNonFlowGuardInstructions,
+  resolveOpencodeConfigPath,
   FLOWGUARD_INSTRUCTION_ENTRIES,
 } from './install-helpers.js';
 
@@ -253,10 +257,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
         ? dirname(globalConfigPath())
         : join(resolve('.'), '.opencode');
     const pkgPath = join(target, 'package.json');
-    const opencodeJsonPath =
-      args.installScope === 'global'
-        ? join(target, 'opencode.json')
-        : join(resolve('.'), 'opencode.json');
+    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
     const cfgPath = join(configTargetDir, 'flowguard.json');
 
     // Snapshot ALL paths that will be touched — before any file is modified
@@ -528,12 +529,17 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       }
     }
 
-    // Remove FlowGuard instruction entries from opencode.json
-    const opencodeJsonPath =
-      args.installScope === 'global'
-        ? join(target, 'opencode.json')
-        : join(resolve('.'), 'opencode.json');
+    // Remove FlowGuard instruction entries from the active OpenCode config.
+    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
     ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
+
+    // Also clean any parallel legacy config file (e.g. opencode.json if
+    // opencode.jsonc was preferred, or vice versa). This ensures no
+    // FlowGuard remnants are left in stale parallel files.
+    const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
+    if (parallelConfig) {
+      ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
+    }
 
     // Remove flowguard.json config file
     const cfgPath =
@@ -758,13 +764,12 @@ async function checkOpencodeInstructions(
 ): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
 
-  const opencodeJsonPath =
-    scope === 'global' ? join(target, 'opencode.json') : join(resolve('.'), 'opencode.json');
+  const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
   const opencodeContent = await checkedRead(opencodeJsonPath, checks);
   if (!opencodeContent) return checks;
 
   try {
-    const parsed = JSON.parse(opencodeContent) as Record<string, unknown>;
+    const parsed = parseJsonc(opencodeContent);
     const instructions = Array.isArray(parsed['instructions'])
       ? (parsed['instructions'] as string[])
       : [];
