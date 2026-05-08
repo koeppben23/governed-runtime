@@ -11,7 +11,7 @@
  *
  * Non-blocking: logging errors never block the plugin.
  *
- * @version v1
+ * @version v2
  */
 
 import { readConfig } from '../adapters/persistence.js';
@@ -19,6 +19,12 @@ import type { FlowGuardConfig } from '../config/flowguard-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
+
+/**
+ * Maximum number of UI sink failures before stderr warnings are suppressed.
+ * Prevents flooding stderr when the SDK connection is persistently broken.
+ */
+const UI_SINK_FAILURE_WARN_LIMIT = 3;
 
 /**
  * Build logging sinks based on config mode, client, and workspace.
@@ -46,6 +52,10 @@ export function buildLogSinks(
   if (mode === 'ui' || mode === 'both') {
     if (client?.app?.log) {
       const clientLog = client.app.log.bind(client.app);
+      // Track UI sink failures to make them observable without flooding stderr.
+      // The logger itself cannot report its own failures (circular dependency),
+      // so stderr is the last-resort diagnostic channel.
+      let uiSinkFailures = 0;
       sinks.push((entry: LogEntry) => {
         clientLog({
           body: {
@@ -54,7 +64,15 @@ export function buildLogSinks(
             message: entry.message,
             ...(entry.extra ? { extra: entry.extra } : {}),
           },
-        }).catch(() => {});
+        }).catch((err: unknown) => {
+          uiSinkFailures++;
+          if (uiSinkFailures <= UI_SINK_FAILURE_WARN_LIMIT) {
+            const detail = err instanceof Error ? err.message : String(err);
+            process.stderr.write(
+              `[FlowGuard] UI log sink error (${uiSinkFailures}/${UI_SINK_FAILURE_WARN_LIMIT}): ${detail}\n`,
+            );
+          }
+        });
       });
     }
   }

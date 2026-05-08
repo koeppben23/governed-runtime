@@ -30,6 +30,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { fileURLToPath } from 'node:url';
 
 // ─── Mock Plugin Input ────────────────────────────────────────────────────────
 
@@ -921,6 +922,134 @@ describe('integration/plugin', () => {
       } finally {
         await ws.cleanup();
       }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Type Safety: ToolHookInput / ToolHookBeforeOutput / ToolHookOutput adoption
+  // ═══════════════════════════════════════════════════════════════════════════════
+  describe('hook type safety (types.ts adoption)', () => {
+    // HAPPY: hooks work correctly with properly-shaped typed inputs
+    it('HAPPY — before hook processes ToolHookInput + ToolHookBeforeOutput shapes', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // ToolHookInput shape: { tool, sessionID }
+        // ToolHookBeforeOutput shape: { args }
+        const input = { tool: 'flowguard_status', sessionID: crypto.randomUUID() };
+        const output = { args: { query: 'phase' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — after hook processes ToolHookInput + ToolHookOutput shapes', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const afterHook = hooks['tool.execute.after']!;
+
+        // ToolHookInput shape: { tool, sessionID }
+        // ToolHookOutput shape: { output }
+        const input = { tool: 'bash', sessionID: crypto.randomUUID() };
+        const output = { output: 'hello world' };
+        await expect(afterHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    // BAD: hooks degrade gracefully when input/output are malformed
+    it('BAD — before hook handles null input gracefully', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // null input — defensive ?? fallbacks should prevent crash
+        await expect(beforeHook(null, { args: {} })).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — after hook handles null input and output gracefully', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const afterHook = hooks['tool.execute.after']!;
+
+        // Both null — defensive fallbacks must prevent crash
+        await expect(afterHook(null, null)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    // CORNER: extra fields on input/output are ignored (forward-compatible)
+    it('CORNER — before hook ignores extra fields on input and output', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // Extra fields beyond ToolHookInput / ToolHookBeforeOutput
+        const input = {
+          tool: 'flowguard_status',
+          sessionID: crypto.randomUUID(),
+          callID: 'c1',
+          futureField: true,
+        };
+        const output = { args: {}, metadata: { v: 2 }, timestamp: Date.now() };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    // EDGE: after hook mutates output.output for blocked audit results
+    it('EDGE — after hook mutates ToolHookOutput.output on audit block', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const afterHook = hooks['tool.execute.after']!;
+
+        // Provide a flowguard_ tool with valid ToolHookOutput shape
+        const output = { output: JSON.stringify({ phase: 'TICKET' }) };
+        await afterHook({ tool: 'flowguard_status', sessionID }, output);
+
+        // output.output should still be a string (possibly mutated by audit)
+        expect(typeof output.output).toBe('string');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    // SMOKE: source-level regression — plugin.ts must import types.ts,
+    // preventing drift back to anonymous inline casts.
+    it('SMOKE — plugin.ts imports ToolHookInput from types.ts (source regression)', async () => {
+      const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin.ts');
+      const source = await fs.readFile(pluginPath, 'utf-8');
+      expect(source).toContain("from './types.js'");
+      expect(source).toContain('ToolHookInput');
+      expect(source).toContain('ToolHookBeforeOutput');
+      expect(source).toContain('ToolHookOutput');
     });
   });
 });

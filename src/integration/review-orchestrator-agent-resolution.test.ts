@@ -17,6 +17,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   resolveReviewerAgent,
   _resetAgentResolutionCache,
@@ -1010,5 +1013,29 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(details.partsCount).toBe(1);
       expect(details.textPartsLength).toBe(8); // "not json" = 8 chars
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// JSDoc Regression: extractJsonFromText docs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('extractJsonFromText JSDoc', () => {
+  it('SMOKE — JSDoc references info.structured (not stale structured_output)', async () => {
+    const orchestratorPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'review-orchestrator.ts',
+    );
+    const source = await fs.readFile(orchestratorPath, 'utf-8');
+
+    // The extractJsonFromText JSDoc should reference the canonical field name
+    // "info.structured", not the stale "info.structured_output".
+    const jsdocMatch = source.match(
+      /\/\*\*[\s\S]*?Extract JSON from unstructured text response[\s\S]*?\*\//,
+    );
+    expect(jsdocMatch).not.toBeNull();
+    const jsdoc = jsdocMatch![0];
+    expect(jsdoc).toContain('info.structured');
+    expect(jsdoc).not.toContain('info.structured_output');
   });
 });

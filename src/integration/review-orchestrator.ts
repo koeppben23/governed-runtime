@@ -379,7 +379,8 @@ export function _resetAgentResolutionCache(): void {
 /**
  * Extract JSON from unstructured text response.
  *
- * Belt-and-suspenders fallback when info.structured_output is absent.
+ * Belt-and-suspenders fallback when info.structured is absent or the
+ * provider does not support the format field.
  * Tries three strategies in order:
  * 1. Direct JSON.parse (response is pure JSON)
  * 2. Strip markdown code fences and parse
