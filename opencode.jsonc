@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Populated by `flowguard install` with the mandates instruction path.
+  // Run `npx flowguard install --core-tarball ...` to activate FlowGuard.
+  "instructions": [],
+}

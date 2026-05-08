@@ -65,8 +65,8 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 
 1. **Reads session state** to get ticket text, plan text, and implementation context
 2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
-3. **Creates a child session** via `client.session.create({ parentID })` for traceability
-4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ agent: "flowguard-reviewer" })`
+3. **Creates a child session** via `client.session.create({ body: { parentID } })` for traceability
+4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ path: { id }, body: { agent: "flowguard-reviewer", parts, format } })`
 5. **Parses ReviewFindings** from the reviewer's response
 6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` injected (only when structured ReviewFindings are available)
 7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission

@@ -24,6 +24,8 @@ import {
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
+import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
@@ -33,7 +35,12 @@ import {
   REVIEWER_SUBAGENT_TYPE,
 } from './review-enforcement.js';
 
-import type { ToolHookInput, ToolHookBeforeOutput, ToolHookOutput } from './types.js';
+import type {
+  ToolHookBeforeInput,
+  ToolHookBeforeOutput,
+  ToolHookAfterInput,
+  ToolHookAfterOutput,
+} from './types.js';
 
 import {
   TOOL_FLOWGUARD_PLAN,
@@ -73,6 +80,16 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
   }
 }
 
+/**
+ * FlowGuard Audit Plugin.
+ *
+ * Consumes only { client, directory, worktree } from PluginInput.
+ * Unused fields and rationale:
+ * - project: Identity resolved via git fingerprint, not OpenCode project metadata.
+ * - $: FlowGuard never spawns shell commands from the plugin layer.
+ * - experimental_workspace: Not applicable to FlowGuard's audit model.
+ * - serverUrl: Communication is tool-hook-only, no HTTP callbacks needed.
+ */
 export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
   const candidateWorktree = worktree || directory;
   // Fail-closed: only resolve a fingerprint and create a workspace file sink
@@ -142,7 +159,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       // OpenCode SDK passes untyped hook parameters. Cast to typed views
       // defined in types.ts (canonical per OpenCode docs convention).
       // Runtime guards (?? fallbacks) kept for defensive safety.
-      const hookInput = input as ToolHookInput;
+      const hookInput = input as ToolHookBeforeInput;
       const hookOutput = output as ToolHookBeforeOutput;
       const toolName: string = hookInput?.tool ?? '';
       const sessionId: string = hookInput?.sessionID ?? 'unknown';
@@ -214,8 +231,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     'tool.execute.after': async (input: unknown, output: unknown) => {
       // OpenCode SDK passes untyped hook parameters. Cast to typed views
       // defined in types.ts (canonical per OpenCode docs convention).
-      const hookInput = input as ToolHookInput;
-      const hookOutput = output as ToolHookOutput;
+      const hookInput = input as ToolHookAfterInput;
+      const hookOutput = output as ToolHookAfterOutput;
       const toolName: string = hookInput?.tool ?? '';
       const sessionId: string = hookInput?.sessionID ?? 'unknown';
       const now = new Date().toISOString();

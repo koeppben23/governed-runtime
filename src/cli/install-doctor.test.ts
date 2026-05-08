@@ -86,6 +86,23 @@ describe('cli/doctor', () => {
       expect(allOk).toBe(true);
     });
 
+    it('HAPPY: validates instructions from opencode.jsonc with comments', async () => {
+      const tarball = await createMockTarball();
+      await fs.writeFile(
+        path.join(tmpDir, 'opencode.jsonc'),
+        `{
+  // OpenCode project config
+  "instructions": []
+}`,
+        'utf-8',
+      );
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const ocCheck = checks.find((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok');
+      expect(ocCheck).toBeDefined();
+    });
+
     it('returns correct check count', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
@@ -101,6 +118,20 @@ describe('cli/doctor', () => {
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const missing = checks.filter((c) => c.status === 'missing');
       expect(missing.length).toBeGreaterThan(0);
+    });
+
+    it('BAD: malformed opencode.jsonc reports explicit JSONC error', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(jsoncPath, '{ "instructions": [ }', 'utf-8');
+      await fs.unlink(path.join(tmpDir, 'opencode.json'));
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const errorCheck = checks.find(
+        (c) => c.file.endsWith('opencode.jsonc') && c.status === 'error',
+      );
+      expect(errorCheck?.detail).toBe('malformed JSON');
     });
 
     it('reports error not missing when tool wrapper is unreadable (EACCES)', async () => {
@@ -657,6 +688,22 @@ describe('cli/doctor', () => {
       expect(cfgCheck?.detail).toContain('defaults only');
     });
 
+    it('EDGE: prefers opencode.jsonc over opencode.json for instruction checks', async () => {
+      const tarball = await createMockTarball();
+      await fs.writeFile(path.join(tmpDir, 'opencode.jsonc'), '{ "instructions": [] }', 'utf-8');
+      await fs.writeFile(path.join(tmpDir, 'opencode.json'), '{ "instructions": [] }', 'utf-8');
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+
+      expect(checks.some((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok')).toBe(
+        true,
+      );
+      expect(checks.some((c) => c.file.endsWith('opencode.json') && c.status === 'ok')).toBe(
+        false,
+      );
+    });
+
     it('doctor reports CONFIG_MISSING after uninstall removes flowguard.json', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
@@ -677,6 +724,34 @@ describe('cli/doctor', () => {
         await doctor(repoArgs({ action: 'doctor' }));
       });
       expect(elapsedMs).toBeLessThan(200);
+    });
+  });
+
+  describe('SMOKE', () => {
+    it('SMOKE: doctor returns all ok after JSONC-backed install', async () => {
+      const tarball = await createMockTarball();
+      await fs.writeFile(path.join(tmpDir, 'opencode.jsonc'), '{}', 'utf-8');
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+
+      expect(checks.every((c) => c.status === 'ok')).toBe(true);
+    });
+  });
+
+  describe('E2E', () => {
+    it('E2E: doctor observes install and uninstall state for JSONC-backed repo', async () => {
+      const tarball = await createMockTarball();
+      await fs.writeFile(path.join(tmpDir, 'opencode.jsonc'), '{}', 'utf-8');
+
+      await install(repoArgs({ coreTarball: tarball }));
+      const installedChecks = await doctor(repoArgs({ action: 'doctor' }));
+      expect(installedChecks.every((c) => c.status === 'ok')).toBe(true);
+
+      await uninstall(repoArgs({ action: 'uninstall' }));
+      const uninstalledChecks = await doctor(repoArgs({ action: 'doctor' }));
+      expect(uninstalledChecks.some((c) => c.status === 'instruction_missing')).toBe(true);
+      expect(uninstalledChecks.some((c) => c.detail?.includes('CONFIG_MISSING'))).toBe(true);
     });
   });
 });

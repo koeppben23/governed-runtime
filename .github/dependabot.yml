@@ -15,6 +15,12 @@ updates:
       - dependencies
       - automated
     groups:
+      opencode-sdk:
+        patterns:
+          - '@opencode-ai/*'
+        update-types:
+          - minor
+          - patch
       production-dependencies:
         dependency-type: production
         update-types:
@@ -22,6 +28,8 @@ updates:
           - patch
       dev-dependencies:
         dependency-type: development
+        exclude-patterns:
+          - '@opencode-ai/*'
         update-types:
           - minor
           - patch

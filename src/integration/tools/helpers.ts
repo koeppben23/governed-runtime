@@ -75,11 +75,22 @@ export interface ToolContext {
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 
+/**
+ * Result type for FlowGuard tools.
+ *
+ * Matches the OpenCode SDK `ToolResult` union:
+ * - `string`: plain text result (current default for all FlowGuard tools)
+ * - `{ output, metadata? }`: structured result with optional metadata
+ *
+ * @see https://opencode.ai/docs/custom-tools
+ */
+export type ToolResult = string | { output: string; metadata?: Record<string, unknown> };
+
 export type ToolDefinition = {
   description: string;
   args: Record<string, z.ZodType>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  execute(args: any, context: ToolContext): Promise<string>;
+  execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────

@@ -5,7 +5,7 @@
  * EXPERIMENTAL: This is a thin convenience wrapper.
  * For production, use OpenCode directly:
  *   opencode run "prompt"
- *   opencode serve --port 4096 --detach
+ *   opencode serve --port 4096
  */
 
 import { spawn } from 'node:child_process';
@@ -229,7 +229,7 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
 export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
   const config: ServeConfig = {};
   const errors: string[] = [];
-  const knownFlags = ['--port', '--hostname', '--cwd', '--detach'];
+  const knownFlags = ['--port', '--hostname', '--cwd'];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -261,8 +261,6 @@ export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: s
       } else {
         errors.push('--hostname requires a value');
       }
-    } else if (arg === '--detach') {
-      // Accepted as explicit detached-mode marker (now always detached anyway)
     } else if (arg === '--cwd') {
       const next = argv[i + 1];
       if (next) {
@@ -305,7 +303,7 @@ export function getServeUsage(): string {
 Server wrapper (EXPERIMENTAL, detached mode only).
 
 For production, use OpenCode directly:
-  opencode serve --port 4096 --detach
+  opencode serve --port 4096
 
 Options:
   --port <num>    Port (default: ${DEFAULT_PORT})

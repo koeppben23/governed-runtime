@@ -1047,9 +1047,9 @@ describe('integration/plugin', () => {
       const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin.ts');
       const source = await fs.readFile(pluginPath, 'utf-8');
       expect(source).toContain("from './types.js'");
-      expect(source).toContain('ToolHookInput');
+      expect(source).toContain('ToolHookBeforeInput');
       expect(source).toContain('ToolHookBeforeOutput');
-      expect(source).toContain('ToolHookOutput');
+      expect(source).toContain('ToolHookAfterOutput');
     });
   });
 });

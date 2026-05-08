@@ -1,0 +1,14 @@
+{
+  "updated": "2026-05-08T10:26:24.914Z",
+  "version": "1.14.33",
+  "files": [
+    {
+      "label": "plugin/dist/index.d.ts",
+      "hash": "d98993464d4f49fc178dfe23902fc73865617d8dc449d0248f3ecbb2db303f85"
+    },
+    {
+      "label": "plugin/dist/tool.d.ts",
+      "hash": "d421dfee976e46b6a496781caedc845f07a067d6d9966a267a0583ddaa9b24bb"
+    }
+  ]
+}

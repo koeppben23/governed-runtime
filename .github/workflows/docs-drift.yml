@@ -1,0 +1,62 @@
+name: OpenCode Docs Drift
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: docs-drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout v6.0.2
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+        with:
+          node-version: '20'
+      - name: Check docs drift
+        run: node scripts/docs-drift.mjs --verbose
+      - name: Create issue on drift
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'sdk-drift,docs',
+              state: 'open',
+            });
+            if (issues.data.length > 0) {
+              console.log('Open docs-drift issue already exists, skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'OpenCode docs changed ÔÇö review integration impact',
+              labels: ['sdk-drift', 'docs', 'automated'],
+              body: [
+                '## Docs Drift Detected',
+                '',
+                'The scheduled docs-drift check detected changes in OpenCode documentation',
+                'that may affect the integration layer.',
+                '',
+                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '### Next steps',
+                '',
+                '1. Review the workflow run log to see which pages changed',
+                '2. Assess impact on integration types and plugin hooks',
+                '3. Update baseline after review:',
+                '   ```bash',
+                '   node scripts/docs-drift.mjs --update',
+                '   ```',
+              ].join('\n'),
+            });

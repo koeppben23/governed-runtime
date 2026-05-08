@@ -104,6 +104,8 @@ jobs:
         run: npm run check
         env:
           FORCE_COLOR: 0
+      - name: SDK type drift check
+        run: node scripts/sdk-type-snapshot.mjs
 
   lint:
     name: lint

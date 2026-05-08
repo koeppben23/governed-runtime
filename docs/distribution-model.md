@@ -66,7 +66,7 @@ FlowGuard provides a CLI wrapper for headless operation:
 flowguard run -- "Run /hydrate policyMode=team-ci"
 
 # Start an OpenCode server (EXPERIMENTAL)
-flowguard serve --port 4096 --detach
+flowguard serve --port 4096
 ```
 
 **Status:** This feature is being refined. For production CI, use the official OpenCode commands directly:
@@ -93,7 +93,7 @@ opencode acp
 
 For CI/headless automation, use OpenCode directly:
 opencode run "prompt"
-opencode serve --port 4096 --detach
+opencode serve --port 4096
 
 FlowGuard wrappers are experimental convenience commands.
 

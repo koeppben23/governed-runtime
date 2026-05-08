@@ -128,9 +128,9 @@ describe('parseServeArgs', () => {
       expect(result).toBeNull();
     });
 
-    it('accepts --detach as explicit marker', () => {
+    it('rejects unsupported --detach flag', () => {
       const result = parseServeArgs(['--detach']);
-      expect(result).not.toBeNull();
+      expect(result).toBeNull();
     });
   });
 });

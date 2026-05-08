@@ -189,6 +189,7 @@ These are the underlying tool names that FlowGuard installs into OpenCode:
 | `flowguard_architecture`  | ADR authoring + review loop |
 | `flowguard_abort_session` | Session termination         |
 | `flowguard_archive`       | Session archival            |
+| `flowguard_continue`      | Deterministic next-action   |
 
 ## Uninstall
 
@@ -237,7 +238,7 @@ opencode run "Run /hydrate with policyMode=team-ci"
 # Or use the HTTP API directly
 curl -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
-  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/validate"}]}}'
+  -d '{"parts": [{"type": "text", "text": "/validate"}]}'
 
 # Stop the server
 kill $SERVER_PID
@@ -262,7 +263,7 @@ curl -X POST http://localhost:4096/session -H "Content-Type: application/json" \
 # Send message
 curl -X POST http://localhost:4096/session/{sessionId}/message \
   -H "Content-Type: application/json" \
-  -d '{"message": {"role": "user", "parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}}'
+  -d '{"parts": [{"type": "text", "text": "/hydrate policyMode=team-ci"}]}'
 ```
 
 See the [OpenCode Server Documentation](https://opencode.ai/docs/server/) for the full API reference.
