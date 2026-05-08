@@ -172,10 +172,10 @@ export interface OrchestratorClient {
         | {
             parts?: Array<{ type?: string; text?: string }>;
             info?: {
-              // v2 SDK field name (canonical): AssistantMessage.structured
-              structured?: unknown;
-              // v1 docs field name (legacy alias): kept for forward-compat
+              // SDK docs field name (canonical): info.structured_output
               structured_output?: unknown;
+              // Possible server alias — kept for forward-compat
+              structured?: unknown;
               error?: {
                 name: string;
                 // v1 shape
@@ -379,7 +379,8 @@ export function _resetAgentResolutionCache(): void {
 /**
  * Extract JSON from unstructured text response.
  *
- * Belt-and-suspenders fallback when info.structured_output is absent.
+ * Belt-and-suspenders fallback when info.structured_output is absent or the
+ * provider does not support the format field.
  * Tries three strategies in order:
  * 1. Direct JSON.parse (response is pure JSON)
  * 2. Strip markdown code fences and parse
@@ -749,23 +750,30 @@ export async function invokeReviewer(
     // 2. Build prompt body — dual-path:
     //    Primary: 'flowguard-reviewer' registered agent (has its own system prompt)
     //    Fallback: 'general' with injected system directive
-    const body: {
-      agent: string;
-      system?: string;
-      parts: Array<{ type: string; text: string }>;
-      format: { type: 'json_schema'; schema: Record<string, unknown>; retryCount: number };
-    } = {
+    //
+    // SDK TYPE LAG: @opencode-ai/sdk@1.14.41 (latest) does not include `format`
+    // in SessionPromptData.body types, but the field IS documented in the official
+    // OpenCode SDK docs: https://opencode.ai/docs/sdk/#structured-output
+    // The server accepts and processes it correctly at runtime.
+    // Track: SDK type definitions need update to include format field.
+    const body = {
       agent,
-      parts: [{ type: 'text', text: prompt }],
-      format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+      parts: [{ type: 'text' as const, text: prompt }],
+      format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
     };
 
     // Inject system directive only in fallback mode — the registered agent's
     // markdown prompt already provides the reviewer persona.
     if (agent === REVIEWER_AGENT_FALLBACK) {
-      body.system = REVIEWER_SYSTEM_DIRECTIVE;
+      (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
     }
 
+    // NOTE: body.format passes TypeScript compilation because the body variable's
+    // excess properties are not checked when passed as a pre-declared variable
+    // (excess property checking only applies to inline object literals).
+    // The format field IS in the documented API (https://opencode.ai/docs/sdk/#structured-output)
+    // but NOT in SDK types (@opencode-ai/sdk@1.14.41). This is a known SDK type lag.
+    // When the SDK adds format to SessionPromptData.body, this comment can be removed.
     const promptResult = await client.session.prompt({
       path: { id: childSessionId },
       body,
@@ -797,30 +805,22 @@ export async function invokeReviewer(
     }
 
     // ── Response parsing: primary path (structured output) ──
-    // v2 SDK types: AssistantMessage.structured (canonical field name)
-    // v1 SDK docs: info.structured_output (legacy alias — may appear in
-    // older server versions or future naming changes)
+    // SDK docs field name (canonical): info.structured_output
+    // Server may also return info.structured — kept as fallback
     // Defensive: check both field names to ensure forward and backward compat.
     let findings: Record<string, unknown> | null = null;
 
-    const structuredRaw = info?.structured ?? info?.structured_output;
+    const structuredRaw = info?.structured_output ?? info?.structured;
     if (structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)) {
       findings = structuredRaw as Record<string, unknown>;
     }
 
-    // ── Response parsing: TextPart fallback ──
-    // Belt-and-suspenders: if structured output is absent, attempt to extract
-    // JSON from the response text parts. This handles providers/models that
-    // don't fully support the format field.
-    if (!findings && promptResult.data.parts) {
-      const textContent = promptResult.data.parts
-        .filter((p) => p.type === 'text' && p.text)
-        .map((p) => p.text!)
-        .join('\n');
-      if (textContent) {
-        findings = extractJsonFromText(textContent);
-      }
-    }
+    // ── Response parsing: TextPart fallback REMOVED (fail-closed) ──
+    // Previously: extracted JSON from text parts when structured_output was absent.
+    // This violated FlowGuard's fail-closed invariant — accepting heuristically-parsed
+    // content that was NOT SDK-validated. The retry loop below handles the absence
+    // of structured output by retrying up to maxAttempts, then returning null.
+    // See: https://opencode.ai/docs/sdk/#error-handling
 
     if (!findings) {
       onFailed({
@@ -829,8 +829,8 @@ export async function invokeReviewer(
         details: {
           agent,
           hasInfo: !!info,
-          hasStructured: info ? 'structured' in info : false,
           hasStructuredOutput: info ? 'structured_output' in info : false,
+          hasStructured: info ? 'structured' in info : false,
           infoKeys: info ? Object.keys(info) : [],
           partsCount: promptResult.data.parts?.length ?? 0,
           textPartsLength:

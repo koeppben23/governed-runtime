@@ -14,6 +14,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import stripJsonComments from 'strip-json-comments';
 import {
   COMMANDS,
   REVIEWER_AGENT_FILENAME,
@@ -327,8 +328,8 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
  * 3. Order of existing user entries is preserved
  * 4. All other fields in opencode.json are preserved
  * 5. $schema is set if missing
- * 6. build agent has task permission for flowguard-reviewer subagent (standard merge path;
- *    desktop-owned configs are out of installer enforcement scope for task permissions)
+ * 6. build agent has task permission for flowguard-reviewer subagent (all paths,
+ *    including desktop-owned configs — P35 governance is non-negotiable)
  *
  * @param filePath - Path to opencode.json
  * @param scope    - Install scope (determines the instruction entry path)
@@ -345,7 +346,9 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   }
 
   try {
-    const parsed = JSON.parse(existing) as Record<string, unknown>;
+    // OpenCode officially supports JSONC (JSON with Comments) — strip before parse.
+    // See: https://opencode.ai/docs/config/#format
+    const parsed = JSON.parse(stripJsonComments(existing)) as Record<string, unknown>;
 
     // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
     // Desktop app owns its own plugin/instruction config — do NOT touch it.
@@ -366,11 +369,16 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
       }
       parsed['instructions'] = instructions;
 
+      // P35-fix: Task permission MUST be enforced regardless of config ownership.
+      // Without this, the build agent can spawn arbitrary subagents when running
+      // under a desktop-owned config, bypassing FlowGuard's governance model.
+      mergeReviewerTaskPermission(parsed);
+
       await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
       return {
         path: filePath,
         action: 'merged',
-        reason: 'desktop-owned config: task permission not enforced',
+        reason: 'desktop-owned config: merged with task permission',
       };
     }
 
@@ -401,8 +409,15 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
     return { path: filePath, action: 'merged' };
   } catch {
+    // Backup before destructive overwrite — preserves user data for recovery
+    const backupPath = `${filePath}.flowguard-backup`;
+    await writeFile(backupPath, existing, 'utf-8');
     await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
-    return { path: filePath, action: 'written', reason: 'existing file was malformed JSON' };
+    return {
+      path: filePath,
+      action: 'written',
+      reason: `existing file was malformed JSON/JSONC (backup: ${backupPath})`,
+    };
   }
 }
 
@@ -420,7 +435,7 @@ export async function removeFromOpencodeJson(
   }
 
   try {
-    const parsed = JSON.parse(existing) as Record<string, unknown>;
+    const parsed = JSON.parse(stripJsonComments(existing)) as Record<string, unknown>;
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
     // touch desktop app's instruction configuration beyond removing our own entries)
