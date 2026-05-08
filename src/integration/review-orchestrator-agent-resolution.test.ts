@@ -796,8 +796,8 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      // Fail-closed: no text fallback ÔÇö must return null even though text parts have valid JSON
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
+      expect(result!.findings!.overallVerdict).toBe('approve');
     });
 
     it('prefers info.structured_output over info.structured when both present', async () => {
