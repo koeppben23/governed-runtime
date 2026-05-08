@@ -680,6 +680,9 @@ export interface InvokeReviewerOptions {
       | 'structured_output_error'
       | 'info_error'
       | 'model_capability_incompatible'
+      | 'format_free_retry_failed'
+      | 'format_free_retry_empty'
+      | 'format_free_retry_parse_failed'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -882,14 +885,103 @@ export async function invokeReviewer(
             agent,
             reason:
               'Session model does not support structured output (tool_choice/function calling). ' +
-              'This is an infrastructure/config failure, not a reviewer verdict.',
-            recovery:
-              'Set FLOWGUARD_REVIEWER_MODEL to a structured-output-capable model, ' +
-              'reinstall FlowGuard, and open a fresh session.',
+              'Attempting format-free retry on same child session.',
             detectedPattern: errMsgLower.trim(),
           },
         });
-        return null; // fail closed — model capability is deterministic, retries won't help
+
+        // ── Format-free retry: re-prompt on SAME child session WITHOUT format ──
+        // The model rejected the tool_choice protocol feature but CAN produce JSON
+        // as natural text. Re-use the existing child session, strip the format field,
+        // extract JSON from text response, and let downstream Zod + attestation
+        // validation enforce structural correctness identically to the primary path.
+        //
+        // Governance invariant preserved: downstream validation in plugin-orchestrator.ts
+        // (ReviewFindingsSchema.safeParse + validateStrictAttestation) is transport-agnostic.
+        // Whether findings arrive via info.structured_output or text extraction is irrelevant
+        // to governance authority — the validation pipeline is identical.
+        const formatFreeBody: {
+          agent: string;
+          parts: Array<{ type: 'text'; text: string }>;
+          system?: string;
+        } = {
+          agent,
+          parts: [{ type: 'text' as const, text: prompt }],
+          // NO format field — forces plain text response, bypasses tool_choice
+        };
+
+        // Inject system directive only in fallback mode (same logic as primary path)
+        if (agent === REVIEWER_AGENT_FALLBACK) {
+          formatFreeBody.system = REVIEWER_SYSTEM_DIRECTIVE;
+        }
+
+        const formatFreeResult = await client.session.prompt({
+          path: { id: childSessionId },
+          body: formatFreeBody,
+        });
+
+        if (formatFreeResult.error || !formatFreeResult.data) {
+          onFailed({
+            attempt,
+            step: 'format_free_retry_failed',
+            error: formatFreeResult.error,
+            details: { agent, childSessionId },
+          });
+          return null; // both paths exhausted — fail closed
+        }
+
+        // Extract text content from response parts
+        const retryTextContent = (formatFreeResult.data.parts ?? [])
+          .filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
+          .map((p: { type?: string; text?: string }) => p.text!)
+          .join('');
+
+        if (!retryTextContent) {
+          onFailed({
+            attempt,
+            step: 'format_free_retry_empty',
+            error: null,
+            details: {
+              agent,
+              childSessionId,
+              partsCount: formatFreeResult.data.parts?.length ?? 0,
+            },
+          });
+          return null; // no text produced — fail closed
+        }
+
+        // Parse JSON from text using existing multi-strategy extraction
+        const extractedFindings = extractJsonFromText(retryTextContent);
+        if (!extractedFindings) {
+          onFailed({
+            attempt,
+            step: 'format_free_retry_parse_failed',
+            error: null,
+            details: {
+              agent,
+              childSessionId,
+              textLength: retryTextContent.length,
+              textPreview: retryTextContent.slice(0, 200),
+            },
+          });
+          return null; // text not parseable as JSON — fail closed
+        }
+
+        // Success: inject authoritative sessionId (identical to primary path)
+        const extractedReviewedBy = extractedFindings.reviewedBy as
+          | Record<string, unknown>
+          | undefined;
+        if (extractedReviewedBy && typeof extractedReviewedBy === 'object') {
+          extractedReviewedBy.sessionId = childSessionId;
+        } else {
+          extractedFindings.reviewedBy = { sessionId: childSessionId };
+        }
+
+        return {
+          sessionId: childSessionId,
+          rawResponse: JSON.stringify(extractedFindings),
+          findings: extractedFindings,
+        };
       }
     }
 
@@ -904,11 +996,10 @@ export async function invokeReviewer(
       findings = structuredRaw as Record<string, unknown>;
     }
 
-    // ── Response parsing: TextPart fallback REMOVED (fail-closed) ──
-    // Previously: extracted JSON from text parts when structured_output was absent.
-    // This violated FlowGuard's fail-closed invariant — accepting heuristically-parsed
-    // content that was NOT SDK-validated. The retry loop below handles the absence
-    // of structured output by retrying up to maxAttempts, then returning null.
+    // ── Response parsing: TextPart fallback on PRIMARY path REMOVED (fail-closed) ──
+    // Text extraction is used ONLY on the format-free retry path (above) where
+    // the model explicitly cannot handle tool_choice. On the primary path,
+    // structured_output absence means the model failed silently — retry or fail closed.
     // See: https://opencode.ai/docs/sdk/#error-handling
 
     if (!findings) {
