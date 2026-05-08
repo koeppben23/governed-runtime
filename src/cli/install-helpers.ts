@@ -398,7 +398,7 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   try {
     // OpenCode officially supports JSONC (JSON with Comments) — strip before parse.
     // See: https://opencode.ai/docs/config/#format
-    const parsed = parseJsonc(existing) as Record<string, unknown>;
+    const parsed = parseJsonc(existing);
 
     // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
     // Desktop app owns its own plugin/instruction config — do NOT touch it.
@@ -485,7 +485,7 @@ export async function removeFromOpencodeJson(
   }
 
   try {
-    const parsed = parseJsonc(existing) as Record<string, unknown>;
+    const parsed = parseJsonc(existing);
 
     // Detect desktop app config — do NOT modify it (flowguard uninstall should not
     // touch desktop app's instruction configuration beyond removing our own entries)

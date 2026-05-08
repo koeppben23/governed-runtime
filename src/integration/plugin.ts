@@ -24,8 +24,6 @@ import {
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
-import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
