@@ -16,8 +16,11 @@
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
  *
- * We define this locally because @opencode-ai/plugin imports but does not
- * re-export the Event type from @opencode-ai/sdk.
+ * Intentionally defined here as a subset of the SDK Event type rather than
+ * imported. FlowGuard only needs { type, properties } for audit logging.
+ * Re-defining avoids a runtime dependency on @opencode-ai/sdk. If the SDK
+ * Event gains new fields, this subset silently ignores them — safe for our
+ * logging-only use case.
  */
 export interface PluginEvent {
   readonly type: string;

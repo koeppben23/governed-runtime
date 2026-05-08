@@ -294,7 +294,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
     // ÔöÇÔöÇ Compaction Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     'experimental.session.compacting': async (input, output) => {
-      const sessionId = input?.sessionID ?? '';
+      const sessionId = input.sessionID ?? '';
       if (!sessionId) return;
 
       const compactionDeps: CompactionDeps = {

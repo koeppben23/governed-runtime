@@ -49,7 +49,7 @@ Expected output:
   ... (20 command files total — 12 canonical + 8 product aliases)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
-  [ok] ~/.config/opencode/opencode.json
+  [ok] ~/.config/opencode/opencode.jsonc
   [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
@@ -83,7 +83,7 @@ Expected global installation location:
 ```
 ~/.config/opencode/
   flowguard.json
-  opencode.json
+  opencode.jsonc
   plugins/flowguard-audit.ts
   commands/
   agents/

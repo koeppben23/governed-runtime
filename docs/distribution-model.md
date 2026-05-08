@@ -41,7 +41,7 @@ The `flowguard-core-{version}.tgz` contains:
 | **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve) |
 | **Core**        | State machine, rails, adapters, audit, config                |
 | **Integration** | OpenCode tools, plugin, command prompts                      |
-| **Templates**   | Package.json, opencode.json, mandates                        |
+| **Templates**   | Package.json, opencode.jsonc, mandates                       |
 
 ---
 
@@ -130,6 +130,12 @@ The installer:
 4. Installs OpenCode tools, commands, and plugin
 5. Creates `flowguard-mandates.md` with content digest
 
+OpenCode merges configuration files from multiple sources (global, project,
+managed) — later configs override earlier ones only for conflicting keys,
+non-conflicting settings are preserved. FlowGuard's installer follows this
+merge semantics: it merges (never replaces) its instruction entry and task
+permission into the existing config.
+
 ---
 
 ## Dependency Resolution
@@ -188,7 +194,7 @@ To remove FlowGuard from an environment:
 npx --package ./flowguard-core-{version}.tgz flowguard uninstall
 ```
 
-The uninstall command removes all FlowGuard-owned files from `~/.config/opencode/` (or `./.opencode/` for repo scope) and cleans up the `opencode.json` instruction entries. `flowguard-mandates.md` is also removed. Your `AGENTS.md` is never touched.
+The uninstall command removes all FlowGuard-owned files from `~/.config/opencode/` (or `./.opencode/` for repo scope) and cleans up the `opencode.jsonc` instruction entries. `flowguard-mandates.md` is also removed. Your `AGENTS.md` is never touched.
 
 ---
 

@@ -186,7 +186,7 @@ The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
 ### 2. Task Permissions (auto-merged)
 
-The installer merges into `opencode.json`:
+The installer merges into `opencode.jsonc`:
 
 ```json
 {
@@ -346,13 +346,13 @@ The `flowguard install` command deploys:
 | Artifact        | Path                                                        | Purpose                                                       |
 | --------------- | ----------------------------------------------------------- | ------------------------------------------------------------- |
 | Review subagent | `.opencode/agents/flowguard-reviewer.md`                    | Hidden subagent definition with adversarial review prompt     |
-| Task permission | `opencode.json` (merged)                                    | Explicitly allows flowguard-reviewer, denies all others       |
+| Task permission | `opencode.jsonc` (merged)                                   | Explicitly allows flowguard-reviewer, denies all others       |
 | Slash commands  | `.opencode/commands/plan.md`, `implement.md`, `continue.md` | Updated with Path A1 (plugin) / A2 (manual subagent) routing  |
 | Plugin          | `.opencode/plugins/flowguard-audit.ts`                      | Re-exports FlowGuardAuditPlugin (orchestration + enforcement) |
 
 ### Security Model Clarification
 
-**Task tool permissions** use OpenCode's last-matching-rule semantics. The explicit allow for `flowguard-reviewer` combined with deny for `*` ensures no other subagent can be invoked via the Task tool by the build agent. However, `permission.task` controls only Task tool invocations — direct user invocations via `@subagent` are **not blocked** by this permission model. This is a known limitation documented in OpenCode's architecture: `permission.task` is not a security boundary for user-@ direct calls. FlowGuard's strict mode achieves security through enforcement hooks (L1-L4) and mandate binding, not through permission denial.
+**Task tool permissions** use OpenCode's last-matching-rule semantics. The explicit allow for `flowguard-reviewer` combined with deny for `*` ensures no other subagent can be invoked via the Task tool by the build agent. <!-- NOT_VERIFIED: the claim that @subagent direct calls bypass permission.task has not been confirmed against the OpenCode permissions implementation. -->
 
 ---
 

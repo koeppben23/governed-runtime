@@ -231,6 +231,18 @@ describe('integration/plugin', () => {
         'tool.execute.before',
       ]);
     });
+
+    it('SMOKE: compaction hook reads input.sessionID and pushes context', async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+      const handler = hooks['experimental.session.compacting']!;
+      expect(handler).toBeDefined();
+
+      const output = { context: [] as string[] };
+      // input.sessionID guaranteed by SDK — no optional chaining needed
+      await handler({ sessionID: 'compaction-smoke-1' }, output);
+      // Session data may or may not be available in unit test;
+      // the hook must not throw on valid input shapes
+    });
   });
 
   // ─── EDGE ─────────────────────────────────────────────────

@@ -16,6 +16,14 @@
  *   - output: { title, output, metadata } (mutable tool result)
  *
  * @see https://opencode.ai/docs/plugins
+ *
+ * Type narrowing: these interfaces intentionally narrow SDK types from
+ * `any` to `Record<string, unknown>` and add `readonly` modifiers for
+ * compile-time fail-closed safety. The SDK contractually guarantees
+ * object shapes at runtime (args, metadata are always objects); the
+ * narrowing catches accidental mutations and property access errors
+ * early, without changing runtime behavior.
+ *
  * @version v3
  */
 
