@@ -678,6 +678,7 @@ export interface InvokeReviewerOptions {
       | 'session_create'
       | 'session_prompt'
       | 'structured_output_error'
+      | 'info_error'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -804,6 +805,35 @@ export async function invokeReviewer(
       return null;
     }
 
+    // Non-StructuredOutputError in info.error — surface for diagnostics.
+    // The error may be transient (rate limit, timeout) or deterministic
+    // (agent not found, model unavailable). We surface it via onFailed but
+    // do NOT return immediately — structured_output might still be present
+    // alongside an error (e.g., partial completion with warning). If no
+    // findings are found below, the retry loop handles it and the error
+    // value is also included in the no_findings diagnostic (infoError field).
+    if (info?.error) {
+      const errorObj =
+        typeof info.error === 'object' && info.error !== null
+          ? (info.error as Record<string, unknown>)
+          : { value: info.error };
+      onFailed({
+        attempt,
+        step: 'info_error',
+        error: info.error,
+        details: {
+          agent,
+          errorName: typeof errorObj.name === 'string' ? errorObj.name : typeof info.error,
+          errorMessage:
+            typeof errorObj.message === 'string'
+              ? errorObj.message
+              : typeof errorObj.value === 'string'
+                ? errorObj.value
+                : undefined,
+        },
+      });
+    }
+
     // ── Response parsing: primary path (structured output) ──
     // SDK docs field name (canonical): info.structured_output
     // Server may also return info.structured — kept as fallback
@@ -829,6 +859,9 @@ export async function invokeReviewer(
         details: {
           agent,
           hasInfo: !!info,
+          // Surface the actual error value — previously only keys were logged,
+          // hiding the root cause when info.error is present but not StructuredOutputError.
+          infoError: info?.error ?? null,
           hasStructuredOutput: info ? 'structured_output' in info : false,
           hasStructured: info ? 'structured' in info : false,
           infoKeys: info ? Object.keys(info) : [],
