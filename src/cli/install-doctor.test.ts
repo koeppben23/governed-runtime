@@ -696,12 +696,8 @@ describe('cli/doctor', () => {
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
 
-      expect(checks.some((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok')).toBe(
-        true,
-      );
-      expect(checks.some((c) => c.file.endsWith('opencode.json') && c.status === 'ok')).toBe(
-        false,
-      );
+      expect(checks.some((c) => c.file.endsWith('opencode.jsonc') && c.status === 'ok')).toBe(true);
+      expect(checks.some((c) => c.file.endsWith('opencode.json') && c.status === 'ok')).toBe(false);
     });
 
     it('doctor reports CONFIG_MISSING after uninstall removes flowguard.json', async () => {
