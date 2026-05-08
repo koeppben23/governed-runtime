@@ -88,16 +88,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for strict manual fallback hardening: command templates now state
-    // that copied JSON/attestation fields are diagnostic only until FlowGuard
-    // persists matching ReviewInvocationEvidence.
+    // Refreshed for P35-fix: command templates now pin `agent: build` in
+    // frontmatter for plan, implement, review, and architecture commands.
+    // This ensures FlowGuard governance runs under the build agent's
+    // permission.task restrictions regardless of active primary agent.
     //
     // This hash gates ONLY the byte-stability of the markdown a CLI install
     // writes to .opencode/command/*.md. It is independent from any runtime
     // mandate digest.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cd65e38931e6e199ee6b5b92e3ddf77e92a0a98cb6e71ebc4ec1ef133f56b16e',
+      '8183def7c249350a1a2073365b52fd9c0390fabc1f2b1f18c2e5dcebbb16ed20',
     );
   });
 

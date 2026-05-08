@@ -24,6 +24,8 @@ import {
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
+import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
+import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
@@ -32,6 +34,13 @@ import {
   enforceBeforeSubagentCall,
   REVIEWER_SUBAGENT_TYPE,
 } from './review-enforcement.js';
+
+import type {
+  ToolHookBeforeInput,
+  ToolHookBeforeOutput,
+  ToolHookAfterInput,
+  ToolHookAfterOutput,
+} from './types.js';
 
 import {
   TOOL_FLOWGUARD_PLAN,
@@ -71,6 +80,16 @@ export function isUsableWorktree(worktree: string | undefined): boolean {
   }
 }
 
+/**
+ * FlowGuard Audit Plugin.
+ *
+ * Consumes only { client, directory, worktree } from PluginInput.
+ * Unused fields and rationale:
+ * - project: Identity resolved via git fingerprint, not OpenCode project metadata.
+ * - $: FlowGuard never spawns shell commands from the plugin layer.
+ * - experimental_workspace: Not applicable to FlowGuard's audit model.
+ * - serverUrl: Communication is tool-hook-only, no HTTP callbacks needed.
+ */
 export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree }) => {
   const candidateWorktree = worktree || directory;
   // Fail-closed: only resolve a fingerprint and create a workspace file sink
@@ -137,11 +156,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   // ── Hook handlers ──────────────────────────────────────────────────────
   return {
     'tool.execute.before': async (input: unknown, output: unknown) => {
-      const toolName: string = (input as { tool?: string })?.tool ?? '';
-      const sessionId: string = (input as { sessionID?: string })?.sessionID ?? 'unknown';
+      // OpenCode SDK passes untyped hook parameters. Cast to typed views
+      // defined in types.ts (canonical per OpenCode docs convention).
+      // Runtime guards (?? fallbacks) kept for defensive safety.
+      const hookInput = input as ToolHookBeforeInput;
+      const hookOutput = output as ToolHookBeforeOutput;
+      const toolName: string = hookInput?.tool ?? '';
+      const sessionId: string = hookInput?.sessionID ?? 'unknown';
       // OpenCode docs: tool arguments live on the output parameter in before hooks
       // (mutable by design). input carries tool name and session metadata only.
-      const args = (output as { args?: Record<string, unknown> })?.args ?? {};
+      const args = hookOutput?.args ?? {};
 
       if (toolName === 'task') {
         const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
@@ -205,8 +229,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     },
 
     'tool.execute.after': async (input: unknown, output: unknown) => {
-      const toolName: string = (input as { tool?: string })?.tool ?? '';
-      const sessionId: string = (input as { sessionID?: string })?.sessionID ?? 'unknown';
+      // OpenCode SDK passes untyped hook parameters. Cast to typed views
+      // defined in types.ts (canonical per OpenCode docs convention).
+      const hookInput = input as ToolHookAfterInput;
+      const hookOutput = output as ToolHookAfterOutput;
+      const toolName: string = hookInput?.tool ?? '';
+      const sessionId: string = hookInput?.sessionID ?? 'unknown';
       const now = new Date().toISOString();
 
       if (
@@ -236,7 +264,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       await runOrchestrator(orchestratorDeps, {
         toolName,
         input,
-        output: output as { output: string },
+        output: hookOutput,
         sessionId,
         now,
       });
@@ -246,11 +274,37 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       await ws.runSerializedForSession(sessionId, async () => {
         const auditResult = await runAuditModule(auditDeps, toolName, input, output, sessionId);
         if (auditResult?.block) {
-          (output as { output: string }).output = strictBlockedOutput(auditResult.code!, {
+          hookOutput.output = strictBlockedOutput(auditResult.code!, {
             reason: auditResult.reason ?? 'audit persistence failed',
           });
         }
       });
+    },
+
+    // ÔöÇÔöÇ Event Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    event: async ({ event }) => {
+      const eventDeps: EventHandlerDeps = {
+        log,
+        cleanupSession: (sessionId: string) => {
+          ws.invalidateChainState(sessionId);
+        },
+      };
+      await handleEvent(eventDeps, event);
+    },
+
+    // ÔöÇÔöÇ Compaction Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    'experimental.session.compacting': async (input, output) => {
+      const sessionId = input.sessionID ?? '';
+      if (!sessionId) return;
+
+      const compactionDeps: CompactionDeps = {
+        getSessionDir: ws.getSessionDir,
+        log,
+      };
+      const context = await buildCompactionContext(compactionDeps, sessionId);
+      if (context) {
+        output.context.push(context);
+      }
     },
   };
 };

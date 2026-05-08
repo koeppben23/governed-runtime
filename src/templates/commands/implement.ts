@@ -3,6 +3,7 @@ import { GOVERNANCE_RULES } from './shared-rules.js';
 export const IMPLEMENT_COMMAND = `
 ---
 description: Implement the approved plan and review the implementation.
+agent: build
 ---
 
 You are managing a FlowGuard-controlled development workflow.

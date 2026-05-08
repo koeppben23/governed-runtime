@@ -3,6 +3,7 @@ import { GOVERNANCE_RULES } from './shared-rules.js';
 export const PLAN_COMMAND = `
 ---
 description: Generate a plan with mandatory independent subagent review for the current task.
+agent: build
 ---
 
 You are managing a FlowGuard-controlled development workflow.

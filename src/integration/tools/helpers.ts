@@ -14,9 +14,10 @@
  */
 
 import { z } from 'zod';
+import * as crypto from 'node:crypto';
 
 // State & Machine
-import type { SessionState } from '../../state/schema.js';
+import { SessionState } from '../../state/schema.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
@@ -24,7 +25,7 @@ import { resolveNextAction } from '../../machine/next-action.js';
 import type { RailResult, RailContext } from '../../rails/types.js';
 
 // Adapters
-import { readState, writeState } from '../../adapters/persistence.js';
+import { readState, atomicWrite, statePath } from '../../adapters/persistence.js';
 import {
   materializeEvidenceArtifacts,
   verifyEvidenceArtifacts,
@@ -75,11 +76,22 @@ export interface ToolContext {
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 
+/**
+ * Result type for FlowGuard tools.
+ *
+ * Matches the OpenCode SDK `ToolResult` union:
+ * - `string`: plain text result (current default for all FlowGuard tools)
+ * - `{ output, metadata? }`: structured result with optional metadata
+ *
+ * @see https://opencode.ai/docs/custom-tools
+ */
+export type ToolResult = string | { output: string; metadata?: Record<string, unknown> };
+
 export type ToolDefinition = {
   description: string;
   args: Record<string, z.ZodType>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  execute(args: any, context: ToolContext): Promise<string>;
+  execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
 
 // ─── Formatting Helpers ───────────────────────────────────────────────────────
@@ -221,24 +233,49 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 /**
  * Persist state and materialize derived evidence artifacts.
  *
+ * Ordering: artifacts-first, state-last.
+ *
+ * This prevents the EVIDENCE_ARTIFACT_MISSING corruption scenario:
+ * if a crash occurs between state write and artifact materialization,
+ * state references artifacts that don't exist on disk.
+ *
+ * With artifacts-first ordering:
+ * - Crash after artifacts, before state → orphan artifact files (benign;
+ *   verification only checks state→artifacts direction).
+ * - Crash after state → both exist, consistent.
+ *
+ * The sourceStateHash is pre-computed from the serialized nextState so that
+ * materializeEvidenceArtifacts does not need to read state from disk.
+ *
  * Failure semantics:
- * - If state write fails: no change persisted.
- * - If artifact materialization fails after state write: best-effort rollback to previous state.
+ * - If validation fails: nothing written.
+ * - If artifact materialization fails: no state change persisted.
+ * - If state write fails after artifacts: orphan artifacts only (benign).
  */
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
 ): Promise<void> {
-  const previous = await readState(sessDir);
-  await writeState(sessDir, nextState);
-  try {
-    await materializeEvidenceArtifacts(sessDir, nextState);
-  } catch (err) {
-    if (previous) {
-      await writeState(sessDir, previous);
-    }
-    throw err;
+  // 1. Validate BEFORE any I/O — fail-closed
+  const result = SessionState.safeParse(nextState);
+  if (!result.success) {
+    throw Object.assign(new Error(`Refusing to persist invalid state: ${result.error.message}`), {
+      code: 'SCHEMA_VALIDATION_FAILED',
+    });
   }
+
+  // 2. Pre-compute serialized form and hash (identical to what writeState would produce)
+  const serialized = JSON.stringify(result.data, null, 2) + '\n';
+  const preComputedStateHash = crypto
+    .createHash('sha256')
+    .update(serialized, 'utf-8')
+    .digest('hex');
+
+  // 3. Materialize artifacts FIRST (uses pre-computed hash, no disk read needed)
+  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
+
+  // 4. Write state LAST (atomic: temp → rename)
+  await atomicWrite(statePath(sessDir), serialized);
 }
 
 /**

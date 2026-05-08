@@ -5,7 +5,7 @@
  * Validates:
  * - Prompt building for plan and implementation reviews
  * - SDK client invocation with mock client
- * - Response text extraction from various Part shapes
+ * - Structured output response parsing (fail-closed: no text fallback)
  * - ReviewFindings parsing (clean JSON, embedded JSON, invalid)
  * - Output mutation (INDEPENDENT_REVIEW_REQUIRED → COMPLETED)
  * - Review-required detection
@@ -654,8 +654,10 @@ describe('invokeReviewer', () => {
     expect(result).toBeNull();
   });
 
-  // CORNER: prompt returns no structured output but valid JSON in text parts (TextPart fallback)
-  it('extracts findings from text parts when structured_output is absent', async () => {
+  // CORNER: prompt returns no structured output but valid JSON in text parts
+  // With fail-closed strict mode, text fallback is NOT used — must return null.
+  // This validates the FlowGuard invariant: only SDK-validated structured_output is accepted.
+  it('returns null when structured_output is absent even if text parts contain valid JSON (fail-closed)', async () => {
     const client = mockClient({
       promptResult: {
         data: { parts: [{ type: 'text', text: validFindings() }] },
@@ -663,8 +665,8 @@ describe('invokeReviewer', () => {
       },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
-    expect(result).not.toBeNull();
-    expect(result!.findings!.overallVerdict).toBe('approve');
+    // Fail-closed: text content is NOT accepted as structured output substitute
+    expect(result).toBeNull();
   });
 
   // BAD: prompt returns no structured output AND no valid JSON in parts

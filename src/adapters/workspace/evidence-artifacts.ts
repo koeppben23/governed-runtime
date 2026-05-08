@@ -63,10 +63,14 @@ export class EvidenceArtifactError extends Error {
 export async function materializeEvidenceArtifacts(
   sessionDir: string,
   state: SessionState,
+  preComputedStateHash?: string,
 ): Promise<void> {
   const artifactsDir = path.join(sessionDir, EVIDENCE_ARTIFACTS_DIR);
   await fs.mkdir(artifactsDir, { recursive: true });
-  const sourceStateHash = await hashFile(path.join(sessionDir, 'session-state.json'));
+  // Use pre-computed hash when provided (artifacts-first ordering in writeStateWithArtifacts).
+  // Falls back to reading from disk for backward compatibility with direct callers.
+  const sourceStateHash =
+    preComputedStateHash ?? (await hashFile(path.join(sessionDir, 'session-state.json')));
   const createdPaths: string[] = [];
 
   try {

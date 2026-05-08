@@ -197,6 +197,55 @@ describe('cli/install', () => {
       expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
 
+    it('HAPPY: merges existing opencode.jsonc and does not create opencode.json', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(
+        jsoncPath,
+        `{
+  // Project-owned OpenCode config
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5"
+}`,
+        'utf-8',
+      );
+
+      const result = await install(repoArgs({ coreTarball: tarball }));
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
+    });
+
+    it('HAPPY: install merges opencode.jsonc with line AND block comments into valid JSON', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(
+        jsoncPath,
+        `{
+  // Line comment: project model
+  "model": "anthropic/claude-sonnet-4-5",
+  /* Block comment: schema URL */
+  "$schema": "https://opencode.ai/config.json"
+}`,
+        'utf-8',
+      );
+
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+
+      // Merged output must be valid JSON (comments stripped by parseJsonc)
+      const content = await fs.readFile(jsoncPath, 'utf-8');
+      expect(() => JSON.parse(content)).not.toThrow();
+      const parsed = JSON.parse(content);
+      expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
+      expect(parsed.$schema).toBe('https://opencode.ai/config.json');
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
+    });
+
     it('AGENTS.md is NOT created by install', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
@@ -551,6 +600,43 @@ describe('cli/install', () => {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }
     });
+
+    it('BAD: failed install over pre-existing opencode.jsonc restores original and leaves no opencode.json', async () => {
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      const originalContent = JSON.stringify(
+        { model: 'anthropic/claude', instructions: ['user.md'] },
+        null,
+        2,
+      );
+      await fs.writeFile(jsoncPath, originalContent, 'utf-8');
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated npm install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain('Dependency install failed');
+
+        // Pre-existing opencode.jsonc must be restored byte-for-byte
+        expect(existsSync(jsoncPath)).toBe(true);
+        const restored = await fs.readFile(jsoncPath, 'utf-8');
+        expect(restored).toBe(originalContent);
+
+        // No stray opencode.json must be created
+        expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -747,6 +833,22 @@ describe('cli/install', () => {
       expect(ocOp?.reason).toContain('malformed');
     });
 
+    it('trailing commas in opencode.jsonc are parsed correctly (full JSONC compat)', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(jsoncPath, '{ "model": "claude", }', 'utf-8');
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+      const ocOp = result.ops.find((op) => op.path.includes('opencode.jsonc'));
+      // Trailing commas are valid JSONC per OpenCode docs ÔÇö should merge, not fallback.
+      expect(ocOp?.action).toBe('merged');
+      // No backup needed ÔÇö file was valid JSONC
+      expect(existsSync(`${jsoncPath}.flowguard-backup`)).toBe(false);
+      // Verify the model field was preserved
+      const content = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(content.model).toBe('claude');
+    });
+
     it('legacy migration: removes AGENTS.md from opencode.json instructions', async () => {
       const tarball = await createMockTarball();
       await fs.writeFile(
@@ -907,6 +1009,42 @@ describe('cli/uninstall', () => {
       const entry = mandatesInstructionEntry('repo');
       expect(parsed.instructions).not.toContain(entry);
     });
+
+    it('HAPPY: uninstall removes FlowGuard instruction from opencode.jsonc', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(jsoncPath, '{ "instructions": ["user.md"] }', 'utf-8');
+
+      await install(repoArgs({ coreTarball: tarball }));
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(parsed.instructions).toEqual(['user.md']);
+    });
+
+    it('HAPPY: uninstall from JSONC with line+block comments round-trips cleanly', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(
+        jsoncPath,
+        `{
+  // Project model
+  "model": "anthropic/claude-sonnet-4-5",
+  /* User instructions */
+  "instructions": ["user.md"]
+}`,
+        'utf-8',
+      );
+
+      await install(repoArgs({ coreTarball: tarball }));
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      // File must still be valid JSON (comments stripped by write-back)
+      const content = await fs.readFile(jsoncPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
+      expect(parsed.instructions).toEqual(['user.md']);
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -916,6 +1054,22 @@ describe('cli/uninstall', () => {
       expect(result.errors).toEqual([]);
       const notFound = result.ops.filter((op) => op.action === 'not_found');
       expect(notFound.length).toBeGreaterThan(0);
+    });
+
+    it('HAPPY: opencode.jsonc with trailing commas is parsed and merged (valid JSONC)', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(jsoncPath, '{ "model": "anthropic/claude", }', 'utf-8');
+
+      const result = await install(repoArgs({ coreTarball: tarball }));
+
+      expect(result.errors).toEqual([]);
+      // No backup needed ÔÇö trailing commas are valid JSONC per OpenCode docs
+      expect(existsSync(`${jsoncPath}.flowguard-backup`)).toBe(false);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(parsed.model).toBe('anthropic/claude');
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('repo'));
     });
 
     it('uninstall reports error when file cannot be removed (EPERM)', async () => {
@@ -1056,6 +1210,21 @@ describe('cli/uninstall', () => {
       expect(result.warnings[0]).toContain('no managed header');
     });
 
+    it('CORNER: opencode.jsonc wins when both OpenCode config files exist', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      const jsonPath = path.join(tmpDir, 'opencode.json');
+      await fs.writeFile(jsoncPath, '{ "instructions": ["jsonc.md"] }', 'utf-8');
+      await fs.writeFile(jsonPath, '{ "instructions": ["json.md"] }', 'utf-8');
+
+      await install(repoArgs({ coreTarball: tarball }));
+
+      const jsonc = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      const json = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
+      expect(jsonc.instructions).toContain(mandatesInstructionEntry('repo'));
+      expect(json.instructions).toEqual(['json.md']);
+    });
+
     it('uninstall removes legacy @opencode-ai/plugin from package.json', async () => {
       const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, '.opencode');
@@ -1151,6 +1320,19 @@ describe('cli/uninstall', () => {
       const afterContent = await fs.readFile(path.join(tmpDir, 'opencode.json'), 'utf-8');
       const afterParsed = JSON.parse(afterContent);
       expect(afterParsed.agent).toBeUndefined();
+    });
+
+    it('EDGE: global install merges opencode.jsonc in OPENCODE_CONFIG_DIR', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(jsoncPath, '{ "instructions": [] }', 'utf-8');
+
+      const result = await install(globalArgs({ coreTarball: tarball }));
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(parsed.instructions).toContain(mandatesInstructionEntry('global'));
     });
 
     it('uninstall does not create plugin field when none existed', async () => {
@@ -1258,6 +1440,33 @@ describe('cli/uninstall', () => {
       // FlowGuard-owned entry removed
       expect(afterContent.agent?.build?.permission?.task?.['flowguard-reviewer']).toBeUndefined();
     });
+
+    it('EDGE: uninstall from opencode.jsonc cleans parallel opencode.json with old FlowGuard entries', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      const jsonPath = path.join(tmpDir, 'opencode.json');
+
+      // opencode.jsonc = current user config (no FlowGuard)
+      await fs.writeFile(jsoncPath, '{ "instructions": ["user.md"] }', 'utf-8');
+      // opencode.json = parallel legacy config with old FlowGuard entry
+      await fs.writeFile(
+        jsonPath,
+        JSON.stringify({ instructions: [mandatesInstructionEntry('repo'), 'legacy.md'] }, null, 2),
+        'utf-8',
+      );
+
+      await install(repoArgs({ coreTarball: tarball }));
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      // jsonc: FlowGuard entry must NOT be present (uninstall removed it)
+      const jsonc = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(jsonc.instructions).toEqual(['user.md']);
+
+      // json: old FlowGuard entry must be removed, legacy.md preserved
+      const json = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
+      expect(json.instructions).not.toContain(mandatesInstructionEntry('repo'));
+      expect(json.instructions).toContain('legacy.md');
+    });
   });
 
   // ─── PERF ──────────────────────────────────────────────────
@@ -1268,6 +1477,43 @@ describe('cli/uninstall', () => {
         await uninstall(repoArgs({ action: 'uninstall' }));
       });
       expect(elapsedMs).toBeLessThan(200);
+    });
+  });
+
+  describe('SMOKE', () => {
+    it('SMOKE: repo install with opencode.jsonc creates a usable FlowGuard OpenCode layout', async () => {
+      const tarball = await createMockTarball();
+      await fs.writeFile(path.join(tmpDir, 'opencode.jsonc'), '{}', 'utf-8');
+
+      const result = await install(repoArgs({ coreTarball: tarball }));
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, '.opencode', 'tools', 'flowguard.ts'))).toBe(true);
+      expect(existsSync(path.join(tmpDir, '.opencode', 'plugins', 'flowguard-audit.ts'))).toBe(
+        true,
+      );
+      expect(existsSync(path.join(tmpDir, 'opencode.jsonc'))).toBe(true);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+    });
+  });
+
+  describe('E2E', () => {
+    it('E2E: install and uninstall round trip preserves user OpenCode JSONC config', async () => {
+      const tarball = await createMockTarball();
+      const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
+      await fs.writeFile(
+        jsoncPath,
+        '{ "instructions": ["user.md"], "model": "anthropic/claude" }',
+        'utf-8',
+      );
+
+      await install(repoArgs({ coreTarball: tarball }));
+      await uninstall(repoArgs({ action: 'uninstall' }));
+
+      const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
+      expect(parsed.model).toBe('anthropic/claude');
+      expect(parsed.instructions).toEqual(['user.md']);
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
     });
   });
 });

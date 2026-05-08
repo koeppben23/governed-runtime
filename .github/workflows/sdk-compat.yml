@@ -1,0 +1,95 @@
+name: SDK Compatibility
+
+on:
+  schedule:
+    - cron: '0 6 * * 1,4' # Mon+Thu 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  compat:
+    name: sdk-compat
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout v6.0.2
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install latest SDK
+        id: install-latest
+        run: |
+          npm install @opencode-ai/plugin@latest --save-dev
+          INSTALLED=$(node -e "console.log(require('./node_modules/@opencode-ai/plugin/package.json').version)")
+          echo "sdk_version=$INSTALLED" >> "$GITHUB_OUTPUT"
+          echo "Installed @opencode-ai/plugin@$INSTALLED"
+      - name: Typecheck against latest
+        run: npm run check
+        env:
+          FORCE_COLOR: 0
+      - name: Contract tests against latest
+        run: npm run test:sdk-contract
+        env:
+          FORCE_COLOR: 0
+      - name: Integration tests against latest
+        run: npm run test:integration
+        env:
+          FORCE_COLOR: 0
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'sdk-drift',
+              state: 'open',
+            });
+            // Skip if there's already an open sdk-drift issue (not docs-only)
+            const nonDocsIssues = issues.data.filter(i =>
+              !i.labels.some(l => (typeof l === 'string' ? l : l.name) === 'docs')
+            );
+            if (nonDocsIssues.length > 0) {
+              console.log('Open sdk-drift issue already exists, skipping.');
+              return;
+            }
+            const version = '${{ steps.install-latest.outputs.sdk_version }}' || 'unknown';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `SDK compat: @opencode-ai/plugin@${version} breaks build`,
+              labels: ['sdk-drift', 'automated'],
+              body: [
+                '## SDK Compatibility Failure',
+                '',
+                `The scheduled SDK compatibility check against \`@opencode-ai/plugin@${version}\` failed.`,
+                '',
+                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                `**Installed version**: ${version}`,
+                '',
+                '### Which step failed?',
+                '',
+                'Check the workflow run log to determine if the failure is in:',
+                '- **Typecheck** ÔÇö SDK type definitions changed',
+                '- **Contract tests** ÔÇö Hook shapes or Plugin interface changed',
+                '- **Integration tests** ÔÇö Runtime behavior changed',
+                '',
+                '### Next steps',
+                '',
+                '1. Review the breaking changes in the SDK release notes',
+                '2. Update integration types and tests as needed',
+                '3. Update the pinned version in package.json',
+                '4. Update type baselines:',
+                '   ```bash',
+                '   node scripts/sdk-type-snapshot.mjs --update',
+                '   ```',
+              ].join('\n'),
+            });

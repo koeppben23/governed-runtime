@@ -2,48 +2,77 @@
  * @module integration/types
  * @description Typed interfaces for the OpenCode plugin hook boundary.
  *
- * The OpenCode SDK passes untyped inputs to plugin hooks.
- * These interfaces provide type-safe access to the commonly used fields.
+ * These interfaces mirror the exact shapes defined by the OpenCode SDK
+ * (`@opencode-ai/plugin` type definitions) for tool execution hooks.
  *
- * OpenCode docs convention (tool.execute.before):
- *   - `input`: tool name and session metadata (read-only)
- *   - `output`: tool arguments (mutable by the plugin)
+ * SDK source of truth: .opencode-sdk-baseline/plugin-index.d.ts
  *
- * OpenCode docs convention (tool.execute.after):
- *   - `input`: tool name and session metadata (read-only)
- *   - `output`: tool result string (mutable by the plugin)
+ * tool.execute.before:
+ *   - input: { tool, sessionID, callID } (read-only identity + session metadata)
+ *   - output: { args } (mutable tool arguments)
+ *
+ * tool.execute.after:
+ *   - input: { tool, sessionID, callID, args } (read-only, includes original args)
+ *   - output: { title, output, metadata } (mutable tool result)
  *
  * @see https://opencode.ai/docs/plugins
- * @version v2
+ *
+ * Type narrowing: these interfaces intentionally narrow SDK types from
+ * `any` to `Record<string, unknown>` and add `readonly` modifiers for
+ * compile-time fail-closed safety. The SDK contractually guarantees
+ * object shapes at runtime (args, metadata are always objects); the
+ * narrowing catches accidental mutations and property access errors
+ * early, without changing runtime behavior.
+ *
+ * @version v3
  */
 
+// ─── Before-Hook Types ────────────────────────────────────────────────────────
+
 /**
- * Plugin hook tool input — typed view of the `input` parameter
- * received by tool.execute.before and tool.execute.after hooks.
+ * Input parameter for `tool.execute.before` hooks.
  *
- * Per OpenCode docs, `input` carries tool identity and session metadata.
- * Tool arguments live on the `output` parameter in before hooks.
+ * Read-only: carries tool identity and session metadata.
+ * Tool arguments live on the output parameter (mutable by design).
  */
-export interface ToolHookInput {
+export interface ToolHookBeforeInput {
   readonly tool: string;
   readonly sessionID: string;
+  readonly callID: string;
 }
 
 /**
- * Plugin hook before-hook output — typed view of the `output` parameter
- * received by tool.execute.before hooks.
+ * Output parameter for `tool.execute.before` hooks.
  *
- * Per OpenCode docs, the before-hook output carries mutable tool arguments.
+ * Mutable: the plugin may modify `args` to alter tool invocation.
  */
 export interface ToolHookBeforeOutput {
   args: Record<string, unknown>;
 }
 
+// ─── After-Hook Types ─────────────────────────────────────────────────────────
+
 /**
- * Plugin hook after-hook output — typed view of the `output` parameter
- * received by tool.execute.after hooks.
+ * Input parameter for `tool.execute.after` hooks.
+ *
+ * Read-only: carries tool identity, session metadata, AND the original
+ * args that were passed to the tool execution.
  */
-export interface ToolHookOutput {
-  /** Mutable output string — the plugin may mutate this in after hooks. */
+export interface ToolHookAfterInput {
+  readonly tool: string;
+  readonly sessionID: string;
+  readonly callID: string;
+  readonly args: Record<string, unknown>;
+}
+
+/**
+ * Output parameter for `tool.execute.after` hooks.
+ *
+ * Mutable: the plugin may modify `title`, `output`, or `metadata`
+ * to alter the result surfaced to the LLM.
+ */
+export interface ToolHookAfterOutput {
+  title: string;
   output: string;
+  metadata: Record<string, unknown>;
 }

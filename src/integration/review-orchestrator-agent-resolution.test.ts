@@ -8,18 +8,25 @@
  * - HAPPY: Fallback path (general agent with system directive)
  * - BAD: Probe failures (throws, error response, undefined data)
  * - CORNER: Cache behavior (single probe, sticky result, reset)
- * - CORNER: TextPart fallback (JSON extraction from text parts)
+ * - CORNER: Fail-closed — no text fallback when structured_output absent
  * - EDGE: Concurrent resolution, empty agent list
  * - E2E: Full review flow with both paths
  * - SMOKE: extractJsonFromText strategies
+ * - NON-RETRYABLE: isRetryable === false early exit (no retry on deterministic API errors)
+ * - MODEL CAPABILITY: model_capability_incompatible fail-closed detection
  *
  * @version v1
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   resolveReviewerAgent,
   _resetAgentResolutionCache,
+  _resetModelCapabilityCache,
+  _getModelCapabilityCache,
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
@@ -138,6 +145,7 @@ describe('Agent Resolution Constants', () => {
 describe('resolveReviewerAgent', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
@@ -421,6 +429,7 @@ describe('extractJsonFromText', () => {
 describe('invokeReviewer — agent resolution integration', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY: Primary path ───────────────────────────────────────────────────
@@ -502,10 +511,10 @@ describe('invokeReviewer — agent resolution integration', () => {
     });
   });
 
-  // ─── CORNER: TextPart fallback ─────────────────────────────────────────────
+  // ─── CORNER: Fail-closed — text fallback removed ─────────────────────────
 
-  describe('CORNER — TextPart fallback when structured_output is absent', () => {
-    it('extracts findings from text parts when structured_output is missing', async () => {
+  describe('CORNER — fail-closed: no text fallback when structured_output is absent', () => {
+    it('returns null when structured_output is missing even if text parts contain valid JSON', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -517,11 +526,11 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: text content is NOT accepted as structured output substitute
+      expect(result).toBeNull();
     });
 
-    it('extracts findings from fenced JSON in text parts', async () => {
+    it('returns null when text parts contain fenced JSON but no structured_output', async () => {
       const fenced = '```json\n' + JSON.stringify(validFindings()) + '\n```';
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -534,11 +543,11 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: fenced JSON in text is NOT accepted
+      expect(result).toBeNull();
     });
 
-    it('returns null when text parts contain no valid JSON', async () => {
+    it('returns null when text parts contain no valid JSON (unchanged behavior)', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -565,11 +574,8 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(result).toBeNull();
     });
 
-    it('concatenates multiple text parts for extraction', async () => {
-      // Split JSON at a natural boundary (between complete lines)
-      const findings = validFindings();
-      const json = JSON.stringify(findings, null, 0);
-      // Use prose + JSON split: text before JSON + JSON itself
+    it('returns null when multiple text parts contain JSON but no structured_output', async () => {
+      const json = JSON.stringify(validFindings(), null, 0);
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -584,7 +590,8 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
+      // Fail-closed: even concatenated text with valid JSON is NOT accepted
+      expect(result).toBeNull();
     });
   });
 
@@ -739,6 +746,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const client1 = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
       await invokeReviewer(client1, PROMPT, 'p1', { _sleepFn: NO_SLEEP });
       _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
 
       // Fallback path
       const client2 = makeClient({ agents: [] });
@@ -764,25 +772,7 @@ describe('invokeReviewer — agent resolution integration', () => {
   // ─── CRITICAL: structured field name compatibility (v2 SDK) ────────────────
 
   describe('CRITICAL — structured vs structured_output field name', () => {
-    it('reads findings from info.structured (canonical v2 field)', async () => {
-      const findings = validFindings();
-      const client = makeClient({
-        agents: [{ id: 'flowguard-reviewer' }],
-        promptResult: {
-          data: {
-            parts: [],
-            info: { structured: findings },
-          },
-          error: undefined,
-        },
-      });
-      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
-      expect(result!.findings!.reviewMode).toBe('subagent');
-    });
-
-    it('reads findings from info.structured_output (legacy v1 field)', async () => {
+    it('reads findings from info.structured_output (canonical docs field)', async () => {
       const findings = validFindings();
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -797,28 +787,46 @@ describe('invokeReviewer — agent resolution integration', () => {
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
       expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.reviewMode).toBe('subagent');
     });
 
-    it('prefers info.structured over info.structured_output when both present', async () => {
-      const canonicalFindings = validFindings({ overallVerdict: 'changes_requested' });
-      const legacyFindings = validFindings({ overallVerdict: 'approve' });
+    it('reads findings from info.structured (server alias fallback)', async () => {
+      const findings = validFindings();
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
           data: {
             parts: [],
-            info: { structured: canonicalFindings, structured_output: legacyFindings },
+            info: { structured: findings },
           },
           error: undefined,
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      // Must use the canonical field (structured), not the legacy one
-      expect(result!.findings!.overallVerdict).toBe('changes_requested');
+      expect(result!.findings!.overallVerdict).toBe('approve');
     });
 
-    it('falls through to TextPart when both structured and structured_output are absent', async () => {
+    it('prefers info.structured_output over info.structured when both present', async () => {
+      const canonicalFindings = validFindings({ overallVerdict: 'approve' });
+      const aliasFallback = validFindings({ overallVerdict: 'changes_requested' });
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured_output: canonicalFindings, structured: aliasFallback },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      // Must use the canonical docs field (structured_output), not the server alias
+      expect(result!.findings!.overallVerdict).toBe('approve');
+    });
+
+    it('returns null when both structured and structured_output are absent (fail-closed)', async () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -830,8 +838,8 @@ describe('invokeReviewer — agent resolution integration', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      // Fail-closed: no text fallback — must return null even though text parts have valid JSON
+      expect(result).toBeNull();
     });
 
     it('returns null when info.structured is an array (not an object)', async () => {
@@ -1010,5 +1018,1821 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(details.partsCount).toBe(1);
       expect(details.textPartsLength).toBe(8); // "not json" = 8 chars
     });
+
+    // ─── info_error step: non-StructuredOutputError surfacing ─────────────────
+
+    it('fires info_error step for non-StructuredOutputError errors in info', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'SessionError', message: 'unspecified session error' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // Should fire both info_error (for the error) and no_findings (no structured output)
+      expect(diagnostics).toHaveLength(2);
+      expect(diagnostics[0]!.step).toBe('info_error');
+      expect(diagnostics[0]!.error).toEqual({
+        name: 'SessionError',
+        message: 'unspecified session error',
+      });
+      const errorDetails = diagnostics[0]!.details as Record<string, unknown>;
+      expect(errorDetails.errorName).toBe('SessionError');
+      expect(errorDetails.errorMessage).toBe('unspecified session error');
+      // Second diagnostic: no_findings with infoError included
+      expect(diagnostics[1]!.step).toBe('no_findings');
+    });
+
+    it('includes infoError value in no_findings details when info.error is present', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const sessionError = { name: 'AgentError', message: 'agent not found' };
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: sessionError },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // Find the no_findings diagnostic
+      const noFindings = diagnostics.find((d) => d.step === 'no_findings');
+      expect(noFindings).toBeDefined();
+      const details = noFindings!.details as Record<string, unknown>;
+      expect(details.infoError).toEqual(sessionError);
+    });
+
+    it('surfaces info.error as string (non-object runtime shape)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      // At runtime, info.error could be a plain string from the server.
+      // TypeScript types say object, but we must be resilient.
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: 'unspecified session error' as unknown as { name: string } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // info_error should still fire with the string value surfaced
+      const infoError = diagnostics.find((d) => d.step === 'info_error');
+      expect(infoError).toBeDefined();
+      expect(infoError!.error).toBe('unspecified session error');
+      const errorDetails = infoError!.details as Record<string, unknown>;
+      expect(errorDetails.errorName).toBe('string'); // typeof string
+      expect(errorDetails.errorMessage).toBe('unspecified session error');
+      // no_findings should include the string error in infoError
+      const noFindings = diagnostics.find((d) => d.step === 'no_findings');
+      expect(noFindings).toBeDefined();
+      expect((noFindings!.details as Record<string, unknown>).infoError).toBe(
+        'unspecified session error',
+      );
+    });
+
+    it('does NOT fire info_error when info.error is absent', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: { parts: [], info: {} },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // Only no_findings should fire, not info_error
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('no_findings');
+      expect((diagnostics[0]!.details as Record<string, unknown>).infoError).toBeNull();
+    });
+
+    it('info_error fires but findings still returned when structured_output coexists with error', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const findings = validFindings();
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: { name: 'PartialWarning', message: 'some warning' },
+              structured_output: findings,
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // info_error fires for the warning
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('info_error');
+      // But findings are still returned successfully (error doesn't block valid output)
+      expect(result).not.toBeNull();
+      expect(result!.findings).toBeTruthy();
+      expect(result!.findings!.overallVerdict).toBe(findings.overallVerdict);
+    });
+  });
+
+  // ─── isRetryable === false: non-retryable API error early exit ──────────────
+
+  describe('NON-RETRYABLE — isRetryable === false early exit', () => {
+    beforeEach(() => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+    });
+
+    it('T1: returns null immediately when promptResult.error.isRetryable === false', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: {
+            name: 'APIError',
+            message: 'deepseek-reasoner does not support this tool_choice',
+            statusCode: 400,
+            isRetryable: false,
+          },
+          data: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toBeNull();
+    });
+
+    it('T2: fires exactly 1 diagnostic when isRetryable === false (no retry)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: {
+            name: 'APIError',
+            message: 'model unavailable',
+            statusCode: 400,
+            isRetryable: false,
+          },
+          data: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('session_prompt');
+      expect(diagnostics[0]!.attempt).toBe(1);
+      expect((diagnostics[0]!.details as Record<string, unknown>).isNonRetryable).toBe(true);
+    });
+
+    it('T3: retries normally when isRetryable is absent', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: { message: 'timeout' },
+          data: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // Should retry maxRetries + 1 = 3 times
+      expect(diagnostics).toHaveLength(3);
+      expect(diagnostics.map((d) => d.attempt)).toEqual([1, 2, 3]);
+      expect(diagnostics.every((d) => d.step === 'session_prompt')).toBe(true);
+      // isNonRetryable should be false for all
+      expect(
+        diagnostics.every((d) => (d.details as Record<string, unknown>).isNonRetryable === false),
+      ).toBe(true);
+    });
+
+    it('T4: retries normally when isRetryable is true', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: { message: 'rate limit', isRetryable: true },
+          data: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 1,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(2);
+      expect(diagnostics.map((d) => d.attempt)).toEqual([1, 2]);
+    });
+
+    it('EDGE: isRetryable as non-boolean (string "false") does NOT trigger early exit', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: { message: 'error', isRetryable: 'false' },
+          data: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 1,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // isRetryable === 'false' (string) should NOT match strict === false
+      expect(diagnostics).toHaveLength(2); // retries normally
+    });
+
+    it('EDGE: promptResult.error is null does NOT trigger isNonRetryable', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          error: null,
+          data: undefined, // no data triggers error path
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect((diagnostics[0]!.details as Record<string, unknown>).isNonRetryable).toBe(false);
+    });
+  });
+
+  // ─── model_capability_incompatible: fail-closed detection ───────────────────
+
+  describe('MODEL CAPABILITY — model_capability_incompatible fail-closed', () => {
+    beforeEach(() => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+    });
+
+    it('T5: returns null with model_capability_incompatible when tool_choice not supported', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'deepseek-reasoner does not support this tool_choice',
+                data: { statusCode: 400, isRetryable: false },
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toBeNull();
+    });
+
+    it('T6: model_capability_incompatible includes diagnostic details', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'model does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      expect(incompatible).toBeDefined();
+      const details = incompatible!.details as Record<string, unknown>;
+      expect(details.reason).toContain('does not support structured output');
+      expect(details.reason).toContain('format-free retry');
+      expect(details.detectedPattern).toContain('tool_choice');
+    });
+
+    it('T7: model_capability_incompatible does not retry (deterministic)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'this model does not support tools or function calling',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // All diagnostics on attempt 1 only — no outer retry loop triggered
+      const attempts = [...new Set(diagnostics.map((d) => d.attempt))];
+      expect(attempts).toEqual([1]);
+    });
+
+    it('T8: info_error fires BEFORE model_capability_incompatible (ordering)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'model does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // 3 diagnostics: info_error → model_capability_incompatible → format_free_retry_empty
+      // (format_free_retry_empty because the mock returns same empty parts for both calls)
+      expect(diagnostics).toHaveLength(3);
+      expect(diagnostics[0]!.step).toBe('info_error');
+      expect(diagnostics[1]!.step).toBe('model_capability_incompatible');
+      expect(diagnostics[2]!.step).toBe('format_free_retry_empty');
+    });
+
+    it('T9: model_capability_incompatible matches case-insensitive', async () => {
+      const patterns = [
+        'Model Does Not Support This Tool_Choice',
+        'THIS MODEL DOES NOT SUPPORT TOOLS',
+        'Does Not Support Function Calling',
+        'does not support Structured Output',
+      ];
+
+      for (const pattern of patterns) {
+        _resetAgentResolutionCache();
+        _resetModelCapabilityCache();
+        const diagnostics: Array<Record<string, unknown>> = [];
+        const client = makeClient({
+          agents: [{ id: 'flowguard-reviewer' }],
+          promptResult: {
+            data: {
+              parts: [],
+              info: { error: { name: 'APIError', message: pattern } },
+            },
+            error: undefined,
+          },
+        });
+        const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+          maxRetries: 0,
+          _sleepFn: NO_SLEEP,
+          _onAttemptFailed: (info) => diagnostics.push(info),
+        });
+        expect(result).toBeNull();
+        const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+        expect(incompatible).toBeDefined();
+      }
+    });
+
+    it('T10: model_capability_incompatible matches "structured output" pattern', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'ProviderError',
+                message: 'does not support structured output for this model',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toBeNull();
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      expect(incompatible).toBeDefined();
+      expect((incompatible!.details as Record<string, unknown>).detectedPattern).toContain(
+        'structured output',
+      );
+    });
+
+    it('CORNER: does NOT fire model_capability_incompatible for unrelated errors', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'Timeout', message: 'request timed out' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // info_error fires, but NOT model_capability_incompatible
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      expect(incompatible).toBeUndefined();
+      expect(diagnostics.some((d) => d.step === 'info_error')).toBe(true);
+    });
+
+    it('CORNER: "does not support" without capability keyword does NOT match', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support streaming' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      expect(incompatible).toBeUndefined();
+    });
+
+    it('EDGE: error message in data.message (nested) also triggers detection', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'bad request',
+                data: { message: 'model does not support this tool_choice' },
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(result).toBeNull();
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      expect(incompatible).toBeDefined();
+    });
+
+    it('EDGE: string info.error does NOT trigger model_capability_incompatible (no message field)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: 'does not support this tool_choice' as unknown as { name: string },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      // String errors are surfaced via info_error with errorObj.value,
+      // but the model_capability_incompatible detection reads errorObj.value too
+      const incompatible = diagnostics.find((d) => d.step === 'model_capability_incompatible');
+      // String "does not support this tool_choice" should be detected via errorObj.value path
+      expect(incompatible).toBeDefined();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORMAT-FREE RETRY — model_capability_incompatible fallback
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('invokeReviewer — format-free retry fallback', () => {
+  /**
+   * Helper: creates a client where the first prompt call triggers
+   * model_capability_incompatible, and the second call (format-free retry)
+   * returns a configurable text response.
+   */
+  function makeSequentialClient(opts: {
+    agents?: Array<Record<string, unknown>>;
+    formatFreeResult?: {
+      data?: {
+        parts?: Array<{ type?: string; text?: string }>;
+        info?: Record<string, unknown>;
+      };
+      error?: unknown;
+    };
+    errorMessage?: string;
+  }): OrchestratorClient {
+    const errorMsg = opts.errorMessage ?? 'deepseek-reasoner does not support this tool_choice';
+
+    // First call: returns tool_choice incompatibility error
+    // Second call: returns the format-free retry result
+    const promptFn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          parts: [],
+          info: {
+            error: {
+              name: 'APIError',
+              message: errorMsg,
+              data: { statusCode: 400, isRetryable: false },
+            },
+          },
+        },
+        error: undefined,
+      })
+      .mockResolvedValueOnce(
+        opts.formatFreeResult ?? {
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        },
+      );
+
+    return {
+      app: {
+        agents: vi.fn().mockResolvedValue({
+          data: opts.agents ?? [{ id: 'flowguard-reviewer', name: 'flowguard-reviewer' }],
+        }),
+      },
+      session: {
+        create: vi
+          .fn()
+          .mockResolvedValueOnce({ data: { id: 'child-session-1' }, error: undefined })
+          .mockResolvedValueOnce({ data: { id: 'retry-session-1' }, error: undefined }),
+        prompt: promptFn,
+      },
+    };
+  }
+
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
+  });
+
+  // ─── HAPPY ──────────────────────────────────────────────────────────────────
+
+  describe('HAPPY — format-free retry succeeds', () => {
+    it('T11: returns valid findings when format-free retry produces pure JSON text', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({});
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe('retry-session-1');
+      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.reviewMode).toBe('subagent');
+    });
+
+    it('T12: parses JSON from markdown code-fenced response', async () => {
+      const fencedJson = '```json\n' + JSON.stringify(validFindings()) + '\n```';
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: fencedJson }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+    });
+
+    it('T13: parses JSON via brace-extraction when text has preamble', async () => {
+      const withPreamble =
+        'Here is my review:\n\n' + JSON.stringify(validFindings()) + '\n\nEnd of review.';
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: withPreamble }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.blockingIssues).toEqual([]);
+    });
+
+    it('T14: authoritatively injects sessionId on format-free retry path', async () => {
+      const findingsWithWrongSession = validFindings({
+        reviewedBy: { sessionId: 'wrong-session-id' },
+      });
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(findingsWithWrongSession) }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      // Authoritative injection overwrites subagent's guess
+      expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
+        'retry-session-1',
+      );
+    });
+
+    it('T14b: injects sessionId when reviewedBy is missing entirely', async () => {
+      const findingsNoReviewedBy = validFindings();
+      delete findingsNoReviewedBy.reviewedBy;
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(findingsNoReviewedBy) }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
+        'retry-session-1',
+      );
+    });
+
+    it('T14c: joins multiple text parts into single JSON', async () => {
+      const fullJson = JSON.stringify(validFindings());
+      const half1 = fullJson.slice(0, Math.floor(fullJson.length / 2));
+      const half2 = fullJson.slice(Math.floor(fullJson.length / 2));
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [
+              { type: 'text', text: half1 },
+              { type: 'text', text: half2 },
+            ],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+    });
+  });
+
+  // ─── BAD ────────────────────────────────────────────────────────────────────
+
+  describe('BAD — format-free retry failures', () => {
+    it('T15: returns null when format-free retry prompt returns error', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: undefined,
+          error: { message: 'rate limit exceeded', statusCode: 429 },
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const retryFailed = diagnostics.find((d) => d.step === 'format_free_retry_failed');
+      expect(retryFailed).toBeDefined();
+      expect(retryFailed!.error).toEqual({ message: 'rate limit exceeded', statusCode: 429 });
+      expect((retryFailed!.details as Record<string, unknown>).childSessionId).toBe(
+        'retry-session-1',
+      );
+    });
+
+    it('T16: returns null when format-free retry returns empty text', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: { parts: [], info: {} },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const retryEmpty = diagnostics.find((d) => d.step === 'format_free_retry_empty');
+      expect(retryEmpty).toBeDefined();
+      expect((retryEmpty!.details as Record<string, unknown>).partsCount).toBe(0);
+    });
+
+    it('T16b: returns null when parts contain only non-text types', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [
+              { type: 'tool_call', text: undefined },
+              { type: 'image', text: undefined },
+            ],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const retryEmpty = diagnostics.find((d) => d.step === 'format_free_retry_empty');
+      expect(retryEmpty).toBeDefined();
+    });
+
+    it('T17: returns null when format-free retry text is not parseable JSON', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: 'I cannot produce a review in JSON format.' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
+      expect(parseFailed).toBeDefined();
+      const details = parseFailed!.details as Record<string, unknown>;
+      expect(details.textLength).toBeGreaterThan(0);
+      expect(details.textPreview).toContain('cannot produce');
+    });
+
+    it('T17b: returns null when text contains invalid JSON (malformed braces)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: '{"overallVerdict": "approve", "broken' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
+      expect(parseFailed).toBeDefined();
+    });
+
+    it('T17c: returns null when promptResult.data is null', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: null as unknown as undefined,
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const retryFailed = diagnostics.find((d) => d.step === 'format_free_retry_failed');
+      expect(retryFailed).toBeDefined();
+    });
+  });
+
+  // ─── CORNER ─────────────────────────────────────────────────────────────────
+
+  describe('CORNER — edge conditions on format-free retry', () => {
+    it('T18: format-free retry does NOT fire for unrelated info.error', async () => {
+      // Unrelated error: "request timed out" — no "does not support" + capability keyword
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'TimeoutError', message: 'request timed out' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      // info_error + no_findings fire, but NO format_free_retry_* steps
+      const formatFreeSteps = diagnostics.filter((d) =>
+        (d.step as string).startsWith('format_free_retry'),
+      );
+      expect(formatFreeSteps).toHaveLength(0);
+      expect(diagnostics.some((d) => d.step === 'info_error')).toBe(true);
+      expect(diagnostics.some((d) => d.step === 'no_findings')).toBe(true);
+    });
+
+    it('T18b: format-free retry fires only ONCE (no retry loop within retry)', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: 'not json at all' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2, // outer retries available but NOT used
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      // prompt called exactly 2 times: original + format-free retry (no outer retry)
+      expect(client.session.prompt).toHaveBeenCalledTimes(2);
+      // All on attempt 1
+      const attempts = [...new Set(diagnostics.map((d) => d.attempt))];
+      expect(attempts).toEqual([1]);
+    });
+
+    it('T19: format-free retry injects system directive for fallback agent', async () => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+      // No 'flowguard-reviewer' in agents list → falls back to 'general'
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'model does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'build' }, { id: 'plan' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'child-session-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+
+      // Verify format-free retry call includes system directive
+      const secondCall = promptFn.mock.calls[1]!;
+      const secondBody = secondCall[0].body;
+      expect(secondBody.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
+      expect(secondBody.agent).toBe(REVIEWER_AGENT_FALLBACK);
+      // No format field
+      expect(secondBody.format).toBeUndefined();
+    });
+
+    it('T19b: format-free retry does NOT inject system directive for primary agent', async () => {
+      const client = makeSequentialClient({});
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Second call (format-free retry) should NOT have system field
+      const promptFn = client.session.prompt as ReturnType<typeof vi.fn>;
+      const secondCall = promptFn.mock.calls[1]!;
+      const secondBody = secondCall[0].body;
+      expect(secondBody.system).toBeUndefined();
+      expect(secondBody.agent).toBe('flowguard-reviewer');
+    });
+
+    it('T20: format-free retry body has no format field', async () => {
+      const client = makeSequentialClient({});
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      const promptFn = client.session.prompt as ReturnType<typeof vi.fn>;
+      // First call has format
+      const firstBody = promptFn.mock.calls[0]![0].body;
+      expect(firstBody.format).toBeDefined();
+      expect(firstBody.format.type).toBe('json_schema');
+      // Second call (format-free) has NO format
+      const secondBody = promptFn.mock.calls[1]![0].body;
+      expect(secondBody.format).toBeUndefined();
+    });
+
+    it('T21: rawResponse is JSON.stringify of extracted findings', async () => {
+      const client = makeSequentialClient({});
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      const parsed = JSON.parse(result!.rawResponse);
+      expect(parsed.overallVerdict).toBe('approve');
+      expect(parsed.reviewedBy.sessionId).toBe('retry-session-1');
+    });
+  });
+
+  // ─── EDGE ───────────────────────────────────────────────────────────────────
+
+  describe('EDGE — boundary conditions', () => {
+    it('T22: format-free retry with whitespace-only text returns null', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: '   \n\t  \n  ' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
+      expect(parseFailed).toBeDefined();
+    });
+
+    it('T23: format-free retry with only primitive JSON (no object) returns null', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            // Pure string, number, or boolean JSON — no braces at all
+            parts: [{ type: 'text', text: '"just a string value"' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      // extractJsonFromText returns null for non-object JSON
+      expect(result).toBeNull();
+      const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
+      expect(parseFailed).toBeDefined();
+    });
+
+    it('T24: format-free retry with "tools" variant error message also triggers', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'This model does not support tools in the current configuration',
+              },
+            },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({
+            data: [{ id: 'flowguard-reviewer', name: 'flowguard-reviewer' }],
+          }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'child-session-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
+    });
+
+    it('T25: format-free retry uses NEW childSessionId (separate from primary attempt)', async () => {
+      const client = makeSequentialClient({});
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      const promptFn = client.session.prompt as ReturnType<typeof vi.fn>;
+      // First call: original session
+      expect(promptFn.mock.calls[0]![0].path.id).toBe('child-session-1');
+      // Second call: NEW retry session (different ID for UI visibility)
+      expect(promptFn.mock.calls[1]![0].path.id).toBe('retry-session-1');
+    });
+
+    it('T26: format-free retry uses same prompt text as original call', async () => {
+      const client = makeSequentialClient({});
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      const promptFn = client.session.prompt as ReturnType<typeof vi.fn>;
+      const firstParts = promptFn.mock.calls[0]![0].body.parts;
+      const secondParts = promptFn.mock.calls[1]![0].body.parts;
+      expect(firstParts[0].text).toBe(PROMPT);
+      expect(secondParts[0].text).toBe(PROMPT);
+    });
+  });
+
+  // ─── E2E ────────────────────────────────────────────────────────────────────
+
+  describe('E2E — full format-free retry flow', () => {
+    it('T27: complete flow: incompatible model → format-free retry → valid findings', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const findings = validFindings({
+        overallVerdict: 'changes_requested',
+        blockingIssues: [{ title: 'Missing error handling', severity: 'high' }],
+      });
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [
+              { type: 'text', text: 'Here is my structured review:\n```json\n' },
+              { type: 'text', text: JSON.stringify(findings) },
+              { type: 'text', text: '\n```\n' },
+            ],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      // Success
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe('retry-session-1');
+      expect(result!.findings.overallVerdict).toBe('changes_requested');
+      expect(result!.findings.blockingIssues).toHaveLength(1);
+
+      // Diagnostics sequence: info_error → model_capability_incompatible (no retry steps since success)
+      expect(diagnostics).toHaveLength(2);
+      expect(diagnostics[0]!.step).toBe('info_error');
+      expect(diagnostics[1]!.step).toBe('model_capability_incompatible');
+
+      // New architecture: create called TWICE (original + retry session), prompt called twice
+      expect(client.session.create).toHaveBeenCalledTimes(2);
+      expect(client.session.prompt).toHaveBeenCalledTimes(2);
+    });
+
+    it('T28: complete flow with fallback agent (general) and system directive', async () => {
+      _resetAgentResolutionCache();
+      _resetModelCapabilityCache();
+      const diagnostics: Array<Record<string, unknown>> = [];
+
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'does not support structured output',
+              },
+            },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [] }), // empty → fallback to 'general'
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'child-session-2' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe('child-session-2');
+      expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
+        'child-session-2',
+      );
+
+      // Both calls use fallback agent with system directive
+      const firstBody = promptFn.mock.calls[0]![0].body;
+      const secondBody = promptFn.mock.calls[1]![0].body;
+      expect(firstBody.agent).toBe('general');
+      expect(secondBody.agent).toBe('general');
+      expect(firstBody.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
+      expect(secondBody.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
+    });
+  });
+
+  // ─── SMOKE ──────────────────────────────────────────────────────────────────
+
+  describe('SMOKE — format-free retry diagnostic completeness', () => {
+    it('T29: all diagnostic steps are valid step union members', () => {
+      const validSteps = [
+        'agent_probe',
+        'session_create',
+        'session_prompt',
+        'structured_output_error',
+        'info_error',
+        'model_capability_incompatible',
+        'format_free_retry_session_create',
+        'format_free_retry_failed',
+        'format_free_retry_empty',
+        'format_free_retry_parse_failed',
+        'no_findings',
+      ];
+      // Every format_free_retry step is in the valid set
+      expect(validSteps).toContain('format_free_retry_session_create');
+      expect(validSteps).toContain('format_free_retry_failed');
+      expect(validSteps).toContain('format_free_retry_empty');
+      expect(validSteps).toContain('format_free_retry_parse_failed');
+    });
+
+    it('T30: format-free retry diagnostics include childSessionId for traceability', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({
+        formatFreeResult: {
+          data: {
+            parts: [{ type: 'text', text: 'unparseable garbage' }],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      const parseFailed = diagnostics.find((d) => d.step === 'format_free_retry_parse_failed');
+      expect(parseFailed).toBeDefined();
+      expect((parseFailed!.details as Record<string, unknown>).childSessionId).toBe(
+        'retry-session-1',
+      );
+      expect((parseFailed!.details as Record<string, unknown>).textLength).toBeGreaterThan(0);
+      expect((parseFailed!.details as Record<string, unknown>).textPreview).toBeDefined();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODEL CAPABILITY CACHE — lifecycle, transitions, and UI behavior
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Model Capability Cache — lifecycle and UI behavior', () => {
+  beforeEach(() => {
+    _resetAgentResolutionCache();
+    _resetModelCapabilityCache();
+  });
+
+  // ─── HAPPY: Cache API ─────────────────────────────────────────────────────
+
+  describe('HAPPY — cache API contract', () => {
+    it('starts as unknown after reset', () => {
+      expect(_getModelCapabilityCache()).toBe('unknown');
+    });
+
+    it('transitions to supported after successful structured output', async () => {
+      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
+      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(_getModelCapabilityCache()).toBe('supported');
+    });
+
+    it('transitions to unsupported after model_capability_incompatible', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'APIError',
+                message: 'does not support this tool_choice',
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+      expect(_getModelCapabilityCache()).toBe('unsupported');
+    });
+
+    it('_resetModelCapabilityCache resets to unknown', async () => {
+      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
+      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(_getModelCapabilityCache()).toBe('supported');
+      _resetModelCapabilityCache();
+      expect(_getModelCapabilityCache()).toBe('unknown');
+    });
+  });
+
+  // ─── HAPPY: Cached unsupported skips format ───────────────────────────────
+
+  describe('HAPPY — cached unsupported skips format prompt', () => {
+    it('skips format prompt and goes directly to format-free on cached unsupported', async () => {
+      // First call: detect incompatibility → cache as unsupported
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+      expect(_getModelCapabilityCache()).toBe('unsupported');
+
+      // Second call: should skip format entirely, go directly format-free
+      const formatFreeResult = {
+        data: {
+          parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+          info: {},
+        },
+        error: undefined,
+      };
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({
+            data: [{ id: 'flowguard-reviewer' }],
+          }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'session-2' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue(formatFreeResult),
+        },
+      };
+
+      const result = await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.findings.overallVerdict).toBe('approve');
+      // Only 1 prompt call (format-free), no format prompt
+      expect(client2.session.prompt).toHaveBeenCalledTimes(1);
+      const promptBody = (client2.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+        .body;
+      expect(promptBody.format).toBeUndefined(); // no format field
+    });
+
+    it('cached unsupported path creates only 1 session (no retry session needed)', async () => {
+      // Pre-set cache by triggering incompatibility
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Now invoke again — cached path
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'cached-session' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue({
+            data: {
+              parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+              info: {},
+            },
+            error: undefined,
+          }),
+        },
+      };
+
+      await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Only 1 create call (cached path — no retry session needed)
+      expect(client2.session.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── CORNER: New session for retry ────────────────────────────────────────
+
+  describe('CORNER — new session for format-free retry (UI visibility)', () => {
+    it('creates a NEW session for format-free retry on first incompatibility detection', async () => {
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 'original-session' }, error: undefined })
+            .mockResolvedValueOnce({ data: { id: 'retry-session' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      // Result comes from the RETRY session
+      expect(result!.sessionId).toBe('retry-session');
+      // Create called twice: original + retry
+      expect(client.session.create).toHaveBeenCalledTimes(2);
+      // First prompt on original, second on retry
+      expect(promptFn.mock.calls[0]![0].path.id).toBe('original-session');
+      expect(promptFn.mock.calls[1]![0].path.id).toBe('retry-session');
+    });
+
+    it('retry session title includes (format-free) suffix', async () => {
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 's1' }, error: undefined })
+            .mockResolvedValueOnce({ data: { id: 's2' }, error: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      const createFn = client.session.create as ReturnType<typeof vi.fn>;
+      // Second create has (format-free) in title
+      const secondCreateBody = createFn.mock.calls[1]![0].body;
+      expect(secondCreateBody.title).toContain('(format-free)');
+      expect(secondCreateBody.parentID).toBe('parent-1');
+    });
+
+    it('returns null when retry session create fails', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const promptFn = vi.fn().mockResolvedValue({
+        data: {
+          parts: [],
+          info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+        },
+        error: undefined,
+      });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi
+            .fn()
+            .mockResolvedValueOnce({ data: { id: 'original' }, error: undefined })
+            .mockResolvedValueOnce({ error: { message: 'rate limited' }, data: undefined }),
+          prompt: promptFn,
+        },
+      };
+
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      const createFailed = diagnostics.find((d) => d.step === 'format_free_retry_session_create');
+      expect(createFailed).toBeDefined();
+      expect((createFailed!.details as Record<string, unknown>).originalSessionId).toBe('original');
+    });
+  });
+
+  // ─── EDGE: Toast notifications ────────────────────────────────────────────
+
+  describe('EDGE — toast notifications', () => {
+    it('shows toast on format-free fallback (first detection)', async () => {
+      const toastFn = vi.fn().mockResolvedValue(undefined);
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+        tui: { showToast: toastFn },
+      };
+
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(toastFn).toHaveBeenCalledTimes(1);
+      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+      expect(toastFn.mock.calls[0]![0].body.variant).toBe('info');
+    });
+
+    it('shows toast on cached unsupported path', async () => {
+      // Pre-set cache
+      const client1 = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client1, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      // Now call with TUI available
+      const toastFn = vi.fn().mockResolvedValue(undefined);
+      const client2: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-2' }, error: undefined }),
+          prompt: vi.fn().mockResolvedValue({
+            data: {
+              parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+              info: {},
+            },
+            error: undefined,
+          }),
+        },
+        tui: { showToast: toastFn },
+      };
+
+      await invokeReviewer(client2, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(toastFn).toHaveBeenCalledTimes(1);
+      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+    });
+
+    it('does not throw when tui is undefined (headless mode)', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        },
+      });
+      // client.tui is undefined by default in makeClient
+
+      // Should not throw
+      await expect(
+        invokeReviewer(client, PROMPT, 'parent-1', {
+          maxRetries: 0,
+          _sleepFn: NO_SLEEP,
+          _onAttemptFailed: () => {},
+        }),
+      ).resolves.not.toThrow();
+    });
+
+    it('does not throw when tui.showToast rejects', async () => {
+      const toastFn = vi.fn().mockRejectedValue(new Error('TUI crashed'));
+      const promptFn = vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: {},
+          },
+          error: undefined,
+        });
+
+      const client: OrchestratorClient = {
+        app: {
+          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
+        },
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: 'ses-1' }, error: undefined }),
+          prompt: promptFn,
+        },
+        tui: { showToast: toastFn },
+      };
+
+      // Should not throw even though toast rejects
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+      });
+
+      expect(result).not.toBeNull();
+      expect(toastFn).toHaveBeenCalled();
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// JSDoc Regression: extractJsonFromText docs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('extractJsonFromText JSDoc', () => {
+  it('SMOKE — JSDoc references info.structured_output (canonical docs field)', async () => {
+    const orchestratorPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'review-orchestrator.ts',
+    );
+    const source = await fs.readFile(orchestratorPath, 'utf-8');
+
+    // The extractJsonFromText JSDoc should reference the canonical docs field name
+    // "info.structured_output", not the server alias "info.structured".
+    const jsdocMatch = source.match(
+      /\/\*\*[\s\S]*?Extract JSON from unstructured text response[\s\S]*?\*\//,
+    );
+    expect(jsdocMatch).not.toBeNull();
+    const jsdoc = jsdocMatch![0];
+    expect(jsdoc).toContain('info.structured_output');
   });
 });

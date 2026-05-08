@@ -35,8 +35,8 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(existsSync(path.join(REPO_ROOT, 'AGENTS.md'))).toBe(true);
     });
 
-    it('opencode.json exists in repo root', () => {
-      expect(existsSync(path.join(REPO_ROOT, 'opencode.json'))).toBe(true);
+    it('opencode.jsonc exists in repo root', () => {
+      expect(existsSync(path.join(REPO_ROOT, 'opencode.jsonc'))).toBe(true);
     });
 
     it('.opencode/ is NOT tracked in git (install artifacts are not committed)', () => {
@@ -69,9 +69,10 @@ describe('DEV_REPO_INVARIANTS', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('opencode.json has empty instructions array (dev repo uses AGENTS.md, not installer path)', async () => {
-      const content = await fs.readFile(path.join(REPO_ROOT, 'opencode.json'), 'utf-8');
-      const parsed = JSON.parse(content);
+    it('opencode.jsonc has empty instructions array (dev repo uses AGENTS.md, not installer path)', async () => {
+      const content = await fs.readFile(path.join(REPO_ROOT, 'opencode.jsonc'), 'utf-8');
+      const { parse } = await import('jsonc-parser');
+      const parsed = parse(content, [], { allowTrailingComma: true });
       expect(parsed.instructions).toEqual([]);
     });
 
