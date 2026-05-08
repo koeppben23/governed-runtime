@@ -323,4 +323,28 @@ describe('resolvePolicyFromSnapshot', () => {
       expect(policy.minimumActorAssuranceForApproval).toBe('best_effort');
     });
   });
+
+  describe('LEGACY — missing fields', () => {
+    it('legacy solo snapshot without reviewOutputPolicy resolves to text_compat_allowed', () => {
+      const legacySnapshot = {
+        mode: 'solo',
+        requireHumanGates: false,
+        maxSelfReviewIterations: 2,
+        maxImplReviewIterations: 1,
+        allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        requireVerifiedActorsForApproval: false,
+        effectiveGateBehavior: 'auto_approve',
+        selfReview: undefined,
+        audit: { emitTransitions: false, emitToolCalls: false, enableChainHash: false },
+        actorClassification: {},
+        frozenAt: '2025-01-01T00:00:00.000Z',
+        frozenBy: 'test',
+        sha256: 'abc',
+      } as unknown as PolicySnapshot;
+
+      const policy = resolvePolicyFromSnapshot(legacySnapshot);
+      expect(policy.reviewOutputPolicy).toBe('text_compat_allowed');
+    });
+  });
 });

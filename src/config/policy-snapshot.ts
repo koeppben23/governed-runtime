@@ -458,7 +458,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
-    reviewOutputPolicy: snapshot.reviewOutputPolicy,
+    reviewOutputPolicy:
+      snapshot.reviewOutputPolicy ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewOutputPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
