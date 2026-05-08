@@ -69,8 +69,9 @@ function makeClient(opts: {
     data?: {
       parts?: Array<{ type?: string; text?: string }>;
       info?: {
+        structured?: unknown;
         structured_output?: unknown;
-        error?: { name: string; message: string };
+        error?: { name: string; message?: string; data?: { message?: string; retries?: number } };
       };
     };
     error?: unknown;
@@ -98,7 +99,7 @@ function makeClient(opts: {
         opts.promptResult ?? {
           data: {
             parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
-            info: { structured_output: validFindings() },
+            info: { structured: validFindings() },
           },
           error: undefined,
         },
@@ -434,7 +435,7 @@ describe('invokeReviewer — agent resolution integration', () => {
           body: expect.objectContaining({
             agent: 'flowguard-reviewer',
             parts: [{ type: 'text', text: PROMPT }],
-            format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+            format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
           }),
         }),
       );
@@ -477,7 +478,7 @@ describe('invokeReviewer — agent resolution integration', () => {
             agent: 'general',
             system: REVIEWER_SYSTEM_DIRECTIVE,
             parts: [{ type: 'text', text: PROMPT }],
-            format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+            format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
           }),
         }),
       );
@@ -597,7 +598,7 @@ describe('invokeReviewer — agent resolution integration', () => {
         promptResult: {
           data: {
             parts: [],
-            info: { structured_output: findings },
+            info: { structured: findings },
           },
           error: undefined,
         },
@@ -612,7 +613,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
-          data: { parts: [], info: { structured_output: findings } },
+          data: { parts: [], info: { structured: findings } },
           error: undefined,
         },
       });
@@ -748,6 +749,7 @@ describe('invokeReviewer — agent resolution integration', () => {
         expect(call.body.format).toEqual({
           type: 'json_schema',
           schema: REVIEW_FINDINGS_JSON_SCHEMA,
+          retryCount: 1,
         });
       }
     });
@@ -756,6 +758,257 @@ describe('invokeReviewer — agent resolution integration', () => {
       // Guards against accidental drift between orchestrator and identifiers
       expect(REVIEWER_AGENT_PRIMARY).toBe('flowguard-reviewer');
       expect(REVIEWER_SUBAGENT_TYPE).toBe('flowguard-reviewer');
+    });
+  });
+
+  // ─── CRITICAL: structured field name compatibility (v2 SDK) ────────────────
+
+  describe('CRITICAL — structured vs structured_output field name', () => {
+    it('reads findings from info.structured (canonical v2 field)', async () => {
+      const findings = validFindings();
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured: findings },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.reviewMode).toBe('subagent');
+    });
+
+    it('reads findings from info.structured_output (legacy v1 field)', async () => {
+      const findings = validFindings();
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured_output: findings },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      expect(result!.findings!.overallVerdict).toBe('approve');
+    });
+
+    it('prefers info.structured over info.structured_output when both present', async () => {
+      const canonicalFindings = validFindings({ overallVerdict: 'changes_requested' });
+      const legacyFindings = validFindings({ overallVerdict: 'approve' });
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured: canonicalFindings, structured_output: legacyFindings },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      // Must use the canonical field (structured), not the legacy one
+      expect(result!.findings!.overallVerdict).toBe('changes_requested');
+    });
+
+    it('falls through to TextPart when both structured and structured_output are absent', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
+            info: { structured: undefined, structured_output: undefined },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).not.toBeNull();
+      expect(result!.findings!.overallVerdict).toBe('approve');
+    });
+
+    it('returns null when info.structured is an array (not an object)', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured: [1, 2, 3] },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+      });
+      expect(result).toBeNull();
+    });
+
+    it('returns null when info.structured is a primitive string', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { structured: 'not-an-object' },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+      });
+      expect(result).toBeNull();
+    });
+
+    it('StructuredOutputError detected with v2 error shape (data.message)', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: {
+              error: {
+                name: 'StructuredOutputError',
+                data: { message: 'schema validation failed', retries: 2 },
+              },
+            },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+      });
+      expect(result).toBeNull();
+      // StructuredOutputError is deterministic — no retry
+      expect(client.session.prompt).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── DIAGNOSTIC: _onAttemptFailed callback ─────────────────────────────────
+
+  describe('DIAGNOSTIC — _onAttemptFailed callback', () => {
+    it('fires with step=session_create when create fails', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        createResult: { error: { message: 'forbidden' }, data: undefined },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('session_create');
+      expect(diagnostics[0]!.attempt).toBe(1);
+    });
+
+    it('fires with step=session_prompt when prompt returns error', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: { error: { message: 'bad request' }, data: undefined },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('session_prompt');
+      expect(diagnostics[0]!.attempt).toBe(1);
+    });
+
+    it('fires with step=no_findings when structured output absent', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: { parts: [], info: {} },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('no_findings');
+      expect((diagnostics[0]!.details as Record<string, unknown>).infoKeys).toEqual([]);
+    });
+
+    it('fires with step=structured_output_error for StructuredOutputError', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [],
+            info: { error: { name: 'StructuredOutputError', message: 'failed' } },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]!.step).toBe('structured_output_error');
+    });
+
+    it('fires once per attempt on repeated failures', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: { error: { message: 'timeout' }, data: undefined },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 2,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(3);
+      expect(diagnostics.map((d) => d.attempt)).toEqual([1, 2, 3]);
+      expect(diagnostics.every((d) => d.step === 'session_prompt')).toBe(true);
+    });
+
+    it('includes infoKeys in no_findings diagnostic for debugging', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [{ type: 'text', text: 'not json' }],
+            info: { structured: null, error: undefined },
+          },
+          error: undefined,
+        },
+      });
+      await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+      expect(diagnostics).toHaveLength(1);
+      const details = diagnostics[0]!.details as Record<string, unknown>;
+      expect(details.hasInfo).toBe(true);
+      expect(details.partsCount).toBe(1);
+      expect(details.textPartsLength).toBe(8); // "not json" = 8 chars
     });
   });
 });

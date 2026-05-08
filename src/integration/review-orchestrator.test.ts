@@ -613,7 +613,7 @@ describe('invokeReviewer', () => {
       body: {
         agent: REVIEWER_SUBAGENT_TYPE,
         parts: [{ type: 'text', text: PROMPT }],
-        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA },
+        format: { type: 'json_schema', schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
       },
     });
   });
@@ -1878,5 +1878,50 @@ describe('MUTATION_KILL: buildReviewContentPrompt with stack section', () => {
   it('omits ticket context when ticketText is empty', () => {
     const prompt = buildReviewContentPrompt({ ...baseOpts, ticketText: '' });
     expect(prompt).not.toContain('Ticket context:');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M2: format object retryCount regression guards (audit fix)
+// ---------------------------------------------------------------------------
+
+describe('M2 — retryCount in format object', () => {
+  const PROMPT = 'Review this plan for correctness.';
+
+  it('HAPPY — retryCount: 1 is sent to the server', async () => {
+    // Without retryCount, the server defaults to 2 retries, wasting tokens
+    // on deterministic schema failures. retryCount: 1 caps this.
+    const client = mockClient();
+    _resetAgentResolutionCache();
+    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.body.format.retryCount).toBe(1);
+  });
+
+  it('BAD — retryCount is not 0 (would disable retries entirely)', async () => {
+    const client = mockClient();
+    _resetAgentResolutionCache();
+    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.body.format.retryCount).not.toBe(0);
+  });
+
+  it('CORNER — retryCount is a positive integer', async () => {
+    const client = mockClient();
+    _resetAgentResolutionCache();
+    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(Number.isInteger(call.body.format.retryCount)).toBe(true);
+    expect(call.body.format.retryCount).toBeGreaterThan(0);
+  });
+
+  it('EDGE — format type is json_schema alongside retryCount', async () => {
+    const client = mockClient();
+    _resetAgentResolutionCache();
+    await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.body.format.type).toBe('json_schema');
+    expect(call.body.format).toHaveProperty('schema');
+    expect(call.body.format).toHaveProperty('retryCount', 1);
   });
 });

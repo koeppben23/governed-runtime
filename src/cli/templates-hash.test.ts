@@ -69,14 +69,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // fallback contract so copied attestation fields are diagnostic only until
     // FlowGuard persists matching ReviewInvocationEvidence.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'ee23516a1270fd82f5ccdd07d686d12a8e5b950030a93f38da3924679be7c480',
+      '3bd9a4e14bea34a0a694a30737ddff727baf9dfcc14abc5b08b89bfc406580a0',
     );
   });
 
   it('OPENCODE_JSON_TEMPLATE matches compiled output hash', () => {
     const template = OPENCODE_JSON_TEMPLATE('flowguard-mandates.md');
     expect(sha256(template)).toBe(
-      '4294d65f4c3cbe1c2f28f82ef289dd26de7aa28587b7a9ffafc4674e6d22cf70',
+      '1fc84e2ee553df018b6ee1af2c2beeaf9b11f86f82f43ee0019e09afa5afd45b',
     );
   });
 

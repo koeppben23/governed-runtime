@@ -136,10 +136,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   // ── Hook handlers ──────────────────────────────────────────────────────
   return {
-    'tool.execute.before': async (input: unknown, _output: unknown) => {
+    'tool.execute.before': async (input: unknown, output: unknown) => {
       const toolName: string = (input as { tool?: string })?.tool ?? '';
       const sessionId: string = (input as { sessionID?: string })?.sessionID ?? 'unknown';
-      const args = (input as { args?: Record<string, unknown> })?.args ?? {};
+      // OpenCode docs: tool arguments live on the output parameter in before hooks
+      // (mutable by design). input carries tool name and session metadata only.
+      const args = (output as { args?: Record<string, unknown> })?.args ?? {};
 
       if (toolName === 'task') {
         const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';

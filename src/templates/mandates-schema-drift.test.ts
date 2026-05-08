@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { REVIEWER_AGENT } from './mandates.js';
+import { REVIEWER_AGENT, OPENCODE_JSON_TEMPLATE } from './mandates.js';
 
 const REQUIRED_ATTESTATION_FIELDS = [
   'mandateDigest',
@@ -70,5 +70,105 @@ describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
     expect(REVIEWER_AGENT).toMatch(
       /Do NOT use "unable_to_review" to avoid producing substantive findings/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M1: Reviewer Agent must have steps limit (audit fix)
+// ---------------------------------------------------------------------------
+
+describe('REVIEWER_AGENT template: steps limit (M1)', () => {
+  it('HAPPY — frontmatter contains steps: 10', () => {
+    // Without a steps limit, the reviewer can run unbounded tool calls,
+    // incurring unbounded cost. steps: 10 caps the review loop.
+    expect(REVIEWER_AGENT).toMatch(/^steps:\s*10$/m);
+  });
+
+  it('CORNER — steps value is a positive integer', () => {
+    const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
+    expect(match).not.toBeNull();
+    const steps = parseInt(match![1], 10);
+    expect(steps).toBeGreaterThan(0);
+    expect(Number.isInteger(steps)).toBe(true);
+  });
+
+  it('BAD — steps is not zero or negative', () => {
+    const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1], 10)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('EDGE — steps appears exactly once in frontmatter section', () => {
+    // Frontmatter is between the first two '---' delimiters
+    const fmMatch = REVIEWER_AGENT.match(/^---\n([\s\S]*?)\n---/);
+    expect(fmMatch).not.toBeNull();
+    const frontmatter = fmMatch![1];
+    const stepsOccurrences = (frontmatter.match(/^steps:/gm) || []).length;
+    expect(stepsOccurrences).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M4: Reviewer prompt StructuredOutput tool compatibility (audit fix)
+// ---------------------------------------------------------------------------
+
+describe('REVIEWER_AGENT template: StructuredOutput tool compatibility (M4)', () => {
+  it('HAPPY — prompt mentions StructuredOutput tool', () => {
+    // When structured output is active, the runtime provides a StructuredOutput
+    // tool. The prompt must instruct the reviewer to use it.
+    expect(REVIEWER_AGENT).toMatch(/StructuredOutput tool/);
+  });
+
+  it('BAD — prompt does NOT say "Return EXACTLY one JSON object"', () => {
+    // "Return EXACTLY one JSON object" conflicts with the StructuredOutput tool
+    // mechanism: the tool wraps the response, so the LLM should not try to emit
+    // raw JSON as text. This would cause the tool to fail or produce double-wrapped output.
+    expect(REVIEWER_AGENT).not.toMatch(/Return EXACTLY one JSON object/i);
+  });
+
+  it('CORNER — prompt still instructs fallback for non-structured environments', () => {
+    // When structured output is unavailable, the reviewer should fall back to
+    // emitting a raw JSON object. The prompt must cover both paths.
+    expect(REVIEWER_AGENT).toMatch(/structured output is unavailable/i);
+  });
+
+  it('EDGE — prompt does not require markdown fences around JSON', () => {
+    // Markdown fences (```json) around the output would break JSON parsing.
+    // The prompt explicitly says "without markdown fences."
+    expect(REVIEWER_AGENT).toMatch(/without markdown\s+fences/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C1: OPENCODE_JSON_TEMPLATE must NOT include a plugin array (audit fix)
+// ---------------------------------------------------------------------------
+
+describe('OPENCODE_JSON_TEMPLATE: no plugin array (C1)', () => {
+  it('HAPPY — template output has no "plugin" key', () => {
+    // The plugin field in opencode.json is for npm packages only (per OpenCode docs).
+    // FlowGuard uses auto-discovery via .opencode/plugins/ directory.
+    // Including "plugin": ["flowguard-audit"] would trigger npm lookup failure.
+    const template = OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md');
+    const parsed = JSON.parse(template);
+    expect(parsed).not.toHaveProperty('plugin');
+  });
+
+  it('HAPPY — template has instructions array', () => {
+    const template = OPENCODE_JSON_TEMPLATE('.opencode/flowguard-mandates.md');
+    const parsed = JSON.parse(template);
+    expect(parsed.instructions).toEqual(['.opencode/flowguard-mandates.md']);
+  });
+
+  it('CORNER — template with different instruction paths still has no plugin', () => {
+    const paths = ['.opencode/flowguard-mandates.md', 'AGENTS.md', 'custom/path/instructions.md'];
+    for (const p of paths) {
+      const parsed = JSON.parse(OPENCODE_JSON_TEMPLATE(p));
+      expect(parsed).not.toHaveProperty('plugin');
+      expect(parsed.instructions).toContain(p);
+    }
+  });
+
+  it('EDGE — template is valid JSON', () => {
+    expect(() => JSON.parse(OPENCODE_JSON_TEMPLATE('test.md'))).not.toThrow();
   });
 });
