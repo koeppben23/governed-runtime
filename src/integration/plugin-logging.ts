@@ -18,6 +18,7 @@ import { readConfig } from '../adapters/persistence.js';
 import type { FlowGuardConfig } from '../config/flowguard-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
+import { createConsoleSink } from '../logging/console-sink.js';
 import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
 
 /**
@@ -35,7 +36,13 @@ const UI_SINK_FAILURE_WARN_LIMIT = 3;
  * @returns Array of LogSink functions
  */
 export function buildLogSinks(
-  config: { logging: { mode: 'file' | 'ui' | 'both'; level: string; retentionDays: number } },
+  config: {
+    logging: {
+      mode: 'file' | 'ui' | 'both' | 'console' | 'file+console';
+      level: string;
+      retentionDays: number;
+    };
+  },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: { app?: { log: (msg: any) => Promise<unknown> } } | undefined,
   workspaceDir: string | null,
@@ -43,7 +50,7 @@ export function buildLogSinks(
   const sinks: LogSink[] = [];
   const mode = config.logging.mode;
 
-  if (mode === 'file' || mode === 'both') {
+  if (mode === 'file' || mode === 'both' || mode === 'file+console') {
     if (workspaceDir) {
       sinks.push(createFileSink(workspaceDir, config.logging.retentionDays));
     }
@@ -52,9 +59,6 @@ export function buildLogSinks(
   if (mode === 'ui' || mode === 'both') {
     if (client?.app?.log) {
       const clientLog = client.app.log.bind(client.app);
-      // Track UI sink failures to make them observable without flooding stderr.
-      // The logger itself cannot report its own failures (circular dependency),
-      // so stderr is the last-resort diagnostic channel.
       let uiSinkFailures = 0;
       sinks.push((entry: LogEntry) => {
         clientLog({
@@ -75,6 +79,10 @@ export function buildLogSinks(
         });
       });
     }
+  }
+
+  if (mode === 'console' || mode === 'file+console') {
+    sinks.push(createConsoleSink());
   }
 
   return sinks;

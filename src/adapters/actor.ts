@@ -38,6 +38,8 @@ import { gitUserEmail, gitUserName } from './git.js';
 import { IdpError } from '../identity/errors.js';
 import { resolveIdpToken, isIdpConfigured } from '../identity/index.js';
 import type { IdpConfig } from '../identity/types.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { redactIdentityExtra } from '../logging/redact.js';
 
 /**
  * Actor claim schema (P33/P34).
@@ -207,6 +209,14 @@ export async function resolveActor(
           verificationMeta: idpActor.verificationMeta,
         };
       } catch (err) {
+        getAdapterLogger().warn(
+          'actor',
+          'IdP token resolution failed',
+          redactIdentityExtra({
+            tokenPath,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
         if (err instanceof IdpError) {
           if (idpMode === 'required') {
             throw new ActorIdentityError(

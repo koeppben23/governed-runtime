@@ -15,6 +15,11 @@ import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
+import {
+  toAdapterLogger,
+  runWithAdapterLogger,
+  runWithAdapterLoggerAsync,
+} from '../logging/adapter-logger.js';
 import { strictBlockedOutput, buildEnforcementError, getToolArgs } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
@@ -116,6 +121,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     ws.cachedFingerprint,
   );
 
+  // Wire adapter-layer logging via AsyncLocalStorage DI.
+  // Each hook handler executes within an ALS scope so adapter I/O
+  // (persistence, git, archive, etc.) receives the plugin logger.
+  // No global setAdapterLogger — scopes are per-hook-invocation.
+  const adapterLog = toAdapterLogger(log);
+
   // ── Log-dependent helpers (kept here pending ws DI) ─────────────────────
   function logError(message: string, err: unknown): void {
     log.error('audit', message, { error: err instanceof Error ? err.message : String(err) });
@@ -159,204 +170,220 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   // ── Hook handlers ──────────────────────────────────────────────────────
   return {
     'tool.execute.before': async (input: unknown, output: unknown) => {
-      // OpenCode SDK passes untyped hook parameters. Cast to typed views
-      // defined in types.ts (canonical per OpenCode docs convention).
-      // Runtime guards (?? fallbacks) kept for defensive safety.
-      const hookInput = input as ToolHookBeforeInput;
-      const hookOutput = output as ToolHookBeforeOutput;
-      const toolName: string = hookInput?.tool ?? '';
-      const sessionId: string = hookInput?.sessionID ?? 'unknown';
-      // OpenCode docs: tool arguments live on the output parameter in before hooks
-      // (mutable by design). input carries tool name and session metadata only.
-      const args = hookOutput?.args ?? {};
+      return runWithAdapterLoggerAsync(adapterLog, async () => {
+        // OpenCode SDK passes untyped hook parameters. Cast to typed views
+        // defined in types.ts (canonical per OpenCode docs convention).
+        // Runtime guards (?? fallbacks) kept for defensive safety.
+        const hookInput = input as ToolHookBeforeInput;
+        const hookOutput = output as ToolHookBeforeOutput;
+        const toolName: string = hookInput?.tool ?? '';
+        const sessionId: string = hookInput?.sessionID ?? 'unknown';
+        // OpenCode docs: tool arguments live on the output parameter in before hooks
+        // (mutable by design). input carries tool name and session metadata only.
+        const args = hookOutput?.args ?? {};
 
-      if (toolName === 'task') {
-        const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-        if (st === REVIEWER_SUBAGENT_TYPE) {
-          const eState = ws.getEnforcementState(sessionId);
-          let strictEnforcement = true;
-          try {
-            const sessDir = ws.getSessionDir(sessionId);
-            if (sessDir) {
-              const state = await readState(sessDir);
-              if (state) {
-                strictEnforcement = state.policySnapshot?.selfReview?.strictEnforcement === true;
+        if (toolName === 'task') {
+          const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
+          if (st === REVIEWER_SUBAGENT_TYPE) {
+            const eState = ws.getEnforcementState(sessionId);
+            let strictEnforcement = true;
+            try {
+              const sessDir = ws.getSessionDir(sessionId);
+              if (sessDir) {
+                const state = await readState(sessDir);
+                if (state) {
+                  strictEnforcement = state.policySnapshot?.selfReview?.strictEnforcement === true;
+                }
               }
+            } catch {
+              /* fail-closed — log for diagnostics */
+              log.warn(
+                'enforcement',
+                'Failed to read session state for subagent enforcement check',
+                {
+                  sessionId,
+                },
+              );
             }
-          } catch {
-            /* fail-closed */
+            const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
+            if (!result.allowed) {
+              log.warn('enforcement', 'blocked subagent call', {
+                tool: toolName,
+                sessionId,
+                code: result.code,
+              });
+              throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+            }
           }
-          const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
-          if (!result.allowed) {
-            log.warn('enforcement', 'blocked subagent call', {
-              tool: toolName,
-              sessionId,
-              code: result.code,
-            });
-            throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-          }
+          return;
         }
-        return;
-      }
 
-      if (
-        toolName !== TOOL_FLOWGUARD_PLAN &&
-        toolName !== TOOL_FLOWGUARD_IMPLEMENT &&
-        toolName !== TOOL_FLOWGUARD_ARCHITECTURE &&
-        toolName !== TOOL_FLOWGUARD_REVIEW
-      )
-        return;
+        if (
+          toolName !== TOOL_FLOWGUARD_PLAN &&
+          toolName !== TOOL_FLOWGUARD_IMPLEMENT &&
+          toolName !== TOOL_FLOWGUARD_ARCHITECTURE &&
+          toolName !== TOOL_FLOWGUARD_REVIEW
+        )
+          return;
 
-      const eState = ws.getEnforcementState(sessionId);
-      let sessionState: SessionState | null = null;
-      let strict = true;
-      try {
-        const sessDir = ws.getSessionDir(sessionId);
-        if (sessDir) {
-          sessionState = await readState(sessDir);
-          if (sessionState) {
-            strict = sessionState.policySnapshot?.selfReview?.strictEnforcement === true;
+        const eState = ws.getEnforcementState(sessionId);
+        let sessionState: SessionState | null = null;
+        let strict = true;
+        try {
+          const sessDir = ws.getSessionDir(sessionId);
+          if (sessDir) {
+            sessionState = await readState(sessDir);
+            if (sessionState) {
+              strict = sessionState.policySnapshot?.selfReview?.strictEnforcement === true;
+            }
           }
+        } catch {
+          /* fail-closed — log for diagnostics */
+          log.warn('enforcement', 'Failed to read session state for verdict enforcement check', {
+            sessionId,
+          });
         }
-      } catch {
-        /* fail-closed */
-      }
-      const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
-      if (!result.allowed) {
-        log.warn('enforcement', 'blocked verdict submission', {
-          tool: toolName,
-          sessionId,
-          code: result.code,
-        });
-        throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-      }
+        const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
+        if (!result.allowed) {
+          log.warn('enforcement', 'blocked verdict submission', {
+            tool: toolName,
+            sessionId,
+            code: result.code,
+          });
+          throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+        }
+      });
     },
 
     'tool.execute.after': async (input: unknown, output: unknown) => {
-      // OpenCode SDK passes untyped hook parameters. Cast to typed views
-      // defined in types.ts (canonical per OpenCode docs convention).
-      const hookInput = input as ToolHookAfterInput;
-      const hookOutput = output as ToolHookAfterOutput;
-      const toolName: string = hookInput?.tool ?? '';
-      const sessionId: string = hookInput?.sessionID ?? 'unknown';
-      const now = new Date().toISOString();
+      return runWithAdapterLoggerAsync(adapterLog, async () => {
+        // OpenCode SDK passes untyped hook parameters. Cast to typed views
+        // defined in types.ts (canonical per OpenCode docs convention).
+        const hookInput = input as ToolHookAfterInput;
+        const hookOutput = output as ToolHookAfterOutput;
+        const toolName: string = hookInput?.tool ?? '';
+        const sessionId: string = hookInput?.sessionID ?? 'unknown';
+        const now = new Date().toISOString();
 
-      if (
-        toolName === TOOL_FLOWGUARD_PLAN ||
-        toolName === TOOL_FLOWGUARD_IMPLEMENT ||
-        toolName === TOOL_FLOWGUARD_ARCHITECTURE ||
-        toolName === TOOL_FLOWGUARD_REVIEW
-      ) {
-        try {
-          trackFlowGuardEnforcement(
-            ws.getEnforcementState(sessionId),
-            toolName,
-            input,
-            output,
-            now,
-          );
-        } catch (err) {
-          logError('enforcement tracking failed', err);
-        }
-      } else if (toolName === 'task') {
-        try {
-          trackTaskEnforcement(ws.getEnforcementState(sessionId), input, output, now);
-        } catch (err) {
-          logError('enforcement tracking failed', err);
-        }
-
-        // Only create host-task evidence for flowguard-reviewer subagent calls.
-        const taskArgs = getToolArgs(input);
-        if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
-          // Must run BEFORE the next FlowGuard tool's execute() so
-          // validateReviewFindings finds evidence.
+        if (
+          toolName === TOOL_FLOWGUARD_PLAN ||
+          toolName === TOOL_FLOWGUARD_IMPLEMENT ||
+          toolName === TOOL_FLOWGUARD_ARCHITECTURE ||
+          toolName === TOOL_FLOWGUARD_REVIEW
+        ) {
           try {
-            const sessDir = ws.getSessionDir(sessionId);
-            if (sessDir) {
-              const state = await readState(sessDir);
-              if (state) {
-                const policy = state.policySnapshot?.reviewInvocationPolicy;
-                if (policy === 'host_task_required' || policy === 'host_task_preferred') {
-                  const eState = ws.getEnforcementState(sessionId);
-                  const evidence = buildHostTaskEvidence(
-                    eState,
-                    sessionId,
-                    state.reviewAssurance?.obligations ?? [],
-                    state.reviewAssurance?.invocations ?? [],
-                    now,
-                  );
-                  if (evidence) {
-                    await ws.updateReviewAssurance(sessDir, (s) => {
-                      return {
-                        ...s,
-                        reviewAssurance: appendInvocationEvidence(
-                          ensureReviewAssurance(s.reviewAssurance),
-                          evidence,
-                        ),
-                      };
-                    });
-                  } else if (policy === 'host_task_required') {
-                    hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
-                      reason:
-                        'flowguard-reviewer Task call did not produce bindable host-task evidence',
-                    });
+            trackFlowGuardEnforcement(
+              ws.getEnforcementState(sessionId),
+              toolName,
+              input,
+              output,
+              now,
+            );
+          } catch (err) {
+            logError('enforcement tracking failed', err);
+          }
+        } else if (toolName === 'task') {
+          try {
+            trackTaskEnforcement(ws.getEnforcementState(sessionId), input, output, now);
+          } catch (err) {
+            logError('enforcement tracking failed', err);
+          }
+
+          // Only create host-task evidence for flowguard-reviewer subagent calls.
+          const taskArgs = getToolArgs(input);
+          if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+            // Must run BEFORE the next FlowGuard tool's execute() so
+            // validateReviewFindings finds evidence.
+            try {
+              const sessDir = ws.getSessionDir(sessionId);
+              if (sessDir) {
+                const state = await readState(sessDir);
+                if (state) {
+                  const policy = state.policySnapshot?.reviewInvocationPolicy;
+                  if (policy === 'host_task_required' || policy === 'host_task_preferred') {
+                    const eState = ws.getEnforcementState(sessionId);
+                    const evidence = buildHostTaskEvidence(
+                      eState,
+                      sessionId,
+                      state.reviewAssurance?.obligations ?? [],
+                      state.reviewAssurance?.invocations ?? [],
+                      now,
+                    );
+                    if (evidence) {
+                      await ws.updateReviewAssurance(sessDir, (s) => {
+                        return {
+                          ...s,
+                          reviewAssurance: appendInvocationEvidence(
+                            ensureReviewAssurance(s.reviewAssurance),
+                            evidence,
+                          ),
+                        };
+                      });
+                    } else if (policy === 'host_task_required') {
+                      hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+                        reason:
+                          'flowguard-reviewer Task call did not produce bindable host-task evidence',
+                      });
+                    }
                   }
                 }
               }
+            } catch (err) {
+              logError('host task evidence creation failed', err);
+              hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+                reason: err instanceof Error ? err.message : String(err),
+              });
             }
-          } catch (err) {
-            logError('host task evidence creation failed', err);
-            hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
-              reason: err instanceof Error ? err.message : String(err),
-            });
           }
         }
-      }
 
-      await runOrchestrator(orchestratorDeps, {
-        toolName,
-        input,
-        output: hookOutput,
-        sessionId,
-        now,
+        await runOrchestrator(orchestratorDeps, {
+          toolName,
+          input,
+          output: hookOutput,
+          sessionId,
+          now,
+        });
+
+        if (!toolName.startsWith(FG_PREFIX)) return;
+
+        await ws.runSerializedForSession(sessionId, async () => {
+          const auditResult = await runAuditModule(auditDeps, toolName, input, output, sessionId);
+          if (auditResult?.block) {
+            hookOutput.output = strictBlockedOutput(auditResult.code!, {
+              reason: auditResult.reason ?? 'audit persistence failed',
+            });
+          }
+        });
       });
+    },
 
-      if (!toolName.startsWith(FG_PREFIX)) return;
+    event: async ({ event }) => {
+      return runWithAdapterLoggerAsync(adapterLog, async () => {
+        const eventDeps: EventHandlerDeps = {
+          log,
+          cleanupSession: (sessionId: string) => {
+            ws.invalidateChainState(sessionId);
+          },
+        };
+        await handleEvent(eventDeps, event);
+      });
+    },
 
-      await ws.runSerializedForSession(sessionId, async () => {
-        const auditResult = await runAuditModule(auditDeps, toolName, input, output, sessionId);
-        if (auditResult?.block) {
-          hookOutput.output = strictBlockedOutput(auditResult.code!, {
-            reason: auditResult.reason ?? 'audit persistence failed',
-          });
+    'experimental.session.compacting': async (input, output) => {
+      return runWithAdapterLoggerAsync(adapterLog, async () => {
+        const sessionId = input.sessionID ?? '';
+        if (!sessionId) return;
+
+        const compactionDeps: CompactionDeps = {
+          getSessionDir: ws.getSessionDir,
+          log,
+        };
+        const context = await buildCompactionContext(compactionDeps, sessionId);
+        if (context) {
+          output.context.push(context);
         }
       });
-    },
-
-    // ÔöÇÔöÇ Event Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-    event: async ({ event }) => {
-      const eventDeps: EventHandlerDeps = {
-        log,
-        cleanupSession: (sessionId: string) => {
-          ws.invalidateChainState(sessionId);
-        },
-      };
-      await handleEvent(eventDeps, event);
-    },
-
-    // ÔöÇÔöÇ Compaction Hook ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-    'experimental.session.compacting': async (input, output) => {
-      const sessionId = input.sessionID ?? '';
-      if (!sessionId) return;
-
-      const compactionDeps: CompactionDeps = {
-        getSessionDir: ws.getSessionDir,
-        log,
-      };
-      const context = await buildCompactionContext(compactionDeps, sessionId);
-      if (context) {
-        output.context.push(context);
-      }
     },
   };
 };

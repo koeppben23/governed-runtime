@@ -14,6 +14,8 @@ import { z } from 'zod';
 import type { JwksDocument, JwksKey, KeyAlgorithm, SigningKey } from './types.js';
 import { JwksDocumentSchema } from './types.js';
 import { IdpError } from './errors.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { redactIdentityExtra } from '../logging/redact.js';
 
 export interface ResolvedKey {
   key: crypto.KeyObject;
@@ -109,6 +111,14 @@ export class JwksFileKeyResolver implements KeyResolver {
       try {
         key = importJwksKeySync(keyDef);
       } catch (err) {
+        getAdapterLogger().error(
+          'identity',
+          'JWKS key import failed',
+          redactIdentityExtra({
+            kid: keyDef.kid,
+            error: (err as Error).message,
+          }),
+        );
         throw new IdpError(
           'IDP_JWKS_INVALID',
           `JWKS key '${keyDef.kid}' cannot be imported: ${(err as Error).message}`,
@@ -129,6 +139,14 @@ export class JwksFileKeyResolver implements KeyResolver {
     try {
       raw = await fs.readFile(jwksPath, 'utf-8');
     } catch (err) {
+      getAdapterLogger().error(
+        'identity',
+        'JWKS file read failed',
+        redactIdentityExtra({
+          jwksPath,
+          error: (err as Error).message,
+        }),
+      );
       throw new IdpError(
         'IDP_JWKS_READ_FAILED',
         `Cannot read JWKS file: ${(err as Error).message}`,
@@ -146,11 +164,20 @@ export class JwksFileKeyResolver implements KeyResolver {
   resolveKey(kid: string, tokenAlgorithm?: string): ResolvedKey {
     const resolved = this.keyMap.get(kid);
     if (!resolved) {
+      getAdapterLogger().warn('identity', 'JWKS key not found', {
+        kid,
+        available: this.getKeyIds(),
+      });
       throw new IdpError('IDP_JWKS_KEY_NOT_FOUND', `No JWKS key found for kid '${kid}'`);
     }
 
     const raw = this.rawKeyMap.get(kid);
     if (raw?.alg && tokenAlgorithm && raw.alg !== tokenAlgorithm) {
+      getAdapterLogger().warn('identity', 'JWKS algorithm mismatch', {
+        kid,
+        tokenAlgorithm,
+        jwksAlgorithm: raw.alg,
+      });
       throw new IdpError(
         'IDP_JWKS_ALGORITHM_MISMATCH',
         `Token algorithm '${tokenAlgorithm}' does not match JWKS key algorithm '${raw.alg}'`,
@@ -243,6 +270,14 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
       signal: AbortSignal.timeout(5000),
     });
   } catch (err) {
+    getAdapterLogger().error(
+      'identity',
+      'JWKS remote fetch failed',
+      redactIdentityExtra({
+        jwksUri,
+        error: (err as Error).message,
+      }),
+    );
     throw new IdpError(
       'IDP_JWKS_FETCH_FAILED',
       `JWKS fetch failed for '${jwksUri}': ${(err as Error).message}`,

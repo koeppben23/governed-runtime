@@ -15,6 +15,7 @@ import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   COMMANDS,
   REVIEWER_AGENT_FILENAME,
@@ -44,6 +45,7 @@ export interface CliArgs {
   policyMode: PolicyMode;
   force: boolean;
   coreTarball?: string;
+  logMode?: 'file' | 'console' | 'file+console';
 }
 
 /** Result of a single file operation. */
@@ -92,6 +94,7 @@ function getPackageVersion(): string {
   try {
     return readFileSync(versionFile, 'utf-8').trim();
   } catch {
+    getAdapterLogger().error('cli', 'VERSION file not found', { versionFile });
     throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
   }
 }
@@ -388,6 +391,9 @@ export async function mergePackageJson(filePath: string, version: string): Promi
     return { path: filePath, action: 'merged' };
   } catch {
     // Malformed JSON — overwrite with template
+    getAdapterLogger().warn('cli', 'Package.json malformed, overwriting with template', {
+      filePath,
+    });
     await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
     return { path: filePath, action: 'written', reason: 'existing file was malformed JSON' };
   }
@@ -526,6 +532,10 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   } catch {
     // Backup before destructive overwrite — preserves user data for recovery
     const backupPath = `${filePath}.flowguard-backup`;
+    getAdapterLogger().warn('cli', 'Opencode.json malformed, creating backup and overwriting', {
+      filePath,
+      backupPath,
+    });
     await writeFile(backupPath, existing, 'utf-8');
     await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
     return {
@@ -627,6 +637,9 @@ export async function removeFromOpencodeJson(
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
     return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
   } catch {
+    getAdapterLogger().warn('cli', 'Opencode.json malformed during uninstall, skipping removal', {
+      filePath,
+    });
     return { path: filePath, action: 'skipped', reason: 'malformed JSON' };
   }
 }

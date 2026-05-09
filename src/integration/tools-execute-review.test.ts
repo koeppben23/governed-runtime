@@ -1542,7 +1542,8 @@ describe('review (standalone flow)', () => {
         const state = await readState(sessDir);
 
         // Simulate legacy snapshot: remove reviewInvocationPolicy from snapshot.
-        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } = state.policySnapshot ?? {};
+        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } =
+          state.policySnapshot ?? {};
         await writeState(sessDir, {
           ...state,
           policySnapshot: snapshotWithoutPolicy,

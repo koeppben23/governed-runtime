@@ -27,6 +27,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
+import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type { ReviewFindings, ReviewObligationType } from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -154,6 +155,8 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
   return {
     tmpDir,
     cleanup: async () => {
+      // Restore adapter logger to prevent cross-test leaks
+      resetAdapterLogger();
       // Restore env
       if (originalEnv !== undefined) {
         process.env.OPENCODE_CONFIG_DIR = originalEnv;

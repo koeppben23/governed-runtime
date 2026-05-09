@@ -7,6 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 /**
  * Check if `gh` CLI is available and authenticated.

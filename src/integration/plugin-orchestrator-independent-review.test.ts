@@ -372,7 +372,8 @@ describe('runReviewOrchestration strict independent review with footer output', 
 
   it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
     const stateRef = { current: buildState('PLAN', 'plan') };
-    const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } = stateRef.current.policySnapshot!;
+    const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } =
+      stateRef.current.policySnapshot!;
     stateRef.current = {
       ...stateRef.current,
       policySnapshot: snapshotWithoutPolicy,

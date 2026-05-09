@@ -79,8 +79,16 @@ async function doInitialize(): Promise<void> {
     sdk.start();
     sdkInitialized = true;
     tracer = trace.getTracer(serviceName, '1.0.0');
-  } catch {
+  } catch (err) {
     sdkInitialized = true;
+    const { getAdapterLogger } = await import('../logging/adapter-logger.js');
+    getAdapterLogger().warn(
+      'telemetry',
+      'OpenTelemetry SDK initialization failed, telemetry disabled',
+      {
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
   }
 }
 

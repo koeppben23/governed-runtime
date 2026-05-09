@@ -34,6 +34,7 @@ import type {
 } from './policy.js';
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 /**
  * Normalize a legacy or weakened selfReview config to the mandatory strict default.
@@ -44,9 +45,9 @@ import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
  */
 function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
   if (value === null || typeof value !== 'object') {
-    console.warn(
-      '[FlowGuard] Legacy selfReview config (null/undefined) normalized to mandatory strict. ' +
-        'Ensure flowguard-reviewer plugin is active.',
+    getAdapterLogger().warn(
+      'policy',
+      'Legacy selfReview config (null/undefined) normalized to mandatory strict',
     );
     return DEFAULT_SELF_REVIEW_CONFIG;
   }
@@ -60,12 +61,14 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
     return DEFAULT_SELF_REVIEW_CONFIG;
   }
 
-  console.warn(
-    '[FlowGuard] Legacy/weakened selfReview config normalized to mandatory strict. ' +
-      `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
-      `fallbackToSelf=${candidate.fallbackToSelf}, ` +
-      `strictEnforcement=${candidate.strictEnforcement}. ` +
-      'Ensure flowguard-reviewer plugin is active.',
+  getAdapterLogger().warn(
+    'policy',
+    'Legacy/weakened selfReview config normalized to mandatory strict',
+    {
+      originalSubagentEnabled: candidate.subagentEnabled,
+      originalFallbackToSelf: candidate.fallbackToSelf,
+      originalStrictEnforcement: candidate.strictEnforcement,
+    },
   );
   return DEFAULT_SELF_REVIEW_CONFIG;
 }

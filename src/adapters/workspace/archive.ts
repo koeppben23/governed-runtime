@@ -20,6 +20,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { atomicWrite } from '../persistence.js';
 import { readAuditTrail, readConfig, readState } from '../persistence.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain } from '../../audit/integrity.js';
 import {
   ArchiveManifestSchema,
@@ -107,7 +108,10 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       await fs.access(snapshotPath);
     } catch {
       // Soft warning — log but don't fail. The archive will just lack the snapshot.
-      // In a real system this would go to a logger; here we proceed gracefully.
+      getAdapterLogger().warn('archive', 'Discovery snapshot missing during archive creation', {
+        sessionId: validSessionId,
+        fingerprint,
+      });
     }
   }
 
@@ -186,6 +190,11 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   try {
     await fs.mkdir(archiveDir, { recursive: true });
   } catch (err) {
+    getAdapterLogger().error('archive', 'Failed to create archive directory', {
+      archiveDir,
+      sessionId: validSessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       `Failed to create archive directory: ${err instanceof Error ? err.message : String(err)}`,
@@ -213,6 +222,11 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       windowsHide: true,
     });
   } catch (err) {
+    getAdapterLogger().error('archive', 'tar command failed', {
+      archivePath,
+      sessionId: validSessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       `tar command failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -225,6 +239,12 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
     await atomicWrite(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`);
   } catch (err) {
+    getAdapterLogger().error('archive', 'Checksum sidecar write failed', {
+      checksumPath,
+      sessionId: validSessionId,
+      policyMode: state?.policySnapshot?.mode,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Regulated: sidecar failure is fatal — archive is not externally verifiable.
     // Policy derived from state already in scope (line 89), not a call parameter.
     if (state?.policySnapshot?.mode === 'regulated') {

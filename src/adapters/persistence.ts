@@ -47,6 +47,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
 import { AuditEvent, ReviewReport } from '../state/evidence.js';
 import {
@@ -173,6 +174,10 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
     } catch {
       /* ignore -- temp file may not have been created */
     }
+    getAdapterLogger().error('persistence', 'Atomic write failed', {
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new PersistenceError(
       'WRITE_FAILED',
       `Atomic write failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
@@ -200,6 +205,10 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     raw = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
+    getAdapterLogger().error('persistence', 'Failed to read state file', {
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new PersistenceError(
       'READ_FAILED',
       `Failed to read state file: ${err instanceof Error ? err.message : String(err)}`,
@@ -443,6 +452,9 @@ export async function readConfig(worktree?: string): Promise<FlowGuardConfig> {
       if (err instanceof PersistenceError) throw err;
       if (isEnoent(err)) {
         // Repo config not found — fall through to global
+        getAdapterLogger().warn('persistence', 'Repo config not found, falling through to global', {
+          repoPath,
+        });
       } else {
         throw new PersistenceError(
           'READ_FAILED',
@@ -475,7 +487,12 @@ export async function readConfig(worktree?: string): Promise<FlowGuardConfig> {
     return result.data;
   } catch (err: unknown) {
     if (err instanceof PersistenceError) throw err;
-    if (isEnoent(err)) return structuredClone(DEFAULT_CONFIG);
+    if (isEnoent(err)) {
+      getAdapterLogger().warn('persistence', 'Global config not found, using defaults', {
+        globalConfigPath: globalPath,
+      });
+      return structuredClone(DEFAULT_CONFIG);
+    }
     throw new PersistenceError(
       'READ_FAILED',
       `Failed to read global config: ${err instanceof Error ? err.message : String(err)}`,

@@ -14,3 +14,13 @@ export {
 } from './logger.js';
 
 export { createFileSink, getLogDir } from './file-sink.js';
+export { createConsoleSink } from './console-sink.js';
+export {
+  setAdapterLogger,
+  getAdapterLogger,
+  resetAdapterLogger,
+  runWithAdapterLogger,
+  runWithAdapterLoggerAsync,
+  toAdapterLogger,
+  type AdapterLogger,
+} from './adapter-logger.js';

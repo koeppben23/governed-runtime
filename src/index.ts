@@ -150,7 +150,7 @@ export {
   type LogSink,
   createLogger,
   createNoopLogger,
-} from './logging/logger.js';
+} from './logging/index.js';
 
 // ─── Audit ───────────────────────────────────────────────────────────────────
 

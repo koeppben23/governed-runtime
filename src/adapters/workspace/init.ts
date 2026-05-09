@@ -15,6 +15,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { isEnoent } from '../persistence.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 import {
   WORKSPACE_FILE,
@@ -140,6 +141,10 @@ export async function ensureWorkspace(
     await fs.mkdir(path.join(wsDir, 'sessions'), { recursive: true });
     await fs.mkdir(path.join(wsDir, 'discovery'), { recursive: true });
   } catch (err) {
+    getAdapterLogger().error('workspace', 'Failed to create workspace directories', {
+      wsDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new WorkspaceError(
       'INIT_FAILED',
       `Failed to create workspace directories: ${err instanceof Error ? err.message : String(err)}`,
@@ -166,6 +171,10 @@ export async function ensureWorkspace(
   try {
     await fs.writeFile(wsFilePath, JSON.stringify(info, null, 2), 'utf-8');
   } catch (err) {
+    getAdapterLogger().error('workspace', 'Failed to write workspace.json', {
+      wsFilePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new WorkspaceError(
       'WRITE_FAILED',
       `Failed to write workspace.json: ${err instanceof Error ? err.message : String(err)}`,
@@ -211,6 +220,11 @@ export async function initWorkspace(
   try {
     await fs.mkdir(sessDir, { recursive: true });
   } catch (err) {
+    getAdapterLogger().error('workspace', 'Failed to create session directory', {
+      sessDir,
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new WorkspaceError(
       'INIT_FAILED',
       `Failed to create session directory: ${err instanceof Error ? err.message : String(err)}`,
@@ -286,6 +300,11 @@ function assertMetadataConsistency(existing: WorkspaceInfo, current: Fingerprint
     current.canonicalRemote !== null &&
     existing.canonicalRemote !== current.canonicalRemote
   ) {
+    getAdapterLogger().error('workspace', 'Workspace fingerprint collision detected', {
+      existingCanonicalRemote: existing.canonicalRemote,
+      currentCanonicalRemote: current.canonicalRemote,
+      fingerprint: current.fingerprint,
+    });
     throw new WorkspaceError(
       'WORKSPACE_MISMATCH',
       `Workspace fingerprint collision: existing canonicalRemote "${existing.canonicalRemote}" ` +
@@ -323,8 +342,12 @@ export async function writeSessionPointer(
     const pointerPath = path.join(configRoot(), POINTER_FILE);
     await fs.mkdir(path.dirname(pointerPath), { recursive: true });
     await fs.writeFile(pointerPath, JSON.stringify(pointer, null, 2), 'utf-8');
-  } catch {
-    // Swallow — pointer is non-authoritative convenience
+  } catch (err) {
+    // Swallow — pointer is non-authoritative convenience, but log for diagnostics
+    getAdapterLogger().warn('workspace', 'Failed to write session pointer (non-authoritative)', {
+      pointerPath: path.join(configRoot(), POINTER_FILE),
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
