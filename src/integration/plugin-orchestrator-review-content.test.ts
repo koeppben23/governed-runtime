@@ -120,6 +120,7 @@ function buildTextCompatClient(findings: Record<string, unknown>) {
 function buildSessionState(
   strictEnforcement = true,
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
 ) {
   return makeState('REVIEW', {
     ticket: {
@@ -136,6 +137,7 @@ function buildSessionState(
         strictEnforcement,
       },
       reviewOutputPolicy,
+      ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
       obligations: [
@@ -208,11 +210,14 @@ async function runReviewContent(
   strictEnforcement = true,
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
   clientOverride?: unknown,
+  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
 ) {
   const client = (clientOverride ?? buildClient(findings)) as
     | ReturnType<typeof buildClient>
     | ReturnType<typeof buildTextCompatClient>;
-  const stateRef = { current: buildSessionState(strictEnforcement, reviewOutputPolicy) };
+  const stateRef = {
+    current: buildSessionState(strictEnforcement, reviewOutputPolicy, reviewInvocationPolicy),
+  };
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
   const output = { output: contentAnalysisRequiredOutput() };
@@ -234,6 +239,28 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     vi.mocked(readState).mockReset();
     vi.mocked(loadExternalContent).mockReset();
     vi.mocked(loadExternalContent).mockResolvedValue({ content: 'diff content' } as never);
+  });
+
+  it('host_task_required does not call SDK for standalone /review', async () => {
+    const { output, client } = await runReviewContent(
+      buildFindings(),
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      true,
+      'structured_required',
+      undefined,
+      'host_task_required',
+    );
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.reviewInvocation).toMatchObject({
+      policy: 'host_task_required',
+      status: 'blocked_until_host_task',
+      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+    });
   });
 
   it('blocks with SUBAGENT_MANDATE_MISMATCH when strict /review attestation obligation mismatches', async () => {

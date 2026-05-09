@@ -62,6 +62,7 @@ export type {
   HydratePolicyResolution,
   PolicyResolutionReason,
   ReviewOutputPolicy,
+  ReviewInvocationPolicy,
 } from './policy-types.js';
 export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
@@ -137,6 +138,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'text_compat_allowed',
+  reviewInvocationPolicy: 'host_task_preferred',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -167,6 +169,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'text_compat_allowed',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -197,6 +200,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -236,6 +240,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   allowSelfApproval: false,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

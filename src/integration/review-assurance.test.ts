@@ -22,6 +22,7 @@ import {
   hashFindings,
   buildInvocationEvidence,
   hasEvidenceReuse,
+  findAcceptedInvocationForFindings,
   validateStrictAttestation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -265,6 +266,81 @@ describe('integration/review-assurance', () => {
     it('returns the same assurance when obligation is null', () => {
       const assurance = { obligations: [makeObligation()], invocations: [] };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
+    });
+
+    it('consumes only the accepted invocation when multiple invocations target the same obligation', () => {
+      const findings = makeFindings();
+      const obligation = makeObligation({
+        obligationId: findings.attestation!.toolObligationId,
+      });
+      const rejectedInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000010',
+        obligationId: obligation.obligationId,
+        childSessionId: 'child-session-rejected',
+        findingsHash: hashText('different findings'),
+      });
+      const acceptedInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000011',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+      });
+      const assurance = {
+        obligations: [obligation],
+        invocations: [rejectedInvocation, acceptedInvocation],
+      };
+
+      const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
+      const consumed = consumeReviewObligation(assurance, obligation, NOW, accepted?.invocationId);
+
+      expect(accepted?.invocationId).toBe(acceptedInvocation.invocationId);
+      expect(consumed.invocations[0]?.consumedByObligationId).toBeNull();
+      expect(consumed.invocations[1]?.consumedByObligationId).toBe(obligation.obligationId);
+    });
+
+    it('fulfilled obligation consumes its bound invocationId even when another invocation has the same child and hash', () => {
+      const findings = makeFindings();
+      const obligation = makeObligation({
+        obligationId: findings.attestation!.toolObligationId,
+      });
+      const boundInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000021',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+      });
+      const duplicateInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000022',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+      });
+      const fulfilledObligation = {
+        ...obligation,
+        status: 'fulfilled' as const,
+        invocationId: boundInvocation.invocationId,
+        fulfilledAt: NOW,
+      };
+      const assurance = {
+        obligations: [fulfilledObligation],
+        invocations: [duplicateInvocation, boundInvocation],
+      };
+
+      const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);
+      const consumed = consumeReviewObligation(
+        assurance,
+        fulfilledObligation,
+        NOW,
+        accepted?.invocationId,
+      );
+
+      expect(accepted?.invocationId).toBe(boundInvocation.invocationId);
+      expect(consumed.invocations[0]?.consumedByObligationId).toBeNull();
+      expect(consumed.invocations[1]?.consumedByObligationId).toBe(
+        fulfilledObligation.obligationId,
+      );
     });
   });
 

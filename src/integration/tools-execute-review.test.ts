@@ -678,7 +678,7 @@ describe('review (standalone flow)', () => {
 
   // Helper: Create a fresh session in READY phase
   async function hydrateAndGetReady(): Promise<void> {
-    const raw = await hydrate.execute({ policyMode: 'team' }, ctx);
+    const raw = await hydrate.execute({ policyMode: 'solo' }, ctx);
     const result = parseToolResult(raw);
     if (result.error) {
       throw new Error(`Failed to hydrate: ${result.message}`);
@@ -1499,6 +1499,8 @@ describe('review (standalone flow)', () => {
           obligationType: 'review',
           parentSessionId: 'parent-session',
           childSessionId: 'child-session',
+          invocationMode: 'sdk_session_prompt',
+          hostVisible: false,
           promptHash: 'a'.repeat(64),
           findingsHash: 'b'.repeat(64),
           invokedAt: new Date().toISOString(),

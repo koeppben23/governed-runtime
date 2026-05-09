@@ -31,10 +31,11 @@ import {
   type OrchestratorClient,
   type PlanReviewPromptOpts,
   type ImplReviewPromptOpts,
-  type ReviewerResult,
+  type ReviewerSuccessResult,
   _resetAgentResolutionCache,
 } from './review-orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { parseToolResult } from './plugin-helpers.js';
 
@@ -618,6 +619,26 @@ describe('invokeReviewer', () => {
     });
   });
 
+  it('returns typed HOST_SUBAGENT_TASK_REQUIRED result without SDK calls when host task is required', async () => {
+    const client = mockClient();
+    const result = await invokeReviewer(client, PROMPT, 'parent-session-1', {
+      reviewInvocationPolicy: 'host_task_required',
+    });
+
+    expect(result).toMatchObject({
+      blocked: true,
+      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      reviewInvocation: {
+        policy: 'host_task_required',
+        status: 'blocked_until_host_task',
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+      },
+    });
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+  });
+
   // BAD: session creation fails
   it('returns null when session creation fails', async () => {
     const client = mockClient({
@@ -767,10 +788,13 @@ describe('invokeReviewer', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('buildMutatedOutput', () => {
-  const reviewerResult: ReviewerResult = {
+  const reviewerResult: ReviewerSuccessResult = {
     sessionId: 'child-session-1',
     rawResponse: validFindings(),
     findings: JSON.parse(validFindings()) as Record<string, unknown>,
+    reviewOutputMode: 'structured_output',
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
   };
 
   // HAPPY: successful mutation
@@ -801,7 +825,7 @@ describe('buildMutatedOutput', () => {
 
   // HAPPY: mutation with changes_requested findings
   it('injects changes_requested findings correctly', () => {
-    const changesFindings: ReviewerResult = {
+    const changesFindings: ReviewerSuccessResult = {
       sessionId: 'child-session-2',
       rawResponse: validFindings({
         overallVerdict: 'changes_requested',
@@ -813,6 +837,9 @@ describe('buildMutatedOutput', () => {
           blockingIssues: [{ severity: 'critical', message: 'Bug' }],
         }),
       ) as Record<string, unknown>,
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     };
 
     const mutated = buildMutatedOutput(modeAOutput(), changesFindings);
@@ -825,10 +852,13 @@ describe('buildMutatedOutput', () => {
 
   // EDGE: findings is null (parsing failed) — fail-closed: returns null
   it('returns null when findings is null (fail-closed)', () => {
-    const nullFindingsResult: ReviewerResult = {
+    const nullFindingsResult: ReviewerSuccessResult = {
       sessionId: 'child-session-3',
       rawResponse: 'Unparseable response text',
       findings: null,
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     };
     const mutated = buildMutatedOutput(modeAOutput(), nullFindingsResult);
     expect(mutated).toBeNull();

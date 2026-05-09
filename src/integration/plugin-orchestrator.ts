@@ -23,6 +23,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
   ensureReviewAssurance,
+  findReviewObligationById,
   hasEvidenceReuse,
   hashFindings,
   hashText,
@@ -37,8 +38,9 @@ import {
   invokeReviewer,
   buildMutatedOutput,
   buildReviewContentPrompt,
-  selectReviewerProfileRules,
   buildReviewContentMutatedOutput,
+  REVIEW_COMPLETED_PREFIX,
+  selectReviewerProfileRules,
   type OrchestratorClient,
 } from './review-orchestrator.js';
 import {
@@ -58,8 +60,13 @@ import {
 } from './tool-names.js';
 import { obligationTypeForTool } from './review-obligation-tools.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
-import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewSessionContext } from './plugin-workspace.js';
+import type { ReviewInvocationPolicy } from '../config/policy-types.js';
+import {
+  REASON_HOST_SUBAGENT_TASK_REQUIRED,
+  RECOVERY_HOST_SUBAGENT_TASK,
+} from '../shared/flowguard-identifiers.js';
 
 /**
  * Dependency interface for closure-captured values in plugin.ts.
@@ -98,6 +105,45 @@ export interface ToolCallEvent {
   readonly output: { output: string };
   readonly sessionId: string;
   readonly now: string;
+}
+
+function buildHostTaskPolicyOutput(
+  originalOutput: string,
+  policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
+  childSessionId: string | null,
+): string | null {
+  const result = parseToolResult(originalOutput);
+  if (!result || Array.isArray(result)) return null;
+  if (childSessionId) {
+    result.next =
+      `${REVIEW_COMPLETED_PREFIX}: Host evidence verified via Task tool subagent call ` +
+      `(session ${childSessionId}). Submit the verdict with the exact ReviewFindings from ` +
+      `the subagent response.`;
+    result.reviewInvocation = {
+      policy,
+      status: 'host_task_evidence_verified',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      childSessionId,
+    };
+    return JSON.stringify(result);
+  }
+
+  result.next =
+    `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
+    `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
+    `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}" and submit the exact ` +
+    `ReviewFindings returned by that subagent.`;
+  result.reviewInvocation = {
+    policy,
+    status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',
+    code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+    reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+    invocationMode: 'host_subagent_task',
+    hostVisible: true,
+    recovery: [RECOVERY_HOST_SUBAGENT_TASK],
+  };
+  return JSON.stringify(result);
 }
 
 /**
@@ -148,6 +194,64 @@ export async function runReviewOrchestration(
         });
       }
       return;
+    }
+
+    // P35 host_task_required / host_task_preferred: policy-gated invocation.
+    // For host_task_required: always emit host-visible Task requirement; SDK
+    // path is never entered (blocked in invokeReviewer).
+    // For host_task_preferred: first call requests host Task; on retry
+    // (obligation already handshook) without host evidence, fall through to
+    // SDK invocation.
+    const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
+    if (invocationPolicy === 'host_task_required' || invocationPolicy === 'host_task_preferred') {
+      const obligationId = reviewCtx.obligationId;
+      const preUpdateObligation = findReviewObligationById(
+        ensureReviewAssurance(sessionState.reviewAssurance),
+        obligationId,
+      );
+      const isRetry = preUpdateObligation?.pluginHandshakeAt !== null;
+
+      await deps.updateReviewAssurance(sessDir, (s, now2) =>
+        updateObligation(s, obligationId, (item) => ({
+          ...item,
+          pluginHandshakeAt: now2,
+        })),
+      );
+      const invocations = sessionState.reviewAssurance?.invocations ?? [];
+      const hostEvidence = invocations.find(
+        (inv) =>
+          inv.obligationId === obligationId &&
+          inv.invocationMode === 'host_subagent_task' &&
+          inv.hostVisible === true,
+      );
+
+      if (hostEvidence) {
+        // Host evidence exists → emit INDEPENDENT_REVIEW_COMPLETED.
+        const mutated = buildHostTaskPolicyOutput(
+          rawOutput,
+          invocationPolicy,
+          hostEvidence.childSessionId,
+        );
+        if (mutated) output.output = mutated;
+        return;
+      }
+
+      // No host evidence.
+      if (invocationPolicy === 'host_task_required') {
+        // Required: always block until host Task is performed.
+        const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
+        if (mutated) output.output = mutated;
+        return;
+      }
+
+      // host_task_preferred without evidence:
+      // First call → request host Task; retry → fall through to SDK.
+      if (!isRetry) {
+        const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
+        if (mutated) output.output = mutated;
+        return;
+      }
+      // Fall through to SDK invocation path below.
     }
 
     // Host-orchestrated /review content analysis.
@@ -212,6 +316,8 @@ export async function runReviewOrchestration(
         {
           reviewOutputPolicy:
             sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+          reviewInvocationPolicy:
+            sessionState.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed',
           _onAttemptFailed: (info) => {
             deps.log.warn(
               'orchestrator',
@@ -228,6 +334,16 @@ export async function runReviewOrchestration(
           },
         },
       );
+      if (reviewerResult?.blocked) {
+        output.output = strictBlockedOutput(
+          reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
+          {
+            reason: reviewerResult.reason ?? 'review invocation blocked by policy',
+            reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation),
+          },
+        );
+        return;
+      }
       if (!reviewerResult?.findings) {
         if (strictEnforcement) {
           await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
@@ -301,6 +417,8 @@ export async function runReviewOrchestration(
           obligationType: 'review',
           parentSessionId: sessionId,
           childSessionId: reviewerResult.sessionId,
+          invocationMode: 'sdk_session_prompt',
+          hostVisible: false,
           promptHash,
           findingsHash,
           invokedAt: now,
@@ -451,6 +569,8 @@ export async function runReviewOrchestration(
       sessionId,
       {
         reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+        reviewInvocationPolicy:
+          sessionState.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed',
         _onAttemptFailed: (info) => {
           deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
             tool: toolName,
@@ -463,6 +583,17 @@ export async function runReviewOrchestration(
         },
       },
     );
+
+    if (reviewerResult?.blocked) {
+      output.output = strictBlockedOutput(
+        reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
+        {
+          reason: reviewerResult.reason ?? 'review invocation blocked by policy',
+          reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation),
+        },
+      );
+      return;
+    }
 
     if (reviewerResult) {
       if (!reviewerResult.findings) {
@@ -570,6 +701,8 @@ export async function runReviewOrchestration(
                 obligationType,
                 parentSessionId: sessionId,
                 childSessionId: reviewerResult.sessionId,
+                invocationMode: 'sdk_session_prompt',
+                hostVisible: false,
                 promptHash,
                 findingsHash,
                 invokedAt: now2,
@@ -660,6 +793,7 @@ export async function runReviewOrchestration(
               ? reviewerResult.findings.blockingIssues.length
               : 0,
             sessionId: reviewerResult.sessionId,
+            rawFindings: reviewerResult.findings,
           };
 
           recordPluginReview(eState, toolName, reviewerResult.sessionId, captured, now);

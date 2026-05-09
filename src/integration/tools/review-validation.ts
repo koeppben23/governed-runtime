@@ -21,6 +21,7 @@ import {
   validateStrictAttestation,
 } from '../review-assurance.js';
 import type { ReviewAssuranceState, ReviewObligationType } from '../../state/evidence.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -40,6 +41,10 @@ export interface ReviewFindingsValidationContext {
   readonly assurance?: ReviewAssuranceState;
   /** Obligation type for strict checks. */
   readonly obligationType?: ReviewObligationType;
+  /** When set, enforce that invocation evidence matches the required policy. */
+  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
+  /** Parent OpenCode session expected in invocation evidence. */
+  readonly reviewParentSessionId?: string;
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -127,7 +132,30 @@ export function validateReviewFindings(
       });
     }
 
-    if (obligation.status !== 'fulfilled' || !obligation.invocationId) {
+    const submittedFindingsHash = hashFindings(findings);
+    const invocation = ctx.assurance.invocations.find((item) =>
+      obligation.invocationId
+        ? item.invocationId === obligation.invocationId
+        : item.obligationId === obligation.obligationId &&
+          item.childSessionId === findings.reviewedBy.sessionId &&
+          item.findingsHash === submittedFindingsHash,
+    );
+    if (!invocation) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        obligationId: obligation.obligationId,
+      });
+    }
+
+    if (
+      obligation.status !== 'fulfilled' &&
+      !(
+        ctx.reviewInvocationPolicy === 'host_task_required' &&
+        obligation.status === 'pending' &&
+        invocation.obligationId === obligation.obligationId &&
+        invocation.invocationMode === 'host_subagent_task' &&
+        invocation.hostVisible === true
+      )
+    ) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
       });
@@ -144,15 +172,6 @@ export function validateReviewFindings(
       });
     }
 
-    const invocation = ctx.assurance.invocations.find(
-      (item) => item.invocationId === obligation.invocationId,
-    );
-    if (!invocation) {
-      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        invocationId: obligation.invocationId,
-      });
-    }
-
     if (invocation.obligationId !== obligation.obligationId) {
       return formatBlocked('SUBAGENT_MANDATE_MISMATCH', {
         obligationId: obligation.obligationId,
@@ -166,7 +185,6 @@ export function validateReviewFindings(
       });
     }
 
-    const submittedFindingsHash = hashFindings(findings);
     if (submittedFindingsHash !== invocation.findingsHash) {
       return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
         obligationId: obligation.obligationId,
@@ -180,6 +198,22 @@ export function validateReviewFindings(
       return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
         invocationId: invocation.invocationId,
         consumedBy: invocation.consumedByObligationId,
+      });
+    }
+
+    if (
+      ctx.reviewInvocationPolicy === 'host_task_required' &&
+      (invocation.invocationMode !== 'host_subagent_task' ||
+        invocation.hostVisible !== true ||
+        invocation.agentType !== REVIEWER_SUBAGENT_TYPE ||
+        invocation.parentSessionId !== ctx.reviewParentSessionId ||
+        invocation.criteriaVersion !== obligation.criteriaVersion ||
+        invocation.mandateDigest !== obligation.mandateDigest)
+    ) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        obligationId: obligation.obligationId,
+        reason:
+          'expected host-visible flowguard-reviewer Task evidence bound to the active session, mandate, criteria, child session, and findings hash',
       });
     }
   }

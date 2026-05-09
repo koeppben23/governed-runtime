@@ -16,14 +16,17 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { invokeReviewer, type OrchestratorClient } from './review-orchestrator.js';
+import {
+  invokeReviewer,
+  type OrchestratorClient,
+} from './review-orchestrator.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Mock sleep function injected via options._sleepFn */
 const mockSleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
 
-/** Default test options that inject the mock sleep */
+/** Default test options: SDK allowed for deterministic tests + mock sleep */
 const TEST_OPTS = { _sleepFn: mockSleep } as const;
 
 function validFindings(): Record<string, unknown> {

@@ -48,14 +48,17 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewInvocationEvidence, ReviewObligation } from '../state/evidence.js';
+import { buildInvocationEvidence, hashFindings, hashText } from './review-assurance.js';
 import {
   isReviewableTool,
   obligationTypeForTool,
   type ReviewableTool,
 } from './review-obligation-tools.js';
 export type { ReviewableTool } from './review-obligation-tools.js';
+type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
@@ -87,12 +90,14 @@ export interface CapturedFindings {
   readonly blockingIssuesCount: number;
   /** The sessionId from reviewedBy, if present. */
   readonly sessionId: string | null;
+  /** Complete parsed ReviewFindings object, when extraction succeeds. */
+  readonly rawFindings?: Record<string, unknown> | null;
 }
 
 /** Per-tool pending review state. */
 export interface PendingReview {
   /** Which tool signaled the review requirement. */
-  readonly tool: ReviewableTool;
+  readonly tool: PendingReviewTool;
   /** ISO 8601 timestamp when the requirement was signaled. */
   readonly requestedAt: string;
   /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
@@ -108,7 +113,7 @@ export interface PendingReview {
 /** Session-level enforcement state. */
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
-  readonly pendingReviews: Map<ReviewableTool, PendingReview>;
+  readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
 }
 
 /** Result of an enforcement check. */
@@ -163,9 +168,10 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (!isReviewableTool(toolName)) return;
+  const isStandaloneReviewTool = toolName === TOOL_FLOWGUARD_REVIEW;
+  if (!isReviewableTool(toolName) && !isStandaloneReviewTool) return;
 
-  const reviewTool: ReviewableTool = toolName;
+  const reviewTool: PendingReviewTool = toolName;
   const parsed = safeParse(output);
   if (!parsed) return;
 
@@ -186,6 +192,25 @@ export function onFlowGuardToolAfter(
       subagentCalled: false,
       subagentRecord: null,
       contentMeta: extractContentMeta(next),
+      capturedFindings: null,
+    });
+  }
+
+  const requiredReviewAttestation = parsed.requiredReviewAttestation as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    parsed.error === true &&
+    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+    requiredReviewAttestation &&
+    isStandaloneReviewTool
+  ) {
+    state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
+      tool: TOOL_FLOWGUARD_REVIEW,
+      requestedAt: now,
+      subagentCalled: false,
+      subagentRecord: null,
+      contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
       capturedFindings: null,
     });
   }
@@ -561,6 +586,96 @@ export function recordPluginReview(
   return true;
 }
 
+/**
+ * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
+ *
+ * Called after `onTaskToolAfter` records a Task tool call to flowguard-reviewer.
+ * Creates persistent ReviewInvocationEvidence with invocationMode='host_subagent_task'
+ * and hostVisible=true, so that validateReviewFindings can find it during tool.execute.
+ *
+ * @param state - Session enforcement state (after onTaskToolAfter update)
+ * @param sessionId - Current session ID (parent session)
+ * @param obligations - Persisted review obligations from session state
+ * @param invocations - Persisted invocation evidence from session state
+ * @param now - ISO 8601 timestamp
+ * @returns ReviewInvocationEvidence or null if no matched pending review
+ */
+export function buildHostTaskEvidence(
+  state: SessionEnforcementState,
+  sessionId: string,
+  obligations: ReviewObligation[],
+  invocations: ReviewInvocationEvidence[],
+  now: string,
+): ReviewInvocationEvidence | null {
+  const matched = [...state.pendingReviews.values()].filter(
+    (p) => p.subagentCalled && p.subagentRecord !== null && p.capturedFindings?.rawFindings,
+  );
+  if (matched.length === 0) return null;
+
+  const latest = matched.sort((a, b) =>
+    (b.subagentRecord?.completedAt ?? '').localeCompare(a.subagentRecord?.completedAt ?? ''),
+  )[0]!;
+
+  const childSessionId = latest.subagentRecord!.sessionId;
+  if (!childSessionId) return null;
+
+  const oType =
+    latest.tool === TOOL_FLOWGUARD_REVIEW ? 'review' : obligationTypeForTool(latest.tool);
+  if (!oType) return null;
+
+  const rawFindings = latest.capturedFindings?.rawFindings;
+  if (!rawFindings) return null;
+  const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
+  const attestedObligationId =
+    typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
+  if (!attestedObligationId) return null;
+
+  const matchedObligation = obligations.find(
+    (o) =>
+      o.obligationId === attestedObligationId &&
+      o.obligationType === oType &&
+      o.status !== 'consumed' &&
+      o.consumedAt === null,
+  );
+  if (!matchedObligation) return null;
+  if (
+    rawFindings.iteration !== matchedObligation.iteration ||
+    rawFindings.planVersion !== matchedObligation.planVersion ||
+    attestation?.mandateDigest !== matchedObligation.mandateDigest ||
+    attestation?.criteriaVersion !== matchedObligation.criteriaVersion ||
+    attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE
+  ) {
+    return null;
+  }
+  const findingsHash = hashFindings(rawFindings);
+  if (
+    invocations.some(
+      (inv) =>
+        inv.obligationId === matchedObligation.obligationId &&
+        inv.childSessionId === childSessionId &&
+        inv.findingsHash === findingsHash,
+    )
+  ) {
+    return null;
+  }
+  const promptHash = hashText(
+    `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
+  );
+
+  return buildInvocationEvidence({
+    obligationId: matchedObligation.obligationId,
+    obligationType: oType,
+    parentSessionId: sessionId,
+    childSessionId,
+    invocationMode: 'host_subagent_task',
+    hostVisible: true,
+    promptHash,
+    findingsHash,
+    invokedAt: now,
+    source: 'host-orchestrated',
+  });
+}
+
 // ─── Helpers (exported for testing) ──────────────────────────────────────────
 
 /**
@@ -762,11 +877,16 @@ function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
   const reviewedBy = record.reviewedBy as Record<string, unknown> | undefined;
   const sessionId = typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
 
-  return {
+  const captured: CapturedFindings = {
     overallVerdict,
     blockingIssuesCount: blockingIssues.length,
     sessionId,
   };
+  Object.defineProperty(captured, 'rawFindings', {
+    value: record,
+    enumerable: false,
+  });
+  return captured;
 }
 
 /**

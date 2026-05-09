@@ -89,6 +89,7 @@ import {
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
+  findAcceptedInvocationForFindings,
   findLatestObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
@@ -166,6 +167,8 @@ export const implement: ToolDefinition = {
           expectedIteration: 0,
           expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
           strictEnforcement: false,
+          reviewInvocationPolicy: policy.reviewInvocationPolicy,
+          reviewParentSessionId: context.sessionID,
         });
         if (blocked) return blocked;
       }
@@ -334,6 +337,8 @@ export const implement: ToolDefinition = {
             strictEnforcement,
             assurance: state.reviewAssurance,
             obligationType: 'implement',
+            reviewInvocationPolicy: policy.reviewInvocationPolicy,
+            reviewParentSessionId: context.sessionID,
           });
           if (blocked) return blocked;
 
@@ -372,6 +377,11 @@ export const implement: ToolDefinition = {
           assuranceBase,
           strictObligation,
           ctx.now(),
+          findAcceptedInvocationForFindings(
+            assuranceBase,
+            strictObligation,
+            args.reviewFindings as ReviewFindings | undefined,
+          )?.invocationId,
         );
 
         const reviewedState: SessionState = {

@@ -56,6 +56,7 @@ import {
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
+  findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
   reviewObligationResponseFields,
@@ -296,6 +297,8 @@ export const architecture: ToolDefinition = {
             strictEnforcement,
             assurance: state.reviewAssurance,
             obligationType: 'architecture',
+            reviewInvocationPolicy: policy.reviewInvocationPolicy,
+            reviewParentSessionId: context.sessionID,
           });
           if (blocked) return blocked;
         }
@@ -365,6 +368,11 @@ export const architecture: ToolDefinition = {
           assuranceBaseModeB,
           strictObligation,
           ctx.now(),
+          findAcceptedInvocationForFindings(
+            assuranceBaseModeB,
+            strictObligation,
+            args.reviewFindings as ReviewFindings | undefined,
+          )?.invocationId,
         );
 
         // Build updated state

@@ -350,13 +350,20 @@ export async function fulfillStrictReviewObligation(
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
-    parentSessionId: 'ses_test_parent',
+    parentSessionId: state.binding.sessionId,
     childSessionId: findings.reviewedBy.sessionId,
+    invocationMode:
+      state.policySnapshot?.reviewInvocationPolicy === 'host_task_required'
+        ? 'host_subagent_task'
+        : 'sdk_session_prompt',
+    hostVisible: state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
   });
+  const obligationAcceptedByReviewer =
+    state.policySnapshot?.reviewInvocationPolicy !== 'host_task_required';
 
   await writeState(sessDir, {
     ...state,
@@ -366,9 +373,13 @@ export async function fulfillStrictReviewObligation(
           ? {
               ...item,
               pluginHandshakeAt: new Date().toISOString(),
-              status: 'fulfilled' as const,
-              invocationId: invocation.invocationId,
-              fulfilledAt: new Date().toISOString(),
+              status: obligationAcceptedByReviewer ? ('fulfilled' as const) : item.status,
+              invocationId: obligationAcceptedByReviewer
+                ? invocation.invocationId
+                : item.invocationId,
+              fulfilledAt: obligationAcceptedByReviewer
+                ? new Date().toISOString()
+                : item.fulfilledAt,
             }
           : item,
       ),

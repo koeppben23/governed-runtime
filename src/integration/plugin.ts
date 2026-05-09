@@ -15,7 +15,7 @@ import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
+import { strictBlockedOutput, buildEnforcementError, getToolArgs } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
   runReviewOrchestration as runOrchestrator,
@@ -32,8 +32,10 @@ import type { FlowGuardPolicy } from '../config/policy.js';
 import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
+  buildHostTaskEvidence,
   REVIEWER_SUBAGENT_TYPE,
 } from './review-enforcement.js';
+import { appendInvocationEvidence, ensureReviewAssurance } from './review-assurance.js';
 
 import type {
   ToolHookBeforeInput,
@@ -46,6 +48,7 @@ import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_REVIEW,
 } from './tool-names.js';
 
 const FG_PREFIX = 'flowguard_';
@@ -199,7 +202,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       if (
         toolName !== TOOL_FLOWGUARD_PLAN &&
         toolName !== TOOL_FLOWGUARD_IMPLEMENT &&
-        toolName !== TOOL_FLOWGUARD_ARCHITECTURE
+        toolName !== TOOL_FLOWGUARD_ARCHITECTURE &&
+        toolName !== TOOL_FLOWGUARD_REVIEW
       )
         return;
 
@@ -240,7 +244,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
       if (
         toolName === TOOL_FLOWGUARD_PLAN ||
         toolName === TOOL_FLOWGUARD_IMPLEMENT ||
-        toolName === TOOL_FLOWGUARD_ARCHITECTURE
+        toolName === TOOL_FLOWGUARD_ARCHITECTURE ||
+        toolName === TOOL_FLOWGUARD_REVIEW
       ) {
         try {
           trackFlowGuardEnforcement(
@@ -258,6 +263,53 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           trackTaskEnforcement(ws.getEnforcementState(sessionId), input, output, now);
         } catch (err) {
           logError('enforcement tracking failed', err);
+        }
+
+        // Only create host-task evidence for flowguard-reviewer subagent calls.
+        const taskArgs = getToolArgs(input);
+        if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+          // Must run BEFORE the next FlowGuard tool's execute() so
+          // validateReviewFindings finds evidence.
+          try {
+            const sessDir = ws.getSessionDir(sessionId);
+            if (sessDir) {
+              const state = await readState(sessDir);
+              if (state) {
+                const policy = state.policySnapshot?.reviewInvocationPolicy;
+                if (policy === 'host_task_required' || policy === 'host_task_preferred') {
+                  const eState = ws.getEnforcementState(sessionId);
+                  const evidence = buildHostTaskEvidence(
+                    eState,
+                    sessionId,
+                    state.reviewAssurance?.obligations ?? [],
+                    state.reviewAssurance?.invocations ?? [],
+                    now,
+                  );
+                  if (evidence) {
+                    await ws.updateReviewAssurance(sessDir, (s) => {
+                      return {
+                        ...s,
+                        reviewAssurance: appendInvocationEvidence(
+                          ensureReviewAssurance(s.reviewAssurance),
+                          evidence,
+                        ),
+                      };
+                    });
+                  } else if (policy === 'host_task_required') {
+                    hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+                      reason:
+                        'flowguard-reviewer Task call did not produce bindable host-task evidence',
+                    });
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            logError('host task evidence creation failed', err);
+            hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+              reason: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
       }
 

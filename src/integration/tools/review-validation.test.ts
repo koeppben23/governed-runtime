@@ -9,7 +9,16 @@ import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
+  appendInvocationEvidence,
+  ensureReviewAssurance,
 } from '../review-assurance.js';
+import {
+  buildHostTaskEvidence,
+  createSessionState,
+  onFlowGuardToolAfter,
+  onTaskToolAfter,
+  REVIEW_REQUIRED_PREFIX,
+} from '../review-enforcement.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -88,6 +97,8 @@ function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
         parentSessionId: 'ses_parent',
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
+        invocationMode: 'sdk_session_prompt' as const,
+        hostVisible: false,
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -581,6 +592,131 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
         obligationType: 'plan',
       }),
     );
+    expect(result).toBeNull();
+  });
+
+  it('host_task_required accepts pending host-visible invocation only when findings match evidence', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      findingsHash: hashFindings(findings),
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('host_task_required rejects host-visible invocation when submitted findings do not match the invocation hash', () => {
+    const storedFindings = strictFindings();
+    const submittedFindings = strictFindings({
+      majorRisks: [{ severity: 'major', category: 'risk', message: 'new risk' }],
+    });
+    const assurance = strictAssuranceFixture(storedFindings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      findingsHash: hashFindings(storedFindings),
+    };
+
+    const result = validateReviewFindings(
+      submittedFindings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_MISSING');
+  });
+
+  it('task-tool after evidence is available before the next FlowGuard verdict submit validates findings', () => {
+    const now = new Date().toISOString();
+    const findings = strictFindings();
+    const enforcementState = createSessionState();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: now,
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations = [];
+
+    onFlowGuardToolAfter(
+      enforcementState,
+      'flowguard_plan',
+      {},
+      JSON.stringify({ next: `${REVIEW_REQUIRED_PREFIX}: iteration=0 planVersion=1` }),
+      now,
+    );
+    onTaskToolAfter(
+      enforcementState,
+      {
+        subagent_type: 'flowguard-reviewer',
+        prompt: `Review iteration=0 planVersion=1 ${'x'.repeat(240)}`,
+      },
+      JSON.stringify(findings),
+      now,
+    );
+    const evidence = buildHostTaskEvidence(
+      enforcementState,
+      'ses_parent',
+      assurance.obligations,
+      assurance.invocations,
+      now,
+    );
+
+    expect(evidence).not.toBeNull();
+    const assuranceWithTaskEvidence = appendInvocationEvidence(
+      ensureReviewAssurance(assurance),
+      evidence!,
+    );
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: assuranceWithTaskEvidence,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
     expect(result).toBeNull();
   });
 });

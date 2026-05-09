@@ -48,6 +48,7 @@ import {
   appendReviewObligation,
   findLatestPendingReviewObligation,
   findReviewObligationById,
+  findAcceptedInvocationForFindings,
   consumeReviewObligation,
   validateStrictAttestation,
   ensureReviewAssurance,
@@ -313,6 +314,7 @@ export const review: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
+      const reviewInvocationPolicy = state.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed';
 
       // 1. Transition READY → REVIEW (no autoAdvance — report must be written first, P8b).
       let result = startReviewFlow(state, ctx);
@@ -493,7 +495,13 @@ export const review: ToolDefinition = {
             // Only accept findings that match it exactly.
             if (
               hostInvForObligation.findingsHash !== findingsHash ||
-              hostInvForObligation.childSessionId !== childSessionId
+              hostInvForObligation.childSessionId !== childSessionId ||
+              (reviewInvocationPolicy === 'host_task_required' &&
+                (hostInvForObligation.invocationMode !== 'host_subagent_task' ||
+                  hostInvForObligation.hostVisible !== true ||
+                  hostInvForObligation.parentSessionId !== context.sessionID ||
+                  hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
+                  hostInvForObligation.mandateDigest !== obligation.mandateDigest))
             ) {
               return formatBlockedWithAttestation(
                 'SUBAGENT_MANDATE_MISMATCH',
@@ -503,6 +511,13 @@ export const review: ToolDefinition = {
             }
             // Exact match — evidence already recorded by plugin, skip creation.
           } else {
+            if (reviewInvocationPolicy === 'host_task_required') {
+              return formatBlockedWithAttestation(
+                'HOST_SUBAGENT_TASK_REQUIRED',
+                'This policy requires host-visible Task-tool evidence for flowguard-reviewer; manual-attested /review findings are not accepted.',
+                obligation.obligationId,
+              );
+            }
             // No host-orchestrated evidence — manual path.
             if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
               return formatBlockedWithAttestation(
@@ -518,6 +533,8 @@ export const review: ToolDefinition = {
               obligationType: 'review',
               parentSessionId: context.sessionID,
               childSessionId,
+              invocationMode: 'manual_attested',
+              hostVisible: false,
               promptHash,
               findingsHash,
               invokedAt: now,
@@ -628,6 +645,11 @@ export const review: ToolDefinition = {
               ensureReviewAssurance(result.state.reviewAssurance),
               validatedReviewObligation,
               now,
+              findAcceptedInvocationForFindings(
+                result.state.reviewAssurance,
+                validatedReviewObligation,
+                args.analysisFindings as ReviewFindings | undefined,
+              )?.invocationId,
             ),
           },
         };
@@ -683,6 +705,8 @@ export const review: ToolDefinition = {
         references: args.references as Array<{ ref: string; type: string }> | undefined,
         obligationId: validatedReviewObligation?.obligationId,
         invocationSource: boundInvocation?.source,
+        invocationMode: boundInvocation?.invocationMode,
+        hostVisible: boundInvocation?.hostVisible,
         reviewOutputMode: boundInvocation?.reviewOutputMode,
         structuredOutputUsed: boundInvocation?.structuredOutputUsed,
         reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,

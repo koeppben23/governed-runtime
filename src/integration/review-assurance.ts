@@ -9,6 +9,7 @@ import type {
   ReviewAssuranceState,
   ReviewFindings,
   ReviewInvocationEvidence,
+  ReviewInvocationMode,
   ReviewObligation,
   ReviewObligationType,
 } from '../state/evidence.js';
@@ -200,8 +201,10 @@ export function consumeReviewObligation(
   assurance: ReviewAssuranceState,
   obligation: ReviewObligation | null,
   now: string,
+  acceptedInvocationId?: string | null,
 ): ReviewAssuranceState {
   if (!obligation) return assurance;
+  const invocationId = acceptedInvocationId ?? obligation.invocationId;
   return {
     obligations: assurance.obligations.map((item) => {
       if (item.obligationId !== obligation.obligationId) return item;
@@ -212,13 +215,50 @@ export function consumeReviewObligation(
       };
     }),
     invocations: assurance.invocations.map((invocation) => {
-      if (invocation.invocationId !== obligation.invocationId) return invocation;
+      if (!invocationId || invocation.invocationId !== invocationId) {
+        return invocation;
+      }
       return {
         ...invocation,
         consumedByObligationId: obligation.obligationId,
       };
     }),
   };
+}
+
+export function findAcceptedInvocationForFindings(
+  assurance: ReviewAssuranceState | undefined,
+  obligation: ReviewObligation | null,
+  findings: ReviewFindings | null | undefined,
+): ReviewInvocationEvidence | null {
+  if (!obligation || !findings) return null;
+  const findingsHash = hashFindings(findings);
+  const base = ensureReviewAssurance(assurance);
+
+  if (obligation.invocationId) {
+    return (
+      base.invocations.find(
+        (invocation) =>
+          invocation.invocationId === obligation.invocationId &&
+          invocation.obligationId === obligation.obligationId &&
+          invocation.childSessionId === findings.reviewedBy.sessionId &&
+          invocation.findingsHash === findingsHash &&
+          invocation.consumedByObligationId === null,
+      ) ?? null
+    );
+  }
+
+  return (
+    base.invocations.find(
+      (invocation) =>
+        invocation.obligationId === obligation.obligationId &&
+        invocation.invocationMode === 'host_subagent_task' &&
+        invocation.hostVisible === true &&
+        invocation.childSessionId === findings.reviewedBy.sessionId &&
+        invocation.findingsHash === findingsHash &&
+        invocation.consumedByObligationId === null,
+    ) ?? null
+  );
 }
 
 export function hashText(text: string): string {
@@ -234,10 +274,12 @@ export function buildInvocationEvidence(input: {
   obligationType: ReviewObligationType;
   parentSessionId: string;
   childSessionId: string;
+  invocationMode: ReviewInvocationMode;
+  hostVisible: boolean;
   promptHash: string;
   findingsHash: string;
   invokedAt: string;
-  fulfilledAt: string;
+  fulfilledAt?: string;
   source?: 'host-orchestrated' | 'agent-submitted-attested';
   reviewOutputMode?: 'structured_output' | 'text_compat';
   structuredOutputUsed?: boolean;
@@ -258,12 +300,14 @@ export function buildInvocationEvidence(input: {
     parentSessionId: input.parentSessionId,
     childSessionId: input.childSessionId,
     agentType: REVIEWER_SUBAGENT_TYPE,
+    invocationMode: input.invocationMode,
+    hostVisible: input.hostVisible,
     promptHash: input.promptHash,
     mandateDigest: REVIEW_MANDATE_DIGEST,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     findingsHash: input.findingsHash,
     invokedAt: input.invokedAt,
-    fulfilledAt: input.fulfilledAt,
+    fulfilledAt: input.fulfilledAt ?? null,
     consumedByObligationId: null,
     source: input.source,
     reviewOutputMode,

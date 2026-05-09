@@ -397,4 +397,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Use /abort to terminate this session and start fresh if infrastructure cannot be repaired',
     ],
   },
+
+  {
+    code: 'HOST_SUBAGENT_TASK_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Policy requires host-visible subagent invocation via the Task tool for {obligationId}, but no host evidence was found.',
+    recoverySteps: [
+      'Invoke the flowguard-reviewer subagent via the OpenCode Task tool (subagent_type: "flowguard-reviewer")',
+      'Ensure the build agent has task permission: { "*": "deny", "flowguard-reviewer": "allow" }',
+      'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
+    ],
+  },
 ];

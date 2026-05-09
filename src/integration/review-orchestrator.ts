@@ -38,6 +38,10 @@
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { parseToolResult } from './plugin-helpers.js';
+import {
+  REASON_HOST_SUBAGENT_TASK_REQUIRED,
+  RECOVERY_HOST_SUBAGENT_TASK,
+} from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
@@ -271,8 +275,28 @@ export interface ArchitectureReviewPromptOpts {
   readonly profileRules?: string;
 }
 
-/** Result of a successful reviewer invocation. */
-export interface ReviewerResult {
+export interface ReviewerBlockedResult {
+  /** True when invocation was intentionally blocked by policy before SDK use. */
+  readonly blocked: true;
+  /** Machine-readable reason code for blocked invocation. */
+  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+  /** Human-readable blocked reason. */
+  readonly reason: string;
+  /** Structured recovery payload for blocked invocation. */
+  readonly reviewInvocation: {
+    readonly policy: 'host_task_required';
+    readonly status: 'blocked_until_host_task';
+    readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+    readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+    readonly invocationMode: 'host_subagent_task';
+    readonly hostVisible: true;
+    readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
+  };
+}
+
+/** Result of a reviewer invocation that reached review transport. */
+export interface ReviewerSuccessResult {
+  readonly blocked?: false;
   /** The child session ID used for the review. */
   readonly sessionId: string;
   /** The raw response text from the reviewer. */
@@ -290,6 +314,8 @@ export interface ReviewerResult {
   /** Original capability error that caused text compatibility mode. */
   readonly modelCapabilityError?: string;
 }
+
+export type ReviewerResult = ReviewerSuccessResult | ReviewerBlockedResult;
 
 /** Result of the full orchestration (including output mutation). */
 export interface OrchestrationResult {
@@ -700,6 +726,8 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
 export interface InvokeReviewerOptions {
   /** Effective frozen policy for reviewer output compatibility. */
   readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
+  /** Effective frozen policy for reviewer invocation mode. */
+  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   /** Maximum number of retry attempts after the first failure (default: 2). */
   readonly maxRetries?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000). */
@@ -745,6 +773,7 @@ export function retrySleep(ms: number): Promise<void> {
 /** Default retry configuration. */
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   maxRetries: 2,
   baseDelayMs: 1000,
   _sleepFn: retrySleep,
@@ -871,6 +900,30 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
+  // Fail-closed guard: SDK invocation is blocked ONLY when the caller
+  // explicitly passes reviewInvocationPolicy='host_task_required'.
+  // Default fallback (no option) does NOT block — it allows the pre-v5
+  // SDK path (used by deterministic orchestration for host_task_preferred
+  // retries, and by tests). The orchestrator always passes the explicit
+  // policy from the normalized policy snapshot.
+  if (options?.reviewInvocationPolicy === 'host_task_required') {
+    return {
+      blocked: true,
+      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+      reason:
+        'Policy requires a host-visible flowguard-reviewer invocation via the OpenCode Task tool; SDK session invocation is disabled.',
+      reviewInvocation: {
+        policy: 'host_task_required',
+        status: 'blocked_until_host_task',
+        code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        recovery: [RECOVERY_HOST_SUBAGENT_TASK],
+      },
+    };
+  }
+
   const {
     maxRetries,
     baseDelayMs,
@@ -1179,7 +1232,7 @@ export async function invokeReviewer(
  */
 export function buildMutatedOutput(
   originalOutput: string,
-  reviewerResult: ReviewerResult,
+  reviewerResult: ReviewerSuccessResult,
 ): string | null {
   if (!reviewerResult.findings) return null;
 
@@ -1221,7 +1274,7 @@ export function buildMutatedOutput(
  */
 export function buildReviewContentMutatedOutput(
   originalOutput: string,
-  reviewerResult: ReviewerResult,
+  reviewerResult: ReviewerSuccessResult,
 ): string | null {
   if (!reviewerResult.findings) return null;
 

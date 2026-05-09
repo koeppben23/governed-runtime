@@ -30,6 +30,7 @@ import type {
   PolicyResolution,
   SelfReviewConfig,
   ReviewOutputPolicy,
+  ReviewInvocationPolicy,
 } from './policy.js';
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
@@ -133,6 +134,7 @@ export function createPolicySnapshot(
     identityProviderMode: policy.identityProviderMode,
     ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
     reviewOutputPolicy: policy.reviewOutputPolicy,
+    reviewInvocationPolicy: policy.reviewInvocationPolicy,
   };
 }
 
@@ -209,6 +211,10 @@ function isValidAssurance(v: unknown): v is 'best_effort' | 'claim_validated' | 
 
 function isValidReviewOutputPolicy(v: unknown): v is ReviewOutputPolicy {
   return v === 'structured_required' || v === 'text_compat_allowed';
+}
+
+function isValidReviewInvocationPolicy(v: unknown): v is ReviewInvocationPolicy {
+  return v === 'host_task_required' || v === 'host_task_preferred' || v === 'sdk_allowed';
 }
 
 /**
@@ -342,6 +348,14 @@ export function normalizePolicySnapshotWithMeta(
     : modeDefaults.reviewOutputPolicy;
   if (!isValidReviewOutputPolicy(rawReviewOutputPolicy)) normalized = true;
 
+  const rawReviewInvocationPolicy = s.reviewInvocationPolicy;
+  const reviewInvocationPolicy: ReviewInvocationPolicy = isValidReviewInvocationPolicy(
+    rawReviewInvocationPolicy,
+  )
+    ? rawReviewInvocationPolicy
+    : modeDefaults.reviewInvocationPolicy;
+  if (!isValidReviewInvocationPolicy(rawReviewInvocationPolicy)) normalized = true;
+
   return {
     snapshot: {
       mode,
@@ -377,6 +391,7 @@ export function normalizePolicySnapshotWithMeta(
       identityProviderMode,
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
       reviewOutputPolicy,
+      reviewInvocationPolicy,
     },
     normalized,
     reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -392,6 +407,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly effectiveGateBehavior: EffectiveGateBehavior;
   readonly reviewOutputPolicy: ReviewOutputPolicy;
+  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
 } {
   switch (mode) {
     case 'solo':
@@ -403,6 +419,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'auto_approve',
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'host_task_preferred',
       };
     case 'regulated':
       return {
@@ -413,6 +430,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'structured_required',
+        reviewInvocationPolicy: 'host_task_required',
       };
     case 'team':
       return {
@@ -423,6 +441,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'host_task_required',
       };
     case 'team-ci':
       return {
@@ -433,6 +452,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'structured_required',
+        reviewInvocationPolicy: 'host_task_required',
       };
   }
 }
@@ -461,6 +481,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     reviewOutputPolicy:
       snapshot.reviewOutputPolicy ??
       modeConsistentDefaults(snapshot.mode as PolicyMode).reviewOutputPolicy,
+    reviewInvocationPolicy:
+      snapshot.reviewInvocationPolicy ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewInvocationPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
