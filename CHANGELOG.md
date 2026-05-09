@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Comprehensive structured logging across all adapter layers**: Adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli, actor) now emit structured logs for all critical failure paths and silent fallbacks. Logging is injected via `AsyncLocalStorage`-scoped DI — adapter functions call `getAdapterLogger()` and receive the plugin or CLI logger for the current execution scope.
+
+- **Console logging sink** (`console-sink.ts`): New sink writes formatted structured log entries to stderr (warn/error) or stdout (info/debug). Configurable via `logging.mode: 'console'` or `'file+console'`.
+
+- **`--log-mode` CLI flag**: `flowguard install|doctor|uninstall --log-mode console|file|file+console` controls CLI logging output. Console mode (default) writes to stderr/stdout; file mode writes JSONL to the target directory. Adapter logger is reset after each CLI command (`try/finally`).
+
+- **Identity log redaction** (`redact.ts`): Identity and JWT/JWKS error logs sanitize sensitive fields — token paths redacted to basename, JWKS URIs to hostname, issuers to SHA-256 prefix, and error messages stripped of absolute paths and URLs.
+
+- **Logging coverage proofs**: Comprehensive test suite (`coverage-proof.test.ts`, `adapter-real-sink.test.ts`) proving adapter failures write to file sinks, git fallbacks log warnings, two ALS scopes do not leak, and identity errors are properly redacted.
+
+### Changed
+
+- **`logging.mode` extended**: Schema now accepts `'console'` and `'file+console'` in addition to existing `'file'` and `'ui'`. Plugin logging (`plugin-logging.ts`) builds console sinks for these modes.
+
+- **ALS-scoped DI replaces global singleton**: `adapter-logger.ts` uses `AsyncLocalStorage` instead of a global variable. Plugin hooks run in `runWithAdapterLoggerAsync()` scopes. CLI uses `setAdapterLogger()` with `finally { resetAdapterLogger() }` cleanup. Tests get automatic isolation.
+
+- **`policy-snapshot.ts` console.warn replaced**: Direct `console.warn` calls replaced with `getAdapterLogger().warn()` for structured routing.
+
+- **CLI structured logging**: `main()` now initializes a structured logger via `initCliLogger()`, logs `command_started`/`install completed`/`doctor completed`/`uninstall completed`, and logs malformed-JSON fallbacks in `install-helpers.ts`.
+
 ### Fixed
 
 - **JSONC conformance — full trailing comma and comment support**: Replaced `strip-json-comments` with `jsonc-parser` for complete JSONC compatibility including single-line comments, block comments, and trailing commas — matching OpenCode's documented config parser semantics. `parseJsonc()` is the central parse function used by `mergeOpencodeJson`, `removeFromOpencodeJson`, and doctor. Trailing commas are now HAPPY-path; truly malformed content still triggers backup-and-overwrite fallback.

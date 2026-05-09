@@ -299,12 +299,65 @@ Enable verbose logging via workspace config:
 ```json
 {
   "logging": {
-    "level": "debug"
+    "level": "debug",
+    "mode": "console"
   }
 }
 ```
 
 Config file location: `~/.config/opencode/flowguard.json` (global) or `.opencode/flowguard.json` in the project.
+
+### Log Modes
+
+| Mode           | Output                                                          | Use case                              |
+| -------------- | --------------------------------------------------------------- | ------------------------------------- |
+| `console`      | stderr/stdout (formatted)                                       | Development, CI, `--log-mode console` |
+| `file`         | `{workspace}/.opencode/logs/flowguard-{YYYY-MM-DD}.log` (JSONL) | Production, audit                     |
+| `file+console` | Both file and console                                           | Development with persistence          |
+| `ui`           | OpenCode TUI via `client.app.log()`                             | Plugin-only (no CLI)                  |
+| `both`         | File + OpenCode TUI                                             | Plugin-only (no CLI)                  |
+
+### CLI `--log-mode` Flag
+
+The CLI uses a separate flag because it has no OpenCode plugin context:
+
+```bash
+flowguard install --core-tarball ./flowguard-core-1.0.0.tgz --log-mode console
+flowguard doctor --log-mode file
+flowguard uninstall --log-mode file+console
+```
+
+Console mode writes formatted lines to stderr/stdout. File mode writes JSONL to the target `.opencode/logs/` directory.
+
+### Log File Location
+
+File logs are written to:
+
+```
+~/.config/opencode/workspaces/{fingerprint}/.opencode/logs/flowguard-{YYYY-MM-DD}.log
+```
+
+Each line is a JSON object with `ts`, `level`, `component`, `service`, `message`, and optional `fields`. Logs older than `logging.retentionDays` (default 7) are auto-deleted on first write each day.
+
+### Missing Adapter Logs
+
+If adapter-layer operations (persistence, git, archive, identity) produce no logs:
+
+1. Verify `logging.level` is not `silent` or `error` (which suppresses warn/info/debug)
+2. Verify `logging.mode` is not set to a mode that doesn't cover your sink
+3. If using the plugin: adapter logging requires the plugin to run hooks via `runWithAdapterLoggerAsync()` — ensure the plugin is active
+4. If using the CLI: adapter logging is active during the command, reset afterwards
+
+### Identity Log Redaction
+
+Identity, JWT, and JWKS error logs automatically sanitize sensitive data:
+
+- File paths → basename only (e.g. `[redacted:token.jwt]`)
+- URIs → hostname only (e.g. `[redacted:auth.example.com]`)
+- Issuers → SHA-256 prefix (e.g. `[hashed:a1b2c3d4]`)
+- Error messages → absolute paths and URLs stripped
+
+If you see raw paths or URLs in identity logs, file a bug — redaction is applied at every log call site.
 
 ## Test Troubleshooting
 

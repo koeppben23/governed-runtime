@@ -43,7 +43,55 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
 **Values:** `debug`, `info`, `warn`, `error`, `silent`
 **Default:** `info`
 
-Controls verbosity of FlowGuard logging.
+Controls verbosity of FlowGuard logging. Messages below the configured level are suppressed. `debug` emits all messages; `silent` suppresses everything.
+
+### logging.mode
+
+**Type:** `enum`
+**Values:** `file`, `ui`, `both`, `console`, `file+console`
+**Default:** `file`
+
+Controls where FlowGuard writes structured log output.
+
+| Mode           | Behavior                                                                |
+| -------------- | ----------------------------------------------------------------------- |
+| `file`         | Writes JSONL to `{workspace}/.opencode/logs/flowguard-{YYYY-MM-DD}.log` |
+| `ui`           | Delegates to OpenCode SDK `client.app.log()` (renders in TUI)           |
+| `both`         | File + UI sinks                                                         |
+| `console`      | Writes formatted lines to stderr (warn/error) / stdout (info/debug)     |
+| `file+console` | File + console sinks                                                    |
+
+**CLI `--log-mode` flag**: The CLI uses a separate flag (`--log-mode console|file|file+console`) because it has no OpenCode plugin context and cannot use `ui` or `both`. The CLI defaults to `console` if `--log-mode` is omitted.
+
+### logging.retentionDays
+
+**Type:** `number` (1-90)
+**Default:** `7`
+
+Number of days to retain log files. Logs older than this are automatically deleted when the first log entry of the day is written. See [Troubleshooting](./troubleshooting.md) for log location details.
+
+### Adapter-layer logging
+
+All adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli, actor, identity) emit structured logs for failure paths via `AsyncLocalStorage`-scoped dependency injection. Example events:
+
+- `Atomic write failed` (persistence)
+- `git executable not found` / `Failed to resolve current branch` (git)
+- `Discovery snapshot missing during archive creation` (archive)
+- `JWT verification failed` (identity, redacted)
+- `Legacy selfReview config normalized to mandatory strict` (policy)
+
+Adapter logs route to whichever log mode is configured — file, console, or both.
+
+### Identity log redaction
+
+Identity, JWT, and JWKS error logs automatically sanitize sensitive data:
+
+- File paths → basename only (e.g. `[redacted:token.jwt]`)
+- URIs → hostname only (e.g. `[redacted:auth.example.com]`)
+- Issuers → SHA-256 prefix (e.g. `[hashed:a1b2c3d4]`)
+- Error messages → URLs and absolute paths stripped
+
+This prevents accidental exposure of tokens, claim data, or provider endpoints in log files.
 
 ### policy.defaultMode
 
