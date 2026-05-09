@@ -55,6 +55,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   identityProvider: undefined,
   identityProviderMode: 'optional',
   reviewOutputPolicy: 'text_compat_allowed',
+  reviewInvocationPolicy: 'sdk_allowed',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

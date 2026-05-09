@@ -370,6 +370,32 @@ describe('runReviewOrchestration strict independent review with footer output', 
     });
   });
 
+  it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } = stateRef.current.policySnapshot!;
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: snapshotWithoutPolicy,
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const output = { output: reviewRequiredOutput('PLAN') };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.error).toBe(true);
+  });
+
   it('passes explicit reviewOutputPolicy for plan/implement/architecture text compatibility path', async () => {
     const stateRef = { current: buildState('PLAN', 'plan', 'text_compat_allowed') };
     vi.mocked(readState).mockResolvedValue(stateRef.current);

@@ -317,7 +317,7 @@ export async function runReviewOrchestration(
           reviewOutputPolicy:
             sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
           reviewInvocationPolicy:
-            sessionState.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed',
+            sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
           _onAttemptFailed: (info) => {
             deps.log.warn(
               'orchestrator',
@@ -570,7 +570,7 @@ export async function runReviewOrchestration(
       {
         reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
         reviewInvocationPolicy:
-          sessionState.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed',
+          sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
         _onAttemptFailed: (info) => {
           deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
             tool: toolName,
