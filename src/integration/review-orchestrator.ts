@@ -900,12 +900,13 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  // Fail-closed guard: SDK invocation is blocked ONLY when the caller
-  // explicitly passes reviewInvocationPolicy='host_task_required'.
-  // Default fallback (no option) does NOT block — it allows the pre-v5
-  // SDK path (used by deterministic orchestration for host_task_preferred
-  // retries, and by tests). The orchestrator always passes the explicit
-  // policy from the normalized policy snapshot.
+  // Guard: SDK invocation is blocked ONLY when the caller explicitly
+  // passes reviewInvocationPolicy='host_task_required' (not from
+  // DEFAULT_INVOKE_OPTIONS, which is a destructure default and
+  // does NOT set options?.reviewInvocationPolicy).
+  // The orchestrator always passes the explicit resolved policy from the
+  // normalized snapshot. Direct callers that omit the option get no
+  // blocking — this preserves deterministic test/retry paths.
   if (options?.reviewInvocationPolicy === 'host_task_required') {
     return {
       blocked: true,

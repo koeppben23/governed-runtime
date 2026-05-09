@@ -1532,6 +1532,41 @@ describe('review (standalone flow)', () => {
         const content = await fs.readFile(`${artifactsDir}/${cardFile}`, 'utf-8');
         expect(content).toContain('# FlowGuard Review Report');
       });
+
+      it('blocks manual /review attestation when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
+        await hydrateAndGetReady();
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+
+        // Simulate legacy snapshot: remove reviewInvocationPolicy from snapshot.
+        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } = state.policySnapshot ?? {};
+        await writeState(sessDir, {
+          ...state,
+          policySnapshot: snapshotWithoutPolicy,
+        });
+
+        // First call: create obligation (CONTENT_ANALYSIS_REQUIRED)
+        const firstRaw = await review.execute({ prNumber: 55, inputOrigin: 'pr' }, ctx);
+        const firstResult = parseToolResult(firstRaw);
+        expect(firstResult.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+        const uuid = (firstResult.requiredReviewAttestation as Record<string, string>)
+          .toolObligationId;
+
+        // Second call: submit manual findings — should block because
+        // the missing reviewInvocationPolicy falls back to host_task_required.
+        const findings = buildAnalysisFindings('approve', uuid);
+        const raw = await review.execute(
+          { prNumber: 55, analysisFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+
+        expect(result.error).toBe(true);
+        expect(result.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+      });
     });
   });
 });

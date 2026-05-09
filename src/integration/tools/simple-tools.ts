@@ -314,7 +314,7 @@ export const review: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
-      const reviewInvocationPolicy = state.policySnapshot?.reviewInvocationPolicy ?? 'sdk_allowed';
+      const reviewInvocationPolicy = state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required';
 
       // 1. Transition READY → REVIEW (no autoAdvance — report must be written first, P8b).
       let result = startReviewFlow(state, ctx);
