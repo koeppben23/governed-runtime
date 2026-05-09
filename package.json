@@ -67,9 +67,9 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@opentelemetry/auto-instrumentations-node": "^0.74.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.216.0",
-    "@opentelemetry/sdk-node": "^0.216.0"
+    "@opentelemetry/auto-instrumentations-node": "^0.75.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.217.0",
+    "@opentelemetry/sdk-node": "^0.217.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
