@@ -81,6 +81,64 @@ describe('AdapterLogger — ALS-scoped DI', () => {
     });
   });
 
+  describe('warnOnce', () => {
+    it('emits only once for the same service+message', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+
+      runWithAdapterLogger(base, () => {
+        const log = getAdapterLogger();
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+      });
+
+      expect(mockWarn).toHaveBeenCalledTimes(1);
+    });
+
+    it('different messages are not deduplicated', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+
+      runWithAdapterLogger(base, () => {
+        const log = getAdapterLogger();
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve HEAD commit');
+      });
+
+      expect(mockWarn).toHaveBeenCalledTimes(2);
+    });
+
+    it('cache resets per scope', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+
+      runWithAdapterLogger(base, () => {
+        getAdapterLogger().warnOnce?.('git', 'branch unknown');
+      });
+      // New scope — cache reset
+      runWithAdapterLogger(base, () => {
+        getAdapterLogger().warnOnce?.('git', 'branch unknown');
+      });
+
+      expect(mockWarn).toHaveBeenCalledTimes(2);
+    });
+
+    it('resetAdapterLogger clears warnOnce cache', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+      setAdapterLogger(base);
+      getAdapterLogger().warnOnce?.('git', 'branch unknown');
+      getAdapterLogger().warnOnce?.('git', 'branch unknown');
+      expect(mockWarn).toHaveBeenCalledTimes(1);
+
+      resetAdapterLogger();
+      setAdapterLogger(base);
+      getAdapterLogger().warnOnce?.('git', 'branch unknown');
+      expect(mockWarn).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('CORNER', () => {
     it('two parallel scopes do not interfere', async () => {
       const aCalls: string[] = [];

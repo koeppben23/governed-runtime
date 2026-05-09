@@ -220,11 +220,11 @@ describe('Coverage proofs', () => {
     it('HAPPY: setAdapterLogger at CLI init reaches adapter functions', () => {
       const captured: string[] = [];
       const logger = createLogger('debug', [createConsoleSink()]);
-      vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
         captured.push(String(chunk));
         return true;
       });
-      vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
       setAdapterLogger(toAdapter(logger));
       getAdapterLogger().info('cli', 'command_started', {

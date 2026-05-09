@@ -31,6 +31,16 @@ import * as path from 'node:path';
 import { isEnoent } from './persistence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 
+/** Deduplicated warn: uses warnOnce if available, falls back to warn. */
+function logWarn(service: string, message: string, extra?: Record<string, unknown>): void {
+  const log = getAdapterLogger();
+  if (log.warnOnce) {
+    log.warnOnce(service, message, extra);
+  } else {
+    log.warn(service, message, extra);
+  }
+}
+
 const execFileAsync = promisify(execFile);
 
 // -- Constants ----------------------------------------------------------------
@@ -160,7 +170,7 @@ export async function currentBranch(worktree: string): Promise<string | null> {
     // Detached HEAD returns literal "HEAD"
     return branch === 'HEAD' ? null : branch;
   } catch {
-    getAdapterLogger().warn('git', 'Failed to resolve current branch', { worktree });
+    logWarn('git', 'Failed to resolve current branch', { worktree });
     return null;
   }
 }
@@ -221,7 +231,7 @@ export async function headCommit(worktree: string): Promise<string | null> {
   try {
     return await git(worktree, ['rev-parse', '--short', 'HEAD']);
   } catch {
-    getAdapterLogger().warn('git', 'Failed to resolve HEAD commit', { worktree });
+    logWarn('git', 'Failed to resolve HEAD commit', { worktree });
     return null;
   }
 }
@@ -243,7 +253,7 @@ export async function defaultBranch(worktree: string): Promise<string | null> {
     const parts = ref.split('/');
     return parts[parts.length - 1] || null;
   } catch {
-    getAdapterLogger().warn('git', 'Failed to resolve default branch', { worktree });
+    logWarn('git', 'Failed to resolve default branch', { worktree });
     return null;
   }
 }
@@ -263,7 +273,7 @@ export async function remoteOriginUrl(worktree: string): Promise<string | null> 
     const url = await git(worktree, ['remote', 'get-url', 'origin']);
     return url || null;
   } catch {
-    getAdapterLogger().warn('git', 'Failed to resolve remote origin URL', { worktree });
+    logWarn('git', 'Failed to resolve remote origin URL', { worktree });
     return null;
   }
 }
@@ -397,7 +407,7 @@ export async function gitUserName(cwd: string): Promise<string | null> {
     const name = await git(cwd, ['config', 'user.name']);
     return name || null;
   } catch {
-    getAdapterLogger().warn('git', 'Failed to read git user.name', { cwd });
+    logWarn('git', 'Failed to read git user.name', { cwd });
     return null;
   }
 }
@@ -412,7 +422,7 @@ export async function gitUserEmail(cwd: string): Promise<string | null> {
     const email = await git(cwd, ['config', 'user.email']);
     return email || null;
   } catch {
-    getAdapterLogger().warn('git', 'Failed to read git user.email', { cwd });
+    logWarn('git', 'Failed to read git user.email', { cwd });
     return null;
   }
 }

@@ -124,6 +124,41 @@ describe('Adapter logging — real sinks', () => {
       ).not.toThrow();
     });
   });
+
+  describe('EDGE', () => {
+    it('warnOnce deduplicates git fallback warnings — 2 calls, 1 sink write', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+
+      // Simulate what git.ts currentBranch does via logWarn helper
+      runWithAdapterLogger(base, () => {
+        const log = getAdapterLogger();
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+      });
+
+      expect(mockWarn).toHaveBeenCalledTimes(1);
+      expect(mockWarn.mock.calls[0][0]).toBe('git');
+      expect(mockWarn.mock.calls[0][1]).toBe('Failed to resolve current branch');
+    });
+
+    it('warnOnce allows different messages but deduplicates same message', () => {
+      const mockWarn = vi.fn();
+      const base: AdapterLogger = { info: vi.fn(), warn: mockWarn, error: vi.fn() };
+
+      runWithAdapterLogger(base, () => {
+        const log = getAdapterLogger();
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve current branch');
+        log.warnOnce?.('git', 'Failed to resolve HEAD commit');
+        log.warnOnce?.('git', 'Failed to resolve HEAD commit');
+        log.warnOnce?.('git', 'Failed to resolve default branch');
+      });
+
+      expect(mockWarn).toHaveBeenCalledTimes(3);
+    });
+  });
 });
 
 function toAdapter(log: ReturnType<typeof createLogger>): AdapterLogger {

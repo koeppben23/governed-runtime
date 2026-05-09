@@ -35,18 +35,18 @@ describe('CLI structured logging', () => {
   });
 
   describe('SMOKE', () => {
-    it('doctor with --log-mode=console writes structured logs to stdout', async () => {
+    it('doctor with --log-mode=console writes structured logs to stderr', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-log-'));
       process.env.OPENCODE_CONFIG_DIR = tmpDir;
       process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
       await fs.mkdir(path.join(tmpDir, '.git'));
 
       const captured: string[] = [];
-      const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
         captured.push(String(chunk));
         return true;
       });
+      vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
       try {
         await main(['doctor', '--install-scope', 'repo', '--log-mode', 'console']);
@@ -54,8 +54,6 @@ describe('CLI structured logging', () => {
         expect(output).toContain('[INFO]');
         expect(output).toContain('cli');
       } finally {
-        stderrSpy.mockRestore();
-        stdoutSpy.mockRestore();
         delete process.env.OPENCODE_CONFIG_DIR;
         delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
         try {
@@ -66,28 +64,75 @@ describe('CLI structured logging', () => {
       }
     });
 
-    it('--log-mode=file does NOT write to console', async () => {
+    it('--log-mode=file does NOT write to stderr', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-file-'));
       process.env.OPENCODE_CONFIG_DIR = tmpDir;
       process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
       await fs.mkdir(path.join(tmpDir, '.git'));
 
-      const capturedStdout: string[] = [];
-      const capturedStderr: string[] = [];
+      const capturedAll: string[] = [];
       vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-        capturedStdout.push(String(chunk));
+        capturedAll.push(String(chunk));
         return true;
       });
       vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-        capturedStderr.push(String(chunk));
+        capturedAll.push(String(chunk));
         return true;
       });
 
       try {
         await main(['doctor', '--install-scope', 'repo', '--log-mode', 'file']);
-        // No structured log to console
-        const allConsole = capturedStdout.join('') + capturedStderr.join('');
+        const allConsole = capturedAll.join('');
         expect(allConsole).not.toContain('[INFO] cli');
+      } finally {
+        delete process.env.OPENCODE_CONFIG_DIR;
+        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+        try {
+          await fs.rm(tmpDir, { recursive: true, force: true });
+        } catch {
+          /* ok */
+        }
+      }
+    });
+
+    it('SMOKE: --log-mode=file writes log file with structured content', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-smk-'));
+      process.env.OPENCODE_CONFIG_DIR = tmpDir;
+      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+      await fs.mkdir(path.join(tmpDir, '.git'));
+
+      // Mock: no console output for file mode
+      vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+      try {
+        await main(['doctor', '--install-scope', 'global', '--log-mode', 'file']);
+
+        // Wait for async file writes
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Find the log file
+        const logDir = path.join(tmpDir, '.opencode', 'logs');
+        let entries: string[] = [];
+        try {
+          entries = await fs.readdir(logDir);
+        } catch {
+          /* ok */
+        }
+        const logFile = entries.find((f) => f.startsWith('flowguard-') && f.endsWith('.log'));
+
+        expect(logFile).toBeTruthy();
+        if (logFile) {
+          const content = await fs.readFile(path.join(logDir, logFile), 'utf-8');
+          const lines = content.trim().split('\n');
+          const firstLine = JSON.parse(lines[0] ?? '{}');
+          expect(firstLine.component).toBe('flowguard');
+          expect(firstLine.service).toBe('cli');
+          // First entry is "CLI logger initialized", subsequent entries contain "command_started"
+          const allContent = content;
+          expect(allContent).toContain('command_started');
+          expect(firstLine.fields).toBeTruthy();
+        }
       } finally {
         delete process.env.OPENCODE_CONFIG_DIR;
         delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
@@ -109,9 +154,6 @@ describe('CLI structured logging', () => {
 
       try {
         await main(['doctor', '--install-scope', 'repo', '--log-mode', 'console']);
-        // After main() returns, the adapter logger should be a noop
-        const calls: string[] = [];
-        // getAdapterLogger is noop now — call it and verify no errors
         const log = getAdapterLogger();
         expect(() => log.warn('test', 'after-main')).not.toThrow();
       } finally {
