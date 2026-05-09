@@ -15,11 +15,7 @@ import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
-import {
-  toAdapterLogger,
-  runWithAdapterLogger,
-  runWithAdapterLoggerAsync,
-} from '../logging/adapter-logger.js';
+import { toAdapterLogger, runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { strictBlockedOutput, buildEnforcementError, getToolArgs } from './plugin-helpers.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {

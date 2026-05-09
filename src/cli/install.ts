@@ -12,7 +12,7 @@ import { writeFile, readFile, readdir, copyFile, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
-import { initCliLogger, type CliLogMode } from './cli-logging.js';
+import { initCliLogger } from './cli-logging.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import {
   TOOL_WRAPPER,
@@ -1156,7 +1156,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
       case '--log-mode': {
         const next = argv[i + 1];
         if (next && (next === 'file' || next === 'console' || next === 'file+console')) {
-          logMode = next as 'file' | 'console' | 'file+console';
+          logMode = next;
           i++;
         } else {
           return null;
@@ -1316,10 +1316,7 @@ export async function main(argv: string[]): Promise<number> {
 
   const { args, deprecations } = parsed;
 
-  const cliLog = initCliLogger(
-    resolveTarget(args.installScope),
-    (args.logMode as CliLogMode) ?? 'console',
-  );
+  const cliLog = initCliLogger(resolveTarget(args.installScope), args.logMode ?? 'console');
 
   for (const d of deprecations) {
     console.error(`  [deprecated] ${d}`);

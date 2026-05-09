@@ -22,6 +22,7 @@ export function hasGhCli(): boolean {
     _ghCliAvailable = true;
   } catch {
     _ghCliAvailable = false;
+    getAdapterLogger().warn('gh-cli', 'GitHub CLI not available or not authenticated');
   }
   return _ghCliAvailable;
 }
@@ -77,18 +78,19 @@ function detectBaseBranch(): string {
       .trim()
       .replace('refs/remotes/', '');
   } catch {
-    /* fallback */
+    getAdapterLogger().warn('gh-cli', 'Cannot detect origin/HEAD, trying main branch fallback');
   }
   try {
     execFileSync('git', ['rev-parse', '--verify', 'main'], { stdio: 'ignore', timeout: 3000 });
     return 'main';
   } catch {
-    /* fallback */
+    getAdapterLogger().warn('gh-cli', 'main branch not found, trying master branch fallback');
   }
   try {
     execFileSync('git', ['rev-parse', '--verify', 'master'], { stdio: 'ignore', timeout: 3000 });
     return 'master';
   } catch {
+    getAdapterLogger().error('gh-cli', 'Cannot determine base branch for diff');
     throw new Error('Cannot determine base branch for diff');
   }
 }
