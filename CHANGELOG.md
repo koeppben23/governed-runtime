@@ -7,30 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Host-task binding diagnostics opaque (F5)**: `buildHostTaskEvidence()` now returns a structured `HostTaskBindResult` with machine-readable `bindOutcome` and serializable `diagnostic` metadata for every code path (9 distinct outcomes). Previously the function returned `null` on 6 different failure paths with no indication of why binding failed — making real-run debugging impossible. The `plugin.ts` caller now emits 4 diagnostic log statements: `reviewer task completed`, `bind attempt` (with policy and pending obligation count), `evidence created` or `bind failed` (with outcome and diagnostic fields), and `output blocked` on `host_task_required` policy with null evidence.
-
 ### Added
 
 - `HostTaskBindResult` and `HostTaskBindOutcome` types exported from `review-enforcement.ts` for structured host-task binding diagnostics.
 - 18 new tests in `plugin-host-task-diagnostics.test.ts` covering all 9 `bindOutcome` values (HAPPY, BAD, CORNER, EDGE, SMOKE, E2E).
-
-### Changed
-
-- `buildHostTaskEvidence()` return type changed from `ReviewInvocationEvidence | null` to `HostTaskBindResult` (breaking — single caller updated).
-
-### Fixed
-
-- **Infinite reviewer re-invocation loop (BUG-07)**: Review obligation now blocked with `REVIEWER_INVOCATION_EXHAUSTED` after all subagent retry attempts fail in non-strict mode. Previously the obligation stayed `pending`, causing `findLatestPendingReviewObligation()` to rediscover it on every subsequent tool call and trigger another 3-attempt cycle — resulting in unbounded subagent sessions with no bindable results. Strict mode behavior unchanged (uses `blockReviewOutcome`).
-- **Plan text corruption from LLM-supplied toolArgs (BUG-09)**: Plan review prompt now always uses `sessionState.plan.current.body` (SSOT) instead of preferring the LLM-supplied `toolArgs.planText`. After context-window compaction, the LLM may reconstruct a hallucinated or truncated plan text that corrupts the reviewer prompt. Added mismatch logging (planTextMismatch, toolArgsPlanTextLength) for observability.
-- **Phase-aware host tool gate (BUG-03)**: Mutating host tools (`bash`, `write`, `edit`) are now blocked during investigation-only phases (`TICKET`, `PLAN`, `ARCHITECTURE`). Previously, all non-FlowGuard tools passed through the `tool.execute.before` hook without any phase check, allowing shell commands and file writes during planning. Read-only tools (`read`, `glob`, `grep`, `webfetch`) remain allowed. Fail-open for sessions without FlowGuard state (e.g. reviewer subagent sessions).
-- **Subagent type authorization (BUG-08)**: Non-reviewer subagent types are now blocked at the plugin level as defense-in-depth. Previously, `tool.execute.before` only intercepted `task` calls with `subagent_type: 'flowguard-reviewer'` — all other subagent types passed through unchecked. Now any non-empty `subagent_type` other than `flowguard-reviewer` triggers a `SUBAGENT_TYPE_UNAUTHORIZED` enforcement error.
-- **Session error audit trail (BUG-01)**: `session.error` SDK events are now persisted to the audit trail via `emitSessionErrorAudit` callback. Previously, session errors were only logged to the file/console logger and silently lost from the persistent audit chain. The composition root (`plugin.ts`) wires the callback to `appendReviewAuditEvent` with `error:SESSION_ERROR` event type.
-- **Session error detail loss (BUG-06)**: The `session.error` event handler now extracts all available error context from SDK event properties — `code`, `stack`, and any non-standard supplementary properties. Previously only `error` or `message` (string) were extracted; stack traces, error codes, and metadata were silently discarded.
-- **Doc-code mismatch in plugin-events (BUG-11)**: Module documentation claimed `session.idle` handling; corrected to `session.delete` which is the actual handled event type.
-
-### Added
 
 - `REVIEWER_INVOCATION_EXHAUSTED` reason code (adapter category) for blocking obligations after all subagent retry attempts are exhausted.
 - 10 new tests in `plugin-orchestrator-exhaustion.test.ts` covering BUG-07 exhaustion blocking (HAPPY, BAD, CORNER, EDGE, SMOKE, E2E).
@@ -43,17 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 14 new integration tests in `plugin.test.ts`: 7 for BUG-08 subagent type authorization, 7 for BUG-03 phase gate wiring.
 - `SESSION_ERROR` reason code registered in the default reason registry (adapter category) for audit trail persistence of host runtime session errors.
 - 12 new tests in `plugin-events.test.ts` covering error detail extraction (5 tests: happy, corner, edge) and audit trail emission (7 tests: happy, bad, corner, edge).
-
-### Changed
-
-- `EventHandlerDeps` interface extended with `emitSessionErrorAudit(sessionId, errorMessage, detail)` callback for audit trail integration.
-- `PRECONDITION_REASONS` count updated from 37 to 38 entries.
-- `VALIDATION_REASONS` count updated from 43 to 44 entries.
-- `INFRA_REASONS` count updated from 28 to 29 entries.
-- Total reason code count updated from 108 to 111.
-- BUG-02 (Task Content Fabrication) reclassified from CODE-BUG to DESIGN-GAP after deep code analysis: L1-L4 enforcement layers validate review process integrity (by design), not content accuracy. Content fabrication detection requires architectural design (L5 content grounding layer).
-
-### Added
 
 - **Comprehensive structured logging across all adapter layers**: Adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli, actor) now emit structured logs for all critical failure paths and silent fallbacks. Logging is injected via `AsyncLocalStorage`-scoped DI — adapter functions call `getAdapterLogger()` and receive the plugin or CLI logger for the current execution scope.
 - **Console logging sink** (`console-sink.ts`): New sink writes formatted structured log entries to stderr. Configurable via `logging.mode: 'console'` or `'file+console'`.
@@ -109,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `buildHostTaskEvidence()` return type changed from `ReviewInvocationEvidence | null` to `HostTaskBindResult` (breaking — single caller updated).
+
+- `EventHandlerDeps` interface extended with `emitSessionErrorAudit(sessionId, errorMessage, detail)` callback for audit trail integration.
+- `PRECONDITION_REASONS` count updated from 37 to 38 entries.
+- `VALIDATION_REASONS` count updated from 43 to 44 entries.
+- `INFRA_REASONS` count updated from 28 to 29 entries.
+- Total reason code count updated from 108 to 111.
+- BUG-02 (Task Content Fabrication) reclassified from CODE-BUG to DESIGN-GAP after deep code analysis: L1-L4 enforcement layers validate review process integrity (by design), not content accuracy. Content fabrication detection requires architectural design (L5 content grounding layer).
+
 - **`logging.mode` extended**: Schema now accepts `'console'` and `'file+console'` in addition to existing `'file'` and `'ui'`. Plugin logging builds console sinks for these modes. Console sink routes all levels to stderr (industry standard, stdout stays clean for CLI output).
 - **ALS-scoped DI replaces global singleton**: `adapter-logger.ts` uses `AsyncLocalStorage` instead of a global variable. Plugin hooks run in `runWithAdapterLoggerAsync()` scopes. CLI uses `setAdapterLogger()` with `finally { resetAdapterLogger() }` cleanup. Tests get automatic isolation.
 - **`policy-snapshot.ts` `console.warn` replaced**: Direct `console.warn` calls replaced with `getAdapterLogger().warn()` for structured routing.
@@ -131,6 +109,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` — dead code never called by any production path. `CheckExecutor` interface removed.
 
 ### Fixed
+
+- **Host-task binding diagnostics opaque (F5)**: `buildHostTaskEvidence()` now returns a structured `HostTaskBindResult` with machine-readable `bindOutcome` and serializable `diagnostic` metadata for every code path (9 distinct outcomes). Previously the function returned `null` on 6 different failure paths with no indication of why binding failed — making real-run debugging impossible. The `plugin.ts` caller now emits 4 diagnostic log statements: `reviewer task completed`, `bind attempt` (with policy and pending obligation count), `evidence created` or `bind failed` (with outcome and diagnostic fields), and `output blocked` on `host_task_required` policy with null evidence.
+
+- **Infinite reviewer re-invocation loop (BUG-07)**: Review obligation now blocked with `REVIEWER_INVOCATION_EXHAUSTED` after all subagent retry attempts fail in non-strict mode. Previously the obligation stayed `pending`, causing `findLatestPendingReviewObligation()` to rediscover it on every subsequent tool call and trigger another 3-attempt cycle — resulting in unbounded subagent sessions with no bindable results. Strict mode behavior unchanged (uses `blockReviewOutcome`).
+- **Plan text corruption from LLM-supplied toolArgs (BUG-09)**: Plan review prompt now always uses `sessionState.plan.current.body` (SSOT) instead of preferring the LLM-supplied `toolArgs.planText`. After context-window compaction, the LLM may reconstruct a hallucinated or truncated plan text that corrupts the reviewer prompt. Added mismatch logging (planTextMismatch, toolArgsPlanTextLength) for observability.
+- **Phase-aware host tool gate (BUG-03)**: Mutating host tools (`bash`, `write`, `edit`) are now blocked during investigation-only phases (`TICKET`, `PLAN`, `ARCHITECTURE`). Previously, all non-FlowGuard tools passed through the `tool.execute.before` hook without any phase check, allowing shell commands and file writes during planning. Read-only tools (`read`, `glob`, `grep`, `webfetch`) remain allowed. Fail-open for sessions without FlowGuard state (e.g. reviewer subagent sessions).
+- **Subagent type authorization (BUG-08)**: Non-reviewer subagent types are now blocked at the plugin level as defense-in-depth. Previously, `tool.execute.before` only intercepted `task` calls with `subagent_type: 'flowguard-reviewer'` — all other subagent types passed through unchecked. Now any non-empty `subagent_type` other than `flowguard-reviewer` triggers a `SUBAGENT_TYPE_UNAUTHORIZED` enforcement error.
+- **Session error audit trail (BUG-01)**: `session.error` SDK events are now persisted to the audit trail via `emitSessionErrorAudit` callback. Previously, session errors were only logged to the file/console logger and silently lost from the persistent audit chain. The composition root (`plugin.ts`) wires the callback to `appendReviewAuditEvent` with `error:SESSION_ERROR` event type.
+- **Session error detail loss (BUG-06)**: The `session.error` event handler now extracts all available error context from SDK event properties — `code`, `stack`, and any non-standard supplementary properties. Previously only `error` or `message` (string) were extracted; stack traces, error codes, and metadata were silently discarded.
+- **Doc-code mismatch in plugin-events (BUG-11)**: Module documentation claimed `session.idle` handling; corrected to `session.delete` which is the actual handled event type.
 
 - **JSONC conformance — full trailing comma and comment support**: Replaced `strip-json-comments` with `jsonc-parser` for complete JSONC compatibility.
 - **OpenCode config resolver prefers `opencode.jsonc`**: Installer and doctor now check `opencode.jsonc` first.
