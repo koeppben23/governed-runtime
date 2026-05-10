@@ -17,6 +17,7 @@ import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
 import { toAdapterLogger, runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { strictBlockedOutput, buildEnforcementError, getToolArgs } from './plugin-helpers.js';
+import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
   runReviewOrchestration as runOrchestrator,
@@ -179,6 +180,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         // (mutable by design). input carries tool name and session metadata only.
         const args = hookOutput?.args ?? {};
 
+        log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
+
         if (toolName === 'task') {
           const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
           if (st === REVIEWER_SUBAGENT_TYPE) {
@@ -211,8 +214,56 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               });
               throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
             }
+          } else if (st !== '') {
+            // Defense-in-depth: block non-reviewer subagent types (BUG-08).
+            // Platform-level config restricts task permissions, but FlowGuard
+            // enforces at the plugin level as a fail-closed safety net.
+            log.warn('enforcement', 'blocked unauthorized subagent type', {
+              tool: toolName,
+              subagentType: st,
+              sessionId,
+            });
+            throw buildEnforcementError(
+              'SUBAGENT_TYPE_UNAUTHORIZED',
+              `Subagent type '${st}' is not authorized by FlowGuard governance. ` +
+                `Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
+            );
           }
           return;
+        }
+
+        // ── Phase-aware host tool gate (BUG-03) ─────────────────────────
+        // Investigation-only phases (TICKET, PLAN, ARCHITECTURE) restrict
+        // mutating host tools (bash, write, edit). Read-only tools pass.
+        // Fail-open: if session state is unreadable (e.g. reviewer subagent
+        // session without FlowGuard state), the check is skipped.
+        if (isMutatingHostTool(toolName)) {
+          try {
+            const sessDir = ws.getSessionDir(sessionId);
+            if (sessDir) {
+              const state = await readState(sessDir);
+              if (state) {
+                const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
+                if (!gateResult.allowed) {
+                  log.warn('enforcement', 'blocked host tool in investigation-only phase', {
+                    tool: toolName,
+                    sessionId,
+                    phase: state.phase,
+                    code: gateResult.code,
+                  });
+                  throw buildEnforcementError(gateResult.code!, gateResult.reason!);
+                }
+              }
+            }
+          } catch (err) {
+            // Re-throw enforcement errors — they are intentional blocks.
+            if (err instanceof Error && err.name === 'FlowGuardEnforcementError') throw err;
+            // Fail-open on state read failure — log for diagnostics.
+            log.warn('enforcement', 'Failed to read session state for phase gate check', {
+              sessionId,
+              tool: toolName,
+            });
+          }
         }
 
         if (
@@ -261,6 +312,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const toolName: string = hookInput?.tool ?? '';
         const sessionId: string = hookInput?.sessionID ?? 'unknown';
         const now = new Date().toISOString();
+
+        log.info('hook', 'tool.execute.after', { tool: toolName, sessionId });
 
         if (
           toolName === TOOL_FLOWGUARD_PLAN ||

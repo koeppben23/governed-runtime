@@ -25,6 +25,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'HOST_TOOL_PHASE_DENIED',
+    category: 'admissibility',
+    messageTemplate:
+      "'{tool}' is not allowed in phase {phase}. Use read-only tools (read, glob, grep) for investigation.",
+    recoverySteps: [
+      'Check the current phase with flowguard_status',
+      'Use read-only tools (read, glob, grep) during investigation phases',
+      'Wait for the implementation phase to use mutating tools',
+    ],
+  },
+
+  {
     code: 'EMPTY_TICKET',
     category: 'input',
     messageTemplate: 'Ticket text must not be empty',

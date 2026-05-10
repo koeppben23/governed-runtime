@@ -111,12 +111,13 @@ real, registered reason.
 
 ### Command & Phase
 
-| Code                  | Description                                                        | Solution                                                 |
-| --------------------- | ------------------------------------------------------------------ | -------------------------------------------------------- |
-| `COMMAND_NOT_ALLOWED` | Command is not in the allowed-phase set for current phase          | Check `docs/commands.md` "Allowed in" for the command    |
-| `WRONG_PHASE`         | Tool requires a specific phase precondition                        | Run `/status` to see the current phase, then `/continue` |
-| `INVALID_VERDICT`     | `/review-decision` verdict is not approve/changes_requested/reject | Pass a valid verdict literal                             |
-| `INVALID_TRANSITION`  | Topology event not valid for current phase                         | Run `/status` and `/why` for diagnostic explanation      |
+| Code                     | Description                                                              | Solution                                                                      |
+| ------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `COMMAND_NOT_ALLOWED`    | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                         |
+| `WRONG_PHASE`            | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                      |
+| `HOST_TOOL_PHASE_DENIED` | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases |
+| `INVALID_VERDICT`        | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                  |
+| `INVALID_TRANSITION`     | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                           |
 
 ### Evidence Integrity
 
@@ -144,6 +145,7 @@ real, registered reason.
 | `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                         | Submit a substantively-new artifact for a fresh review obligation                           |
 | `MAX_REVIEW_ITERATIONS_REACHED`      | Review loop reached max iterations without convergence ({lastVerdict})          | Submit a fresh /plan or /implement to reset the iteration counter                           |
 | `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed                | Address the reviewer's reason or substantially revise; do not retry the same artifact       |
+| `SUBAGENT_TYPE_UNAUTHORIZED`         | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth)   | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents         |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output          | Re-run the tool that produced the review obligation                                         |
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                               | Include the structured `reviewFindings` object                                              |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session       | Use findings produced for the current session                                               |
@@ -224,6 +226,7 @@ FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 HOST_SUBAGENT_TASK_REQUIRED
+HOST_TOOL_PHASE_DENIED
 HYDRATE_DISCOVERY_CONTRACT_FAILED
 IMPLEMENTATION_EVIDENCE_EMPTY
 IMPLEMENTATION_EVIDENCE_REQUIRED
@@ -281,6 +284,7 @@ SUBAGENT_PROMPT_MISSING_CONTEXT
 SUBAGENT_REVIEW_NOT_INVOKED
 SUBAGENT_REVIEW_REQUIRED
 SUBAGENT_SESSION_MISMATCH
+SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED
 TOOL_ERROR

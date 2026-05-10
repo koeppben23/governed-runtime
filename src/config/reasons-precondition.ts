@@ -409,4 +409,15 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
     ],
   },
+
+  {
+    code: 'SUBAGENT_TYPE_UNAUTHORIZED',
+    category: 'precondition',
+    messageTemplate:
+      "Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only flowguard-reviewer is allowed.",
+    recoverySteps: [
+      'Use the flowguard-reviewer subagent type for reviewer Task calls',
+      'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
+    ],
+  },
 ];
