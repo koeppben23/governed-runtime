@@ -271,7 +271,7 @@ export const ReviewFindings = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
-    reviewMode: z.literal('subagent'),
+    reviewMode: z.enum(['subagent', 'self']),
     overallVerdict: LoopVerdict,
     blockingIssues: z.array(Finding),
     majorRisks: z.array(Finding),

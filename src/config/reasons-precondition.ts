@@ -115,6 +115,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEWER_UNAVAILABLE_STRICT',
+    category: 'precondition',
+    messageTemplate:
+      'Reviewer subagent is unavailable and strict enforcement requires host-visible review. {{reason}}',
+    recoverySteps: [
+      '{{recovery}}',
+      'Alternatively, set selfReview.strictEnforcement to false in policy to allow self-review fallback',
+    ],
+  },
+
+  {
     code: 'NO_SELF_REVIEW',
     category: 'precondition',
     messageTemplate: 'No self-review loop is active. Submit a plan first.',

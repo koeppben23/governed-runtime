@@ -524,3 +524,241 @@ describe('BUG-17: implement evidence-first resolution', () => {
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 });
+
+// =============================================================================
+// BUG-19: reviewerUnavailable fallback in host_task_required mode
+// =============================================================================
+
+describe('BUG-19: reviewerUnavailable self-review fallback', () => {
+  /**
+   * State with a pending obligation but NO invocation evidence (reviewer
+   * was never successfully invoked). resolveHostTaskFindings returns null.
+   */
+  function planStateNoEvidence() {
+    return makeState('PLAN', {
+      ticket: TICKET,
+      plan: {
+        current: {
+          body: '## Plan\n1. Fix the bug',
+          digest: 'digest-plan',
+          sections: [],
+          createdAt: now,
+        },
+        history: [],
+        reviewFindings: [],
+      },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-plan',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      policySnapshot: {
+        mode: 'team',
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: now,
+            pluginHandshakeAt: now,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+          },
+        ],
+        invocations: [], // NO evidence — reviewer failed to be invoked
+      },
+    });
+  }
+
+  function implStateNoEvidence() {
+    return makeState('IMPL_REVIEW', {
+      plan: {
+        current: { body: '## Plan', digest: 'digest-plan', sections: [], createdAt: now },
+        history: [],
+        reviewFindings: [],
+      },
+      implementation: { changedFiles: ['src/foo.ts'], digest: 'digest-impl', createdAt: now },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-impl',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      policySnapshot: {
+        mode: 'team',
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: OBLIGATION_ID,
+            obligationType: 'implement',
+            iteration: 1,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: now,
+            pluginHandshakeAt: now,
+            status: 'pending',
+            invocationId: null,
+            blockedCode: null,
+            fulfilledAt: null,
+            consumedAt: null,
+          },
+        ],
+        invocations: [],
+      },
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('HAPPY: plan accepts reviewerUnavailable=true in non-strict host_task_required mode', async () => {
+    const state = planStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.autoAdvance.mockReturnValue({
+      state: { ...state, phase: 'PLAN_REVIEW' },
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute(
+      { selfReviewVerdict: 'approve', reviewerUnavailable: true },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBeUndefined();
+  });
+
+  it('HAPPY: implement accepts reviewerUnavailable=true in non-strict host_task_required mode', async () => {
+    const state = implStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.autoAdvance.mockReturnValue({
+      state: { ...state, phase: 'EVIDENCE_REVIEW' },
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
+
+    const { implement } = await import('./implement.js');
+    const res = await implement.execute(
+      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBeUndefined();
+  });
+
+  it('BAD: plan blocks reviewerUnavailable=true when strictEnforcement is true', async () => {
+    const state = planStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute(
+      { selfReviewVerdict: 'approve', reviewerUnavailable: true },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
+  });
+
+  it('EDGE: reviewerUnavailable fallback creates findings with reviewMode "self"', async () => {
+    const state = planStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+
+    let persistedState: unknown = null;
+    mocks.writeStateWithArtifacts.mockImplementation(async (_dir: string, s: unknown) => {
+      persistedState = s;
+    });
+    mocks.autoAdvance.mockImplementation((s: unknown) => ({
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+
+    const { plan } = await import('./plan.js');
+    await plan.execute({ selfReviewVerdict: 'approve', reviewerUnavailable: true }, {} as never);
+
+    const ps = persistedState as { plan?: { reviewFindings?: Array<{ reviewMode: string }> } };
+    expect(ps?.plan?.reviewFindings).toHaveLength(1);
+    expect(ps!.plan!.reviewFindings![0].reviewMode).toBe('self');
+  });
+
+  it('EDGE: reviewerUnavailable without evidence still blocks when strictEnforcement (implement)', async () => {
+    const state = implStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+    });
+
+    const { implement } = await import('./implement.js');
+    const res = await implement.execute(
+      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
+  });
+
+  it('REGRESSION: reviewerUnavailable=false does NOT trigger fallback (still BLOCKED)', async () => {
+    const state = planStateNoEvidence();
+    mocks.requireStateForMutation.mockResolvedValue(state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute(
+      { selfReviewVerdict: 'approve', reviewerUnavailable: false },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
+  });
+});

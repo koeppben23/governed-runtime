@@ -134,6 +134,13 @@ export const plan: ToolDefinition = {
       'Structured review findings from independent review. ' +
         'Required when selfReviewVerdict is "approve" and subagentEnabled=true.',
     ),
+    reviewerUnavailable: z
+      .boolean()
+      .optional()
+      .describe(
+        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
+          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+      ),
   },
   async execute(args, context) {
     try {
@@ -377,6 +384,30 @@ export const plan: ToolDefinition = {
           if (resolved) {
             effectiveFindings = resolved.findings;
             evidenceInvocationId = resolved.invocationId;
+          } else if (args.reviewerUnavailable === true) {
+            // BUG-19: Reviewer subagent cannot be invoked (environment/infra).
+            // Allow self-review fallback to unblock workflow. Strict enforcement
+            // still blocks — degraded assurance is only permitted in non-strict.
+            if (strictEnforcement) {
+              return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+                reason:
+                  'reviewer subagent unavailable and strict enforcement requires host-visible review',
+                recovery: 'Install the flowguard-reviewer agent or disable strict enforcement',
+              });
+            }
+            effectiveFindings = {
+              iteration: expectedIteration,
+              planVersion: expectedPlanVersion,
+              reviewMode: 'self' as const,
+              overallVerdict: args.selfReviewVerdict as 'approve' | 'changes_requested',
+              blockingIssues: [],
+              majorRisks: [],
+              missingVerification: [],
+              scopeCreep: [],
+              unknowns: [],
+              reviewedBy: { sessionId: context.sessionID },
+              reviewedAt: new Date().toISOString(),
+            };
           }
         } else if (args.reviewFindings) {
           effectiveFindings = args.reviewFindings as ReviewFindings;

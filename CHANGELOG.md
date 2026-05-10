@@ -11,7 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Test infrastructure: fulfillStrictReviewObligation missing capturedRawFindings (Batch 10)**: The test helper `fulfillStrictReviewObligation` correctly set `invocationMode: 'host_subagent_task'` and `hostVisible: true` in host_task_required mode but did NOT pass `capturedRawFindings` to `buildInvocationEvidence`. After the BUG-17 evidence-first fix, `resolveHostTaskFindings` requires `capturedRawFindings != null` on the invocation — so all tests using this helper cascaded into either `REVIEW_FINDINGS_REQUIRED` (direct) or "No matching review obligation found" (indirect, when the second plan call failed and no new obligation was created for the next iteration). Fix: pass `capturedRawFindings: findings` to the invocation evidence in host_task_required mode. Resolves 70 deterministic test failures across 11 test files.
 
-- **Template hash stability updated for Batch 9 template changes**: `templates-hash.test.ts` expected hash updated to reflect the template content changes from Batch 9 (reviewFindings optional in host_task_required mode, examples simplified).
+- **Agent infinite loop when reviewer subagent unavailable (BUG-19)**: In `host_task_required` mode, `buildHostTaskPolicyOutput` instructs the agent to spawn a `flowguard-reviewer` subagent via the Task tool. If the reviewer agent is not installed (no `.opencode/agents/` directory), the agent cannot fulfill this instruction and resubmits `flowguard_plan` — creating a new obligation — producing the same instruction — infinite loop. Fix: (1) Added fallback instruction to `buildHostTaskPolicyOutput` next field ("If Task tool cannot spawn reviewer, submit selfReviewVerdict with reviewerUnavailable: true"). (2) All three tools (plan, implement, architecture) detect `args.reviewerUnavailable === true`: in strict mode → BLOCKED with `REVIEWER_UNAVAILABLE_STRICT`; in non-strict mode → synthetic self-review findings with `reviewMode: 'self'` unblock the workflow. (3) `ReviewFindings.reviewMode` Zod schema extended from `z.literal('subagent')` to `z.enum(['subagent', 'self'])`. (4) New reason code `REVIEWER_UNAVAILABLE_STRICT` registered (PRECONDITION category, count now 39).
+
+- **Template hash stability updated for Batch 9/10 template changes**: `templates-hash.test.ts` expected hash updated to reflect template content changes from Batch 9 (reviewFindings optional in host_task_required mode, examples simplified) and Batch 10 (fallback instruction for reviewer unavailability).
+
+### Changed
+
+- `plan.ts`, `implement.ts`, `architecture.ts`: Added `reviewerUnavailable: z.boolean().optional()` to tool args schema. Added fallback path: when `reviewerUnavailable === true` in strict mode → BLOCKED with `REVIEWER_UNAVAILABLE_STRICT`; in non-strict → synthetic self-review findings with `reviewMode: 'self'`.
+- `plugin-orchestrator.ts`: `buildHostTaskPolicyOutput` next field now includes fallback instruction for reviewer unavailability ("If Task tool cannot spawn reviewer, submit selfReviewVerdict with reviewerUnavailable: true").
+- `src/state/evidence.ts`: `ReviewFindings.reviewMode` extended from `z.literal('subagent')` to `z.enum(['subagent', 'self'])`.
+- `src/config/reasons-precondition.ts`: New reason code `REVIEWER_UNAVAILABLE_STRICT` registered (PRECONDITION category).
+- `src/templates/commands/plan.ts`, `implement.ts`, `architecture.ts`: Added fallback instruction for reviewer unavailability to template content.
+
+### Added
+
+- 6 new tests in `evidence-first-resolution.test.ts` covering BUG-19 reviewer unavailability (HAPPY×2, BAD/EDGE×2 strict blocks, EDGE×1 reviewMode='self', REGRESSION×1).
+- 1 new test in `plugin-orchestrator-bug16.test.ts` covering BUG-19 fallback instruction in next field.
 
 ### Fixed
 

@@ -614,11 +614,14 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+        // BUG-19: reviewMode:'self' now parses through schema (enum extended)
+        // but is blocked by mandate check (reviewMode !== 'subagent') with
+        // the more specific SUBAGENT_MANDATE_MISMATCH code.
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'STRICT_REVIEW_ORCHESTRATION_FAILED',
+          'SUBAGENT_MANDATE_MISMATCH',
         );
       } finally {
         await ws.cleanup();

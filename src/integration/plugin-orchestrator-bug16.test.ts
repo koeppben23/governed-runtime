@@ -281,4 +281,26 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const client = deps.client as { session: { create: ReturnType<typeof vi.fn> } };
     expect(client.session.create).not.toHaveBeenCalled();
   });
+
+  it('BUG-19: next field includes reviewerUnavailable fallback instruction', async () => {
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const output = { output: reviewRequiredOutput(0, 1) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+
+    await runReviewOrchestration(deps, event);
+
+    const parsed = JSON.parse(output.output);
+    expect(parsed.next).toContain('FALLBACK');
+    expect(parsed.next).toContain('reviewerUnavailable: true');
+    expect(parsed.next).toContain('self-review assurance');
+  });
 });
