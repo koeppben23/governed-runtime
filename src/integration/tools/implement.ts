@@ -83,7 +83,11 @@ import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evi
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
-import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
+import {
+  validateReviewFindings,
+  requireReviewFindings,
+  resolveHostTaskFindings,
+} from './review-validation.js';
 import {
   appendReviewObligation,
   consumeReviewObligation,
@@ -319,21 +323,53 @@ export const implement: ToolDefinition = {
           return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
         }
 
-        if (!args.reviewFindings) {
+        // Compute iteration before findings resolution
+        const iteration = nextImplementationReviewIteration(state);
+        const implPlanVersion = (state.plan?.history.length ?? 0) + 1;
+
+        // ── Resolve effective findings ──────────────────────────────
+        // BUG-15 Stufe 2: For host_task_required, resolve findings from
+        // invocation evidence (plugin first-party) instead of requiring
+        // agent reconstruction. Eliminates attestation copy errors.
+        const assuranceBase = state.reviewAssurance ?? { obligations: [], invocations: [] };
+        const isHostTaskMode = policy.reviewInvocationPolicy === 'host_task_required';
+
+        // Find the unconsumed obligation for evidence lookup
+        const pendingImplObligation =
+          [...assuranceBase.obligations]
+            .reverse()
+            .find(
+              (item) =>
+                item.obligationType === 'implement' &&
+                item.status !== 'consumed' &&
+                item.consumedAt == null,
+            ) ?? null;
+
+        let effectiveFindings: ReviewFindings | undefined = args.reviewFindings
+          ? (args.reviewFindings as ReviewFindings)
+          : undefined;
+        let evidenceInvocationId: string | undefined;
+
+        if (!effectiveFindings && isHostTaskMode) {
+          const resolved = resolveHostTaskFindings(state.reviewAssurance, pendingImplObligation);
+          if (resolved) {
+            effectiveFindings = resolved.findings;
+            evidenceInvocationId = resolved.invocationId;
+          }
+        }
+
+        if (!effectiveFindings) {
           const blocked = requireReviewFindings(false);
           if (blocked) return blocked;
         }
 
-        // Compute iteration before validation
-        const iteration = nextImplementationReviewIteration(state);
-
-        // Validate review findings in Mode B
+        // Validate agent-submitted findings only (evidence findings are first-party)
         if (args.reviewFindings) {
           const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
             subagentEnabled,
             fallbackToSelf,
             expectedIteration: iteration,
-            expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
+            expectedPlanVersion: implPlanVersion,
             strictEnforcement,
             assurance: state.reviewAssurance,
             obligationType: 'implement',
@@ -341,13 +377,21 @@ export const implement: ToolDefinition = {
             reviewParentSessionId: context.sessionID,
           });
           if (blocked) return blocked;
+        }
 
-          if (args.reviewFindings.overallVerdict !== args.reviewVerdict) {
-            return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-              reviewVerdict: args.reviewVerdict,
-              overallVerdict: args.reviewFindings.overallVerdict,
-            });
-          }
+        // Defense-in-depth: unable_to_review must never reach state persistence.
+        if (effectiveFindings?.overallVerdict === 'unable_to_review') {
+          return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+            obligationId: pendingImplObligation?.obligationId ?? 'unknown',
+          });
+        }
+
+        // Guard: submitted reviewVerdict must match the findings overallVerdict.
+        if (effectiveFindings && effectiveFindings.overallVerdict !== args.reviewVerdict) {
+          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+            reviewVerdict: args.reviewVerdict,
+            overallVerdict: effectiveFindings.overallVerdict,
+          });
         }
 
         const verdict = args.reviewVerdict as LoopVerdict;
@@ -360,28 +404,24 @@ export const implement: ToolDefinition = {
 
         // Persist review findings in Mode B
         const existingFindings = state.implReviewFindings ?? [];
-        const newReviewFindings = args.reviewFindings
-          ? [...existingFindings, args.reviewFindings as ReviewFindings]
+        const newReviewFindings = effectiveFindings
+          ? [...existingFindings, effectiveFindings]
           : existingFindings;
 
-        const assuranceBase = state.reviewAssurance ?? { obligations: [], invocations: [] };
         const strictObligation = strictEnforcement
-          ? findLatestObligation(
-              assuranceBase.obligations,
-              'implement',
-              iteration,
-              (state.plan?.history.length ?? 0) + 1,
-            )
+          ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, implPlanVersion)
           : null;
+        // BUG-15 Stufe 2: For evidence-resolved findings, use known invocationId
         const consumedAssurance = consumeReviewObligation(
           assuranceBase,
           strictObligation,
           ctx.now(),
-          findAcceptedInvocationForFindings(
-            assuranceBase,
-            strictObligation,
-            args.reviewFindings as ReviewFindings | undefined,
-          )?.invocationId,
+          evidenceInvocationId ??
+            findAcceptedInvocationForFindings(
+              assuranceBase,
+              strictObligation,
+              args.reviewFindings as ReviewFindings | undefined,
+            )?.invocationId,
         );
 
         const reviewedState: SessionState = {

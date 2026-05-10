@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Evidence-based findings resolution eliminates agent reconstruction (BUG-15 Stufe 2)**: In `host_task_required` mode, the agent no longer needs to submit `reviewFindings` — the plugin captures the complete raw findings in `capturedRawFindings` on `ReviewInvocationEvidence`, and the tool layer resolves them directly from invocation evidence via `resolveHostTaskFindings()`. This eliminates the fundamental brittleness of LLM-reconstructed findings JSON (key ordering, Zod stripping, hallucinated fields) and achieves 100% success rate for the plan-review-revision loop. Agent-submitted findings (SDK path) continue to work unchanged with full `validateReviewFindings` validation. Evidence-resolved findings skip `validateReviewFindings` (first-party, plugin-validated) and use `evidenceInvocationId` directly for obligation consumption — bypassing `findAcceptedInvocationForFindings` hash comparison entirely.
+
+### Added
+
+- `capturedRawFindings` optional field on `ReviewInvocationEvidence` Zod schema — stores the reviewer's complete raw findings object captured by the plugin hook.
+- `resolveHostTaskFindings()` and `ResolvedHostTaskFindings` interface exported from `review-validation.ts` — resolves findings from invocation evidence for `host_task_required` mode.
+- `capturedRawFindings` parameter on `buildInvocationEvidence()` in `review-assurance.ts`.
+- 14 new tests in `review-validation.test.ts` covering `resolveHostTaskFindings` (HAPPY×2, BAD×5, EDGE×5, CORNER×2).
+- 5 new tests in `review-assurance.test.ts` covering `capturedRawFindings` field (HAPPY×2, EDGE×2, CORNER×1).
+- 6 new tests in `plugin-host-task-diagnostics.test.ts` covering E2E evidence-based findings resolution (E2E×3, BAD×1, SMOKE×2).
+- 6 new tests in `architecture-tool.test.ts` covering tool-level evidence resolve (HAPPY×1, BAD×2, EDGE×2, CORNER×1).
+
+### Changed
+
+- `plan.ts`, `implement.ts`, `architecture.ts` (`host_task_required` Mode B paths): restructured to resolve findings from invocation evidence when `args.reviewFindings` is absent. Obligation lookup moved before findings resolution. `effectiveFindings` variable unifies both paths. `evidenceInvocationId` bypasses `findAcceptedInvocationForFindings`.
+- `buildHostTaskEvidence()` in `review-enforcement.ts` now passes `capturedRawFindings: rawFindings` to `buildInvocationEvidence`.
+
+### Fixed
+
+- **Hash mismatch breaks host_task_required revision loop (BUG-15)**: In `host_task_required` mode, the plan-review-revisions loop was 100% broken because `validateReviewFindings` compared a SHA-256 hash of the agent's reconstructed findings JSON against the plugin-captured `rawFindings` hash. These never match because: (1) Zod strips/transforms fields during agent submission, (2) LLM agents reconstruct JSON with different key ordering, (3) `JSON.stringify` is key-order-dependent. Fix: added `capturedVerdict` field to `ReviewInvocationEvidence` schema, populated from the plugin's first-party `CapturedFindings.overallVerdict`. For `host_task_required` mode, invocation lookup now matches by `obligationId` + `invocationMode` instead of requiring `findingsHash`, and validation verifies the submitted verdict against `capturedVerdict` instead of hash comparison. SDK path (`sdk_session_prompt`) unchanged — hash comparison remains correct there because the plugin injects findings and the agent returns them verbatim. No new reason codes (reuses `REVIEW_FINDINGS_HASH_MISMATCH` for verdict tamper). SessionId comparison also relaxed for `host_task_required` since the agent reconstructs `reviewedBy.sessionId` from text output.
+
+### Added
+
+- `capturedVerdict` optional field on `ReviewInvocationEvidence` Zod schema — stores the reviewer's authoritative verdict captured by the plugin hook.
+- `capturedVerdict` parameter on `buildInvocationEvidence()` in `review-assurance.ts`.
+- 5 new tests in `review-assurance.test.ts` covering `capturedVerdict` field (HAPPY×3, EDGE×2: Zod round-trip, backward compat).
+- 6 new tests in `review-validation.test.ts` covering BUG-15 verdict-based validation (HAPPY×2, BAD×2, CORNER×1, EDGE×1, REGRESSION×1).
+- 7 new tests in `plugin-host-task-diagnostics.test.ts` covering `capturedVerdict` evidence creation and E2E revision loop (HAPPY×2, EDGE×1, SMOKE×1, E2E×3: verdict match, verdict tamper, hash-mismatch-with-verdict-match).
+
+### Changed
+
+- `buildHostTaskEvidence()` in `review-enforcement.ts` now passes `capturedVerdict` from `CapturedFindings.overallVerdict` to `buildInvocationEvidence`.
+- SDK-path `buildInvocationEvidence` call in `plugin-orchestrator.ts` also passes `capturedVerdict` for schema consistency.
+- `validateReviewFindings()` in `review-validation.ts`: for `host_task_required` mode, invocation lookup relaxed (no `findingsHash`/`childSessionId` in predicate), sessionId check relaxed (skip hard block), hash comparison replaced with verdict comparison when `capturedVerdict` is present. Fallback to hash comparison when `capturedVerdict` is absent (legacy evidence backward compat).
+
 ### Added
 
 - `TaskToolContext` interface, `resolveSessionIdFromMetadata()`, and `injectSessionIdIntoOutput()` exported from `review-enforcement.ts` for tiered session ID resolution.

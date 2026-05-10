@@ -286,6 +286,11 @@ export function buildInvocationEvidence(input: {
   reviewAssuranceLevel?: 'structured_high' | 'text_compat_lower';
   extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
   modelCapabilityError?: string;
+  /** Captured verdict from the reviewer's actual output (host-task authoritative). */
+  capturedVerdict?: string;
+  /** Complete raw findings from the reviewer's output (host-task only).
+   *  Enables evidence-based findings resolution without agent reconstruction. */
+  capturedRawFindings?: Record<string, unknown>;
 }): ReviewInvocationEvidence {
   const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
   const structuredOutputUsed =
@@ -315,6 +320,8 @@ export function buildInvocationEvidence(input: {
     reviewAssuranceLevel,
     ...(input.extractionMethod ? { extractionMethod: input.extractionMethod } : {}),
     ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
+    ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
+    ...(input.capturedRawFindings ? { capturedRawFindings: input.capturedRawFindings } : {}),
   };
 }
 

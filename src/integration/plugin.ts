@@ -21,7 +21,6 @@ import {
   buildEnforcementError,
   getToolArgs,
   getToolMetadata,
-  getToolCallID,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';

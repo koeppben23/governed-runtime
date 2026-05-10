@@ -339,6 +339,12 @@ export const ReviewInvocationEvidence = z
     invokedAt: z.string().datetime(),
     fulfilledAt: z.string().datetime().nullable(),
     consumedByObligationId: z.string().uuid().nullable(),
+    /** Captured verdict from the reviewer's actual output (host-task authoritative). */
+    capturedVerdict: z.string().optional(),
+    /** Complete raw findings captured by the plugin from the reviewer's output (host-task only).
+     *  Enables evidence-based findings resolution: the tool reads findings directly from
+     *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
+    capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
     /** Reviewer output transport used to obtain the findings. */

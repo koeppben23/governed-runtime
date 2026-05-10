@@ -721,6 +721,11 @@ export async function runReviewOrchestration(
                 reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
                 extractionMethod: reviewerResult.extractionMethod,
                 modelCapabilityError: reviewerResult.modelCapabilityError,
+                capturedVerdict:
+                  reviewerResult.findings &&
+                  typeof reviewerResult.findings.overallVerdict === 'string'
+                    ? reviewerResult.findings.overallVerdict
+                    : undefined,
               });
               // Use immutable appendInvocationEvidence instead of
               // mutating ensureReviewAssurance()'s return via .push().

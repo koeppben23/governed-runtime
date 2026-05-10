@@ -63,7 +63,11 @@ import {
 } from '../review-assurance.js';
 
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
-import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
+import {
+  validateReviewFindings,
+  requireReviewFindings,
+  resolveHostTaskFindings,
+} from './review-validation.js';
 
 // Presentation
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
@@ -271,11 +275,7 @@ export const architecture: ToolDefinition = {
         const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
         const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
-        if (!args.reviewFindings) {
-          const blocked = requireReviewFindings(false);
-          if (blocked) return blocked;
-        }
-
+        // ── Obligation lookup (before findings resolution) ─────────
         // ADRs are immutable per id; planVersion is fixed at 1, iteration is
         // the loop counter. Use the centralized obligation lookup (matches
         // both pending and fulfilled — plugin-orchestrated obligations are
@@ -288,6 +288,30 @@ export const architecture: ToolDefinition = {
         const expectedIteration = pendingObligation?.iteration ?? state.selfReview.iteration;
         const expectedPlanVersion = pendingObligation?.planVersion ?? 1;
 
+        // ── Resolve effective findings ──────────────────────────────
+        // BUG-15 Stufe 2: For host_task_required, resolve findings from
+        // invocation evidence (plugin first-party) instead of requiring
+        // agent reconstruction. Eliminates attestation copy errors.
+        const isHostTaskMode = policy.reviewInvocationPolicy === 'host_task_required';
+        let effectiveFindings: ReviewFindings | undefined = args.reviewFindings
+          ? (args.reviewFindings as ReviewFindings)
+          : undefined;
+        let evidenceInvocationId: string | undefined;
+
+        if (!effectiveFindings && isHostTaskMode) {
+          const resolved = resolveHostTaskFindings(state.reviewAssurance, pendingObligation);
+          if (resolved) {
+            effectiveFindings = resolved.findings;
+            evidenceInvocationId = resolved.invocationId;
+          }
+        }
+
+        if (!effectiveFindings) {
+          const blocked = requireReviewFindings(false);
+          if (blocked) return blocked;
+        }
+
+        // Validate agent-submitted findings only (evidence findings are first-party)
         if (args.reviewFindings) {
           const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
             subagentEnabled: subagentEnabledModeB,
@@ -303,15 +327,19 @@ export const architecture: ToolDefinition = {
           if (blocked) return blocked;
         }
 
-        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
-        if (
-          args.reviewFindings &&
-          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
-          args.reviewFindings.overallVerdict !== 'unable_to_review'
-        ) {
+        // Defense-in-depth: unable_to_review must never reach state persistence.
+        if (effectiveFindings?.overallVerdict === 'unable_to_review') {
+          return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+            obligationId: pendingObligation?.obligationId ?? 'unknown',
+          });
+        }
+
+        // Guard: submitted selfReviewVerdict must match the findings overallVerdict.
+        // (unable_to_review already handled by defense-in-depth check above)
+        if (effectiveFindings && effectiveFindings.overallVerdict !== args.selfReviewVerdict) {
           return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
             submittedVerdict: args.selfReviewVerdict,
-            findingsVerdict: args.reviewFindings.overallVerdict,
+            findingsVerdict: effectiveFindings.overallVerdict,
           });
         }
 
@@ -347,8 +375,8 @@ export const architecture: ToolDefinition = {
 
         // F13 slice 7c: append-only review findings parallel to author artifacts
         const existingReviewFindings = state.architecture.reviewFindings;
-        const newReviewFindings = args.reviewFindings
-          ? [...(existingReviewFindings ?? []), args.reviewFindings as ReviewFindings]
+        const newReviewFindings = effectiveFindings
+          ? [...(existingReviewFindings ?? []), effectiveFindings]
           : existingReviewFindings;
         const adrWithReviewFindings = newReviewFindings
           ? { ...currentAdr, reviewFindings: newReviewFindings }
@@ -364,15 +392,17 @@ export const architecture: ToolDefinition = {
             )
           : null;
 
+        // BUG-15 Stufe 2: For evidence-resolved findings, use known invocationId
         const consumedAssurance = consumeReviewObligation(
           assuranceBaseModeB,
           strictObligation,
           ctx.now(),
-          findAcceptedInvocationForFindings(
-            assuranceBaseModeB,
-            strictObligation,
-            args.reviewFindings as ReviewFindings | undefined,
-          )?.invocationId,
+          evidenceInvocationId ??
+            findAcceptedInvocationForFindings(
+              assuranceBaseModeB,
+              strictObligation,
+              args.reviewFindings as ReviewFindings | undefined,
+            )?.invocationId,
         );
 
         // Build updated state

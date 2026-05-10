@@ -803,6 +803,8 @@ export function buildHostTaskEvidence(
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',
+    capturedVerdict: latest.capturedFindings?.overallVerdict,
+    capturedRawFindings: rawFindings,
   });
 
   return {

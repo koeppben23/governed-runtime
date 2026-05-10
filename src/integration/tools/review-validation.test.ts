@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateReviewFindings,
   requireReviewFindings,
+  resolveHostTaskFindings,
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
@@ -611,6 +612,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       hostVisible: true,
       parentSessionId: 'ses_parent',
       findingsHash: hashFindings(findings),
+      capturedVerdict: 'approve',
     };
 
     const result = validateReviewFindings(
@@ -627,10 +629,52 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     expect(result).toBeNull();
   });
 
-  it('host_task_required rejects host-visible invocation when submitted findings do not match the invocation hash', () => {
-    const storedFindings = strictFindings();
+  it('host_task_required rejects when submitted verdict differs from capturedVerdict (BUG-15: verdict tamper)', () => {
+    const storedFindings = strictFindings({ overallVerdict: 'changes_requested' });
+    const submittedFindings = strictFindings({ overallVerdict: 'approve' }); // tampered verdict
+    const assurance = strictAssuranceFixture(storedFindings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      findingsHash: hashFindings(storedFindings),
+      capturedVerdict: 'changes_requested',
+    };
+
+    const result = validateReviewFindings(
+      submittedFindings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+  });
+
+  // ── BUG-15: host_task_required verdict-based validation ─────────────────
+
+  it('BUG-15 HAPPY: host_task_required accepts when hash differs but verdict matches (core fix)', () => {
+    // This is THE BUG-15 scenario: agent reconstructs findings JSON with
+    // different key order / Zod-stripped fields, causing hash mismatch.
+    // With capturedVerdict, verdict match suffices.
+    const storedFindings = strictFindings({ overallVerdict: 'approve' });
     const submittedFindings = strictFindings({
-      majorRisks: [{ severity: 'major', category: 'risk', message: 'new risk' }],
+      overallVerdict: 'approve',
+      // Different majorRisks array → different hash, same verdict
+      majorRisks: [{ severity: 'major', category: 'risk', message: 'agent-reconstructed' }],
     });
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
@@ -646,6 +690,118 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       hostVisible: true,
       parentSessionId: 'ses_parent',
       findingsHash: hashFindings(storedFindings),
+      capturedVerdict: 'approve',
+    };
+
+    // Verify hashes actually differ (precondition for this test)
+    expect(hashFindings(submittedFindings)).not.toBe(hashFindings(storedFindings));
+
+    const result = validateReviewFindings(
+      submittedFindings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('BUG-15 HAPPY: host_task_required accepts changes_requested verdict (revision loop)', () => {
+    const findings = strictFindings({ overallVerdict: 'changes_requested' });
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      findingsHash: hashFindings(findings),
+      capturedVerdict: 'changes_requested',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('BUG-15 CORNER: host_task_required accepts with different sessionId from evidence', () => {
+    // After BUG-14 fix, sessionId is injected into output. But agent may
+    // still reconstruct it differently. Host-task mode skips hard sessionId block.
+    const findings = strictFindings({
+      reviewedBy: { sessionId: 'ses_agent_reconstructed' },
+    });
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      childSessionId: 'ses_real_child', // different from agent's reconstruction
+      findingsHash: 'does-not-matter-for-host-task',
+      capturedVerdict: 'approve',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('BUG-15 EDGE: host_task_required falls back to hash when capturedVerdict is missing (legacy evidence)', () => {
+    // Legacy invocation evidence without capturedVerdict → falls back to hash comparison
+    const storedFindings = strictFindings();
+    const submittedFindings = strictFindings({
+      majorRisks: [{ severity: 'major', category: 'risk', message: 'extra' }],
+    });
+    const assurance = strictAssuranceFixture(storedFindings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: new Date().toISOString(),
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      findingsHash: hashFindings(storedFindings),
+      // no capturedVerdict → legacy evidence
     };
 
     const result = validateReviewFindings(
@@ -660,7 +816,54 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+  });
+
+  it('BUG-15 REGRESSION: sdk_session_prompt still uses hash comparison', () => {
+    // SDK path MUST NOT use verdict-based validation — hash comparison stays
+    const storedFindings = strictFindings();
+    const submittedFindings = strictFindings({
+      majorRisks: [{ severity: 'major', category: 'risk', message: 'sdk tampered' }],
+    });
+    const assurance = strictAssuranceFixture(storedFindings);
+
+    const result = validateReviewFindings(
+      submittedFindings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        // no reviewInvocationPolicy → defaults to SDK-like behavior
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+  });
+
+  it('BUG-15 BAD: sdk_session_prompt rejects sessionId mismatch (non-host-task hard block)', () => {
+    const findings = strictFindings({
+      reviewedBy: { sessionId: 'ses_wrong' },
+    });
+    const assurance = strictAssuranceFixture(findings);
+    // Fix the invocation to have a different childSessionId so lookup works via invocationId
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      childSessionId: 'ses_correct',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        // no reviewInvocationPolicy → SDK-like
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_FINDINGS_SESSION_MISMATCH');
   });
 
   it('task-tool after evidence is available before the next FlowGuard verdict submit validates findings', () => {
@@ -718,5 +921,266 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     );
 
     expect(result).toBeNull();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// resolveHostTaskFindings — BUG-15 Stufe 2
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('resolveHostTaskFindings', () => {
+  const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+  const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+  const now = new Date().toISOString();
+
+  const validRawFindings: Record<string, unknown> = {
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'approve',
+    blockingIssues: [],
+    majorRisks: [],
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId: 'ses_child' },
+    reviewedAt: now,
+  };
+
+  function makeObligation(overrides: Record<string, unknown> = {}) {
+    return {
+      obligationId: OBLIGATION_ID,
+      obligationType: 'plan' as const,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      createdAt: now,
+      pluginHandshakeAt: now,
+      status: 'fulfilled' as const,
+      invocationId: INVOCATION_ID,
+      blockedCode: null,
+      fulfilledAt: now,
+      consumedAt: null,
+      ...overrides,
+    };
+  }
+
+  function makeHostTaskInvocation(overrides: Record<string, unknown> = {}) {
+    return {
+      invocationId: INVOCATION_ID,
+      obligationId: OBLIGATION_ID,
+      obligationType: 'plan' as const,
+      parentSessionId: 'ses_parent',
+      childSessionId: 'ses_child',
+      agentType: 'flowguard-reviewer' as const,
+      invocationMode: 'host_subagent_task' as const,
+      hostVisible: true,
+      promptHash: 'abc',
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      findingsHash: hashFindings(validRawFindings),
+      invokedAt: now,
+      fulfilledAt: now,
+      consumedByObligationId: null,
+      capturedVerdict: 'approve',
+      capturedRawFindings: validRawFindings,
+      ...overrides,
+    };
+  }
+
+  // ── Happy Path ──────────────────────────────────────────────────────────
+
+  it('HAPPY: resolves findings from host-task invocation with capturedRawFindings', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [makeHostTaskInvocation()],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result).not.toBeNull();
+    expect(result!.findings.overallVerdict).toBe('approve');
+    expect(result!.findings.iteration).toBe(0);
+    expect(result!.findings.planVersion).toBe(1);
+    expect(result!.findings.reviewMode).toBe('subagent');
+    expect(result!.invocationId).toBe(INVOCATION_ID);
+  });
+
+  it('HAPPY: resolves changes_requested verdict from evidence', () => {
+    const rawFindings = { ...validRawFindings, overallVerdict: 'changes_requested' };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedVerdict: 'changes_requested',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result).not.toBeNull();
+    expect(result!.findings.overallVerdict).toBe('changes_requested');
+  });
+
+  // ── Bad Path ────────────────────────────────────────────────────────────
+
+  it('BAD: returns null when assurance is undefined', () => {
+    expect(resolveHostTaskFindings(undefined, makeObligation())).toBeNull();
+  });
+
+  it('BAD: returns null when obligation is null', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [makeHostTaskInvocation()],
+    };
+    expect(resolveHostTaskFindings(assurance, null)).toBeNull();
+  });
+
+  it('BAD: returns null when no invocation exists for obligation', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [], // no invocations
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('BAD: returns null when invocation has no capturedRawFindings', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: undefined,
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('BAD: returns null when capturedRawFindings fails Zod parse (missing required fields)', () => {
+    const invalidRaw = { overallVerdict: 'approve' }; // missing required fields
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: invalidRaw,
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  // ── Edge Cases ──────────────────────────────────────────────────────────
+
+  it('EDGE: skips already-consumed invocations', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          consumedByObligationId: '99999999-9999-4999-8999-999999999999',
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('EDGE: skips SDK invocations (only host_subagent_task)', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          invocationMode: 'sdk_session_prompt',
+          hostVisible: false,
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('EDGE: skips non-host-visible invocations', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          hostVisible: false,
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('EDGE: skips invocations with mismatched obligationId', () => {
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          obligationId: '33333333-3333-4333-8333-333333333333',
+        }),
+      ],
+    };
+    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+  });
+
+  it('EDGE: picks first unconsumed invocation when multiple exist', () => {
+    const secondInvocationId = '44444444-4444-4444-8444-444444444444';
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          consumedByObligationId: '99999999-9999-4999-8999-999999999999', // consumed
+        }),
+        makeHostTaskInvocation({
+          invocationId: secondInvocationId,
+          // unconsumed
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result).not.toBeNull();
+    expect(result!.invocationId).toBe(secondInvocationId);
+  });
+
+  it('CORNER: extra unknown fields in capturedRawFindings are stripped by Zod parse', () => {
+    const rawWithExtras = {
+      ...validRawFindings,
+      extraField: 'should-be-stripped',
+      _internal: { foo: 'bar' },
+    };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: rawWithExtras,
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result).not.toBeNull();
+    expect(result!.findings.overallVerdict).toBe('approve');
+    // Extra fields are stripped by Zod
+    expect((result!.findings as Record<string, unknown>).extraField).toBeUndefined();
+  });
+
+  it('CORNER: findings with unable_to_review verdict still resolve (defense-in-depth at tool layer)', () => {
+    const rawFindings = { ...validRawFindings, overallVerdict: 'unable_to_review' };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: rawFindings,
+          capturedVerdict: 'unable_to_review',
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+    // resolveHostTaskFindings itself does NOT block unable_to_review —
+    // that's the tool layer's defense-in-depth responsibility.
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result).not.toBeNull();
+    expect(result!.findings.overallVerdict).toBe('unable_to_review');
   });
 });
