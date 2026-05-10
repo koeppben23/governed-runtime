@@ -16,7 +16,13 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
 import { toAdapterLogger, runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
-import { strictBlockedOutput, buildEnforcementError, getToolArgs } from './plugin-helpers.js';
+import {
+  strictBlockedOutput,
+  buildEnforcementError,
+  getToolArgs,
+  getToolMetadata,
+  getToolCallID,
+} from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
@@ -37,6 +43,8 @@ import {
   enforceBeforeSubagentCall,
   buildHostTaskEvidence,
   REVIEWER_SUBAGENT_TYPE,
+  resolveSessionIdFromMetadata,
+  injectSessionIdIntoOutput,
 } from './review-enforcement.js';
 import { appendInvocationEvidence, ensureReviewAssurance } from './review-assurance.js';
 
@@ -333,16 +341,42 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
             logError('enforcement tracking failed', err);
           }
         } else if (toolName === 'task') {
+          // BUG-14 fix: For reviewer tasks, pre-inject the authoritative child
+          // session ID into the output BEFORE trackTaskEnforcement captures it.
+          // This mirrors SDK mode post-hoc injection (review-orchestrator.ts:1193-1202):
+          // the reviewer cannot know its own session ID, so the runtime resolves
+          // it from hook metadata or callID and injects it into the findings JSON.
+          const taskArgs = getToolArgs(input);
+          let resolvedChildSessionId: string | null = null;
+          if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+            const metadata = getToolMetadata(hookOutput);
+            const callID = hookInput.callID ?? '';
+            // Tier 1: metadata.sessionID — authoritative from task tool runtime
+            resolvedChildSessionId = resolveSessionIdFromMetadata(metadata);
+            // Tier 3: synthetic from callID (Tier 2 is handled by onTaskToolAfter)
+            if (!resolvedChildSessionId && callID) {
+              resolvedChildSessionId = `derived:call:${callID}`;
+            }
+            if (resolvedChildSessionId) {
+              hookOutput.output = injectSessionIdIntoOutput(
+                hookOutput.output,
+                resolvedChildSessionId,
+              );
+            }
+          }
+
           try {
-            trackTaskEnforcement(ws.getEnforcementState(sessionId), input, output, now);
+            trackTaskEnforcement(ws.getEnforcementState(sessionId), input, hookOutput, now);
           } catch (err) {
             logError('enforcement tracking failed', err);
           }
 
           // Only create host-task evidence for flowguard-reviewer subagent calls.
-          const taskArgs = getToolArgs(input);
           if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
-            log.info('host-task', 'reviewer task completed', { sessionId });
+            log.info('host-task', 'reviewer task completed', {
+              sessionId,
+              resolvedChildSessionId,
+            });
 
             // Must run BEFORE the next FlowGuard tool's execute() so
             // validateReviewFindings finds evidence.

@@ -116,6 +116,24 @@ export interface SessionEnforcementState {
   readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
 }
 
+/**
+ * Optional context from the plugin hook for session ID resolution.
+ *
+ * The OpenCode `task` tool's `tool.execute.after` hook provides metadata
+ * and callID that may contain the child session ID. This context enables
+ * tiered session ID resolution:
+ *
+ * Tier 1: `metadata.sessionID` — authoritative, from the task tool runtime.
+ * Tier 2: Text extraction from the reviewer's output (existing behavior).
+ * Tier 3: `derived:call:${callID}` — synthetic, guaranteed unique.
+ */
+export interface TaskToolContext {
+  /** Metadata from the task tool output (may contain child sessionID). */
+  readonly metadata?: Record<string, unknown>;
+  /** Tool call ID — unique per invocation, used for Tier 3 synthetic ID. */
+  readonly callID?: string;
+}
+
 /** Result of an enforcement check. */
 export type EnforcementResult =
   | { readonly allowed: true }
@@ -318,6 +336,19 @@ export function enforceBeforeSubagentCall(
  * - Records the subagent session ID — null if extraction fails (Level 2 strict)
  * - Captures actual findings from the subagent response (Level 4)
  *
+ * Session ID resolution (BUG-14 fix — three-tiered):
+ *
+ * Tier 1: Hook metadata — `context.metadata.sessionID` from the task tool
+ *   runtime. Authoritative because the task tool created the child session.
+ * Tier 2: Text extraction — parse `reviewedBy.sessionId` from the reviewer's
+ *   JSON output. Works when the reviewer includes a valid session ID.
+ * Tier 3: Synthetic — `derived:call:${context.callID}`. Guaranteed unique
+ *   per invocation. Prevents `no_child_session` binding failure.
+ *
+ * Mirrors SDK mode post-hoc injection (review-orchestrator.ts:1193-1202):
+ * the reviewer cannot know its own session ID, so the runtime resolves it
+ * and injects it into the captured findings for hash consistency.
+ *
  * 1:1 obligation matching: Each Task call satisfies exactly one pending review.
  * P34a (plan) and P34b (implement) are independent obligations. When multiple
  * are pending, the prompt's iteration/planVersion must match the target obligation's
@@ -327,18 +358,25 @@ export function enforceBeforeSubagentCall(
  * @param args - Task tool arguments (expects subagent_type and prompt fields)
  * @param taskResult - Raw task result string (subagent response)
  * @param now - ISO 8601 timestamp
+ * @param context - Optional hook context for tiered session ID resolution
  */
 export function onTaskToolAfter(
   state: SessionEnforcementState,
   args: Record<string, unknown>,
   taskResult: string,
   now: string,
+  context?: TaskToolContext,
 ): void {
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Extract session ID — null if extraction fails (no fallback, strict)
-  const sessionId = extractSubagentSessionId(taskResult);
+  // Tiered session ID resolution (BUG-14 fix):
+  // Tier 1: Hook metadata — authoritative from task tool runtime
+  let sessionId = resolveSessionIdFromMetadata(context?.metadata);
+  // Tier 2: Text extraction — parse from reviewer's JSON output
+  if (!sessionId) sessionId = extractSubagentSessionId(taskResult);
+  // Tier 3: Synthetic from callID — guaranteed unique for deduplication
+  if (!sessionId && context?.callID) sessionId = `derived:call:${context.callID}`;
 
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
@@ -899,6 +937,96 @@ function safeParse(raw: string): Record<string, unknown> | null {
     } catch {
       return null;
     }
+  }
+}
+
+/**
+ * Extract the subagent session ID from hook metadata.
+ *
+ * The OpenCode `task` tool may include the child session ID in the
+ * output metadata. This is the authoritative source (Tier 1) because
+ * the task tool runtime created the session and knows the exact ID.
+ *
+ * Checks common field names: sessionID (SDK convention), sessionId
+ * (camelCase alternative), id (generic).
+ *
+ * @param metadata - Metadata object from tool output, or undefined
+ * @returns The session ID string, or null if not found
+ */
+export function resolveSessionIdFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): string | null {
+  if (!metadata) return null;
+  if (typeof metadata.sessionID === 'string' && metadata.sessionID) return metadata.sessionID;
+  if (typeof metadata.sessionId === 'string' && metadata.sessionId) return metadata.sessionId;
+  if (typeof metadata.id === 'string' && metadata.id) return metadata.id;
+  return null;
+}
+
+/**
+ * Inject the authoritative child session ID into ReviewFindings JSON.
+ *
+ * Mirrors the SDK mode post-hoc injection in review-orchestrator.ts:1193-1202.
+ * The reviewer subagent cannot reliably know its own session ID, so the
+ * runtime injects it into `reviewedBy.sessionId` before the output is
+ * captured and hashed.
+ *
+ * Handles three output formats:
+ * 1. Clean JSON: full output is valid JSON
+ * 2. Embedded JSON: JSON block with `"reviewedBy"` marker in mixed text
+ * 3. Non-JSON: returns original text unchanged
+ *
+ * @param output - Raw task tool output text
+ * @param sessionId - Authoritative child session ID to inject
+ * @returns Modified output text with injected session ID
+ */
+export function injectSessionIdIntoOutput(output: string, sessionId: string): string {
+  // Path 1: clean JSON parse
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      injectSessionIdIntoObject(parsed, sessionId);
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not clean JSON — fall through to embedded extraction
+  }
+
+  // Path 2: find embedded JSON block containing "reviewedBy"
+  const markerIdx = output.indexOf('"reviewedBy"');
+  if (markerIdx < 0) return output;
+
+  const startIdx = output.lastIndexOf('{', markerIdx);
+  if (startIdx < 0) return output;
+
+  const block = extractJsonBlock(output, startIdx);
+  if (!block) return output;
+
+  try {
+    const parsed = JSON.parse(block) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      injectSessionIdIntoObject(parsed, sessionId);
+      return (
+        output.slice(0, startIdx) + JSON.stringify(parsed) + output.slice(startIdx + block.length)
+      );
+    }
+  } catch {
+    // Unparseable block — return original
+  }
+
+  return output;
+}
+
+/**
+ * Inject sessionId into the reviewedBy field of a parsed ReviewFindings object.
+ * Mutates the object in place.
+ */
+function injectSessionIdIntoObject(obj: Record<string, unknown>, sessionId: string): void {
+  const reviewedBy = obj.reviewedBy;
+  if (typeof reviewedBy === 'object' && reviewedBy !== null && !Array.isArray(reviewedBy)) {
+    (reviewedBy as Record<string, unknown>).sessionId = sessionId;
+  } else {
+    obj.reviewedBy = { sessionId };
   }
 }
 

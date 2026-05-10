@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TaskToolContext` interface, `resolveSessionIdFromMetadata()`, and `injectSessionIdIntoOutput()` exported from `review-enforcement.ts` for tiered session ID resolution.
+- `getToolMetadata()` and `getToolCallID()` exported from `plugin-helpers.ts` for hook metadata extraction.
+- 37 new tests in `review-enforcement.test.ts` covering `resolveSessionIdFromMetadata` (12 tests: HAPPY, BAD, CORNER, EDGE), `injectSessionIdIntoOutput` (13 tests: HAPPY, BAD, CORNER, EDGE, SMOKE), and `onTaskToolAfter` tiered session ID resolution (12 tests: HAPPY, BAD, CORNER, EDGE, E2E).
+- 20 new tests in `plugin-helpers.test.ts` covering `getToolMetadata` and `getToolCallID` (HAPPY, BAD, CORNER, EDGE).
+- 17 new integration tests in `plugin-host-task-diagnostics.test.ts` covering BUG-14 tiered session ID resolution with metadata/callID (HAPPY×3, BAD×3, CORNER×4, EDGE×3, SMOKE×1, E2E×3).
 - `HostTaskBindResult` and `HostTaskBindOutcome` types exported from `review-enforcement.ts` for structured host-task binding diagnostics.
 - `validateReviewUrl()` exported from `rails/review.ts` — pure URL validation function for SSRF mitigation with scheme allowlist and private IP blocking.
 - 9 new tests in `plugin-orchestrator-arch-ssot.test.ts` covering BUG-12 architecture SSOT enforcement (HAPPY×2, BAD×2, CORNER×2, EDGE×1, SMOKE×2).
@@ -111,8 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stale empty `opencode.json`**: Deleted 0-byte `opencode.json` from repository root. Canonical config is `opencode.jsonc`.
 - **Heuristic validation check executors (P10a)**: Removed `baselineTestQuality` and `baselineRollbackSafety` — dead code never called by any production path. `CheckExecutor` interface removed.
 
+### Changed
+
+- `onTaskToolAfter()` signature extended with optional `context?: TaskToolContext` parameter for tiered session ID resolution (backward compatible).
+- `trackTaskEnforcement()` in `plugin-enforcement-tracking.ts` now extracts metadata and callID from hook input/output and passes them as `TaskToolContext` (v2).
+- `plugin.ts` task handler restructured: resolves child session ID and injects it into `hookOutput.output` before `trackTaskEnforcement` captures findings.
+
 ### Fixed
 
+- **Host-task plan-review loop never converges (BUG-14)**: The `host_task_required` review invocation path now resolves the child session ID via three-tiered resolution and injects it into the reviewer output before tracking — mirroring the SDK mode post-hoc injection (review-orchestrator.ts:1193-1202). Previously, `onTaskToolAfter` called `extractSubagentSessionId(taskResult)` which always returned `null` because the reviewer subagent cannot know its own session ID. This caused `buildHostTaskEvidence()` to always return `no_child_session`, blocking evidence creation and triggering infinite re-invocation. Tier 1: hook metadata `sessionID` (authoritative). Tier 2: text extraction from reviewer JSON (existing). Tier 3: synthetic `derived:call:${callID}` (guaranteed unique). No new reason codes introduced.
 - **Architecture adrText/adrTitle SSOT violation (BUG-12)**: Architecture review prompt now always uses `sessionState.architecture.adrText` and `sessionState.architecture.title` (SSOT) instead of the LLM-supplied `toolArgs.adrText`/`toolArgs.title`. Same class of bug as BUG-09 (plan text SSOT). Additionally fixed a variable scoping bug where `adrText`/`adrTitle` were declared inside the `else if` block but referenced in the outer logging block — causing a silent `ReferenceError` when `toolArgs.adrText` was a string, which was caught by the outer try-catch and silently swallowed. Added mismatch logging (adrTextMismatch, toolArgsAdrTextLength) for observability.
 - **SSRF in fetchUrlContent (BUG-13, Security)**: `/review` URL fetching now validates URLs before fetch with `validateReviewUrl()`. Blocks: non-HTTPS schemes (http, file, ftp, data, javascript), private/reserved IPv4 ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 0.0.0.0), private IPv6 (::1, fc00::/7, fe80::/10), and `localhost`. Redirect following disabled (`redirect: 'error'` instead of `redirect: 'follow'`) to prevent SSRF via open redirects. Uses existing `COMMAND_BLOCKED` reason code.
 - **Host-task binding diagnostics opaque (F5)**: `buildHostTaskEvidence()` now returns a structured `HostTaskBindResult` with machine-readable `bindOutcome` and serializable `diagnostic` metadata for every code path (9 distinct outcomes). Previously the function returned `null` on 6 different failure paths with no indication of why binding failed — making real-run debugging impossible. The `plugin.ts` caller now emits 4 diagnostic log statements: `reviewer task completed`, `bind attempt` (with policy and pending obligation count), `evidence created` or `bind failed` (with outcome and diagnostic fields), and `output blocked` on `host_task_required` policy with null evidence.

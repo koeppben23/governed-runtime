@@ -16,10 +16,13 @@ import {
   createSessionState,
   onFlowGuardToolAfter,
   onTaskToolAfter,
+  resolveSessionIdFromMetadata,
+  injectSessionIdIntoOutput,
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   type HostTaskBindOutcome,
   type HostTaskBindResult,
+  type TaskToolContext,
 } from './review-enforcement.js';
 import {
   createReviewObligation,
@@ -588,6 +591,453 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
       expect(result.evidence!.obligationType).toBe('implement');
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUG-14: Tiered Session ID Resolution via TaskToolContext
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () => {
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Build task result JSON WITHOUT a reviewedBy.sessionId (simulates real reviewer output). */
+  function taskResultNoSessionId(
+    obligationId: string,
+    opts: { iteration?: number; planVersion?: number; verdict?: string } = {},
+  ): string {
+    const { iteration = 0, planVersion = 1, verdict = 'approve' } = opts;
+    return JSON.stringify({
+      iteration,
+      planVersion,
+      reviewMode: 'subagent',
+      overallVerdict: verdict,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: {},
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: obligationId,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+  }
+
+  /**
+   * Full cycle with TaskToolContext (BUG-14 flow).
+   * Optionally pre-injects session ID into output (mirrors plugin.ts logic).
+   */
+  function setupCycleWithContext(
+    opts: {
+      context?: TaskToolContext;
+      iteration?: number;
+      planVersion?: number;
+      includeEmbeddedSessionId?: boolean;
+    } = {},
+  ) {
+    const { context, iteration = 0, planVersion = 1, includeEmbeddedSessionId = false } = opts;
+
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
+
+    const obligation = pendingObligation({ iteration, planVersion });
+
+    let taskResult: string;
+    if (includeEmbeddedSessionId) {
+      taskResult = taskResultWithAttestation(obligation.obligationId, {
+        childSessionId: 'ses_embedded_001',
+        iteration,
+        planVersion,
+      });
+    } else {
+      taskResult = taskResultNoSessionId(obligation.obligationId, { iteration, planVersion });
+    }
+
+    // Mirror plugin.ts BUG-14 fix: resolve session ID and inject BEFORE tracking
+    let resolvedChildSessionId: string | null = null;
+    if (context) {
+      resolvedChildSessionId = resolveSessionIdFromMetadata(context.metadata);
+      if (!resolvedChildSessionId && context.callID) {
+        resolvedChildSessionId = `derived:call:${context.callID}`;
+      }
+      if (resolvedChildSessionId) {
+        taskResult = injectSessionIdIntoOutput(taskResult, resolvedChildSessionId);
+      }
+    }
+
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(iteration, planVersion) },
+      taskResult,
+      LATER,
+      context,
+    );
+
+    return { state, obligation, resolvedChildSessionId };
+  }
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+
+  describe('HAPPY', () => {
+    it('Tier 1 — metadata.sessionID resolves and binds correctly', () => {
+      const ctx: TaskToolContext = {
+        metadata: { sessionID: 'ses_meta_001' },
+        callID: 'call-001',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence).not.toBeNull();
+      expect(result.evidence!.childSessionId).toBe('ses_meta_001');
+      expect(result.evidence!.invocationMode).toBe('host_subagent_task');
+    });
+
+    it('Tier 3 — synthetic callID resolves when metadata has no sessionID', () => {
+      const ctx: TaskToolContext = {
+        metadata: { unrelated: 'data' },
+        callID: 'call-42',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence).not.toBeNull();
+      expect(result.evidence!.childSessionId).toBe('derived:call:call-42');
+    });
+
+    it('Tier 1 metadata.sessionId (camelCase) resolves correctly', () => {
+      const ctx: TaskToolContext = {
+        metadata: { sessionId: 'ses_camel_001' },
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('ses_camel_001');
+    });
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+
+  describe('BAD', () => {
+    it('no context, no embedded sessionId → no_child_session (original BUG-14 path)', () => {
+      // No TaskToolContext at all — the pre-BUG-14 behavior
+      const { state, obligation } = setupCycleWithContext({
+        context: undefined,
+        includeEmbeddedSessionId: false,
+      });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      // This is the original BUG-14 failure: no child session can be resolved
+      expect(result.evidence).toBeNull();
+      expect(result.bindOutcome).toBe('no_child_session');
+    });
+
+    it('empty metadata + no callID → no_child_session', () => {
+      const ctx: TaskToolContext = { metadata: {}, callID: '' };
+      const { state, obligation } = setupCycleWithContext({
+        context: ctx,
+        includeEmbeddedSessionId: false,
+      });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.evidence).toBeNull();
+      expect(result.bindOutcome).toBe('no_child_session');
+    });
+
+    it('metadata with empty string sessionID → falls through to Tier 3', () => {
+      const ctx: TaskToolContext = {
+        metadata: { sessionID: '' },
+        callID: 'call-fallback',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      // Empty string is falsy, falls to Tier 3
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('derived:call:call-fallback');
+    });
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+
+  describe('CORNER', () => {
+    it('Tier 1 overrides embedded text session ID', () => {
+      // Output contains reviewedBy.sessionId = 'ses_embedded_001'
+      // But metadata has sessionID = 'ses_meta_override'
+      const ctx: TaskToolContext = {
+        metadata: { sessionID: 'ses_meta_override' },
+        callID: 'call-override',
+      };
+      const { state, obligation } = setupCycleWithContext({
+        context: ctx,
+        includeEmbeddedSessionId: true,
+      });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      // Tier 1 wins — NOT the embedded 'ses_embedded_001'
+      expect(result.evidence!.childSessionId).toBe('ses_meta_override');
+    });
+
+    it('Tier 2 text extraction used when metadata missing but output has sessionId', () => {
+      // No metadata context but output contains embedded reviewedBy.sessionId
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+      const obligation = pendingObligation();
+
+      // Task result WITH embedded sessionId, NO metadata context
+      const taskResult = taskResultWithAttestation(obligation.obligationId, {
+        childSessionId: 'ses_text_extracted',
+      });
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+        taskResult,
+        LATER,
+        // No context — Tier 2 text extraction kicks in
+      );
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('ses_text_extracted');
+    });
+
+    it('metadata.id (generic) resolves as Tier 1 fallback field', () => {
+      const ctx: TaskToolContext = {
+        metadata: { id: 'ses_generic_id' },
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('ses_generic_id');
+    });
+
+    it('Tier 3 synthetic ID is unique per callID', () => {
+      const ctx1: TaskToolContext = { callID: 'call-aaa' };
+      const ctx2: TaskToolContext = { callID: 'call-bbb' };
+
+      const { state: s1, obligation: o1 } = setupCycleWithContext({ context: ctx1 });
+      const { state: s2, obligation: o2 } = setupCycleWithContext({ context: ctx2 });
+
+      const r1 = buildHostTaskEvidence(s1, SESSION_ID, [o1], [], LATER);
+      const r2 = buildHostTaskEvidence(s2, SESSION_ID, [o2], [], LATER);
+
+      expect(r1.evidence!.childSessionId).toBe('derived:call:call-aaa');
+      expect(r2.evidence!.childSessionId).toBe('derived:call:call-bbb');
+      expect(r1.evidence!.childSessionId).not.toBe(r2.evidence!.childSessionId);
+    });
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+
+  describe('EDGE', () => {
+    it('injected session ID produces consistent findingsHash across bind attempts', () => {
+      const ctx: TaskToolContext = {
+        metadata: { sessionID: 'ses_hash_check' },
+        callID: 'call-hash',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(r1.bindOutcome).toBe('bound');
+      expect(r1.diagnostic).toHaveProperty('findingsHash');
+
+      // Second bind with same evidence → duplicate, confirming hash is stable
+      const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [r1.evidence!], LATER);
+      expect(r2.bindOutcome).toBe('duplicate_evidence');
+      expect(r2.diagnostic).toHaveProperty('findingsHash', r1.diagnostic.findingsHash);
+    });
+
+    it('non-JSON output is unchanged by injection — no_child_session if no other tier', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+      const obligation = pendingObligation();
+
+      // Raw non-JSON text as task output
+      const rawOutput = 'This is a plain text reviewer response with no JSON structure.';
+      // Tier 3 with callID still resolves
+      const ctx: TaskToolContext = { callID: 'call-raw-text' };
+      const injected = injectSessionIdIntoOutput(rawOutput, `derived:call:${ctx.callID}`);
+      // No reviewedBy marker in non-JSON → output unchanged
+      expect(injected).toBe(rawOutput);
+
+      // But onTaskToolAfter with context still gets Tier 3 session ID
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+        rawOutput,
+        LATER,
+        ctx,
+      );
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      // Session ID is resolved via Tier 3 but output has no parseable findings
+      // → binding depends on whether capturedFindings is non-null
+      // Non-JSON output → capturedFindings is null → no_findings or no_child_session
+      expect(result.evidence).toBeNull();
+    });
+
+    it('undefined metadata with valid callID → Tier 3 resolves', () => {
+      const ctx: TaskToolContext = {
+        metadata: undefined,
+        callID: 'call-no-meta',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('derived:call:call-no-meta');
+    });
+  });
+
+  // ─── SMOKE ─────────────────────────────────────────────────
+
+  describe('SMOKE', () => {
+    it('full pipeline: resolve → inject → track → build → bound', () => {
+      const metadata = { sessionID: 'ses_smoke_full' };
+      const callID = 'call-smoke-full';
+
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(1, 2), NOW);
+
+      const obligation = pendingObligation({ iteration: 1, planVersion: 2 });
+      let taskResult = taskResultNoSessionId(obligation.obligationId, {
+        iteration: 1,
+        planVersion: 2,
+      });
+
+      // Step 1: Resolve session ID (mirrors plugin.ts)
+      let resolved = resolveSessionIdFromMetadata(metadata);
+      if (!resolved && callID) resolved = `derived:call:${callID}`;
+      expect(resolved).toBe('ses_smoke_full');
+
+      // Step 2: Inject into output
+      taskResult = injectSessionIdIntoOutput(taskResult, resolved!);
+      const parsed = JSON.parse(taskResult) as Record<string, unknown>;
+      const rb = parsed.reviewedBy as Record<string, unknown>;
+      expect(rb.sessionId).toBe('ses_smoke_full');
+
+      // Step 3: Track
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(1, 2) },
+        taskResult,
+        LATER,
+        { metadata, callID },
+      );
+
+      // Step 4: Build evidence
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      // Step 5: Verify bound
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence).not.toBeNull();
+      expect(result.evidence!.childSessionId).toBe('ses_smoke_full');
+      expect(result.evidence!.obligationType).toBe('plan');
+      expect(result.evidence!.invocationMode).toBe('host_subagent_task');
+      expect(result.evidence!.hostVisible).toBe(true);
+    });
+  });
+
+  // ─── E2E ───────────────────────────────────────────────────
+
+  describe('E2E', () => {
+    it('Tier 1 bind + duplicate detection = stable pipeline', () => {
+      const ctx: TaskToolContext = {
+        metadata: { sessionID: 'ses_e2e_tier1' },
+        callID: 'call-e2e-001',
+      };
+      const { state, obligation } = setupCycleWithContext({ context: ctx });
+
+      // First bind succeeds
+      const first = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      expect(first.bindOutcome).toBe('bound');
+      expect(first.evidence!.childSessionId).toBe('ses_e2e_tier1');
+
+      // Second bind with existing evidence → duplicate
+      const second = buildHostTaskEvidence(
+        state,
+        SESSION_ID,
+        [obligation],
+        [first.evidence!],
+        LATER,
+      );
+      expect(second.bindOutcome).toBe('duplicate_evidence');
+      expect(second.evidence).toBeNull();
+    });
+
+    it('Tier 3 bind for implement obligation', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_implement', {}, modeAResponse(0, 1), NOW);
+
+      const obligation = pendingObligation({ obligationType: 'implement' });
+      let taskResult = taskResultNoSessionId(obligation.obligationId);
+
+      // Tier 3 resolution
+      const callID = 'call-impl-001';
+      const resolved = `derived:call:${callID}`;
+      taskResult = injectSessionIdIntoOutput(taskResult, resolved);
+
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+        taskResult,
+        LATER,
+        { callID },
+      );
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence).not.toBeNull();
+      expect(result.evidence!.childSessionId).toBe('derived:call:call-impl-001');
+      expect(result.evidence!.obligationType).toBe('implement');
+    });
+
+    it('pre-BUG-14 path without context still works when output has embedded sessionId', () => {
+      // Backward compatibility: if no TaskToolContext is passed but the reviewer
+      // output includes a valid reviewedBy.sessionId, Tier 2 extraction works
+      const state = createSessionState();
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+      const obligation = pendingObligation();
+
+      const taskResult = taskResultWithAttestation(obligation.obligationId, {
+        childSessionId: 'ses_backward_compat',
+      });
+
+      // No context at all — old code path
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+        taskResult,
+        LATER,
+      );
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence!.childSessionId).toBe('ses_backward_compat');
     });
   });
 });
