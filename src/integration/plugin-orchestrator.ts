@@ -504,7 +504,7 @@ export async function runReviewOrchestration(
     let prompt: string;
     if (toolName === TOOL_FLOWGUARD_PLAN) {
       prompt = buildPlanReviewPrompt({
-        planText: typeof toolArgs.planText === 'string' ? toolArgs.planText : planText,
+        planText, // SSOT: always use sessionState.plan.current.body (line 489)
         ticketText,
         iteration: reviewCtx.iteration,
         planVersion: reviewCtx.planVersion,
@@ -561,6 +561,14 @@ export async function runReviewOrchestration(
       sessionId,
       iteration: reviewCtx.iteration,
       planVersion: reviewCtx.planVersion,
+      planTextLength: planText.length,
+      planTextSource: 'sessionState',
+      ...(toolName === TOOL_FLOWGUARD_PLAN && typeof toolArgs.planText === 'string'
+        ? {
+            toolArgsPlanTextLength: toolArgs.planText.length,
+            planTextMismatch: toolArgs.planText !== planText,
+          }
+        : {}),
     });
 
     const reviewerResult = await invokeReviewer(
@@ -830,6 +838,27 @@ export async function runReviewOrchestration(
           'STRICT_REVIEW_ORCHESTRATION_FAILED',
           { reason: 'reviewer invocation failed' },
           output,
+        );
+      } else {
+        // Non-strict: block the obligation to prevent infinite re-invocation.
+        // The obligation must not stay 'pending' — findLatestPendingReviewObligation()
+        // would rediscover it on the next tool call and trigger another 3-attempt cycle.
+        await deps.updateReviewAssurance(sessDir, (s) =>
+          updateObligation(s, reviewCtx.obligationId, (item) => ({
+            ...item,
+            status: 'blocked' as const,
+            blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+          })),
+        );
+        await appendReviewAuditEvent(
+          sessDir,
+          sessionId,
+          String(parsedOutput.phase ?? sessionState.phase),
+          'review:obligation_blocked',
+          {
+            obligationId: reviewCtx.obligationId,
+            code: 'REVIEWER_INVOCATION_EXHAUSTED',
+          },
         );
       }
     }

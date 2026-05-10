@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Infinite reviewer re-invocation loop (BUG-07)**: Review obligation now blocked with `REVIEWER_INVOCATION_EXHAUSTED` after all subagent retry attempts fail in non-strict mode. Previously the obligation stayed `pending`, causing `findLatestPendingReviewObligation()` to rediscover it on every subsequent tool call and trigger another 3-attempt cycle — resulting in unbounded subagent sessions with no bindable results. Strict mode behavior unchanged (uses `blockReviewOutcome`).
+- **Plan text corruption from LLM-supplied toolArgs (BUG-09)**: Plan review prompt now always uses `sessionState.plan.current.body` (SSOT) instead of preferring the LLM-supplied `toolArgs.planText`. After context-window compaction, the LLM may reconstruct a hallucinated or truncated plan text that corrupts the reviewer prompt. Added mismatch logging (planTextMismatch, toolArgsPlanTextLength) for observability.
 - **Phase-aware host tool gate (BUG-03)**: Mutating host tools (`bash`, `write`, `edit`) are now blocked during investigation-only phases (`TICKET`, `PLAN`, `ARCHITECTURE`). Previously, all non-FlowGuard tools passed through the `tool.execute.before` hook without any phase check, allowing shell commands and file writes during planning. Read-only tools (`read`, `glob`, `grep`, `webfetch`) remain allowed. Fail-open for sessions without FlowGuard state (e.g. reviewer subagent sessions).
 - **Subagent type authorization (BUG-08)**: Non-reviewer subagent types are now blocked at the plugin level as defense-in-depth. Previously, `tool.execute.before` only intercepted `task` calls with `subagent_type: 'flowguard-reviewer'` — all other subagent types passed through unchecked. Now any non-empty `subagent_type` other than `flowguard-reviewer` triggers a `SUBAGENT_TYPE_UNAUTHORIZED` enforcement error.
 - **Session error audit trail (BUG-01)**: `session.error` SDK events are now persisted to the audit trail via `emitSessionErrorAudit` callback. Previously, session errors were only logged to the file/console logger and silently lost from the persistent audit chain. The composition root (`plugin.ts`) wires the callback to `appendReviewAuditEvent` with `error:SESSION_ERROR` event type.
@@ -17,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `REVIEWER_INVOCATION_EXHAUSTED` reason code (adapter category) for blocking obligations after all subagent retry attempts are exhausted.
+- 10 new tests in `plugin-orchestrator-exhaustion.test.ts` covering BUG-07 exhaustion blocking (HAPPY, BAD, CORNER, EDGE, SMOKE, E2E).
+- 8 new tests in `plugin-orchestrator-plan-ssot.test.ts` covering BUG-09 plan text SSOT enforcement (HAPPY, BAD, CORNER, EDGE, SMOKE).
 - `HOST_TOOL_PHASE_DENIED` reason code (admissibility category) for phase-gated host tool blocks.
 - `SUBAGENT_TYPE_UNAUTHORIZED` reason code (precondition category) for unauthorized subagent type detection.
 - `phase-tool-gate.ts` module with `isMutatingHostTool()` and `isHostToolAllowedInPhase()` pure functions.
@@ -31,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EventHandlerDeps` interface extended with `emitSessionErrorAudit(sessionId, errorMessage, detail)` callback for audit trail integration.
 - `PRECONDITION_REASONS` count updated from 37 to 38 entries.
 - `VALIDATION_REASONS` count updated from 43 to 44 entries.
-- Total reason code count updated from 108 to 110.
+- `INFRA_REASONS` count updated from 28 to 29 entries.
+- Total reason code count updated from 108 to 111.
 - BUG-02 (Task Content Fabrication) reclassified from CODE-BUG to DESIGN-GAP after deep code analysis: L1-L4 enforcement layers validate review process integrity (by design), not content accuracy. Content fabrication detection requires architectural design (L5 content grounding layer).
 
 ### Added
