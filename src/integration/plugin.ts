@@ -342,6 +342,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           // Only create host-task evidence for flowguard-reviewer subagent calls.
           const taskArgs = getToolArgs(input);
           if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+            log.info('host-task', 'reviewer task completed', { sessionId });
+
             // Must run BEFORE the next FlowGuard tool's execute() so
             // validateReviewFindings finds evidence.
             try {
@@ -351,15 +353,36 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 if (state) {
                   const policy = state.policySnapshot?.reviewInvocationPolicy;
                   if (policy === 'host_task_required' || policy === 'host_task_preferred') {
+                    const obligations = state.reviewAssurance?.obligations ?? [];
+                    const invocations = state.reviewAssurance?.invocations ?? [];
+
+                    log.info('host-task', 'bind attempt', {
+                      sessionId,
+                      policy,
+                      pendingObligationCount: obligations.filter((o) => o.status === 'pending')
+                        .length,
+                      totalInvocations: invocations.length,
+                    });
+
                     const eState = ws.getEnforcementState(sessionId);
-                    const evidence = buildHostTaskEvidence(
+                    const bindResult = buildHostTaskEvidence(
                       eState,
                       sessionId,
-                      state.reviewAssurance?.obligations ?? [],
-                      state.reviewAssurance?.invocations ?? [],
+                      obligations,
+                      invocations,
                       now,
                     );
+                    const evidence = bindResult.evidence;
+
                     if (evidence) {
+                      log.info('host-task', 'evidence created', {
+                        sessionId,
+                        bindOutcome: bindResult.bindOutcome,
+                        invocationId: evidence.invocationId,
+                        obligationId: evidence.obligationId,
+                        childSessionId: evidence.childSessionId,
+                        findingsHash: evidence.findingsHash,
+                      });
                       await ws.updateReviewAssurance(sessDir, (s) => {
                         return {
                           ...s,
@@ -370,9 +393,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                         };
                       });
                     } else if (policy === 'host_task_required') {
+                      log.warn('host-task', 'output blocked — no bindable evidence', {
+                        sessionId,
+                        policy,
+                        bindOutcome: bindResult.bindOutcome,
+                        ...bindResult.diagnostic,
+                      });
                       hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
                         reason:
                           'flowguard-reviewer Task call did not produce bindable host-task evidence',
+                      });
+                    } else {
+                      log.warn('host-task', 'bind failed', {
+                        sessionId,
+                        bindOutcome: bindResult.bindOutcome,
+                        ...bindResult.diagnostic,
                       });
                     }
                   }

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Host-task binding diagnostics opaque (F5)**: `buildHostTaskEvidence()` now returns a structured `HostTaskBindResult` with machine-readable `bindOutcome` and serializable `diagnostic` metadata for every code path (9 distinct outcomes). Previously the function returned `null` on 6 different failure paths with no indication of why binding failed — making real-run debugging impossible. The `plugin.ts` caller now emits 4 diagnostic log statements: `reviewer task completed`, `bind attempt` (with policy and pending obligation count), `evidence created` or `bind failed` (with outcome and diagnostic fields), and `output blocked` on `host_task_required` policy with null evidence.
+
+### Added
+
+- `HostTaskBindResult` and `HostTaskBindOutcome` types exported from `review-enforcement.ts` for structured host-task binding diagnostics.
+- 18 new tests in `plugin-host-task-diagnostics.test.ts` covering all 9 `bindOutcome` values (HAPPY, BAD, CORNER, EDGE, SMOKE, E2E).
+
+### Changed
+
+- `buildHostTaskEvidence()` return type changed from `ReviewInvocationEvidence | null` to `HostTaskBindResult` (breaking — single caller updated).
+
+### Fixed
+
 - **Infinite reviewer re-invocation loop (BUG-07)**: Review obligation now blocked with `REVIEWER_INVOCATION_EXHAUSTED` after all subagent retry attempts fail in non-strict mode. Previously the obligation stayed `pending`, causing `findLatestPendingReviewObligation()` to rediscover it on every subsequent tool call and trigger another 3-attempt cycle — resulting in unbounded subagent sessions with no bindable results. Strict mode behavior unchanged (uses `blockReviewOutcome`).
 - **Plan text corruption from LLM-supplied toolArgs (BUG-09)**: Plan review prompt now always uses `sessionState.plan.current.body` (SSOT) instead of preferring the LLM-supplied `toolArgs.planText`. After context-window compaction, the LLM may reconstruct a hallucinated or truncated plan text that corrupts the reviewer prompt. Added mismatch logging (planTextMismatch, toolArgsPlanTextLength) for observability.
 - **Phase-aware host tool gate (BUG-03)**: Mutating host tools (`bash`, `write`, `edit`) are now blocked during investigation-only phases (`TICKET`, `PLAN`, `ARCHITECTURE`). Previously, all non-FlowGuard tools passed through the `tool.execute.before` hook without any phase check, allowing shell commands and file writes during planning. Read-only tools (`read`, `glob`, `grep`, `webfetch`) remain allowed. Fail-open for sessions without FlowGuard state (e.g. reviewer subagent sessions).

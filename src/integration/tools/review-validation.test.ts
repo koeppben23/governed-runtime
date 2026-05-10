@@ -693,7 +693,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       JSON.stringify(findings),
       now,
     );
-    const evidence = buildHostTaskEvidence(
+    const bindResult = buildHostTaskEvidence(
       enforcementState,
       'ses_parent',
       assurance.obligations,
@@ -701,10 +701,10 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       now,
     );
 
-    expect(evidence).not.toBeNull();
+    expect(bindResult.evidence).not.toBeNull();
     const assuranceWithTaskEvidence = appendInvocationEvidence(
       ensureReviewAssurance(assurance),
-      evidence!,
+      bindResult.evidence!,
     );
     const result = validateReviewFindings(
       findings,

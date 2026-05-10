@@ -587,6 +587,37 @@ export function recordPluginReview(
 }
 
 /**
+ * Machine-readable outcome of a host-task bind attempt.
+ * Used for diagnostic logging — NOT a governance reason code.
+ */
+export type HostTaskBindOutcome =
+  | 'bound'
+  | 'no_matched_record'
+  | 'no_child_session'
+  | 'no_obligation_type'
+  | 'no_findings'
+  | 'no_attestation'
+  | 'no_matching_obligation'
+  | 'field_mismatch'
+  | 'duplicate_evidence';
+
+/**
+ * Structured result from {@link buildHostTaskEvidence}.
+ *
+ * Always includes a machine-readable `bindOutcome` and a serializable
+ * `diagnostic` object so the caller can log exactly why binding succeeded
+ * or failed without re-inspecting internal state.
+ */
+export interface HostTaskBindResult {
+  /** Created evidence, or null if binding failed. */
+  evidence: ReviewInvocationEvidence | null;
+  /** Machine-readable bind outcome for logging. */
+  bindOutcome: HostTaskBindOutcome;
+  /** Structured diagnostic metadata (safe to JSON.stringify). */
+  diagnostic: Record<string, unknown>;
+}
+
+/**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
  *
  * Called after `onTaskToolAfter` records a Task tool call to flowguard-reviewer.
@@ -598,7 +629,7 @@ export function recordPluginReview(
  * @param obligations - Persisted review obligations from session state
  * @param invocations - Persisted invocation evidence from session state
  * @param now - ISO 8601 timestamp
- * @returns ReviewInvocationEvidence or null if no matched pending review
+ * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
  */
 export function buildHostTaskEvidence(
   state: SessionEnforcementState,
@@ -606,29 +637,63 @@ export function buildHostTaskEvidence(
   obligations: ReviewObligation[],
   invocations: ReviewInvocationEvidence[],
   now: string,
-): ReviewInvocationEvidence | null {
-  const matched = [...state.pendingReviews.values()].filter(
+): HostTaskBindResult {
+  const allPending = [...state.pendingReviews.values()];
+  const matched = allPending.filter(
     (p) => p.subagentCalled && p.subagentRecord !== null && p.capturedFindings?.rawFindings,
   );
-  if (matched.length === 0) return null;
+  if (matched.length === 0) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matched_record',
+      diagnostic: {
+        pendingCount: allPending.length,
+        calledCount: allPending.filter((p) => p.subagentCalled).length,
+      },
+    };
+  }
 
   const latest = matched.sort((a, b) =>
     (b.subagentRecord?.completedAt ?? '').localeCompare(a.subagentRecord?.completedAt ?? ''),
   )[0]!;
 
   const childSessionId = latest.subagentRecord!.sessionId;
-  if (!childSessionId) return null;
+  if (!childSessionId) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_child_session',
+      diagnostic: { tool: latest.tool },
+    };
+  }
 
   const oType =
     latest.tool === TOOL_FLOWGUARD_REVIEW ? 'review' : obligationTypeForTool(latest.tool);
-  if (!oType) return null;
+  if (!oType) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_obligation_type',
+      diagnostic: { tool: latest.tool },
+    };
+  }
 
   const rawFindings = latest.capturedFindings?.rawFindings;
-  if (!rawFindings) return null;
+  if (!rawFindings) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_findings',
+      diagnostic: { tool: latest.tool, childSessionId },
+    };
+  }
   const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
   const attestedObligationId =
     typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
-  if (!attestedObligationId) return null;
+  if (!attestedObligationId) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_attestation',
+      diagnostic: { hasAttestation: !!attestation, childSessionId },
+    };
+  }
 
   const matchedObligation = obligations.find(
     (o) =>
@@ -637,16 +702,34 @@ export function buildHostTaskEvidence(
       o.status !== 'consumed' &&
       o.consumedAt === null,
   );
-  if (!matchedObligation) return null;
-  if (
-    rawFindings.iteration !== matchedObligation.iteration ||
-    rawFindings.planVersion !== matchedObligation.planVersion ||
-    attestation?.mandateDigest !== matchedObligation.mandateDigest ||
-    attestation?.criteriaVersion !== matchedObligation.criteriaVersion ||
-    attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE
-  ) {
-    return null;
+  if (!matchedObligation) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matching_obligation',
+      diagnostic: {
+        attestedObligationId,
+        obligationType: oType,
+        availableObligations: obligations.length,
+      },
+    };
   }
+
+  const mismatchFields: string[] = [];
+  if (rawFindings.iteration !== matchedObligation.iteration) mismatchFields.push('iteration');
+  if (rawFindings.planVersion !== matchedObligation.planVersion) mismatchFields.push('planVersion');
+  if (attestation?.mandateDigest !== matchedObligation.mandateDigest)
+    mismatchFields.push('mandateDigest');
+  if (attestation?.criteriaVersion !== matchedObligation.criteriaVersion)
+    mismatchFields.push('criteriaVersion');
+  if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) mismatchFields.push('reviewedBy');
+  if (mismatchFields.length > 0) {
+    return {
+      evidence: null,
+      bindOutcome: 'field_mismatch',
+      diagnostic: { attestedObligationId, mismatchFields },
+    };
+  }
+
   const findingsHash = hashFindings(rawFindings);
   if (
     invocations.some(
@@ -656,13 +739,22 @@ export function buildHostTaskEvidence(
         inv.findingsHash === findingsHash,
     )
   ) {
-    return null;
+    return {
+      evidence: null,
+      bindOutcome: 'duplicate_evidence',
+      diagnostic: {
+        childSessionId,
+        findingsHash,
+        obligationId: matchedObligation.obligationId,
+      },
+    };
   }
+
   const promptHash = hashText(
     `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
   );
 
-  return buildInvocationEvidence({
+  const evidence = buildInvocationEvidence({
     obligationId: matchedObligation.obligationId,
     obligationType: oType,
     parentSessionId: sessionId,
@@ -674,6 +766,16 @@ export function buildHostTaskEvidence(
     invokedAt: now,
     source: 'host-orchestrated',
   });
+
+  return {
+    evidence,
+    bindOutcome: 'bound',
+    diagnostic: {
+      obligationId: matchedObligation.obligationId,
+      childSessionId,
+      findingsHash,
+    },
+  };
 }
 
 // ─── Helpers (exported for testing) ──────────────────────────────────────────
