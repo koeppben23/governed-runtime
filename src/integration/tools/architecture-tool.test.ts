@@ -910,7 +910,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
-    it('EDGE: host_task_required + agent submits reviewFindings → existing validation path', async () => {
+    it('EDGE: host_task_required + agent submits reviewFindings → ignored, evidence used (BUG-17)', async () => {
       mocks.state = stateWithEvidence('approve');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
@@ -933,7 +933,66 @@ describe('integration/tools/architecture (wrapper)', () => {
         {} as never,
       );
       const parsed = JSON.parse(String(res));
-      // Should succeed via agent-submitted path (existing validation)
+      // BUG-17: Should succeed via evidence (agent reviewFindings ignored)
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
+      // BUG-17: In host_task_required mode, agent-submitted reviewFindings are
+      // completely ignored. Even invalid/mismatched findings don't cause a BLOCKED
+      // because evidence is resolved from plugin instead.
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'approve',
+          // Agent submits WRONG iteration — would normally be blocked, but BUG-17 ignores it
+          reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // Still succeeds — evidence 'approve' matches selfReviewVerdict 'approve'
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('REGRESSION: sdk_allowed + agent submits reviewFindings → validates (non-host_task path)', async () => {
+      // BUG-17 regression guard: non-host_task modes still validate agent findings
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'sdk_allowed',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // SDK path succeeds with valid findings
       expect(parsed.error).toBeUndefined();
     });
 

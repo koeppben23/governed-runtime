@@ -59,7 +59,7 @@ import {
   TOOL_FLOWGUARD_ARCHITECTURE,
 } from './tool-names.js';
 import { obligationTypeForTool } from './review-obligation-tools.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+import { REVIEWER_SUBAGENT_TYPE, extractContentMeta } from './review-enforcement.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { ReviewInvocationPolicy } from '../config/policy-types.js';
@@ -129,11 +129,26 @@ function buildHostTaskPolicyOutput(
     return JSON.stringify(result);
   }
 
+  // BUG-16: Preserve iteration/planVersion from the original next field so
+  // the agent can construct a correct subagent prompt that passes
+  // promptContainsValue enforcement. BUG-18: Instruct the reviewer subagent
+  // to NOT call FlowGuard tools in its own session.
+  const originalMeta = typeof result.next === 'string' ? extractContentMeta(result.next) : null;
+  const iterStr =
+    originalMeta?.expectedIteration != null ? `iteration=${originalMeta.expectedIteration}` : '';
+  const versionStr =
+    originalMeta?.expectedPlanVersion != null
+      ? `planVersion=${originalMeta.expectedPlanVersion}`
+      : '';
+  const contextSuffix = [iterStr, versionStr].filter(Boolean).join(', ');
+
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
     `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}" and submit the exact ` +
-    `ReviewFindings returned by that subagent.`;
+    `ReviewFindings returned by that subagent.` +
+    (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
+    ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_architecture) in its own session.`;
   result.reviewInvocation = {
     policy,
     status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',

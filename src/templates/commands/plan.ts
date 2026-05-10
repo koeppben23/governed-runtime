@@ -38,11 +38,11 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 ### Phase 3: Review Loop
 
 6. Follow the \`next\` field instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. Pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
-     - "approve": Call \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\`.
-     - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <pluginReviewFindings> })\`.
-     - "unable_to_review": The reviewer declared the plan unreviewable (e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique). The plan tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same plan — that obligation is consumed. Report the reviewer's findings to the user, then either /ticket the prerequisite work first OR revise the plan substantially (new \`flowguard_plan({ planText })\` submission, which starts a fresh review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool, then submit the verdict with reviewFindings. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. In host_task_required mode, findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`. Otherwise, pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
+      - "approve": Call \`flowguard_plan({ selfReviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
+      - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised> })\` (or with \`reviewFindings\` in SDK mode).
+      - "unable_to_review": The reviewer declared the plan unreviewable (e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique). The plan tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same plan — that obligation is consumed. Report the reviewer's findings to the user, then either /ticket the prerequisite work first OR revise the plan substantially (new \`flowguard_plan({ planText })\` submission, which starts a fresh review obligation).
+   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool, then submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
    - If review converged: Report the result. Present any \`reviewCard\` field in full.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
@@ -66,12 +66,12 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 Happy path:
 1. \`flowguard_status\` → phase: TICKET, ticket present
 2. \`flowguard_plan({ planText })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\` → PLAN_REVIEW
+3. \`flowguard_plan({ selfReviewVerdict: "approve" })\` → PLAN_REVIEW
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised>, reviewFindings: <pluginReviewFindings> })\`
+1. \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ selfReviewVerdict: "approve", reviewFindings: <new pluginReviewFindings> })\` → PLAN_REVIEW
+3. \`flowguard_plan({ selfReviewVerdict: "approve" })\` → PLAN_REVIEW
 
 ${GOVERNANCE_RULES}
 ## Done-when

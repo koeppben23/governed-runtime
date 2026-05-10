@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Evidence-first findings resolution in host_task_required mode (BUG-17)**: In `host_task_required` mode, plugin-captured evidence is now the SOLE source of truth for review findings. Agent-submitted `reviewFindings` are completely ignored (warn-logged for observability). Previously, the code checked `args.reviewFindings` FIRST before falling back to evidence — allowing the non-deterministic LLM reconstruction path to introduce hash mismatches and BLOCKED states on every first attempt. All three tools (plan, implement, architecture) now share the same evidence-first pattern: `if (isHostTaskMode) → resolve from evidence; else if (args.reviewFindings) → validate via SDK path`. SDK path (`sdk_session_prompt`, `host_task_preferred` retry) continues to validate agent-submitted findings unchanged.
+
+- **buildHostTaskPolicyOutput preserves iteration/planVersion context (BUG-16)**: The orchestrator's `buildHostTaskPolicyOutput` function previously overwrote the `next` field with a generic message, losing the `iteration=X` and `planVersion=Y` values from the original tool output. The agent uses these values to construct the subagent prompt, which must pass `promptContainsValue` enforcement. Without them, the first reviewer subagent call always failed with `SUBAGENT_PROMPT_MISSING_CONTEXT`. Fix: extracts the original meta via `extractContentMeta()` and appends `Context: iteration=X, planVersion=Y.` to the mutated next field.
+
+- **Reviewer subagent instructed to not call FlowGuard tools (BUG-18)**: The mutated `next` field now includes the instruction "The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_architecture) in its own session." This prevents the reviewer from calling `flowguard_plan` in its own session (which wastes tokens and creates confusion but was not a hard blocker due to evidence-binding working regardless).
+
+### Changed
+
+- `plan.ts`, `implement.ts`, `architecture.ts` (Mode B paths): restructured findings resolution to evidence-first pattern. In `host_task_required` mode, `args.reviewFindings` is ignored with a warn log; `resolveHostTaskFindings()` is called unconditionally. `else if (args.reviewFindings)` branch handles SDK path with full `validateReviewFindings` validation.
+- `plugin-orchestrator.ts`: `buildHostTaskPolicyOutput` imports `extractContentMeta` from `review-enforcement.ts` and preserves original iteration/planVersion in the mutated `next` field. Adds "must NOT call FlowGuard tools" instruction for the reviewer subagent.
+- `src/templates/commands/plan.ts`, `implement.ts`, `architecture.ts`: Updated to clarify that in host_task_required mode, `reviewFindings` is optional (resolved from plugin evidence automatically). Examples simplified to omit `reviewFindings` parameter.
+
+### Added
+
+- 8 new tests in `evidence-first-resolution.test.ts` covering BUG-17 plan and implement evidence-first patterns (HAPPY×2, BAD×2, EDGE×2, REGRESSION×2).
+- 3 new tests in `architecture-tool.test.ts` covering BUG-17 architecture evidence-first behavior (EDGE×2 for invalid-findings-ignored, REGRESSION×1 for SDK path).
+- 6 new tests in `plugin-orchestrator-bug16.test.ts` covering BUG-16 context preservation (HAPPY×2, EDGE×2, SMOKE×2).
+
+### Fixed
+
 - **Evidence-based findings resolution eliminates agent reconstruction (BUG-15 Stufe 2)**: In `host_task_required` mode, the agent no longer needs to submit `reviewFindings` — the plugin captures the complete raw findings in `capturedRawFindings` on `ReviewInvocationEvidence`, and the tool layer resolves them directly from invocation evidence via `resolveHostTaskFindings()`. This eliminates the fundamental brittleness of LLM-reconstructed findings JSON (key ordering, Zod stripping, hallucinated fields) and achieves 100% success rate for the plan-review-revision loop. Agent-submitted findings (SDK path) continue to work unchanged with full `validateReviewFindings` validation. Evidence-resolved findings skip `validateReviewFindings` (first-party, plugin-validated) and use `evidenceInvocationId` directly for obligation consumption — bypassing `findAcceptedInvocationForFindings` hash comparison entirely.
 
 ### Added

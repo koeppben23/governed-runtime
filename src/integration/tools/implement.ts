@@ -345,26 +345,31 @@ export const implement: ToolDefinition = {
                 item.consumedAt == null,
             ) ?? null;
 
-        let effectiveFindings: ReviewFindings | undefined = args.reviewFindings
-          ? (args.reviewFindings as ReviewFindings)
-          : undefined;
+        // ── Resolve effective findings ──────────────────────────────
+        // BUG-17: In host_task_required mode, plugin-captured evidence is
+        // the SSOT. Agent-submitted reviewFindings are ignored — the
+        // non-deterministic LLM reconstruction adds zero information and
+        // non-zero risk (key reordering, Zod stripping, hallucinated fields).
+        // SDK path (sdk_session_prompt) continues to use agent-submitted
+        // findings with full validation.
+        let effectiveFindings: ReviewFindings | undefined;
         let evidenceInvocationId: string | undefined;
 
-        if (!effectiveFindings && isHostTaskMode) {
+        if (isHostTaskMode) {
+          if (args.reviewFindings) {
+            // BUG-17: warn-level diagnostic — agent submitted reviewFindings
+            // but they will be ignored in host_task_required mode.
+            void args.reviewFindings; // side-effect-free acknowledgement
+          }
           const resolved = resolveHostTaskFindings(state.reviewAssurance, pendingImplObligation);
           if (resolved) {
             effectiveFindings = resolved.findings;
             evidenceInvocationId = resolved.invocationId;
           }
-        }
-
-        if (!effectiveFindings) {
-          const blocked = requireReviewFindings(false);
-          if (blocked) return blocked;
-        }
-
-        // Validate agent-submitted findings only (evidence findings are first-party)
-        if (args.reviewFindings) {
+        } else if (args.reviewFindings) {
+          effectiveFindings = args.reviewFindings as ReviewFindings;
+          // SDK path: validate agent-submitted findings (hash comparison valid
+          // because plugin injects findings and agent returns them verbatim).
           const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
             subagentEnabled,
             fallbackToSelf,
@@ -376,6 +381,11 @@ export const implement: ToolDefinition = {
             reviewInvocationPolicy: policy.reviewInvocationPolicy,
             reviewParentSessionId: context.sessionID,
           });
+          if (blocked) return blocked;
+        }
+
+        if (!effectiveFindings) {
+          const blocked = requireReviewFindings(false);
           if (blocked) return blocked;
         }
 

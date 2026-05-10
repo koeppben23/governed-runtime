@@ -39,11 +39,11 @@ Implement the approved plan and obtain mandatory independent implementation revi
 ### Phase 4: Implementation Review Loop
 
 6. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. Pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
-     - "approve": Call \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\`.
-     - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <pluginReviewFindings> })\`, then make the code changes, then call \`flowguard_implement({})\` again to re-record.
-     - "unable_to_review": The reviewer declared the implementation unreviewable (e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique). The implement tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same evidence — that obligation is consumed. Report the reviewer's findings to the user, then either revise the plan via /plan first OR record substantially-new implementation evidence (new \`flowguard_implement({})\` call after additional code changes, which starts a fresh review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent, then submit verdict with reviewFindings. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. In host_task_required mode, findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`. Otherwise, pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
+      - "approve": Call \`flowguard_implement({ reviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
+      - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested" })\` (or with \`reviewFindings\` in SDK mode), then make the code changes, then call \`flowguard_implement({})\` again to re-record.
+      - "unable_to_review": The reviewer declared the implementation unreviewable (e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique). The implement tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same evidence — that obligation is consumed. Report the reviewer's findings to the user, then either revise the plan via /plan first OR record substantially-new implementation evidence (new \`flowguard_implement({})\` call after additional code changes, which starts a fresh review obligation).
+   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent, then submit verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
    - If review converged: Report the final status.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
@@ -67,13 +67,13 @@ Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
 3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "approve" })\` → EVIDENCE_REVIEW
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_implement({ reviewVerdict: "changes_requested", reviewFindings: <pluginReviewFindings> })\`
+1. \`flowguard_implement({ reviewVerdict: "changes_requested" })\`
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_implement({ reviewVerdict: "approve", reviewFindings: <new pluginReviewFindings> })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "approve" })\` → EVIDENCE_REVIEW
 
 ${GOVERNANCE_RULES}
 ## Done-when
