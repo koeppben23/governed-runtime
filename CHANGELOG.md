@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `HostTaskBindResult` and `HostTaskBindOutcome` types exported from `review-enforcement.ts` for structured host-task binding diagnostics.
+- `validateReviewUrl()` exported from `rails/review.ts` — pure URL validation function for SSRF mitigation with scheme allowlist and private IP blocking.
+- 9 new tests in `plugin-orchestrator-arch-ssot.test.ts` covering BUG-12 architecture SSOT enforcement (HAPPY×2, BAD×2, CORNER×2, EDGE×1, SMOKE×2).
+- 24 new tests in `review.test.ts` covering BUG-13 URL validation (HAPPY×3, BAD×15, CORNER×3, EDGE×3) — scheme blocking, private IP blocking, malformed URLs, and boundary public IPs.
 - 18 new tests in `plugin-host-task-diagnostics.test.ts` covering all 9 `bindOutcome` values (HAPPY, BAD, CORNER, EDGE, SMOKE, E2E).
 
 - `REVIEWER_INVOCATION_EXHAUSTED` reason code (adapter category) for blocking obligations after all subagent retry attempts are exhausted.
@@ -110,6 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Architecture adrText/adrTitle SSOT violation (BUG-12)**: Architecture review prompt now always uses `sessionState.architecture.adrText` and `sessionState.architecture.title` (SSOT) instead of the LLM-supplied `toolArgs.adrText`/`toolArgs.title`. Same class of bug as BUG-09 (plan text SSOT). Additionally fixed a variable scoping bug where `adrText`/`adrTitle` were declared inside the `else if` block but referenced in the outer logging block — causing a silent `ReferenceError` when `toolArgs.adrText` was a string, which was caught by the outer try-catch and silently swallowed. Added mismatch logging (adrTextMismatch, toolArgsAdrTextLength) for observability.
+- **SSRF in fetchUrlContent (BUG-13, Security)**: `/review` URL fetching now validates URLs before fetch with `validateReviewUrl()`. Blocks: non-HTTPS schemes (http, file, ftp, data, javascript), private/reserved IPv4 ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 0.0.0.0), private IPv6 (::1, fc00::/7, fe80::/10), and `localhost`. Redirect following disabled (`redirect: 'error'` instead of `redirect: 'follow'`) to prevent SSRF via open redirects. Uses existing `COMMAND_BLOCKED` reason code.
 - **Host-task binding diagnostics opaque (F5)**: `buildHostTaskEvidence()` now returns a structured `HostTaskBindResult` with machine-readable `bindOutcome` and serializable `diagnostic` metadata for every code path (9 distinct outcomes). Previously the function returned `null` on 6 different failure paths with no indication of why binding failed — making real-run debugging impossible. The `plugin.ts` caller now emits 4 diagnostic log statements: `reviewer task completed`, `bind attempt` (with policy and pending obligation count), `evidence created` or `bind failed` (with outcome and diagnostic fields), and `output blocked` on `host_task_required` policy with null evidence.
 
 - **Infinite reviewer re-invocation loop (BUG-07)**: Review obligation now blocked with `REVIEWER_INVOCATION_EXHAUSTED` after all subagent retry attempts fail in non-strict mode. Previously the obligation stayed `pending`, causing `findLatestPendingReviewObligation()` to rediscover it on every subsequent tool call and trigger another 3-attempt cycle — resulting in unbounded subagent sessions with no bindable results. Strict mode behavior unchanged (uses `blockReviewOutcome`).

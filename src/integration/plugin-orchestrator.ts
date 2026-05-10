@@ -487,6 +487,8 @@ export async function runReviewOrchestration(
 
     const ticketText = sessionState.ticket?.text ?? '';
     const planText = sessionState.plan?.current?.body ?? '';
+    const adrText = sessionState.architecture?.adrText ?? '';
+    const adrTitle = sessionState.architecture?.title ?? '';
     const toolArgs = getToolArgs(input);
 
     // P9c: select phase-specific stack profile rules for reviewer prompts.
@@ -528,14 +530,6 @@ export async function runReviewOrchestration(
         ...implRules,
       });
     } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
-      const adrText =
-        typeof toolArgs.adrText === 'string'
-          ? toolArgs.adrText
-          : (sessionState.architecture?.adrText ?? '');
-      const adrTitle =
-        typeof toolArgs.title === 'string'
-          ? toolArgs.title
-          : (sessionState.architecture?.title ?? '');
       prompt = buildArchitectureReviewPrompt({
         adrText,
         adrTitle,
@@ -567,6 +561,12 @@ export async function runReviewOrchestration(
         ? {
             toolArgsPlanTextLength: toolArgs.planText.length,
             planTextMismatch: toolArgs.planText !== planText,
+          }
+        : {}),
+      ...(toolName === TOOL_FLOWGUARD_ARCHITECTURE && typeof toolArgs.adrText === 'string'
+        ? {
+            toolArgsAdrTextLength: toolArgs.adrText.length,
+            adrTextMismatch: toolArgs.adrText !== adrText,
           }
         : {}),
     });

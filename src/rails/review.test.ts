@@ -13,6 +13,7 @@ import {
   executeReview,
   executeReviewFlow,
   startReviewFlow,
+  validateReviewUrl,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
@@ -818,6 +819,159 @@ describe('review rail', () => {
         };
         await executeReview(state, NOW, llmExecutors, refInput);
         expect(capturedContent[0]).toBeUndefined();
+      });
+    });
+  });
+
+  // =========================================================================
+  // BUG-13: URL Validation (SSRF Mitigation)
+  // =========================================================================
+
+  describe('BUG-13: validateReviewUrl — SSRF mitigation', () => {
+    // --- HAPPY: valid HTTPS URLs accepted --------------------------------
+
+    describe('HAPPY: valid HTTPS URLs accepted', () => {
+      it('accepts standard HTTPS URL', () => {
+        const result = validateReviewUrl('https://example.com/spec.md');
+        expect(result.valid).toBe(true);
+      });
+
+      it('accepts HTTPS URL with port', () => {
+        const result = validateReviewUrl('https://api.example.com:8443/data');
+        expect(result.valid).toBe(true);
+      });
+
+      it('accepts HTTPS URL with path, query, and fragment', () => {
+        const result = validateReviewUrl('https://github.com/owner/repo/pull/123.diff?w=1#changes');
+        expect(result.valid).toBe(true);
+      });
+    });
+
+    // --- BAD: disallowed schemes blocked ----------------------------------
+
+    describe('BAD: disallowed schemes blocked', () => {
+      it('rejects HTTP URL', () => {
+        const result = validateReviewUrl('http://example.com/data');
+        expect(result.valid).toBe(false);
+        expect(result).toHaveProperty('reason');
+        expect((result as { reason: string }).reason).toContain('https:');
+      });
+
+      it('rejects file:// URL', () => {
+        const result = validateReviewUrl('file:///etc/passwd');
+        expect(result.valid).toBe(false);
+        expect((result as { reason: string }).reason).toContain('not allowed');
+      });
+
+      it('rejects ftp:// URL', () => {
+        const result = validateReviewUrl('ftp://server.internal/secret');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects data: URL', () => {
+        const result = validateReviewUrl('data:text/plain,hello');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects javascript: URL', () => {
+        const result = validateReviewUrl('javascript:alert(1)');
+        expect(result.valid).toBe(false);
+      });
+    });
+
+    // --- BAD: private/reserved IPs blocked --------------------------------
+
+    describe('BAD: private/reserved IP addresses blocked', () => {
+      it('rejects localhost', () => {
+        const result = validateReviewUrl('https://localhost/admin');
+        expect(result.valid).toBe(false);
+        expect((result as { reason: string }).reason).toContain('localhost');
+      });
+
+      it('rejects 127.0.0.1 (loopback)', () => {
+        const result = validateReviewUrl('https://127.0.0.1/internal');
+        expect(result.valid).toBe(false);
+        expect((result as { reason: string }).reason).toContain('private');
+      });
+
+      it('rejects 10.0.0.1 (RFC 1918)', () => {
+        const result = validateReviewUrl('https://10.0.0.1/config');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects 172.16.0.1 (RFC 1918)', () => {
+        const result = validateReviewUrl('https://172.16.0.1/secrets');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects 192.168.1.1 (RFC 1918)', () => {
+        const result = validateReviewUrl('https://192.168.1.1/router');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects 169.254.169.254 (link-local / cloud metadata)', () => {
+        const result = validateReviewUrl('https://169.254.169.254/latest/meta-data');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects 0.0.0.0 (unspecified)', () => {
+        const result = validateReviewUrl('https://0.0.0.0/');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects IPv6 loopback [::1]', () => {
+        const result = validateReviewUrl('https://[::1]/secret');
+        expect(result.valid).toBe(false);
+        expect((result as { reason: string }).reason).toContain('IPv6');
+      });
+
+      it('rejects IPv6 unique-local [fc00::1]', () => {
+        const result = validateReviewUrl('https://[fc00::1]/');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects IPv6 link-local [fe80::1]', () => {
+        const result = validateReviewUrl('https://[fe80::1]/');
+        expect(result.valid).toBe(false);
+      });
+    });
+
+    // --- CORNER: malformed / edge-case URLs --------------------------------
+
+    describe('CORNER: malformed and edge-case URLs', () => {
+      it('rejects empty string', () => {
+        const result = validateReviewUrl('');
+        expect(result.valid).toBe(false);
+        expect((result as { reason: string }).reason).toContain('parsing failed');
+      });
+
+      it('rejects string without scheme', () => {
+        const result = validateReviewUrl('example.com/path');
+        expect(result.valid).toBe(false);
+      });
+
+      it('rejects relative path', () => {
+        const result = validateReviewUrl('/etc/passwd');
+        expect(result.valid).toBe(false);
+      });
+    });
+
+    // --- EDGE: boundary IPs outside private ranges -------------------------
+
+    describe('EDGE: public IPs accepted', () => {
+      it('accepts public IPv4 (8.8.8.8)', () => {
+        const result = validateReviewUrl('https://8.8.8.8/dns');
+        expect(result.valid).toBe(true);
+      });
+
+      it('accepts 172.15.255.255 (just below 172.16/12 range)', () => {
+        const result = validateReviewUrl('https://172.15.255.255/ok');
+        expect(result.valid).toBe(true);
+      });
+
+      it('accepts 172.32.0.0 (just above 172.31/12 range)', () => {
+        const result = validateReviewUrl('https://172.32.0.0/ok');
+        expect(result.valid).toBe(true);
       });
     });
   });

@@ -27,9 +27,134 @@ import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 
 // ─── Content Loading Helpers ──────────────────────────────────────
 
-/** Fetch content from URL using native fetch. Throws on failure. */
+// ─── URL Validation (BUG-13: SSRF Mitigation) ───────────────────────
+
+/** Private/reserved IPv4 CIDR ranges that must be blocked. */
+const PRIVATE_IPV4_RANGES: Array<{ prefix: number; mask: number }> = [
+  { prefix: 0x7f000000, mask: 0xff000000 }, // 127.0.0.0/8  (loopback)
+  { prefix: 0x0a000000, mask: 0xff000000 }, // 10.0.0.0/8   (RFC 1918)
+  { prefix: 0xac100000, mask: 0xfff00000 }, // 172.16.0.0/12 (RFC 1918)
+  { prefix: 0xc0a80000, mask: 0xffff0000 }, // 192.168.0.0/16 (RFC 1918)
+  { prefix: 0xa9fe0000, mask: 0xffff0000 }, // 169.254.0.0/16 (link-local)
+  { prefix: 0x00000000, mask: 0xffffffff }, // 0.0.0.0/32    (unspecified)
+];
+
+/** Reserved IPv6 addresses that must be blocked. */
+const PRIVATE_IPV6_PREFIXES = ['::1', 'fc00:', 'fd', 'fe80:'];
+
+/**
+ * Parse a dotted-decimal IPv4 string into a 32-bit integer.
+ * Returns null if the string is not a valid IPv4 address.
+ */
+function parseIPv4(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let result = 0;
+  for (const part of parts) {
+    const n = Number(part);
+    if (!Number.isInteger(n) || n < 0 || n > 255) return null;
+    result = (result << 8) | n;
+  }
+  return result >>> 0; // unsigned 32-bit
+}
+
+/**
+ * Check if an IPv4 address (as 32-bit int) falls within any private/reserved range.
+ */
+function isPrivateIPv4(ip: number): boolean {
+  return PRIVATE_IPV4_RANGES.some((range) => (ip & range.mask) >>> 0 === range.prefix >>> 0);
+}
+
+/**
+ * Check if an IPv6 address string is private/reserved.
+ * Covers: ::1 (loopback), fc00::/7 (unique-local), fe80::/10 (link-local).
+ */
+function isPrivateIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  return PRIVATE_IPV6_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+/**
+ * Validate a URL for safe external fetch. Fail-closed: any parsing
+ * failure or disallowed target results in rejection.
+ *
+ * Rules:
+ * - Scheme must be `https:` (no http, file, ftp, data, etc.)
+ * - Hostname must not resolve to private/reserved IP ranges
+ * - Hostname must not be `localhost` or a bare IPv4/IPv6 loopback
+ * - URL must parse successfully via `new URL()`
+ *
+ * @returns Object with `valid` flag and optional `reason` for rejection.
+ */
+export function validateReviewUrl(url: string): { valid: true } | { valid: false; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, reason: `URL parsing failed: ${url}` };
+  }
+
+  // Scheme allowlist: only HTTPS
+  if (parsed.protocol !== 'https:') {
+    return {
+      valid: false,
+      reason: `URL scheme '${parsed.protocol}' is not allowed; only https: is permitted`,
+    };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block localhost (any casing)
+  if (hostname === 'localhost') {
+    return { valid: false, reason: 'URL hostname "localhost" is blocked (private network)' };
+  }
+
+  // Block bare IPv4 in private ranges
+  // Hostname may be a bare IP or bracket-wrapped IPv6.
+  const ipv4 = parseIPv4(hostname);
+  if (ipv4 !== null) {
+    if (isPrivateIPv4(ipv4)) {
+      return {
+        valid: false,
+        reason: `URL hostname "${hostname}" resolves to a private/reserved IPv4 range`,
+      };
+    }
+  }
+
+  // Block bracket-wrapped IPv6 — URL parser keeps brackets in hostname.
+  // e.g. new URL('https://[::1]/') → hostname = '[::1]'
+  // Strip brackets before checking against private IPv6 prefixes.
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    const bareIpv6 = hostname.slice(1, -1);
+    if (isPrivateIPv6(bareIpv6)) {
+      return {
+        valid: false,
+        reason: `URL hostname "${hostname}" resolves to a private/reserved IPv6 range`,
+      };
+    }
+  } else if (hostname.includes(':')) {
+    // Bare IPv6 without brackets (unusual but defensive)
+    if (isPrivateIPv6(hostname)) {
+      return {
+        valid: false,
+        reason: `URL hostname "${hostname}" resolves to a private/reserved IPv6 range`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+/** Fetch content from URL using native fetch. Validates URL before fetching.
+ *  Rejects private/reserved targets (SSRF mitigation).
+ *  Disables redirect following to prevent SSRF via redirect.
+ *  Throws on validation failure or HTTP errors. */
 async function fetchUrlContent(url: string): Promise<string> {
-  const resp = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+  const validation = validateReviewUrl(url);
+  if (!validation.valid) {
+    throw new Error(`URL validation blocked: ${validation.reason}`);
+  }
+  const resp = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15000) });
   if (!resp.ok) {
     throw new Error(`Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`);
   }
@@ -189,6 +314,14 @@ function loadBranchContent(refInput: ReviewReferenceInput): { content: string } 
 async function loadUrlContent(
   refInput: ReviewReferenceInput,
 ): Promise<{ content: string } | ReviewReport> {
+  // BUG-13: Validate URL before fetch to block SSRF attempts with a clear reason.
+  const validation = validateReviewUrl(refInput.url!);
+  if (!validation.valid) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `URL blocked: ${validation.reason}`,
+    }) as unknown as ReviewReport;
+  }
   try {
     const content = await fetchUrlContent(refInput.url!);
     return { content };
