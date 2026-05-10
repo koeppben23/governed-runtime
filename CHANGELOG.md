@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Session error audit trail (BUG-01)**: `session.error` SDK events are now persisted to the audit trail via `emitSessionErrorAudit` callback. Previously, session errors were only logged to the file/console logger and silently lost from the persistent audit chain. The composition root (`plugin.ts`) wires the callback to `appendReviewAuditEvent` with `error:SESSION_ERROR` event type.
+- **Session error detail loss (BUG-06)**: The `session.error` event handler now extracts all available error context from SDK event properties — `code`, `stack`, and any non-standard supplementary properties. Previously only `error` or `message` (string) were extracted; stack traces, error codes, and metadata were silently discarded.
+- **Doc-code mismatch in plugin-events (BUG-11)**: Module documentation claimed `session.idle` handling; corrected to `session.delete` which is the actual handled event type.
+
+### Added
+
+- `SESSION_ERROR` reason code registered in the default reason registry (adapter category) for audit trail persistence of host runtime session errors.
+- 12 new tests in `plugin-events.test.ts` covering error detail extraction (5 tests: happy, corner, edge) and audit trail emission (7 tests: happy, bad, corner, edge).
+
+### Changed
+
+- `EventHandlerDeps` interface extended with `emitSessionErrorAudit(sessionId, errorMessage, detail)` callback for audit trail integration.
+- `INFRA_REASONS` count updated from 27 to 28 entries.
+
 ### Added
 
 - **Comprehensive structured logging across all adapter layers**: Adapter modules (persistence, git, archive, init, evidence-artifacts, gh-cli, actor) now emit structured logs for all critical failure paths and silent fallbacks. Logging is injected via `AsyncLocalStorage`-scoped DI — adapter functions call `getAdapterLogger()` and receive the plugin or CLI logger for the current execution scope.

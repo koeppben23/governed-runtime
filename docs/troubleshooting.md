@@ -107,6 +107,7 @@ real, registered reason.
 | `CONFIG_MISSING`           | Config file is absent                       | Re-run `flowguard install` for this workspace             |
 | `CONFIG_INVALID`           | Config file failed schema validation        | Restore from a trusted backup or re-install               |
 | `SCHEMA_VALIDATION_FAILED` | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported |
+| `SESSION_ERROR`            | Session error received from host runtime    | Check OpenCode logs for root cause; start a new session   |
 
 ### Command & Phase
 
@@ -269,6 +270,7 @@ REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
 REVISED_PLAN_REQUIRED
 SCHEMA_VALIDATION_FAILED
+SESSION_ERROR
 STRICT_REVIEW_ORCHESTRATION_FAILED
 SUBAGENT_CONTEXT_UNVERIFIABLE
 SUBAGENT_EVIDENCE_REUSED

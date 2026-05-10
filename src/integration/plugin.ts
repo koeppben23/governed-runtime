@@ -26,6 +26,7 @@ import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
+import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
@@ -360,6 +361,15 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           log,
           cleanupSession: (sessionId: string) => {
             ws.invalidateChainState(sessionId);
+          },
+          async emitSessionErrorAudit(sessionId, errorMessage, detail) {
+            const sessDir = ws.getSessionDir(sessionId);
+            if (!sessDir) return; // No session dir — pre-session error, log-only
+            await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
+              code: 'SESSION_ERROR',
+              message: errorMessage,
+              ...detail,
+            });
           },
         };
         await handleEvent(eventDeps, event);
