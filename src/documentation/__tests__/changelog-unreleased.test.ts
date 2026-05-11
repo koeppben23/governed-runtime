@@ -25,6 +25,10 @@ function unreleasedSection(): string {
   return afterMarker!.split(/\n## \[/)[0];
 }
 
+function unreleasedCategoryHeadings(): string[] {
+  return Array.from(unreleasedSection().matchAll(/^### (.+)$/gm), (match) => match[1]);
+}
+
 function rc2Section(): string {
   const marker = '## [1.2.0-rc.2] - 2026-05-03\n';
   const afterMarker = readChangelog().split(marker)[1];
@@ -66,12 +70,16 @@ describe('documentation/changelog-sections', () => {
   describe('EDGE — category headings are known', () => {
     it('uses only Keep a Changelog category headings in Unreleased', () => {
       const allowed = new Set(['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security']);
-      const headings = Array.from(
-        unreleasedSection().matchAll(/^### (.+)$/gm),
-        (match) => match[1],
-      );
+      const headings = unreleasedCategoryHeadings();
       expect(headings.length).toBeGreaterThan(0);
       expect(headings.filter((heading) => !allowed.has(heading))).toEqual([]);
+    });
+
+    it('does not repeat category headings in Unreleased', () => {
+      const headings = unreleasedCategoryHeadings();
+      const duplicates = headings.filter((heading, index) => headings.indexOf(heading) !== index);
+
+      expect(duplicates).toEqual([]);
     });
   });
 });
