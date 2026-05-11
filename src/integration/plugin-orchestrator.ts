@@ -303,7 +303,7 @@ export async function runReviewOrchestration(
         url: typeof rawInput.url === 'string' ? rawInput.url : undefined,
       };
       const contentResult = await loadExternalContent(refInput);
-      if (!('content' in contentResult)) {
+      if (!('content' in contentResult) || typeof contentResult.content !== 'string') {
         if (strictEnforcement) {
           await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
             obligationId: reviewCtx.obligationId,
@@ -312,16 +312,7 @@ export async function runReviewOrchestration(
         }
         return;
       }
-      const content: unknown = contentResult.content;
-      if (typeof content !== 'string') {
-        if (strictEnforcement) {
-          await blockStrictReviewContent('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-            obligationId: reviewCtx.obligationId,
-            reason: 'external review content could not be loaded',
-          });
-        }
-        return;
-      }
+      const content: string = contentResult.content;
       const prompt = buildReviewContentPrompt({
         content,
         ticketText: sessionState.ticket?.text ?? '',

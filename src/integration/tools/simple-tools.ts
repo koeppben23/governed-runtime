@@ -629,7 +629,6 @@ export const review: ToolDefinition = {
 
       const reviewResult = await executeReview(result.state, now, executors, refInput);
 
-      // Discriminant check: RailBlocked has kind, ReviewReport does not
       if ('kind' in reviewResult) {
         return formatBlockedReviewReport(reviewResult);
       }
