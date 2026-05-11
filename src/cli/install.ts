@@ -12,6 +12,8 @@ import { writeFile, readFile, readdir, copyFile, rm } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
+import { initCliLogger } from './cli-logging.js';
+import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
@@ -1109,6 +1111,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let policyMode: PolicyMode = 'solo';
   let force = false;
   let coreTarball: string | undefined;
+  let logMode: 'file' | 'console' | 'file+console' | undefined;
   const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length; i++) {
@@ -1150,6 +1153,16 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
+      case '--log-mode': {
+        const next = argv[i + 1];
+        if (next && (next === 'file' || next === 'console' || next === 'file+console')) {
+          logMode = next;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
 
       // ── Deprecated aliases ─────────────────────────────────
       case '--global':
@@ -1179,7 +1192,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   return {
-    args: { action, installScope, policyMode, force, coreTarball },
+    args: { action, installScope, policyMode, force, coreTarball, logMode },
     deprecations,
   };
 }
@@ -1303,52 +1316,74 @@ export async function main(argv: string[]): Promise<number> {
 
   const { args, deprecations } = parsed;
 
-  // Emit deprecation warnings
+  const cliLog = initCliLogger(resolveTarget(args.installScope), args.logMode ?? 'console');
+
   for (const d of deprecations) {
     console.error(`  [deprecated] ${d}`);
   }
 
-  switch (args.action) {
-    case 'install': {
-      const result = await install(args);
-      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-      console.log(`Installing FlowGuard to ${targetLabel}...`);
-      console.log(`  Install scope: ${args.installScope}`);
-      console.log(`  Policy mode: ${args.policyMode}`);
-      console.log('');
-      console.log(formatResult(result));
-      if (result.errors.length > 0) return 1;
-      return 0;
-    }
+  cliLog.info('cli', 'command_started', {
+    action: args.action,
+    installScope: args.installScope,
+    policyMode: args.policyMode,
+    force: args.force,
+    logMode: args.logMode,
+  });
 
-    case 'uninstall': {
-      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-      const result = await uninstall(args);
-      console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
-      console.log('');
-      console.log(formatResult(result));
-      return result.errors.length > 0 ? 1 : 0;
-    }
+  try {
+    switch (args.action) {
+      case 'install': {
+        const result = await install(args);
+        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+        console.log(`Installing FlowGuard to ${targetLabel}...`);
+        console.log(`  Install scope: ${args.installScope}`);
+        console.log(`  Policy mode: ${args.policyMode}`);
+        console.log('');
+        console.log(formatResult(result));
+        if (result.errors.length > 0) {
+          cliLog.warn('cli', 'install had errors', { errorCount: result.errors.length });
+          return 1;
+        }
+        cliLog.info('cli', 'install completed', { filesWritten: result.ops.length });
+        return 0;
+      }
 
-    case 'doctor': {
-      const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-      const checks = await doctor(args);
-      console.log(`Checking FlowGuard installation at ${targetLabel}...`);
-      console.log('');
-      console.log(formatDoctor(checks));
-      const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
-      return hasFailure ? 1 : 0;
-    }
+      case 'uninstall': {
+        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+        const result = await uninstall(args);
+        console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
+        console.log('');
+        console.log(formatResult(result));
+        cliLog.info('cli', 'uninstall completed', { filesRemoved: result.ops.length });
+        return result.errors.length > 0 ? 1 : 0;
+      }
 
-    case 'run': {
-      const { runMain } = await import('./run.js');
-      return runMain(argv.slice(1));
-    }
+      case 'doctor': {
+        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+        const checks = await doctor(args);
+        console.log(`Checking FlowGuard installation at ${targetLabel}...`);
+        console.log('');
+        console.log(formatDoctor(checks));
+        const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+        cliLog.info('cli', 'doctor completed', {
+          totalChecks: checks.length,
+          hasFailure,
+        });
+        return hasFailure ? 1 : 0;
+      }
 
-    case 'serve': {
-      const { serveMain } = await import('./run.js');
-      return serveMain(argv.slice(1));
+      case 'run': {
+        const { runMain } = await import('./run.js');
+        return runMain(argv.slice(1));
+      }
+
+      case 'serve': {
+        const { serveMain } = await import('./run.js');
+        return serveMain(argv.slice(1));
+      }
     }
+  } finally {
+    resetAdapterLogger();
   }
 }
 

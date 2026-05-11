@@ -98,24 +98,27 @@ real, registered reason.
 
 ### Session & State
 
-| Code                       | Description                                 | Solution                                                  |
-| -------------------------- | ------------------------------------------- | --------------------------------------------------------- |
-| `NO_SESSION`               | No session exists for the current workspace | Run `/hydrate` first                                      |
-| `MISSING_SESSION_ID`       | Tool call missing session id                | Re-invoke via OpenCode (the runtime injects sessionId)    |
-| `MISSING_WORKTREE`         | Workspace fingerprint cannot be resolved    | Run from inside a git worktree                            |
-| `INVALID_FINGERPRINT`      | Workspace fingerprint mismatch              | Run `flowguard doctor`                                    |
-| `CONFIG_MISSING`           | Config file is absent                       | Re-run `flowguard install` for this workspace             |
-| `CONFIG_INVALID`           | Config file failed schema validation        | Restore from a trusted backup or re-install               |
-| `SCHEMA_VALIDATION_FAILED` | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported |
+| Code                            | Description                                 | Solution                                                                                                       |
+| ------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                    | No session exists for the current workspace | Run `/hydrate` first                                                                                           |
+| `MISSING_SESSION_ID`            | Tool call missing session id                | Re-invoke via OpenCode (the runtime injects sessionId)                                                         |
+| `MISSING_WORKTREE`              | Workspace fingerprint cannot be resolved    | Run from inside a git worktree                                                                                 |
+| `INVALID_FINGERPRINT`           | Workspace fingerprint mismatch              | Run `flowguard doctor`                                                                                         |
+| `CONFIG_MISSING`                | Config file is absent                       | Re-run `flowguard install` for this workspace                                                                  |
+| `CONFIG_INVALID`                | Config file failed schema validation        | Restore from a trusted backup or re-install                                                                    |
+| `SCHEMA_VALIDATION_FAILED`      | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported                                                      |
+| `SESSION_ERROR`                 | Session error received from host runtime    | Check OpenCode logs for root cause; start a new session                                                        |
+| `REVIEWER_INVOCATION_EXHAUSTED` | All reviewer subagent retry attempts failed | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output |
 
 ### Command & Phase
 
-| Code                  | Description                                                        | Solution                                                 |
-| --------------------- | ------------------------------------------------------------------ | -------------------------------------------------------- |
-| `COMMAND_NOT_ALLOWED` | Command is not in the allowed-phase set for current phase          | Check `docs/commands.md` "Allowed in" for the command    |
-| `WRONG_PHASE`         | Tool requires a specific phase precondition                        | Run `/status` to see the current phase, then `/continue` |
-| `INVALID_VERDICT`     | `/review-decision` verdict is not approve/changes_requested/reject | Pass a valid verdict literal                             |
-| `INVALID_TRANSITION`  | Topology event not valid for current phase                         | Run `/status` and `/why` for diagnostic explanation      |
+| Code                     | Description                                                              | Solution                                                                      |
+| ------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `COMMAND_NOT_ALLOWED`    | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                         |
+| `WRONG_PHASE`            | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                      |
+| `HOST_TOOL_PHASE_DENIED` | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases |
+| `INVALID_VERDICT`        | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                  |
+| `INVALID_TRANSITION`     | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                           |
 
 ### Evidence Integrity
 
@@ -143,6 +146,7 @@ real, registered reason.
 | `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                         | Submit a substantively-new artifact for a fresh review obligation                           |
 | `MAX_REVIEW_ITERATIONS_REACHED`      | Review loop reached max iterations without convergence ({lastVerdict})          | Submit a fresh /plan or /implement to reset the iteration counter                           |
 | `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed                | Address the reviewer's reason or substantially revise; do not retry the same artifact       |
+| `SUBAGENT_TYPE_UNAUTHORIZED`         | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth)   | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents         |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output          | Re-run the tool that produced the review obligation                                         |
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                               | Include the structured `reviewFindings` object                                              |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session       | Use findings produced for the current session                                               |
@@ -222,6 +226,8 @@ EXPLICIT_WEAKER_THAN_CENTRAL
 FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
+HOST_SUBAGENT_TASK_REQUIRED
+HOST_TOOL_PHASE_DENIED
 HYDRATE_DISCOVERY_CONTRACT_FAILED
 IMPLEMENTATION_EVIDENCE_EMPTY
 IMPLEMENTATION_EVIDENCE_REQUIRED
@@ -266,8 +272,11 @@ REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
+REVIEWER_INVOCATION_EXHAUSTED
+REVIEWER_UNAVAILABLE_STRICT
 REVISED_PLAN_REQUIRED
 SCHEMA_VALIDATION_FAILED
+SESSION_ERROR
 STRICT_REVIEW_ORCHESTRATION_FAILED
 SUBAGENT_CONTEXT_UNVERIFIABLE
 SUBAGENT_EVIDENCE_REUSED
@@ -278,6 +287,7 @@ SUBAGENT_PROMPT_MISSING_CONTEXT
 SUBAGENT_REVIEW_NOT_INVOKED
 SUBAGENT_REVIEW_REQUIRED
 SUBAGENT_SESSION_MISMATCH
+SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED
 TOOL_ERROR
@@ -298,12 +308,65 @@ Enable verbose logging via workspace config:
 ```json
 {
   "logging": {
-    "level": "debug"
+    "level": "debug",
+    "mode": "console"
   }
 }
 ```
 
 Config file location: `~/.config/opencode/flowguard.json` (global) or `.opencode/flowguard.json` in the project.
+
+### Log Modes
+
+| Mode           | Output                                                          | Use case                              |
+| -------------- | --------------------------------------------------------------- | ------------------------------------- |
+| `console`      | stderr/stdout (formatted)                                       | Development, CI, `--log-mode console` |
+| `file`         | `{workspace}/.opencode/logs/flowguard-{YYYY-MM-DD}.log` (JSONL) | Production, audit                     |
+| `file+console` | Both file and console                                           | Development with persistence          |
+| `ui`           | OpenCode TUI via `client.app.log()`                             | Plugin-only (no CLI)                  |
+| `both`         | File + OpenCode TUI                                             | Plugin-only (no CLI)                  |
+
+### CLI `--log-mode` Flag
+
+The CLI uses a separate flag because it has no OpenCode plugin context:
+
+```bash
+flowguard install --core-tarball ./flowguard-core-1.0.0.tgz --log-mode console
+flowguard doctor --log-mode file
+flowguard uninstall --log-mode file+console
+```
+
+Console mode writes formatted lines to stderr/stdout. File mode writes JSONL to the target `.opencode/logs/` directory.
+
+### Log File Location
+
+File logs are written to:
+
+```
+~/.config/opencode/workspaces/{fingerprint}/.opencode/logs/flowguard-{YYYY-MM-DD}.log
+```
+
+Each line is a JSON object with `ts`, `level`, `component`, `service`, `message`, and optional `fields`. Logs older than `logging.retentionDays` (default 7) are auto-deleted on first write each day.
+
+### Missing Adapter Logs
+
+If adapter-layer operations (persistence, git, archive, identity) produce no logs:
+
+1. Verify `logging.level` is not `silent` or `error` (which suppresses warn/info/debug)
+2. Verify `logging.mode` is not set to a mode that doesn't cover your sink
+3. If using the plugin: adapter logging requires the plugin to run hooks via `runWithAdapterLoggerAsync()` — ensure the plugin is active
+4. If using the CLI: adapter logging is active during the command, reset afterwards
+
+### Identity Log Redaction
+
+Identity, JWT, and JWKS error logs automatically sanitize sensitive data:
+
+- File paths → basename only (e.g. `[redacted:token.jwt]`)
+- URIs → hostname only (e.g. `[redacted:auth.example.com]`)
+- Issuers → SHA-256 prefix (e.g. `[hashed:a1b2c3d4]`)
+- Error messages → absolute paths and URLs stripped
+
+If you see raw paths or URLs in identity logs, file a bug — redaction is applied at every log call site.
 
 ## Test Troubleshooting
 

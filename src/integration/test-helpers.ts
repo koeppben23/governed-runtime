@@ -27,6 +27,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
+import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type { ReviewFindings, ReviewObligationType } from '../state/evidence.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -154,6 +155,8 @@ export async function createTestWorkspace(): Promise<TestWorkspace> {
   return {
     tmpDir,
     cleanup: async () => {
+      // Restore adapter logger to prevent cross-test leaks
+      resetAdapterLogger();
       // Restore env
       if (originalEnv !== undefined) {
         process.env.OPENCODE_CONFIG_DIR = originalEnv;
@@ -347,16 +350,24 @@ export async function fulfillStrictReviewObligation(
     },
   };
 
+  const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: input.obligationType,
-    parentSessionId: 'ses_test_parent',
+    parentSessionId: state.binding.sessionId,
     childSessionId: findings.reviewedBy.sessionId,
+    invocationMode: isHostTask ? 'host_subagent_task' : 'sdk_session_prompt',
+    hostVisible: isHostTask,
     promptHash: hashText(`${input.obligationType}:${input.iteration}:${input.planVersion}`),
     findingsHash: hashFindings(findings),
     invokedAt: new Date().toISOString(),
     fulfilledAt: new Date().toISOString(),
+    // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
+    // evidence (capturedRawFindings) rather than from agent-submitted args.
+    // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
+    ...(isHostTask ? { capturedRawFindings: findings } : {}),
   });
+  const obligationAcceptedByReviewer = !isHostTask;
 
   await writeState(sessDir, {
     ...state,
@@ -366,9 +377,13 @@ export async function fulfillStrictReviewObligation(
           ? {
               ...item,
               pluginHandshakeAt: new Date().toISOString(),
-              status: 'fulfilled' as const,
-              invocationId: invocation.invocationId,
-              fulfilledAt: new Date().toISOString(),
+              status: obligationAcceptedByReviewer ? ('fulfilled' as const) : item.status,
+              invocationId: obligationAcceptedByReviewer
+                ? invocation.invocationId
+                : item.invocationId,
+              fulfilledAt: obligationAcceptedByReviewer
+                ? new Date().toISOString()
+                : item.fulfilledAt,
             }
           : item,
       ),

@@ -48,6 +48,7 @@ import {
   appendReviewObligation,
   findLatestPendingReviewObligation,
   findReviewObligationById,
+  findAcceptedInvocationForFindings,
   consumeReviewObligation,
   validateStrictAttestation,
   ensureReviewAssurance,
@@ -313,6 +314,8 @@ export const review: ToolDefinition = {
   async execute(args, context) {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
+      const reviewInvocationPolicy =
+        state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required';
 
       // 1. Transition READY → REVIEW (no autoAdvance — report must be written first, P8b).
       let result = startReviewFlow(state, ctx);
@@ -463,13 +466,43 @@ export const review: ToolDefinition = {
             (inv) =>
               inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
           );
+          const submittedReviewOutput = findings.pluginReviewOutput as
+            | Record<string, unknown>
+            | undefined;
+
+          if (submittedReviewOutput?.reviewOutputMode === 'text_compat') {
+            if (hostInvForObligation?.reviewOutputMode !== 'text_compat') {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_MANDATE_MISMATCH',
+                'Submitted text-compat findings require matching host-orchestrated ReviewInvocationEvidence with reviewOutputMode: text_compat.',
+                obligation.obligationId,
+              );
+            }
+            if (
+              hostInvForObligation.reviewAssuranceLevel !== 'text_compat_lower' ||
+              hostInvForObligation.structuredOutputUsed !== false ||
+              !hostInvForObligation.extractionMethod
+            ) {
+              return formatBlockedWithAttestation(
+                'SUBAGENT_MANDATE_MISMATCH',
+                'Submitted text-compat findings require complete lower-assurance invocation metadata.',
+                obligation.obligationId,
+              );
+            }
+          }
 
           if (hostInvForObligation) {
             // Host-orchestrated evidence exists for this obligation.
             // Only accept findings that match it exactly.
             if (
               hostInvForObligation.findingsHash !== findingsHash ||
-              hostInvForObligation.childSessionId !== childSessionId
+              hostInvForObligation.childSessionId !== childSessionId ||
+              (reviewInvocationPolicy === 'host_task_required' &&
+                (hostInvForObligation.invocationMode !== 'host_subagent_task' ||
+                  hostInvForObligation.hostVisible !== true ||
+                  hostInvForObligation.parentSessionId !== context.sessionID ||
+                  hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
+                  hostInvForObligation.mandateDigest !== obligation.mandateDigest))
             ) {
               return formatBlockedWithAttestation(
                 'SUBAGENT_MANDATE_MISMATCH',
@@ -479,6 +512,13 @@ export const review: ToolDefinition = {
             }
             // Exact match — evidence already recorded by plugin, skip creation.
           } else {
+            if (reviewInvocationPolicy === 'host_task_required') {
+              return formatBlockedWithAttestation(
+                'HOST_SUBAGENT_TASK_REQUIRED',
+                'This policy requires host-visible Task-tool evidence for flowguard-reviewer; manual-attested /review findings are not accepted.',
+                obligation.obligationId,
+              );
+            }
             // No host-orchestrated evidence — manual path.
             if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
               return formatBlockedWithAttestation(
@@ -494,6 +534,8 @@ export const review: ToolDefinition = {
               obligationType: 'review',
               parentSessionId: context.sessionID,
               childSessionId,
+              invocationMode: 'manual_attested',
+              hostVisible: false,
               promptHash,
               findingsHash,
               invokedAt: now,
@@ -604,6 +646,11 @@ export const review: ToolDefinition = {
               ensureReviewAssurance(result.state.reviewAssurance),
               validatedReviewObligation,
               now,
+              findAcceptedInvocationForFindings(
+                result.state.reviewAssurance,
+                validatedReviewObligation,
+                args.analysisFindings as ReviewFindings | undefined,
+              )?.invocationId,
             ),
           },
         };
@@ -659,6 +706,12 @@ export const review: ToolDefinition = {
         references: args.references as Array<{ ref: string; type: string }> | undefined,
         obligationId: validatedReviewObligation?.obligationId,
         invocationSource: boundInvocation?.source,
+        invocationMode: boundInvocation?.invocationMode,
+        hostVisible: boundInvocation?.hostVisible,
+        reviewOutputMode: boundInvocation?.reviewOutputMode,
+        structuredOutputUsed: boundInvocation?.structuredOutputUsed,
+        reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
+        extractionMethod: boundInvocation?.extractionMethod,
         reviewerSessionId:
           boundInvocation?.childSessionId ??
           ((findingsForCard?.reviewedBy as Record<string, unknown>)?.sessionId as

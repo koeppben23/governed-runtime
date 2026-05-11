@@ -14,13 +14,19 @@
  */
 
 import type { ReviewFindings } from '../../state/evidence.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
 import {
   findLatestObligation,
   hashFindings,
   validateStrictAttestation,
 } from '../review-assurance.js';
-import type { ReviewAssuranceState, ReviewObligationType } from '../../state/evidence.js';
+import type {
+  ReviewAssuranceState,
+  ReviewObligationType,
+  ReviewObligation,
+} from '../../state/evidence.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -40,6 +46,10 @@ export interface ReviewFindingsValidationContext {
   readonly assurance?: ReviewAssuranceState;
   /** Obligation type for strict checks. */
   readonly obligationType?: ReviewObligationType;
+  /** When set, enforce that invocation evidence matches the required policy. */
+  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
+  /** Parent OpenCode session expected in invocation evidence. */
+  readonly reviewParentSessionId?: string;
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -127,7 +137,38 @@ export function validateReviewFindings(
       });
     }
 
-    if (obligation.status !== 'fulfilled' || !obligation.invocationId) {
+    const submittedFindingsHash = hashFindings(findings);
+    const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
+
+    // BUG-15 fix: For host_task_required, the plugin holds first-party evidence
+    // from the host-visible Task hook. The agent reconstructs findings from text
+    // output, which produces a different JSON.stringify key order and Zod-stripped
+    // fields. Match by obligationId + invocationMode instead of requiring findingsHash.
+    const invocation = ctx.assurance.invocations.find((item) =>
+      obligation.invocationId
+        ? item.invocationId === obligation.invocationId
+        : item.obligationId === obligation.obligationId &&
+          (isHostTaskMode
+            ? item.invocationMode === 'host_subagent_task'
+            : item.childSessionId === findings.reviewedBy.sessionId &&
+              item.findingsHash === submittedFindingsHash),
+    );
+    if (!invocation) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        obligationId: obligation.obligationId,
+      });
+    }
+
+    if (
+      obligation.status !== 'fulfilled' &&
+      !(
+        ctx.reviewInvocationPolicy === 'host_task_required' &&
+        obligation.status === 'pending' &&
+        invocation.obligationId === obligation.obligationId &&
+        invocation.invocationMode === 'host_subagent_task' &&
+        invocation.hostVisible === true
+      )
+    ) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
       });
@@ -144,15 +185,6 @@ export function validateReviewFindings(
       });
     }
 
-    const invocation = ctx.assurance.invocations.find(
-      (item) => item.invocationId === obligation.invocationId,
-    );
-    if (!invocation) {
-      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        invocationId: obligation.invocationId,
-      });
-    }
-
     if (invocation.obligationId !== obligation.obligationId) {
       return formatBlocked('SUBAGENT_MANDATE_MISMATCH', {
         obligationId: obligation.obligationId,
@@ -160,14 +192,27 @@ export function validateReviewFindings(
     }
 
     if (findings.reviewedBy.sessionId !== invocation.childSessionId) {
-      return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
-        provided: findings.reviewedBy.sessionId,
-        expected: invocation.childSessionId,
-      });
+      if (!isHostTaskMode) {
+        return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
+          provided: findings.reviewedBy.sessionId,
+          expected: invocation.childSessionId,
+        });
+      }
+      // Host-task mode: sessionId verified at evidence-creation time (plugin hook).
+      // Agent reconstruction from text output may differ; skip hard block.
     }
 
-    const submittedFindingsHash = hashFindings(findings);
-    if (submittedFindingsHash !== invocation.findingsHash) {
+    if (isHostTaskMode && invocation.capturedVerdict) {
+      // Host-task mode: plugin captured the authoritative verdict from the
+      // reviewer's actual output. Verify the agent's submitted verdict matches
+      // the first-party evidence instead of comparing full-content hashes.
+      const submittedVerdict = (findings as { overallVerdict?: string }).overallVerdict;
+      if (submittedVerdict !== invocation.capturedVerdict) {
+        return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
+          obligationId: obligation.obligationId,
+        });
+      }
+    } else if (submittedFindingsHash !== invocation.findingsHash) {
       return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
         obligationId: obligation.obligationId,
       });
@@ -180,6 +225,22 @@ export function validateReviewFindings(
       return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
         invocationId: invocation.invocationId,
         consumedBy: invocation.consumedByObligationId,
+      });
+    }
+
+    if (
+      ctx.reviewInvocationPolicy === 'host_task_required' &&
+      (invocation.invocationMode !== 'host_subagent_task' ||
+        invocation.hostVisible !== true ||
+        invocation.agentType !== REVIEWER_SUBAGENT_TYPE ||
+        invocation.parentSessionId !== ctx.reviewParentSessionId ||
+        invocation.criteriaVersion !== obligation.criteriaVersion ||
+        invocation.mandateDigest !== obligation.mandateDigest)
+    ) {
+      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+        obligationId: obligation.obligationId,
+        reason:
+          'expected host-visible flowguard-reviewer Task evidence bound to the active session, mandate, criteria, child session, and findings hash',
       });
     }
   }
@@ -201,4 +262,60 @@ export function requireReviewFindings(hasFindings: boolean): string | null {
     });
   }
   return null;
+}
+
+// ─── Evidence-Based Findings Resolution ───────────────────────────────────────
+
+/**
+ * Result of resolving review findings from host-task invocation evidence.
+ */
+export interface ResolvedHostTaskFindings {
+  /** Parsed ReviewFindings from the evidence's capturedRawFindings. */
+  readonly findings: ReviewFindings;
+  /** InvocationId of the evidence record — used for direct obligation consumption
+   *  without hash comparison (avoids Zod parse / JSON.stringify key-order mismatches). */
+  readonly invocationId: string;
+}
+
+/**
+ * Resolve review findings from host-task invocation evidence.
+ *
+ * For `host_task_required` mode, the plugin stores the complete raw findings
+ * in the invocation evidence (`capturedRawFindings`). This function reads and
+ * validates them, eliminating agent-side reconstruction of the ReviewFindings
+ * object — the primary remaining failure point after Stufe 1.
+ *
+ * The returned `invocationId` is used for direct obligation consumption,
+ * bypassing `findAcceptedInvocationForFindings` (which would require hash
+ * comparison against the Zod-parsed object, reintroducing the key-order problem).
+ *
+ * @param assurance - Review assurance state with obligations and invocations
+ * @param obligation - The pending/fulfilled obligation to resolve findings for
+ * @returns Parsed findings + invocationId, or null if evidence is unavailable
+ */
+export function resolveHostTaskFindings(
+  assurance: ReviewAssuranceState | undefined,
+  obligation: ReviewObligation | null,
+): ResolvedHostTaskFindings | null {
+  if (!obligation || !assurance) return null;
+
+  // Find the unconsumed host-task invocation with captured raw findings
+  const invocation = assurance.invocations.find(
+    (inv) =>
+      inv.obligationId === obligation.obligationId &&
+      inv.invocationMode === 'host_subagent_task' &&
+      inv.hostVisible === true &&
+      inv.capturedRawFindings != null &&
+      inv.consumedByObligationId === null,
+  );
+
+  if (!invocation?.capturedRawFindings) return null;
+
+  // Parse through ReviewFindings schema for type safety and validation.
+  // safeParse: if the raw findings are malformed (missing required fields,
+  // invalid types), return null → caller falls back to BLOCKED.
+  const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
+  if (!parsed.success) return null;
+
+  return { findings: parsed.data, invocationId: invocation.invocationId };
 }

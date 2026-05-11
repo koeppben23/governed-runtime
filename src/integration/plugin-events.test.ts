@@ -37,6 +37,12 @@ function createMockDeps(): EventHandlerDeps & {
     cleanupSession(sessionId: string) {
       calls.push({ method: 'cleanupSession', args: [sessionId] });
     },
+    async emitSessionErrorAudit(sessionId, errorMessage, detail) {
+      calls.push({
+        method: 'emitSessionErrorAudit',
+        args: [sessionId, errorMessage, detail],
+      });
+    },
   };
 }
 
@@ -275,12 +281,248 @@ describe('integration/plugin-events', () => {
       const sdkLikeEvent = {
         type: 'session.error',
         properties: { sessionID: 'test', error: 'boom' },
-        timestamp: Date.now(), // extra field ÔÇö should not break PluginEvent compatibility
+        timestamp: Date.now(), // extra field — should not break PluginEvent compatibility
       };
 
-      // PluginEvent only requires { type, properties? } ÔÇö extra fields are allowed
+      // PluginEvent only requires { type, properties? } — extra fields are allowed
       const event: PluginEvent = sdkLikeEvent;
       expect(event.type).toBe('session.error');
+    });
+  });
+
+  // --- BUG-06: error detail extraction -------------------------------------------
+  describe('BUG-06: error detail extraction', () => {
+    // T1 -- HAPPY: error code and stack are extracted
+    it('session.error with code and stack properties extracts them into log', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'boom',
+          code: 'E42',
+          stack: 'Error: boom\n    at foo.ts:1:1',
+        },
+      };
+
+      await handleEvent(deps, event);
+
+      const errorCall = deps.calls.find((c) => c.method === 'log.error');
+      expect(errorCall).toBeDefined();
+      const extra = errorCall!.args[2] as Record<string, unknown>;
+      expect(extra.errorCode).toBe('E42');
+      expect(extra.errorStack).toBe('Error: boom\n    at foo.ts:1:1');
+    });
+
+    // T2 -- HAPPY: unknown properties land in supplementary
+    it('session.error with unknown extra properties includes supplementary', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'x',
+          retryCount: 3,
+          context: { a: 1 },
+        },
+      };
+
+      await handleEvent(deps, event);
+
+      const errorCall = deps.calls.find((c) => c.method === 'log.error');
+      expect(errorCall).toBeDefined();
+      const extra = errorCall!.args[2] as Record<string, unknown>;
+      expect(extra.supplementary).toEqual({ retryCount: 3, context: { a: 1 } });
+    });
+
+    // T3 -- CORNER: non-string code/stack are not extracted, land in supplementary
+    it('non-string code and stack are not extracted, land in supplementary', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'x', code: 42, stack: { deep: true } },
+      };
+
+      await handleEvent(deps, event);
+
+      const errorCall = deps.calls.find((c) => c.method === 'log.error');
+      expect(errorCall).toBeDefined();
+      const extra = errorCall!.args[2] as Record<string, unknown>;
+      // Non-string code/stack are not in KNOWN_KEYS extraction but ARE in KNOWN_KEYS set,
+      // so they are excluded from supplementary too. This is intentional: primary fields
+      // are "handled" even when non-string (the handler falls back to defaults).
+      expect(extra).not.toHaveProperty('errorCode');
+      expect(extra).not.toHaveProperty('errorStack');
+      // code and stack are in KNOWN_KEYS so they stay out of supplementary
+      expect(extra).not.toHaveProperty('supplementary');
+    });
+
+    // T4 -- CORNER: empty string code is not included (falsy spread guard)
+    it('empty string code is not included in log extra', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'x', code: '', stack: '' },
+      };
+
+      await handleEvent(deps, event);
+
+      const errorCall = deps.calls.find((c) => c.method === 'log.error');
+      expect(errorCall).toBeDefined();
+      const extra = errorCall!.args[2] as Record<string, unknown>;
+      // Empty strings are falsy, so spread guard filters them out
+      expect(extra).not.toHaveProperty('errorCode');
+      expect(extra).not.toHaveProperty('errorStack');
+    });
+
+    // T5 -- EDGE: many supplementary keys
+    it('50 unknown properties all land in supplementary', async () => {
+      const deps = createMockDeps();
+      const extraProps: Record<string, unknown> = {};
+      for (let i = 0; i < 50; i++) {
+        extraProps[`custom_${i}`] = `value_${i}`;
+      }
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'x', ...extraProps },
+      };
+
+      await handleEvent(deps, event);
+
+      const errorCall = deps.calls.find((c) => c.method === 'log.error');
+      expect(errorCall).toBeDefined();
+      const extra = errorCall!.args[2] as Record<string, unknown>;
+      const supplementary = extra.supplementary as Record<string, unknown>;
+      expect(supplementary).toBeDefined();
+      expect(Object.keys(supplementary)).toHaveLength(50);
+      expect(supplementary.custom_0).toBe('value_0');
+      expect(supplementary.custom_49).toBe('value_49');
+    });
+  });
+
+  // --- BUG-01: audit trail emission --------------------------------------------
+  describe('BUG-01: audit trail emission', () => {
+    // T6 -- HAPPY: emitSessionErrorAudit is called with correct args
+    it('session.error calls emitSessionErrorAudit with sessionId and errorMessage', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'Something failed' },
+      };
+
+      await handleEvent(deps, event);
+
+      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      expect(auditCall).toBeDefined();
+      expect(auditCall!.args[0]).toBe('S1');
+      expect(auditCall!.args[1]).toBe('Something failed');
+      expect(auditCall!.args[2]).toEqual({ eventType: 'session.error' });
+    });
+
+    // T7 -- HAPPY: audit call receives extended properties
+    it('audit call includes errorCode and errorStack when present', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: {
+          sessionID: 'S1',
+          error: 'x',
+          code: 'E99',
+          stack: 'trace...',
+        },
+      };
+
+      await handleEvent(deps, event);
+
+      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      expect(auditCall).toBeDefined();
+      const detail = auditCall!.args[2] as Record<string, unknown>;
+      expect(detail.errorCode).toBe('E99');
+      expect(detail.errorStack).toBe('trace...');
+    });
+
+    // T8 -- BAD: audit throws synchronously -- handler is fail-safe
+    it('handler does not throw when emitSessionErrorAudit throws sync error', async () => {
+      const deps = createMockDeps();
+      deps.emitSessionErrorAudit = () => {
+        throw new Error('audit boom');
+      };
+
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'test' },
+      };
+
+      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
+
+      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
+      expect(warnCall).toBeDefined();
+      expect(warnCall!.args[1]).toBe('event handler failed (non-blocking)');
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('audit boom');
+    });
+
+    // T9 -- BAD: audit returns rejected promise -- handler is fail-safe
+    it('handler does not throw when emitSessionErrorAudit returns rejected promise', async () => {
+      const deps = createMockDeps();
+      deps.emitSessionErrorAudit = () => Promise.reject(new Error('audit rejected'));
+
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'test' },
+      };
+
+      await expect(handleEvent(deps, event)).resolves.toBeUndefined();
+
+      const warnCall = deps.calls.find((c) => c.method === 'log.warn');
+      expect(warnCall).toBeDefined();
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('audit rejected');
+    });
+
+    // T10 -- CORNER: unknown sessionId still triggers audit
+    it('emitSessionErrorAudit is called even when sessionId is "unknown"', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: {},
+      };
+
+      await handleEvent(deps, event);
+
+      const auditCall = deps.calls.find((c) => c.method === 'emitSessionErrorAudit');
+      expect(auditCall).toBeDefined();
+      expect(auditCall!.args[0]).toBe('unknown');
+      expect(auditCall!.args[1]).toBe('unspecified session error');
+    });
+
+    // T11 -- CORNER: session.delete does NOT call emitSessionErrorAudit
+    it('session.delete does not call emitSessionErrorAudit', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.delete',
+        properties: { sessionID: 'S1' },
+      };
+
+      await handleEvent(deps, event);
+
+      const auditCalls = deps.calls.filter((c) => c.method === 'emitSessionErrorAudit');
+      expect(auditCalls).toHaveLength(0);
+    });
+
+    // T12 -- EDGE: log.error is called BEFORE emitSessionErrorAudit (ordering)
+    it('log.error is called before emitSessionErrorAudit', async () => {
+      const deps = createMockDeps();
+      const event: PluginEvent = {
+        type: 'session.error',
+        properties: { sessionID: 'S1', error: 'test' },
+      };
+
+      await handleEvent(deps, event);
+
+      const logIdx = deps.calls.findIndex((c) => c.method === 'log.error');
+      const auditIdx = deps.calls.findIndex((c) => c.method === 'emitSessionErrorAudit');
+      expect(logIdx).toBeGreaterThanOrEqual(0);
+      expect(auditIdx).toBeGreaterThanOrEqual(0);
+      expect(logIdx).toBeLessThan(auditIdx);
     });
   });
 });

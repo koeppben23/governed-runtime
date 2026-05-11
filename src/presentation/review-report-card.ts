@@ -45,8 +45,16 @@ export interface ReviewReportCardInput {
   obligationId?: string;
   /** Evidence source: host-orchestrated or agent-submitted-attested. */
   invocationSource?: string;
+  /** How the reviewer was invoked: host_subagent_task, sdk_session_prompt, or manual_attested. */
+  invocationMode?: string;
+  /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
+  hostVisible?: boolean;
   /** Subagent session ID from invocation evidence. */
   reviewerSessionId?: string;
+  reviewOutputMode?: string;
+  structuredOutputUsed?: boolean;
+  reviewAssuranceLevel?: string;
+  extractionMethod?: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -104,7 +112,13 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     references,
     obligationId,
     invocationSource,
+    invocationMode,
+    hostVisible,
     reviewerSessionId,
+    reviewOutputMode,
+    structuredOutputUsed,
+    reviewAssuranceLevel,
+    extractionMethod,
   } = input;
 
   const lines: string[] = [];
@@ -184,7 +198,14 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
   lines.push('');
 
   // ── Evidence ────────────────────────────────────────────────────
-  const hasEvidence = obligationId || invocationSource || reviewerSessionId;
+  const hasEvidence =
+    obligationId ||
+    invocationSource ||
+    invocationMode ||
+    typeof hostVisible === 'boolean' ||
+    reviewerSessionId ||
+    reviewOutputMode ||
+    reviewAssuranceLevel;
   if (hasEvidence) {
     lines.push('---');
     lines.push('');
@@ -192,7 +213,17 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     lines.push('');
     if (obligationId) lines.push(`- **Obligation:** \`${obligationId}\``);
     if (invocationSource) lines.push(`- **Invocation source:** ${invocationSource}`);
+    if (invocationMode) lines.push(`- **Invocation mode:** ${invocationMode}`);
+    if (typeof hostVisible === 'boolean') {
+      lines.push(`- **Host visible:** ${hostVisible ? 'yes' : 'no'}`);
+    }
     if (reviewerSessionId) lines.push(`- **Reviewer session:** \`${reviewerSessionId}\``);
+    if (reviewOutputMode) lines.push(`- **Review output mode:** ${reviewOutputMode}`);
+    if (typeof structuredOutputUsed === 'boolean') {
+      lines.push(`- **Structured output used:** ${structuredOutputUsed ? 'yes' : 'no'}`);
+    }
+    if (reviewAssuranceLevel) lines.push(`- **Review assurance:** ${reviewAssuranceLevel}`);
+    if (extractionMethod) lines.push(`- **Extraction method:** ${extractionMethod}`);
     lines.push('');
   }
 

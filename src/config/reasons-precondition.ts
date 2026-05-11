@@ -115,6 +115,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEWER_UNAVAILABLE_STRICT',
+    category: 'precondition',
+    messageTemplate:
+      'Reviewer subagent is unavailable and strict enforcement requires host-visible review. {{reason}}',
+    recoverySteps: [
+      '{{recovery}}',
+      'Alternatively, set selfReview.strictEnforcement to false in policy to allow self-review fallback',
+    ],
+  },
+
+  {
     code: 'NO_SELF_REVIEW',
     category: 'precondition',
     messageTemplate: 'No self-review loop is active. Submit a plan first.',
@@ -395,6 +406,29 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Run flowguard doctor to verify plugin installation and reviewer agent availability',
       'Check network connectivity and OpenCode SDK health',
       'Use /abort to terminate this session and start fresh if infrastructure cannot be repaired',
+    ],
+  },
+
+  {
+    code: 'HOST_SUBAGENT_TASK_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Policy requires host-visible subagent invocation via the Task tool for {obligationId}, but no host evidence was found.',
+    recoverySteps: [
+      'Invoke the flowguard-reviewer subagent via the OpenCode Task tool (subagent_type: "flowguard-reviewer")',
+      'Ensure the build agent has task permission: { "*": "deny", "flowguard-reviewer": "allow" }',
+      'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
+    ],
+  },
+
+  {
+    code: 'SUBAGENT_TYPE_UNAUTHORIZED',
+    category: 'precondition',
+    messageTemplate:
+      "Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only flowguard-reviewer is allowed.",
+    recoverySteps: [
+      'Use the flowguard-reviewer subagent type for reviewer Task calls',
+      'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
     ],
   },
 ];

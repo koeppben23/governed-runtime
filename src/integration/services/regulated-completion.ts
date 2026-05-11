@@ -15,6 +15,7 @@ import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js
 import { createLifecycleEvent } from '../../audit/types.js';
 import { getLastChainHash } from '../../audit/integrity.js';
 import { writeStateWithArtifacts } from '../tools/helpers.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 /**
  * Execute the P26 regulated completion chain: audit emit → archive → verify.
@@ -47,6 +48,11 @@ export async function executeRegulatedCompletion(
   const pendingState = { ...resultState, archiveStatus: 'pending' as const };
   await writeStateWithArtifacts(sessDir, pendingState);
 
+  getAdapterLogger().info('services', 'Starting regulated completion chain', {
+    sessionID,
+    fingerprint,
+  });
+
   let finalState: SessionState;
   try {
     // 1. Emit session_completed audit event BEFORE archive.
@@ -75,7 +81,17 @@ export async function executeRegulatedCompletion(
       ...resultState,
       archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     };
-  } catch {
+    getAdapterLogger().info('services', 'Regulated completion chain finished', {
+      sessionID,
+      archiveStatus: finalState.archiveStatus,
+      archivePassed: verification.passed,
+    });
+  } catch (err) {
+    getAdapterLogger().error('services', 'Regulated completion chain failed', {
+      sessionID,
+      fingerprint,
+      error: err instanceof Error ? err.message : String(err),
+    });
     finalState = { ...resultState, archiveStatus: 'failed' as const };
   }
 

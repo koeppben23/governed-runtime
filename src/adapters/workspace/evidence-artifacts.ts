@@ -18,6 +18,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { SessionState } from '../../state/schema.js';
 import { atomicWrite } from '../persistence.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 export const EVIDENCE_ARTIFACT_SCHEMA_VERSION = 'flowguard-evidence-artifact.v1';
 export const EVIDENCE_ARTIFACTS_DIR = 'artifacts';
@@ -610,7 +611,14 @@ async function assertMarkdownIntegrity(
   const markdownRelPath = meta.markdownPath;
   const fileName = path.basename(markdownRelPath);
   const markdownPath = path.join(artifactsDir, fileName);
-  const actualHash = await hashFile(markdownPath).catch(() => null);
+  const actualHash = await hashFile(markdownPath).catch((err) => {
+    getAdapterLogger().warn('evidence-artifacts', 'Failed to hash evidence artifact', {
+      markdownPath,
+      artifactType,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  });
   if (!actualHash) {
     throw new EvidenceArtifactError(
       'EVIDENCE_ARTIFACT_MISSING',

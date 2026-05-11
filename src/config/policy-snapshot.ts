@@ -29,9 +29,12 @@ import type {
   CentralMinimumMode,
   PolicyResolution,
   SelfReviewConfig,
+  ReviewOutputPolicy,
+  ReviewInvocationPolicy,
 } from './policy.js';
 import type { HydratePolicyResolution } from './policy.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 /**
  * Normalize a legacy or weakened selfReview config to the mandatory strict default.
@@ -42,9 +45,9 @@ import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
  */
 function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
   if (value === null || typeof value !== 'object') {
-    console.warn(
-      '[FlowGuard] Legacy selfReview config (null/undefined) normalized to mandatory strict. ' +
-        'Ensure flowguard-reviewer plugin is active.',
+    getAdapterLogger().warn(
+      'policy',
+      'Legacy selfReview config (null/undefined) normalized to mandatory strict',
     );
     return DEFAULT_SELF_REVIEW_CONFIG;
   }
@@ -58,12 +61,14 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
     return DEFAULT_SELF_REVIEW_CONFIG;
   }
 
-  console.warn(
-    '[FlowGuard] Legacy/weakened selfReview config normalized to mandatory strict. ' +
-      `Original: subagentEnabled=${candidate.subagentEnabled}, ` +
-      `fallbackToSelf=${candidate.fallbackToSelf}, ` +
-      `strictEnforcement=${candidate.strictEnforcement}. ` +
-      'Ensure flowguard-reviewer plugin is active.',
+  getAdapterLogger().warn(
+    'policy',
+    'Legacy/weakened selfReview config normalized to mandatory strict',
+    {
+      originalSubagentEnabled: candidate.subagentEnabled,
+      originalFallbackToSelf: candidate.fallbackToSelf,
+      originalStrictEnforcement: candidate.strictEnforcement,
+    },
   );
   return DEFAULT_SELF_REVIEW_CONFIG;
 }
@@ -131,6 +136,8 @@ export function createPolicySnapshot(
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
     identityProviderMode: policy.identityProviderMode,
     ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
+    reviewOutputPolicy: policy.reviewOutputPolicy,
+    reviewInvocationPolicy: policy.reviewInvocationPolicy,
   };
 }
 
@@ -203,6 +210,14 @@ function isValidIdpMode(v: unknown): v is IdentityProviderMode {
 /** Validate actor assurance tier. */
 function isValidAssurance(v: unknown): v is 'best_effort' | 'claim_validated' | 'idp_verified' {
   return typeof v === 'string' && ['best_effort', 'claim_validated', 'idp_verified'].includes(v);
+}
+
+function isValidReviewOutputPolicy(v: unknown): v is ReviewOutputPolicy {
+  return v === 'structured_required' || v === 'text_compat_allowed';
+}
+
+function isValidReviewInvocationPolicy(v: unknown): v is ReviewInvocationPolicy {
+  return v === 'host_task_required' || v === 'host_task_preferred' || v === 'sdk_allowed';
 }
 
 /**
@@ -330,6 +345,20 @@ export function normalizePolicySnapshotWithMeta(
     normalized = true;
   }
 
+  const rawReviewOutputPolicy = s.reviewOutputPolicy;
+  const reviewOutputPolicy: ReviewOutputPolicy = isValidReviewOutputPolicy(rawReviewOutputPolicy)
+    ? rawReviewOutputPolicy
+    : modeDefaults.reviewOutputPolicy;
+  if (!isValidReviewOutputPolicy(rawReviewOutputPolicy)) normalized = true;
+
+  const rawReviewInvocationPolicy = s.reviewInvocationPolicy;
+  const reviewInvocationPolicy: ReviewInvocationPolicy = isValidReviewInvocationPolicy(
+    rawReviewInvocationPolicy,
+  )
+    ? rawReviewInvocationPolicy
+    : modeDefaults.reviewInvocationPolicy;
+  if (!isValidReviewInvocationPolicy(rawReviewInvocationPolicy)) normalized = true;
+
   return {
     snapshot: {
       mode,
@@ -364,6 +393,8 @@ export function normalizePolicySnapshotWithMeta(
           : undefined,
       identityProviderMode,
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
+      reviewOutputPolicy,
+      reviewInvocationPolicy,
     },
     normalized,
     reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -378,6 +409,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly allowSelfApproval: boolean;
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly effectiveGateBehavior: EffectiveGateBehavior;
+  readonly reviewOutputPolicy: ReviewOutputPolicy;
+  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
 } {
   switch (mode) {
     case 'solo':
@@ -388,6 +421,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'auto_approve',
+        reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'host_task_preferred',
       };
     case 'regulated':
       return {
@@ -397,8 +432,20 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: false,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'structured_required',
+        reviewInvocationPolicy: 'host_task_required',
       };
     case 'team':
+      return {
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        minimumActorAssuranceForApproval: 'best_effort',
+        effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'text_compat_allowed',
+        reviewInvocationPolicy: 'host_task_required',
+      };
     case 'team-ci':
       return {
         requireHumanGates: true,
@@ -407,6 +454,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         allowSelfApproval: true,
         minimumActorAssuranceForApproval: 'best_effort',
         effectiveGateBehavior: 'human_gated',
+        reviewOutputPolicy: 'structured_required',
+        reviewInvocationPolicy: 'host_task_required',
       };
   }
 }
@@ -432,6 +481,12 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
+    reviewOutputPolicy:
+      snapshot.reviewOutputPolicy ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewOutputPolicy,
+    reviewInvocationPolicy:
+      snapshot.reviewInvocationPolicy ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewInvocationPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),

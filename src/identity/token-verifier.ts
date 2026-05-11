@@ -18,6 +18,8 @@ import type { KeyObject } from 'node:crypto';
 import { IdpError, type IdpErrorCode } from './errors.js';
 import type { IdpConfig, VerifiedToken } from './types.js';
 import type { KeyResolver } from './key-resolver.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { redactIdentityExtra } from '../logging/redact.js';
 
 interface JwtHeader extends JWTHeaderParameters {
   alg: string;
@@ -155,6 +157,15 @@ export class JwtStaticTokenVerifier implements TokenVerifier {
       return verified.payload as JwtPayload;
     } catch (err) {
       if (err instanceof IdpError) throw err;
+      getAdapterLogger().warn(
+        'identity',
+        'JWT verification failed',
+        redactIdentityExtra({
+          algorithm,
+          issuer: this.config.issuer,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
       throw this.mapJoseError(err);
     }
   }

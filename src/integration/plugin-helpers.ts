@@ -128,3 +128,38 @@ export function getToolOutput(output: unknown): string {
 export function getToolArgs(input: unknown): Record<string, unknown> {
   return ((input as Record<string, unknown>)?.args as Record<string, unknown>) ?? {};
 }
+
+/**
+ * Extract the metadata object from a tool output.
+ *
+ * The OpenCode SDK `tool.execute.after` output includes a `metadata` field
+ * that the tool implementation may populate with arbitrary key-value data.
+ * For the built-in `task` tool, this may include the child session ID.
+ *
+ * Per SDK baseline (plugin-index.d.ts): output.metadata is typed as `any`.
+ *
+ * @param output - The tool output object from plugin hooks
+ * @returns The metadata as a record, or empty object if unavailable
+ */
+export function getToolMetadata(output: unknown): Record<string, unknown> {
+  const inner = (output as { metadata?: unknown } | null | undefined)?.metadata;
+  return typeof inner === 'object' && inner !== null && !Array.isArray(inner)
+    ? (inner as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Extract the callID from a tool hook input.
+ *
+ * The OpenCode SDK `tool.execute.after` input includes a `callID` field
+ * that uniquely identifies the tool invocation within the session.
+ *
+ * Per SDK baseline (plugin-index.d.ts): input.callID is typed as `string`.
+ *
+ * @param input - The tool input object from plugin hooks
+ * @returns The callID string, or empty string if unavailable
+ */
+export function getToolCallID(input: unknown): string {
+  const val = (input as Record<string, unknown> | null | undefined)?.callID;
+  return typeof val === 'string' ? val : '';
+}

@@ -22,6 +22,7 @@ import {
   hashFindings,
   buildInvocationEvidence,
   hasEvidenceReuse,
+  findAcceptedInvocationForFindings,
   validateStrictAttestation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -32,6 +33,7 @@ import type {
   ReviewInvocationEvidence,
   ReviewFindings,
 } from '../state/evidence.js';
+import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../state/evidence.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -266,6 +268,81 @@ describe('integration/review-assurance', () => {
       const assurance = { obligations: [makeObligation()], invocations: [] };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
+
+    it('consumes only the accepted invocation when multiple invocations target the same obligation', () => {
+      const findings = makeFindings();
+      const obligation = makeObligation({
+        obligationId: findings.attestation!.toolObligationId,
+      });
+      const rejectedInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000010',
+        obligationId: obligation.obligationId,
+        childSessionId: 'child-session-rejected',
+        findingsHash: hashText('different findings'),
+      });
+      const acceptedInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000011',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+      });
+      const assurance = {
+        obligations: [obligation],
+        invocations: [rejectedInvocation, acceptedInvocation],
+      };
+
+      const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
+      const consumed = consumeReviewObligation(assurance, obligation, NOW, accepted?.invocationId);
+
+      expect(accepted?.invocationId).toBe(acceptedInvocation.invocationId);
+      expect(consumed.invocations[0]?.consumedByObligationId).toBeNull();
+      expect(consumed.invocations[1]?.consumedByObligationId).toBe(obligation.obligationId);
+    });
+
+    it('fulfilled obligation consumes its bound invocationId even when another invocation has the same child and hash', () => {
+      const findings = makeFindings();
+      const obligation = makeObligation({
+        obligationId: findings.attestation!.toolObligationId,
+      });
+      const boundInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000021',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+      });
+      const duplicateInvocation = makeInvocation({
+        invocationId: '00000000-0000-4000-8000-000000000022',
+        obligationId: obligation.obligationId,
+        childSessionId: findings.reviewedBy.sessionId,
+        findingsHash: hashFindings(findings),
+      });
+      const fulfilledObligation = {
+        ...obligation,
+        status: 'fulfilled' as const,
+        invocationId: boundInvocation.invocationId,
+        fulfilledAt: NOW,
+      };
+      const assurance = {
+        obligations: [fulfilledObligation],
+        invocations: [duplicateInvocation, boundInvocation],
+      };
+
+      const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);
+      const consumed = consumeReviewObligation(
+        assurance,
+        fulfilledObligation,
+        NOW,
+        accepted?.invocationId,
+      );
+
+      expect(accepted?.invocationId).toBe(boundInvocation.invocationId);
+      expect(consumed.invocations[0]?.consumedByObligationId).toBeNull();
+      expect(consumed.invocations[1]?.consumedByObligationId).toBe(
+        fulfilledObligation.obligationId,
+      );
+    });
   });
 
   describe('hashFindings', () => {
@@ -291,6 +368,234 @@ describe('integration/review-assurance', () => {
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
       expect(result.consumedByObligationId).toBeNull();
+      expect(result.reviewOutputMode).toBe('structured_output');
+      expect(result.structuredOutputUsed).toBe(true);
+      expect(result.reviewAssuranceLevel).toBe('structured_high');
+      expect(result.extractionMethod).toBeUndefined();
+    });
+
+    it('records text compatibility metadata explicitly', () => {
+      const result = makeInvocation({
+        reviewOutputMode: 'text_compat',
+        structuredOutputUsed: false,
+        reviewAssuranceLevel: 'text_compat_lower',
+        extractionMethod: 'outermost_braces',
+        modelCapabilityError: 'model does not support this tool_choice',
+      });
+      expect(result).toMatchObject({
+        reviewOutputMode: 'text_compat',
+        structuredOutputUsed: false,
+        reviewAssuranceLevel: 'text_compat_lower',
+        extractionMethod: 'outermost_braces',
+        modelCapabilityError: 'model does not support this tool_choice',
+      });
+    });
+
+    it('defaults to text_compat_lower when reviewOutputMode is text_compat', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000002',
+        obligationType: 'review',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        fulfilledAt: NOW,
+        reviewOutputMode: 'text_compat',
+      });
+      expect(result.reviewOutputMode).toBe('text_compat');
+      expect(result.structuredOutputUsed).toBe(false);
+      expect(result.reviewAssuranceLevel).toBe('text_compat_lower');
+    });
+  });
+
+  // ── BUG-15: capturedVerdict field ──────────────────────────────────────
+
+  describe('buildInvocationEvidence — capturedVerdict (BUG-15)', () => {
+    it('HAPPY: includes capturedVerdict when provided', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        fulfilledAt: NOW,
+        capturedVerdict: 'approve',
+      });
+      expect(result.capturedVerdict).toBe('approve');
+    });
+
+    it('HAPPY: includes capturedVerdict=changes_requested', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        capturedVerdict: 'changes_requested',
+      });
+      expect(result.capturedVerdict).toBe('changes_requested');
+    });
+
+    it('HAPPY: omits capturedVerdict when undefined', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+      });
+      expect(result.capturedVerdict).toBeUndefined();
+    });
+
+    it('EDGE: capturedVerdict survives Zod round-trip (schema parse)', () => {
+      const evidence = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        capturedVerdict: 'approve',
+      });
+      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
+      expect(parsed.capturedVerdict).toBe('approve');
+    });
+
+    it('EDGE: Zod parse accepts evidence without capturedVerdict (backward compat)', () => {
+      const evidence = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+        // no capturedVerdict
+      });
+      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
+      expect(parsed.capturedVerdict).toBeUndefined();
+    });
+  });
+
+  // ── BUG-15 Stufe 2: capturedRawFindings field ─────────────────────────────
+
+  describe('buildInvocationEvidence — capturedRawFindings (BUG-15 Stufe 2)', () => {
+    const sampleRawFindings: Record<string, unknown> = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_child' },
+      reviewedAt: NOW,
+    };
+
+    it('HAPPY: includes capturedRawFindings when provided', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        promptHash: hashText('prompt'),
+        findingsHash: hashFindings(sampleRawFindings),
+        invokedAt: NOW,
+        capturedVerdict: 'approve',
+        capturedRawFindings: sampleRawFindings,
+      });
+      expect(result.capturedRawFindings).toEqual(sampleRawFindings);
+    });
+
+    it('HAPPY: omits capturedRawFindings when undefined', () => {
+      const result = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+      });
+      expect(result.capturedRawFindings).toBeUndefined();
+    });
+
+    it('EDGE: capturedRawFindings survives Zod round-trip (schema parse)', () => {
+      const evidence = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        promptHash: hashText('prompt'),
+        findingsHash: hashFindings(sampleRawFindings),
+        invokedAt: NOW,
+        capturedVerdict: 'approve',
+        capturedRawFindings: sampleRawFindings,
+      });
+      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
+      expect(parsed.capturedRawFindings).toBeDefined();
+      expect(parsed.capturedRawFindings!.overallVerdict).toBe('approve');
+      expect(parsed.capturedRawFindings!.iteration).toBe(0);
+    });
+
+    it('EDGE: Zod parse accepts evidence without capturedRawFindings (backward compat)', () => {
+      const evidence = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
+        promptHash: hashText('prompt'),
+        findingsHash: hashText('findings'),
+        invokedAt: NOW,
+      });
+      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
+      expect(parsed.capturedRawFindings).toBeUndefined();
+    });
+
+    it('CORNER: capturedRawFindings with extra keys preserved through Zod (z.record passthrough)', () => {
+      const rawWithExtras = {
+        ...sampleRawFindings,
+        _internalDebug: { foo: 'bar' },
+        customField: 42,
+      };
+      const evidence = buildInvocationEvidence({
+        obligationId: '00000000-0000-4000-8000-000000000001',
+        obligationType: 'plan',
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        promptHash: hashText('prompt'),
+        findingsHash: hashFindings(rawWithExtras),
+        invokedAt: NOW,
+        capturedRawFindings: rawWithExtras,
+      });
+      const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
+      // z.record(z.string(), z.unknown()) preserves all keys
+      expect(parsed.capturedRawFindings!._internalDebug).toEqual({ foo: 'bar' });
+      expect(parsed.capturedRawFindings!.customField).toBe(42);
     });
   });
 

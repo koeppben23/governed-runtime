@@ -271,7 +271,7 @@ export const ReviewFindings = z
   .object({
     iteration: z.number().int().nonnegative(),
     planVersion: z.number().int().positive(),
-    reviewMode: z.literal('subagent'),
+    reviewMode: z.enum(['subagent', 'self']),
     overallVerdict: LoopVerdict,
     blockingIssues: z.array(Finding),
     majorRisks: z.array(Finding),
@@ -316,6 +316,9 @@ export const ReviewObligation = z.object({
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 
+/** How the reviewer was invoked — host-visible Task tool vs SDK vs manual attested. */
+export type ReviewInvocationMode = 'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested';
+
 /** P35 strict invocation evidence record. */
 export const ReviewInvocationEvidence = z
   .object({
@@ -325,15 +328,37 @@ export const ReviewInvocationEvidence = z
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
+    /** How the reviewer was invoked: host-visible Task tool, SDK, or manual attested. */
+    invocationMode: z.enum(['host_subagent_task', 'sdk_session_prompt', 'manual_attested']),
+    /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
+    hostVisible: z.boolean(),
     promptHash: z.string().min(1),
     mandateDigest: z.string().min(1),
     criteriaVersion: z.string().min(1),
     findingsHash: z.string().min(1),
     invokedAt: z.string().datetime(),
-    fulfilledAt: z.string().datetime(),
+    fulfilledAt: z.string().datetime().nullable(),
     consumedByObligationId: z.string().uuid().nullable(),
+    /** Captured verdict from the reviewer's actual output (host-task authoritative). */
+    capturedVerdict: z.string().optional(),
+    /** Complete raw findings captured by the plugin from the reviewer's output (host-task only).
+     *  Enables evidence-based findings resolution: the tool reads findings directly from
+     *  invocation evidence, eliminating agent-side reconstruction of the ReviewFindings object. */
+    capturedRawFindings: z.record(z.string(), z.unknown()).optional(),
     /** Evidence source: host-orchestrated or agent-submitted-attested. */
     source: z.enum(['host-orchestrated', 'agent-submitted-attested']).optional(),
+    /** Reviewer output transport used to obtain the findings. */
+    reviewOutputMode: z.enum(['structured_output', 'text_compat']).default('structured_output'),
+    /** True only when OpenCode SDK structured_output was present and used. */
+    structuredOutputUsed: z.boolean().default(true),
+    /** Review-output assurance tier, distinct from actor identity assurance. */
+    reviewAssuranceLevel: z
+      .enum(['structured_high', 'text_compat_lower'])
+      .default('structured_high'),
+    /** JSON extraction strategy used for text compatibility mode only. */
+    extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
+    /** Original model capability error that caused text compatibility mode. */
+    modelCapabilityError: z.string().optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
@@ -646,6 +671,12 @@ export const PolicySnapshotSchema = z
         fallbackToSelf: z.boolean(),
         strictEnforcement: z.boolean().default(false),
       })
+      .optional(),
+    /** Frozen review output policy for structured vs text-compatible evidence. */
+    reviewOutputPolicy: z.enum(['structured_required', 'text_compat_allowed']).optional(),
+    /** Frozen review invocation policy — how the reviewer must be invoked. */
+    reviewInvocationPolicy: z
+      .enum(['host_task_required', 'host_task_preferred', 'sdk_allowed'])
       .optional(),
     audit: z.object({
       emitTransitions: z.boolean(),

@@ -214,6 +214,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -251,6 +252,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -281,6 +283,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -314,6 +317,7 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
         minimumActorAssuranceForApproval: 'best_effort',
         requireVerifiedActorsForApproval: false,
         identityProviderMode: 'optional',
+        reviewOutputPolicy: 'text_compat_allowed',
         audit: {
           emitTransitions: true,
           emitToolCalls: true,
@@ -382,10 +386,10 @@ describe('P34a: Agent-Orchestrated Review Input Validation', () => {
     expect(result.success).toBe(true);
   });
 
-  it('ReviewFindings schema rejects self reviewMode', async () => {
+  it('ReviewFindings schema accepts self reviewMode (BUG-19 fallback)', async () => {
     const { ReviewFindings } = await import('../../state/evidence.js');
     const result = ReviewFindings.safeParse(validReviewFindingsSelf);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('ReviewFindings.planVersion must match expected version', async () => {

@@ -41,6 +41,12 @@ export interface SelfReviewConfig {
   readonly strictEnforcement: boolean;
 }
 
+/** Controls which reviewer output modes may satisfy governance evidence. */
+export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
+
+/** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
+export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
+
 /** Mandatory independent review configuration for FlowGuardPolicy. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   subagentEnabled: true,
@@ -87,6 +93,12 @@ export interface FlowGuardPolicy {
 
   /** Independent review configuration. */
   readonly selfReview: SelfReviewConfig;
+
+  /** Whether lower-assurance text-compatible review output may satisfy evidence. */
+  readonly reviewOutputPolicy: ReviewOutputPolicy;
+
+  /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
+  readonly reviewInvocationPolicy: ReviewInvocationPolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

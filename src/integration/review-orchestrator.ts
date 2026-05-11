@@ -38,6 +38,10 @@
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { parseToolResult } from './plugin-helpers.js';
+import {
+  REASON_HOST_SUBAGENT_TASK_REQUIRED,
+  RECOVERY_HOST_SUBAGENT_TASK,
+} from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',
@@ -271,15 +275,47 @@ export interface ArchitectureReviewPromptOpts {
   readonly profileRules?: string;
 }
 
-/** Result of a successful reviewer invocation. */
-export interface ReviewerResult {
+export interface ReviewerBlockedResult {
+  /** True when invocation was intentionally blocked by policy before SDK use. */
+  readonly blocked: true;
+  /** Machine-readable reason code for blocked invocation. */
+  readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+  /** Human-readable blocked reason. */
+  readonly reason: string;
+  /** Structured recovery payload for blocked invocation. */
+  readonly reviewInvocation: {
+    readonly policy: 'host_task_required';
+    readonly status: 'blocked_until_host_task';
+    readonly code: typeof REASON_HOST_SUBAGENT_TASK_REQUIRED;
+    readonly reviewerSubagentType: typeof REVIEWER_SUBAGENT_TYPE;
+    readonly invocationMode: 'host_subagent_task';
+    readonly hostVisible: true;
+    readonly recovery: readonly [typeof RECOVERY_HOST_SUBAGENT_TASK];
+  };
+}
+
+/** Result of a reviewer invocation that reached review transport. */
+export interface ReviewerSuccessResult {
+  readonly blocked?: false;
   /** The child session ID used for the review. */
   readonly sessionId: string;
   /** The raw response text from the reviewer. */
   readonly rawResponse: string;
   /** Parsed ReviewFindings JSON, or null if parsing failed. */
   readonly findings: Record<string, unknown> | null;
+  /** Transport path used to obtain the findings. */
+  readonly reviewOutputMode: 'structured_output' | 'text_compat';
+  /** True only when SDK structured_output was used. */
+  readonly structuredOutputUsed: boolean;
+  /** Review output assurance tier; distinct from actor identity assurance. */
+  readonly reviewAssuranceLevel: 'structured_high' | 'text_compat_lower';
+  /** Text JSON extraction method, present only for text compatibility mode. */
+  readonly extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
+  /** Original capability error that caused text compatibility mode. */
+  readonly modelCapabilityError?: string;
 }
+
+export type ReviewerResult = ReviewerSuccessResult | ReviewerBlockedResult;
 
 /** Result of the full orchestration (including output mutation). */
 export interface OrchestrationResult {
@@ -382,32 +418,14 @@ export function _resetAgentResolutionCache(): void {
 
 // ─── Model Capability Cache ──────────────────────────────────────────────────
 
-/**
- * Tracks whether the session model supports structured output (tool_choice/function calling).
- *
- * - 'unknown': not yet determined (first invocation will probe)
- * - 'supported': model accepts format field (primary path)
- * - 'unsupported': model rejects tool_choice (format-free path used directly)
- *
- * Cached for process lifetime — model capability is deterministic per provider/model pair.
- * A restart clears the cache (new process = fresh state).
- */
-let modelCapabilityCache: 'unknown' | 'supported' | 'unsupported' = 'unknown';
-
-/**
- * Reset the model capability cache. Test-only utility.
- * @internal
- */
+/** @internal No-op retained for tests; model capability is no longer cached globally. */
 export function _resetModelCapabilityCache(): void {
-  modelCapabilityCache = 'unknown';
+  // Capability depends on provider/model/agent and is intentionally not cached globally.
 }
 
-/**
- * Get current model capability cache value. Test-only utility.
- * @internal
- */
+/** @internal Always unknown; model capability is evaluated per invocation. */
 export function _getModelCapabilityCache(): 'unknown' | 'supported' | 'unsupported' {
-  return modelCapabilityCache;
+  return 'unknown';
 }
 
 // ─── Text Extraction Utility ─────────────────────────────────────────────────
@@ -425,13 +443,22 @@ export function _getModelCapabilityCache(): 'unknown' | 'supported' | 'unsupport
  * Returns null if no valid JSON object can be extracted.
  */
 export function extractJsonFromText(text: string): Record<string, unknown> | null {
+  return extractJsonFromTextWithMethod(text)?.value ?? null;
+}
+
+export function extractJsonFromTextWithMethod(text: string): {
+  value: Record<string, unknown>;
+  extractionMethod: 'direct_json' | 'json_fence' | 'outermost_braces';
+} | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
   // Strategy 1: direct parse
   try {
     const parsed = JSON.parse(trimmed);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { value: parsed, extractionMethod: 'direct_json' };
+    }
   } catch {
     // not pure JSON — try next strategy
   }
@@ -441,7 +468,9 @@ export function extractJsonFromText(text: string): Record<string, unknown> | nul
   if (fenceMatch) {
     try {
       const parsed = JSON.parse(fenceMatch[1]!.trim());
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { value: parsed, extractionMethod: 'json_fence' };
+      }
     } catch {
       // fence content not valid JSON
     }
@@ -465,7 +494,9 @@ export function extractJsonFromText(text: string): Record<string, unknown> | nul
     if (lastBrace > firstBrace) {
       try {
         const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { value: parsed, extractionMethod: 'outermost_braces' };
+        }
       } catch {
         // brace content not valid JSON
       }
@@ -693,6 +724,10 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
  */
 /** Options for controlling retry behavior of reviewer invocation. */
 export interface InvokeReviewerOptions {
+  /** Effective frozen policy for reviewer output compatibility. */
+  readonly reviewOutputPolicy?: 'structured_required' | 'text_compat_allowed';
+  /** Effective frozen policy for reviewer invocation mode. */
+  readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   /** Maximum number of retry attempts after the first failure (default: 2). */
   readonly maxRetries?: number;
   /** Base delay in milliseconds for exponential backoff (default: 1000). */
@@ -720,6 +755,7 @@ export interface InvokeReviewerOptions {
       | 'format_free_retry_failed'
       | 'format_free_retry_empty'
       | 'format_free_retry_parse_failed'
+      | 'text_compat_blocked_by_policy'
       | 'no_findings';
     error?: unknown;
     details?: Record<string, unknown>;
@@ -736,6 +772,8 @@ export function retrySleep(ms: number): Promise<void> {
 
 /** Default retry configuration. */
 const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
+  reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   maxRetries: 2,
   baseDelayMs: 1000,
   _sleepFn: retrySleep,
@@ -760,6 +798,7 @@ async function executeFormatFreePrompt(
   prompt: string,
   sessionId: string,
   attempt: number,
+  modelCapabilityError: string,
   onFailed: (info: {
     attempt: number;
     step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
@@ -818,8 +857,8 @@ async function executeFormatFreePrompt(
   }
 
   // Parse JSON from text using existing multi-strategy extraction
-  const extractedFindings = extractJsonFromText(textContent);
-  if (!extractedFindings) {
+  const extraction = extractJsonFromTextWithMethod(textContent);
+  if (!extraction) {
     onFailed({
       attempt,
       step: 'format_free_retry_parse_failed',
@@ -833,6 +872,7 @@ async function executeFormatFreePrompt(
     });
     return null;
   }
+  const extractedFindings = extraction.value;
 
   // Success: inject authoritative sessionId
   const reviewedBy = extractedFindings.reviewedBy as Record<string, unknown> | undefined;
@@ -846,6 +886,11 @@ async function executeFormatFreePrompt(
     sessionId,
     rawResponse: JSON.stringify(extractedFindings),
     findings: extractedFindings,
+    reviewOutputMode: 'text_compat',
+    structuredOutputUsed: false,
+    reviewAssuranceLevel: 'text_compat_lower',
+    extractionMethod: extraction.extractionMethod,
+    modelCapabilityError,
   };
 }
 
@@ -855,9 +900,35 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
+  // Guard: SDK invocation is blocked ONLY when the caller explicitly
+  // passes reviewInvocationPolicy='host_task_required' (not from
+  // DEFAULT_INVOKE_OPTIONS, which is a destructure default and
+  // does NOT set options?.reviewInvocationPolicy).
+  // The orchestrator always passes the explicit resolved policy from the
+  // normalized snapshot. Direct callers that omit the option get no
+  // blocking — this preserves deterministic test/retry paths.
+  if (options?.reviewInvocationPolicy === 'host_task_required') {
+    return {
+      blocked: true,
+      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+      reason:
+        'Policy requires a host-visible flowguard-reviewer invocation via the OpenCode Task tool; SDK session invocation is disabled.',
+      reviewInvocation: {
+        policy: 'host_task_required',
+        status: 'blocked_until_host_task',
+        code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+        invocationMode: 'host_subagent_task',
+        hostVisible: true,
+        recovery: [RECOVERY_HOST_SUBAGENT_TASK],
+      },
+    };
+  }
+
   const {
     maxRetries,
     baseDelayMs,
+    reviewOutputPolicy,
     _sleepFn: sleep,
     _onAttemptFailed: onFailed,
   } = {
@@ -895,34 +966,6 @@ export async function invokeReviewer(
     }
 
     const childSessionId = createResult.data.id;
-
-    // ── Model Capability Cache: skip format prompt if model is known-unsupported ──
-    // When cached as 'unsupported', go directly to format-free path on this session.
-    // This avoids the session.error flash in the UI on subsequent calls.
-    if (modelCapabilityCache === 'unsupported') {
-      // Toast notification (non-blocking, TUI may not be available)
-      try {
-        await client.tui?.showToast({
-          body: {
-            message: 'FlowGuard Reviewer: running (format-free mode)',
-            variant: 'info',
-          },
-        });
-      } catch {
-        /* TUI unavailable in headless/CLI — ignore */
-      }
-
-      const result = await executeFormatFreePrompt(
-        client,
-        agent,
-        prompt,
-        childSessionId,
-        attempt,
-        onFailed,
-      );
-      if (result) return result;
-      return null; // format-free failed — fail closed
-    }
 
     // 2. Build prompt body with format (structured output)
     //    Primary: 'flowguard-reviewer' registered agent (has its own system prompt)
@@ -1024,8 +1067,7 @@ export async function invokeReviewer(
           errMsgLower.includes('function calling') ||
           errMsgLower.includes('structured output'))
       ) {
-        // Cache: this model deterministically cannot handle structured output
-        modelCapabilityCache = 'unsupported';
+        const capabilityError = errMsgLower.trim();
 
         onFailed({
           attempt,
@@ -1035,16 +1077,34 @@ export async function invokeReviewer(
             agent,
             reason:
               'Session model does not support structured output (tool_choice/function calling). ' +
-              'Creating new child session for format-free retry.',
-            detectedPattern: errMsgLower.trim(),
+              (reviewOutputPolicy === 'text_compat_allowed'
+                ? 'Creating new child session for text compatibility retry.'
+                : 'Policy requires structured output.'),
+            detectedPattern: capabilityError,
+            reviewOutputPolicy,
           },
         });
+
+        if (reviewOutputPolicy !== 'text_compat_allowed') {
+          onFailed({
+            attempt,
+            step: 'text_compat_blocked_by_policy',
+            error: info.error,
+            details: {
+              agent,
+              reviewOutputPolicy,
+              recovery:
+                'Configure the flowguard-reviewer agent to use a structured-output-capable model.',
+            },
+          });
+          return null;
+        }
 
         // Toast notification (non-blocking)
         try {
           await client.tui?.showToast({
             body: {
-              message: 'FlowGuard Reviewer: falling back to format-free mode',
+              message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
               variant: 'info',
             },
           });
@@ -1052,7 +1112,7 @@ export async function invokeReviewer(
           /* TUI unavailable — ignore */
         }
 
-        // ── Create NEW child session for format-free retry ──
+        // ── Create NEW child session for policy-gated text compatibility retry ──
         // The original child session already received a session.error event,
         // which causes the UI to close/collapse its panel. A fresh session
         // ensures the UI shows a new visible subagent panel during the retry.
@@ -1081,16 +1141,13 @@ export async function invokeReviewer(
           prompt,
           retrySessionId,
           attempt,
+          capabilityError,
           onFailed,
         );
         if (result) return result;
         return null; // format-free failed — fail closed
       }
     }
-
-    // ── Primary path succeeded: cache model as supporting structured output ──
-    // (Only set if we reach here = no model_capability_incompatible)
-    modelCapabilityCache = 'supported';
 
     // ── Response parsing: primary path (structured output) ──
     // SDK docs field name (canonical): info.structured_output
@@ -1104,8 +1161,8 @@ export async function invokeReviewer(
     }
 
     // ── Response parsing: TextPart fallback on PRIMARY path REMOVED (fail-closed) ──
-    // Text extraction is used ONLY on the format-free retry path (above) where
-    // the model explicitly cannot handle tool_choice. On the primary path,
+    // Text extraction is used ONLY on the policy-gated text compatibility path
+    // (above) where the model explicitly cannot handle tool_choice. On the primary path,
     // structured_output absence means the model failed silently — retry or fail closed.
     // See: https://opencode.ai/docs/sdk/#error-handling
 
@@ -1148,6 +1205,9 @@ export async function invokeReviewer(
       sessionId: childSessionId,
       rawResponse: JSON.stringify(findings),
       findings,
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     };
   }
 
@@ -1173,7 +1233,7 @@ export async function invokeReviewer(
  */
 export function buildMutatedOutput(
   originalOutput: string,
-  reviewerResult: ReviewerResult,
+  reviewerResult: ReviewerSuccessResult,
 ): string | null {
   if (!reviewerResult.findings) return null;
 
@@ -1190,6 +1250,17 @@ export function buildMutatedOutput(
   // Inject structured findings
   parsed.pluginReviewFindings = reviewerResult.findings;
   parsed._pluginReviewSessionId = reviewerResult.sessionId;
+  parsed.pluginReviewOutput = {
+    reviewOutputMode: reviewerResult.reviewOutputMode,
+    structuredOutputUsed: reviewerResult.structuredOutputUsed,
+    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+    ...(reviewerResult.extractionMethod
+      ? { extractionMethod: reviewerResult.extractionMethod }
+      : {}),
+    ...(reviewerResult.modelCapabilityError
+      ? { modelCapabilityError: reviewerResult.modelCapabilityError }
+      : {}),
+  };
 
   return JSON.stringify(parsed);
 }
@@ -1204,7 +1275,7 @@ export function buildMutatedOutput(
  */
 export function buildReviewContentMutatedOutput(
   originalOutput: string,
-  reviewerResult: ReviewerResult,
+  reviewerResult: ReviewerSuccessResult,
 ): string | null {
   if (!reviewerResult.findings) return null;
 
@@ -1221,6 +1292,17 @@ export function buildReviewContentMutatedOutput(
 
   parsed.pluginReviewFindings = reviewerResult.findings;
   parsed._pluginReviewSessionId = reviewerResult.sessionId;
+  parsed.pluginReviewOutput = {
+    reviewOutputMode: reviewerResult.reviewOutputMode,
+    structuredOutputUsed: reviewerResult.structuredOutputUsed,
+    reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+    ...(reviewerResult.extractionMethod
+      ? { extractionMethod: reviewerResult.extractionMethod }
+      : {}),
+    ...(reviewerResult.modelCapabilityError
+      ? { modelCapabilityError: reviewerResult.modelCapabilityError }
+      : {}),
+  };
 
   return JSON.stringify(parsed);
 }

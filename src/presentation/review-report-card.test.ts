@@ -83,6 +83,20 @@ describe('buildReviewReportCard', () => {
     expect(card).toContain('child-session-1');
   });
 
+  it('renders lower-assurance text compatibility metadata', () => {
+    const card = buildReviewReportCard({
+      ...baseInput,
+      reviewOutputMode: 'text_compat',
+      structuredOutputUsed: false,
+      reviewAssuranceLevel: 'text_compat_lower',
+      extractionMethod: 'json_fence',
+    });
+    expect(card).toContain('**Review output mode:** text_compat');
+    expect(card).toContain('**Structured output used:** no');
+    expect(card).toContain('**Review assurance:** text_compat_lower');
+    expect(card).toContain('**Extraction method:** json_fence');
+  });
+
   it('has no command footer (/approve, /request-changes, /reject)', () => {
     const card = buildReviewReportCard(baseInput);
     expect(card).not.toContain('/approve');

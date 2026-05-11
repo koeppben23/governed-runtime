@@ -33,7 +33,7 @@ export const FlowGuardConfigSchema = z.object({
   logging: z
     .object({
       /** Logging output mode. */
-      mode: z.enum(['file', 'ui', 'both']).default('file'),
+      mode: z.enum(['file', 'ui', 'both', 'console', 'file+console']).default('file'),
       /** Minimum log level. Messages below this level are suppressed. */
       level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
       /** Number of days to retain log files. */

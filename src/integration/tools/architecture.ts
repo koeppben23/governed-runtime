@@ -56,13 +56,18 @@ import {
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
+  findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
 
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
-import { validateReviewFindings, requireReviewFindings } from './review-validation.js';
+import {
+  validateReviewFindings,
+  requireReviewFindings,
+  resolveHostTaskFindings,
+} from './review-validation.js';
 
 // Presentation
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
@@ -114,6 +119,13 @@ export const architecture: ToolDefinition = {
         'Required when selfReviewVerdict is "approve" and subagentEnabled=true. ' +
         'Use exactly the JSON object the subagent returned — do not modify it.',
     ),
+    reviewerUnavailable: z
+      .boolean()
+      .optional()
+      .describe(
+        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
+          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+      ),
   },
   async execute(args, context) {
     try {
@@ -125,8 +137,11 @@ export const architecture: ToolDefinition = {
 
       const hasTitle = typeof args.title === 'string' && args.title.trim().length > 0;
       const hasAdrText = typeof args.adrText === 'string' && args.adrText.trim().length > 0;
-      const hasVerdict = args.selfReviewVerdict !== undefined;
-      const isInitialSubmission = !args.selfReviewVerdict;
+      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
+      // may send for absent optional fields). Defense-in-depth.
+      const hasVerdict =
+        typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0;
+      const isInitialSubmission = !hasVerdict;
 
       // Runtime sequence contract: ADR submission and review verdict are separate phases.
       if (hasTitle && hasVerdict) {
@@ -270,11 +285,7 @@ export const architecture: ToolDefinition = {
         const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
         const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
-        if (!args.reviewFindings) {
-          const blocked = requireReviewFindings(false);
-          if (blocked) return blocked;
-        }
-
+        // ── Obligation lookup (before findings resolution) ─────────
         // ADRs are immutable per id; planVersion is fixed at 1, iteration is
         // the loop counter. Use the centralized obligation lookup (matches
         // both pending and fulfilled — plugin-orchestrated obligations are
@@ -287,7 +298,54 @@ export const architecture: ToolDefinition = {
         const expectedIteration = pendingObligation?.iteration ?? state.selfReview.iteration;
         const expectedPlanVersion = pendingObligation?.planVersion ?? 1;
 
-        if (args.reviewFindings) {
+        // ── Resolve effective findings ──────────────────────────────
+        // BUG-17: In host_task_required mode, plugin-captured evidence is
+        // the SSOT. Agent-submitted reviewFindings are ignored — the
+        // non-deterministic LLM reconstruction adds zero information and
+        // non-zero risk (key reordering, Zod stripping, hallucinated fields).
+        // SDK path (sdk_session_prompt) continues to use agent-submitted
+        // findings with full validation.
+        const isHostTaskMode = policy.reviewInvocationPolicy === 'host_task_required';
+        let effectiveFindings: ReviewFindings | undefined;
+        let evidenceInvocationId: string | undefined;
+
+        if (isHostTaskMode) {
+          if (args.reviewFindings) {
+            // BUG-17: warn-level diagnostic — agent submitted reviewFindings
+            // but they will be ignored in host_task_required mode.
+            void args.reviewFindings; // side-effect-free acknowledgement
+          }
+          const resolved = resolveHostTaskFindings(state.reviewAssurance, pendingObligation);
+          if (resolved) {
+            effectiveFindings = resolved.findings;
+            evidenceInvocationId = resolved.invocationId;
+          } else if (args.reviewerUnavailable === true) {
+            // BUG-19: Reviewer subagent cannot be invoked (environment/infra).
+            if (strictEnforcement) {
+              return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+                reason:
+                  'reviewer subagent unavailable and strict enforcement requires host-visible review',
+                recovery: 'Install the flowguard-reviewer agent or disable strict enforcement',
+              });
+            }
+            effectiveFindings = {
+              iteration: expectedIteration,
+              planVersion: expectedPlanVersion,
+              reviewMode: 'self' as const,
+              overallVerdict: args.selfReviewVerdict as 'approve' | 'changes_requested',
+              blockingIssues: [],
+              majorRisks: [],
+              missingVerification: [],
+              scopeCreep: [],
+              unknowns: [],
+              reviewedBy: { sessionId: context.sessionID },
+              reviewedAt: new Date().toISOString(),
+            };
+          }
+        } else if (args.reviewFindings) {
+          effectiveFindings = args.reviewFindings as ReviewFindings;
+          // SDK path: validate agent-submitted findings (hash comparison valid
+          // because plugin injects findings and agent returns them verbatim).
           const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
             subagentEnabled: subagentEnabledModeB,
             fallbackToSelf,
@@ -296,19 +354,30 @@ export const architecture: ToolDefinition = {
             strictEnforcement,
             assurance: state.reviewAssurance,
             obligationType: 'architecture',
+            reviewInvocationPolicy: policy.reviewInvocationPolicy,
+            reviewParentSessionId: context.sessionID,
           });
           if (blocked) return blocked;
         }
 
-        // Guard: submitted selfReviewVerdict must match the subagent's overallVerdict.
-        if (
-          args.reviewFindings &&
-          args.reviewFindings.overallVerdict !== args.selfReviewVerdict &&
-          args.reviewFindings.overallVerdict !== 'unable_to_review'
-        ) {
+        if (!effectiveFindings) {
+          const blocked = requireReviewFindings(false);
+          if (blocked) return blocked;
+        }
+
+        // Defense-in-depth: unable_to_review must never reach state persistence.
+        if (effectiveFindings?.overallVerdict === 'unable_to_review') {
+          return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+            obligationId: pendingObligation?.obligationId ?? 'unknown',
+          });
+        }
+
+        // Guard: submitted selfReviewVerdict must match the findings overallVerdict.
+        // (unable_to_review already handled by defense-in-depth check above)
+        if (effectiveFindings && effectiveFindings.overallVerdict !== args.selfReviewVerdict) {
           return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
             submittedVerdict: args.selfReviewVerdict,
-            findingsVerdict: args.reviewFindings.overallVerdict,
+            findingsVerdict: effectiveFindings.overallVerdict,
           });
         }
 
@@ -344,8 +413,8 @@ export const architecture: ToolDefinition = {
 
         // F13 slice 7c: append-only review findings parallel to author artifacts
         const existingReviewFindings = state.architecture.reviewFindings;
-        const newReviewFindings = args.reviewFindings
-          ? [...(existingReviewFindings ?? []), args.reviewFindings as ReviewFindings]
+        const newReviewFindings = effectiveFindings
+          ? [...(existingReviewFindings ?? []), effectiveFindings]
           : existingReviewFindings;
         const adrWithReviewFindings = newReviewFindings
           ? { ...currentAdr, reviewFindings: newReviewFindings }
@@ -361,10 +430,17 @@ export const architecture: ToolDefinition = {
             )
           : null;
 
+        // BUG-15 Stufe 2: For evidence-resolved findings, use known invocationId
         const consumedAssurance = consumeReviewObligation(
           assuranceBaseModeB,
           strictObligation,
           ctx.now(),
+          evidenceInvocationId ??
+            findAcceptedInvocationForFindings(
+              assuranceBaseModeB,
+              strictObligation,
+              args.reviewFindings as ReviewFindings | undefined,
+            )?.invocationId,
         );
 
         // Build updated state

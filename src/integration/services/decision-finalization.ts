@@ -15,6 +15,7 @@
 import type { RailResult } from '../../rails/types.js';
 import { writeMadrArtifact } from '../artifacts/madr-writer.js';
 import { executeRegulatedCompletion } from './regulated-completion.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 /**
  * Finalize a decision rail result: write MADR artifact if needed,
@@ -38,6 +39,9 @@ export async function finalizeDecision(
 ): Promise<RailResult> {
   // ── MADR artifact for architecture completion ──
   if (result.kind === 'ok' && result.state.phase === 'ARCH_COMPLETE' && result.state.architecture) {
+    getAdapterLogger().info('services', 'Writing MADR artifact for architecture completion', {
+      sessionID,
+    });
     await writeMadrArtifact(sessDir, result.state.architecture);
   }
 

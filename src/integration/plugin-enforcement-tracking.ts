@@ -6,7 +6,7 @@
  * patterns from the tool.execute.after handler. The try/catch wrapper
  * remains in plugin.ts because logError is closure-captured.
  *
- * @version v1
+ * @version v2
  */
 
 import {
@@ -14,7 +14,7 @@ import {
   onTaskToolAfter,
   type SessionEnforcementState,
 } from './review-enforcement.js';
-import { getToolArgs, getToolOutput } from './plugin-helpers.js';
+import { getToolArgs, getToolOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
 
 /**
  * Track FlowGuard tool responses for INDEPENDENT_REVIEW_REQUIRED signals.
@@ -37,8 +37,14 @@ export function trackFlowGuardEnforcement(
 /**
  * Track Task calls to the flowguard-reviewer subagent.
  *
- * Extracts args and raw output from the plugin hook input/output,
- * then delegates to review enforcement tracking for 1:1 obligation matching.
+ * Extracts args, raw output, metadata, and callID from the plugin hook
+ * input/output, then delegates to review enforcement tracking for 1:1
+ * obligation matching.
+ *
+ * BUG-14 fix: passes metadata and callID as TaskToolContext to enable
+ * tiered session ID resolution. Without this, the host_task_required
+ * path always fails with `no_child_session` because the reviewer cannot
+ * know its own session ID.
  */
 export function trackTaskEnforcement(
   eState: SessionEnforcementState,
@@ -48,5 +54,7 @@ export function trackTaskEnforcement(
 ): void {
   const args = getToolArgs(input);
   const rawOutput = getToolOutput(output);
-  onTaskToolAfter(eState, args, rawOutput, now);
+  const metadata = getToolMetadata(output);
+  const callID = getToolCallID(input);
+  onTaskToolAfter(eState, args, rawOutput, now, { metadata, callID });
 }

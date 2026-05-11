@@ -96,7 +96,32 @@ function buildClient(findings: Record<string, unknown> | null) {
   };
 }
 
-function buildSessionState(strictEnforcement = true) {
+function buildTextCompatClient(findings: Record<string, unknown>) {
+  return {
+    session: {
+      create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
+      prompt: vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: { parts: [{ type: 'text', text: JSON.stringify(findings) }], info: {} },
+          error: undefined,
+        }),
+    },
+  };
+}
+
+function buildSessionState(
+  strictEnforcement = true,
+  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
+) {
   return makeState('REVIEW', {
     ticket: {
       text: 'Review the authentication changes',
@@ -111,6 +136,8 @@ function buildSessionState(strictEnforcement = true) {
         fallbackToSelf: false,
         strictEnforcement,
       },
+      reviewOutputPolicy,
+      ...(reviewInvocationPolicy ? { reviewInvocationPolicy } : {}),
     },
     reviewAssurance: {
       obligations: [
@@ -181,9 +208,16 @@ async function runReviewContent(
   findings: Record<string, unknown> | null,
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
   strictEnforcement = true,
+  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
+  clientOverride?: unknown,
+  reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
 ) {
-  const client = buildClient(findings);
-  const stateRef = { current: buildSessionState(strictEnforcement) };
+  const client = (clientOverride ?? buildClient(findings)) as
+    | ReturnType<typeof buildClient>
+    | ReturnType<typeof buildTextCompatClient>;
+  const stateRef = {
+    current: buildSessionState(strictEnforcement, reviewOutputPolicy, reviewInvocationPolicy),
+  };
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
   const output = { output: contentAnalysisRequiredOutput() };
@@ -205,6 +239,28 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     vi.mocked(readState).mockReset();
     vi.mocked(loadExternalContent).mockReset();
     vi.mocked(loadExternalContent).mockResolvedValue({ content: 'diff content' } as never);
+  });
+
+  it('host_task_required does not call SDK for standalone /review', async () => {
+    const { output, client } = await runReviewContent(
+      buildFindings(),
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      true,
+      'structured_required',
+      undefined,
+      'host_task_required',
+    );
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.reviewInvocation).toMatchObject({
+      policy: 'host_task_required',
+      status: 'blocked_until_host_task',
+      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+    });
   });
 
   it('blocks with SUBAGENT_MANDATE_MISMATCH when strict /review attestation obligation mismatches', async () => {
@@ -309,6 +365,35 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       attestation: { toolObligationId: OBLIGATION_ID },
     });
     expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
+  });
+
+  it('passes explicit reviewOutputPolicy for /review content text compatibility', async () => {
+    const findings = buildFindings();
+    const textCompatClient = buildTextCompatClient(findings);
+    const { output, blockReviewOutcome, state, client } = await runReviewContent(
+      findings,
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      true,
+      'text_compat_allowed',
+      textCompatClient,
+    );
+
+    expect(blockReviewOutcome).not.toHaveBeenCalled();
+    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+    const invocation = state.reviewAssurance?.invocations[0];
+    expect(invocation).toMatchObject({
+      reviewOutputMode: 'text_compat',
+      structuredOutputUsed: false,
+      reviewAssuranceLevel: 'text_compat_lower',
+      extractionMethod: 'direct_json',
+    });
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.pluginReviewOutput).toMatchObject({
+      reviewOutputMode: 'text_compat',
+      structuredOutputUsed: false,
+      reviewAssuranceLevel: 'text_compat_lower',
+      extractionMethod: 'direct_json',
+    });
   });
 
   it('supports direct /review input shape while injecting valid strict findings', async () => {

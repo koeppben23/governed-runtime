@@ -48,14 +48,17 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewInvocationEvidence, ReviewObligation } from '../state/evidence.js';
+import { buildInvocationEvidence, hashFindings, hashText } from './review-assurance.js';
 import {
   isReviewableTool,
   obligationTypeForTool,
   type ReviewableTool,
 } from './review-obligation-tools.js';
 export type { ReviewableTool } from './review-obligation-tools.js';
+type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
 
 /** Record of a completed subagent invocation. */
 export interface SubagentRecord {
@@ -87,12 +90,14 @@ export interface CapturedFindings {
   readonly blockingIssuesCount: number;
   /** The sessionId from reviewedBy, if present. */
   readonly sessionId: string | null;
+  /** Complete parsed ReviewFindings object, when extraction succeeds. */
+  readonly rawFindings?: Record<string, unknown> | null;
 }
 
 /** Per-tool pending review state. */
 export interface PendingReview {
   /** Which tool signaled the review requirement. */
-  readonly tool: ReviewableTool;
+  readonly tool: PendingReviewTool;
   /** ISO 8601 timestamp when the requirement was signaled. */
   readonly requestedAt: string;
   /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
@@ -108,7 +113,25 @@ export interface PendingReview {
 /** Session-level enforcement state. */
 export interface SessionEnforcementState {
   /** Pending reviews keyed by tool name. */
-  readonly pendingReviews: Map<ReviewableTool, PendingReview>;
+  readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
+}
+
+/**
+ * Optional context from the plugin hook for session ID resolution.
+ *
+ * The OpenCode `task` tool's `tool.execute.after` hook provides metadata
+ * and callID that may contain the child session ID. This context enables
+ * tiered session ID resolution:
+ *
+ * Tier 1: `metadata.sessionID` — authoritative, from the task tool runtime.
+ * Tier 2: Text extraction from the reviewer's output (existing behavior).
+ * Tier 3: `derived:call:${callID}` — synthetic, guaranteed unique.
+ */
+export interface TaskToolContext {
+  /** Metadata from the task tool output (may contain child sessionID). */
+  readonly metadata?: Record<string, unknown>;
+  /** Tool call ID — unique per invocation, used for Tier 3 synthetic ID. */
+  readonly callID?: string;
 }
 
 /** Result of an enforcement check. */
@@ -163,14 +186,19 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (!isReviewableTool(toolName)) return;
+  const isStandaloneReviewTool = toolName === TOOL_FLOWGUARD_REVIEW;
+  if (!isReviewableTool(toolName) && !isStandaloneReviewTool) return;
 
-  const reviewTool: ReviewableTool = toolName;
+  const reviewTool: PendingReviewTool = toolName;
   const parsed = safeParse(output);
   if (!parsed) return;
 
-  // Mode B: agent is submitting a verdict → clear pending review on success
-  const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
+  // Mode B: agent is submitting a verdict → clear pending review on success.
+  // BUG-21: Use value-based checks — the `in` operator returns true for keys
+  // with null values (LLMs may send explicit nulls for absent optional fields).
+  const hasSelfReviewVerdict =
+    (typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0) ||
+    (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0);
   if (hasSelfReviewVerdict) {
     // Only clear if the call succeeded (no error in output)
     if (parsed.error !== true) {
@@ -186,6 +214,25 @@ export function onFlowGuardToolAfter(
       subagentCalled: false,
       subagentRecord: null,
       contentMeta: extractContentMeta(next),
+      capturedFindings: null,
+    });
+  }
+
+  const requiredReviewAttestation = parsed.requiredReviewAttestation as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    parsed.error === true &&
+    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+    requiredReviewAttestation &&
+    isStandaloneReviewTool
+  ) {
+    state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
+      tool: TOOL_FLOWGUARD_REVIEW,
+      requestedAt: now,
+      subagentCalled: false,
+      subagentRecord: null,
+      contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
       capturedFindings: null,
     });
   }
@@ -293,6 +340,19 @@ export function enforceBeforeSubagentCall(
  * - Records the subagent session ID — null if extraction fails (Level 2 strict)
  * - Captures actual findings from the subagent response (Level 4)
  *
+ * Session ID resolution (BUG-14 fix — three-tiered):
+ *
+ * Tier 1: Hook metadata — `context.metadata.sessionID` from the task tool
+ *   runtime. Authoritative because the task tool created the child session.
+ * Tier 2: Text extraction — parse `reviewedBy.sessionId` from the reviewer's
+ *   JSON output. Works when the reviewer includes a valid session ID.
+ * Tier 3: Synthetic — `derived:call:${context.callID}`. Guaranteed unique
+ *   per invocation. Prevents `no_child_session` binding failure.
+ *
+ * Mirrors SDK mode post-hoc injection (review-orchestrator.ts:1193-1202):
+ * the reviewer cannot know its own session ID, so the runtime resolves it
+ * and injects it into the captured findings for hash consistency.
+ *
  * 1:1 obligation matching: Each Task call satisfies exactly one pending review.
  * P34a (plan) and P34b (implement) are independent obligations. When multiple
  * are pending, the prompt's iteration/planVersion must match the target obligation's
@@ -302,18 +362,25 @@ export function enforceBeforeSubagentCall(
  * @param args - Task tool arguments (expects subagent_type and prompt fields)
  * @param taskResult - Raw task result string (subagent response)
  * @param now - ISO 8601 timestamp
+ * @param context - Optional hook context for tiered session ID resolution
  */
 export function onTaskToolAfter(
   state: SessionEnforcementState,
   args: Record<string, unknown>,
   taskResult: string,
   now: string,
+  context?: TaskToolContext,
 ): void {
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Extract session ID — null if extraction fails (no fallback, strict)
-  const sessionId = extractSubagentSessionId(taskResult);
+  // Tiered session ID resolution (BUG-14 fix):
+  // Tier 1: Hook metadata — authoritative from task tool runtime
+  let sessionId = resolveSessionIdFromMetadata(context?.metadata);
+  // Tier 2: Text extraction — parse from reviewer's JSON output
+  if (!sessionId) sessionId = extractSubagentSessionId(taskResult);
+  // Tier 3: Synthetic from callID — guaranteed unique for deduplication
+  if (!sessionId && context?.callID) sessionId = `derived:call:${context.callID}`;
 
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
@@ -404,16 +471,31 @@ export function enforceBeforeVerdict(
 
   const reviewTool: ReviewableTool = toolName;
 
-  // Only enforce on Mode B calls (verdict submission)
-  const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
+  // Only enforce on Mode B calls (verdict submission).
+  // BUG-21: Use value-based checks — the `in` operator returns true for keys
+  // with null values (DeepSeek R1 sends explicit nulls for optional fields).
+  const selfReviewValue = args.selfReviewVerdict;
+  const reviewVerdictValue = args.reviewVerdict;
+  const hasSelfReviewVerdict =
+    (typeof selfReviewValue === 'string' && selfReviewValue.length > 0) ||
+    (typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0);
   if (!hasSelfReviewVerdict) return { allowed: true };
 
   // Check if there's a pending review for this tool
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) {
-    // P35 Recovery: Reconstruct from session-state.json when transient cache miss
-    if (sessionState?.reviewAssurance?.obligations) {
-      const pendingObligation = sessionState.reviewAssurance.obligations.find(
+    // BUG-21 Fix B: Separate "state is readable" from "has obligations".
+    // After /ticket (before first /plan), sessionState exists but
+    // reviewAssurance is undefined — the old code skipped this block
+    // and fell through to the strict-enforcement BLOCKED path.
+    if (sessionState) {
+      const obligations = sessionState.reviewAssurance?.obligations;
+      if (!obligations || obligations.length === 0) {
+        // Session state is readable but no review obligations exist yet — allowed
+        return { allowed: true };
+      }
+      // P35 Recovery: Reconstruct from session-state.json when transient cache miss
+      const pendingObligation = obligations.find(
         (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
       );
       if (pendingObligation) {
@@ -430,7 +512,7 @@ export function enforceBeforeVerdict(
       // No pending obligations — genuinely no requirement
       return { allowed: true };
     }
-    // Strict: state unreadable → fail-closed
+    // Session state is unreadable (null/undefined) → fail-closed in strict mode
     if (strictEnforcement) {
       return {
         allowed: false,
@@ -561,6 +643,255 @@ export function recordPluginReview(
   return true;
 }
 
+/**
+ * Machine-readable outcome of a host-task bind attempt.
+ * Used for diagnostic logging — NOT a governance reason code.
+ */
+export type HostTaskBindOutcome =
+  | 'bound'
+  | 'no_matched_record'
+  | 'no_child_session'
+  | 'no_obligation_type'
+  | 'no_findings'
+  | 'no_matching_obligation'
+  | 'field_mismatch'
+  | 'duplicate_evidence';
+
+/**
+ * Structured result from {@link buildHostTaskEvidence}.
+ *
+ * Always includes a machine-readable `bindOutcome` and a serializable
+ * `diagnostic` object so the caller can log exactly why binding succeeded
+ * or failed without re-inspecting internal state.
+ */
+export interface HostTaskBindResult {
+  /** Created evidence, or null if binding failed. */
+  evidence: ReviewInvocationEvidence | null;
+  /** Machine-readable bind outcome for logging. */
+  bindOutcome: HostTaskBindOutcome;
+  /** Structured diagnostic metadata (safe to JSON.stringify). */
+  diagnostic: Record<string, unknown>;
+}
+
+/**
+ * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
+ *
+ * Called after `onTaskToolAfter` records a Task tool call to flowguard-reviewer.
+ * Creates persistent ReviewInvocationEvidence with invocationMode='host_subagent_task'
+ * and hostVisible=true, so that validateReviewFindings can find it during tool.execute.
+ *
+ * @param state - Session enforcement state (after onTaskToolAfter update)
+ * @param sessionId - Current session ID (parent session)
+ * @param obligations - Persisted review obligations from session state
+ * @param invocations - Persisted invocation evidence from session state
+ * @param now - ISO 8601 timestamp
+ * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
+ */
+export function buildHostTaskEvidence(
+  state: SessionEnforcementState,
+  sessionId: string,
+  obligations: ReviewObligation[],
+  invocations: ReviewInvocationEvidence[],
+  now: string,
+): HostTaskBindResult {
+  const allPending = [...state.pendingReviews.values()];
+  const matched = allPending.filter(
+    (p) => p.subagentCalled && p.subagentRecord !== null && p.capturedFindings?.rawFindings,
+  );
+  if (matched.length === 0) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matched_record',
+      diagnostic: {
+        pendingCount: allPending.length,
+        calledCount: allPending.filter((p) => p.subagentCalled).length,
+      },
+    };
+  }
+
+  const latest = matched.sort((a, b) =>
+    (b.subagentRecord?.completedAt ?? '').localeCompare(a.subagentRecord?.completedAt ?? ''),
+  )[0]!;
+
+  const childSessionId = latest.subagentRecord!.sessionId;
+  if (!childSessionId) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_child_session',
+      diagnostic: { tool: latest.tool },
+    };
+  }
+
+  const oType =
+    latest.tool === TOOL_FLOWGUARD_REVIEW ? 'review' : obligationTypeForTool(latest.tool);
+  if (!oType) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_obligation_type',
+      diagnostic: { tool: latest.tool },
+    };
+  }
+
+  const rawFindings = latest.capturedFindings?.rawFindings;
+  if (!rawFindings) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_findings',
+      diagnostic: { tool: latest.tool, childSessionId },
+    };
+  }
+  const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
+  const attestedObligationId =
+    typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
+
+  // BUG-20: Validate attestation contains a proper UUID. In host_task_required mode,
+  // the LLM-constructed reviewer prompt cannot relay obligationId/mandateDigest/criteriaVersion
+  // because buildHostTaskPolicyOutput does not (and cannot) include them. The reviewer
+  // writes placeholder values like "not_provided_in_prompt" which are not valid UUIDs.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const hasValidAttestation = attestedObligationId !== null && UUID_RE.test(attestedObligationId);
+
+  let matchedObligation: ReviewObligation | undefined;
+
+  if (hasValidAttestation) {
+    // Primary path: attestation-based matching (SDK path, well-behaved reviewers).
+    matchedObligation = obligations.find(
+      (o) =>
+        o.obligationId === attestedObligationId &&
+        o.obligationType === oType &&
+        o.status !== 'consumed' &&
+        o.consumedAt === null,
+    );
+    if (!matchedObligation) {
+      return {
+        evidence: null,
+        bindOutcome: 'no_matching_obligation',
+        diagnostic: {
+          attestedObligationId,
+          obligationType: oType,
+          availableObligations: obligations.length,
+          bindingMode: 'attestation',
+        },
+      };
+    }
+  } else {
+    // BUG-20 Fallback: tool-based obligation matching when attestation is absent or invalid.
+    // Safety justification:
+    // 1. Plugin validated this Task call via matchPendingReview (P34 1:1 contract)
+    // 2. rawFindings are first-party captured by plugin hook (not LLM-reconstructed)
+    // 3. At most one pending obligation per tool-type for plan/implement/architecture
+    //    (see review-assurance.ts:143-144 comment confirming this invariant)
+    // 4. This uses the same lookup semantics as plan.ts:352-358 (the consumer),
+    //    guaranteeing resolveHostTaskFindings will find the evidence we create here.
+    matchedObligation = obligations
+      .filter((o) => o.obligationType === oType && o.status !== 'consumed' && o.consumedAt === null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!matchedObligation) {
+      return {
+        evidence: null,
+        bindOutcome: 'no_matching_obligation',
+        diagnostic: {
+          attestedObligationId,
+          obligationType: oType,
+          availableObligations: obligations.length,
+          bindingMode: 'tool_fallback',
+        },
+      };
+    }
+  }
+
+  // Field consistency checks — verify findings match the obligation's context.
+  const mismatchFields: string[] = [];
+  if (rawFindings.iteration !== matchedObligation.iteration) mismatchFields.push('iteration');
+  if (rawFindings.planVersion !== matchedObligation.planVersion) mismatchFields.push('planVersion');
+  // BUG-20: Only check attestation-specific fields when a valid attestation is present.
+  // In host_task_required mode, the reviewer cannot fill mandateDigest/criteriaVersion/reviewedBy
+  // because these values are not provided in the LLM-constructed prompt. Checking them would
+  // always fail with placeholder values, making the entire host_task_required path broken.
+  if (hasValidAttestation) {
+    if (attestation?.mandateDigest !== matchedObligation.mandateDigest)
+      mismatchFields.push('mandateDigest');
+    if (attestation?.criteriaVersion !== matchedObligation.criteriaVersion)
+      mismatchFields.push('criteriaVersion');
+    if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) mismatchFields.push('reviewedBy');
+  }
+  if (mismatchFields.length > 0) {
+    return {
+      evidence: null,
+      bindOutcome: 'field_mismatch',
+      diagnostic: {
+        attestedObligationId,
+        mismatchFields,
+        bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
+      },
+    };
+  }
+
+  // BUG-20b: Normalize raw findings before hash computation and storage.
+  // When attestation is invalid (placeholder values from LLM), strip it from the
+  // stored copy. ReviewFindingsSchema treats attestation as optional-but-must-be-valid:
+  // if we store invalid attestation, resolveHostTaskFindings rejects the ENTIRE
+  // findings object via safeParse, causing REVIEW_FINDINGS_REQUIRED even though
+  // binding succeeded. Normalizing BEFORE hashFindings keeps findingsHash and
+  // capturedRawFindings consistent (both computed from the same normalized object).
+  const normalizedFindings = hasValidAttestation
+    ? rawFindings
+    : (() => {
+        const { attestation: _, ...rest } = rawFindings;
+        return rest;
+      })();
+
+  const findingsHash = hashFindings(normalizedFindings);
+  if (
+    invocations.some(
+      (inv) =>
+        inv.obligationId === matchedObligation.obligationId &&
+        inv.childSessionId === childSessionId &&
+        inv.findingsHash === findingsHash,
+    )
+  ) {
+    return {
+      evidence: null,
+      bindOutcome: 'duplicate_evidence',
+      diagnostic: {
+        childSessionId,
+        findingsHash,
+        obligationId: matchedObligation.obligationId,
+      },
+    };
+  }
+
+  const promptHash = hashText(
+    `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
+  );
+
+  const evidence = buildInvocationEvidence({
+    obligationId: matchedObligation.obligationId,
+    obligationType: oType,
+    parentSessionId: sessionId,
+    childSessionId,
+    invocationMode: 'host_subagent_task',
+    hostVisible: true,
+    promptHash,
+    findingsHash,
+    invokedAt: now,
+    source: 'host-orchestrated',
+    capturedVerdict: latest.capturedFindings?.overallVerdict,
+    capturedRawFindings: normalizedFindings,
+  });
+
+  return {
+    evidence,
+    bindOutcome: 'bound',
+    diagnostic: {
+      obligationId: matchedObligation.obligationId,
+      childSessionId,
+      findingsHash,
+      bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
+    },
+  };
+}
+
 // ─── Helpers (exported for testing) ──────────────────────────────────────────
 
 /**
@@ -686,6 +1017,96 @@ function safeParse(raw: string): Record<string, unknown> | null {
 }
 
 /**
+ * Extract the subagent session ID from hook metadata.
+ *
+ * The OpenCode `task` tool may include the child session ID in the
+ * output metadata. This is the authoritative source (Tier 1) because
+ * the task tool runtime created the session and knows the exact ID.
+ *
+ * Checks common field names: sessionID (SDK convention), sessionId
+ * (camelCase alternative), id (generic).
+ *
+ * @param metadata - Metadata object from tool output, or undefined
+ * @returns The session ID string, or null if not found
+ */
+export function resolveSessionIdFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): string | null {
+  if (!metadata) return null;
+  if (typeof metadata.sessionID === 'string' && metadata.sessionID) return metadata.sessionID;
+  if (typeof metadata.sessionId === 'string' && metadata.sessionId) return metadata.sessionId;
+  if (typeof metadata.id === 'string' && metadata.id) return metadata.id;
+  return null;
+}
+
+/**
+ * Inject the authoritative child session ID into ReviewFindings JSON.
+ *
+ * Mirrors the SDK mode post-hoc injection in review-orchestrator.ts:1193-1202.
+ * The reviewer subagent cannot reliably know its own session ID, so the
+ * runtime injects it into `reviewedBy.sessionId` before the output is
+ * captured and hashed.
+ *
+ * Handles three output formats:
+ * 1. Clean JSON: full output is valid JSON
+ * 2. Embedded JSON: JSON block with `"reviewedBy"` marker in mixed text
+ * 3. Non-JSON: returns original text unchanged
+ *
+ * @param output - Raw task tool output text
+ * @param sessionId - Authoritative child session ID to inject
+ * @returns Modified output text with injected session ID
+ */
+export function injectSessionIdIntoOutput(output: string, sessionId: string): string {
+  // Path 1: clean JSON parse
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      injectSessionIdIntoObject(parsed, sessionId);
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not clean JSON — fall through to embedded extraction
+  }
+
+  // Path 2: find embedded JSON block containing "reviewedBy"
+  const markerIdx = output.indexOf('"reviewedBy"');
+  if (markerIdx < 0) return output;
+
+  const startIdx = output.lastIndexOf('{', markerIdx);
+  if (startIdx < 0) return output;
+
+  const block = extractJsonBlock(output, startIdx);
+  if (!block) return output;
+
+  try {
+    const parsed = JSON.parse(block) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      injectSessionIdIntoObject(parsed, sessionId);
+      return (
+        output.slice(0, startIdx) + JSON.stringify(parsed) + output.slice(startIdx + block.length)
+      );
+    }
+  } catch {
+    // Unparseable block — return original
+  }
+
+  return output;
+}
+
+/**
+ * Inject sessionId into the reviewedBy field of a parsed ReviewFindings object.
+ * Mutates the object in place.
+ */
+function injectSessionIdIntoObject(obj: Record<string, unknown>, sessionId: string): void {
+  const reviewedBy = obj.reviewedBy;
+  if (typeof reviewedBy === 'object' && reviewedBy !== null && !Array.isArray(reviewedBy)) {
+    (reviewedBy as Record<string, unknown>).sessionId = sessionId;
+  } else {
+    obj.reviewedBy = { sessionId };
+  }
+}
+
+/**
  * Extract the subagent session ID from the Task tool response.
  *
  * The flowguard-reviewer subagent returns a JSON ReviewFindings object
@@ -762,11 +1183,16 @@ function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
   const reviewedBy = record.reviewedBy as Record<string, unknown> | undefined;
   const sessionId = typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
 
-  return {
+  const captured: CapturedFindings = {
     overallVerdict,
     blockingIssuesCount: blockingIssues.length,
     sessionId,
   };
+  Object.defineProperty(captured, 'rawFindings', {
+    value: record,
+    enumerable: false,
+  });
+  return captured;
 }
 
 /**

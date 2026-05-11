@@ -185,7 +185,7 @@ describe('FlowGuardConfigSchema', () => {
     it('rejects invalid mode', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        logging: { mode: 'console' },
+        logging: { mode: 'cloud' },
       });
       expect(result.success).toBe(false);
     });

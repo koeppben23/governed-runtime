@@ -35,12 +35,12 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 ### Phase 3: Review Loop
 
 5. Follow the \`next\` field instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. Pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
-     - "approve": Call \`flowguard_architecture({ selfReviewVerdict: "approve", reviewFindings: <pluginReviewFindings> })\`.
-     - "changes_requested": Revise the ADR to address blocking issues, then call \`flowguard_architecture({ selfReviewVerdict: "changes_requested", adrText: <revised>, reviewFindings: <pluginReviewFindings> })\`.
-     - "unable_to_review": The reviewer declared the ADR unreviewable (e.g., contradictory context, missing prerequisites, or scope ambiguity that prevents critique). The architecture tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ADR — that obligation is consumed. Report the reviewer's findings to the user, then either resolve the prerequisite ambiguity OR submit a substantially-revised ADR (a fresh \`flowguard_architecture({ title, adrText })\` submission, which starts a new review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool with subagent_type "flowguard-reviewer", supplying the ADR text, ADR title, ticket text, iteration, and planVersion as instructed. Parse the JSON ReviewFindings from the subagent response, then submit the verdict with reviewFindings. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
-   - If review converged: Report the result.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. In host_task_required mode, findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`. Otherwise, pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
+      - "approve": Call \`flowguard_architecture({ selfReviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
+      - "changes_requested": Revise the ADR to address blocking issues, then call \`flowguard_architecture({ selfReviewVerdict: "changes_requested", adrText: <revised> })\` (or with \`reviewFindings\` in SDK mode).
+      - "unable_to_review": The reviewer declared the ADR unreviewable (e.g., contradictory context, missing prerequisites, or scope ambiguity that prevents critique). The architecture tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ADR — that obligation is consumed. Report the reviewer's findings to the user, then either resolve the prerequisite ambiguity OR submit a substantially-revised ADR (a fresh \`flowguard_architecture({ title, adrText })\` submission, which starts a new review obligation).
+   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool with subagent_type "flowguard-reviewer", supplying the ADR text, ADR title, ticket text, iteration, and planVersion as instructed. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable), submit \`flowguard_architecture({ selfReviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
+   - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: Repeat from step 5 (max iterations from policy.maxSelfReviewIterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
    - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-submit the ADR: call \`flowguard_architecture({ title: <same title>, adrText: <same ADR text> })\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-submissions are allowed.
@@ -63,23 +63,25 @@ Happy path:
 1. \`flowguard_status\` → phase: READY
 2. \`flowguard_architecture({ title, adrText })\` → returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` or "INDEPENDENT_REVIEW_COMPLETED: ..."
 3. (If REQUIRED) Call flowguard-reviewer subagent via Task tool, parse ReviewFindings.
-4. \`flowguard_architecture({ selfReviewVerdict: "approve", reviewFindings: <findings> })\` → ARCH_REVIEW
+4. \`flowguard_architecture({ selfReviewVerdict: "approve" })\` → ARCH_REVIEW
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_architecture({ selfReviewVerdict: "changes_requested", adrText: <revised>, reviewFindings: <findings> })\`
+1. \`flowguard_architecture({ selfReviewVerdict: "changes_requested", adrText: <revised> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` for the next iteration
-3. After re-reviewing, \`flowguard_architecture({ selfReviewVerdict: "approve", reviewFindings: <new findings> })\` → ARCH_REVIEW
+3. After re-reviewing, \`flowguard_architecture({ selfReviewVerdict: "approve" })\` → ARCH_REVIEW
 
 ${GOVERNANCE_RULES}
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim.
-- It contains the formatted architecture review with ADR details, findings, and next actions.
+- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
+- The reviewCard contains the formatted architecture review with ADR details, findings, and next actions.
+- This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
 
 - ADR is created or revised with Context, Decision, and Consequences sections.
 - Independent review loop has converged (approved or max iterations reached).
+- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has reached ARCH_REVIEW (ready for human review).
 - Response ends with a \`Next action:\` line.
 `;

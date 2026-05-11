@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../__fixtures__.js';
+import {
+  REVIEW_CRITERIA_VERSION,
+  REVIEW_MANDATE_DIGEST,
+  hashFindings,
+} from '../review-assurance.js';
 
 const mocks = vi.hoisted(() => {
   return {
@@ -722,5 +727,363 @@ describe('integration/tools/architecture (wrapper)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // BUG-15 Stufe 2: evidence-based findings resolution in tool layer
+  // ═════════════════════════════════════════════════════════════════════════
+
+  describe('BUG-15 Stufe 2: evidence-resolve in architecture tool', () => {
+    const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+    const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+    const now = '2026-01-01T00:00:00.000Z';
+
+    const validRawFindings: Record<string, unknown> = {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_child' },
+      reviewedAt: now,
+    };
+
+    function stateWithEvidence(verdict: 'approve' | 'changes_requested' = 'approve') {
+      const rawFindings = { ...validRawFindings, overallVerdict: verdict };
+      return makeState('ARCHITECTURE', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: now,
+        },
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'digest-adr',
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              createdAt: now,
+              pluginHandshakeAt: now,
+              status: 'fulfilled',
+              invocationId: INVOCATION_ID,
+              blockedCode: null,
+              fulfilledAt: now,
+              consumedAt: null,
+            },
+          ],
+          invocations: [
+            {
+              invocationId: INVOCATION_ID,
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              parentSessionId: 'ses_parent',
+              childSessionId: 'ses_child',
+              agentType: 'flowguard-reviewer',
+              invocationMode: 'host_subagent_task',
+              hostVisible: true,
+              promptHash: 'abc',
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              findingsHash: hashFindings(rawFindings),
+              invokedAt: now,
+              fulfilledAt: now,
+              consumedByObligationId: null,
+              capturedVerdict: verdict,
+              capturedRawFindings: rawFindings,
+            },
+          ],
+        },
+      });
+    }
+
+    it('HAPPY: host_task_required + no reviewFindings + evidence available → succeeds', async () => {
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute({ selfReviewVerdict: 'approve' }, {} as never);
+      const parsed = JSON.parse(String(res));
+      // Should NOT be blocked — evidence-resolved findings used
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('BAD: host_task_required + no reviewFindings + no evidence → BLOCKED', async () => {
+      // State WITHOUT evidence (empty invocations)
+      const stateNoEvidence = makeState('ARCHITECTURE', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: now,
+        },
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'digest-adr',
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+        reviewAssurance: {
+          obligations: [],
+          invocations: [],
+        },
+      });
+      mocks.state = stateNoEvidence;
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute({ selfReviewVerdict: 'approve' }, {} as never);
+      const parsed = JSON.parse(String(res));
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    });
+
+    it('BAD: host_task_required + evidence verdict != selfReviewVerdict → BLOCKED', async () => {
+      // Evidence says changes_requested, agent says approve
+      mocks.state = stateWithEvidence('changes_requested');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        { selfReviewVerdict: 'approve' }, // mismatch
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+    });
+
+    it('EDGE: non-host_task + no reviewFindings → BLOCKED (unchanged behavior)', async () => {
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'sdk_allowed', // NOT host_task_required
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute({ selfReviewVerdict: 'approve' }, {} as never);
+      const parsed = JSON.parse(String(res));
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
+    });
+
+    it('EDGE: host_task_required + agent submits reviewFindings → ignored, evidence used (BUG-17)', async () => {
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // BUG-17: Should succeed via evidence (agent reviewFindings ignored)
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
+      // BUG-17: In host_task_required mode, agent-submitted reviewFindings are
+      // completely ignored. Even invalid/mismatched findings don't cause a BLOCKED
+      // because evidence is resolved from plugin instead.
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'approve',
+          // Agent submits WRONG iteration — would normally be blocked, but BUG-17 ignores it
+          reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // Still succeeds — evidence 'approve' matches selfReviewVerdict 'approve'
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('REGRESSION: sdk_allowed + agent submits reviewFindings → validates (non-host_task path)', async () => {
+      // BUG-17 regression guard: non-host_task modes still validate agent findings
+      mocks.state = stateWithEvidence('approve');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'sdk_allowed',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'approve',
+          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // SDK path succeeds with valid findings
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('CORNER: host_task_required + changes_requested verdict + evidence → proceeds to revision', async () => {
+      mocks.state = stateWithEvidence('changes_requested');
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        {
+          selfReviewVerdict: 'changes_requested',
+          adrText: '## Context\nRevised\n\n## Decision\nB\n\n## Consequences\nC',
+        },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
+      // Should proceed with changes_requested — no BLOCKED
+      expect(parsed.error).toBeUndefined();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-21: Null-tolerant mode detection (defense-in-depth for Fix F)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('BUG-21: null-tolerant mode detection (architecture tool)', () => {
+    it('HAPPY: selfReviewVerdict=null + title + adrText → Mode A (initial submission)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: null,
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      // Should NOT be blocked with ADR_SUBMISSION_MIXED_INPUTS
+      // because null is not treated as "has verdict"
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+    });
+
+    it('HAPPY: selfReviewVerdict="" + title + adrText → Mode A (empty string treated as absent)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: '',
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+    });
+
+    it('CORNER: selfReviewVerdict=null → isInitialSubmission=true (consistent with hasVerdict=false)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      // With null verdict AND title → isInitialSubmission should be true
+      // The ADR_SUBMISSION_MIXED_INPUTS guard: if (hasTitle && hasVerdict) → blocked
+      // With hasVerdict=false (null), this guard doesn't fire
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: null,
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+      expect(parsed.error).toBeUndefined();
+    });
   });
 });

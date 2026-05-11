@@ -18,6 +18,8 @@ import {
   buildEnforcementError,
   getToolOutput,
   getToolArgs,
+  getToolMetadata,
+  getToolCallID,
 } from './plugin-helpers.js';
 
 describe('parseToolResult', () => {
@@ -180,5 +182,98 @@ describe('getToolArgs', () => {
     expect(getToolArgs({})).toEqual({});
     expect(getToolArgs(null)).toEqual({});
     expect(getToolArgs(undefined)).toEqual({});
+  });
+});
+
+// ─── getToolMetadata ──────────────────────────────────────────────────────────
+
+describe('getToolMetadata', () => {
+  it('HAPPY: extracts metadata object', () => {
+    expect(getToolMetadata({ metadata: { sessionID: 'ses_123' } })).toEqual({
+      sessionID: 'ses_123',
+    });
+  });
+
+  it('HAPPY: returns full metadata with multiple fields', () => {
+    const meta = { sessionID: 'ses_abc', model: 'gpt-4', tokens: 100 };
+    expect(getToolMetadata({ metadata: meta })).toEqual(meta);
+  });
+
+  it('BAD: returns {} for null metadata', () => {
+    expect(getToolMetadata({ metadata: null })).toEqual({});
+  });
+
+  it('BAD: returns {} for undefined metadata', () => {
+    expect(getToolMetadata({ metadata: undefined })).toEqual({});
+  });
+
+  it('BAD: returns {} for null output', () => {
+    expect(getToolMetadata(null)).toEqual({});
+  });
+
+  it('BAD: returns {} for undefined output', () => {
+    expect(getToolMetadata(undefined)).toEqual({});
+  });
+
+  it('CORNER: returns {} for missing metadata key', () => {
+    expect(getToolMetadata({})).toEqual({});
+  });
+
+  it('CORNER: returns {} for array metadata (not an object)', () => {
+    expect(getToolMetadata({ metadata: [1, 2, 3] })).toEqual({});
+  });
+
+  it('CORNER: returns {} for string metadata', () => {
+    expect(getToolMetadata({ metadata: 'not-an-object' })).toEqual({});
+  });
+
+  it('CORNER: returns {} for number metadata', () => {
+    expect(getToolMetadata({ metadata: 42 })).toEqual({});
+  });
+
+  it('EDGE: returns object even if metadata has only prototype properties', () => {
+    const meta = Object.create(null) as Record<string, unknown>;
+    meta.key = 'val';
+    expect(getToolMetadata({ metadata: meta })).toEqual({ key: 'val' });
+  });
+});
+
+// ─── getToolCallID ────────────────────────────────────────────────────────────
+
+describe('getToolCallID', () => {
+  it('HAPPY: extracts callID string', () => {
+    expect(getToolCallID({ callID: 'call_abc123' })).toBe('call_abc123');
+  });
+
+  it('BAD: returns empty string for null input', () => {
+    expect(getToolCallID(null)).toBe('');
+  });
+
+  it('BAD: returns empty string for undefined input', () => {
+    expect(getToolCallID(undefined)).toBe('');
+  });
+
+  it('BAD: returns empty string for missing callID', () => {
+    expect(getToolCallID({})).toBe('');
+  });
+
+  it('CORNER: returns empty string for numeric callID', () => {
+    expect(getToolCallID({ callID: 12345 })).toBe('');
+  });
+
+  it('CORNER: returns empty string for null callID', () => {
+    expect(getToolCallID({ callID: null })).toBe('');
+  });
+
+  it('CORNER: returns empty string for boolean callID', () => {
+    expect(getToolCallID({ callID: true })).toBe('');
+  });
+
+  it('EDGE: preserves callID with special characters', () => {
+    expect(getToolCallID({ callID: 'call_αβγ-δ:ε' })).toBe('call_αβγ-δ:ε');
+  });
+
+  it('EDGE: returns empty string for empty object callID', () => {
+    expect(getToolCallID({ callID: {} })).toBe('');
   });
 });

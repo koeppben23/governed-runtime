@@ -90,9 +90,31 @@ function buildClient(findings: Record<string, unknown>) {
   };
 }
 
+function buildTextCompatClient(findings: Record<string, unknown>) {
+  return {
+    session: {
+      create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
+      prompt: vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            parts: [],
+            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
+          },
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          data: { parts: [{ type: 'text', text: JSON.stringify(findings) }], info: {} },
+          error: undefined,
+        }),
+    },
+  };
+}
+
 function buildState(
   phase: ReviewableCase['phase'],
   obligationType: ReviewableCase['obligationType'],
+  reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
 ) {
   return makeState(phase, {
     ticket: TICKET,
@@ -116,6 +138,7 @@ function buildState(
         fallbackToSelf: false,
         strictEnforcement: true,
       },
+      reviewOutputPolicy,
     },
     reviewAssurance: {
       obligations: [
@@ -248,6 +271,9 @@ describe('runReviewOrchestration strict independent review with footer output', 
         criteriaVersion: REVIEW_CRITERIA_VERSION,
         fulfilledAt: NOW,
         source: 'host-orchestrated',
+        reviewOutputMode: 'structured_output',
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
 
@@ -266,7 +292,141 @@ describe('runReviewOrchestration strict independent review with footer output', 
         overallVerdict: 'approve',
         attestation: { toolObligationId: OBLIGATION_ID },
       });
+      expect(parsed.pluginReviewOutput).toMatchObject({
+        reviewOutputMode: 'structured_output',
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high',
+      });
       expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
     });
   }
+
+  it('host_task_required does not call SDK and returns machine-readable Task requirement', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: {
+        ...stateRef.current.policySnapshot!,
+        reviewInvocationPolicy: 'host_task_required',
+      },
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const output = { output: reviewRequiredOutput('PLAN') };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
+    expect(parsed.reviewInvocation).toMatchObject({
+      policy: 'host_task_required',
+      status: 'blocked_until_host_task',
+      code: 'HOST_SUBAGENT_TASK_REQUIRED',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+    });
+  });
+
+  it('host_task_preferred requests Task first without silently returning or calling SDK', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: {
+        ...stateRef.current.policySnapshot!,
+        reviewInvocationPolicy: 'host_task_preferred',
+      },
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const output = { output: reviewRequiredOutput('PLAN') };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_REQUIRED'));
+    expect(parsed.reviewInvocation).toMatchObject({
+      policy: 'host_task_preferred',
+      status: 'host_task_requested',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+    });
+  });
+
+  it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } =
+      stateRef.current.policySnapshot!;
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: snapshotWithoutPolicy,
+    };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const output = { output: reviewRequiredOutput('PLAN') };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.error).toBe(true);
+  });
+
+  it('passes explicit reviewOutputPolicy for plan/implement/architecture text compatibility path', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan', 'text_compat_allowed') };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const client = buildTextCompatClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const output = { output: reviewRequiredOutput('PLAN') };
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(deps.blockReviewOutcome).not.toHaveBeenCalled();
+    expect(client.session.prompt).toHaveBeenCalledTimes(2);
+    const invocation = stateRef.current.reviewAssurance?.invocations[0];
+    expect(invocation).toMatchObject({
+      reviewOutputMode: 'text_compat',
+      structuredOutputUsed: false,
+      reviewAssuranceLevel: 'text_compat_lower',
+      extractionMethod: 'direct_json',
+    });
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.pluginReviewOutput).toMatchObject({
+      reviewOutputMode: 'text_compat',
+      structuredOutputUsed: false,
+      reviewAssuranceLevel: 'text_compat_lower',
+      extractionMethod: 'direct_json',
+    });
+  });
 });

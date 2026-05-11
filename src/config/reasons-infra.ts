@@ -304,4 +304,27 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Re-run /review-decision with a verified actor identity',
     ],
   },
+
+  {
+    code: 'SESSION_ERROR',
+    category: 'adapter',
+    messageTemplate: 'Session error received from host runtime: {message}',
+    recoverySteps: [
+      'Check the host runtime (OpenCode) logs for the root cause',
+      'The session may have encountered an unrecoverable error',
+      'Start a new session if the current one is no longer functional',
+    ],
+  },
+
+  {
+    code: 'REVIEWER_INVOCATION_EXHAUSTED',
+    category: 'adapter',
+    messageTemplate:
+      'All reviewer invocation attempts failed. The review obligation has been blocked to prevent infinite re-invocation.',
+    recoverySteps: [
+      'Re-run the tool command to create a fresh obligation and retry',
+      'Check that the reviewer model supports structured output',
+      'Inspect the session log for per-attempt failure details',
+    ],
+  },
 ];

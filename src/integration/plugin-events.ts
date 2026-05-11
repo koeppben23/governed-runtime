@@ -4,7 +4,7 @@
  *
  * Implements handlers for:
  * - session.error: Logs unhandled session errors to the audit trail
- * - session.idle: Cleans stale in-memory caches for terminated sessions
+ * - session.delete: Cleans stale in-memory caches for terminated sessions
  *
  * All handlers are fail-safe: errors are logged but never thrown.
  * This prevents event-hook failures from breaking the host runtime.
@@ -41,6 +41,21 @@ export interface EventHandlerDeps {
    * Called on session termination events to prevent memory leaks.
    */
   cleanupSession(sessionId: string): void;
+  /**
+   * Persist a session error to the audit trail.
+   *
+   * Called after logging. Fail-safe: errors from this callback are caught
+   * by the outer try/catch and logged via deps.log.warn — they never
+   * propagate to the host runtime.
+   *
+   * Implementations that cannot resolve a sessionDir (e.g., before session
+   * creation) should return silently.
+   */
+  emitSessionErrorAudit(
+    sessionId: string,
+    errorMessage: string,
+    detail: Record<string, unknown>,
+  ): Promise<void>;
 }
 
 /**
@@ -73,10 +88,37 @@ export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): P
               ? properties.message
               : 'unspecified session error';
 
+        // Extract typed error context that would otherwise be silently lost.
+        const errorCode = typeof properties?.code === 'string' ? properties.code : undefined;
+        const errorStack = typeof properties?.stack === 'string' ? properties.stack : undefined;
+
+        // Collect all non-standard properties as supplementary context.
+        const KNOWN_KEYS = new Set(['sessionID', 'error', 'message', 'code', 'stack']);
+        const supplementary: Record<string, unknown> = {};
+        if (properties) {
+          for (const [key, value] of Object.entries(properties)) {
+            if (!KNOWN_KEYS.has(key)) {
+              supplementary[key] = value;
+            }
+          }
+        }
+        const hasSupplementary = Object.keys(supplementary).length > 0;
+
         deps.log.error('event', 'session error received', {
           sessionId,
           error: errorMessage,
           eventType: event.type,
+          ...(errorCode ? { errorCode } : {}),
+          ...(errorStack ? { errorStack } : {}),
+          ...(hasSupplementary ? { supplementary } : {}),
+        });
+
+        // Persist to audit trail (fail-safe: errors caught by outer try/catch).
+        await deps.emitSessionErrorAudit(sessionId, errorMessage, {
+          eventType: event.type,
+          ...(errorCode ? { errorCode } : {}),
+          ...(errorStack ? { errorStack } : {}),
+          ...(hasSupplementary ? { supplementary } : {}),
         });
         break;
       }

@@ -614,11 +614,14 @@ describe('integration/plugin', () => {
 
         const blocked = JSON.parse(String(output.output)) as Record<string, unknown>;
         expect(blocked.error).toBe(true);
-        expect(blocked.code).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+        // BUG-19: reviewMode:'self' now parses through schema (enum extended)
+        // but is blocked by mandate check (reviewMode !== 'subagent') with
+        // the more specific SUBAGENT_MANDATE_MISMATCH code.
+        expect(blocked.code).toBe('SUBAGENT_MANDATE_MISMATCH');
 
         const state = await readState(sessDir);
         expect(state?.reviewAssurance?.obligations[0]?.blockedCode).toBe(
-          'STRICT_REVIEW_ORCHESTRATION_FAILED',
+          'SUBAGENT_MANDATE_MISMATCH',
         );
       } finally {
         await ws.cleanup();
@@ -1209,5 +1212,305 @@ describe('plugin bootstrap fail-closed', () => {
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-08: Subagent type authorization (defense-in-depth)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  describe('BUG-08: subagent type authorization', () => {
+    it('HAPPY — flowguard-reviewer subagent type passes through (existing L3)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // flowguard-reviewer with empty prompt — should pass (no pending review)
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — non-reviewer subagent type "explore" is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: 'explore', prompt: 'search code' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — non-reviewer subagent type "general" is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: 'general', prompt: 'do something' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — arbitrary subagent type "malicious-agent" is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: 'malicious-agent', prompt: 'bypass' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('SUBAGENT_TYPE_UNAUTHORIZED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('CORNER — empty subagent_type passes through (generic task, not a subagent spawn)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: '', prompt: 'something' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('CORNER — missing subagent_type field passes through (undefined → empty)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { prompt: 'no subagent_type field' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('EDGE — error message includes the blocked subagent type name', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { subagent_type: 'rogue-agent', prompt: 'test' } };
+        try {
+          await beforeHook(input, output);
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(Error);
+          const error = err as Error;
+          expect(error.name).toBe('FlowGuardEnforcementError');
+          expect(error.message).toContain('rogue-agent');
+          expect(error.message).toContain('SUBAGENT_TYPE_UNAUTHORIZED');
+        }
+      } finally {
+        await ws.cleanup();
+      }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-03: Phase-aware host tool gate (integration)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  describe('BUG-03: phase-aware host tool gate (integration)', () => {
+    it('HAPPY — bash in PLAN phase is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Seed a session in PLAN phase
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('PLAN'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'npm install' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — write in TICKET phase is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('TICKET'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'write', sessionID, callID: 'c1' };
+        const output = { args: { filePath: '/tmp/file.ts', content: 'code' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — bash in IMPLEMENTATION phase is allowed', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('IMPLEMENTATION'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'npm install' } };
+        // Should not throw — IMPLEMENTATION phase allows mutating tools
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('CORNER — read in PLAN phase is allowed (read-only tool)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('PLAN'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'read', sessionID, callID: 'c1' };
+        const output = { args: { filePath: '/tmp/some-file.ts' } };
+        // read is not a mutating tool → never blocked
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('EDGE — bash with unknown session (no state) is allowed (fail-open)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // Use a session ID that has no persisted state
+        const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { command: 'echo hello' } };
+        // No session state → fail-open → allowed
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('EDGE — edit in ARCHITECTURE phase is blocked', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('ARCHITECTURE'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'edit', sessionID, callID: 'c1' };
+        const output = { args: { filePath: '/tmp/file.ts', oldString: 'a', newString: 'b' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('HOST_TOOL_PHASE_DENIED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('SMOKE — enforcement error has correct name and structured message', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('PLAN'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'rm -rf /' } };
+        try {
+          await beforeHook(input, output);
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(Error);
+          const error = err as Error;
+          expect(error.name).toBe('FlowGuardEnforcementError');
+          expect(error.message).toContain('HOST_TOOL_PHASE_DENIED');
+          expect(error.message).toContain('bash');
+        }
+      } finally {
+        await ws.cleanup();
+      }
+    });
   });
 });

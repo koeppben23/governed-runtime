@@ -723,6 +723,39 @@ describe('implement', () => {
       });
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-21: Null-tolerant mode detection (defense-in-depth for Fix E)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('BUG-21: null-tolerant mode detection (implement tool)', () => {
+    it('HAPPY: reviewVerdict=null → Mode A (record implementation)', async () => {
+      await reachImplementation();
+      const raw = await implement.execute({ reviewVerdict: null } as any, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.changedFiles).toBeDefined();
+    });
+
+    it('HAPPY: reviewFindings=null → Mode A (no INVALID_IMPLEMENT_TOOL_SEQUENCE)', async () => {
+      await reachImplementation();
+      const raw = await implement.execute({ reviewFindings: null } as any, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.changedFiles).toBeDefined();
+    });
+
+    it('CORNER: both reviewVerdict=null + reviewFindings=null → Mode A', async () => {
+      await reachImplementation();
+      const raw = await implement.execute(
+        { reviewVerdict: null, reviewFindings: null } as any,
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.changedFiles).toBeDefined();
+    });
+  });
 });
 
 // =============================================================================

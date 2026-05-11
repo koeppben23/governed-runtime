@@ -66,6 +66,7 @@ function validFindings(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 const NO_SLEEP = async () => {};
+const TEXT_COMPAT_OPTIONS = { reviewOutputPolicy: 'text_compat_allowed' as const };
 
 function makeClient(opts: {
   agents?: Array<Record<string, unknown>>;
@@ -915,6 +916,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -931,6 +933,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -950,6 +953,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1009,6 +1013,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1349,6 +1354,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1356,7 +1362,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       expect(incompatible).toBeDefined();
       const details = incompatible!.details as Record<string, unknown>;
       expect(details.reason).toContain('does not support structured output');
-      expect(details.reason).toContain('format-free retry');
+      expect(details.reason).toContain('text compatibility retry');
       expect(details.detectedPattern).toContain('tool_choice');
     });
 
@@ -1406,6 +1412,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1659,6 +1666,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1667,6 +1675,43 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(result!.sessionId).toBe('retry-session-1');
       expect(result!.findings.overallVerdict).toBe('approve');
       expect(result!.findings.reviewMode).toBe('subagent');
+      expect(result!.reviewOutputMode).toBe('text_compat');
+      expect(result!.structuredOutputUsed).toBe(false);
+      expect(result!.reviewAssuranceLevel).toBe('text_compat_lower');
+      expect(result!.extractionMethod).toBe('direct_json');
+      expect(result!.modelCapabilityError).toContain('tool_choice');
+    });
+
+    it('T11b: blocks text compatibility when policy requires structured output', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({});
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        reviewOutputPolicy: 'structured_required',
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
+      expect(diagnostics.some((d) => d.step === 'text_compat_blocked_by_policy')).toBe(true);
+      expect(client.session.prompt).toHaveBeenCalledTimes(1);
+    });
+
+    it('T11c: defaults to structured_required and does not retry text compatibility', async () => {
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({});
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', {
+        maxRetries: 0,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: (info) => diagnostics.push(info),
+      });
+
+      expect(result).toBeNull();
+      expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
+      expect(diagnostics.some((d) => d.step === 'text_compat_blocked_by_policy')).toBe(true);
+      expect(client.session.create).toHaveBeenCalledTimes(1);
+      expect(client.session.prompt).toHaveBeenCalledTimes(1);
     });
 
     it('T12: parses JSON from markdown code-fenced response', async () => {
@@ -1682,6 +1727,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -1704,6 +1750,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -1728,6 +1775,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -1753,6 +1801,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -1781,6 +1830,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -1803,6 +1853,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1826,6 +1877,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1852,6 +1904,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1874,6 +1927,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1899,6 +1953,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1918,6 +1973,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -1972,6 +2028,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 2, // outer retries available but NOT used
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2021,6 +2078,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2040,6 +2098,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2056,6 +2115,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2074,6 +2134,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2101,6 +2162,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2124,6 +2186,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2172,6 +2235,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2185,6 +2249,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2200,6 +2265,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       const client = makeSequentialClient({});
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2237,6 +2303,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 2,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2296,6 +2363,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2353,6 +2421,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2369,162 +2438,36 @@ describe('invokeReviewer — format-free retry fallback', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODEL CAPABILITY CACHE — lifecycle, transitions, and UI behavior
+// MODEL CAPABILITY CACHE — removed global state guard
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Model Capability Cache — lifecycle and UI behavior', () => {
+describe('Model Capability Cache — removed global state guard', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
     _resetModelCapabilityCache();
   });
 
-  // ─── HAPPY: Cache API ─────────────────────────────────────────────────────
+  it('keeps model capability unknown across successful and incompatible invocations', async () => {
+    const structuredClient = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
+    await invokeReviewer(structuredClient, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+    expect(_getModelCapabilityCache()).toBe('unknown');
 
-  describe('HAPPY — cache API contract', () => {
-    it('starts as unknown after reset', () => {
-      expect(_getModelCapabilityCache()).toBe('unknown');
-    });
-
-    it('transitions to supported after successful structured output', async () => {
-      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(_getModelCapabilityCache()).toBe('supported');
-    });
-
-    it('transitions to unsupported after model_capability_incompatible', async () => {
-      const client = makeClient({
-        agents: [{ id: 'flowguard-reviewer' }],
-        promptResult: {
-          data: {
-            parts: [],
-            info: {
-              error: {
-                name: 'APIError',
-                message: 'does not support this tool_choice',
-              },
-            },
-          },
-          error: undefined,
-        },
-      });
-      await invokeReviewer(client, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        _sleepFn: NO_SLEEP,
-        _onAttemptFailed: () => {},
-      });
-      expect(_getModelCapabilityCache()).toBe('unsupported');
-    });
-
-    it('_resetModelCapabilityCache resets to unknown', async () => {
-      const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-      await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(_getModelCapabilityCache()).toBe('supported');
-      _resetModelCapabilityCache();
-      expect(_getModelCapabilityCache()).toBe('unknown');
-    });
-  });
-
-  // ─── HAPPY: Cached unsupported skips format ───────────────────────────────
-
-  describe('HAPPY — cached unsupported skips format prompt', () => {
-    it('skips format prompt and goes directly to format-free on cached unsupported', async () => {
-      // First call: detect incompatibility → cache as unsupported
-      const client1 = makeClient({
-        agents: [{ id: 'flowguard-reviewer' }],
-        promptResult: {
-          data: {
-            parts: [],
-            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
-          },
-          error: undefined,
-        },
-      });
-      await invokeReviewer(client1, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        _sleepFn: NO_SLEEP,
-        _onAttemptFailed: () => {},
-      });
-      expect(_getModelCapabilityCache()).toBe('unsupported');
-
-      // Second call: should skip format entirely, go directly format-free
-      const formatFreeResult = {
+    const incompatibleClient = makeClient({
+      agents: [{ id: 'flowguard-reviewer' }],
+      promptResult: {
         data: {
-          parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
-          info: {},
+          parts: [],
+          info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
         },
         error: undefined,
-      };
-      const client2: OrchestratorClient = {
-        app: {
-          agents: vi.fn().mockResolvedValue({
-            data: [{ id: 'flowguard-reviewer' }],
-          }),
-        },
-        session: {
-          create: vi.fn().mockResolvedValue({ data: { id: 'session-2' }, error: undefined }),
-          prompt: vi.fn().mockResolvedValue(formatFreeResult),
-        },
-      };
-
-      const result = await invokeReviewer(client2, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        _sleepFn: NO_SLEEP,
-        _onAttemptFailed: () => {},
-      });
-
-      expect(result).not.toBeNull();
-      expect(result!.findings.overallVerdict).toBe('approve');
-      // Only 1 prompt call (format-free), no format prompt
-      expect(client2.session.prompt).toHaveBeenCalledTimes(1);
-      const promptBody = (client2.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]
-        .body;
-      expect(promptBody.format).toBeUndefined(); // no format field
+      },
     });
-
-    it('cached unsupported path creates only 1 session (no retry session needed)', async () => {
-      // Pre-set cache by triggering incompatibility
-      const client1 = makeClient({
-        agents: [{ id: 'flowguard-reviewer' }],
-        promptResult: {
-          data: {
-            parts: [],
-            info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
-          },
-          error: undefined,
-        },
-      });
-      await invokeReviewer(client1, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        _sleepFn: NO_SLEEP,
-        _onAttemptFailed: () => {},
-      });
-
-      // Now invoke again — cached path
-      const client2: OrchestratorClient = {
-        app: {
-          agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }),
-        },
-        session: {
-          create: vi.fn().mockResolvedValue({ data: { id: 'cached-session' }, error: undefined }),
-          prompt: vi.fn().mockResolvedValue({
-            data: {
-              parts: [{ type: 'text', text: JSON.stringify(validFindings()) }],
-              info: {},
-            },
-            error: undefined,
-          }),
-        },
-      };
-
-      await invokeReviewer(client2, PROMPT, 'parent-1', {
-        maxRetries: 0,
-        _sleepFn: NO_SLEEP,
-        _onAttemptFailed: () => {},
-      });
-
-      // Only 1 create call (cached path — no retry session needed)
-      expect(client2.session.create).toHaveBeenCalledTimes(1);
+    await invokeReviewer(incompatibleClient, PROMPT, 'parent-1', {
+      maxRetries: 0,
+      _sleepFn: NO_SLEEP,
+      _onAttemptFailed: () => {},
     });
+    expect(_getModelCapabilityCache()).toBe('unknown');
   });
 
   // ─── CORNER: New session for retry ────────────────────────────────────────
@@ -2563,6 +2506,7 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2610,6 +2554,7 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
 
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
@@ -2646,6 +2591,7 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
 
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
@@ -2692,17 +2638,17 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
 
       await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
 
       expect(toastFn).toHaveBeenCalledTimes(1);
-      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+      expect(toastFn.mock.calls[0]![0].body.message).toContain('text compatibility');
       expect(toastFn.mock.calls[0]![0].body.variant).toBe('info');
     });
 
-    it('shows toast on cached unsupported path', async () => {
-      // Pre-set cache
+    it('does not use stale cached unsupported state on later structured-capable invocation', async () => {
       const client1 = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
         promptResult: {
@@ -2715,11 +2661,12 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
       });
       await invokeReviewer(client1, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });
 
-      // Now call with TUI available
+      // The next invocation must attempt structured output again, not skip to text compatibility.
       const toastFn = vi.fn().mockResolvedValue(undefined);
       const client2: OrchestratorClient = {
         app: {
@@ -2744,8 +2691,11 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(toastFn).toHaveBeenCalledTimes(1);
-      expect(toastFn.mock.calls[0]![0].body.message).toContain('format-free');
+      expect(toastFn).not.toHaveBeenCalled();
+      expect(client2.session.prompt).toHaveBeenCalledTimes(1);
+      const promptBody = (client2.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+        .body;
+      expect(promptBody.format).toBeDefined();
     });
 
     it('does not throw when tui is undefined (headless mode)', async () => {
@@ -2804,6 +2754,7 @@ describe('Model Capability Cache — lifecycle and UI behavior', () => {
       // Should not throw even though toast rejects
       const result = await invokeReviewer(client, PROMPT, 'parent-1', {
         maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
         _sleepFn: NO_SLEEP,
         _onAttemptFailed: () => {},
       });

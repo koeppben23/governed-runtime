@@ -948,4 +948,67 @@ describe('plan', () => {
       }
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-21: Null-tolerant mode detection (defense-in-depth for Fixes D/E/F)
+  //
+  // Post-Zod, null values should never reach execute(). These tests verify that
+  // IF null somehow leaks through (schema change, framework bypass), the mode
+  // detection logic treats null as "field absent" — not as "field present".
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('BUG-21: null-tolerant mode detection (plan tool)', () => {
+    it('HAPPY: selfReviewVerdict=null + planText → Mode A (plan submitted)', async () => {
+      await hydrateAndTicket();
+      // Simulate a Zod bypass: args.selfReviewVerdict is null
+      const raw = await plan.execute(
+        { planText: '## Plan\n1. Fix auth', selfReviewVerdict: null } as any,
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+    });
+
+    it('HAPPY: reviewFindings=null + planText → Mode A (not PLAN_SUBMISSION_MIXED_INPUTS)', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: '## Plan\n1. Fix auth', reviewFindings: null } as any,
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+    });
+
+    it('CORNER: both selfReviewVerdict=null + reviewFindings=null + planText → Mode A', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: '## Plan\n1. Fix auth', selfReviewVerdict: null, reviewFindings: null } as any,
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+    });
+
+    it('BAD: selfReviewVerdict=null + no planText → EMPTY_PLAN (not verdict path)', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ selfReviewVerdict: null } as any, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('EMPTY_PLAN');
+    });
+
+    it('EDGE: selfReviewVerdict="" (empty string) + planText → Mode A', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        { planText: '## Plan\n1. Fix', selfReviewVerdict: '' } as any,
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+    });
+  });
 });

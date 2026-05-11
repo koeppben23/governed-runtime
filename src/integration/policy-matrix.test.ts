@@ -319,6 +319,60 @@ const MATRIX: Array<{
 ];
 
 describe('policy mode matrix', () => {
+  it('freezes reviewOutputPolicy defaults per mode', async () => {
+    const expected: Record<Mode, 'structured_required' | 'text_compat_allowed'> = {
+      solo: 'text_compat_allowed',
+      team: 'text_compat_allowed',
+      'team-ci': 'structured_required',
+      regulated: 'structured_required',
+    };
+
+    for (const mode of MODES) {
+      const ctx = contextFor(mode);
+      await hydrateMode(mode, ctx);
+      const state = await readState(await sessionDir(ctx));
+      expect(state?.policySnapshot.reviewOutputPolicy).toBe(expected[mode]);
+    }
+  });
+
+  it('normalizes missing reviewOutputPolicy mode-consistently for solo', async () => {
+    const { normalizePolicySnapshotWithMeta } = await import('../config/policy-snapshot.js');
+    const result = normalizePolicySnapshotWithMeta({
+      mode: 'solo',
+      hash: 'test-hash',
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+      requestedMode: 'solo',
+      effectiveGateBehavior: 'auto_approve',
+      requireHumanGates: false,
+      maxSelfReviewIterations: 2,
+      maxImplReviewIterations: 1,
+      allowSelfApproval: true,
+      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      actorClassification: {},
+    });
+    expect(result.snapshot.reviewOutputPolicy).toBe('text_compat_allowed');
+    expect(result.normalized).toBe(true);
+  });
+
+  it('normalizes missing reviewOutputPolicy mode-consistently for team-ci', async () => {
+    const { normalizePolicySnapshotWithMeta } = await import('../config/policy-snapshot.js');
+    const result = normalizePolicySnapshotWithMeta({
+      mode: 'team-ci',
+      hash: 'test-hash',
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+      requestedMode: 'team-ci',
+      effectiveGateBehavior: 'human_gated',
+      requireHumanGates: true,
+      maxSelfReviewIterations: 3,
+      maxImplReviewIterations: 3,
+      allowSelfApproval: true,
+      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      actorClassification: {},
+    });
+    expect(result.snapshot.reviewOutputPolicy).toBe('structured_required');
+    expect(result.normalized).toBe(true);
+  });
+
   for (const testCase of MATRIX) {
     for (const mode of MODES) {
       it(`${testCase.scenario} / ${mode}`, async () => {

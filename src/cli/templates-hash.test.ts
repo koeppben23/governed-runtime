@@ -93,12 +93,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // This ensures FlowGuard governance runs under the build agent's
     // permission.task restrictions regardless of active primary agent.
     //
-    // This hash gates ONLY the byte-stability of the markdown a CLI install
-    // writes to .opencode/command/*.md. It is independent from any runtime
-    // mandate digest.
+    // Refreshed for reviewCard presentation mandate: plan, implement,
+    // architecture, and review commands now have dedicated ## Presentation
+    // sections with mandatory verbatim display instructions and reviewCard
+    // in Done-when. This ensures LLMs cannot skip or summarize reviewCard.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '8183def7c249350a1a2073365b52fd9c0390fabc1f2b1f18c2e5dcebbb16ed20',
+      '0df83521211e25232a69afc6c45eb952a624329eee2f4223f96b991dcc2e7d5a',
     );
   });
 

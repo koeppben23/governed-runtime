@@ -67,13 +67,28 @@ When the plugin's `tool.execute.after` hook detects `INDEPENDENT_REVIEW_REQUIRED
 2. **Builds a structured prompt** with the plan/implementation text, ticket context, iteration, and planVersion
 3. **Creates a child session** via `client.session.create({ body: { parentID } })` for traceability
 4. **Sends the prompt** to the `flowguard-reviewer` agent via `client.session.prompt({ path: { id }, body: { agent: "flowguard-reviewer", parts, format } })`
-5. **Parses ReviewFindings** from the reviewer's response
-6. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` injected (only when structured ReviewFindings are available)
-7. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
+5. **Uses SDK structured output** as the high-assurance path (`reviewOutputMode: "structured_output"`, `reviewAssuranceLevel: "structured_high"`)
+6. **Retries in text compatibility mode only if policy allows it** and the selected model explicitly rejects structured output/tool calling (`reviewOutputMode: "text_compat"`, `reviewAssuranceLevel: "text_compat_lower"`)
+7. **Parses and validates ReviewFindings** with schema, obligation, mandate, criteria, reviewer, session, and invocation-evidence binding
+8. **Mutates `output.output`** from `INDEPENDENT_REVIEW_REQUIRED` to `INDEPENDENT_REVIEW_COMPLETED` with `pluginReviewFindings` and `pluginReviewOutput` injected only after evidence is valid
+9. **Updates enforcement state** to satisfy L1/L2/L4 checks for the subsequent verdict submission
 
 The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the verdict with the pre-injected findings.
 
-**Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid, structured `ReviewFindings` (with `overallVerdict` and `blockingIssues`). Unparseable reviewer responses never produce `COMPLETED`.
+**Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Structured output is canonical high-assurance evidence. Text compatibility is lower-assurance evidence, policy-gated, audit-visible, and never treated as equivalent to structured output. Unparseable reviewer responses never produce `COMPLETED`.
+
+### Review Output Policy
+
+`reviewOutputPolicy` is frozen in the policy snapshot at session creation:
+
+| Mode        | Default policy        | Rationale                                               |
+| ----------- | --------------------- | ------------------------------------------------------- |
+| `solo`      | `text_compat_allowed` | Maximizes OpenCode model compatibility for local use.   |
+| `team`      | `text_compat_allowed` | Keeps team workflows compatible, with audit visibility. |
+| `team-ci`   | `structured_required` | CI needs reproducible, machine-validated evidence.      |
+| `regulated` | `structured_required` | Regulated evidence must use structured high assurance.  |
+
+When `structured_required` is active, a reviewer model that cannot use structured output blocks the deterministic path. Recovery is to configure the `flowguard-reviewer` agent with a structured-output-capable model.
 
 ### Manual Subagent Path
 

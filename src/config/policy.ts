@@ -32,6 +32,7 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Types (P2f split — imported from policy-types.ts) ────────────────────────
 import type {
@@ -61,6 +62,8 @@ export type {
   CentralPolicyEvidence,
   HydratePolicyResolution,
   PolicyResolutionReason,
+  ReviewOutputPolicy,
+  ReviewInvocationPolicy,
 } from './policy-types.js';
 export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 
@@ -135,6 +138,8 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 1,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'text_compat_allowed',
+  reviewInvocationPolicy: 'host_task_preferred',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -164,6 +169,8 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'text_compat_allowed',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -193,6 +200,8 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: true,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -231,6 +240,8 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   maxImplReviewIterations: 3,
   allowSelfApproval: false,
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
+  reviewOutputPolicy: 'structured_required',
+  reviewInvocationPolicy: 'host_task_required',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -393,6 +404,11 @@ export async function loadCentralPolicyEvidence(
   } catch (err) {
     const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
     const message = err instanceof Error ? err.message : String(err);
+    getAdapterLogger().error('policy', 'Central policy file cannot be read', {
+      absolutePath,
+      code: code || 'unknown',
+      error: message,
+    });
     throw new PolicyConfigurationError(
       code === 'ENOENT' ? 'CENTRAL_POLICY_MISSING' : 'CENTRAL_POLICY_UNREADABLE',
       `Central policy file cannot be read at ${absolutePath}: ${message}`,
@@ -508,6 +524,15 @@ export async function resolvePolicyForHydrate(opts: {
   }
 
   const centralResolution = resolvePolicyWithContext(centralEvidence.minimumMode, opts.ciContext);
+  getAdapterLogger().warn('policy', 'Policy uplifted to central minimum', {
+    requestedMode,
+    requestedSource,
+    requestedStrength: requestedStrength,
+    centralMinimum: centralEvidence.minimumMode,
+    centralStrength,
+    resolutionReason:
+      requestedSource === 'repo' ? 'repo_weaker_than_central' : 'default_weaker_than_central',
+  });
   // Apply config overrides to central policy as well
   const centralPolicyWithOverrides = applyConfigOverrides(centralResolution.policy, opts);
   return {
@@ -547,6 +572,7 @@ export function resolvePolicyWithContext(
 ): PolicyResolution {
   const requestedMode = normalizePolicyMode(mode);
   if (requestedMode === 'team-ci' && !ciContext) {
+    getAdapterLogger().warn('policy', 'team-ci mode degraded to team — no CI context detected');
     const degradedPolicy: FlowGuardPolicy = {
       ...TEAM_CI_POLICY,
       requireHumanGates: true,

@@ -17,6 +17,8 @@
 
 import * as fs from 'node:fs/promises';
 import { IdpError } from './errors.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { redactIdentityExtra } from '../logging/redact.js';
 import {
   JwksFileKeyResolver,
   JwksRemoteKeyResolver,
@@ -75,6 +77,14 @@ export async function resolveIdpToken(
   try {
     token = (await fs.readFile(tokenPath, 'utf-8')).trim();
   } catch (err) {
+    getAdapterLogger().error(
+      'identity',
+      'IdP token file read failed',
+      redactIdentityExtra({
+        tokenPath,
+        error: (err as Error).message,
+      }),
+    );
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new IdpError('IDP_TOKEN_MISSING', `IdP token file not found at path: ${tokenPath}`);
     }

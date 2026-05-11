@@ -382,3 +382,194 @@ describe('cli/templates', () => {
     });
   });
 });
+
+// ─── reviewCard presentation mandate ─────────────────────────────────────────
+// Commands that produce reviewCard output MUST have:
+// 1. A dedicated ## Presentation section with verbatim display instructions
+// 2. A Done-when bullet mentioning reviewCard verbatim display
+// This ensures LLMs cannot skip or summarize the reviewCard.
+
+describe('reviewCard presentation mandate', () => {
+  // These four commands produce reviewCard fields in their tool responses.
+  const REVIEW_CARD_COMMANDS = ['plan.md', 'implement.md', 'architecture.md', 'review.md'] as const;
+
+  // ─── HAPPY ─────────────────────────────────────────────────
+  describe('HAPPY', () => {
+    for (const cmd of REVIEW_CARD_COMMANDS) {
+      it(`${cmd} has a dedicated ## Presentation section`, () => {
+        expect(COMMANDS[cmd], `${cmd} missing ## Presentation`).toContain('## Presentation');
+      });
+
+      it(`${cmd} Presentation section mandates verbatim reviewCard display`, () => {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const presSection = content.substring(presIdx);
+        expect(presSection, `${cmd} Presentation missing 'reviewCard'`).toContain('reviewCard');
+        expect(presSection, `${cmd} Presentation missing 'verbatim'`).toContain('verbatim');
+      });
+
+      it(`${cmd} Done-when section includes reviewCard mandate`, () => {
+        const content = COMMANDS[cmd];
+        const doneIdx = content.indexOf('## Done-when');
+        const doneSection = content.substring(doneIdx);
+        expect(doneSection, `${cmd} Done-when missing reviewCard`).toContain('reviewCard');
+        expect(doneSection, `${cmd} Done-when missing verbatim`).toContain('verbatim');
+      });
+    }
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────
+  describe('BAD', () => {
+    for (const cmd of REVIEW_CARD_COMMANDS) {
+      it(`${cmd} Presentation does NOT allow summarizing reviewCard`, () => {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const presSection = content.substring(presIdx);
+        expect(presSection, `${cmd} allows summarizing`).toContain('never summarize');
+      });
+
+      it(`${cmd} Presentation does NOT allow truncating reviewCard`, () => {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const presSection = content.substring(presIdx);
+        expect(presSection, `${cmd} allows truncating`).toContain(
+          'never summarize, truncate, or omit',
+        );
+      });
+    }
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────
+  describe('CORNER', () => {
+    it('non-reviewCard commands do NOT have ## Presentation section', () => {
+      const nonReviewCardCommands = Object.keys(COMMANDS).filter(
+        (k) => !REVIEW_CARD_COMMANDS.includes(k as (typeof REVIEW_CARD_COMMANDS)[number]),
+      );
+      for (const cmd of nonReviewCardCommands) {
+        expect(COMMANDS[cmd], `${cmd} should NOT have ## Presentation`).not.toContain(
+          '## Presentation',
+        );
+      }
+    });
+
+    it('Presentation section appears AFTER Governance rules in review-loop commands', () => {
+      // plan, implement, architecture: Presentation is a dedicated post-governance section.
+      // review.md is excluded — its Presentation is part of the Steps flow (before Governance).
+      const loopCommands = ['plan.md', 'implement.md', 'architecture.md'] as const;
+      for (const cmd of loopCommands) {
+        const content = COMMANDS[cmd];
+        const govIdx = content.indexOf('## Governance rules');
+        const presIdx = content.indexOf('## Presentation');
+        expect(presIdx, `${cmd}: Presentation should be after Governance rules`).toBeGreaterThan(
+          govIdx,
+        );
+      }
+    });
+
+    it('Presentation section appears BEFORE Done-when in all reviewCard commands', () => {
+      for (const cmd of REVIEW_CARD_COMMANDS) {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const doneIdx = content.indexOf('## Done-when');
+        expect(presIdx, `${cmd}: Presentation should be before Done-when`).toBeLessThan(doneIdx);
+      }
+    });
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────
+  describe('EDGE', () => {
+    for (const cmd of REVIEW_CARD_COMMANDS) {
+      it(`${cmd} Presentation declares reviewCard as mandatory output`, () => {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
+        const presSection =
+          nextSectionIdx > -1
+            ? content.substring(presIdx, nextSectionIdx)
+            : content.substring(presIdx);
+        expect(presSection, `${cmd} missing mandatory language`).toContain('mandatory output');
+      });
+    }
+
+    it('all four reviewCard commands use identical Presentation structure (3 bullet points)', () => {
+      for (const cmd of REVIEW_CARD_COMMANDS) {
+        const content = COMMANDS[cmd];
+        const presIdx = content.indexOf('## Presentation');
+        const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
+        const presSection =
+          nextSectionIdx > -1
+            ? content.substring(presIdx, nextSectionIdx)
+            : content.substring(presIdx);
+        const bullets = presSection.match(/^- /gm);
+        expect(
+          bullets?.length,
+          `${cmd} Presentation should have exactly 3 bullets, found ${bullets?.length}`,
+        ).toBe(3);
+      }
+    });
+
+    it('review loop step references Presentation section (not inline reviewCard)', () => {
+      // plan, implement, architecture have a review loop that should reference
+      // the Presentation section — not inline the reviewCard instruction.
+      const loopCommands = ['plan.md', 'implement.md', 'architecture.md'] as const;
+      for (const cmd of loopCommands) {
+        const content = COMMANDS[cmd];
+        expect(content, `${cmd} review loop should reference Presentation section`).toContain(
+          'per the Presentation section below',
+        );
+      }
+    });
+  });
+
+  // ─── E2E SMOKE ─────────────────────────────────────────────
+  describe('E2E SMOKE', () => {
+    it('plan.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
+      const content = COMMANDS['plan.md'];
+      // 1. Dedicated Presentation section exists
+      expect(content).toContain('## Presentation');
+      // 2. Presentation mandates verbatim with prohibition
+      expect(content).toContain(
+        'display its markdown verbatim — never summarize, truncate, or omit',
+      );
+      // 3. Done-when includes reviewCard
+      const doneSection = content.substring(content.indexOf('## Done-when'));
+      expect(doneSection).toContain('reviewCard');
+      expect(doneSection).toContain('verbatim');
+      // 4. Review loop references Presentation section
+      expect(content).toContain('per the Presentation section below');
+      // 5. Old buried sub-bullet is gone
+      expect(content).not.toContain('Present any `reviewCard` field in full');
+    });
+
+    it('implement.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
+      const content = COMMANDS['implement.md'];
+      expect(content).toContain('## Presentation');
+      expect(content).toContain(
+        'display its markdown verbatim — never summarize, truncate, or omit',
+      );
+      const doneSection = content.substring(content.indexOf('## Done-when'));
+      expect(doneSection).toContain('reviewCard');
+      // Old weak language is gone
+      expect(content).not.toContain('Report the final status.');
+    });
+
+    it('architecture.md complete reviewCard contract: Presentation strengthened + Done-when added', () => {
+      const content = COMMANDS['architecture.md'];
+      expect(content).toContain('## Presentation');
+      expect(content).toContain('never summarize, truncate, or omit');
+      const doneSection = content.substring(content.indexOf('## Done-when'));
+      expect(doneSection).toContain('reviewCard');
+      expect(doneSection).toContain('verbatim');
+    });
+
+    it('review.md complete reviewCard contract: Presentation refactored + Done-when added', () => {
+      const content = COMMANDS['review.md'];
+      expect(content).toContain('## Presentation');
+      expect(content).toContain('never summarize, truncate, or omit');
+      const doneSection = content.substring(content.indexOf('## Done-when'));
+      expect(doneSection).toContain('reviewCard');
+      // Old inline bullet is refactored
+      expect(content).not.toContain('Present the report:');
+    });
+  });
+});
