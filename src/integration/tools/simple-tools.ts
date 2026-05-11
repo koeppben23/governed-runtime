@@ -627,11 +627,13 @@ export const review: ToolDefinition = {
         },
       };
 
-      const report = await executeReview(result.state, now, executors, refInput);
+      const reviewResult = await executeReview(result.state, now, executors, refInput);
 
-      if ('kind' in report && report.kind === 'blocked') {
-        return formatBlockedReviewReport(report);
+      // Discriminant check: RailBlocked has kind, ReviewReport does not
+      if ('kind' in reviewResult) {
+        return formatBlockedReviewReport(reviewResult);
       }
+      const report = reviewResult;
 
       // Consume exactly the obligation that passed attestation validation.
       // This prevents a race where two different review inputs (`prNumber=42`
