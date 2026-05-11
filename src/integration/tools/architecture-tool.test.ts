@@ -1023,4 +1023,67 @@ describe('integration/tools/architecture (wrapper)', () => {
       expect(parsed.error).toBeUndefined();
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BUG-21: Null-tolerant mode detection (defense-in-depth for Fix F)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  describe('BUG-21: null-tolerant mode detection (architecture tool)', () => {
+    it('HAPPY: selfReviewVerdict=null + title + adrText → Mode A (initial submission)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: null,
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      // Should NOT be blocked with ADR_SUBMISSION_MIXED_INPUTS
+      // because null is not treated as "has verdict"
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+    });
+
+    it('HAPPY: selfReviewVerdict="" + title + adrText → Mode A (empty string treated as absent)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: '',
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+    });
+
+    it('CORNER: selfReviewVerdict=null → isInitialSubmission=true (consistent with hasVerdict=false)', async () => {
+      mocks.requireStateForMutation.mockResolvedValue(
+        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+      );
+      const { architecture } = await import('./architecture.js');
+      // With null verdict AND title → isInitialSubmission should be true
+      // The ADR_SUBMISSION_MIXED_INPUTS guard: if (hasTitle && hasVerdict) → blocked
+      // With hasVerdict=false (null), this guard doesn't fire
+      const raw = await architecture.execute(
+        {
+          title: 'ADR-001',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          selfReviewVerdict: null,
+        } as any,
+        {} as never,
+      );
+      const parsed = JSON.parse(String(raw));
+      expect(parsed.code).not.toBe('ADR_SUBMISSION_MIXED_INPUTS');
+      expect(parsed.error).toBeUndefined();
+    });
+  });
 });

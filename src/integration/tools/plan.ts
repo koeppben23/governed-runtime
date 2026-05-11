@@ -169,8 +169,12 @@ export const plan: ToolDefinition = {
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
 
       const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
-      const hasVerdict = args.selfReviewVerdict !== undefined;
-      const hasFindings = args.reviewFindings !== undefined;
+      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
+      // may send for absent optional fields). Post-Zod these can only be string/object
+      // or undefined, but defense-in-depth protects against schema changes.
+      const hasVerdict =
+        typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0;
+      const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
       const isInitialSubmission = !hasVerdict;
 
       // Runtime sequence contract: plan submission and review verdict are separate phases.

@@ -137,8 +137,11 @@ export const architecture: ToolDefinition = {
 
       const hasTitle = typeof args.title === 'string' && args.title.trim().length > 0;
       const hasAdrText = typeof args.adrText === 'string' && args.adrText.trim().length > 0;
-      const hasVerdict = args.selfReviewVerdict !== undefined;
-      const isInitialSubmission = !args.selfReviewVerdict;
+      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
+      // may send for absent optional fields). Defense-in-depth.
+      const hasVerdict =
+        typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0;
+      const isInitialSubmission = !hasVerdict;
 
       // Runtime sequence contract: ADR submission and review verdict are separate phases.
       if (hasTitle && hasVerdict) {

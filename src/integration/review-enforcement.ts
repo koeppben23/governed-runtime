@@ -193,8 +193,12 @@ export function onFlowGuardToolAfter(
   const parsed = safeParse(output);
   if (!parsed) return;
 
-  // Mode B: agent is submitting a verdict → clear pending review on success
-  const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
+  // Mode B: agent is submitting a verdict → clear pending review on success.
+  // BUG-21: Use value-based checks — the `in` operator returns true for keys
+  // with null values (LLMs may send explicit nulls for absent optional fields).
+  const hasSelfReviewVerdict =
+    (typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0) ||
+    (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0);
   if (hasSelfReviewVerdict) {
     // Only clear if the call succeeded (no error in output)
     if (parsed.error !== true) {
@@ -467,16 +471,31 @@ export function enforceBeforeVerdict(
 
   const reviewTool: ReviewableTool = toolName;
 
-  // Only enforce on Mode B calls (verdict submission)
-  const hasSelfReviewVerdict = 'selfReviewVerdict' in args || 'reviewVerdict' in args;
+  // Only enforce on Mode B calls (verdict submission).
+  // BUG-21: Use value-based checks — the `in` operator returns true for keys
+  // with null values (DeepSeek R1 sends explicit nulls for optional fields).
+  const selfReviewValue = args.selfReviewVerdict;
+  const reviewVerdictValue = args.reviewVerdict;
+  const hasSelfReviewVerdict =
+    (typeof selfReviewValue === 'string' && selfReviewValue.length > 0) ||
+    (typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0);
   if (!hasSelfReviewVerdict) return { allowed: true };
 
   // Check if there's a pending review for this tool
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) {
-    // P35 Recovery: Reconstruct from session-state.json when transient cache miss
-    if (sessionState?.reviewAssurance?.obligations) {
-      const pendingObligation = sessionState.reviewAssurance.obligations.find(
+    // BUG-21 Fix B: Separate "state is readable" from "has obligations".
+    // After /ticket (before first /plan), sessionState exists but
+    // reviewAssurance is undefined — the old code skipped this block
+    // and fell through to the strict-enforcement BLOCKED path.
+    if (sessionState) {
+      const obligations = sessionState.reviewAssurance?.obligations;
+      if (!obligations || obligations.length === 0) {
+        // Session state is readable but no review obligations exist yet — allowed
+        return { allowed: true };
+      }
+      // P35 Recovery: Reconstruct from session-state.json when transient cache miss
+      const pendingObligation = obligations.find(
         (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
       );
       if (pendingObligation) {
@@ -493,7 +512,7 @@ export function enforceBeforeVerdict(
       // No pending obligations — genuinely no requirement
       return { allowed: true };
     }
-    // Strict: state unreadable → fail-closed
+    // Session state is unreadable (null/undefined) → fail-closed in strict mode
     if (strictEnforcement) {
       return {
         allowed: false,

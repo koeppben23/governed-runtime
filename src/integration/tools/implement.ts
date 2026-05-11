@@ -153,8 +153,10 @@ export const implement: ToolDefinition = {
       const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
       const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
       const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
-      const hasVerdict = args.reviewVerdict !== undefined;
-      const hasFindings = args.reviewFindings !== undefined;
+      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
+      // may send for absent optional fields). Defense-in-depth.
+      const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
+      const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
       const isRecordImpl = !hasVerdict;
 
       // Runtime sequence contract: implementation evidence and review verdict are separate phases.

@@ -281,6 +281,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         )
           return;
 
+        // BUG-21: LLMs (notably DeepSeek R1) send explicit null for optional fields.
+        // Zod .optional() rejects null — strip null-valued keys so they become
+        // genuinely absent (→ undefined after Zod validation). This runs on the
+        // mutable hookOutput.args reference, so Zod and execute() see stripped args.
+        for (const key of Object.keys(args)) {
+          if (args[key] === null) {
+            delete args[key];
+          }
+        }
+
         const eState = ws.getEnforcementState(sessionId);
         let sessionState: SessionState | null = null;
         let strict = true;
