@@ -261,9 +261,11 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.diagnostic).toHaveProperty('tool', 'flowguard_plan');
     });
 
-    it('no_attestation — toolObligationId missing from attestation', () => {
+    it('no_attestation fallback — toolObligationId missing triggers tool-based matching', () => {
       const state = createSessionState();
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+
+      const obligation = pendingObligation();
 
       const taskResultNoAttestation = JSON.stringify({
         iteration: 0,
@@ -276,7 +278,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         unknowns: [],
         reviewedBy: { sessionId: CHILD_SESSION_ID },
         reviewedAt: NOW,
-        // No attestation field → toolObligationId is null
+        // No attestation field → toolObligationId is null → fallback to tool matching
       });
       onTaskToolAfter(
         state,
@@ -285,17 +287,18 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         LATER,
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+      // BUG-20: With the fallback, this now BINDS successfully instead of failing
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
 
-      expect(result.evidence).toBeNull();
-      expect(result.bindOutcome).toBe('no_attestation');
-      expect(result.diagnostic).toHaveProperty('hasAttestation', false);
-      expect(result.diagnostic).toHaveProperty('childSessionId', CHILD_SESSION_ID);
+      expect(result.evidence).not.toBeNull();
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.diagnostic).toHaveProperty('obligationId', obligation.obligationId);
+      expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
     });
 
     it('no_matching_obligation — attestedObligationId does not match any obligation', () => {
       const { state } = setupFullCycle();
-      // Pass an empty obligations array → no match
+      // Pass an empty obligations array → no match via attestation path
       const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
 
       expect(result.evidence).toBeNull();
@@ -303,6 +306,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.diagnostic).toHaveProperty('attestedObligationId');
       expect(result.diagnostic).toHaveProperty('obligationType', 'plan');
       expect(result.diagnostic).toHaveProperty('availableObligations', 0);
+      expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
     });
 
     it('field_mismatch — iteration mismatch between findings and obligation', () => {
@@ -463,7 +467,6 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         'no_child_session',
         'no_obligation_type',
         'no_findings',
-        'no_attestation',
         'no_matching_obligation',
         'field_mismatch',
         'duplicate_evidence',
@@ -1525,5 +1528,577 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     expect(r2).not.toBeNull();
     expect(r1!.findings.overallVerdict).toBe(r2!.findings.overallVerdict);
     expect(r1!.invocationId).toBe(r2!.invocationId);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUG-20: Attestation-Free Fallback Binding
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// BUG-20 root cause: In host_task_required mode, the LLM-constructed reviewer
+// prompt does NOT contain obligationId/mandateDigest/criteriaVersion because
+// buildHostTaskPolicyOutput cannot include them (obligation is created separately).
+// The reviewer writes placeholder values like "not_provided_in_prompt" which are
+// not valid UUIDs. Previously this caused a hard failure at the no_attestation
+// check (line 728-733), making the ENTIRE host_task_required flow broken.
+//
+// Fix: When attestation is missing or toolObligationId is not a valid UUID,
+// fall back to tool-based obligation matching (by oType + unconsumed + newest).
+// This is safe because:
+// 1. Plugin validated this Task call via matchPendingReview (P34 1:1 contract)
+// 2. rawFindings are first-party captured (not LLM-reconstructed)
+// 3. At most one pending obligation per tool-type (plan/implement/architecture)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('BUG-20: attestation-free fallback binding', () => {
+  // ─── Helper: task result WITHOUT attestation (real DeepSeek R1 behavior) ────
+
+  /** Build task result mimicking real DeepSeek R1 output: valid findings, no attestation. */
+  function taskResultWithoutAttestation(
+    opts: {
+      childSessionId?: string;
+      iteration?: number;
+      planVersion?: number;
+      verdict?: string;
+    } = {},
+  ): string {
+    const {
+      childSessionId = CHILD_SESSION_ID,
+      iteration = 0,
+      planVersion = 1,
+      verdict = 'approve',
+    } = opts;
+    return JSON.stringify({
+      iteration,
+      planVersion,
+      reviewMode: 'subagent',
+      overallVerdict: verdict,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: childSessionId },
+      reviewedAt: NOW,
+      // NO attestation field — this is what DeepSeek R1 produces in host_task_required mode
+    });
+  }
+
+  /** Build task result with INVALID attestation (placeholder values from LLM). */
+  function taskResultWithPlaceholderAttestation(
+    opts: {
+      childSessionId?: string;
+      iteration?: number;
+      planVersion?: number;
+      verdict?: string;
+    } = {},
+  ): string {
+    const {
+      childSessionId = CHILD_SESSION_ID,
+      iteration = 0,
+      planVersion = 1,
+      verdict = 'approve',
+    } = opts;
+    return JSON.stringify({
+      iteration,
+      planVersion,
+      reviewMode: 'subagent',
+      overallVerdict: verdict,
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: childSessionId },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: 'not_provided_in_prompt',
+        mandateDigest: 'not_provided',
+        criteriaVersion: 'not_provided',
+        iteration,
+        planVersion,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+  }
+
+  /** Setup a full cycle without attestation (host_task_required real scenario). */
+  function setupFallbackCycle(
+    opts: {
+      iteration?: number;
+      planVersion?: number;
+      verdict?: string;
+      usePlaceholder?: boolean;
+    } = {},
+  ) {
+    const { iteration = 0, planVersion = 1, verdict = 'approve', usePlaceholder = false } = opts;
+
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
+
+    const obligation = pendingObligation({ iteration, planVersion });
+
+    const taskResult = usePlaceholder
+      ? taskResultWithPlaceholderAttestation({ iteration, planVersion, verdict })
+      : taskResultWithoutAttestation({ iteration, planVersion, verdict });
+
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(iteration, planVersion) },
+      taskResult,
+      LATER,
+    );
+
+    return { state, obligation };
+  }
+
+  // ─── HAPPY ─────────────────────────────────────────────────────────────────
+
+  it('HAPPY: bound via tool-fallback when attestation is completely absent', () => {
+    const { state, obligation } = setupFallbackCycle();
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.evidence!.obligationId).toBe(obligation.obligationId);
+    expect(result.evidence!.invocationMode).toBe('host_subagent_task');
+    expect(result.evidence!.hostVisible).toBe(true);
+    expect(result.evidence!.capturedRawFindings).toBeDefined();
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+    expect(result.diagnostic).toHaveProperty('obligationId', obligation.obligationId);
+  });
+
+  it('HAPPY: bound via tool-fallback when toolObligationId is non-UUID placeholder (real BUG-20 case)', () => {
+    // This is the EXACT scenario from the 2026-05-11 production log:
+    // attestation.toolObligationId = "not_provided_in_prompt"
+    const { state, obligation } = setupFallbackCycle({ usePlaceholder: true });
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.evidence!.obligationId).toBe(obligation.obligationId);
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  it('HAPPY: changes_requested verdict flows through fallback binding', () => {
+    const { state, obligation } = setupFallbackCycle({ verdict: 'changes_requested' });
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.evidence!.capturedVerdict).toBe('changes_requested');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  // ─── BAD ───────────────────────────────────────────────────────────────────
+
+  it('BAD: fallback with no unconsumed obligation of matching type → no_matching_obligation', () => {
+    const { state } = setupFallbackCycle();
+
+    // All obligations consumed — pass empty array
+    const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+
+    expect(result.evidence).toBeNull();
+    expect(result.bindOutcome).toBe('no_matching_obligation');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+    expect(result.diagnostic).toHaveProperty('availableObligations', 0);
+  });
+
+  it('BAD: fallback with only consumed obligations → no_matching_obligation', () => {
+    const { state } = setupFallbackCycle();
+
+    const consumedObligation = pendingObligation({
+      status: 'consumed' as const,
+      consumedAt: NOW,
+    });
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [consumedObligation], [], LATER);
+
+    expect(result.evidence).toBeNull();
+    expect(result.bindOutcome).toBe('no_matching_obligation');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  it('BAD: fallback iteration mismatch → field_mismatch', () => {
+    // Reviewer produces iteration=0 but obligation has iteration=5
+    const { state } = setupFallbackCycle({ iteration: 0 });
+
+    const wrongIteration = pendingObligation({ iteration: 5, planVersion: 1 });
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [wrongIteration], [], LATER);
+
+    expect(result.evidence).toBeNull();
+    expect(result.bindOutcome).toBe('field_mismatch');
+    const fields = result.diagnostic.mismatchFields as string[];
+    expect(fields).toContain('iteration');
+    // mandateDigest/criteriaVersion/reviewedBy NOT checked (no valid attestation)
+    expect(fields).not.toContain('mandateDigest');
+    expect(fields).not.toContain('criteriaVersion');
+    expect(fields).not.toContain('reviewedBy');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  // ─── EDGE ──────────────────────────────────────────────────────────────────
+
+  it('EDGE: fallback picks most recent obligation when multiple unconsumed exist (by createdAt)', () => {
+    const { state } = setupFallbackCycle({ iteration: 0, planVersion: 1 });
+
+    const olderObligation = pendingObligation({
+      iteration: 0,
+      planVersion: 1,
+      createdAt: '2026-05-10T10:00:00.000Z',
+    } as Partial<ReviewObligation>);
+    const newerObligation = pendingObligation({
+      iteration: 0,
+      planVersion: 1,
+      createdAt: '2026-05-10T11:00:00.000Z',
+    } as Partial<ReviewObligation>);
+
+    const result = buildHostTaskEvidence(
+      state,
+      SESSION_ID,
+      [olderObligation, newerObligation],
+      [],
+      LATER,
+    );
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    // Should pick the NEWER obligation (sorted by createdAt descending)
+    expect(result.evidence!.obligationId).toBe(newerObligation.obligationId);
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  it('EDGE: valid UUID attestation that does not match any obligation → no_matching_obligation (no fallback to tool)', () => {
+    // If the reviewer DID produce a valid UUID but it doesn't match, the primary path
+    // is used and fails. There is NO fallback — this prevents stale attestations from
+    // accidentally binding to wrong obligations.
+    const { state } = setupFullCycle();
+
+    // The attestation in setupFullCycle has the correct obligation UUID, but we pass
+    // a DIFFERENT obligation with a different ID
+    const differentObligation = pendingObligation();
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [differentObligation], [], LATER);
+
+    expect(result.evidence).toBeNull();
+    expect(result.bindOutcome).toBe('no_matching_obligation');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
+  });
+
+  it('EDGE: fallback skips obligations of wrong type', () => {
+    const { state } = setupFallbackCycle();
+
+    // Obligation is type 'implement' but tool is 'flowguard_plan' → oType = 'plan'
+    const wrongType = pendingObligation({
+      obligationType: 'implement' as const,
+    } as Partial<ReviewObligation>);
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [wrongType], [], LATER);
+
+    expect(result.evidence).toBeNull();
+    expect(result.bindOutcome).toBe('no_matching_obligation');
+    expect(result.diagnostic).toHaveProperty('obligationType', 'plan');
+  });
+
+  // ─── CORNER ────────────────────────────────────────────────────────────────
+
+  it('CORNER: attestation with empty string toolObligationId triggers fallback', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+
+    const taskResult = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: CHILD_SESSION_ID },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: '', // empty string — not a UUID
+        mandateDigest: '',
+        criteriaVersion: '',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResult,
+      LATER,
+    );
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  it('CORNER: attestation with UUID-like but invalid format triggers fallback', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+
+    const taskResult = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: CHILD_SESSION_ID },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: '12345678-1234-1234-1234-12345678', // too short — not valid UUID
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResult,
+      LATER,
+    );
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  // ─── REGRESSION ────────────────────────────────────────────────────────────
+
+  it('REGRESSION: valid attestation still binds via primary path (unchanged behavior)', () => {
+    const { state, obligation } = setupFullCycle();
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(result.evidence).not.toBeNull();
+    expect(result.bindOutcome).toBe('bound');
+    expect(result.evidence!.obligationId).toBe(obligation.obligationId);
+    expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
+  });
+
+  it('REGRESSION: field_mismatch checks include mandateDigest/criteriaVersion ONLY with valid attestation', () => {
+    // With valid attestation: all fields checked
+    const { state, obligation } = setupFullCycle();
+    const mismatchedObligation = pendingObligation({
+      obligationId: obligation.obligationId,
+      iteration: 0,
+      planVersion: 1,
+      mandateDigest: 'wrong_digest_value',
+    });
+
+    const resultWithAttestation = buildHostTaskEvidence(
+      state,
+      SESSION_ID,
+      [mismatchedObligation],
+      [],
+      LATER,
+    );
+    expect(resultWithAttestation.bindOutcome).toBe('field_mismatch');
+    expect(resultWithAttestation.diagnostic.mismatchFields).toContain('mandateDigest');
+    expect(resultWithAttestation.diagnostic).toHaveProperty('bindingMode', 'attestation');
+  });
+
+  it('REGRESSION: field_mismatch for mandateDigest NOT triggered without attestation', () => {
+    // Without attestation: mandateDigest not checked (would always fail)
+    const { state } = setupFallbackCycle();
+    const obligationWithCustomDigest = pendingObligation({
+      iteration: 0,
+      planVersion: 1,
+      mandateDigest: 'some_completely_different_digest_that_would_normally_fail',
+    });
+
+    const resultNoAttestation = buildHostTaskEvidence(
+      state,
+      SESSION_ID,
+      [obligationWithCustomDigest],
+      [],
+      LATER,
+    );
+    // Should BIND because mandateDigest is NOT checked in fallback mode
+    expect(resultNoAttestation.evidence).not.toBeNull();
+    expect(resultNoAttestation.bindOutcome).toBe('bound');
+    expect(resultNoAttestation.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+  });
+
+  // ─── SMOKE ─────────────────────────────────────────────────────────────────
+
+  it('SMOKE: fallback binding is deterministic across repeated calls', () => {
+    const { state, obligation } = setupFallbackCycle();
+
+    const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(r1.bindOutcome).toBe('bound');
+    expect(r2.bindOutcome).toBe('bound');
+    expect(r1.evidence!.obligationId).toBe(r2.evidence!.obligationId);
+    expect(r1.evidence!.findingsHash).toBe(r2.evidence!.findingsHash);
+    expect(r1.diagnostic.bindingMode).toBe('tool_fallback');
+  });
+
+  it('SMOKE: fallback-bound evidence is consumable by resolveHostTaskFindings', () => {
+    const { state, obligation } = setupFallbackCycle();
+
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    expect(bindResult.evidence).not.toBeNull();
+
+    // Simulate persisting and reading back
+    const assurance = appendInvocationEvidence(
+      ensureReviewAssurance({
+        obligations: [
+          {
+            ...obligation,
+            status: 'pending' as const,
+            pluginHandshakeAt: NOW,
+            invocationId: null,
+            fulfilledAt: null,
+          },
+        ],
+        invocations: [],
+      }),
+      bindResult.evidence!,
+    );
+
+    const resolved = resolveHostTaskFindings(assurance, obligation);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.findings.overallVerdict).toBe('approve');
+    expect(resolved!.findings.iteration).toBe(0);
+    expect(resolved!.findings.planVersion).toBe(1);
+    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+  });
+
+  // ─── E2E ───────────────────────────────────────────────────────────────────
+
+  it('E2E: full host_task_required flow without attestation — bind + resolve + consume', () => {
+    // Simulates the EXACT flow from the 2026-05-11 production log:
+    // 1. Plan Mode A → obligation created
+    // 2. Task call → reviewer produces findings WITHOUT attestation
+    // 3. buildHostTaskEvidence → fallback → bound
+    // 4. resolveHostTaskFindings → finds evidence → returns findings
+    // This is the flow that was 100% broken before BUG-20 fix.
+
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
+
+    const obligation = pendingObligation({ iteration: 0, planVersion: 1 });
+
+    // Reviewer output: real DeepSeek R1 format — valid findings, no attestation
+    const reviewerOutput = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [
+        { severity: 'major', category: 'risk', message: 'No error handling for network failures' },
+      ],
+      missingVerification: ['Unit tests for auth flow'],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_reviewer_xyz' },
+      reviewedAt: '2026-05-11T06:45:00.000Z',
+      // attestation intentionally missing — real DeepSeek R1 behavior
+    });
+
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
+      reviewerOutput,
+      LATER,
+    );
+
+    // Step 3: Build evidence — THIS IS THE FIX
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    expect(bindResult.evidence).not.toBeNull();
+    expect(bindResult.bindOutcome).toBe('bound');
+    expect(bindResult.evidence!.capturedRawFindings).toBeDefined();
+    expect(
+      (bindResult.evidence!.capturedRawFindings as Record<string, unknown>).overallVerdict,
+    ).toBe('approve');
+
+    // Step 4: Resolve findings from evidence (what plan.ts:380 does)
+    const assurance = appendInvocationEvidence(
+      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      bindResult.evidence!,
+    );
+    const resolved = resolveHostTaskFindings(assurance, obligation);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.findings.overallVerdict).toBe('approve');
+    expect(resolved!.findings.majorRisks).toHaveLength(1);
+    expect(resolved!.findings.missingVerification).toContain('Unit tests for auth flow');
+  });
+
+  it('E2E: placeholder attestation from real log — "not_provided_in_prompt" triggers fallback', () => {
+    // Exact reproduction of the 2026-05-11 log scenario:
+    // attestedObligationId: "not_provided_in_prompt"
+    // mandateDigest: "not_provided"
+    // criteriaVersion: "not_provided"
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
+
+    const obligation = pendingObligation({ iteration: 0, planVersion: 1 });
+
+    const reviewerOutput = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'approve',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_child_real' },
+      reviewedAt: '2026-05-11T06:45:00.000Z',
+      attestation: {
+        toolObligationId: 'not_provided_in_prompt',
+        mandateDigest: 'not_provided',
+        criteriaVersion: 'not_provided',
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
+      reviewerOutput,
+      LATER,
+    );
+
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+    // BEFORE FIX: bindOutcome was 'no_attestation' or 'no_matching_obligation'
+    // AFTER FIX: fallback binding succeeds
+    expect(bindResult.evidence).not.toBeNull();
+    expect(bindResult.bindOutcome).toBe('bound');
+    expect(bindResult.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
+    expect(bindResult.evidence!.obligationId).toBe(obligation.obligationId);
   });
 });

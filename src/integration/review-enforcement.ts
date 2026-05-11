@@ -634,7 +634,6 @@ export type HostTaskBindOutcome =
   | 'no_child_session'
   | 'no_obligation_type'
   | 'no_findings'
-  | 'no_attestation'
   | 'no_matching_obligation'
   | 'field_mismatch'
   | 'duplicate_evidence';
@@ -725,46 +724,87 @@ export function buildHostTaskEvidence(
   const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
   const attestedObligationId =
     typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
-  if (!attestedObligationId) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_attestation',
-      diagnostic: { hasAttestation: !!attestation, childSessionId },
-    };
+
+  // BUG-20: Validate attestation contains a proper UUID. In host_task_required mode,
+  // the LLM-constructed reviewer prompt cannot relay obligationId/mandateDigest/criteriaVersion
+  // because buildHostTaskPolicyOutput does not (and cannot) include them. The reviewer
+  // writes placeholder values like "not_provided_in_prompt" which are not valid UUIDs.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const hasValidAttestation = attestedObligationId !== null && UUID_RE.test(attestedObligationId);
+
+  let matchedObligation: ReviewObligation | undefined;
+
+  if (hasValidAttestation) {
+    // Primary path: attestation-based matching (SDK path, well-behaved reviewers).
+    matchedObligation = obligations.find(
+      (o) =>
+        o.obligationId === attestedObligationId &&
+        o.obligationType === oType &&
+        o.status !== 'consumed' &&
+        o.consumedAt === null,
+    );
+    if (!matchedObligation) {
+      return {
+        evidence: null,
+        bindOutcome: 'no_matching_obligation',
+        diagnostic: {
+          attestedObligationId,
+          obligationType: oType,
+          availableObligations: obligations.length,
+          bindingMode: 'attestation',
+        },
+      };
+    }
+  } else {
+    // BUG-20 Fallback: tool-based obligation matching when attestation is absent or invalid.
+    // Safety justification:
+    // 1. Plugin validated this Task call via matchPendingReview (P34 1:1 contract)
+    // 2. rawFindings are first-party captured by plugin hook (not LLM-reconstructed)
+    // 3. At most one pending obligation per tool-type for plan/implement/architecture
+    //    (see review-assurance.ts:143-144 comment confirming this invariant)
+    // 4. This uses the same lookup semantics as plan.ts:352-358 (the consumer),
+    //    guaranteeing resolveHostTaskFindings will find the evidence we create here.
+    matchedObligation = obligations
+      .filter((o) => o.obligationType === oType && o.status !== 'consumed' && o.consumedAt === null)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!matchedObligation) {
+      return {
+        evidence: null,
+        bindOutcome: 'no_matching_obligation',
+        diagnostic: {
+          attestedObligationId,
+          obligationType: oType,
+          availableObligations: obligations.length,
+          bindingMode: 'tool_fallback',
+        },
+      };
+    }
   }
 
-  const matchedObligation = obligations.find(
-    (o) =>
-      o.obligationId === attestedObligationId &&
-      o.obligationType === oType &&
-      o.status !== 'consumed' &&
-      o.consumedAt === null,
-  );
-  if (!matchedObligation) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_matching_obligation',
-      diagnostic: {
-        attestedObligationId,
-        obligationType: oType,
-        availableObligations: obligations.length,
-      },
-    };
-  }
-
+  // Field consistency checks — verify findings match the obligation's context.
   const mismatchFields: string[] = [];
   if (rawFindings.iteration !== matchedObligation.iteration) mismatchFields.push('iteration');
   if (rawFindings.planVersion !== matchedObligation.planVersion) mismatchFields.push('planVersion');
-  if (attestation?.mandateDigest !== matchedObligation.mandateDigest)
-    mismatchFields.push('mandateDigest');
-  if (attestation?.criteriaVersion !== matchedObligation.criteriaVersion)
-    mismatchFields.push('criteriaVersion');
-  if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) mismatchFields.push('reviewedBy');
+  // BUG-20: Only check attestation-specific fields when a valid attestation is present.
+  // In host_task_required mode, the reviewer cannot fill mandateDigest/criteriaVersion/reviewedBy
+  // because these values are not provided in the LLM-constructed prompt. Checking them would
+  // always fail with placeholder values, making the entire host_task_required path broken.
+  if (hasValidAttestation) {
+    if (attestation?.mandateDigest !== matchedObligation.mandateDigest)
+      mismatchFields.push('mandateDigest');
+    if (attestation?.criteriaVersion !== matchedObligation.criteriaVersion)
+      mismatchFields.push('criteriaVersion');
+    if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) mismatchFields.push('reviewedBy');
+  }
   if (mismatchFields.length > 0) {
     return {
       evidence: null,
       bindOutcome: 'field_mismatch',
-      diagnostic: { attestedObligationId, mismatchFields },
+      diagnostic: {
+        attestedObligationId,
+        mismatchFields,
+        bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
+      },
     };
   }
 
@@ -814,6 +854,7 @@ export function buildHostTaskEvidence(
       obligationId: matchedObligation.obligationId,
       childSessionId,
       findingsHash,
+      bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
     },
   };
 }
