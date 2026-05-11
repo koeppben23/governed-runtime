@@ -791,6 +791,7 @@ export type AuditEvent = z.infer<typeof AuditEvent>;
  * The ExtendedReviewReport interface is removed in PR-C; completeness lives in the base schema.
  */
 export const ReviewReport = z.object({
+  kind: z.never().optional(),
   schemaVersion: z.literal('flowguard-review-report.v1'),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),

@@ -629,7 +629,7 @@ export const review: ToolDefinition = {
 
       const reviewResult = await executeReview(result.state, now, executors, refInput);
 
-      if ('kind' in reviewResult) {
+      if (reviewResult.kind === 'blocked') {
         return formatBlockedReviewReport(reviewResult);
       }
       const report = reviewResult;

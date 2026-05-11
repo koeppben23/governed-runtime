@@ -1022,6 +1022,38 @@ describe('review rail', () => {
         expect(result.success).toBe(false);
       });
 
+      it('safeParse rejects blocked discriminant on ReviewReport', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          kind: 'blocked',
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
       it('safeParse rejects missing schemaVersion', () => {
         const base = makeState('COMPLETE');
         const result = ReviewReport.safeParse({
