@@ -44,7 +44,7 @@ Implement the approved plan and obtain mandatory independent implementation revi
       - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested" })\` (or with \`reviewFindings\` in SDK mode), then make the code changes, then call \`flowguard_implement({})\` again to re-record.
       - "unable_to_review": The reviewer declared the implementation unreviewable (e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique). The implement tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same evidence — that obligation is consumed. Report the reviewer's findings to the user, then either revise the plan via /plan first OR record substantially-new implementation evidence (new \`flowguard_implement({})\` call after additional code changes, which starts a fresh review obligation).
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent, then submit verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable), submit \`flowguard_implement({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
-   - If review converged: Report the final status.
+   - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
    - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-record the implementation: call \`flowguard_implement({})\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-recordings are allowed.
@@ -76,12 +76,19 @@ Revision path (when review returns changes_requested):
 4. \`flowguard_implement({ reviewVerdict: "approve" })\` → EVIDENCE_REVIEW
 
 ${GOVERNANCE_RULES}
+## Presentation
+
+- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
+- The reviewCard contains the formatted implementation review with findings, verdict, and next actions.
+- This is mandatory output: the user relies on it to make their review decision.
+
 ## Done-when
 
 - All plan steps are implemented as code changes.
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
 - Independent review loop has converged.
+- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to EVIDENCE_REVIEW.
 - Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `;

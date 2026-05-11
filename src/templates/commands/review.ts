@@ -62,9 +62,13 @@ Start the compliance review flow for the current FlowGuard session.
 
 6. The tool transitions READY -> REVIEW -> REVIEW_COMPLETE and generates a compliance report.
 
-7. Present the report:
-    - If the response contains a \`reviewCard\` field, display its markdown verbatim.
-    - It contains the formatted review report with findings, completeness, and evidence.
+7. Present the report per the Presentation section below.
+
+## Presentation
+
+- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
+- The reviewCard contains the formatted review report with findings, completeness, and evidence.
+- This is mandatory output: the user relies on it for compliance assessment.
 
 ## Verification Review Check
 
@@ -93,6 +97,7 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Compliance report generated and presented.
+- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - External references captured with audit provenance.
 - Verification review checked for repo-native candidates vs generic mismatches.
 - Phase has reached REVIEW_COMPLETE.

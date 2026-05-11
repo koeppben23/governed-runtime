@@ -43,7 +43,7 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
       - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ selfReviewVerdict: "changes_requested", planText: <revised> })\` (or with \`reviewFindings\` in SDK mode).
       - "unable_to_review": The reviewer declared the plan unreviewable (e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique). The plan tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same plan — that obligation is consumed. Report the reviewer's findings to the user, then either /ticket the prerequisite work first OR revise the plan substantially (new \`flowguard_plan({ planText })\` submission, which starts a fresh review obligation).
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent via Task tool, then submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable, or infrastructure missing), submit \`flowguard_plan({ selfReviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
-   - If review converged: Report the result. Present any \`reviewCard\` field in full.
+   - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
    - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-submit the plan: call \`flowguard_plan({ planText: <same plan text> })\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-submissions are allowed.
@@ -74,11 +74,18 @@ Revision path (when review returns changes_requested):
 3. \`flowguard_plan({ selfReviewVerdict: "approve" })\` → PLAN_REVIEW
 
 ${GOVERNANCE_RULES}
+## Presentation
+
+- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
+- The reviewCard contains the formatted plan review with findings, verdict, and next actions.
+- This is mandatory output: the user relies on it to make their review decision.
+
 ## Done-when
 
 - Plan contains all 7 required sections.
 - Verification Plan cites Source for each check OR states NOT_VERIFIED.
 - Independent review loop has converged (approved or max 3 iterations).
+- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to PLAN_REVIEW.
 - Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
 `;
