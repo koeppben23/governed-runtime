@@ -365,7 +365,7 @@ export async function fulfillStrictReviewObligation(
     // BUG-17 Batch 10: host_task_required mode resolves findings from invocation
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
-    ...(isHostTask ? { capturedRawFindings: findings as unknown as Record<string, unknown> } : {}),
+    ...(isHostTask ? { capturedRawFindings: findings } : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
