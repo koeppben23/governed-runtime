@@ -1009,7 +1009,13 @@ describe('review rail', () => {
             policyMode: 'unknown',
             overallComplete: true,
             slots: [],
-            fourEyes: { required: false, satisfied: true, initiatedBy: '', decidedBy: null, detail: '' },
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
             summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
           },
         });
@@ -1033,7 +1039,13 @@ describe('review rail', () => {
             policyMode: 'unknown',
             overallComplete: true,
             slots: [],
-            fourEyes: { required: false, satisfied: true, initiatedBy: '', decidedBy: null, detail: '' },
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
             summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
           },
         });
@@ -1073,7 +1085,13 @@ describe('review rail', () => {
             policyMode: 'unknown',
             overallComplete: true,
             slots: [],
-            fourEyes: { required: false, satisfied: true, initiatedBy: '', decidedBy: null, detail: '' },
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
             summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
           },
         });
@@ -1115,7 +1133,13 @@ describe('review rail', () => {
             policyMode: 'unknown',
             overallComplete: true,
             slots: [],
-            fourEyes: { required: false, satisfied: true, initiatedBy: '', decidedBy: null, detail: '' },
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
             summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
           },
         });
