@@ -808,7 +808,21 @@ export function buildHostTaskEvidence(
     };
   }
 
-  const findingsHash = hashFindings(rawFindings);
+  // BUG-20b: Normalize raw findings before hash computation and storage.
+  // When attestation is invalid (placeholder values from LLM), strip it from the
+  // stored copy. ReviewFindingsSchema treats attestation as optional-but-must-be-valid:
+  // if we store invalid attestation, resolveHostTaskFindings rejects the ENTIRE
+  // findings object via safeParse, causing REVIEW_FINDINGS_REQUIRED even though
+  // binding succeeded. Normalizing BEFORE hashFindings keeps findingsHash and
+  // capturedRawFindings consistent (both computed from the same normalized object).
+  const normalizedFindings = hasValidAttestation
+    ? rawFindings
+    : (() => {
+        const { attestation: _, ...rest } = rawFindings;
+        return rest;
+      })();
+
+  const findingsHash = hashFindings(normalizedFindings);
   if (
     invocations.some(
       (inv) =>
@@ -844,7 +858,7 @@ export function buildHostTaskEvidence(
     invokedAt: now,
     source: 'host-orchestrated',
     capturedVerdict: latest.capturedFindings?.overallVerdict,
-    capturedRawFindings: rawFindings,
+    capturedRawFindings: normalizedFindings,
   });
 
   return {
