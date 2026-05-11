@@ -11,23 +11,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { existsSync } from 'node:fs';
 import { execSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION = (await fs.readFile(path.join(REPO_ROOT, 'VERSION'), 'utf-8')).trim();
-const DIST_DIR = path.join(REPO_ROOT, 'dist');
-const HAS_BUILT_DIST = existsSync(DIST_DIR);
 
 let tmpDir: string;
 let tarballPath: string;
 
 const providedTarball = process.env.FLOWGUARD_TARBALL;
-
-if (process.env.CI === 'true' && !HAS_BUILT_DIST && !providedTarball) {
-  throw new Error('Built dist/ missing; run npm run build before test:install-verify');
-}
 
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'gov-smoke-'));
@@ -74,7 +67,7 @@ function assertSuccess(
   );
 }
 
-;(HAS_BUILT_DIST || providedTarball ? describe : describe.skip)('install-verify', () => {
+describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
     if (providedTarball) {
