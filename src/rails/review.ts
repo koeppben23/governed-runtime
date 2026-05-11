@@ -17,10 +17,10 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { ReviewReport, ExternalReference, InputOrigin } from '../state/evidence.js';
+import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
-import type { RailResult, RailContext, TransitionRecord } from './types.js';
+import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
@@ -269,7 +269,7 @@ function buildMechanicalFindings(
 
 export async function loadExternalContent(
   refInput: ReviewReferenceInput,
-): Promise<{ content: string } | ReviewReport> {
+): Promise<{ content: string } | RailBlocked> {
   if (refInput.prNumber !== undefined) return loadPrContent(refInput);
   if (refInput.branch !== undefined) return loadBranchContent(refInput);
   if (refInput.url !== undefined) return loadUrlContent(refInput);
@@ -277,12 +277,12 @@ export async function loadExternalContent(
   return { content: '' };
 }
 
-function loadPrContent(refInput: ReviewReferenceInput): { content: string } | ReviewReport {
+function loadPrContent(refInput: ReviewReferenceInput): { content: string } | RailBlocked {
   if (!hasGhCli()) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
-    }) as unknown as ReviewReport;
+    });
   }
   try {
     return { content: loadPrDiff(refInput.prNumber!) };
@@ -290,16 +290,16 @@ function loadPrContent(refInput: ReviewReferenceInput): { content: string } | Re
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `Failed to load PR #${refInput.prNumber}: ${err instanceof Error ? err.message : String(err)}`,
-    }) as unknown as ReviewReport;
+    });
   }
 }
 
-function loadBranchContent(refInput: ReviewReferenceInput): { content: string } | ReviewReport {
+function loadBranchContent(refInput: ReviewReferenceInput): { content: string } | RailBlocked {
   if (!hasGhCli()) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
-    }) as unknown as ReviewReport;
+    });
   }
   try {
     return { content: loadBranchDiff(refInput.branch!) };
@@ -307,20 +307,20 @@ function loadBranchContent(refInput: ReviewReferenceInput): { content: string } 
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `Failed to load branch '${refInput.branch}': ${err instanceof Error ? err.message : String(err)}`,
-    }) as unknown as ReviewReport;
+    });
   }
 }
 
 async function loadUrlContent(
   refInput: ReviewReferenceInput,
-): Promise<{ content: string } | ReviewReport> {
+): Promise<{ content: string } | RailBlocked> {
   // BUG-13: Validate URL before fetch to block SSRF attempts with a clear reason.
   const validation = validateReviewUrl(refInput.url!);
   if (!validation.valid) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `URL blocked: ${validation.reason}`,
-    }) as unknown as ReviewReport;
+    });
   }
   try {
     const content = await fetchUrlContent(refInput.url!);
@@ -329,7 +329,7 @@ async function loadUrlContent(
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
       reason: `Failed to fetch URL ${refInput.url}: ${err instanceof Error ? err.message : String(err)}`,
-    }) as unknown as ReviewReport;
+    });
   }
 }
 
@@ -344,11 +344,11 @@ interface BuildReportOptions {
   refInput?: ReviewReferenceInput;
 }
 
-function buildReport(opts: BuildReportOptions): ReviewReport {
+export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
   const { state, now, validationSummary, findings, completeness, refInput } = opts;
   const overallStatus = computeOverallStatus(findings);
   const refs = computeRefs(refInput);
-  return {
+  return ReviewReport.parse({
     schemaVersion: 'flowguard-review-report.v1',
     sessionId: state.id,
     generatedAt: now,
@@ -361,7 +361,7 @@ function buildReport(opts: BuildReportOptions): ReviewReport {
     completeness,
     ...(refInput?.inputOrigin !== undefined && { inputOrigin: refInput.inputOrigin }),
     ...(refs !== undefined && { references: refs }),
-  };
+  });
 }
 
 function computeOverallStatus(
@@ -383,7 +383,7 @@ export async function executeReview(
   now: string,
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
-): Promise<ReviewReport> {
+): Promise<ReviewReport | RailBlocked> {
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,
     passed: v.passed,
@@ -409,7 +409,7 @@ export async function executeReview(
     findings.push(...llmFindings);
   }
 
-  return buildReport({
+  return buildReviewReport({
     state,
     now,
     validationSummary,

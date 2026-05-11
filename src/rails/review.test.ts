@@ -14,9 +14,12 @@ import {
   executeReviewFlow,
   startReviewFlow,
   validateReviewUrl,
+  loadExternalContent,
+  buildReviewReport,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
+import { ReviewReport } from '../state/evidence.js';
 import {
   makeState,
   makeProgressedState,
@@ -972,6 +975,354 @@ describe('review rail', () => {
       it('accepts 172.32.0.0 (just above 172.31/12 range)', () => {
         const result = validateReviewUrl('https://172.32.0.0/ok');
         expect(result.valid).toBe(true);
+      });
+    });
+  });
+
+  // =========================================================================
+  // FG-REL-013: Type-safe discriminated union + schema-validated ReviewReport
+  // =========================================================================
+
+  describe('FG-REL-013: type-safe discriminated union + schema validation', () => {
+    // ─── NEGATIVE: ReviewReport schema validation rejects invalid shapes ──
+    describe('NEGATIVE: ReviewReport schema validation', () => {
+      it('throws when sessionId is not a valid UUID', async () => {
+        const state = makeState('TICKET', { id: 'not-a-uuid' });
+        await expect(executeReview(state, NOW)).rejects.toThrow();
+      });
+
+      it('safeParse rejects invalid overallStatus value', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'bogus',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse rejects blocked discriminant on ReviewReport', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          kind: 'blocked',
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse rejects missing schemaVersion', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse rejects missing required findings array', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          overallStatus: 'clean',
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse rejects wrong type for sessionId (number)', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: 12345,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse rejects invalid completeness shape (missing slots)', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: { bad: true },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it('safeParse accepts valid minimal ReviewReport', () => {
+        const base = makeState('COMPLETE');
+        const result = ReviewReport.safeParse({
+          schemaVersion: 'flowguard-review-report.v1',
+          sessionId: base.id,
+          generatedAt: NOW,
+          phase: 'COMPLETE',
+          planDigest: null,
+          implDigest: null,
+          validationSummary: [],
+          findings: [],
+          overallStatus: 'clean',
+          completeness: {
+            sessionId: base.id,
+            phase: 'COMPLETE',
+            policyMode: 'unknown',
+            overallComplete: true,
+            slots: [],
+            fourEyes: {
+              required: false,
+              satisfied: true,
+              initiatedBy: '',
+              decidedBy: null,
+              detail: '',
+            },
+            summary: { total: 0, complete: 0, missing: 0, notYetRequired: 0, failed: 0 },
+          },
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('executeReview rejects invalid completeness via buildReviewReport integration', async () => {
+        // buildReviewReport internally calls ReviewReport.parse(), so an
+        // invalid completeness should cause a throw when the report is built.
+        const state = makeState('COMPLETE');
+        // We cannot directly call buildReviewReport with invalid completeness
+        // from a test because it derives completeness via evaluateCompleteness.
+        // Instead, verify the builder boundary rejects by calling it with
+        // explicitly broken data.
+        const completeness = {} as Parameters<typeof buildReviewReport>[0]['completeness'];
+        expect(() =>
+          buildReviewReport({
+            state,
+            now: NOW,
+            validationSummary: [],
+            findings: [],
+            completeness,
+          }),
+        ).toThrow();
+      });
+    });
+
+    // ─── HAPPY: loadExternalContent returns content ──────────────
+    describe('HAPPY: loadExternalContent content path', () => {
+      it('text field returns content branch with the text', async () => {
+        const result = await loadExternalContent({ text: 'analysis content' });
+        expect('content' in result).toBe(true);
+        if ('content' in result) {
+          expect(result.content).toBe('analysis content');
+        }
+      });
+
+      it('empty string text returns content branch with empty string', async () => {
+        const result = await loadExternalContent({ text: '' });
+        expect('content' in result).toBe(true);
+        if ('content' in result) {
+          expect(result.content).toBe('');
+        }
+      });
+
+      it('no input fields returns content branch with empty string', async () => {
+        const result = await loadExternalContent({});
+        expect('content' in result).toBe(true);
+        if ('content' in result) {
+          expect(result.content).toBe('');
+        }
+      });
+
+      it('skipExternalContentLoad skips content loading', async () => {
+        const state = makeProgressedState('COMPLETE');
+        const refInput: ReviewReferenceInput = {
+          prNumber: 123,
+          skipExternalContentLoad: true,
+        };
+        const report = await executeReview(state, NOW, undefined, refInput);
+        expect('kind' in report).toBe(false);
+      });
+    });
+
+    // ─── BAD: loadExternalContent blocked paths ──
+    describe('BAD: blocked paths', () => {
+      it('loadExternalContent with prNumber returns blocked (no gh CLI)', async () => {
+        const result = await loadExternalContent({ prNumber: 42 });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+          expect(result.code).toBe('COMMAND_BLOCKED');
+        }
+      });
+
+      it('loadExternalContent with branch returns blocked (no gh CLI)', async () => {
+        const result = await loadExternalContent({ branch: 'feature/x' });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+          expect(result.code).toBe('COMMAND_BLOCKED');
+        }
+      });
+
+      it('loadExternalContent with blocked URL returns blocked', async () => {
+        const result = await loadExternalContent({ url: 'http://0.0.0.0/secret' });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+          expect(result.code).toBe('COMMAND_BLOCKED');
+        }
+      });
+    });
+
+    // ─── CORNER: Mixed fields and boundary behavior ─────────────
+    describe('CORNER: mixed input fields', () => {
+      it('multiple content fields — prNumber takes priority', async () => {
+        const result = await loadExternalContent({
+          prNumber: 42,
+          text: 'should be ignored',
+        });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+        }
+      });
+
+      it('branch takes priority over url and text', async () => {
+        const result = await loadExternalContent({
+          branch: 'feature/y',
+          url: 'https://example.com',
+          text: 'fallback',
+        });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+        }
+      });
+
+      it('url takes priority over text', async () => {
+        const result = await loadExternalContent({
+          url: 'http://0.0.0.0/test-priority',
+          text: 'fallback',
+        });
+        expect('content' in result).toBe(false);
+        if (!('content' in result)) {
+          expect(result.kind).toBe('blocked');
+          expect(result.code).toBe('COMMAND_BLOCKED');
+        }
+      });
+    });
+
+    // ─── EDGE: Empty and undefined input handling ───────────────
+    describe('EDGE: empty and undefined input', () => {
+      it('undefined refInput skips external content', async () => {
+        const state = makeProgressedState('COMPLETE');
+        const report = await executeReview(state, NOW);
+        expect('kind' in report).toBe(false);
+      });
+
+      it('all undefined fields returns content with empty string', async () => {
+        const result = await loadExternalContent({
+          text: undefined,
+          prNumber: undefined,
+          branch: undefined,
+          url: undefined,
+        });
+        expect('content' in result).toBe(true);
+        if ('content' in result) {
+          expect(result.content).toBe('');
+        }
       });
     });
   });

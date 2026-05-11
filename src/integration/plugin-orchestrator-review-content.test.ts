@@ -238,7 +238,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
   beforeEach(() => {
     vi.mocked(readState).mockReset();
     vi.mocked(loadExternalContent).mockReset();
-    vi.mocked(loadExternalContent).mockResolvedValue({ content: 'diff content' } as never);
+    vi.mocked(loadExternalContent).mockResolvedValue({ content: 'diff content' });
   });
 
   it('host_task_required does not call SDK for standalone /review', async () => {
