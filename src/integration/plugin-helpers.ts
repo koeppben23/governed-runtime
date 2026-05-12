@@ -21,12 +21,16 @@ import { defaultReasonRegistry } from '../config/reasons.js';
  * @returns Parsed object or null if parsing fails completely
  */
 export function parseToolResult(rawOutput: unknown): Record<string, unknown> | null {
+  let resultStr: string;
   try {
-    const resultStr = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
+    resultStr = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
+  } catch {
+    return null;
+  }
+  try {
     return JSON.parse(resultStr);
   } catch {
     try {
-      const resultStr = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
       const firstLine = resultStr.split('\n')[0] ?? '';
       if (!firstLine.trim()) return null;
       return JSON.parse(firstLine);

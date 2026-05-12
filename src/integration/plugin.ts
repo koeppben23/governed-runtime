@@ -173,6 +173,28 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     mode: config.policy.defaultMode ?? 'solo',
   };
 
+  async function resolveEnforcement(
+    sessionId: string,
+    context: 'subagent' | 'verdict',
+  ): Promise<{ strictEnforcement: boolean; sessionState: SessionState | null }> {
+    let sessionState: SessionState | null = null;
+    let strictEnforcement = true;
+    try {
+      const sessDir = ws.getSessionDir(sessionId);
+      if (sessDir) {
+        sessionState = await readState(sessDir);
+        if (sessionState) {
+          strictEnforcement = sessionState.policySnapshot?.selfReview?.strictEnforcement === true;
+        }
+      }
+    } catch {
+      log.warn('enforcement', `Failed to read session state for ${context} enforcement check`, {
+        sessionId,
+      });
+    }
+    return { strictEnforcement, sessionState };
+  }
+
   // ── Hook handlers ──────────────────────────────────────────────────────
   return {
     'tool.execute.before': async (input: unknown, output: unknown) => {
@@ -194,25 +216,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
           if (st === REVIEWER_SUBAGENT_TYPE) {
             const eState = ws.getEnforcementState(sessionId);
-            let strictEnforcement = true;
-            try {
-              const sessDir = ws.getSessionDir(sessionId);
-              if (sessDir) {
-                const state = await readState(sessDir);
-                if (state) {
-                  strictEnforcement = state.policySnapshot?.selfReview?.strictEnforcement === true;
-                }
-              }
-            } catch {
-              /* fail-closed — log for diagnostics */
-              log.warn(
-                'enforcement',
-                'Failed to read session state for subagent enforcement check',
-                {
-                  sessionId,
-                },
-              );
-            }
+            const { strictEnforcement } = await resolveEnforcement(sessionId, 'subagent');
             const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
             if (!result.allowed) {
               log.warn('enforcement', 'blocked subagent call', {
@@ -293,22 +297,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         }
 
         const eState = ws.getEnforcementState(sessionId);
-        let sessionState: SessionState | null = null;
-        let strict = true;
-        try {
-          const sessDir = ws.getSessionDir(sessionId);
-          if (sessDir) {
-            sessionState = await readState(sessDir);
-            if (sessionState) {
-              strict = sessionState.policySnapshot?.selfReview?.strictEnforcement === true;
-            }
-          }
-        } catch {
-          /* fail-closed — log for diagnostics */
-          log.warn('enforcement', 'Failed to read session state for verdict enforcement check', {
-            sessionId,
-          });
-        }
+        const { strictEnforcement: strict, sessionState } = await resolveEnforcement(
+          sessionId,
+          'verdict',
+        );
         const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
         if (!result.allowed) {
           log.warn('enforcement', 'blocked verdict submission', {

@@ -18,8 +18,8 @@
  * @version v1
  */
 
-import * as crypto from 'node:crypto';
 import type { RailContext } from '../rails/types.js';
+import { hashText } from '../shared/hashing.js';
 
 // -- Factory ------------------------------------------------------------------
 
@@ -32,6 +32,6 @@ import type { RailContext } from '../rails/types.js';
 export function createRailContext(): RailContext {
   return {
     now: () => new Date().toISOString(),
-    digest: (text: string) => crypto.createHash('sha256').update(text, 'utf-8').digest('hex'),
+    digest: (text: string) => hashText(text),
   };
 }

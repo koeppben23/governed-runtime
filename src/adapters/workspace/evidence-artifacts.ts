@@ -16,6 +16,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { hashText } from '../../shared/hashing.js';
 import type { SessionState } from '../../state/schema.js';
 import { atomicWrite } from '../persistence.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -647,10 +648,6 @@ async function cleanupCreatedArtifacts(createdPaths: string[]): Promise<void> {
 async function hashFile(filePath: string): Promise<string> {
   const content = await fs.readFile(filePath);
   return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-function hashText(text: string): string {
-  return crypto.createHash('sha256').update(text, 'utf-8').digest('hex');
 }
 
 function isNotFound(err: unknown): boolean {

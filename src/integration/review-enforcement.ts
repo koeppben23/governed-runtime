@@ -58,6 +58,7 @@ import {
   type ReviewableTool,
 } from './review-obligation-tools.js';
 export type { ReviewableTool } from './review-obligation-tools.js';
+import { parseToolResult } from './plugin-helpers.js';
 type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
 
 /** Record of a completed subagent invocation. */
@@ -190,7 +191,7 @@ export function onFlowGuardToolAfter(
   if (!isReviewableTool(toolName) && !isStandaloneReviewTool) return;
 
   const reviewTool: PendingReviewTool = toolName;
-  const parsed = safeParse(output);
+  const parsed = parseToolResult(output);
   if (!parsed) return;
 
   // Mode B: agent is submitting a verdict → clear pending review on success.
@@ -997,24 +998,6 @@ export function promptContainsValue(prompt: string, keyword: string, expected: n
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
-
-/**
- * Parse JSON safely, handling NextAction footer lines.
- * Returns null on parse failure.
- */
-function safeParse(raw: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    try {
-      const firstLine = raw.split('\n')[0] ?? '';
-      if (!firstLine.trim()) return null;
-      return JSON.parse(firstLine) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-}
 
 /**
  * Extract the subagent session ID from hook metadata.

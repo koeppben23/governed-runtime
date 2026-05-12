@@ -8,7 +8,6 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -29,6 +28,8 @@ import {
 
 import type { PolicyMode } from '../config/policy-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { hashText } from '../shared/hashing.js';
+export { hashText as sha256 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InstallScope = 'global' | 'repo';
@@ -153,21 +154,12 @@ export function resolveTarget(scope: InstallScope): string {
   return resolve('.opencode');
 }
 
-// ─── Crypto Helpers ───────────────────────────────────────────────────────────
-
-/**
- * Compute SHA-256 hex digest of a string.
- */
-export function sha256(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
-}
-
 /**
  * Compute the canonical digest for flowguard-mandates.md body.
  * This is the digest stored in the managed-artifact header.
  */
 export function computeMandatesDigest(): string {
-  return sha256(FLOWGUARD_MANDATES_BODY);
+  return hashText(FLOWGUARD_MANDATES_BODY);
 }
 
 // ─── Reviewer Agent Model Override ───────────────────────────────────────────
