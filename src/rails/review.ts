@@ -18,6 +18,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';
@@ -349,7 +350,7 @@ export function buildReviewReport(opts: BuildReportOptions): ReviewReport {
   const overallStatus = computeOverallStatus(findings);
   const refs = computeRefs(refInput);
   return ReviewReport.parse({
-    schemaVersion: 'flowguard-review-report.v1',
+    schemaVersion: REVIEW_REPORT_SCHEMA_ID,
     sessionId: state.id,
     generatedAt: now,
     phase: state.phase,

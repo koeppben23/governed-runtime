@@ -37,6 +37,7 @@ import { buildProductNextAction } from '../presentation/next-action-copy.js';
 
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -356,7 +357,7 @@ export function buildReadinessProjection(
     ) {
       warnings.push(
         'Legacy selfReview config detected and normalized to mandatory strict. ' +
-          'Ensure flowguard-reviewer plugin is active.',
+          `Ensure ${REVIEWER_SUBAGENT_TYPE} plugin is active.`,
       );
     }
   }

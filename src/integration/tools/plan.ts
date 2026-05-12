@@ -75,6 +75,7 @@ import type {
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with implement.ts)
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
@@ -313,9 +314,9 @@ export const plan: ToolDefinition = {
           reviewMode: subagentEnabled ? 'subagent' : 'self',
           ...reviewObligationResponseFields(nextObligation),
           next:
-            'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
-            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
-            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+            `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
+            `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
+            `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
             '(1) the full plan text, (2) the ticket text, (3) iteration=0, ' +
             '(4) planVersion=' +
             planVersion +
@@ -396,7 +397,7 @@ export const plan: ToolDefinition = {
               return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
                 reason:
                   'reviewer subagent unavailable and strict enforcement requires host-visible review',
-                recovery: 'Install the flowguard-reviewer agent or disable strict enforcement',
+                recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
               });
             }
             effectiveFindings = {
@@ -637,8 +638,8 @@ export const plan: ToolDefinition = {
             reviewMode: 'subagent',
             ...reviewObligationResponseFields(nextObligation),
             next:
-              'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
-              'to review the revised plan. Use subagent_type "flowguard-reviewer" with a prompt ' +
+              `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool ` +
+              `to review the revised plan. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
               'that includes: (1) the revised plan text, (2) the ticket text, (3) iteration=' +
               nextIteration +
               ', (4) planVersion=' +

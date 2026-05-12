@@ -11,12 +11,13 @@
  * Namespace separation: archive types live here, NOT in discovery/types.
  * Archive is not discovery — they are independently evolving concerns.
  *
- * Dependency: leaf module — no imports from other FlowGuard modules.
+ * Dependency: imports only from shared zero-dependency identifiers.
  *
  * @version v1
  */
 
 import { z } from 'zod';
+import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export const ArchiveManifestSchema = z.object({
   schemaVersion: z.literal(ARCHIVE_MANIFEST_SCHEMA_VERSION),
   createdAt: z.string().datetime(),
   sessionId: z.string().uuid(),
-  fingerprint: z.string().regex(/^[0-9a-f]{24}$/),
+  fingerprint: z.string().regex(FINGERPRINT_PATTERN),
   policyMode: z.string().min(1),
   profileId: z.string().min(1),
   /** SHA-256 digest of the discovery result (or null if discovery was skipped). */

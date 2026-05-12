@@ -28,6 +28,7 @@ import {
 } from './templates.js';
 
 import type { PolicyMode } from '../config/policy-types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InstallScope = 'global' | 'repo';
@@ -436,7 +437,7 @@ export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): vo
   // flowguard-reviewer must appear after * because OpenCode uses last-matching-rule.
   permission['task'] = {
     '*': 'deny',
-    'flowguard-reviewer': 'allow',
+    [REVIEWER_SUBAGENT_TYPE]: 'allow',
   };
 }
 
@@ -608,8 +609,8 @@ export async function removeFromOpencodeJson(
           if (permission['task'] && typeof permission['task'] === 'object') {
             const task = permission['task'] as Record<string, unknown>;
             // Remove only FlowGuard-owned entries
-            if (task['flowguard-reviewer'] === 'allow') {
-              delete task['flowguard-reviewer'];
+            if (task[REVIEWER_SUBAGENT_TYPE] === 'allow') {
+              delete task[REVIEWER_SUBAGENT_TYPE];
               removedTaskHardening = true;
             }
             // Remove wildcard deny only if no foreign task entries remain

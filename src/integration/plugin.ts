@@ -444,7 +444,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                       });
                       hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
                         reason:
-                          'flowguard-reviewer Task call did not produce bindable host-task evidence',
+                          `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
                       });
                     } else {
                       log.warn('host-task', 'bind failed', {

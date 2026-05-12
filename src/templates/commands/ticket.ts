@@ -1,5 +1,25 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
 
+const EXTERNAL_REFERENCE_TABLE: Array<{
+  scenario: string;
+  source: 'user' | 'external';
+  inputOrigin: 'manual_text' | 'external_reference' | 'mixed';
+}> = [
+  { scenario: 'User typed text, no URL',          source: 'user',     inputOrigin: 'manual_text' },
+  { scenario: 'Extracted from Jira/ADO/GitHub',   source: 'external', inputOrigin: 'external_reference' },
+  { scenario: 'User text AND URL',                source: 'external', inputOrigin: 'mixed' },
+  { scenario: 'Extraction failed',                source: 'external', inputOrigin: 'external_reference' },
+];
+
+const externalRefMarkdown = [
+  '     | Scenario | source | inputOrigin |',
+  '     |----------|--------|-------------|',
+  ...EXTERNAL_REFERENCE_TABLE.map(
+    ({ scenario, source, inputOrigin }) =>
+      `     | ${scenario} | \`"${source}"\` | \`"${inputOrigin}"\` |`
+  ),
+].join('\n');
+
 export const TICKET_COMMAND = `
 ---
 description: Record a task or ticket for the FlowGuard session.
@@ -29,12 +49,7 @@ $ARGUMENTS
      - \`source\`: platform name (jira, ados, github, gitlab, confluence, figma)
      - \`extractedAt\`: ISO timestamp (only when content was actually extracted)
    - Set \`inputOrigin\` based on scenario:
-     | Scenario | source | inputOrigin |
-     |----------|--------|-------------|
-     | User typed text, no URL | \`"user"\` | \`"manual_text"\` |
-     | Extracted from Jira/ADO/GitHub | \`"external"\` | \`"external_reference"\` |
-     | User text AND URL | \`"external"\` | \`"mixed"\` |
-     | Extraction failed | \`"external"\` | \`"external_reference"\` |
+${externalRefMarkdown}
    - On extraction failure: use placeholder text, still add reference (without \`extractedAt\`).
 
 3. Call \`flowguard_ticket\` with:

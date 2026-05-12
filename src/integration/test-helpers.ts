@@ -37,6 +37,7 @@ import {
   hashFindings,
   hashText,
 } from './review-assurance.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ export async function fulfillStrictReviewObligation(
       toolObligationId: obligation.obligationId,
       iteration: input.iteration,
       planVersion: input.planVersion,
-      reviewedBy: 'flowguard-reviewer',
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
   };
 

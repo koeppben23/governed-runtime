@@ -558,7 +558,7 @@ export function enforceBeforeVerdict(
           `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ` +
           `("${submittedSessionId}") does not match the actual subagent session ` +
           `("${pending.subagentRecord.sessionId}"). ` +
-          `The findings must come from the flowguard-reviewer subagent that was invoked.`,
+          `The findings must come from the ${REVIEWER_SUBAGENT_TYPE} subagent that was invoked.`,
       };
     }
   }

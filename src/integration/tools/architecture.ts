@@ -69,6 +69,8 @@ import {
   resolveHostTaskFindings,
 } from './review-validation.js';
 
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+
 // Presentation
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import { buildArchitectureReviewCard } from '../../presentation/architecture-review-card.js';
@@ -87,7 +89,7 @@ export const architecture: ToolDefinition = {
     "Mode B (review verdict): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
     'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
-    'by the flowguard-reviewer subagent and the verdict submission MUST include reviewFindings ' +
+    `by the ${REVIEWER_SUBAGENT_TYPE} subagent and the verdict submission MUST include reviewFindings ` +
     'returned by that subagent. When subagentEnabled=false, the legacy LLM-driven self-review path is used.\n' +
     'The review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to ARCH_REVIEW.\n' +
@@ -115,7 +117,7 @@ export const architecture: ToolDefinition = {
           "'changes_requested' = ADR needs revision, provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      'Structured findings from the flowguard-reviewer subagent (F13). ' +
+      `Structured findings from the ${REVIEWER_SUBAGENT_TYPE} subagent (F13). ` +
         'Required when selfReviewVerdict is "approve" and subagentEnabled=true. ' +
         'Use exactly the JSON object the subagent returned — do not modify it.',
     ),
@@ -233,9 +235,9 @@ export const architecture: ToolDefinition = {
         await writeStateWithArtifacts(sessDir, augmentedState);
 
         const modeANext = subagentEnabled
-          ? 'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
-            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
-            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+          ? `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
+            `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
+            `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
             '(1) the full ADR text, (2) the ADR title, (3) the ticket text, ' +
             '(4) iteration=0, (5) planVersion=' +
             archPlanVersion +
@@ -325,7 +327,7 @@ export const architecture: ToolDefinition = {
               return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
                 reason:
                   'reviewer subagent unavailable and strict enforcement requires host-visible review',
-                recovery: 'Install the flowguard-reviewer agent or disable strict enforcement',
+                recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
               });
             }
             effectiveFindings = {
@@ -571,8 +573,8 @@ export const architecture: ToolDefinition = {
         await writeStateWithArtifacts(sessDir, stateToPersist);
 
         const nonConvergedNext = subagentEnabledModeB
-          ? 'INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool ' +
-            'to review the revised ADR. Use subagent_type "flowguard-reviewer" with a prompt ' +
+          ? `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool ` +
+            `to review the revised ADR. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
             'that includes: (1) the revised ADR text, (2) the ADR title, (3) the ticket text, ' +
             '(4) iteration=' +
             nextIteration +

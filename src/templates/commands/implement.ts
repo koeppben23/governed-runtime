@@ -1,4 +1,5 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 export const IMPLEMENT_COMMAND = `
 ---
@@ -43,7 +44,7 @@ Implement the approved plan and obtain mandatory independent implementation revi
       - "approve": Call \`flowguard_implement({ reviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
       - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested" })\` (or with \`reviewFindings\` in SDK mode), then make the code changes, then call \`flowguard_implement({})\` again to re-record.
       - "unable_to_review": The reviewer declared the implementation unreviewable (e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique). The implement tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same evidence — that obligation is consumed. Report the reviewer's findings to the user, then either revise the plan via /plan first OR record substantially-new implementation evidence (new \`flowguard_implement({})\` call after additional code changes, which starts a fresh review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the flowguard-reviewer subagent, then submit verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable), submit \`flowguard_implement({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the ${REVIEWER_SUBAGENT_TYPE} subagent, then submit verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable), submit \`flowguard_implement({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
    - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: Repeat from step 6 (max 3 iterations).
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
