@@ -34,17 +34,27 @@ import * as path from 'node:path';
 // -- Error --------------------------------------------------------------------
 
 /**
- * Typed binding error.
+ * Typed binding error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type BindingErrorCode =
+  | 'MISSING_SESSION_ID'
+  | 'NO_WORKTREE'
+  | 'NOT_GIT_REPO'
+  | 'WORKTREE_MISMATCH';
+
+/**
+ * Binding errors (workspace ↔ git worktree resolution).
  * Codes:
- * - MISSING_SESSION_ID: OpenCode context has no session ID
+ * - MISSING_SESSION_ID: context has no session identifier
  * - NO_WORKTREE: neither worktree nor directory available in context
  * - NOT_GIT_REPO: directory is not inside a git repository
  * - WORKTREE_MISMATCH: state was created for a different worktree
  */
 export class BindingError extends Error {
-  readonly code: string;
+  readonly code: BindingErrorCode;
 
-  constructor(code: string, message: string) {
+  constructor(code: BindingErrorCode, message: string) {
     super(message);
     this.name = 'BindingError';
     this.code = code;

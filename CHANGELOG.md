@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-040 (Issue #190):** Add typed error code unions to all 8 custom error classes:
+  - `PersistenceErrorCode` (4 codes): `READ_FAILED`, `WRITE_FAILED`, `PARSE_FAILED`, `SCHEMA_VALIDATION_FAILED`
+  - `GitErrorCode` (4 codes): `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, `NOT_GIT_REPO`
+  - `WorkspaceErrorCode` (7 codes): `INVALID_FINGERPRINT`, `INVALID_SESSION_ID`, `INIT_FAILED`, `WRITE_FAILED`, `READ_FAILED`, `WORKSPACE_MISMATCH`, `ARCHIVE_FAILED`
+  - `EvidenceArtifactErrorCode` (3 codes): `EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`, `EVIDENCE_ARTIFACT_IMMUTABLE`
+  - `BindingErrorCode` (4 codes): `MISSING_SESSION_ID`, `NO_WORKTREE`, `NOT_GIT_REPO`, `WORKTREE_MISMATCH`
+  - `PolicyConfigurationErrorCode` (9 codes): all central-policy and mode validation codes
+  - `ActorClaimErrorCode` (5 codes) and `ActorIdentityErrorCode` (4 codes) extracted from inline unions to named exports
+  - Compile-time safety tests proving invalid codes are rejected (`@ts-expect-error`)
 - **FG-REL-038 (Issue #188):** Split `review-orchestrator.ts` (1,490 LOC) and `review-enforcement.ts` (1,217 LOC) into focused single-responsibility modules:
   - `review-findings-schema.ts` — JSON Schema definition for ReviewFindings
   - `review-text-extraction.ts` — Multi-strategy JSON extraction from text
