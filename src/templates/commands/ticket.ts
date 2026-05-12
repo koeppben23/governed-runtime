@@ -5,10 +5,14 @@ const EXTERNAL_REFERENCE_TABLE: Array<{
   source: 'user' | 'external';
   inputOrigin: 'manual_text' | 'external_reference' | 'mixed';
 }> = [
-  { scenario: 'User typed text, no URL',          source: 'user',     inputOrigin: 'manual_text' },
-  { scenario: 'Extracted from Jira/ADO/GitHub',   source: 'external', inputOrigin: 'external_reference' },
-  { scenario: 'User text AND URL',                source: 'external', inputOrigin: 'mixed' },
-  { scenario: 'Extraction failed',                source: 'external', inputOrigin: 'external_reference' },
+  { scenario: 'User typed text, no URL', source: 'user', inputOrigin: 'manual_text' },
+  {
+    scenario: 'Extracted from Jira/ADO/GitHub',
+    source: 'external',
+    inputOrigin: 'external_reference',
+  },
+  { scenario: 'User text AND URL', source: 'external', inputOrigin: 'mixed' },
+  { scenario: 'Extraction failed', source: 'external', inputOrigin: 'external_reference' },
 ];
 
 const externalRefMarkdown = [
@@ -16,7 +20,7 @@ const externalRefMarkdown = [
   '     |----------|--------|-------------|',
   ...EXTERNAL_REFERENCE_TABLE.map(
     ({ scenario, source, inputOrigin }) =>
-      `     | ${scenario} | \`"${source}"\` | \`"${inputOrigin}"\` |`
+      `     | ${scenario} | \`"${source}"\` | \`"${inputOrigin}"\` |`,
   ),
 ].join('\n');
 

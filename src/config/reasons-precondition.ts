@@ -339,8 +339,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_PROMPT_EMPTY',
     category: 'precondition',
-    messageTemplate:
-      `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,
     recoverySteps: [
       `Provide a substantive prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Include the full review context: plan or implementation text, ticket text, iteration, and planVersion',
@@ -351,8 +350,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
     category: 'precondition',
-    messageTemplate:
-      `The ${REVIEWER_SUBAGENT_TYPE} prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.`,
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.`,
     recoverySteps: [
       'Read the iteration and planVersion values from the flowguard_plan or flowguard_implement response',
       `Include those exact values in the prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
@@ -363,8 +361,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate:
-      `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. Call the subagent before submitting a verdict.`,
+    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. Call the subagent before submitting a verdict.`,
     recoverySteps: [
       `Call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool`,
       'Pass the plan/implementation text, ticket text, iteration, and planVersion in the prompt',
@@ -425,8 +422,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_TYPE_UNAUTHORIZED',
     category: 'precondition',
-    messageTemplate:
-      `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
+    messageTemplate: `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
     recoverySteps: [
       `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer Task calls`,
       'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',

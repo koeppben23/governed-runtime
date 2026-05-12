@@ -239,8 +239,7 @@ export function validateReviewFindings(
     ) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
-        reason:
-          `expected host-visible ${REVIEWER_SUBAGENT_TYPE} Task evidence bound to the active session, mandate, criteria, child session, and findings hash`,
+        reason: `expected host-visible ${REVIEWER_SUBAGENT_TYPE} Task evidence bound to the active session, mandate, criteria, child session, and findings hash`,
       });
     }
   }

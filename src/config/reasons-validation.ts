@@ -203,8 +203,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
-    messageTemplate:
-      `analysisFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
+    messageTemplate: `analysisFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
     recoverySteps: [
       `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}"`,
       'Pass the subagent output as analysisFindings',
@@ -382,8 +381,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_SESSION_MISMATCH',
     category: 'state',
-    messageTemplate:
-      `Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked ${REVIEWER_SUBAGENT_TYPE}.`,
+    messageTemplate: `Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked ${REVIEWER_SUBAGENT_TYPE}.`,
     recoverySteps: [
       `Use the exact reviewFindings object returned by the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Do not modify reviewedBy.sessionId after the subagent produces the findings',
@@ -455,8 +453,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
     category: 'state',
-    messageTemplate:
-      `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
     recoverySteps: [
       'Do NOT retry the same submission — the reviewer has already declared the input unreviewable',
       'Inspect reviewFindings.missingVerification[] and reviewFindings.unknowns[] for the specific tool-failure cause',

@@ -911,8 +911,7 @@ export async function invokeReviewer(
     return {
       blocked: true,
       code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      reason:
-        `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
+      reason: `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
       reviewInvocation: {
         policy: 'host_task_required',
         status: 'blocked_until_host_task',
@@ -1093,8 +1092,7 @@ export async function invokeReviewer(
             details: {
               agent,
               reviewOutputPolicy,
-              recovery:
-                `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
+              recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
             },
           });
           return null;
