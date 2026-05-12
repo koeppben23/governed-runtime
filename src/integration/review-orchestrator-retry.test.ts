@@ -456,7 +456,6 @@ describe('invokeReviewer — retry logic', () => {
   });
 });
 
-
 describe('invokeReviewer — format-free retry fallback', () => {
   /**
    * Helper: creates a client where the first prompt call triggers
