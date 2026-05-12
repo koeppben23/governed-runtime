@@ -48,6 +48,54 @@ const execFileAsync = promisify(execFile);
 /** Default timeout for git commands (ms). 5 seconds is generous for local ops. */
 const GIT_TIMEOUT_MS = 5_000;
 
+/** Known package/dependency manifest filenames. */
+const PACKAGE_FILES: ReadonlySet<string> = new Set([
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'package.json',
+  'Cargo.toml',
+  'go.mod',
+  'pyproject.toml',
+  'setup.py',
+  'requirements.txt',
+  'Gemfile',
+  'composer.json',
+  '*.csproj',
+  '*.sln',
+]);
+
+/** Known config filenames (exact match on basename). */
+const CONFIG_FILES: ReadonlySet<string> = new Set([
+  'tsconfig.json',
+  'angular.json',
+  'nx.json',
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.json',
+  '.eslintrc.yml',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  '.prettierrc',
+  '.prettierrc.json',
+  'Dockerfile',
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'jest.config.js',
+  'jest.config.ts',
+  'vitest.config.ts',
+  'vitest.config.js',
+  'webpack.config.js',
+  'vite.config.ts',
+  'vite.config.js',
+  'rollup.config.js',
+  'tailwind.config.js',
+  'tailwind.config.ts',
+  'next.config.js',
+  'next.config.mjs',
+  'nuxt.config.ts',
+]);
+
 // -- Error --------------------------------------------------------------------
 
 /**
@@ -298,54 +346,6 @@ export async function listRepoSignals(worktree: string): Promise<{
   packageFiles: string[];
   configFiles: string[];
 }> {
-  /** Known package/dependency manifest filenames. */
-  const PACKAGE_FILES = new Set([
-    'pom.xml',
-    'build.gradle',
-    'build.gradle.kts',
-    'package.json',
-    'Cargo.toml',
-    'go.mod',
-    'pyproject.toml',
-    'setup.py',
-    'requirements.txt',
-    'Gemfile',
-    'composer.json',
-    '*.csproj',
-    '*.sln',
-  ]);
-
-  /** Known config filenames (exact match on basename). */
-  const CONFIG_FILES = new Set([
-    'tsconfig.json',
-    'angular.json',
-    'nx.json',
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    'eslint.config.js',
-    'eslint.config.mjs',
-    '.prettierrc',
-    '.prettierrc.json',
-    'Dockerfile',
-    'docker-compose.yml',
-    'docker-compose.yaml',
-    'jest.config.js',
-    'jest.config.ts',
-    'vitest.config.ts',
-    'vitest.config.js',
-    'webpack.config.js',
-    'vite.config.ts',
-    'vite.config.js',
-    'rollup.config.js',
-    'tailwind.config.js',
-    'tailwind.config.ts',
-    'next.config.js',
-    'next.config.mjs',
-    'nuxt.config.ts',
-  ]);
-
   let allFiles: string[] = [];
 
   try {
