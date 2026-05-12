@@ -21,20 +21,22 @@ import {
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
-  buildReviewContentMutatedOutput,
   selectReviewerProfileRules,
+  type PlanReviewPromptOpts,
+  type ImplReviewPromptOpts,
+} from './review-prompt-builders.js';
+import { _resetAgentResolutionCache } from './review-agent-resolution.js';
+import {
+  buildReviewContentMutatedOutput,
   invokeReviewer,
   buildMutatedOutput,
   isReviewRequired,
   extractReviewContext,
   REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
-  type PlanReviewPromptOpts,
-  type ImplReviewPromptOpts,
   type ReviewerSuccessResult,
-  _resetAgentResolutionCache,
 } from './review-orchestrator.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { parseToolResult } from './plugin-helpers.js';
@@ -593,7 +595,7 @@ describe('invokeReviewer', () => {
 
   // HAPPY: successful invocation
   it('creates child session and invokes reviewer', async () => {
-    const { REVIEW_FINDINGS_JSON_SCHEMA } = await import('./review-orchestrator.js');
+    const { REVIEW_FINDINGS_JSON_SCHEMA } = await import('./review-findings-schema.js');
     const client = mockClient();
     const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
 

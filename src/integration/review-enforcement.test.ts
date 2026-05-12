@@ -22,17 +22,21 @@ import {
   enforceBeforeSubagentCall,
   matchPendingReview,
   recordPluginReview,
+} from './review-enforcement.js';
+import {
   extractContentMeta,
   extractCapturedFindings,
   promptContainsValue,
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
+} from './review-enforcement-extraction.js';
+import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   MIN_SUBAGENT_PROMPT_LENGTH,
   type SessionEnforcementState,
   type TaskToolContext,
-} from './review-enforcement.js';
+} from './review-enforcement-types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -11,19 +11,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './review-enforcement.js';
+import { buildHostTaskEvidence } from './review-evidence-binding.js';
 import {
-  buildHostTaskEvidence,
-  createSessionState,
-  onFlowGuardToolAfter,
-  onTaskToolAfter,
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
+} from './review-enforcement-extraction.js';
+import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   type HostTaskBindOutcome,
   type HostTaskBindResult,
   type TaskToolContext,
-} from './review-enforcement.js';
+} from './review-enforcement-types.js';
 import {
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,

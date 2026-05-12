@@ -14,12 +14,12 @@ import {
   ensureReviewAssurance,
 } from '../review-assurance.js';
 import {
-  buildHostTaskEvidence,
   createSessionState,
   onFlowGuardToolAfter,
   onTaskToolAfter,
-  REVIEW_REQUIRED_PREFIX,
 } from '../review-enforcement.js';
+import { buildHostTaskEvidence } from '../review-evidence-binding.js';
+import { REVIEW_REQUIRED_PREFIX } from '../review-enforcement-types.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 

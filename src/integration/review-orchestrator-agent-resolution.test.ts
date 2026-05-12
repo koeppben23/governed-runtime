@@ -30,13 +30,12 @@ import {
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
-  extractJsonFromText,
-  invokeReviewer,
-  buildPlanReviewPrompt,
-  REVIEW_FINDINGS_JSON_SCHEMA,
-  type OrchestratorClient,
-} from './review-orchestrator.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement.js';
+} from './review-agent-resolution.js';
+import { extractJsonFromText } from './review-text-extraction.js';
+import { invokeReviewer, type OrchestratorClient } from './review-orchestrator.js';
+import { buildPlanReviewPrompt } from './review-prompt-builders.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './review-findings-schema.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -2771,11 +2770,11 @@ describe('Model Capability Cache — removed global state guard', () => {
 
 describe('extractJsonFromText JSDoc', () => {
   it('SMOKE — JSDoc references info.structured_output (canonical docs field)', async () => {
-    const orchestratorPath = path.resolve(
+    const extractionPath = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      'review-orchestrator.ts',
+      'review-text-extraction.ts',
     );
-    const source = await fs.readFile(orchestratorPath, 'utf-8');
+    const source = await fs.readFile(extractionPath, 'utf-8');
 
     // The extractJsonFromText JSDoc should reference the canonical docs field name
     // "info.structured_output", not the server alias "info.structured".

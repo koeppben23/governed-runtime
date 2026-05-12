@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **FG-REL-038 (Issue #188):** Split `review-orchestrator.ts` (1,490 LOC) and `review-enforcement.ts` (1,217 LOC) into focused single-responsibility modules:
+  - `review-findings-schema.ts` — JSON Schema definition for ReviewFindings
+  - `review-text-extraction.ts` — Multi-strategy JSON extraction from text
+  - `review-prompt-builders.ts` — All prompt builders (plan, impl, arch, content) + profile rules
+  - `review-agent-resolution.ts` — Agent registry probe, cache, model capability detection
+  - `review-enforcement-types.ts` — Types, interfaces, constants (universal coupling point)
+  - `review-enforcement-extraction.ts` — Pure parsing/extraction helpers (content meta, findings, session ID, JSON blocks)
+  - `review-evidence-binding.ts` — Host-task evidence binding (buildHostTaskEvidence)
+  - `review-orchestrator.ts` (residual) — SDK invocation, output mutation, review detection
+  - `review-enforcement.ts` (residual) — State factory, hook handlers, L1-L4 enforcement
+  - All 13 consumer files migrated to direct imports (no re-exports, no facades)
+
 ### Added
 
 - Clean Code D: IP validation extracted from review.ts to adapters/ip-validation.ts. PACKAGE_FILES and CONFIG_FILES lifted from function-scoped to module-level const in git.ts. Dynamic imports replaced with static imports in archive.ts and plugin-policy.ts.
