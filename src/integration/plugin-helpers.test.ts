@@ -47,6 +47,13 @@ describe('parseToolResult', () => {
     const result = parseToolResult({ already: 'object' });
     expect(result).toEqual({ already: 'object' });
   });
+
+  it('BAD: returns null for circular/non-serializable input', () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const result = parseToolResult(circular);
+    expect(result).toBeNull();
+  });
 });
 
 describe('strictBlockedOutput', () => {
