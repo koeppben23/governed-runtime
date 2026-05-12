@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `review-enforcement.test.ts` (3223 LOC) → 4 per-concern files + `review-enforcement-test-helpers.ts`
   - `plugin-host-task-diagnostics.test.ts` (2670 LOC) → 3 per-concern files + `plugin-host-task-diagnostics-helpers.ts`
   - All 921 tests preserved across 19 new files (no test removal, no file >1500 LOC)
+- **FG-REL-042 (Issue #192):** Add vitest workspace for native unit/integration/smoke test separation:
+  - New `vitest.workspace.ts` defining 3 projects: `unit` (src/**/\*.test.ts, 15s timeout), `integration` (src/integration/**/\*.test.ts, 60s timeout), `smoke` (build-dependent CLI tests, 120s timeout)
+  - Per-project coverage thresholds: unit 80/80/80/80, integration 70/70/70/70, smoke none
+  - All `package.json` test scripts migrated from `--exclude` hacks to native `--project` flags
+  - CI `test` job simplified from raw `npx vitest run --exclude ...` to `npm test`
+  - `npm test` = unit + integration (default fast CI feedback); `npm run test:smoke` = opt-in build-dependent tests
+  - Root `vitest.config.ts` stripped to coverage-only fallback (project config in workspace)
 
 ### Added
 
