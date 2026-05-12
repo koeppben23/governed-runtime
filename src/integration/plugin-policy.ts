@@ -18,6 +18,8 @@
 import { resolveRuntimePolicyMode, resolvePolicyWithContext } from '../config/policy.js';
 import type { PolicyMode, FlowGuardPolicy } from '../config/policy.js';
 import type { SessionState } from '../state/schema.js';
+import * as fs from 'node:fs/promises';
+import { readState } from '../adapters/persistence.js';
 import { resolvePolicyFromSnapshot } from '../config/policy.js';
 import { detectCiContext } from '../config/policy.js';
 
@@ -60,7 +62,6 @@ export async function resolvePluginSessionPolicy(
   // This distinguishes "missing state" from "corrupt state"
   let stateFileExists: boolean;
   try {
-    const fs = await import('node:fs/promises');
     await fs.access(sessDir + '/session-state.json');
     stateFileExists = true;
   } catch {
@@ -79,7 +80,6 @@ export async function resolvePluginSessionPolicy(
   // Any error here is a state integrity problem → fail closed
   let state: SessionState | null;
   try {
-    const { readState } = await import('../adapters/persistence.js');
     state = await readState(sessDir);
   } catch (err) {
     // Corrupt/unparseable state → fail closed, NOT fallback

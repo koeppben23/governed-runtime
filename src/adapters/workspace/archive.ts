@@ -18,6 +18,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { atomicWrite } from '../persistence.js';
 import { readAuditTrail, readConfig, readState } from '../persistence.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -202,8 +204,6 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   }
 
   // Create tar.gz using system tar (available on Windows 10+, macOS, Linux)
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
   const execFileAsync = promisify(execFile);
 
   try {
