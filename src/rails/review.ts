@@ -274,14 +274,17 @@ function buildMechanicalFindings(
 export async function loadExternalContent(
   refInput: ReviewReferenceInput,
 ): Promise<{ content: string } | RailBlocked> {
-  if (refInput.prNumber !== undefined) return loadPrContent(refInput);
-  if (refInput.branch !== undefined) return loadBranchContent(refInput);
+  if (refInput.prNumber !== undefined) return loadPrContent(refInput.prNumber);
+  if (refInput.branch !== undefined) return loadBranchContent(refInput.branch);
   if (refInput.url !== undefined) return loadUrlContent(refInput);
   if (refInput.text !== undefined) return { content: refInput.text };
   return { content: '' };
 }
 
-function loadPrContent(refInput: ReviewReferenceInput): { content: string } | RailBlocked {
+function loadContentViaGh(
+  fetcher: () => string,
+  failureReasonPrefix: string,
+): { content: string } | RailBlocked {
   if (!hasGhCli()) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
@@ -289,30 +292,21 @@ function loadPrContent(refInput: ReviewReferenceInput): { content: string } | Ra
     });
   }
   try {
-    return { content: loadPrDiff(refInput.prNumber!) };
+    return { content: fetcher() };
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `Failed to load PR #${refInput.prNumber}: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `${failureReasonPrefix}: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
 
-function loadBranchContent(refInput: ReviewReferenceInput): { content: string } | RailBlocked {
-  if (!hasGhCli()) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: 'GitHub CLI (gh) is required. Install: https://cli.github.com/',
-    });
-  }
-  try {
-    return { content: loadBranchDiff(refInput.branch!) };
-  } catch (err) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: `Failed to load branch '${refInput.branch}': ${err instanceof Error ? err.message : String(err)}`,
-    });
-  }
+function loadPrContent(prNumber: number): { content: string } | RailBlocked {
+  return loadContentViaGh(() => loadPrDiff(prNumber), `Failed to load PR #${prNumber}`);
+}
+
+function loadBranchContent(branch: string): { content: string } | RailBlocked {
+  return loadContentViaGh(() => loadBranchDiff(branch), `Failed to load branch '${branch}'`);
 }
 
 async function loadUrlContent(

@@ -4,6 +4,8 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
+export { hashText };
 
 import type {
   ReviewAssuranceState,
@@ -259,10 +261,6 @@ export function findAcceptedInvocationForFindings(
         invocation.consumedByObligationId === null,
     ) ?? null
   );
-}
-
-export function hashText(text: string): string {
-  return createHash('sha256').update(text, 'utf-8').digest('hex');
 }
 
 export function hashFindings(findings: Record<string, unknown>): string {

@@ -98,6 +98,7 @@ import {
   findLatestObligation,
   reviewObligationResponseFields,
 } from '../review-assurance.js';
+import { buildLatestImplementationReviewSummary } from './review-summary.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
@@ -309,20 +310,8 @@ export const implement: ToolDefinition = {
         };
 
         if (newReviewFindings.length > 0) {
-          // Use at() for proper TS narrowing
-          const atIndex = newReviewFindings.length - 1;
-          const rf = newReviewFindings.at(atIndex);
-          if (rf) {
-            response.latestImplementationReview = {
-              iteration: rf.iteration,
-              reviewMode: rf.reviewMode,
-              overallVerdict: rf.overallVerdict,
-              blockingIssueCount: rf.blockingIssues.length,
-              majorRiskCount: rf.majorRisks.length,
-              missingVerificationCount: rf.missingVerification.length,
-              reviewedAt: rf.reviewedAt,
-            };
-          }
+          response.latestImplementationReview =
+            buildLatestImplementationReviewSummary(newReviewFindings);
         }
 
         return appendNextAction(JSON.stringify(response), finalState);
@@ -523,19 +512,8 @@ export const implement: ToolDefinition = {
           };
 
           if (newReviewFindings.length > 0) {
-            const atIndex = newReviewFindings.length - 1;
-            const rf = newReviewFindings.at(atIndex);
-            if (rf) {
-              response.latestImplementationReview = {
-                iteration: rf.iteration,
-                reviewMode: rf.reviewMode,
-                overallVerdict: rf.overallVerdict,
-                blockingIssueCount: rf.blockingIssues.length,
-                majorRiskCount: rf.majorRisks.length,
-                missingVerificationCount: rf.missingVerification.length,
-                reviewedAt: rf.reviewedAt,
-              };
-            }
+            response.latestImplementationReview =
+              buildLatestImplementationReviewSummary(newReviewFindings);
           }
 
           return appendNextAction(JSON.stringify(response), finalState);
@@ -563,19 +541,8 @@ export const implement: ToolDefinition = {
         };
 
         if (newReviewFindings.length > 0) {
-          const atIndex = newReviewFindings.length - 1;
-          const rf = newReviewFindings.at(atIndex);
-          if (rf) {
-            response.latestImplementationReview = {
-              iteration: rf.iteration,
-              reviewMode: rf.reviewMode,
-              overallVerdict: rf.overallVerdict,
-              blockingIssueCount: rf.blockingIssues.length,
-              majorRiskCount: rf.majorRisks.length,
-              missingVerificationCount: rf.missingVerification.length,
-              reviewedAt: rf.reviewedAt,
-            };
-          }
+          response.latestImplementationReview =
+            buildLatestImplementationReviewSummary(newReviewFindings);
         }
 
         if (converged && verdict === 'approve') {
