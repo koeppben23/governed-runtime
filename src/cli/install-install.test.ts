@@ -8,7 +8,12 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
-import { install, uninstall, mergeReviewerTaskPermission } from './install.js';
+import {
+  install,
+  uninstall,
+  mergeReviewerTaskPermission,
+  isFlowGuardVendorArtifact,
+} from './install.js';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,
@@ -1514,6 +1519,32 @@ describe('cli/uninstall', () => {
       expect(parsed.model).toBe('anthropic/claude');
       expect(parsed.instructions).toEqual(['user.md']);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+    });
+  });
+
+  // ─── H10-lite: isFlowGuardVendorArtifact tarball filename validation ───
+  describe('isFlowGuardVendorArtifact', () => {
+    it('HAPPY: accepts valid FlowGuard tarball filenames', () => {
+      expect(isFlowGuardVendorArtifact('flowguard-core-1.2.0-rc.2.tgz')).toBe(true);
+      expect(isFlowGuardVendorArtifact('flowguard-core-2.0.0.tgz')).toBe(true);
+      expect(isFlowGuardVendorArtifact('flowguard-core-0.1.0-alpha.1.tgz')).toBe(true);
+    });
+
+    it('BAD: rejects non-versioned tarball filenames', () => {
+      expect(isFlowGuardVendorArtifact('flowguard-core-malware.tgz')).toBe(false);
+      expect(isFlowGuardVendorArtifact('flowguard-core-.tgz')).toBe(false);
+      expect(isFlowGuardVendorArtifact('flowguard-core-something.tgz')).toBe(false);
+    });
+
+    it('BAD: rejects tarballs with wrong prefix or suffix', () => {
+      expect(isFlowGuardVendorArtifact('evil-flowguard-core-1.2.0.tgz')).toBe(false);
+      expect(isFlowGuardVendorArtifact('flowguard-core-1.2.0.tar.gz')).toBe(false);
+      expect(isFlowGuardVendorArtifact('other-package-1.2.0.tgz')).toBe(false);
+    });
+
+    it('EDGE: does not match non-tarball files', () => {
+      expect(isFlowGuardVendorArtifact('flowguard-core-1.2.0.zip')).toBe(false);
+      expect(isFlowGuardVendorArtifact('')).toBe(false);
     });
   });
 });

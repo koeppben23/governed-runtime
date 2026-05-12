@@ -90,7 +90,7 @@ export interface OrchestratorDeps {
     info(service: string, message: string, extra?: Record<string, unknown>): void;
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
   };
-  client: unknown; // OpenCode SDK client
+  client: OrchestratorClient;
 }
 
 /**
@@ -325,31 +325,21 @@ export async function runReviewOrchestration(
         profileRules,
       });
 
-      const reviewerResult = await invokeReviewer(
-        deps.client as OrchestratorClient,
-        prompt,
-        sessionId,
-        {
-          reviewOutputPolicy:
-            sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
-          reviewInvocationPolicy:
-            sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
-          _onAttemptFailed: (info) => {
-            deps.log.warn(
-              'orchestrator',
-              `reviewer attempt ${info.attempt} failed at ${info.step}`,
-              {
-                tool: toolName,
-                sessionId,
-                step: info.step,
-                attempt: info.attempt,
-                error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
-                ...(info.details ?? {}),
-              },
-            );
-          },
+      const reviewerResult = await invokeReviewer(deps.client, prompt, sessionId, {
+        reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+        reviewInvocationPolicy:
+          sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
+        _onAttemptFailed: (info) => {
+          deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
+            tool: toolName,
+            sessionId,
+            step: info.step,
+            attempt: info.attempt,
+            error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
+            ...(info.details ?? {}),
+          });
         },
-      );
+      });
       if (reviewerResult?.blocked) {
         output.output = strictBlockedOutput(
           reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -587,26 +577,21 @@ export async function runReviewOrchestration(
         : {}),
     });
 
-    const reviewerResult = await invokeReviewer(
-      deps.client as OrchestratorClient,
-      prompt,
-      sessionId,
-      {
-        reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
-        reviewInvocationPolicy:
-          sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
-        _onAttemptFailed: (info) => {
-          deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
-            tool: toolName,
-            sessionId,
-            step: info.step,
-            attempt: info.attempt,
-            error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
-            ...(info.details ?? {}),
-          });
-        },
+    const reviewerResult = await invokeReviewer(deps.client, prompt, sessionId, {
+      reviewOutputPolicy: sessionState.policySnapshot.reviewOutputPolicy ?? 'structured_required',
+      reviewInvocationPolicy:
+        sessionState.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
+      _onAttemptFailed: (info) => {
+        deps.log.warn('orchestrator', `reviewer attempt ${info.attempt} failed at ${info.step}`, {
+          tool: toolName,
+          sessionId,
+          step: info.step,
+          attempt: info.attempt,
+          error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
+          ...(info.details ?? {}),
+        });
       },
-    );
+    });
 
     if (reviewerResult?.blocked) {
       output.output = strictBlockedOutput(

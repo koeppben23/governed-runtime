@@ -18,6 +18,7 @@
 
 import { createRequire } from 'node:module';
 import { SpanStatusCode, type Tracer, type Span } from '@opentelemetry/api';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 const _require = createRequire(import.meta.url);
 
@@ -164,8 +165,10 @@ export function withSpanSync<T>(
     if (t) {
       span = t.startSpan(operation, { attributes: buildAttributes(operation, attrs) });
     }
-  } catch {
-    // Noop tracer — no SDK loaded
+  } catch (err) {
+    getAdapterLogger().warn('telemetry', 'withSpanSync failed, span not created', {
+      error: String(err),
+    });
   }
 
   try {
@@ -191,7 +194,10 @@ function getTracerSync(): Tracer | undefined {
   try {
     const { trace } = _require('@opentelemetry/api');
     return trace.getTracer('flowguard', '1.0.0');
-  } catch {
+  } catch (err) {
+    getAdapterLogger().warn('telemetry', 'getTracerSync failed, returning undefined', {
+      error: String(err),
+    });
     return undefined;
   }
 }
@@ -241,7 +247,10 @@ function getActiveSpan(): Span | null {
   try {
     const { trace } = _require('@opentelemetry/api');
     return trace.getActiveSpan() ?? null;
-  } catch {
+  } catch (err) {
+    getAdapterLogger().warn('telemetry', 'getActiveSpan failed, returning null', {
+      error: String(err),
+    });
     return null;
   }
 }
