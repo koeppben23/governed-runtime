@@ -79,7 +79,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
-  resolveHostTaskFindings,
+  resolveHostTaskEffectiveFindings,
 } from './review-validation.js';
 import {
   appendReviewObligation,
@@ -372,65 +372,32 @@ export const plan: ToolDefinition = {
         // non-zero risk (key reordering, Zod stripping, hallucinated fields).
         // SDK path (sdk_session_prompt) continues to use agent-submitted
         // findings with full validation.
-        const isHostTaskMode = policy.reviewInvocationPolicy === 'host_task_required';
-        let effectiveFindings: ReviewFindings | undefined;
-        let evidenceInvocationId: string | undefined;
-
-        if (isHostTaskMode) {
-          if (args.reviewFindings) {
-            // BUG-17: warn-level diagnostic — agent submitted reviewFindings
-            // but they will be ignored in host_task_required mode.
-            void args.reviewFindings; // side-effect-free acknowledgement
-          }
-          const resolved = resolveHostTaskFindings(
-            state.reviewAssurance,
-            pendingObligation ?? null,
-          );
-          if (resolved) {
-            effectiveFindings = resolved.findings;
-            evidenceInvocationId = resolved.invocationId;
-          } else if (args.reviewerUnavailable === true) {
-            // BUG-19: Reviewer subagent cannot be invoked (environment/infra).
-            // Allow self-review fallback to unblock workflow. Strict enforcement
-            // still blocks — degraded assurance is only permitted in non-strict.
-            if (strictEnforcement) {
-              return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-                reason:
-                  'reviewer subagent unavailable and strict enforcement requires host-visible review',
-                recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
-              });
-            }
-            effectiveFindings = {
-              iteration: expectedIteration,
-              planVersion: expectedPlanVersion,
-              reviewMode: 'self' as const,
-              overallVerdict: args.selfReviewVerdict as 'approve' | 'changes_requested',
-              blockingIssues: [],
-              majorRisks: [],
-              missingVerification: [],
-              scopeCreep: [],
-              unknowns: [],
-              reviewedBy: { sessionId: context.sessionID },
-              reviewedAt: new Date().toISOString(),
-            };
-          }
-        } else if (args.reviewFindings) {
-          effectiveFindings = args.reviewFindings as ReviewFindings;
-          // SDK path: validate agent-submitted findings (hash comparison valid
-          // because plugin injects findings and agent returns them verbatim).
-          const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
+        const resolved = resolveHostTaskEffectiveFindings({
+          pendingObligation: pendingObligation ?? null,
+          expected: {
+            obligationType: 'plan',
+            iteration: expectedIteration,
+            planVersion: expectedPlanVersion,
+          },
+          policy: {
+            reviewInvocationPolicy: policy.reviewInvocationPolicy,
+            strictEnforcement,
             subagentEnabled,
             fallbackToSelf,
-            expectedPlanVersion,
-            expectedIteration,
-            strictEnforcement,
+          },
+          input: {
+            reviewFindings: args.reviewFindings,
+            reviewerUnavailable: args.reviewerUnavailable,
+            verdict: args.selfReviewVerdict,
+          },
+          state: {
             assurance: state.reviewAssurance,
-            obligationType: 'plan',
-            reviewInvocationPolicy: policy.reviewInvocationPolicy,
-            reviewParentSessionId: context.sessionID,
-          });
-          if (blocked) return blocked;
-        }
+            sessionId: context.sessionID,
+          },
+        });
+        if (resolved.blocked) return resolved.blocked;
+        const effectiveFindings = resolved.effectiveFindings;
+        const evidenceInvocationId = resolved.evidenceInvocationId;
 
         if (!effectiveFindings) {
           const blocked = requireReviewFindings(false);

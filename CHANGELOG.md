@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Clean Code D: `resolveHostTaskEffectiveFindings` helper in review-validation.ts replaces 3× ~68-line duplicated host-task resolution blocks in plan.ts, implement.ts, and architecture.ts. All existing behavior (host_task_required evidence resolution, reviewerUnavailable fallback, SDK path validation) preserved 1:1.
 - Clean Code A: canonical constants for `FINGERPRINT_PATTERN`, `REVIEWER_SUBAGENT_TYPE`, and `REVIEW_REPORT_SCHEMA_ID` centralized in `shared/flowguard-identifiers.ts`. All ~55 hardcoded `'flowguard-reviewer'` code strings replaced with the canonical constant. Ticket external-reference table data-driven from structured constant. Schema-level `FINGERPRINT_PATTERN` shared between `state/evidence.ts` and `archive/types.ts`.
 
 - Clean Code B: 3 telemetry catch blocks now log warnings via adapter logger instead of silently swallowing errors. `parseIPv4` rejects hex-formatted octets via decimal-only regex. Tarball filename matching tightened to version-pattern regex (digest verification deferred).

@@ -318,3 +318,96 @@ export function resolveHostTaskFindings(
 
   return { findings: parsed.data, invocationId: invocation.invocationId };
 }
+
+// ─── Host Task Effective Findings Resolution ───────────────────────────────────
+
+interface HostTaskResolutionContext {
+  readonly pendingObligation: ReviewObligation | null;
+  readonly expected: {
+    readonly obligationType: ReviewObligationType;
+    readonly iteration: number;
+    readonly planVersion: number;
+  };
+  readonly policy: {
+    readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
+    readonly strictEnforcement: boolean;
+    readonly subagentEnabled: boolean;
+    readonly fallbackToSelf: boolean;
+  };
+  readonly input: {
+    readonly reviewFindings?: unknown;
+    readonly reviewerUnavailable?: boolean;
+    readonly verdict?: string;
+  };
+  readonly state: {
+    readonly assurance?: ReviewAssuranceState;
+    readonly sessionId: string;
+  };
+}
+
+interface HostTaskResolutionResult {
+  readonly effectiveFindings?: ReviewFindings;
+  readonly evidenceInvocationId?: string;
+  readonly blocked?: ReturnType<typeof formatBlocked>;
+}
+
+export function resolveHostTaskEffectiveFindings(
+  ctx: HostTaskResolutionContext,
+): HostTaskResolutionResult {
+  const isHostTaskMode = ctx.policy.reviewInvocationPolicy === 'host_task_required';
+
+  if (isHostTaskMode) {
+    if (ctx.input.reviewFindings) {
+      void ctx.input.reviewFindings; // side-effect-free acknowledgement
+    }
+    const resolved = resolveHostTaskFindings(ctx.state.assurance, ctx.pendingObligation);
+    if (resolved) {
+      return {
+        effectiveFindings: resolved.findings,
+        evidenceInvocationId: resolved.invocationId,
+      };
+    } else if (ctx.input.reviewerUnavailable === true) {
+      if (ctx.policy.strictEnforcement) {
+        return {
+          blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+            reason:
+              'reviewer subagent unavailable and strict enforcement requires host-visible review',
+            recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
+          }),
+        };
+      }
+      return {
+        effectiveFindings: {
+          iteration: ctx.expected.iteration,
+          planVersion: ctx.expected.planVersion,
+          reviewMode: 'self' as const,
+          overallVerdict: ctx.input.verdict as 'approve' | 'changes_requested',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: ctx.state.sessionId },
+          reviewedAt: new Date().toISOString(),
+        },
+      };
+    }
+    return {};
+  } else if (ctx.input.reviewFindings) {
+    const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
+      subagentEnabled: ctx.policy.subagentEnabled,
+      fallbackToSelf: ctx.policy.fallbackToSelf,
+      expectedPlanVersion: ctx.expected.planVersion,
+      expectedIteration: ctx.expected.iteration,
+      strictEnforcement: ctx.policy.strictEnforcement,
+      assurance: ctx.state.assurance,
+      obligationType: ctx.expected.obligationType,
+      reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
+      reviewParentSessionId: ctx.state.sessionId,
+    });
+    if (blocked) return { blocked };
+    return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
+  }
+
+  return {};
+}
