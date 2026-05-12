@@ -52,12 +52,15 @@ function parseIPv4(ip: string): number | null {
   if (parts.length !== 4) return null;
   let result = 0;
   for (const part of parts) {
+    // Reject non-decimal input such as hex; preserve existing leading-zero decimal behavior.
+    if (!/^\d{1,3}$/.test(part)) return null;
     const n = Number(part);
     if (!Number.isInteger(n) || n < 0 || n > 255) return null;
     result = (result << 8) | n;
   }
   return result >>> 0; // unsigned 32-bit
 }
+export { parseIPv4 };
 
 /**
  * Check if an IPv4 address (as 32-bit int) falls within any private/reserved range.

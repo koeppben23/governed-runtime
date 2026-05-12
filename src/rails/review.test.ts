@@ -14,6 +14,7 @@ import {
   executeReviewFlow,
   startReviewFlow,
   validateReviewUrl,
+  parseIPv4,
   loadExternalContent,
   buildReviewReport,
   type ReviewExecutors,
@@ -1324,6 +1325,34 @@ describe('review rail', () => {
           expect(result.content).toBe('');
         }
       });
+    });
+  });
+
+  // ─── parseIPv4: decimal-only validation (H9) ─────────────────
+  describe('parseIPv4', () => {
+    it('HAPPY: accepts standard IPv4 addresses', () => {
+      expect(parseIPv4('192.168.1.1')).toBe(((192 << 24) | (168 << 16) | (1 << 8) | 1) >>> 0);
+      expect(parseIPv4('127.0.0.1')).toBe(((127 << 24) | (0 << 16) | (0 << 8) | 1) >>> 0);
+      expect(parseIPv4('255.255.255.255')).toBe(0xffffffff);
+      expect(parseIPv4('0.0.0.0')).toBe(0);
+    });
+
+    it('BAD: rejects hex-formatted octets', () => {
+      expect(parseIPv4('0xab.0.0.0')).toBeNull();
+      expect(parseIPv4('0x7f.0x00.0x00.0x01')).toBeNull();
+      expect(parseIPv4('0XAB.0.0.0')).toBeNull();
+    });
+
+    it('BAD: rejects invalid IP formats', () => {
+      expect(parseIPv4('not.an.ip.address')).toBeNull();
+      expect(parseIPv4('')).toBeNull();
+      expect(parseIPv4('1.2.3')).toBeNull();
+      expect(parseIPv4('1.2.3.4.5')).toBeNull();
+    });
+
+    it('EDGE: preserves existing leading-zero decimal behavior', () => {
+      expect(parseIPv4('010.0.0.1')).toBe(((10 << 24) | 1) >>> 0);
+      expect(parseIPv4('192.168.001.001')).toBe(((192 << 24) | (168 << 16) | (1 << 8) | 1) >>> 0);
     });
   });
 });

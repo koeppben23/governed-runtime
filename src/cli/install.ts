@@ -67,6 +67,9 @@ import {
   hasNonFlowGuardInstructions,
 } from './install-helpers.js';
 
+/** Canonical regex for FlowGuard tarball filenames — shared between install and uninstall. */
+const FLOWGUARD_TARBALL_PATTERN = /^flowguard-core-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/;
+
 // ─── Re-exports for backward compatibility ─────────────────────────────────
 export {
   type InstallScope,
@@ -222,9 +225,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
     // 0c. Extract version from tarball filename
     const tarballName = basename(tarballPath);
-    const versionMatch = tarballName.match(
-      /^flowguard-core-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/,
-    );
+    const versionMatch = tarballName.match(FLOWGUARD_TARBALL_PATTERN);
     if (!versionMatch) {
       errors.push(
         'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
@@ -407,9 +408,9 @@ export async function install(args: CliArgs): Promise<CliResult> {
 
 // ─── Uninstall ────────────────────────────────────────────────────────────────
 
-/** True if a vendor entry is a FlowGuard-owned tarball. */
-function isFlowGuardVendorArtifact(entry: string): boolean {
-  return entry.startsWith('flowguard-core-') && entry.endsWith('.tgz');
+/** True if a vendor entry is a FlowGuard-owned tarball with a valid semver/pre-release version. */
+export function isFlowGuardVendorArtifact(entry: string): boolean {
+  return FLOWGUARD_TARBALL_PATTERN.test(entry);
 }
 
 /**

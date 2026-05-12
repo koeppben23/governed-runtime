@@ -7,7 +7,19 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// ─── Module-level mocks — scoped to this test file ──────────────────────
+const adapterLoggerSpy = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+vi.mock('../logging/adapter-logger.js', () => ({
+  getAdapterLogger: () => adapterLoggerSpy,
+}));
+
 describe('telemetry', () => {
+  beforeEach(() => {
+    adapterLoggerSpy.warn.mockClear();
+    adapterLoggerSpy.info.mockClear();
+    adapterLoggerSpy.error.mockClear();
+  });
+
   describe('HAPPY', () => {
     it('withSpan executes function and returns result', async () => {
       const { withSpan } = await import('./index.js');
@@ -129,6 +141,30 @@ describe('telemetry', () => {
       const longName = 'a'.repeat(500);
       const result = await withSpan(longName, async () => 'ok');
       expect(result).toBe('ok');
+    });
+
+    it('handles error when OTEL tracer is unavailable and warns via adapter logger', async () => {
+      vi.doMock('node:module',
+        async (importOriginal) => {
+          const actual = await importOriginal<typeof import('node:module')>();
+          return {
+            ...actual,
+            createRequire: vi.fn().mockReturnValue(() => {
+              throw new Error('OTEL not available');
+            }),
+          };
+        },
+      );
+      vi.resetModules();
+      const { withSpanSync } = await import('./index.js');
+      const result = withSpanSync('test.operation', () => 'fallback result');
+      expect(result).toBe('fallback result');
+      expect(adapterLoggerSpy.warn).toHaveBeenCalledWith(
+        'telemetry',
+        expect.stringContaining('getTracerSync failed'),
+        expect.objectContaining({ error: expect.any(String) }),
+      );
+      vi.resetModules();
     });
   });
 });
