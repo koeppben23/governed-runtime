@@ -52,10 +52,19 @@ interface ArtifactFile {
   readonly jsonAbsPath: string;
 }
 
-export class EvidenceArtifactError extends Error {
-  readonly code: string;
+/**
+ * Typed evidence artifact error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type EvidenceArtifactErrorCode =
+  | 'EVIDENCE_ARTIFACT_MISSING'
+  | 'EVIDENCE_ARTIFACT_MISMATCH'
+  | 'EVIDENCE_ARTIFACT_IMMUTABLE';
 
-  constructor(code: string, message: string) {
+export class EvidenceArtifactError extends Error {
+  readonly code: EvidenceArtifactErrorCode;
+
+  constructor(code: EvidenceArtifactErrorCode, message: string) {
     super(message);
     this.name = 'EvidenceArtifactError';
     this.code = code;

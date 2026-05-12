@@ -22,6 +22,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, validate } from './tools/index.js';
 import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
@@ -63,10 +64,10 @@ vi.mock('../adapters/actor', async (importOriginal) => {
 const actorMock = await import('../adapters/actor.js');
 
 let ws: TestWorkspace;
-let previousCI: string | undefined;
+let cleanupEnv: () => void;
 
 beforeEach(async () => {
-  previousCI = process.env.CI;
+  cleanupEnv = withTestEnv({ CI: process.env.CI });
   ws = await createTestWorkspace();
 });
 
@@ -81,8 +82,7 @@ afterEach(async () => {
       assurance: 'claim_validated' as const,
     });
   vi.clearAllMocks();
-  if (previousCI === undefined) delete process.env.CI;
-  else process.env.CI = previousCI;
+  cleanupEnv();
   await ws.cleanup();
 });
 

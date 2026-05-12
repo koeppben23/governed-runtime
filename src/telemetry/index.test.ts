@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 // ─── Module-level mocks — scoped to this test file ──────────────────────
 const adapterLoggerSpy = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
@@ -64,10 +65,14 @@ describe('telemetry', () => {
 
   describe('BAD', () => {
     it('handles gracefully when OTEL not configured', async () => {
-      delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-      const { withSpan } = await import('./index.js');
-      const result = await withSpan('test.operation', async () => 'result');
-      expect(result).toBe('result');
+      const restoreEnv = withTestEnv({ OTEL_EXPORTER_OTLP_ENDPOINT: undefined });
+      try {
+        const { withSpan } = await import('./index.js');
+        const result = await withSpan('test.operation', async () => 'result');
+        expect(result).toBe('result');
+      } finally {
+        restoreEnv();
+      }
     });
 
     it('withSpan handles undefined attributes gracefully', async () => {

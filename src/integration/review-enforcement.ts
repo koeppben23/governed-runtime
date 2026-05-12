@@ -2,159 +2,55 @@
  * @module integration/review-enforcement
  * @description Runtime enforcement for independent review subagent invocation.
  *
- * Problem: FlowGuard tools return advisory `next` messages instructing the
- * primary agent to call the flowguard-reviewer subagent via the Task tool.
- * However, the primary agent could ignore this instruction, fabricate
- * ReviewFindings without invoking the subagent, send an empty/garbage prompt,
- * or modify the subagent's actual findings before submitting them.
+ * Contains the state factory and hook handlers (pure functions) that enforce
+ * four levels of review integrity:
  *
- * Solution: This module observes the entire tool-call sequence via OpenCode's
- * plugin hook system (tool.execute.before/after) and enforces four levels:
- *
- * Enforcement levels:
  * - Level 1 (Binary Gate): A Task call to flowguard-reviewer MUST occur
- *   before any verdict submission. Enforced in tool.execute.before for
- *   flowguard_plan/flowguard_implement Mode B calls.
- * - Level 2 (Session ID): The submitted reviewFindings.reviewedBy.sessionId
- *   must match the actual subagent session ID. Enforced when both the actual
- *   and submitted session IDs are available.
- * - Level 3 (Prompt Integrity): The Task call prompt must contain expected
- *   iteration/planVersion values and meet minimum length requirements.
- *   Enforced in tool.execute.before for task calls to flowguard-reviewer.
- * - Level 4 (Findings Integrity): The submitted reviewFindings must match the
- *   actual subagent response (overallVerdict and blockingIssues count).
- *   Enforced in tool.execute.before for flowguard_plan/flowguard_implement
- *   Mode B calls.
+ *   before any verdict submission.
+ * - Level 2 (Session ID): Submitted sessionId must match actual subagent session.
+ * - Level 3 (Prompt Integrity): Task call prompt must contain expected context.
+ * - Level 4 (Findings Integrity): Submitted findings must match actual response.
  *
- * 1:1 obligation matching (P34a/P34b contract):
- * Each Task call to flowguard-reviewer satisfies exactly ONE pending review
- * obligation. P34a (plan review) and P34b (implement review) are independent
- * governance obligations — a single subagent call cannot satisfy both.
- * When multiple pending reviews exist, the Task prompt's iteration/planVersion
- * values are matched against each pending review's contentMeta to determine
- * which obligation the call fulfills. If no match is found, no obligation is
- * satisfied (fail-closed).
+ * Extracted modules (FG-REL-038):
+ * - review-enforcement-types.ts — Types, interfaces, constants
+ * - review-enforcement-extraction.ts — Pure parsing/extraction helpers
+ * - review-evidence-binding.ts — Host-task evidence binding
  *
  * Architecture:
  * - Pure logic module — no OpenCode/plugin dependencies, fully unit-testable.
  * - Plugin integration happens in plugin.ts (delegates to this module).
  * - Session-scoped state tracked per session ID.
  *
- * Conformance: Uses documented OpenCode plugin hooks (tool.execute.before/after)
- * per https://opencode.ai/docs/plugins
- *
- * @version v3
+ * @version v4
  */
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+import type { SessionState } from '../state/schema.js';
+import {
+  type SessionEnforcementState,
+  type PendingReview,
+  type CapturedFindings,
+  type SubagentRecord,
+  type TaskToolContext,
+  type EnforcementResult,
+  type PendingReviewTool,
+  REVIEW_REQUIRED_PREFIX,
+  MIN_SUBAGENT_PROMPT_LENGTH,
+} from './review-enforcement-types.js';
+import {
+  extractContentMeta,
+  extractCapturedFindings,
+  extractSubagentSessionId,
+  resolveSessionIdFromMetadata,
+  promptContainsValue,
+} from './review-enforcement-extraction.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
-import type { SessionState } from '../state/schema.js';
-import type { ReviewInvocationEvidence, ReviewObligation } from '../state/evidence.js';
-import { buildInvocationEvidence, hashFindings, hashText } from './review-assurance.js';
 import {
   isReviewableTool,
   obligationTypeForTool,
   type ReviewableTool,
 } from './review-obligation-tools.js';
-export type { ReviewableTool } from './review-obligation-tools.js';
 import { parseToolResult } from './plugin-helpers.js';
-type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
-
-/** Record of a completed subagent invocation. */
-export interface SubagentRecord {
-  /** Subagent session ID extracted from response, or null if extraction failed. */
-  readonly sessionId: string | null;
-  /** ISO 8601 timestamp when the Task call completed. */
-  readonly completedAt: string;
-}
-
-/**
- * Content metadata captured from FlowGuard tool response.
- * Used by Level 3 (Prompt Integrity) to validate the Task call prompt.
- */
-export interface ContentMeta {
-  /** Expected iteration value parsed from the INDEPENDENT_REVIEW_REQUIRED message. */
-  readonly expectedIteration: number;
-  /** Expected planVersion value parsed from the message (null if not present). */
-  readonly expectedPlanVersion: number | null;
-}
-
-/**
- * Key fields captured from the actual subagent response.
- * Used by Level 4 (Findings Integrity) to detect findings modification.
- */
-export interface CapturedFindings {
-  /** The overallVerdict from the subagent's ReviewFindings. */
-  readonly overallVerdict: string;
-  /** Count of blockingIssues from the subagent's ReviewFindings. */
-  readonly blockingIssuesCount: number;
-  /** The sessionId from reviewedBy, if present. */
-  readonly sessionId: string | null;
-  /** Complete parsed ReviewFindings object, when extraction succeeds. */
-  readonly rawFindings?: Record<string, unknown> | null;
-}
-
-/** Per-tool pending review state. */
-export interface PendingReview {
-  /** Which tool signaled the review requirement. */
-  readonly tool: PendingReviewTool;
-  /** ISO 8601 timestamp when the requirement was signaled. */
-  readonly requestedAt: string;
-  /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
-  subagentCalled: boolean;
-  /** Record of the actual subagent call, if made (Level 2). */
-  subagentRecord: SubagentRecord | null;
-  /** Content metadata for prompt integrity validation (Level 3). */
-  contentMeta: ContentMeta | null;
-  /** Actual findings from the subagent response (Level 4). */
-  capturedFindings: CapturedFindings | null;
-}
-
-/** Session-level enforcement state. */
-export interface SessionEnforcementState {
-  /** Pending reviews keyed by tool name. */
-  readonly pendingReviews: Map<PendingReviewTool, PendingReview>;
-}
-
-/**
- * Optional context from the plugin hook for session ID resolution.
- *
- * The OpenCode `task` tool's `tool.execute.after` hook provides metadata
- * and callID that may contain the child session ID. This context enables
- * tiered session ID resolution:
- *
- * Tier 1: `metadata.sessionID` — authoritative, from the task tool runtime.
- * Tier 2: Text extraction from the reviewer's output (existing behavior).
- * Tier 3: `derived:call:${callID}` — synthetic, guaranteed unique.
- */
-export interface TaskToolContext {
-  /** Metadata from the task tool output (may contain child sessionID). */
-  readonly metadata?: Record<string, unknown>;
-  /** Tool call ID — unique per invocation, used for Tier 3 synthetic ID. */
-  readonly callID?: string;
-}
-
-/** Result of an enforcement check. */
-export type EnforcementResult =
-  | { readonly allowed: true }
-  | { readonly allowed: false; readonly code: string; readonly reason: string };
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-/** The prefix that FlowGuard tools use to signal subagent review is required. */
-export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
-
-/** The subagent type name for the FlowGuard reviewer. */
-export { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
-
-/**
- * Minimum prompt length for subagent calls (Level 3).
- * A real review prompt must include plan/implementation text, ticket context,
- * iteration, and planVersion. 200 characters is a generous floor that catches
- * empty or trivially short prompts.
- */
-export const MIN_SUBAGENT_PROMPT_LENGTH = 200;
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -343,21 +239,9 @@ export function enforceBeforeSubagentCall(
  *
  * Session ID resolution (BUG-14 fix — three-tiered):
  *
- * Tier 1: Hook metadata — `context.metadata.sessionID` from the task tool
- *   runtime. Authoritative because the task tool created the child session.
- * Tier 2: Text extraction — parse `reviewedBy.sessionId` from the reviewer's
- *   JSON output. Works when the reviewer includes a valid session ID.
- * Tier 3: Synthetic — `derived:call:${context.callID}`. Guaranteed unique
- *   per invocation. Prevents `no_child_session` binding failure.
- *
- * Mirrors SDK mode post-hoc injection (review-orchestrator.ts:1193-1202):
- * the reviewer cannot know its own session ID, so the runtime resolves it
- * and injects it into the captured findings for hash consistency.
- *
- * 1:1 obligation matching: Each Task call satisfies exactly one pending review.
- * P34a (plan) and P34b (implement) are independent obligations. When multiple
- * are pending, the prompt's iteration/planVersion must match the target obligation's
- * contentMeta. If only one is pending, it is matched unambiguously.
+ * Tier 1: Hook metadata — `context.metadata.sessionID` from the task tool runtime.
+ * Tier 2: Text extraction — parse `reviewedBy.sessionId` from the reviewer's JSON output.
+ * Tier 3: Synthetic — `derived:call:${context.callID}`. Guaranteed unique per invocation.
  *
  * @param state - Session enforcement state (mutated in place)
  * @param args - Task tool arguments (expects subagent_type and prompt fields)
@@ -392,8 +276,6 @@ export function onTaskToolAfter(
   };
 
   // Match exactly ONE pending review obligation (P34 1:1 contract).
-  // Each subagent call satisfies one obligation. If both plan and implement
-  // reviews are pending, each requires its own subagent invocation.
   const matched = matchPendingReview(state, args);
   if (matched) {
     matched.subagentCalled = true;
@@ -410,10 +292,6 @@ export function onTaskToolAfter(
  * - 1 pending: that one (unambiguous — L3 already validated the prompt)
  * - >1 pending: match by contentMeta (iteration + planVersion from prompt)
  * - >1 pending, no contentMeta match: null (fail-closed, ambiguous)
- *
- * @param state - Session enforcement state (read-only)
- * @param taskArgs - Task tool call arguments (expects prompt field)
- * @returns The matched PendingReview, or null if no match
  */
 export function matchPendingReview(
   state: SessionEnforcementState,
@@ -448,16 +326,7 @@ export function matchPendingReview(
  * Enforcement checks (in order):
  * - Level 1: Binary gate — subagent must have been called
  * - Level 2: Session ID match — when both actual and submitted IDs are available
- * - Level 4: Findings integrity — submitted overallVerdict and blockingIssues count
- *   must match the actual subagent response
- *
- * Returns { allowed: true } if no enforcement is needed, or
- * { allowed: false, code, reason } if the call should be blocked.
- *
- * @param state - Session enforcement state (read-only check)
- * @param toolName - FlowGuard tool name
- * @param args - Tool call arguments
- * @returns Enforcement result
+ * - Level 4: Findings integrity — submitted must match captured
  */
 export function enforceBeforeVerdict(
   state: SessionEnforcementState,
@@ -486,9 +355,6 @@ export function enforceBeforeVerdict(
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending) {
     // BUG-21 Fix B: Separate "state is readable" from "has obligations".
-    // After /ticket (before first /plan), sessionState exists but
-    // reviewAssurance is undefined — the old code skipped this block
-    // and fell through to the strict-enforcement BLOCKED path.
     if (sessionState) {
       const obligations = sessionState.reviewAssurance?.obligations;
       if (!obligations || obligations.length === 0) {
@@ -616,7 +482,7 @@ export function enforceBeforeVerdict(
  * subsequent L1/L2/L4 checks pass for the verdict submission.
  *
  * @param state - Session enforcement state (mutated in place)
- * @param toolName - Which tool's pending review to satisfy ('flowguard_plan' or 'flowguard_implement')
+ * @param toolName - Which tool's pending review to satisfy
  * @param sessionId - The child session ID from the orchestrator
  * @param capturedFindings - The findings captured from the reviewer response
  * @param now - ISO 8601 timestamp
@@ -642,576 +508,4 @@ export function recordPluginReview(
   };
   pending.capturedFindings = capturedFindings;
   return true;
-}
-
-/**
- * Machine-readable outcome of a host-task bind attempt.
- * Used for diagnostic logging — NOT a governance reason code.
- */
-export type HostTaskBindOutcome =
-  | 'bound'
-  | 'no_matched_record'
-  | 'no_child_session'
-  | 'no_obligation_type'
-  | 'no_findings'
-  | 'no_matching_obligation'
-  | 'field_mismatch'
-  | 'duplicate_evidence';
-
-/**
- * Structured result from {@link buildHostTaskEvidence}.
- *
- * Always includes a machine-readable `bindOutcome` and a serializable
- * `diagnostic` object so the caller can log exactly why binding succeeded
- * or failed without re-inspecting internal state.
- */
-export interface HostTaskBindResult {
-  /** Created evidence, or null if binding failed. */
-  evidence: ReviewInvocationEvidence | null;
-  /** Machine-readable bind outcome for logging. */
-  bindOutcome: HostTaskBindOutcome;
-  /** Structured diagnostic metadata (safe to JSON.stringify). */
-  diagnostic: Record<string, unknown>;
-}
-
-/**
- * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
- *
- * Called after `onTaskToolAfter` records a Task tool call to flowguard-reviewer.
- * Creates persistent ReviewInvocationEvidence with invocationMode='host_subagent_task'
- * and hostVisible=true, so that validateReviewFindings can find it during tool.execute.
- *
- * @param state - Session enforcement state (after onTaskToolAfter update)
- * @param sessionId - Current session ID (parent session)
- * @param obligations - Persisted review obligations from session state
- * @param invocations - Persisted invocation evidence from session state
- * @param now - ISO 8601 timestamp
- * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
- */
-export function buildHostTaskEvidence(
-  state: SessionEnforcementState,
-  sessionId: string,
-  obligations: ReviewObligation[],
-  invocations: ReviewInvocationEvidence[],
-  now: string,
-): HostTaskBindResult {
-  const allPending = [...state.pendingReviews.values()];
-  const matched = allPending.filter(
-    (p) => p.subagentCalled && p.subagentRecord !== null && p.capturedFindings?.rawFindings,
-  );
-  if (matched.length === 0) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_matched_record',
-      diagnostic: {
-        pendingCount: allPending.length,
-        calledCount: allPending.filter((p) => p.subagentCalled).length,
-      },
-    };
-  }
-
-  const latest = matched.sort((a, b) =>
-    (b.subagentRecord?.completedAt ?? '').localeCompare(a.subagentRecord?.completedAt ?? ''),
-  )[0]!;
-
-  const childSessionId = latest.subagentRecord!.sessionId;
-  if (!childSessionId) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_child_session',
-      diagnostic: { tool: latest.tool },
-    };
-  }
-
-  const oType =
-    latest.tool === TOOL_FLOWGUARD_REVIEW ? 'review' : obligationTypeForTool(latest.tool);
-  if (!oType) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_obligation_type',
-      diagnostic: { tool: latest.tool },
-    };
-  }
-
-  const rawFindings = latest.capturedFindings?.rawFindings;
-  if (!rawFindings) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_findings',
-      diagnostic: { tool: latest.tool, childSessionId },
-    };
-  }
-  const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
-  const attestedObligationId =
-    typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
-
-  // BUG-20: Validate attestation contains a proper UUID. In host_task_required mode,
-  // the LLM-constructed reviewer prompt cannot relay obligationId/mandateDigest/criteriaVersion
-  // because buildHostTaskPolicyOutput does not (and cannot) include them. The reviewer
-  // writes placeholder values like "not_provided_in_prompt" which are not valid UUIDs.
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const hasValidAttestation = attestedObligationId !== null && UUID_RE.test(attestedObligationId);
-
-  let matchedObligation: ReviewObligation | undefined;
-
-  if (hasValidAttestation) {
-    // Primary path: attestation-based matching (SDK path, well-behaved reviewers).
-    matchedObligation = obligations.find(
-      (o) =>
-        o.obligationId === attestedObligationId &&
-        o.obligationType === oType &&
-        o.status !== 'consumed' &&
-        o.consumedAt === null,
-    );
-    if (!matchedObligation) {
-      return {
-        evidence: null,
-        bindOutcome: 'no_matching_obligation',
-        diagnostic: {
-          attestedObligationId,
-          obligationType: oType,
-          availableObligations: obligations.length,
-          bindingMode: 'attestation',
-        },
-      };
-    }
-  } else {
-    // BUG-20 Fallback: tool-based obligation matching when attestation is absent or invalid.
-    // Safety justification:
-    // 1. Plugin validated this Task call via matchPendingReview (P34 1:1 contract)
-    // 2. rawFindings are first-party captured by plugin hook (not LLM-reconstructed)
-    // 3. At most one pending obligation per tool-type for plan/implement/architecture
-    //    (see review-assurance.ts:143-144 comment confirming this invariant)
-    // 4. This uses the same lookup semantics as plan.ts:352-358 (the consumer),
-    //    guaranteeing resolveHostTaskFindings will find the evidence we create here.
-    matchedObligation = obligations
-      .filter((o) => o.obligationType === oType && o.status !== 'consumed' && o.consumedAt === null)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (!matchedObligation) {
-      return {
-        evidence: null,
-        bindOutcome: 'no_matching_obligation',
-        diagnostic: {
-          attestedObligationId,
-          obligationType: oType,
-          availableObligations: obligations.length,
-          bindingMode: 'tool_fallback',
-        },
-      };
-    }
-  }
-
-  // Field consistency checks — verify findings match the obligation's context.
-  const mismatchFields: string[] = [];
-  if (rawFindings.iteration !== matchedObligation.iteration) mismatchFields.push('iteration');
-  if (rawFindings.planVersion !== matchedObligation.planVersion) mismatchFields.push('planVersion');
-  // BUG-20: Only check attestation-specific fields when a valid attestation is present.
-  // In host_task_required mode, the reviewer cannot fill mandateDigest/criteriaVersion/reviewedBy
-  // because these values are not provided in the LLM-constructed prompt. Checking them would
-  // always fail with placeholder values, making the entire host_task_required path broken.
-  if (hasValidAttestation) {
-    if (attestation?.mandateDigest !== matchedObligation.mandateDigest)
-      mismatchFields.push('mandateDigest');
-    if (attestation?.criteriaVersion !== matchedObligation.criteriaVersion)
-      mismatchFields.push('criteriaVersion');
-    if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) mismatchFields.push('reviewedBy');
-  }
-  if (mismatchFields.length > 0) {
-    return {
-      evidence: null,
-      bindOutcome: 'field_mismatch',
-      diagnostic: {
-        attestedObligationId,
-        mismatchFields,
-        bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
-      },
-    };
-  }
-
-  // BUG-20b: Normalize raw findings before hash computation and storage.
-  // When attestation is invalid (placeholder values from LLM), strip it from the
-  // stored copy. ReviewFindingsSchema treats attestation as optional-but-must-be-valid:
-  // if we store invalid attestation, resolveHostTaskFindings rejects the ENTIRE
-  // findings object via safeParse, causing REVIEW_FINDINGS_REQUIRED even though
-  // binding succeeded. Normalizing BEFORE hashFindings keeps findingsHash and
-  // capturedRawFindings consistent (both computed from the same normalized object).
-  const normalizedFindings = hasValidAttestation
-    ? rawFindings
-    : (() => {
-        const { attestation: _, ...rest } = rawFindings;
-        return rest;
-      })();
-
-  const findingsHash = hashFindings(normalizedFindings);
-  if (
-    invocations.some(
-      (inv) =>
-        inv.obligationId === matchedObligation.obligationId &&
-        inv.childSessionId === childSessionId &&
-        inv.findingsHash === findingsHash,
-    )
-  ) {
-    return {
-      evidence: null,
-      bindOutcome: 'duplicate_evidence',
-      diagnostic: {
-        childSessionId,
-        findingsHash,
-        obligationId: matchedObligation.obligationId,
-      },
-    };
-  }
-
-  const promptHash = hashText(
-    `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
-  );
-
-  const evidence = buildInvocationEvidence({
-    obligationId: matchedObligation.obligationId,
-    obligationType: oType,
-    parentSessionId: sessionId,
-    childSessionId,
-    invocationMode: 'host_subagent_task',
-    hostVisible: true,
-    promptHash,
-    findingsHash,
-    invokedAt: now,
-    source: 'host-orchestrated',
-    capturedVerdict: latest.capturedFindings?.overallVerdict,
-    capturedRawFindings: normalizedFindings,
-  });
-
-  return {
-    evidence,
-    bindOutcome: 'bound',
-    diagnostic: {
-      obligationId: matchedObligation.obligationId,
-      childSessionId,
-      findingsHash,
-      bindingMode: hasValidAttestation ? 'attestation' : 'tool_fallback',
-    },
-  };
-}
-
-// ─── Helpers (exported for testing) ──────────────────────────────────────────
-
-/**
- * Extract content metadata (iteration, planVersion) from the
- * INDEPENDENT_REVIEW_REQUIRED message string.
- *
- * The FlowGuard tools embed these values in the `next` field:
- * - plan Mode A: "... iteration=0, (4) planVersion=3 ..."
- * - plan Mode B: "... iteration=2, (4) planVersion=4 ..."
- * - implement Mode A: "... iteration=1, (5) planVersion=3 ..."
- *
- * @returns ContentMeta or null if iteration cannot be extracted
- */
-export function extractContentMeta(nextField: string): ContentMeta | null {
-  const iterMatch = nextField.match(/iteration[=:\s]+(\d+)/i);
-  if (!iterMatch) return null;
-
-  const versionMatch = nextField.match(/planVersion[=:\s]+(\d+)/i);
-
-  return {
-    expectedIteration: parseInt(iterMatch[1]!, 10),
-    expectedPlanVersion: versionMatch ? parseInt(versionMatch[1]!, 10) : null,
-  };
-}
-
-/**
- * Extract key fields from the actual subagent response for integrity checking.
- *
- * The flowguard-reviewer subagent returns a JSON ReviewFindings object.
- * The Task tool may wrap this in additional text. We attempt both direct
- * JSON parse and regex-based extraction.
- *
- * @returns CapturedFindings or null if extraction fails
- */
-export function extractCapturedFindings(taskResult: string): CapturedFindings | null {
-  // Try direct JSON parse
-  try {
-    const parsed = JSON.parse(taskResult) as unknown;
-    const result = extractFindingsFromObject(parsed);
-    if (result) return result;
-  } catch {
-    // Not clean JSON — continue to regex extraction
-  }
-
-  // Try to find a JSON block containing overallVerdict in the response
-  const jsonMatch = taskResult.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
-  if (jsonMatch) {
-    // Try to find the complete JSON object by finding the matching closing brace
-    const startIdx = taskResult.indexOf(jsonMatch[0]);
-    const candidate = extractJsonBlock(taskResult, startIdx);
-    if (candidate) {
-      try {
-        const parsed = JSON.parse(candidate) as unknown;
-        const result = extractFindingsFromObject(parsed);
-        if (result) return result;
-      } catch {
-        // Parse failed — fall through
-      }
-    }
-  }
-
-  return null;
-}
-
-/**
- * Check whether a reviewer prompt contains a specific numeric value
- * associated with a keyword (e.g. "iteration", "version").
- *
- * Used in L3 prompt-context enforcement (`enforceBeforeVerdict` and
- * `enforceBeforeSubagentCall`) to verify the prompt was constructed
- * with the runtime's expected iteration/planVersion values, not stale
- * values from a previous turn.
- *
- * Matching rules:
- * - Case-insensitive keyword match.
- * - Up to 30 non-digit characters between keyword and number. This
- *   accommodates all formats currently produced by mandate templates
- *   (`iteration=0`, `Iteration: 0`, `iteration 0`) plus future XML
- *   wrappers (`<iteration>0</iteration>` — `>` is a single non-digit
- *   character) and JSON embeds (`"iteration": 0` — `": ` is 3 chars).
- * - The 30-char ceiling intentionally rejects long-distance "matches"
- *   where the number is unrelated to the keyword (e.g. an iteration
- *   keyword followed by a sentence and then an unrelated number).
- *
- * Word-boundary semantics:
- * - `\b` at the suffix prevents partial-number matches: expected=1
- *   does NOT match "iteration=12" because `1` is followed by digit
- *   `2` (no word boundary between two digits).
- * - The prefix is bounded by the keyword + a non-digit gap (`[^\d]`),
- *   so a number embedded inside another number cannot be mis-attributed
- *   (e.g. expected=1 against "iteration=21" — the `[^\d]` separator
- *   forbids the leading `2` to count as the gap).
- *
- * @param prompt - The full prompt text
- * @param keyword - The keyword to match near (e.g. "iteration", "version")
- * @param expected - The expected numeric value
- * @returns true if the prompt contains the keyword-number pair
- */
-export function promptContainsValue(prompt: string, keyword: string, expected: number): boolean {
-  // Match keyword followed by up to 30 non-digit chars then the expected number
-  const pattern = new RegExp(`${keyword}[^\\d]{0,30}${expected}\\b`, 'i');
-  return pattern.test(prompt);
-}
-
-// ─── Internal helpers ────────────────────────────────────────────────────────
-
-/**
- * Extract the subagent session ID from hook metadata.
- *
- * The OpenCode `task` tool may include the child session ID in the
- * output metadata. This is the authoritative source (Tier 1) because
- * the task tool runtime created the session and knows the exact ID.
- *
- * Checks common field names: sessionID (SDK convention), sessionId
- * (camelCase alternative), id (generic).
- *
- * @param metadata - Metadata object from tool output, or undefined
- * @returns The session ID string, or null if not found
- */
-export function resolveSessionIdFromMetadata(
-  metadata: Record<string, unknown> | undefined,
-): string | null {
-  if (!metadata) return null;
-  if (typeof metadata.sessionID === 'string' && metadata.sessionID) return metadata.sessionID;
-  if (typeof metadata.sessionId === 'string' && metadata.sessionId) return metadata.sessionId;
-  if (typeof metadata.id === 'string' && metadata.id) return metadata.id;
-  return null;
-}
-
-/**
- * Inject the authoritative child session ID into ReviewFindings JSON.
- *
- * Mirrors the SDK mode post-hoc injection in review-orchestrator.ts:1193-1202.
- * The reviewer subagent cannot reliably know its own session ID, so the
- * runtime injects it into `reviewedBy.sessionId` before the output is
- * captured and hashed.
- *
- * Handles three output formats:
- * 1. Clean JSON: full output is valid JSON
- * 2. Embedded JSON: JSON block with `"reviewedBy"` marker in mixed text
- * 3. Non-JSON: returns original text unchanged
- *
- * @param output - Raw task tool output text
- * @param sessionId - Authoritative child session ID to inject
- * @returns Modified output text with injected session ID
- */
-export function injectSessionIdIntoOutput(output: string, sessionId: string): string {
-  // Path 1: clean JSON parse
-  try {
-    const parsed = JSON.parse(output) as Record<string, unknown>;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      injectSessionIdIntoObject(parsed, sessionId);
-      return JSON.stringify(parsed);
-    }
-  } catch {
-    // Not clean JSON — fall through to embedded extraction
-  }
-
-  // Path 2: find embedded JSON block containing "reviewedBy"
-  const markerIdx = output.indexOf('"reviewedBy"');
-  if (markerIdx < 0) return output;
-
-  const startIdx = output.lastIndexOf('{', markerIdx);
-  if (startIdx < 0) return output;
-
-  const block = extractJsonBlock(output, startIdx);
-  if (!block) return output;
-
-  try {
-    const parsed = JSON.parse(block) as Record<string, unknown>;
-    if (parsed && typeof parsed === 'object') {
-      injectSessionIdIntoObject(parsed, sessionId);
-      return (
-        output.slice(0, startIdx) + JSON.stringify(parsed) + output.slice(startIdx + block.length)
-      );
-    }
-  } catch {
-    // Unparseable block — return original
-  }
-
-  return output;
-}
-
-/**
- * Inject sessionId into the reviewedBy field of a parsed ReviewFindings object.
- * Mutates the object in place.
- */
-function injectSessionIdIntoObject(obj: Record<string, unknown>, sessionId: string): void {
-  const reviewedBy = obj.reviewedBy;
-  if (typeof reviewedBy === 'object' && reviewedBy !== null && !Array.isArray(reviewedBy)) {
-    (reviewedBy as Record<string, unknown>).sessionId = sessionId;
-  } else {
-    obj.reviewedBy = { sessionId };
-  }
-}
-
-/**
- * Extract the subagent session ID from the Task tool response.
- *
- * The flowguard-reviewer subagent returns a JSON ReviewFindings object
- * with a reviewedBy.sessionId field. The Task tool wraps this in its
- * own response format. We attempt to extract it.
- *
- * Returns null if extraction fails (no fallback — strict for Level 2).
- */
-function extractSubagentSessionId(taskResult: string): string | null {
-  try {
-    // Try direct JSON parse (subagent might return clean JSON)
-    const parsed = JSON.parse(taskResult) as Record<string, unknown>;
-    const direct = extractSessionIdFromObject(parsed);
-    if (direct) return direct;
-  } catch {
-    // Not clean JSON — try to find JSON in the text
-  }
-
-  // Try to find embedded JSON blocks containing "reviewedBy"
-  let searchFrom = 0;
-  while (searchFrom < taskResult.length) {
-    const markerIdx = taskResult.indexOf('"reviewedBy"', searchFrom);
-    if (markerIdx < 0) break;
-
-    const startIdx = taskResult.lastIndexOf('{', markerIdx);
-    if (startIdx < 0) break;
-
-    const candidate = extractJsonBlock(taskResult, startIdx);
-    if (candidate) {
-      try {
-        const parsed = JSON.parse(candidate) as Record<string, unknown>;
-        const extracted = extractSessionIdFromObject(parsed);
-        if (extracted) return extracted;
-      } catch {
-        // Continue scanning for another candidate
-      }
-      // Ensure forward progress: advance past the marker if the candidate
-      // ended before it (e.g., lastIndexOf found a { from a different block
-      // that precedes the marker). Without this, the same marker is re-found
-      // on the next iteration, causing an infinite loop.
-      searchFrom = Math.max(startIdx + candidate.length, markerIdx + '"reviewedBy"'.length);
-      continue;
-    }
-
-    searchFrom = markerIdx + '"reviewedBy"'.length;
-  }
-
-  return null;
-}
-
-function extractSessionIdFromObject(obj: Record<string, unknown>): string | null {
-  const reviewedBy = obj.reviewedBy as Record<string, unknown> | undefined;
-  if (typeof reviewedBy?.sessionId === 'string') {
-    return reviewedBy.sessionId;
-  }
-  if (typeof obj.sessionId === 'string') {
-    return obj.sessionId;
-  }
-  return null;
-}
-
-/**
- * Extract CapturedFindings fields from a parsed object.
- * Returns null if the object doesn't contain a valid overallVerdict.
- */
-function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
-  if (!obj || typeof obj !== 'object') return null;
-
-  const record = obj as Record<string, unknown>;
-  const overallVerdict = typeof record.overallVerdict === 'string' ? record.overallVerdict : null;
-  if (!overallVerdict) return null;
-
-  const blockingIssues = Array.isArray(record.blockingIssues) ? record.blockingIssues : [];
-  const reviewedBy = record.reviewedBy as Record<string, unknown> | undefined;
-  const sessionId = typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
-
-  const captured: CapturedFindings = {
-    overallVerdict,
-    blockingIssuesCount: blockingIssues.length,
-    sessionId,
-  };
-  Object.defineProperty(captured, 'rawFindings', {
-    value: record,
-    enumerable: false,
-  });
-  return captured;
-}
-
-/**
- * Extract a complete JSON block starting from a given index.
- * Counts braces to find the matching closing brace.
- */
-function extractJsonBlock(text: string, startIdx: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i]!;
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\' && inString) {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
-    if (inString) continue;
-
-    if (ch === '{') depth++;
-    if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.slice(startIdx, i + 1);
-      }
-    }
-  }
-
-  return null;
 }

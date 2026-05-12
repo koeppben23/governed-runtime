@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { withTestEnv } from '../integration/test-helpers.js';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -532,13 +533,15 @@ describe('config paths', () => {
 // =============================================================================
 
 describe('readConfig', () => {
+  let restoreEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpWorktree();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    restoreEnv();
     await cleanTmpDir(tmpDir);
   });
 

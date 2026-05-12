@@ -11,6 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { main, parseArgs } from './install.js';
 import { getAdapterLogger, resetAdapterLogger } from '../logging/adapter-logger.js';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 describe('CLI structured logging', () => {
   beforeEach(() => {
@@ -37,8 +38,10 @@ describe('CLI structured logging', () => {
   describe('SMOKE', () => {
     it('doctor with --log-mode=console writes structured logs to stderr', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-log-'));
-      process.env.OPENCODE_CONFIG_DIR = tmpDir;
-      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+      const restoreEnv = withTestEnv({
+        OPENCODE_CONFIG_DIR: tmpDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      });
       await fs.mkdir(path.join(tmpDir, '.git'));
 
       const captured: string[] = [];
@@ -54,8 +57,7 @@ describe('CLI structured logging', () => {
         expect(output).toContain('[INFO]');
         expect(output).toContain('cli');
       } finally {
-        delete process.env.OPENCODE_CONFIG_DIR;
-        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+        restoreEnv();
         try {
           await fs.rm(tmpDir, { recursive: true, force: true });
         } catch {
@@ -66,8 +68,10 @@ describe('CLI structured logging', () => {
 
     it('--log-mode=file does NOT write to stderr', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-file-'));
-      process.env.OPENCODE_CONFIG_DIR = tmpDir;
-      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+      const restoreEnv = withTestEnv({
+        OPENCODE_CONFIG_DIR: tmpDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      });
       await fs.mkdir(path.join(tmpDir, '.git'));
 
       const capturedAll: string[] = [];
@@ -85,8 +89,7 @@ describe('CLI structured logging', () => {
         const allConsole = capturedAll.join('');
         expect(allConsole).not.toContain('[INFO] cli');
       } finally {
-        delete process.env.OPENCODE_CONFIG_DIR;
-        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+        restoreEnv();
         try {
           await fs.rm(tmpDir, { recursive: true, force: true });
         } catch {
@@ -97,8 +100,10 @@ describe('CLI structured logging', () => {
 
     it('SMOKE: --log-mode=file writes log file with structured content', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-smk-'));
-      process.env.OPENCODE_CONFIG_DIR = tmpDir;
-      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+      const restoreEnv = withTestEnv({
+        OPENCODE_CONFIG_DIR: tmpDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      });
       await fs.mkdir(path.join(tmpDir, '.git'));
 
       // Mock: no console output for file mode
@@ -134,8 +139,7 @@ describe('CLI structured logging', () => {
           expect(firstLine.fields).toBeTruthy();
         }
       } finally {
-        delete process.env.OPENCODE_CONFIG_DIR;
-        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+        restoreEnv();
         try {
           await fs.rm(tmpDir, { recursive: true, force: true });
         } catch {
@@ -146,8 +150,10 @@ describe('CLI structured logging', () => {
 
     it('adapter logger is reset after CLI main() completes', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-cln-'));
-      process.env.OPENCODE_CONFIG_DIR = tmpDir;
-      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+      const restoreEnv = withTestEnv({
+        OPENCODE_CONFIG_DIR: tmpDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      });
       await fs.mkdir(path.join(tmpDir, '.git'));
       vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
@@ -157,8 +163,7 @@ describe('CLI structured logging', () => {
         const log = getAdapterLogger();
         expect(() => log.warn('test', 'after-main')).not.toThrow();
       } finally {
-        delete process.env.OPENCODE_CONFIG_DIR;
-        delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+        restoreEnv();
         try {
           await fs.rm(tmpDir, { recursive: true, force: true });
         } catch {

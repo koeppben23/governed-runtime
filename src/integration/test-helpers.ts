@@ -454,3 +454,66 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
 
   return { ...record, reviewFindings };
 }
+
+// ─── Scoped Env Mutation ─────────────────────────────────────────────────────
+
+/**
+ * Scoped env-var mutation with atomic save/restore.
+ *
+ * Saves all originals **before** applying any changes (atomic snapshot).
+ * Returns an idempotent cleanup function that restores all vars to their
+ * exact pre-mutation state.
+ *
+ * The atomicity guarantees correct cleanup even if `beforeEach` is
+ * interrupted mid-way — all originals are captured before any mutation
+ * takes effect.
+ *
+ * @example beforeEach / afterEach pattern
+ * ```ts
+ * let cleanupEnv: () => void;
+ * beforeEach(() => { cleanupEnv = withTestEnv({ CI: '1' }); });
+ * afterEach(() => cleanupEnv());
+ * ```
+ *
+ * @example Inside it() with onTestFinished
+ * ```ts
+ * import { onTestFinished } from 'vitest';
+ * it('test', () => {
+ *   const cleanup = withTestEnv({ CI: '1' });
+ *   onTestFinished(cleanup);
+ * });
+ * ```
+ *
+ * Use `undefined` as a value to delete a variable for the test duration.
+ */
+export function withTestEnv(overrides: Record<string, string | undefined>): () => void {
+  const originals = new Map<string, string | undefined>();
+
+  // Phase 1: Atomic snapshot — save ALL originals before mutating ANY.
+  for (const key of Object.keys(overrides)) {
+    originals.set(key, process.env[key]);
+  }
+
+  // Phase 2: Apply overrides.
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  // Phase 3: Return idempotent cleanup.
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    for (const [key, original] of originals) {
+      if (original === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original;
+      }
+    }
+  };
+}

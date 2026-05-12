@@ -37,14 +37,13 @@ import { buildCompactionContext, type CompactionDeps } from './plugin-compaction
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
+import { enforceBeforeVerdict, enforceBeforeSubagentCall } from './review-enforcement.js';
+import { buildHostTaskEvidence } from './review-evidence-binding.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
 import {
-  enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
-  buildHostTaskEvidence,
-  REVIEWER_SUBAGENT_TYPE,
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
-} from './review-enforcement.js';
+} from './review-enforcement-extraction.js';
 import { appendInvocationEvidence, ensureReviewAssurance } from './review-assurance.js';
 
 import type {

@@ -20,6 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { withTestEnv } from '../integration/test-helpers.js';
 import * as crypto from 'node:crypto';
 import {
   resolveActor,
@@ -49,32 +50,21 @@ const mockGitUserEmail = vi.mocked(gitUserEmail);
 const WORKTREE = '/fake/worktree';
 
 describe('resolveActor', () => {
-  // Save and restore env vars
-  const envBackup: Record<string, string | undefined> = {};
-  const ENV_KEYS = [
-    'FLOWGUARD_ACTOR_ID',
-    'FLOWGUARD_ACTOR_EMAIL',
-    'FLOWGUARD_ACTOR_CLAIMS_PATH',
-    'FLOWGUARD_ACTOR_TOKEN_PATH',
-  ];
+  let cleanupEnv: () => void;
 
   beforeEach(() => {
-    for (const key of ENV_KEYS) {
-      envBackup[key] = process.env[key];
-      delete process.env[key];
-    }
+    cleanupEnv = withTestEnv({
+      FLOWGUARD_ACTOR_ID: undefined,
+      FLOWGUARD_ACTOR_EMAIL: undefined,
+      FLOWGUARD_ACTOR_CLAIMS_PATH: undefined,
+      FLOWGUARD_ACTOR_TOKEN_PATH: undefined,
+    });
     mockGitUserName.mockReset().mockResolvedValue(null);
     mockGitUserEmail.mockReset().mockResolvedValue(null);
   });
 
   afterEach(() => {
-    for (const key of ENV_KEYS) {
-      if (envBackup[key] === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = envBackup[key];
-      }
-    }
+    cleanupEnv();
   });
 
   // ── HAPPY ──────────────────────────────────────────────────────────────────

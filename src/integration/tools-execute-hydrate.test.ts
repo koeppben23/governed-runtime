@@ -18,6 +18,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import {
   status,
@@ -138,8 +139,10 @@ const tarOk = await isTarAvailable();
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
+let cleanupEnv: () => void;
 
 beforeEach(async () => {
+  cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
   // Ensure clean config state (no stale global/repo config from other test files)
   try {
@@ -180,7 +183,7 @@ afterEach(async () => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     });
-  delete process.env.FLOWGUARD_POLICY_PATH;
+  cleanupEnv();
   // Clean up config written by tests (P11: config at repo path)
   try {
     await import('node:fs/promises').then((fs) =>
@@ -236,21 +239,19 @@ describe('hydrate', () => {
     });
 
     it('team-ci degrades to team when CI context is missing', async () => {
-      const ciVars = [
-        'CI',
-        'GITHUB_ACTIONS',
-        'GITLAB_CI',
-        'BUILDKITE',
-        'JENKINS_URL',
-        'TF_BUILD',
-        'TEAMCITY_VERSION',
-        'CIRCLECI',
-        'DRONE',
-        'BITBUCKET_BUILD_NUMBER',
-        'BUILDKITE_BUILD_ID',
-      ];
-      const previous = Object.fromEntries(ciVars.map((v) => [v, process.env[v]]));
-      ciVars.forEach((v) => delete process.env[v]);
+      const cleanup = withTestEnv({
+        CI: undefined,
+        GITHUB_ACTIONS: undefined,
+        GITLAB_CI: undefined,
+        BUILDKITE: undefined,
+        JENKINS_URL: undefined,
+        TF_BUILD: undefined,
+        TEAMCITY_VERSION: undefined,
+        CIRCLECI: undefined,
+        DRONE: undefined,
+        BITBUCKET_BUILD_NUMBER: undefined,
+        BUILDKITE_BUILD_ID: undefined,
+      });
       try {
         const result = await hydrateSession({ policyMode: 'team-ci' });
         const resolution = result.policyResolution as Record<string, unknown>;
@@ -259,16 +260,12 @@ describe('hydrate', () => {
         expect(resolution.effectiveGateBehavior).toBe('human_gated');
         expect(resolution.reason).toBe('ci_context_missing');
       } finally {
-        ciVars.forEach((v) => {
-          if (previous[v] === undefined) delete process.env[v];
-          else process.env[v] = previous[v];
-        });
+        cleanup();
       }
     });
 
     it('team-ci stays active when CI context is present', async () => {
-      const previousCi = process.env.CI;
-      process.env.CI = 'true';
+      const cleanup = withTestEnv({ CI: 'true' });
       try {
         const result = await hydrateSession({ policyMode: 'team-ci' });
         const resolution = result.policyResolution as Record<string, unknown>;
@@ -277,8 +274,7 @@ describe('hydrate', () => {
         expect(resolution.effectiveGateBehavior).toBe('auto_approve');
         expect(resolution.reason).toBeNull();
       } finally {
-        if (previousCi === undefined) delete process.env.CI;
-        else process.env.CI = previousCi;
+        cleanup();
       }
     });
 

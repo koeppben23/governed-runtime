@@ -29,6 +29,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import {
   status,
@@ -133,8 +134,10 @@ const tarOk = await isTarAvailable();
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
+let cleanupEnv: () => void;
 
 beforeEach(async () => {
+  cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
   ctx = createToolContext({
     worktree: ws.tmpDir,
@@ -160,7 +163,7 @@ afterEach(async () => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     });
-  delete process.env.FLOWGUARD_POLICY_PATH;
+  cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -927,24 +930,21 @@ describe('plan', () => {
     });
 
     it('BAD: throws when OPENCODE_CONFIG_DIR is not set', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
-      delete process.env.OPENCODE_CONFIG_DIR;
+      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: undefined });
       try {
         expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
       } finally {
-        if (original) process.env.OPENCODE_CONFIG_DIR = original;
+        cleanup();
       }
     });
 
     it('BAD: throws when OPENCODE_CONFIG_DIR points to non-temp directory', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
       const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
-      process.env.OPENCODE_CONFIG_DIR = nonTempPath;
+      const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: nonTempPath });
       try {
         expect(() => assertTestConfigDir()).toThrow('Unsafe OPENCODE_CONFIG_DIR');
       } finally {
-        if (original) process.env.OPENCODE_CONFIG_DIR = original;
-        else delete process.env.OPENCODE_CONFIG_DIR;
+        cleanup();
       }
     });
   });

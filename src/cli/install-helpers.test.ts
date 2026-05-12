@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -716,34 +717,30 @@ describe('install-helpers', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('buildReviewerAgentContent', () => {
-  const originalEnv = process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
+  let restoreEnv: (() => void) | undefined;
 
   afterEach(() => {
-    // Restore env var to original state after each test
-    if (originalEnv === undefined) {
-      delete process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
-    } else {
-      process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = originalEnv;
-    }
+    restoreEnv?.();
+    restoreEnv = undefined;
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
   it('T11: returns template unchanged when FLOWGUARD_REVIEWER_MODEL absent', () => {
-    delete process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     expect(result).toBe(REVIEWER_AGENT);
   });
 
   it('T13: injects model: into frontmatter when FLOWGUARD_REVIEWER_MODEL set', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'opencode/big-pickle';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'opencode/big-pickle' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     expect(result).toContain('model: opencode/big-pickle');
     expect(result).not.toBe(REVIEWER_AGENT);
   });
 
   it('T14: injected model: appears between --- and description:', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'gpt-5.2';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'gpt-5.2' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     const lines = result.split('\n');
     const dashIndex = lines.indexOf('---');
@@ -757,39 +754,39 @@ describe('buildReviewerAgentContent', () => {
   // ─── BAD ────────────────────────────────────────────────────────────────────
 
   it('T12: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is empty string', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = '';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     expect(result).toBe(REVIEWER_AGENT);
   });
 
   it('T12b: returns template unchanged when FLOWGUARD_REVIEWER_MODEL is whitespace only', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = '   \t  ';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '   \t  ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     expect(result).toBe(REVIEWER_AGENT);
   });
 
   it('T15: throws on newline in FLOWGUARD_REVIEWER_MODEL (YAML injection prevention)', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'bad-model\nhidden: false';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'bad-model\nhidden: false' });
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/newline characters/);
   });
 
   it('T15b: throws on carriage return in FLOWGUARD_REVIEWER_MODEL', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'bad-model\rinjected: true';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'bad-model\rinjected: true' });
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/newline characters/);
   });
 
   it('T16: throws on invalid characters in FLOWGUARD_REVIEWER_MODEL', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'model with spaces';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'model with spaces' });
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
   });
 
   it('T16b: throws on shell metacharacters in FLOWGUARD_REVIEWER_MODEL', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = '$(whoami)';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '$(whoami)' });
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
   });
 
   it('T16c: throws on quotes in FLOWGUARD_REVIEWER_MODEL', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = '"injected"';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '"injected"' });
     expect(() => buildReviewerAgentContent(REVIEWER_AGENT)).toThrow(/invalid characters/);
   });
 
@@ -806,9 +803,13 @@ describe('buildReviewerAgentContent', () => {
       '@provider/model',
     ];
     for (const id of validIds) {
-      process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = id;
-      const result = buildReviewerAgentContent(REVIEWER_AGENT);
-      expect(result).toContain(`model: ${id}`);
+      const cleanup = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: id });
+      try {
+        const result = buildReviewerAgentContent(REVIEWER_AGENT);
+        expect(result).toContain(`model: ${id}`);
+      } finally {
+        cleanup();
+      }
     }
   });
 
@@ -824,7 +825,7 @@ describe('buildReviewerAgentContent', () => {
   // ─── EDGE ───────────────────────────────────────────────────────────────────
 
   it('EDGE: trims whitespace from model ID', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = '  opencode/big-pickle  ';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: '  opencode/big-pickle  ' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     expect(result).toContain('model: opencode/big-pickle');
     // No leading/trailing whitespace in the model value
@@ -832,7 +833,7 @@ describe('buildReviewerAgentContent', () => {
   });
 
   it('EDGE: preserves rest of template unchanged', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'test-model';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'test-model' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     // Remove the injected model line and compare
     const withoutModel = result.replace('model: test-model\n', '');
@@ -840,13 +841,13 @@ describe('buildReviewerAgentContent', () => {
   });
 
   it('EDGE: handles template without newline gracefully', () => {
-    delete process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined });
     const result = buildReviewerAgentContent('no-newline');
     expect(result).toBe('no-newline');
   });
 
   it('EDGE: handles template without newline when env var set', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'some-model';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'some-model' });
     // Defensive: malformed template with no newline returns template unchanged
     const result = buildReviewerAgentContent('no-newline');
     expect(result).toBe('no-newline');
@@ -859,7 +860,7 @@ describe('buildReviewerAgentContent', () => {
   });
 
   it('SMOKE: injected content is valid YAML frontmatter', () => {
-    process.env[FLOWGUARD_REVIEWER_MODEL_ENV] = 'opencode/big-pickle';
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'opencode/big-pickle' });
     const result = buildReviewerAgentContent(REVIEWER_AGENT);
     // Verify the frontmatter block is well-formed: starts with ---, ends with ---
     const lines = result.split('\n');

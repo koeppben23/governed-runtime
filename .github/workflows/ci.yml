@@ -46,8 +46,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run full test suite (excl. build-dependent tests)
-        run: npx vitest run --exclude src/cli/install-verify.test.ts --exclude src/cli/cli-contract-smoke.test.ts --exclude src/cli/run-acp-smoke.test.ts
+      - name: Run full test suite (excl. build-dependent smoke tests)
+        run: npm test
         env:
           FORCE_COLOR: 0
 

@@ -73,10 +73,23 @@ export interface SessionPointer {
  * - READ_FAILED: workspace.json or pointer read failed
  * - WRITE_FAILED: workspace.json or pointer write failed
  */
-export class WorkspaceError extends Error {
-  readonly code: string;
+/**
+ * Typed workspace error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type WorkspaceErrorCode =
+  | 'INVALID_FINGERPRINT'
+  | 'INVALID_SESSION_ID'
+  | 'INIT_FAILED'
+  | 'WRITE_FAILED'
+  | 'READ_FAILED'
+  | 'WORKSPACE_MISMATCH'
+  | 'ARCHIVE_FAILED';
 
-  constructor(code: string, message: string) {
+export class WorkspaceError extends Error {
+  readonly code: WorkspaceErrorCode;
+
+  constructor(code: WorkspaceErrorCode, message: string) {
     super(`[${code}] ${message}`);
     this.name = 'WorkspaceError';
     this.code = code;

@@ -97,6 +97,16 @@ export function repoConfigPath(worktree: string): string {
   return path.join(worktree, '.opencode', CONFIG_FILE);
 }
 /**
+ * Typed persistence error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type PersistenceErrorCode =
+  | 'READ_FAILED'
+  | 'WRITE_FAILED'
+  | 'PARSE_FAILED'
+  | 'SCHEMA_VALIDATION_FAILED';
+
+/**
  * Typed persistence error.
  * Codes:
  * - READ_FAILED: filesystem read error (permissions, disk, etc.)
@@ -105,9 +115,9 @@ export function repoConfigPath(worktree: string): string {
  * - WRITE_FAILED: filesystem write error
  */
 export class PersistenceError extends Error {
-  readonly code: string;
+  readonly code: PersistenceErrorCode;
 
-  constructor(code: string, message: string) {
+  constructor(code: PersistenceErrorCode, message: string) {
     super(message);
     this.name = 'PersistenceError';
     this.code = code;

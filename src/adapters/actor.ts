@@ -58,16 +58,22 @@ const ActorClaimSchema = z.object({
 export type ActorClaim = z.infer<typeof ActorClaimSchema>;
 
 /**
+ * Typed actor claim error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type ActorClaimErrorCode =
+  | 'ACTOR_CLAIM_MISSING'
+  | 'ACTOR_CLAIM_UNREADABLE'
+  | 'ACTOR_CLAIM_INVALID'
+  | 'ACTOR_CLAIM_EXPIRED'
+  | 'ACTOR_CLAIM_PATH_EMPTY';
+
+/**
  * Actor claim resolution errors (P33).
  */
 export class ActorClaimError extends Error {
   constructor(
-    public readonly code:
-      | 'ACTOR_CLAIM_MISSING'
-      | 'ACTOR_CLAIM_UNREADABLE'
-      | 'ACTOR_CLAIM_INVALID'
-      | 'ACTOR_CLAIM_EXPIRED'
-      | 'ACTOR_CLAIM_PATH_EMPTY',
+    public readonly code: ActorClaimErrorCode,
     message: string,
   ) {
     super(message);
@@ -75,13 +81,19 @@ export class ActorClaimError extends Error {
   }
 }
 
+/**
+ * Typed actor identity error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type ActorIdentityErrorCode =
+  | 'ACTOR_IDENTITY_UNAVAILABLE'
+  | 'ACTOR_IDP_MODE_REQUIRED'
+  | 'ACTOR_IDP_CONFIG_REQUIRED'
+  | 'ACTOR_IDP_INVALID';
+
 export class ActorIdentityError extends Error {
   constructor(
-    public readonly code:
-      | 'ACTOR_IDENTITY_UNAVAILABLE'
-      | 'ACTOR_IDP_MODE_REQUIRED'
-      | 'ACTOR_IDP_CONFIG_REQUIRED'
-      | 'ACTOR_IDP_INVALID',
+    public readonly code: ActorIdentityErrorCode,
     message: string,
   ) {
     super(message);

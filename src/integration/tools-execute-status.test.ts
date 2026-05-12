@@ -14,6 +14,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import {
   status,
@@ -120,8 +121,10 @@ const actorMock = await import('../adapters/actor.js');
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
+let cleanupEnv: () => void;
 
 beforeEach(async () => {
+  cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
   ctx = createToolContext({
     worktree: ws.tmpDir,
@@ -142,7 +145,7 @@ afterEach(async () => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     });
-  delete process.env.FLOWGUARD_POLICY_PATH;
+  cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
 });

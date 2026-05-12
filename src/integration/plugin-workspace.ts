@@ -28,10 +28,8 @@ import { getLastChainHash } from '../audit/integrity.js';
 import { appendReviewAuditEvent } from './plugin-review-audit.js';
 import { blockObligation } from './plugin-review-state.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
-import {
-  createSessionState as createEnforcementState,
-  type SessionEnforcementState,
-} from './review-enforcement.js';
+import { createSessionState as createEnforcementState } from './review-enforcement.js';
+import type { SessionEnforcementState } from './review-enforcement-types.js';
 
 import type { SessionState } from '../state/schema.js';
 

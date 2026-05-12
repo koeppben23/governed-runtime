@@ -16,7 +16,7 @@
 
 import { readState } from '../adapters/persistence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
-import type { CapturedFindings, SessionEnforcementState } from './review-enforcement.js';
+import type { CapturedFindings, SessionEnforcementState } from './review-enforcement-types.js';
 import { recordPluginReview } from './review-enforcement.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -32,17 +32,19 @@ import {
 import {
   isReviewRequired,
   extractReviewContext,
+  invokeReviewer,
+  buildMutatedOutput,
+  buildReviewContentMutatedOutput,
+  REVIEW_COMPLETED_PREFIX,
+  type OrchestratorClient,
+} from './review-orchestrator.js';
+import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
-  invokeReviewer,
-  buildMutatedOutput,
   buildReviewContentPrompt,
-  buildReviewContentMutatedOutput,
-  REVIEW_COMPLETED_PREFIX,
   selectReviewerProfileRules,
-  type OrchestratorClient,
-} from './review-orchestrator.js';
+} from './review-prompt-builders.js';
 import {
   getToolOutput,
   getToolArgs,
@@ -59,7 +61,8 @@ import {
   TOOL_FLOWGUARD_ARCHITECTURE,
 } from './tool-names.js';
 import { obligationTypeForTool } from './review-obligation-tools.js';
-import { REVIEWER_SUBAGENT_TYPE, extractContentMeta } from './review-enforcement.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+import { extractContentMeta } from './review-enforcement-extraction.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { ReviewInvocationPolicy } from '../config/policy-types.js';

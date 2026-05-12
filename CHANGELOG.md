@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **FG-REL-041 (Issue #191):** Replace direct `process.env` mutation in tests with scoped `withTestEnv` helper:
+  - New `withTestEnv(overrides)` function in `test-helpers.ts` with atomic save/restore and idempotent cleanup
+  - 22 test files migrated from manual save/restore patterns to `withTestEnv`
+  - Fixed leaky env mutation in `telemetry/index.test.ts` (OTEL_EXPORTER_OTLP_ENDPOINT deleted without restore)
+  - Fixed leaky env mutation in `workspace.test.ts` PERF block (OPENCODE_CONFIG_DIR set without restore)
+  - 17 tests for the helper itself (HAPPY 4, BAD 3, CORNER 3, EDGE 3, SMOKE 4)
+- **FG-REL-040 (Issue #190):** Add typed error code unions to all 8 custom error classes:
+  - `PersistenceErrorCode` (4 codes): `READ_FAILED`, `WRITE_FAILED`, `PARSE_FAILED`, `SCHEMA_VALIDATION_FAILED`
+  - `GitErrorCode` (4 codes): `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, `NOT_GIT_REPO`
+  - `WorkspaceErrorCode` (7 codes): `INVALID_FINGERPRINT`, `INVALID_SESSION_ID`, `INIT_FAILED`, `WRITE_FAILED`, `READ_FAILED`, `WORKSPACE_MISMATCH`, `ARCHIVE_FAILED`
+  - `EvidenceArtifactErrorCode` (3 codes): `EVIDENCE_ARTIFACT_MISSING`, `EVIDENCE_ARTIFACT_MISMATCH`, `EVIDENCE_ARTIFACT_IMMUTABLE`
+  - `BindingErrorCode` (4 codes): `MISSING_SESSION_ID`, `NO_WORKTREE`, `NOT_GIT_REPO`, `WORKTREE_MISMATCH`
+  - `PolicyConfigurationErrorCode` (9 codes): all central-policy and mode validation codes
+  - `ActorClaimErrorCode` (5 codes) and `ActorIdentityErrorCode` (4 codes) extracted from inline unions to named exports
+  - Compile-time safety tests proving invalid codes are rejected (`@ts-expect-error`)
+- **FG-REL-038 (Issue #188):** Split `review-orchestrator.ts` (1,490 LOC) and `review-enforcement.ts` (1,217 LOC) into focused single-responsibility modules:
+  - `review-findings-schema.ts` — JSON Schema definition for ReviewFindings
+  - `review-text-extraction.ts` — Multi-strategy JSON extraction from text
+  - `review-prompt-builders.ts` — All prompt builders (plan, impl, arch, content) + profile rules
+  - `review-agent-resolution.ts` — Agent registry probe, cache, model capability detection
+  - `review-enforcement-types.ts` — Types, interfaces, constants (universal coupling point)
+  - `review-enforcement-extraction.ts` — Pure parsing/extraction helpers (content meta, findings, session ID, JSON blocks)
+  - `review-evidence-binding.ts` — Host-task evidence binding (buildHostTaskEvidence)
+  - `review-orchestrator.ts` (residual) — SDK invocation, output mutation, review detection
+  - `review-enforcement.ts` (residual) — State factory, hook handlers, L1-L4 enforcement
+  - All 13 consumer files migrated to direct imports (no re-exports, no facades)
+- **FG-REL-039 (Issue #189):** Split the 5 largest test files (>2000 LOC each) into per-concern suites:
+  - `config/config.test.ts` (2691 LOC) → `policy.test.ts` + `profile.test.ts` + `reasons.test.ts`
+  - `audit/audit.test.ts` (2482 LOC) → 5 per-module files + `audit-test-helpers.ts`
+  - `review-orchestrator-agent-resolution.test.ts` (2788 LOC) → 4 per-concern files + `review-orchestrator-test-helpers.ts`
+  - `review-enforcement.test.ts` (3223 LOC) → 4 per-concern files + `review-enforcement-test-helpers.ts`
+  - `plugin-host-task-diagnostics.test.ts` (2670 LOC) → 3 per-concern files + `plugin-host-task-diagnostics-helpers.ts`
+  - All 921 tests preserved across 19 new files (no test removal, no file >1500 LOC)
+- **FG-REL-042 (Issue #192):** Add vitest workspace for native unit/integration/smoke test separation:
+  - New `vitest.workspace.ts` defining 3 projects: `unit` (src/**/\*.test.ts, 15s timeout), `integration` (src/integration/**/\*.test.ts, 60s timeout), `smoke` (build-dependent CLI tests, 120s timeout)
+  - Per-project coverage thresholds: unit 80/80/80/80, integration 70/70/70/70, smoke none
+  - All `package.json` test scripts migrated from `--exclude` hacks to native `--project` flags
+  - CI `test` job simplified from raw `npx vitest run --exclude ...` to `npm test`
+  - `npm test` = unit + integration (default fast CI feedback); `npm run test:smoke` = opt-in build-dependent tests
+  - Root `vitest.config.ts` stripped to coverage-only fallback (project config in workspace)
+
 ### Added
 
 - Clean Code D: IP validation extracted from review.ts to adapters/ip-validation.ts. PACKAGE_FILES and CONFIG_FILES lifted from function-scoped to module-level const in git.ts. Dynamic imports replaced with static imports in archive.ts and plugin-policy.ts.
@@ -121,8 +164,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **External references for `/ticket` and `/review`**: Structured external references with audit provenance.
 - **Agent mandate v3 guidance set**: Compact cross-LLM v3 structure with dedicated guidance docs.
 - **Agent eval scenarios**: Scenario-based eval suite with pass/fail rubric.
-
-### Changed
 
 - `src/templates/commands/plan.ts`: Added `## Presentation` section (3 bullets: verbatim display mandate, content description, mandatory output declaration). Added `reviewCard` to Done-when. Replaced inline sub-bullet ("Present any reviewCard field in full") with cross-reference to Presentation section.
 - `src/templates/commands/implement.ts`: Added `## Presentation` section (same 3-bullet pattern). Added `reviewCard` to Done-when. Replaced weak "Report the final status" with cross-reference to Presentation section.

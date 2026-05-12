@@ -106,10 +106,16 @@ const CONFIG_FILES: ReadonlySet<string> = new Set([
  * - GIT_COMMAND_FAILED: git returned non-zero exit code
  * - NOT_GIT_REPO: directory is not inside a git repository
  */
-export class GitError extends Error {
-  readonly code: string;
+/**
+ * Typed git error codes.
+ * Compile-time validated — no arbitrary strings allowed.
+ */
+export type GitErrorCode = 'GIT_NOT_FOUND' | 'GIT_TIMEOUT' | 'GIT_COMMAND_FAILED' | 'NOT_GIT_REPO';
 
-  constructor(code: string, message: string) {
+export class GitError extends Error {
+  readonly code: GitErrorCode;
+
+  constructor(code: GitErrorCode, message: string) {
     super(message);
     this.name = 'GitError';
     this.code = code;

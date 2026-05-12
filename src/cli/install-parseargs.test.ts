@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseArgs, resolveTarget } from './install.js';
 import { setupCliTestEnvironment } from './install-test-helpers.test.js';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 setupCliTestEnvironment();
 
@@ -258,15 +259,12 @@ describe('cli/resolveTarget', () => {
 
   describe('BAD', () => {
     it('global target starts with homedir when no env override', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: undefined });
       try {
-        delete process.env.OPENCODE_CONFIG_DIR;
         const target = resolveTarget('global');
         expect(target.startsWith(os.homedir())).toBe(true);
       } finally {
-        if (original !== undefined) {
-          process.env.OPENCODE_CONFIG_DIR = original;
-        }
+        restoreEnv();
       }
     });
   });
@@ -286,46 +284,33 @@ describe('cli/resolveTarget', () => {
     });
 
     it('global respects OPENCODE_CONFIG_DIR env var', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: '/custom/config/path' });
       try {
-        process.env.OPENCODE_CONFIG_DIR = '/custom/config/path';
         const target = resolveTarget('global');
         expect(target).toBe('/custom/config/path');
       } finally {
-        if (original === undefined) {
-          delete process.env.OPENCODE_CONFIG_DIR;
-        } else {
-          process.env.OPENCODE_CONFIG_DIR = original;
-        }
+        restoreEnv();
       }
     });
 
     it('global falls back to homedir when OPENCODE_CONFIG_DIR is unset', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: undefined });
       try {
-        delete process.env.OPENCODE_CONFIG_DIR;
         const target = resolveTarget('global');
         expect(target.startsWith(os.homedir())).toBe(true);
         expect(target).toContain(path.join('.config', 'opencode'));
       } finally {
-        if (original !== undefined) {
-          process.env.OPENCODE_CONFIG_DIR = original;
-        }
+        restoreEnv();
       }
     });
 
     it('repo scope is unaffected by OPENCODE_CONFIG_DIR', () => {
-      const original = process.env.OPENCODE_CONFIG_DIR;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: '/custom/config/path' });
       try {
-        process.env.OPENCODE_CONFIG_DIR = '/custom/config/path';
         const target = resolveTarget('repo');
         expect(target).toBe(path.resolve('.opencode'));
       } finally {
-        if (original === undefined) {
-          delete process.env.OPENCODE_CONFIG_DIR;
-        } else {
-          process.env.OPENCODE_CONFIG_DIR = original;
-        }
+        restoreEnv();
       }
     });
   });

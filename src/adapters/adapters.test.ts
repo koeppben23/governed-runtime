@@ -17,6 +17,7 @@ import * as fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { withTestEnv } from '../integration/test-helpers.js';
 import * as crypto from 'node:crypto';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -575,11 +576,9 @@ describe('persistence', () => {
     it('ARCHIVE: rename failure during archiveSession preserves pre-existing sidecar files', async () => {
       const worktree = tmpDir;
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
-      const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
+      const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
       const sessionId = `archive-atomic-${Date.now()}`;
       try {
-        process.env.OPENCODE_CONFIG_DIR = configDir;
-
         const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
         await writeState(sessDir, makeState('COMPLETE'));
 
@@ -630,11 +629,7 @@ describe('persistence', () => {
         expect(tmpFiles).toHaveLength(0);
       } finally {
         restoreRename();
-        if (previousConfigDir === undefined) {
-          delete process.env.OPENCODE_CONFIG_DIR;
-        } else {
-          process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
-        }
+        cleanupEnv();
         await cleanTmpDir(configDir);
       }
     });
