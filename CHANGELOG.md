@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-041 (Issue #191):** Replace direct `process.env` mutation in tests with scoped `withTestEnv` helper:
+  - New `withTestEnv(overrides)` function in `test-helpers.ts` with atomic save/restore and idempotent cleanup
+  - 22 test files migrated from manual save/restore patterns to `withTestEnv`
+  - Fixed leaky env mutation in `telemetry/index.test.ts` (OTEL_EXPORTER_OTLP_ENDPOINT deleted without restore)
+  - Fixed leaky env mutation in `workspace.test.ts` PERF block (OPENCODE_CONFIG_DIR set without restore)
+  - 17 tests for the helper itself (HAPPY 4, BAD 3, CORNER 3, EDGE 3, SMOKE 4)
 - **FG-REL-040 (Issue #190):** Add typed error code unions to all 8 custom error classes:
   - `PersistenceErrorCode` (4 codes): `READ_FAILED`, `WRITE_FAILED`, `PARSE_FAILED`, `SCHEMA_VALIDATION_FAILED`
   - `GitErrorCode` (4 codes): `GIT_NOT_FOUND`, `GIT_TIMEOUT`, `GIT_COMMAND_FAILED`, `NOT_GIT_REPO`

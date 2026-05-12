@@ -29,6 +29,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import {
   status,
@@ -494,14 +495,12 @@ describe('EDGE: policy mode affects CLI output', () => {
   });
 
   it('team-ci mode with degraded CI context shows effectiveGateBehavior=human_gated', async () => {
-    const prevCI = process.env.CI;
-    const prevGHA = process.env.GITHUB_ACTIONS;
-    const prevGL = process.env.GITLAB_CI;
-    const prevBK = process.env.BUILDKITE;
-    delete process.env.CI;
-    delete process.env.GITHUB_ACTIONS;
-    delete process.env.GITLAB_CI;
-    delete process.env.BUILDKITE;
+    const cleanup = withTestEnv({
+      CI: undefined,
+      GITHUB_ACTIONS: undefined,
+      GITLAB_CI: undefined,
+      BUILDKITE: undefined,
+    });
     try {
       await callOk(hydrate, { policyMode: 'team-ci', profileId: 'baseline' });
       const sessDir = await getSessDir();
@@ -509,14 +508,7 @@ describe('EDGE: policy mode affects CLI output', () => {
 
       expect(state!.policySnapshot.effectiveGateBehavior).toBe('human_gated');
     } finally {
-      if (prevCI === undefined) delete process.env.CI;
-      else process.env.CI = prevCI;
-      if (prevGHA === undefined) delete process.env.GITHUB_ACTIONS;
-      else process.env.GITHUB_ACTIONS = prevGHA;
-      if (prevGL === undefined) delete process.env.GITLAB_CI;
-      else process.env.GITLAB_CI = prevGL;
-      if (prevBK === undefined) delete process.env.BUILDKITE;
-      else process.env.BUILDKITE = prevBK;
+      cleanup();
     }
   });
 

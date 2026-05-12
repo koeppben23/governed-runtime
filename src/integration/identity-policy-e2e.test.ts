@@ -30,6 +30,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
+  withTestEnv,
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
@@ -91,8 +92,7 @@ const actorMock = await import('../adapters/actor.js');
 
 let ws: TestWorkspace;
 let ctx: TestToolContext;
-let _prevPolicyPath: string | undefined;
-let _prevTokenPath: string | undefined;
+let cleanupEnv: () => void;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
@@ -116,10 +116,10 @@ beforeEach(async () => {
     directory: ws.tmpDir,
     sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
-  _prevPolicyPath = process.env.FLOWGUARD_POLICY_PATH;
-  _prevTokenPath = process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
-  delete process.env.FLOWGUARD_POLICY_PATH;
-  delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
+  cleanupEnv = withTestEnv({
+    FLOWGUARD_POLICY_PATH: undefined,
+    FLOWGUARD_ACTOR_TOKEN_PATH: undefined,
+  });
 });
 
 afterEach(async () => {
@@ -136,16 +136,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   // Restore env vars to their previous state
-  if (_prevPolicyPath === undefined) {
-    delete process.env.FLOWGUARD_POLICY_PATH;
-  } else {
-    process.env.FLOWGUARD_POLICY_PATH = _prevPolicyPath;
-  }
-  if (_prevTokenPath === undefined) {
-    delete process.env.FLOWGUARD_ACTOR_TOKEN_PATH;
-  } else {
-    process.env.FLOWGUARD_ACTOR_TOKEN_PATH = _prevTokenPath;
-  }
+  cleanupEnv();
   vi.clearAllMocks();
   // Clean up config written by tests (P11)
   try {

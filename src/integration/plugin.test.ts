@@ -23,7 +23,7 @@ import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { createTestWorkspace } from './test-helpers.js';
+import { createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {
   computeFingerprint,
@@ -1130,22 +1130,18 @@ describe('plugin bootstrap fail-closed', () => {
    * OPENCODE_CONFIG_DIR. Invariant: one fingerprint folder per repo.
    */
   let configDir: string;
-  let originalEnv: string | undefined;
-  let originalGuard: string | undefined;
+  let cleanupEnv: () => void;
 
   beforeEach(async () => {
-    originalEnv = process.env.OPENCODE_CONFIG_DIR;
-    originalGuard = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
     configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-rogue-regression-'));
-    process.env.OPENCODE_CONFIG_DIR = configDir;
-    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    cleanupEnv = withTestEnv({
+      OPENCODE_CONFIG_DIR: configDir,
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+    });
   });
 
   afterEach(async () => {
-    if (originalEnv !== undefined) process.env.OPENCODE_CONFIG_DIR = originalEnv;
-    else delete process.env.OPENCODE_CONFIG_DIR;
-    if (originalGuard !== undefined) process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalGuard;
-    else delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+    cleanupEnv();
     await fs.rm(configDir, { recursive: true, force: true }).catch(() => {});
   });
 

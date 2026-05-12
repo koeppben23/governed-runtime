@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { withTestEnv } from '../integration/test-helpers.js';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -90,28 +91,18 @@ describe('actor assurance matrix', () => {
   });
 
   describe('EDGE/E2E-SMOKE — policy-aware actor resolution (IdP mode)', () => {
-    const envBackup: Record<string, string | undefined> = {};
-    const ENV_KEYS = [
-      'FLOWGUARD_ACTOR_TOKEN_PATH',
-      'FLOWGUARD_ACTOR_ID',
-      'FLOWGUARD_ACTOR_CLAIMS_PATH',
-    ];
+    let restoreEnv: () => void;
 
     beforeEach(() => {
-      for (const key of ENV_KEYS) {
-        envBackup[key] = process.env[key];
-        delete process.env[key];
-      }
+      restoreEnv = withTestEnv({
+        FLOWGUARD_ACTOR_TOKEN_PATH: undefined,
+        FLOWGUARD_ACTOR_ID: undefined,
+        FLOWGUARD_ACTOR_CLAIMS_PATH: undefined,
+      });
     });
 
     afterEach(() => {
-      for (const key of ENV_KEYS) {
-        if (envBackup[key] === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = envBackup[key];
-        }
-      }
+      restoreEnv();
     });
 
     it('required + missing config -> block', async () => {

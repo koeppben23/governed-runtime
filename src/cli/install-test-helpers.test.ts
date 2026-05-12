@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { CliArgs } from './install.js';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
 // Must be called at module scope in each test file that needs it (vitest hoists mocks per-file).
@@ -116,8 +117,7 @@ export function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
 // ─── Shared Setup/Teardown ────────────────────────────────────────────────────
 
 let originalCwd: string;
-let originalConfigDir: string | undefined;
-let originalRequireTestConfigDir: string | undefined;
+let restoreEnv: (() => void) | undefined;
 
 /**
  * Call this in each test file's top-level scope to set up the shared
@@ -127,25 +127,17 @@ export function setupCliTestEnvironment(): void {
   beforeEach(async () => {
     tmpDir = await createTmpDir();
     originalCwd = process.cwd();
-    originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    originalRequireTestConfigDir = process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
     process.chdir(tmpDir);
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
-    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
+    restoreEnv = withTestEnv({
+      OPENCODE_CONFIG_DIR: tmpDir,
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+    });
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    if (originalConfigDir !== undefined) {
-      process.env.OPENCODE_CONFIG_DIR = originalConfigDir;
-    } else {
-      delete process.env.OPENCODE_CONFIG_DIR;
-    }
-    if (originalRequireTestConfigDir !== undefined) {
-      process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = originalRequireTestConfigDir;
-    } else {
-      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-    }
+    restoreEnv?.();
+    restoreEnv = undefined;
     await cleanTmpDir(tmpDir);
   });
 }

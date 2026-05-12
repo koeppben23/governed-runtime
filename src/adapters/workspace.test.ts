@@ -40,6 +40,7 @@ import {
   type WorkspaceInfo,
 } from './workspace/index.js';
 import * as crypto from 'node:crypto';
+import { withTestEnv } from '../integration/test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
@@ -48,7 +49,6 @@ import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 let tmpDir: string;
-let originalEnv: string | undefined;
 
 async function createTmpDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), 'ws-test-'));
@@ -357,50 +357,52 @@ describe('validateSessionId', () => {
 // =============================================================================
 
 describe('path resolution', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(() => {
-    originalEnv = process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv = withTestEnv({});
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.OPENCODE_CONFIG_DIR = originalEnv;
-    } else {
-      delete process.env.OPENCODE_CONFIG_DIR;
-    }
+    cleanupEnv();
   });
 
   it('workspacesHome blocks when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active and OPENCODE_CONFIG_DIR unset', () => {
-    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
-    delete process.env.OPENCODE_CONFIG_DIR;
+    const cleanup = withTestEnv({
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      OPENCODE_CONFIG_DIR: undefined,
+    });
     try {
       expect(() => workspacesHome()).toThrow('OPENCODE_CONFIG_DIR is not set');
     } finally {
-      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
+      cleanup();
     }
   });
 
   it('workspacesHome blocks when OPENCODE_CONFIG_DIR is outside tmpdir', () => {
-    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
     const nonTempPath = path.join(os.homedir(), '.config', 'opencode');
-    process.env.OPENCODE_CONFIG_DIR = nonTempPath;
+    const cleanup = withTestEnv({
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      OPENCODE_CONFIG_DIR: nonTempPath,
+    });
     try {
       expect(() => workspacesHome()).toThrow('must be under the OS temp directory');
     } finally {
-      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-      delete process.env.OPENCODE_CONFIG_DIR;
+      cleanup();
     }
   });
 
   it('workspacesHome allows OPENCODE_CONFIG_DIR under tmpdir', () => {
-    process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = '1';
     const testDir = path.join(os.tmpdir(), 'fg-workspace-test-' + Date.now());
-    process.env.OPENCODE_CONFIG_DIR = testDir;
+    const cleanup = withTestEnv({
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      OPENCODE_CONFIG_DIR: testDir,
+    });
     try {
       const home = workspacesHome();
       expect(home).toContain('workspaces');
     } finally {
-      delete process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR;
-      delete process.env.OPENCODE_CONFIG_DIR;
+      cleanup();
     }
   });
 
@@ -442,13 +444,15 @@ describe('path resolution', () => {
 // =============================================================================
 
 describe('ensureWorkspace', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -482,13 +486,15 @@ describe('ensureWorkspace', () => {
 // =============================================================================
 
 describe('initWorkspace', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -608,13 +614,15 @@ describe('initWorkspace', () => {
 // =============================================================================
 
 describe('readWorkspaceInfo', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -637,13 +645,15 @@ describe('readWorkspaceInfo', () => {
 // =============================================================================
 
 describe('session pointer', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -679,13 +689,15 @@ describe('session pointer', () => {
 // =============================================================================
 
 describe('archiveSession', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -967,13 +979,15 @@ describe('archiveSession', () => {
 // =============================================================================
 
 describe('archiveSession failure paths', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -984,10 +998,12 @@ describe('archiveSession failure paths', () => {
     await writeState(sessDir, makeState('COMPLETE'));
 
     // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create
-    const originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    process.env.OPENCODE_CONFIG_DIR = '/root/fail-permission-test';
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    process.env.OPENCODE_CONFIG_DIR = originalConfigDir ?? '';
+    const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: '/root/fail-permission-test' });
+    try {
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
+    } finally {
+      cleanup();
+    }
   });
 
   it('throws ARCHIVE_FAILED when tar execution fails (missing binary)', async () => {
@@ -996,10 +1012,12 @@ describe('archiveSession failure paths', () => {
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
     await writeState(sessDir, makeState('COMPLETE'));
 
-    const originalPath = process.env.PATH;
-    process.env.PATH = '/nonexistent/path/with/no/tar';
-    await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
-    process.env.PATH = originalPath ?? '';
+    const cleanup = withTestEnv({ PATH: '/nonexistent/path/with/no/tar' });
+    try {
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
+    } finally {
+      cleanup();
+    }
   });
 
   it('throws ARCHIVE_FAILED when archive path collides with existing file', async () => {
@@ -1264,13 +1282,15 @@ describe('archiveSession failure paths', () => {
 // =============================================================================
 
 describe('verifyArchive', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 
@@ -1825,13 +1845,14 @@ describe('PERF', () => {
 
   it('initWorkspace is fast (<50ms)', async () => {
     const td = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = td;
+    const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: td });
     try {
       const { elapsedMs } = await measureAsync(() =>
         initWorkspace(path.resolve('.'), `perf-${Date.now()}`),
       );
       expect(elapsedMs).toBeLessThan(process.platform === 'win32' ? 500 : 50);
     } finally {
+      cleanup();
       await cleanTmpDir(td);
     }
   });
@@ -1842,13 +1863,15 @@ describe('PERF', () => {
 // =============================================================================
 
 describe('EDGE', () => {
+  let cleanupEnv: () => void;
+
   beforeEach(async () => {
     tmpDir = await createTmpDir();
-    process.env.OPENCODE_CONFIG_DIR = tmpDir;
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
   });
 
   afterEach(async () => {
-    delete process.env.OPENCODE_CONFIG_DIR;
+    cleanupEnv();
     await cleanTmpDir(tmpDir);
   });
 

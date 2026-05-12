@@ -32,6 +32,7 @@ import {
   createMockTarball,
   setupCliTestEnvironment,
 } from './install-test-helpers.test.js';
+import { withTestEnv } from '../integration/test-helpers.js';
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
@@ -295,8 +296,7 @@ describe('cli/doctor', () => {
     it('P12: pending obligation without handshake reports error', async () => {
       const configDir = path.join(tmpDir, '.config', 'opencode');
       await fs.mkdir(configDir, { recursive: true });
-      const prevDir = process.env.OPENCODE_CONFIG_DIR;
-      process.env.OPENCODE_CONFIG_DIR = configDir;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
 
       try {
         const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
@@ -332,7 +332,7 @@ describe('cli/doctor', () => {
         expect(checks[0].status).toBe('error');
         expect(checks[0].detail).toContain('plugin handshake');
       } finally {
-        process.env.OPENCODE_CONFIG_DIR = prevDir;
+        restoreEnv();
       }
     });
 
@@ -344,8 +344,7 @@ describe('cli/doctor', () => {
     it('P12: invalid pointer (missing sessionId) reports warn', async () => {
       const configDir = path.join(tmpDir, '.config', 'opencode');
       await fs.mkdir(configDir, { recursive: true });
-      const prevDir = process.env.OPENCODE_CONFIG_DIR;
-      process.env.OPENCODE_CONFIG_DIR = configDir;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
 
       try {
         await fs.writeFile(
@@ -358,15 +357,14 @@ describe('cli/doctor', () => {
         expect(checks[0].status).toBe('warn');
         expect(checks[0].detail).toContain('sessionId');
       } finally {
-        process.env.OPENCODE_CONFIG_DIR = prevDir;
+        restoreEnv();
       }
     });
 
     it('P12: valid pointer but missing session-state reports warn', async () => {
       const configDir = path.join(tmpDir, '.config', 'opencode');
       await fs.mkdir(configDir, { recursive: true });
-      const prevDir = process.env.OPENCODE_CONFIG_DIR;
-      process.env.OPENCODE_CONFIG_DIR = configDir;
+      const restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
 
       try {
         const sessionId = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
@@ -381,7 +379,7 @@ describe('cli/doctor', () => {
         expect(checks[0].status).toBe('warn');
         expect(checks[0].detail).toContain('Session state');
       } finally {
-        process.env.OPENCODE_CONFIG_DIR = prevDir;
+        restoreEnv();
       }
     });
 
