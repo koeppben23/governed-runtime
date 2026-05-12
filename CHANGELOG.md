@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `review-orchestrator.ts` (residual) — SDK invocation, output mutation, review detection
   - `review-enforcement.ts` (residual) — State factory, hook handlers, L1-L4 enforcement
   - All 13 consumer files migrated to direct imports (no re-exports, no facades)
+- **FG-REL-039 (Issue #189):** Split the 5 largest test files (>2000 LOC each) into per-concern suites:
+  - `config/config.test.ts` (2691 LOC) → `policy.test.ts` + `profile.test.ts` + `reasons.test.ts`
+  - `audit/audit.test.ts` (2482 LOC) → 5 per-module files + `audit-test-helpers.ts`
+  - `review-orchestrator-agent-resolution.test.ts` (2788 LOC) → 4 per-concern files + `review-orchestrator-test-helpers.ts`
+  - `review-enforcement.test.ts` (3223 LOC) → 4 per-concern files + `review-enforcement-test-helpers.ts`
+  - `plugin-host-task-diagnostics.test.ts` (2670 LOC) → 3 per-concern files + `plugin-host-task-diagnostics-helpers.ts`
+  - All 921 tests preserved across 19 new files (no test removal, no file >1500 LOC)
 
 ### Added
 
@@ -135,8 +142,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **External references for `/ticket` and `/review`**: Structured external references with audit provenance.
 - **Agent mandate v3 guidance set**: Compact cross-LLM v3 structure with dedicated guidance docs.
 - **Agent eval scenarios**: Scenario-based eval suite with pass/fail rubric.
-
-### Changed
 
 - `src/templates/commands/plan.ts`: Added `## Presentation` section (3 bullets: verbatim display mandate, content description, mandatory output declaration). Added `reviewCard` to Done-when. Replaced inline sub-bullet ("Present any reviewCard field in full") with cross-reference to Presentation section.
 - `src/templates/commands/implement.ts`: Added `## Presentation` section (same 3-bullet pattern). Added `reviewCard` to Done-when. Replaced weak "Report the final status" with cross-reference to Presentation section.
