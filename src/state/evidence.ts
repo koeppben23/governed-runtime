@@ -10,7 +10,12 @@
 
 import { z } from 'zod';
 import { IdpConfigSchema } from '../identity/types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import {
+  FINGERPRINT_PATTERN,
+  REVIEWER_SUBAGENT_TYPE,
+  REVIEW_REPORT_SCHEMA_ID,
+} from '../shared/flowguard-identifiers.js';
+export { FINGERPRINT_PATTERN };
 
 // ─── Zod Schemas for ReviewReport ────────────────────────────────────
 
@@ -140,9 +145,6 @@ const OpenCodeSessionId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
  * ~/.config/opencode/workspaces/{fingerprint}/. Deterministic and stable
  * across clones of the same remote.
  */
-
-/** Canonical regex for a 24-hex-char repository fingerprint. */
-export const FINGERPRINT_PATTERN = /^[0-9a-f]{24}$/;
 
 export const BindingInfo = z
   .object({
@@ -792,7 +794,7 @@ export type AuditEvent = z.infer<typeof AuditEvent>;
  */
 export const ReviewReport = z.object({
   kind: z.never().optional(),
-  schemaVersion: z.literal('flowguard-review-report.v1'),
+  schemaVersion: z.literal(REVIEW_REPORT_SCHEMA_ID),
   sessionId: z.string().uuid(),
   generatedAt: z.string().datetime(),
   phase: z.string(),

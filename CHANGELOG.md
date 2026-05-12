@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Clean Code A: canonical constants for `FINGERPRINT_PATTERN`, `REVIEWER_SUBAGENT_TYPE`, and `REVIEW_REPORT_SCHEMA_ID` centralized in `shared/flowguard-identifiers.ts`. All ~55 hardcoded `'flowguard-reviewer'` code strings replaced with the canonical constant. Ticket external-reference table data-driven from structured constant. Schema-level `FINGERPRINT_PATTERN` shared between `state/evidence.ts` and `archive/types.ts`.
+
 - 39 new tests in `install-templates.test.ts` covering reviewCard presentation mandate (HAPPY×12: Presentation section + verbatim mandate + Done-when for all 4 commands, BAD×8: anti-summarize + anti-truncate for all 4 commands, CORNER×3: non-reviewCard commands excluded + ordering constraints, EDGE×6: mandatory output declaration + 3-bullet structure + review-loop cross-reference, E2E SMOKE×4: complete contract verification per command).
 
 - ~30 new tests in `review-enforcement.test.ts` covering BUG-21 null-verdict tolerance (before-hook null stripping, value-based mode detection, sessionState fallback, after-hook null handling, E2E smoke with DeepSeek R1 payload shape).

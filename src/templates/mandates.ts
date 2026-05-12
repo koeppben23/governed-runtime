@@ -1,3 +1,5 @@
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+
 /** Filename for the FlowGuard mandates artifact. */
 export const MANDATES_FILENAME = 'flowguard-mandates.md';
 
@@ -492,7 +494,7 @@ fences or surrounding text.
     "toolObligationId": "<from prompt: attestation.toolObligationId value. FlowGuard provides this UUID for every reviewable flow, including content-aware /review.>",
     "iteration": <same number as top-level iteration>,
     "planVersion": <same number as top-level planVersion>,
-    "reviewedBy": "flowguard-reviewer"
+    "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}"
   }
 }
 
@@ -509,7 +511,7 @@ fences or surrounding text.
 `;
 
 /** Filename for the reviewer agent definition. */
-export const REVIEWER_AGENT_FILENAME = 'flowguard-reviewer.md';
+export const REVIEWER_AGENT_FILENAME = `${REVIEWER_SUBAGENT_TYPE}.md`;
 
 // ---------------------------------------------------------------------------
 // opencode.json skeleton
@@ -535,7 +537,7 @@ export const OPENCODE_JSON_TEMPLATE = (instructionEntry: string): string => `\
       "permission": {
         "task": {
           "*": "deny",
-          "flowguard-reviewer": "allow"
+          "${REVIEWER_SUBAGENT_TYPE}": "allow"
         }
       }
     }

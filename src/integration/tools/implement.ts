@@ -83,6 +83,7 @@ import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evi
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
@@ -290,9 +291,9 @@ export const implement: ToolDefinition = {
           reviewMode: 'subagent',
           ...reviewObligationResponseFields(nextObligation),
           next:
-            'INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ' +
-            'you MUST call the flowguard-reviewer subagent via the Task tool. ' +
-            'Use subagent_type "flowguard-reviewer" with a prompt that includes: ' +
+            `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
+            `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
+            `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
             '(1) the implementation summary and changed files, ' +
             '(2) the approved plan text, (3) the ticket text, (4) iteration=' +
             reviewIteration +
@@ -380,7 +381,7 @@ export const implement: ToolDefinition = {
               return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
                 reason:
                   'reviewer subagent unavailable and strict enforcement requires host-visible review',
-                recovery: 'Install the flowguard-reviewer agent or disable strict enforcement',
+                recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
               });
             }
             effectiveFindings = {
@@ -517,7 +518,7 @@ export const implement: ToolDefinition = {
             next:
               'Make the requested code changes using read/write/bash tools, ' +
               'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-              'After re-recording, call the flowguard-reviewer subagent again for independent review.',
+              `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
             _audit: { transitions },
           };
 

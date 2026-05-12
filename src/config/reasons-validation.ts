@@ -5,6 +5,7 @@
  * @internal — do not import directly. Use reasons.ts barrel.
  */
 import type { BlockedReason } from './reasons.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
@@ -202,12 +203,11 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
-    messageTemplate:
-      'analysisFindings must come from flowguard-reviewer subagent. The findings provided do not contain evidence of subagent origin.',
+    messageTemplate: `analysisFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
     recoverySteps: [
-      'Call Task tool with subagent_type: "flowguard-reviewer"',
+      `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}"`,
       'Pass the subagent output as analysisFindings',
-      'Ensure findings include reviewedBy.sessionId containing "flowguard-reviewer" or attestation.reviewedBy === "flowguard-reviewer"',
+      `Ensure findings include reviewedBy.sessionId containing "${REVIEWER_SUBAGENT_TYPE}" or attestation.reviewedBy === "${REVIEWER_SUBAGENT_TYPE}"`,
     ],
   },
 
@@ -281,7 +281,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Submitted review findings do not match the persisted subagent invocation evidence for obligation {obligationId}.',
     recoverySteps: [
       'Discard the modified review findings',
-      'Use the exact ReviewFindings returned by the fulfilled flowguard-reviewer invocation',
+      `Use the exact ReviewFindings returned by the fulfilled ${REVIEWER_SUBAGENT_TYPE} invocation`,
       'If the evidence is stale, rerun the reviewer for the current obligation',
     ],
   },
@@ -293,7 +293,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Submitted review findings session does not match the persisted subagent invocation: provided {provided}, expected {expected}.',
     recoverySteps: [
       'Use ReviewFindings from the child session that fulfilled the active obligation',
-      'Rerun the flowguard-reviewer subagent if the findings came from a different session',
+      `Rerun the ${REVIEWER_SUBAGENT_TYPE} subagent if the findings came from a different session`,
     ],
   },
 
@@ -381,10 +381,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_SESSION_MISMATCH',
     category: 'state',
-    messageTemplate:
-      'Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked flowguard-reviewer.',
+    messageTemplate: `Submitted reviewFindings.reviewedBy.sessionId ({provided}) does not match the actual subagent session ({expected}). Findings must come from the invoked ${REVIEWER_SUBAGENT_TYPE}.`,
     recoverySteps: [
-      'Use the exact reviewFindings object returned by the flowguard-reviewer subagent',
+      `Use the exact reviewFindings object returned by the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Do not modify reviewedBy.sessionId after the subagent produces the findings',
       'Re-invoke the subagent if the findings came from a different session',
     ],
@@ -396,7 +395,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Submitted reviewFindings.overallVerdict ({provided}) does not match the actual subagent verdict ({expected}). Findings must not be modified.',
     recoverySteps: [
-      'Submit the verdict exactly as the flowguard-reviewer subagent returned it',
+      `Submit the verdict exactly as the ${REVIEWER_SUBAGENT_TYPE} subagent returned it`,
       'Do not override the subagent verdict with a different value',
       'If you disagree with the subagent verdict, run another review iteration with revised input',
     ],
@@ -408,7 +407,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Submitted reviewFindings.blockingIssues count ({provided}) does not match the actual subagent count ({expected}).',
     recoverySteps: [
-      'Submit the exact reviewFindings object returned by the flowguard-reviewer subagent',
+      `Submit the exact reviewFindings object returned by the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Do not add, remove, or modify blockingIssues entries after the subagent produces them',
       'Re-invoke the subagent if the captured findings are stale',
     ],
@@ -420,7 +419,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Subagent invocation evidence has already been consumed for this obligation. Each obligation requires a fresh invocation.',
     recoverySteps: [
-      'Re-invoke the flowguard-reviewer subagent for the current obligation',
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent for the current obligation`,
       'Do not reuse findings from a previously consumed invocation',
       'Each plan version and review iteration requires its own subagent invocation',
     ],
@@ -454,8 +453,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_UNABLE_TO_REVIEW',
     category: 'state',
-    messageTemplate:
-      'The flowguard-reviewer subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.',
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} subagent reported it is unable to review obligation {obligationId} ({reason}). The review loop did NOT converge. This is a tool-failure signal (not a substantive finding) and is reserved for cases where the reviewer cannot honestly evaluate the input — for example malformed plan/implementation text, missing required context references, an unrecoverable structured-output schema violation, or a corrupted/mismatched mandate digest. Substantive concerns must be expressed as changes_requested instead.`,
     recoverySteps: [
       'Do NOT retry the same submission — the reviewer has already declared the input unreviewable',
       'Inspect reviewFindings.missingVerification[] and reviewFindings.unknowns[] for the specific tool-failure cause',

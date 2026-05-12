@@ -67,7 +67,7 @@ export function validateReviewFindings(
   if (reviewMode !== 'subagent') {
     return formatBlocked('REVIEW_MODE_SELF_NOT_ALLOWED', {
       action: 'submit non-subagent review findings',
-      policyHint: 'mandatory flowguard-reviewer subagent review required',
+      policyHint: `mandatory ${REVIEWER_SUBAGENT_TYPE} subagent review required`,
     });
   }
 
@@ -239,8 +239,7 @@ export function validateReviewFindings(
     ) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
-        reason:
-          'expected host-visible flowguard-reviewer Task evidence bound to the active session, mandate, criteria, child session, and findings hash',
+        reason: `expected host-visible ${REVIEWER_SUBAGENT_TYPE} Task evidence bound to the active session, mandate, criteria, child session, and findings hash`,
       });
     }
   }

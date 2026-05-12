@@ -1,4 +1,5 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 export const REVIEW_COMMAND = `
 ---
@@ -31,11 +32,11 @@ Start the compliance review flow for the current FlowGuard session.
 3. **Subagent Review** (content-aware only):
     If the blocked response contains \`pluginReviewFindings\`, use those findings
     directly — the FlowGuard orchestration plugin has already invoked the
-    \`flowguard-reviewer\` subagent for you and injected the results.
+    \`${REVIEWER_SUBAGENT_TYPE}\` subagent for you and injected the results.
     If the response contains \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\`
-    and NO \`pluginReviewFindings\`, manually call the \`flowguard-reviewer\` subagent
+    and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
-    - Use \`subagent_type: "flowguard-reviewer"\`
+    - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
     - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
     - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
     - Parse the response as \`ReviewFindings\` object — preserve all fields

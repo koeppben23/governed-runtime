@@ -225,7 +225,7 @@ function buildRequiredReviewAttestationPayload(obligationId: string): {
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     recovery: [
       'Load the referenced content (PR diff via gh CLI, URL via webfetch, or use manual text).',
-      'Call Task tool with subagent_type: "flowguard-reviewer" and provide the content in the prompt.',
+      `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content in the prompt.`,
       'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
       'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
       'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
@@ -246,7 +246,7 @@ function formatBlockedWithAttestation(code: string, message: string, obligationI
 function formatMissingContentAnalysis(obligationId: string): string {
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
-    'Content-aware /review requires subagent analysis. Call the flowguard-reviewer subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.',
+    `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }
@@ -254,7 +254,7 @@ function formatMissingContentAnalysis(obligationId: string): string {
 function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the flowguard-reviewer subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
+    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }
@@ -305,7 +305,7 @@ export const review: ToolDefinition = {
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
     analysisFindings: ReviewFindings.optional().describe(
-      'Complete findings from flowguard-reviewer subagent analysis. ' +
+      `Complete findings from ${REVIEWER_SUBAGENT_TYPE} subagent analysis. ` +
         'Required when content-aware fields (text/prNumber/branch/url) are provided. ' +
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
@@ -408,7 +408,7 @@ export const review: ToolDefinition = {
 
         if (reviewMode !== 'subagent') {
           return formatSubagentReviewNotInvoked(
-            'reviewMode is not "subagent" — findings did not come from the flowguard-reviewer subagent',
+            `reviewMode is not "subagent" — findings did not come from the ${REVIEWER_SUBAGENT_TYPE} subagent`,
             obligation.obligationId,
           );
         }
@@ -515,7 +515,7 @@ export const review: ToolDefinition = {
             if (reviewInvocationPolicy === 'host_task_required') {
               return formatBlockedWithAttestation(
                 'HOST_SUBAGENT_TASK_REQUIRED',
-                'This policy requires host-visible Task-tool evidence for flowguard-reviewer; manual-attested /review findings are not accepted.',
+                `This policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; manual-attested /review findings are not accepted.`,
                 obligation.obligationId,
               );
             }

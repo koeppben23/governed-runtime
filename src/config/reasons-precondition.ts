@@ -5,6 +5,7 @@
  * @internal — do not import directly. Use reasons.ts barrel.
  */
 import type { BlockedReason } from './reasons.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
@@ -109,7 +110,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Review findings are required for all review verdicts in mandatory review mode.',
     recoverySteps: [
-      'Obtain structured ReviewFindings from flowguard-reviewer subagent',
+      `Obtain structured ReviewFindings from ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Submit verdict with reviewFindings parameter',
     ],
   },
@@ -338,10 +339,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_PROMPT_EMPTY',
     category: 'precondition',
-    messageTemplate:
-      'The flowguard-reviewer prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.',
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,
     recoverySteps: [
-      'Provide a substantive prompt to the flowguard-reviewer subagent',
+      `Provide a substantive prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Include the full review context: plan or implementation text, ticket text, iteration, and planVersion',
       'Re-invoke the subagent with the complete context',
     ],
@@ -350,11 +350,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
     category: 'precondition',
-    messageTemplate:
-      'The flowguard-reviewer prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.',
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt does not contain the expected review context. Include iteration and planVersion values from the FlowGuard tool response.`,
     recoverySteps: [
       'Read the iteration and planVersion values from the flowguard_plan or flowguard_implement response',
-      'Include those exact values in the prompt to the flowguard-reviewer subagent',
+      `Include those exact values in the prompt to the ${REVIEWER_SUBAGENT_TYPE} subagent`,
       'Re-invoke the subagent with the corrected prompt',
     ],
   },
@@ -362,10 +361,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
-    messageTemplate:
-      'FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to flowguard-reviewer was detected. Call the subagent before submitting a verdict.',
+    messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. Call the subagent before submitting a verdict.`,
     recoverySteps: [
-      'Call the flowguard-reviewer subagent via the Task tool',
+      `Call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool`,
       'Pass the plan/implementation text, ticket text, iteration, and planVersion in the prompt',
       'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
     ],
@@ -415,8 +413,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Policy requires host-visible subagent invocation via the Task tool for {obligationId}, but no host evidence was found.',
     recoverySteps: [
-      'Invoke the flowguard-reviewer subagent via the OpenCode Task tool (subagent_type: "flowguard-reviewer")',
-      'Ensure the build agent has task permission: { "*": "deny", "flowguard-reviewer": "allow" }',
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent via the OpenCode Task tool (subagent_type: "${REVIEWER_SUBAGENT_TYPE}")`,
+      `Ensure the build agent has task permission: { "*": "deny", "${REVIEWER_SUBAGENT_TYPE}": "allow" }`,
       'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
     ],
   },
@@ -424,10 +422,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_TYPE_UNAUTHORIZED',
     category: 'precondition',
-    messageTemplate:
-      "Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only flowguard-reviewer is allowed.",
+    messageTemplate: `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
     recoverySteps: [
-      'Use the flowguard-reviewer subagent type for reviewer Task calls',
+      `Use the ${REVIEWER_SUBAGENT_TYPE} subagent type for reviewer Task calls`,
       'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
     ],
   },

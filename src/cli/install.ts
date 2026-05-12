@@ -37,6 +37,7 @@ import {
 } from '../adapters/persistence.js';
 import { PersistenceError } from '../adapters/persistence.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   type InstallScope,
   type PolicyMode,
@@ -817,7 +818,7 @@ async function checkOpencodeInstructions(
       ] as Record<string, unknown> | undefined;
       const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
       const hasTaskHardening =
-        taskPerms?.['*'] === 'deny' && taskPerms?.['flowguard-reviewer'] === 'allow';
+        taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
       if (!hasTaskHardening) {
         checks.push({
           file: opencodeJsonPath,
