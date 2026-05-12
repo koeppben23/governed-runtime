@@ -60,6 +60,7 @@ import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
 } from './tool-names.js';
+import type { OrchestratorClient } from './review-orchestrator.js';
 
 const FG_PREFIX = 'flowguard_';
 
@@ -155,7 +156,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     blockReviewOutcome: ws.blockReviewOutcome,
     getEnforcementState: ws.getEnforcementState,
     log,
-    client,
+    client: client as OrchestratorClient,
   };
 
   const auditDeps: AuditDeps = {

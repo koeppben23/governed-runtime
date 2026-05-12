@@ -262,7 +262,7 @@ export interface ConvergedResult<T> {
  * audit-log consumers can record at which iteration the BLOCKED
  * occurred without losing context.
  */
-export interface BlockedResult<_T> {
+export interface BlockedResult {
   readonly kind: 'blocked';
   readonly code: 'SUBAGENT_UNABLE_TO_REVIEW';
   readonly iteration: number;
@@ -271,33 +271,20 @@ export interface BlockedResult<_T> {
   readonly obligationId?: string;
   readonly reason?: string;
   readonly findings?: unknown;
-  /**
-   * Phantom field — preserves _T for caller type-narrowing without
-   * exposing an actual artifact. Do NOT read this; if you need the
-   * artifact, the loop did not converge and you have a bug.
-   *
-   * The `_T` generic parameter is intentionally unused at the value level
-   * (eslint underscore convention). It exists so that the discriminated
-   * union ConvergenceResult<T> can preserve the artifact type information
-   * across both branches, which prevents accidental loss of the generic
-   * when callers narrow into `BlockedResult<unknown>` by mistake.
-   */
-  readonly _artifactType?: never;
 }
 
 /**
  * Result of a convergence loop (full or single-step).
  *
- * Discriminated union introduced in P1.3 slice 4b. Callers MUST narrow
- * on `result.kind` before reading `artifact` — TypeScript will refuse
- * to access `artifact` on the `BlockedResult<T>` branch.
+ * Discriminated union. Callers MUST narrow on `result.kind` before reading
+ * `artifact` — TypeScript will refuse to access `artifact` on the
+ * `BlockedResult` branch.
  *
- * Migration note: prior to slice 4b this was a single-shape interface.
  * All call sites in src/rails/{plan,implement,continue,architecture}.ts
- * have been updated to narrow on `result.kind` and route BLOCKED to
- * the rails' RailBlocked path via blocked('SUBAGENT_UNABLE_TO_REVIEW').
+ * narrow on `result.kind` and route BLOCKED to the rails' RailBlocked path
+ * via blocked('SUBAGENT_UNABLE_TO_REVIEW').
  */
-export type ConvergenceResult<T> = ConvergedResult<T> | BlockedResult<T>;
+export type ConvergenceResult<T> = ConvergedResult<T> | BlockedResult;
 
 /**
  * Process one iteration result: compute revision delta and resolve artifact.

@@ -144,17 +144,15 @@ describe('telemetry', () => {
     });
 
     it('handles error when OTEL tracer is unavailable and warns via adapter logger', async () => {
-      vi.doMock('node:module',
-        async (importOriginal) => {
-          const actual = await importOriginal<typeof import('node:module')>();
-          return {
-            ...actual,
-            createRequire: vi.fn().mockReturnValue(() => {
-              throw new Error('OTEL not available');
-            }),
-          };
-        },
-      );
+      vi.doMock('node:module', async (importOriginal) => {
+        const actual = await importOriginal<typeof import('node:module')>();
+        return {
+          ...actual,
+          createRequire: vi.fn().mockReturnValue(() => {
+            throw new Error('OTEL not available');
+          }),
+        };
+      });
       vi.resetModules();
       const { withSpanSync } = await import('./index.js');
       const result = withSpanSync('test.operation', () => 'fallback result');

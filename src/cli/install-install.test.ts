@@ -8,7 +8,12 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
-import { install, uninstall, mergeReviewerTaskPermission, isFlowGuardVendorArtifact } from './install.js';
+import {
+  install,
+  uninstall,
+  mergeReviewerTaskPermission,
+  isFlowGuardVendorArtifact,
+} from './install.js';
 import {
   TOOL_WRAPPER,
   PLUGIN_WRAPPER,

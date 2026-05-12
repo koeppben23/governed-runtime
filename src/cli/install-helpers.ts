@@ -409,25 +409,32 @@ export async function mergePackageJson(filePath: string, version: string): Promi
  * subagent via the Task tool.
  */
 export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type AnyObj = Record<string, any>;
+  type AnyObj = Record<string, unknown>;
 
-  if (!parsed['agent'] || typeof parsed['agent'] !== 'object') {
+  if (!parsed['agent'] || typeof parsed['agent'] !== 'object' || parsed['agent'] === null) {
     parsed['agent'] = {};
   }
   const agent = parsed['agent'] as AnyObj;
 
-  if (!agent['build'] || typeof agent['build'] !== 'object') {
+  if (!agent['build'] || typeof agent['build'] !== 'object' || agent['build'] === null) {
     agent['build'] = {};
   }
   const build = agent['build'] as AnyObj;
 
-  if (!build['permission'] || typeof build['permission'] !== 'object') {
+  if (
+    !build['permission'] ||
+    typeof build['permission'] !== 'object' ||
+    build['permission'] === null
+  ) {
     build['permission'] = {};
   }
   const permission = build['permission'] as AnyObj;
 
-  if (!permission['task'] || typeof permission['task'] !== 'object') {
+  if (
+    !permission['task'] ||
+    typeof permission['task'] !== 'object' ||
+    permission['task'] === null
+  ) {
     permission['task'] = {};
   }
 
