@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-048 (Issue #199):** Replace smoke-only architecture boundary checks with robust import boundary enforcement:
+  - Removed "smoke test" disclaimer from dependency-rules.test.ts — now treated as authoritative boundary enforcement
+  - Registered `presentation/` layer in FF_MODULES and added deny-list rule (forbids imports from integration, rails, cli, audit, archive)
+  - Added pure-function negative fixture tests proving violations in state and presentation layers are detected
+  - Integrated CLI facade integrity check from architecture-boundary.test.ts (facade imports commands; commands don't circular-import facade)
+  - Added explicit directory existence assertions for all 13 core layer directories
+  - Deleted `architecture-boundary.test.ts` (all checks now in dependency-rules.test.ts)
+  - Updated `test:architecture` script to use directory glob only
+  - Zero runtime changes, zero production code changes
 - **FG-REL-046 (Issue #197):** Decompose plugin orchestration and hook handlers to reduce function sizes:
   - `plugin-audit.ts`: extracted `resolveAuditContext` (fingerprint + session + policy + parse), `emitDecisionReceipt` (80-line decision event block), and `maybeCompleteAndArchive` (completion detection + auto-archive) — `runAudit` reduced from 299 to ~135 lines; prevHash threaded explicitly in/out
   - `plugin.ts`: extracted `handleHostTaskEvidence` (81-line host-task evidence binding block) into new `plugin-task-evidence.ts`; after hook reduced by 81 lines
