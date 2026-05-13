@@ -1,9 +1,12 @@
 /**
  * @module architecture/dependency-rules
- * @description Clean Architecture dependency boundary tests.
+ * @description Clean Architecture dependency boundary enforcement.
  *
- * IMPORTANT: This is a smoke test, not a complete static analysis tool.
- * It catches common violations but may have false negatives for complex import paths.
+ * This test statically analyzes all production TypeScript import and
+ * re-export edges and enforces layer dependency rules. Violations
+ * surface as test failures. The regex-based parser may miss
+ * dynamically-constructed imports; for those, an explicit exception
+ * comment is required.
  *
  * ARCHITECTURE RULES (verified by these tests):
  *
@@ -36,6 +39,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
 
@@ -195,6 +199,7 @@ const FF_MODULES = new Set([
   'cli',
   'identity',
   'telemetry',
+  'presentation',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -267,7 +272,126 @@ function getLayerFromPath(filePath: string): string | null {
   if (filePath.includes('/archive/')) return 'archive';
   if (filePath.includes('/logging/')) return 'logging';
   if (filePath.includes('/cli/')) return 'cli';
+  if (filePath.includes('/presentation/')) return 'presentation';
   return null;
+}
+
+function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[] {
+  const allViolations: ImportViolation[] = [];
+
+  for (const [, analysis] of analyses) {
+    if (analysis.filePath.includes('.test.')) continue;
+    const layer = getLayerFromPath(analysis.filePath);
+    if (!layer) continue;
+
+    const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
+
+    if (layer === 'state') {
+      const forbidden = new Set([
+        'machine',
+        'rails',
+        'adapters',
+        'integration',
+        'config',
+        'audit',
+        'archive',
+        'logging',
+        'cli',
+      ]);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: `leaf-${layer}`,
+            message: `${layer}/ is a leaf module but imports: ${imp.targetModule}`,
+          });
+        }
+      }
+    }
+
+    if (layer === 'machine') {
+      const forbidden = new Set([
+        'rails',
+        'adapters',
+        'integration',
+        'config',
+        'audit',
+        'discovery',
+        'archive',
+        'logging',
+        'cli',
+      ]);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'machine-only-state',
+            message: `machine/ may only import state/ but imports: ${imp.targetModule}`,
+          });
+        }
+      }
+    }
+
+    if (layer === 'rails' && analysis.filePath.includes('/rails/')) {
+      const integrationImports = ffImports.filter((i) => i.targetModule === 'integration');
+      for (const imp of integrationImports) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'rails-no-integration',
+          message: 'rails/ must not import integration/',
+        });
+      }
+
+      const FORBIDDEN_NODE_BUILTINS = new Set([
+        'fs',
+        'path',
+        'crypto',
+        'child_process',
+        'process',
+        'os',
+        'events',
+        'stream',
+        'buffer',
+        'util',
+        'url',
+        'http',
+        'https',
+        'node:fs',
+        'node:path',
+        'node:crypto',
+        'node:child_process',
+        'node:process',
+        'node:os',
+        'node:events',
+        'node:stream',
+      ]);
+      const builtinImports = analysis.imports.filter(
+        (i) => i.isNodeBuiltin && FORBIDDEN_NODE_BUILTINS.has(i.module),
+      );
+      for (const imp of builtinImports) {
+        allViolations.push({
+          file: analysis.relativePath,
+          rule: 'rails-no-builtins',
+          message: `rails/ must not import Node builtin: ${imp.module}`,
+        });
+      }
+    }
+
+    if (layer === 'presentation') {
+      const forbidden = new Set(['integration', 'rails', 'cli', 'audit', 'archive']);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'presentation-deny',
+            message: `presentation/ imports from forbidden module: ${imp.targetModule}`,
+          });
+        }
+      }
+    }
+  }
+
+  return allViolations;
 }
 
 describe('Layer Dependency Rules', () => {
@@ -446,6 +570,47 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\ndiscovery/types violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 3b: presentation/ deny-list — no imports from integration, rails, cli, audit, archive', () => {
+    const violations: ImportViolation[] = [];
+    const forbiddenFromPresentation = new Set(['integration', 'rails', 'cli', 'audit', 'archive']);
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/presentation/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
+        for (const imp of ffImports) {
+          if (imp.targetModule && forbiddenFromPresentation.has(imp.targetModule)) {
+            violations.push({
+              file: analysis.relativePath,
+              rule: 'presentation-deny',
+              message: `presentation/ imports from forbidden module: ${imp.targetModule}`,
+              imports: [imp.module],
+            });
+          }
+        }
+      }
+    });
+
+    it('should have presentation files', () => {
+      const files = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/presentation/') && !a.filePath.includes('.test.'),
+      );
+      expect(files.length).toBeGreaterThan(0);
+    });
+
+    it('should have no violations', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\npresentation/ violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
@@ -702,6 +867,115 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
+  describe('Negative Fixture — proves violations are detected', () => {
+    it('detects a prohibited state → integration import edge', () => {
+      const fakeFile = 'state/deliberate-violation.ts';
+      const fakeAnalysis: FileAnalysis = {
+        filePath: path.join(SRC_DIR, fakeFile),
+        relativePath: fakeFile,
+        imports: [
+          {
+            module: '../../integration/plugin.js',
+            raw: "import { x } from '../../integration/plugin.js';",
+            isNodeBuiltin: false,
+            isFFModule: true,
+            targetModule: 'integration',
+          },
+        ],
+      };
+
+      const violations = detectViolations(
+        new Map([['state/deliberate-violation.ts', fakeAnalysis]]),
+      );
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.message).toContain('integration');
+      expect(violations[0]!.rule).toBe('leaf-state');
+    });
+
+    it('detects prohibited presentation → integration re-export edge', () => {
+      const fakeFile = 'presentation/deliberate-violation.ts';
+      const fakeAnalysis: FileAnalysis = {
+        filePath: path.join(SRC_DIR, fakeFile),
+        relativePath: fakeFile,
+        imports: [
+          {
+            module: '../../integration/plugin.js',
+            raw: "export { x } from '../../integration/plugin.js';",
+            isNodeBuiltin: false,
+            isFFModule: true,
+            targetModule: 'integration',
+          },
+        ],
+      };
+
+      const violations = detectViolations(
+        new Map([['presentation/deliberate-violation.ts', fakeAnalysis]]),
+      );
+
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.message).toContain('integration');
+      expect(violations[0]!.rule).toBe('presentation-deny');
+    });
+  });
+
+  describe('Directory existence', () => {
+    const CORE_LAYER_DIRS = [
+      'state',
+      'machine',
+      'rails',
+      'adapters',
+      'integration',
+      'config',
+      'audit',
+      'discovery',
+      'archive',
+      'logging',
+      'cli',
+      'identity',
+      'presentation',
+    ] as const;
+
+    it('all core layer directories exist', () => {
+      for (const dir of CORE_LAYER_DIRS) {
+        const fullPath = path.join(SRC_DIR, dir);
+        expect(existsSync(fullPath), `Expected directory '${dir}' to exist`).toBe(true);
+      }
+    });
+  });
+
+  describe('CLI facade integrity', () => {
+    it('cli/install.ts imports from install-command, uninstall-command, doctor-command', async () => {
+      const facadePath = path.join(SRC_DIR, 'cli', 'install.ts');
+      const content = await fs.readFile(facadePath, 'utf-8');
+      expect(content).toContain("from './install-command.js'");
+      expect(content).toContain("from './uninstall-command.js'");
+      expect(content).toContain("from './doctor-command.js'");
+    });
+
+    it('command modules do not import cli/install.ts (no circular dependency)', async () => {
+      const commands = [
+        path.join(SRC_DIR, 'cli', 'install-command.ts'),
+        path.join(SRC_DIR, 'cli', 'uninstall-command.ts'),
+        path.join(SRC_DIR, 'cli', 'doctor-command.ts'),
+      ];
+
+      for (const cmdPath of commands) {
+        const exists = existsSync(cmdPath);
+        if (!exists) continue; // file may not exist in all environments
+        const content = await fs.readFile(cmdPath, 'utf-8');
+        expect(content).not.toContain("from './install.js'");
+        expect(content).not.toContain("from '../install.js'");
+      }
+    });
+
+    it('command modules exist on disk', () => {
+      expect(existsSync(path.join(SRC_DIR, 'cli/install-command.ts'))).toBe(true);
+      expect(existsSync(path.join(SRC_DIR, 'cli/uninstall-command.ts'))).toBe(true);
+      expect(existsSync(path.join(SRC_DIR, 'cli/doctor-command.ts'))).toBe(true);
+    });
+  });
+
   describe('Summary', () => {
     it('should have analyzed all TypeScript files', () => {
       const nonTestCount = Array.from(analyses.values()).filter(
@@ -712,114 +986,14 @@ describe('Layer Dependency Rules', () => {
     });
 
     it('should have no critical architecture violations', () => {
-      const allViolations: ImportViolation[] = [];
+      const violations = detectViolations(analyses);
 
-      for (const [, analysis] of analyses) {
-        if (analysis.filePath.includes('.test.')) continue;
-        const layer = getLayerFromPath(analysis.filePath);
-        if (!layer) continue;
-
-        const ffImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule);
-
-        if (layer === 'state') {
-          const forbidden = new Set([
-            'machine',
-            'rails',
-            'adapters',
-            'integration',
-            'config',
-            'audit',
-            'archive',
-            'logging',
-            'cli',
-          ]);
-          for (const imp of ffImports) {
-            if (imp.targetModule && forbidden.has(imp.targetModule)) {
-              allViolations.push({
-                file: analysis.relativePath,
-                rule: `leaf-${layer}`,
-                message: `${layer}/ is a leaf module but imports: ${imp.targetModule}`,
-              });
-            }
-          }
-        }
-
-        if (layer === 'machine') {
-          const forbidden = new Set([
-            'rails',
-            'adapters',
-            'integration',
-            'config',
-            'audit',
-            'discovery',
-            'archive',
-            'logging',
-            'cli',
-          ]);
-          for (const imp of ffImports) {
-            if (imp.targetModule && forbidden.has(imp.targetModule)) {
-              allViolations.push({
-                file: analysis.relativePath,
-                rule: `machine-only-state`,
-                message: `machine/ may only import state/ but imports: ${imp.targetModule}`,
-              });
-            }
-          }
-        }
-
-        if (layer === 'rails' && analysis.filePath.includes('/rails/')) {
-          const integrationImports = ffImports.filter((i) => i.targetModule === 'integration');
-          for (const imp of integrationImports) {
-            allViolations.push({
-              file: analysis.relativePath,
-              rule: `rails-no-integration`,
-              message: `rails/ must not import integration/`,
-            });
-          }
-
-          const FORBIDDEN_NODE_BUILTINS = new Set([
-            'fs',
-            'path',
-            'crypto',
-            'child_process',
-            'process',
-            'os',
-            'events',
-            'stream',
-            'buffer',
-            'util',
-            'url',
-            'http',
-            'https',
-            'node:fs',
-            'node:path',
-            'node:crypto',
-            'node:child_process',
-            'node:process',
-            'node:os',
-            'node:events',
-            'node:stream',
-          ]);
-          const builtinImports = analysis.imports.filter(
-            (i) => i.isNodeBuiltin && FORBIDDEN_NODE_BUILTINS.has(i.module),
-          );
-          for (const imp of builtinImports) {
-            allViolations.push({
-              file: analysis.relativePath,
-              rule: `rails-no-builtins`,
-              message: `rails/ must not import Node builtin: ${imp.module}`,
-            });
-          }
-        }
-      }
-
-      if (allViolations.length > 0) {
-        const summary = allViolations.map((v) => `  - ${v.file}: ${v.message}`).join('\n');
-
+      if (violations.length > 0) {
+        const summary = violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n');
         console.error('\nCritical architecture violations:\n' + summary);
       }
 
-      expect(allViolations).toHaveLength(0);
+      expect(violations).toHaveLength(0);
     });
   });
 });
