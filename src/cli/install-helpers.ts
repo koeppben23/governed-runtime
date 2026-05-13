@@ -120,6 +120,10 @@ export const FLOWGUARD_OWNED_FILES = [
   'vendor',
 ] as const;
 
+/** Canonical regex for FlowGuard tarball filenames shared by install and uninstall. */
+export const FLOWGUARD_TARBALL_PATTERN =
+  /^flowguard-core-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/;
+
 /**
  * Instruction entries that are FlowGuard-owned (not desktop-owned indicators).
  * Used by desktop-owned heuristic: any instruction NOT in this list signals desktop ownership.
