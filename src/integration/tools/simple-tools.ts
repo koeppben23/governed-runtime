@@ -69,11 +69,16 @@ import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js
 import { writeReport, reportPath } from '../../adapters/persistence.js';
 import { ActorClaimError } from '../../adapters/actor.js';
 
-import { writeStateWithArtifacts } from './helpers.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// flowguard_ticket — Record Task
-// ═══════════════════════════════════════════════════════════════════════════════
+async function safeExecute(fn: () => Promise<string>): Promise<string> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ActorClaimError) {
+      return formatBlocked(err.code);
+    }
+    return formatError(err);
+  }
+}
 
 export const ticket: ToolDefinition = {
   description:
