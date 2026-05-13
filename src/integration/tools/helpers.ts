@@ -26,15 +26,13 @@ import type { RailResult, RailContext } from '../../rails/types.js';
 
 // Adapters
 import { readState, atomicWrite, statePath } from '../../adapters/persistence.js';
-import {
-  materializeEvidenceArtifacts,
-  verifyEvidenceArtifacts,
-} from '../../adapters/workspace/evidence-artifacts.js';
 
 // Workspace
 import {
   computeFingerprint,
+  materializeEvidenceArtifacts,
   sessionDir as resolveSessionDir,
+  verifyEvidenceArtifacts,
   workspaceDir as resolveWorkspaceDir,
 } from '../../adapters/workspace/index.js';
 
@@ -43,8 +41,7 @@ import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
-import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 

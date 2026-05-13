@@ -47,5 +47,12 @@ export {
   readSessionPointer,
 } from './init.js';
 
+// ── Evidence Artifacts ────────────────────────────────────────────────────────
+export {
+  materializeEvidenceArtifacts,
+  materializeReviewCardArtifact,
+  verifyEvidenceArtifacts,
+} from './evidence-artifacts.js';
+
 // ── Archive ──────────────────────────────────────────────────────────────────
 export { archiveSession, verifyArchive } from './archive.js';
