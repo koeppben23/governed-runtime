@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-016 (Issue #125):** Split `src/config/policy.ts` into focused policy implementation modules while preserving the stable `config/policy.js` facade:
+  - New `policy-errors.ts`, `policy-presets.ts`, `policy-ci.ts`, `policy-central.ts`, and `policy-resolver.ts` modules separate error taxonomy, preset authority, CI detection, central policy validation, and runtime/hydrate resolution
+  - `policy.ts` is now a compatibility facade with the same existing public exports, avoiding public API expansion
+  - `policy-snapshot.ts` imports types/defaults from lower policy modules to avoid facade cycles while keeping snapshot authority separate
+  - `resolvePolicyForHydrate` behavior is preserved and decomposed below the existing policy-specific lint complexity warnings
 - **FG-REL-041 (Issue #191):** Replace direct `process.env` mutation in tests with scoped `withTestEnv` helper:
   - New `withTestEnv(overrides)` function in `test-helpers.ts` with atomic save/restore and idempotent cleanup
   - 22 test files migrated from manual save/restore patterns to `withTestEnv`

@@ -1,6 +1,6 @@
 /**
  * @module config/policy-types
- * @description Core policy types, interfaces, and error classes.
+ * @description Core policy types and interfaces.
  *
  * Extracted from policy.ts.
  *

@@ -27,13 +27,13 @@ import type {
   PolicySource,
   PolicyResolutionReason,
   CentralMinimumMode,
-  PolicyResolution,
   SelfReviewConfig,
   ReviewOutputPolicy,
   ReviewInvocationPolicy,
-} from './policy.js';
-import type { HydratePolicyResolution } from './policy.js';
-import { DEFAULT_SELF_REVIEW_CONFIG } from './policy.js';
+  HydratePolicyResolution,
+} from './policy-types.js';
+import type { PolicyResolution } from './policy-resolver.js';
+import { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 /**
