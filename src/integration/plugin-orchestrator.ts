@@ -282,6 +282,66 @@ async function handleHostTaskPolicy(
   return false; // retry + preferred + no evidence → fall through to SDK
 }
 
+// ─── Prompt building ─────────────────────────────────────────────────────────
+
+function buildToolPrompt(
+  toolName: string,
+  planText: string,
+  ticketText: string,
+  adrText: string,
+  adrTitle: string,
+  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>,
+  parsedOutput: ReturnType<typeof parseToolResult> & Record<string, unknown>,
+  sessionState: SessionState,
+  planRules: ReturnType<typeof selectReviewerProfileRules>,
+  implRules: ReturnType<typeof selectReviewerProfileRules>,
+  archRules: ReturnType<typeof selectReviewerProfileRules>,
+  deps: OrchestratorDeps,
+): string | null {
+  if (toolName === TOOL_FLOWGUARD_PLAN) {
+    return buildPlanReviewPrompt({
+      planText,
+      ticketText,
+      iteration: reviewCtx.iteration,
+      planVersion: reviewCtx.planVersion,
+      obligationId: reviewCtx.obligationId,
+      criteriaVersion: reviewCtx.criteriaVersion,
+      mandateDigest: reviewCtx.mandateDigest,
+      ...planRules,
+    });
+  }
+  if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
+    return buildImplReviewPrompt({
+      changedFiles: Array.isArray(parsedOutput.changedFiles)
+        ? (parsedOutput.changedFiles as string[])
+        : (sessionState.implementation?.changedFiles ?? []),
+      planText,
+      ticketText,
+      iteration: reviewCtx.iteration,
+      planVersion: reviewCtx.planVersion,
+      obligationId: reviewCtx.obligationId,
+      criteriaVersion: reviewCtx.criteriaVersion,
+      mandateDigest: reviewCtx.mandateDigest,
+      ...implRules,
+    });
+  }
+  if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
+    return buildArchitectureReviewPrompt({
+      adrText,
+      adrTitle,
+      ticketText,
+      iteration: reviewCtx.iteration,
+      planVersion: reviewCtx.planVersion,
+      obligationId: reviewCtx.obligationId,
+      criteriaVersion: reviewCtx.criteriaVersion,
+      mandateDigest: reviewCtx.mandateDigest,
+      ...archRules,
+    });
+  }
+  deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', { tool: toolName });
+  return null;
+}
+
 /**
  * Run the review orchestrator for a single tool invocation.
  */
@@ -539,57 +599,21 @@ export async function runReviewOrchestration(
     const archRules = selectReviewerProfileRules(sessionState.activeProfile, 'ARCH_REVIEW');
 
     // F13 slice 6: 3-way prompt selection by reviewable tool.
-    // The previous 2-way ternary defaulted any non-PLAN tool to the
-    // implementation prompt, which would have produced incorrect prompts
-    // for the architecture tool once it routes through this orchestrator
-    // (slice 7). The exhaustive switch surfaces unsupported tools as a
-    // typed error at the bottom rather than silently picking impl.
-    let prompt: string;
-    if (toolName === TOOL_FLOWGUARD_PLAN) {
-      prompt = buildPlanReviewPrompt({
-        planText, // SSOT: always use sessionState.plan.current.body (line 489)
-        ticketText,
-        iteration: reviewCtx.iteration,
-        planVersion: reviewCtx.planVersion,
-        obligationId: reviewCtx.obligationId,
-        criteriaVersion: reviewCtx.criteriaVersion,
-        mandateDigest: reviewCtx.mandateDigest,
-        ...planRules,
-      });
-    } else if (toolName === TOOL_FLOWGUARD_IMPLEMENT) {
-      prompt = buildImplReviewPrompt({
-        changedFiles: Array.isArray(parsedOutput.changedFiles)
-          ? (parsedOutput.changedFiles as string[])
-          : (sessionState.implementation?.changedFiles ?? []),
-        planText,
-        ticketText,
-        iteration: reviewCtx.iteration,
-        planVersion: reviewCtx.planVersion,
-        obligationId: reviewCtx.obligationId,
-        criteriaVersion: reviewCtx.criteriaVersion,
-        mandateDigest: reviewCtx.mandateDigest,
-        ...implRules,
-      });
-    } else if (toolName === TOOL_FLOWGUARD_ARCHITECTURE) {
-      prompt = buildArchitectureReviewPrompt({
-        adrText,
-        adrTitle,
-        ticketText,
-        iteration: reviewCtx.iteration,
-        planVersion: reviewCtx.planVersion,
-        obligationId: reviewCtx.obligationId,
-        criteriaVersion: reviewCtx.criteriaVersion,
-        mandateDigest: reviewCtx.mandateDigest,
-        ...archRules,
-      });
-    } else {
-      // Unreachable: orchestrator is only entered when isReviewRequired()
-      // classified the tool as reviewable. Defensive fail-closed.
-      deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', {
-        tool: toolName,
-      });
-      return;
-    }
+    const prompt = buildToolPrompt(
+      toolName,
+      planText,
+      ticketText,
+      adrText,
+      adrTitle,
+      reviewCtx,
+      parsedOutput,
+      sessionState,
+      planRules,
+      implRules,
+      archRules,
+      deps,
+    );
+    if (!prompt) return;
 
     deps.log.info('orchestrator', 'invoking reviewer subagent', {
       tool: toolName,
