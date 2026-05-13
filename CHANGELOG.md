@@ -14,6 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `install.ts` remains the public CLI/bin entrypoint with compatibility re-exports, argument parsing, output formatting, and `main()` dispatch
   - Shared FlowGuard tarball filename authority moved to `install-helpers.ts` so install validation and uninstall ownership checks use the same regex
   - Added an architecture smoke check to prevent the command implementations from drifting back into the facade
+- **FG-REL-012 (Issue #121):** Split `src/state/evidence.ts` (823 LOC, 22 schemas, 10+ concerns) into 12 focused single-authority modules:
+  - `evidence-primitives.ts` — foundational enums, scalars, assurance helper (CheckId, ReviewVerdict, RevisionDelta, LoopVerdict, etc.)
+  - `evidence-error.ts` — fail-closed ErrorInfo schema
+  - `evidence-ticket.ts` — TicketEvidence with input origin and external references
+  - `evidence-binding.ts` — workspace BindingInfo with fingerprint validation
+  - `evidence-validation.ts` — ValidationResult with evidence metadata
+  - `evidence-impl.ts` — ImplEvidence and ImplReviewResult (digest-stop loop)
+  - `evidence-plan.ts` — PlanEvidence, PlanRecord with version history, SelfReviewLoop
+  - `evidence-architecture.ts` — ArchitectureDecision, ADR section validation, MADR helpers
+  - `evidence-review.ts` — review findings, obligations, invocation evidence, assurance state, completeness report, review decision, standalone ReviewReport
+  - `evidence-identity.ts` — DecisionIdentity, ActorInfo, ActorVerificationMeta, assurance-backed schemas
+  - `evidence-policy.ts` — frozen PolicySnapshotSchema with governance-critical fields
+  - `evidence-audit.ts` — tamper-evident AuditEvent with hash-chain linking
+  - `evidence.ts` reduced to a 12-module facade with `export *` / `export type *` re-exports preserving all existing import paths
+  - 121 new per-module tests (HAPPY, BAD, CORNER, EDGE) in `evidence-split.test.ts` proving independent module correctness
+  - Zero consumer file changes — 49 files across `rails/`, `integration/`, `audit/`, `config/`, `adapters/` import unchanged from `state/evidence.js`
+  - Zero schema semantics changes, zero runtime behavior changes
 - **FG-REL-016 (Issue #125):** Split `src/config/policy.ts` into focused policy implementation modules while preserving the stable `config/policy.js` facade:
   - New `policy-errors.ts`, `policy-presets.ts`, `policy-ci.ts`, `policy-central.ts`, and `policy-resolver.ts` modules separate error taxonomy, preset authority, CI detection, central policy validation, and runtime/hydrate resolution
   - `policy.ts` is now a compatibility facade with the same existing public exports, avoiding public API expansion
