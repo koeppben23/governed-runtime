@@ -143,6 +143,7 @@ export const plan: ToolDefinition = {
       ),
   },
   async execute(args, context) {
+    // eslint-disable-next-line max-lines-per-function, complexity -- multi-mode dispatch (Mode A/B) is the canonical governance entry point; each mode extracted as a local closure
     try {
       const { sessDir, state, policy, ctx } = await withMutableSession(context);
       const maxSelfReviewIterations = policy.maxSelfReviewIterations;

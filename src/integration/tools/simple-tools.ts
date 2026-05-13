@@ -71,6 +71,17 @@ import { ActorClaimError } from '../../adapters/actor.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
 
+async function safeExecute(fn: () => Promise<string>): Promise<string> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof ActorClaimError) {
+      return formatBlocked(err.code);
+    }
+    return formatError(err);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_ticket — Record Task
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -100,9 +111,8 @@ export const ticket: ToolDefinition = {
       ),
   },
   async execute(args, context) {
-    try {
+    return safeExecute(async () => {
       const { sessDir, state, ctx } = await withMutableSession(context);
-
       const result = executeTicket(
         state,
         {
@@ -113,14 +123,8 @@ export const ticket: ToolDefinition = {
         },
         ctx,
       );
-
-      return await persistAndFormat(sessDir, result);
-    } catch (err) {
-      if (err instanceof ActorClaimError) {
-        return formatBlocked(err.code);
-      }
-      return formatError(err);
-    }
+      return persistAndFormat(sessDir, result);
+    });
   },
 };
 
@@ -309,6 +313,7 @@ export const review: ToolDefinition = {
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
+    // eslint-disable-next-line complexity -- multi-path tool routing (session boot, obligation lifecycle, state validation, review startup, content resolution)
   },
   async execute(args, context) {
     try {
@@ -782,22 +787,11 @@ export const abort_session: ToolDefinition = {
       .describe('Reason for aborting. Recorded in audit trail.'),
   },
   async execute(args, context) {
-    try {
+    return safeExecute(async () => {
       const { sessDir, state, ctx } = await withMutableSession(context);
-
-      const result = executeAbort(
-        state,
-        {
-          reason: args.reason,
-          actor: context.sessionID,
-        },
-        ctx,
-      );
-
-      return await persistAndFormat(sessDir, result);
-    } catch (err) {
-      return formatError(err);
-    }
+      const result = executeAbort(state, { reason: args.reason, actor: context.sessionID }, ctx);
+      return persistAndFormat(sessDir, result);
+    });
   },
 };
 
