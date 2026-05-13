@@ -56,10 +56,7 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
-  resolveWorkspacePaths,
-  requireStateForMutation,
-  resolvePolicyFromState,
-  createPolicyContext,
+  withMutableSession,
   formatEval,
   formatBlocked,
   formatError,
@@ -145,10 +142,7 @@ export const implement: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { worktree, sessDir } = await resolveWorkspacePaths(context);
-      const state = await requireStateForMutation(sessDir);
-      const policy = resolvePolicyFromState(state);
-      const ctx = createPolicyContext(policy);
+      const { worktree, sessDir, state, policy, ctx } = await withMutableSession(context);
       const maxImplReviewIterations = policy.maxImplReviewIterations;
 
       // Policy config for review findings validation
