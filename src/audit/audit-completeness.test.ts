@@ -204,6 +204,7 @@ describe('audit completeness', () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const state = makeState('TICKET', { policySnapshot: undefined as any });
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe('unknown');
