@@ -238,7 +238,7 @@ export const plan: ToolDefinition = {
         if (blocked) return blocked;
       }
 
-      if (isInitialSubmission) {
+      async function handlePlanSubmission(): Promise<string> {
         // ── Mode A: Initial plan submission ──────────────────────
         const planBody = args.planText?.trim();
         if (!planBody) {
@@ -338,7 +338,9 @@ export const plan: ToolDefinition = {
         }
 
         return appendNextAction(JSON.stringify(response), finalState);
-      } else {
+      }
+
+      async function handlePlanReview(): Promise<string> {
         // ── Mode B: Independent review verdict ───────────────────
 
         if (!state.selfReview) {
@@ -614,6 +616,11 @@ export const plan: ToolDefinition = {
           stateToPersist,
         );
       }
+
+      if (isInitialSubmission) {
+        return handlePlanSubmission();
+      }
+      return handlePlanReview();
     } catch (err) {
       return formatError(err);
     }
