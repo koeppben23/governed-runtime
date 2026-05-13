@@ -11,16 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **FG-QUAL-002 (Issue #214):** Extract review subsystem into bounded context `integration/review/`:
   - Moved 11 review modules + 6 test files into `src/integration/review/` with `enforcement/` sub-directory
-  - Created barrel exports (`review/index.ts`, `review/enforcement/index.ts`) for clean public API surface
-  - Resolved circular type dependency between orchestrator and agent-resolution via shared `review/types.ts`
-  - Fixed TypeScript strict-mode issues: union-type property access in orchestrator, implicit `any` in filter/reduce callbacks
-  - Removed unnecessary type assertion flagged by `@typescript-eslint/no-unnecessary-type-assertion`
-  - Updated all 20+ consumer import paths (static imports, dynamic `import()`, `vi.mock()` paths)
-  - Added architecture boundary tests: review/ directory structure, barrel existence, no plugin-lifecycle imports, no stale root-level files
-  - Updated `stryker.conf.json` mutate paths to new locations
-  - Fixed pre-existing Windows path normalization bug in `dependency-rules.test.ts` negative fixtures
+  - Created barrel exports for clean public API surface
+  - Updated all 20+ consumer import paths and architecture boundary tests
   - Zero runtime behavior changes, zero schema changes, zero public API changes
 
+- **FG-QUAL-001 (Issue #213):** Decompose 590-line god function `runReviewOrchestration` into single-responsibility helpers:
+  - Extracted shared strict enforcement, content analysis, and standard review pipeline helpers
+  - Introduced typed options interfaces replacing 6-parameter positional signatures
+  - `runReviewOrchestration` reduced to ~30 lines thin dispatcher
+  - Zero public API changes, zero behavioral changes, all 121 orchestrator tests pass unmodified
 - **FG-REL-050 (Issue #201):** Baseline quick wins — removed unused `eslint-disable` directive, consolidated `createLifecycleEvent`, `finalizeDecision`, `executeFormatFreePrompt`, `ensureMetaJson`, and `createPlanArtifact` from positional parameters to typed input objects; eliminated 7 `max-params`/`max-lines`/`unused-disable` warnings
 - **FG-REL-049 (Issue #200):** Split `normalizePolicySnapshotWithMeta` into auditable typed field normalizers — extracted `normalizeMode`, `normalizeHash`, `normalizeCoreFields`, `normalizePolicyFields`, `normalizeActorAssurance`, `normalizeIdpMode`, `normalizeActorClassification`, `normalizeAudit`, and `extractProvenanceFields` as private helpers; wrapper reduced to ~60 lines with complexity under 12 — zero public contract changes
 - **FG-REL-047 (Issue #198):** Start tool execute decomposition with status-tool extraction, hydrate policy resolution extraction, and local plan/implement/architecture phase extraction; no JSON output changes.
