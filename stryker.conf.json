@@ -28,8 +28,8 @@
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
     "src/integration/tool-names.ts",
-    "src/integration/review-enforcement.ts",
-    "src/integration/review-orchestrator.ts",
+    "src/integration/review/enforcement/enforcement.ts",
+    "src/integration/review/orchestrator.ts",
     "src/integration/status.ts"
   ],
   "mutator": {

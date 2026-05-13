@@ -88,7 +88,7 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
   reviewObligationResponseFields,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 
 type PlanArgs = {
   planText?: string;

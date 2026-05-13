@@ -96,7 +96,7 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
   reviewObligationResponseFields,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════

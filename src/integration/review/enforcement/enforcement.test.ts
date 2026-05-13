@@ -20,8 +20,8 @@ import {
   onTaskToolAfter,
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
-} from './review-enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+} from './enforcement.js';
+import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './types.js';
 import {
   NOW,
   LATER,
@@ -32,7 +32,7 @@ import {
   taskResultWithFindings,
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
-} from './review-enforcement-test-helpers.js';
+} from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests

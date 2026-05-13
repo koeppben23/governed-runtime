@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractJsonFromText } from './review-text-extraction.js';
-import { validFindings } from './review-orchestrator-test-helpers.js';
+import { extractJsonFromText } from './text-extraction.js';
+import { validFindings } from './orchestrator-test-helpers.js';
 describe('extractJsonFromText', () => {
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ describe('extractJsonFromText JSDoc', () => {
   it('SMOKE — JSDoc references info.structured_output (canonical docs field)', async () => {
     const extractionPath = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
-      'review-text-extraction.ts',
+      'text-extraction.ts',
     );
     const source = await fs.readFile(extractionPath, 'utf-8');
 

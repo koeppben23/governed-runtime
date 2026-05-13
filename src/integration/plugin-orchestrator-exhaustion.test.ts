@@ -33,7 +33,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   findLatestPendingReviewObligation,
-} from './review-assurance.js';
+} from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 
 const PARENT_SESSION_ID = 'parent-session-exhaust-1';

@@ -20,7 +20,7 @@ import {
   findLatestObligation,
   hashFindings,
   validateStrictAttestation,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 import type {
   ReviewAssuranceState,
   ReviewObligationType,

@@ -12,20 +12,16 @@ import {
   onFlowGuardToolAfter,
   onTaskToolAfter,
   matchPendingReview,
-} from './review-enforcement.js';
-import {
-  extractContentMeta,
-  extractCapturedFindings,
-  promptContainsValue,
-} from './review-enforcement-extraction.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+} from './enforcement.js';
+import { extractContentMeta, extractCapturedFindings, promptContainsValue } from './extraction.js';
+import { REVIEWER_SUBAGENT_TYPE } from './types.js';
 import {
   NOW,
   LATER,
   modeASubagentResponse,
   taskResultWithFindings,
   validSubagentPrompt,
-} from './review-enforcement-test-helpers.js';
+} from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests

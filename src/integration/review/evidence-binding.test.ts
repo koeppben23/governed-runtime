@@ -15,19 +15,23 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './review-enforcement.js';
-import { buildHostTaskEvidence } from './review-evidence-binding.js';
+import {
+  createSessionState,
+  onFlowGuardToolAfter,
+  onTaskToolAfter,
+} from './enforcement/enforcement.js';
+import { buildHostTaskEvidence } from './evidence-binding.js';
 import {
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
-} from './review-enforcement-extraction.js';
+} from './enforcement/extraction.js';
 import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   type HostTaskBindOutcome,
   type HostTaskBindResult,
   type TaskToolContext,
-} from './review-enforcement-types.js';
+} from './enforcement/types.js';
 import {
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,
@@ -36,10 +40,10 @@ import {
   buildInvocationEvidence,
   appendInvocationEvidence,
   ensureReviewAssurance,
-} from './review-assurance.js';
-import type { ReviewObligation, ReviewInvocationEvidence } from '../state/evidence.js';
-import { validateReviewFindings } from './tools/review-validation.js';
-import { resolveHostTaskFindings } from './tools/review-validation.js';
+} from './assurance.js';
+import type { ReviewObligation, ReviewInvocationEvidence } from '../../state/evidence.js';
+import { validateReviewFindings } from '../tools/review-validation.js';
+import { resolveHostTaskFindings } from '../tools/review-validation.js';
 
 import {
   NOW,
@@ -51,7 +55,7 @@ import {
   taskResultWithAttestation,
   pendingObligation,
   setupFullCycle,
-} from './plugin-host-task-diagnostics-helpers.js';
+} from '../plugin-host-task-diagnostics-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // F5: buildHostTaskEvidence — HostTaskBindResult diagnostics

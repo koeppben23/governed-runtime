@@ -13,7 +13,7 @@
  * @version v1
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 export const REVIEW_FINDINGS_JSON_SCHEMA = {
   type: 'object',

@@ -10,9 +10,9 @@
  * @version v1
  */
 
-import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
-import type { ReviewableTool } from './review-obligation-tools.js';
-export type { ReviewableTool } from './review-obligation-tools.js';
+import { TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
+import type { ReviewableTool } from '../obligation-tools.js';
+export type { ReviewableTool } from '../obligation-tools.js';
 
 export type PendingReviewTool = ReviewableTool | typeof TOOL_FLOWGUARD_REVIEW;
 
@@ -97,7 +97,7 @@ export type EnforcementResult =
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
 
 /** The subagent type name for the FlowGuard reviewer. */
-export { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+export { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';
 
 /**
  * Minimum prompt length for subagent calls (Level 3).
@@ -130,7 +130,7 @@ export type HostTaskBindOutcome =
  */
 export interface HostTaskBindResult {
   /** Created evidence, or null if binding failed. */
-  evidence: import('../state/evidence.js').ReviewInvocationEvidence | null;
+  evidence: import('../../../state/evidence.js').ReviewInvocationEvidence | null;
   /** Machine-readable bind outcome for logging. */
   bindOutcome: HostTaskBindOutcome;
   /** Structured diagnostic metadata (safe to JSON.stringify). */

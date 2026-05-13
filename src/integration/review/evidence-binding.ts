@@ -11,11 +11,11 @@
  * @version v1
  */
 
-import type { ReviewInvocationEvidence, ReviewObligation } from '../state/evidence.js';
-import type { SessionEnforcementState, HostTaskBindResult } from './review-enforcement-types.js';
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
-import { obligationTypeForTool } from './review-obligation-tools.js';
-import { buildInvocationEvidence, hashFindings, hashText } from './review-assurance.js';
+import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence.js';
+import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
+import { obligationTypeForTool } from './obligation-tools.js';
+import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.

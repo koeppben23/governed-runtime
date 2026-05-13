@@ -4,7 +4,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   hashFindings,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 
 const mocks = vi.hoisted(() => {
   return {

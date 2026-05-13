@@ -24,7 +24,7 @@
  * @version v4
  */
 
-import type { SessionState } from '../state/schema.js';
+import type { SessionState } from '../../../state/schema.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -35,22 +35,22 @@ import {
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
   MIN_SUBAGENT_PROMPT_LENGTH,
-} from './review-enforcement-types.js';
+} from './types.js';
 import {
   extractContentMeta,
   extractCapturedFindings,
   extractSubagentSessionId,
   resolveSessionIdFromMetadata,
   promptContainsValue,
-} from './review-enforcement-extraction.js';
+} from './extraction.js';
 
-import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
+import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
   isReviewableTool,
   obligationTypeForTool,
   type ReviewableTool,
-} from './review-obligation-tools.js';
-import { parseToolResult } from './plugin-helpers.js';
+} from '../obligation-tools.js';
+import { parseToolResult } from '../../plugin-helpers.js';
 
 // ─── State factory ───────────────────────────────────────────────────────────
 

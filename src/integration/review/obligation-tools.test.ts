@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ReviewObligationType } from '../state/evidence.js';
+import { ReviewObligationType } from '../../state/evidence.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
-} from './tool-names.js';
-import {
-  REVIEWABLE_TOOLS,
-  isReviewableTool,
-  obligationTypeForTool,
-} from './review-obligation-tools.js';
+} from '../tool-names.js';
+import { REVIEWABLE_TOOLS, isReviewableTool, obligationTypeForTool } from './obligation-tools.js';
 
 describe('review-obligation-tools', () => {
   describe('HAPPY', () => {

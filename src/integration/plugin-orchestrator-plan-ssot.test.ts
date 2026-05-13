@@ -26,7 +26,7 @@ import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../__fixtures__
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';

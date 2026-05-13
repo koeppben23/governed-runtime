@@ -5,18 +5,18 @@ import {
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
-} from './review-agent-resolution.js';
-import { invokeReviewer } from './review-orchestrator.js';
-import { buildPlanReviewPrompt } from './review-prompt-builders.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './review-findings-schema.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+} from './agent-resolution.js';
+import { invokeReviewer } from './orchestrator.js';
+import { buildPlanReviewPrompt } from './prompt-builders.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {
   validFindings,
   NO_SLEEP,
   TEXT_COMPAT_OPTIONS,
   makeClient,
   PROMPT,
-} from './review-orchestrator-test-helpers.js';
+} from './orchestrator-test-helpers.js';
 describe('invokeReviewer — agent resolution integration', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();

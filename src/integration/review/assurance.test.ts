@@ -26,14 +26,14 @@ import {
   validateStrictAttestation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review-assurance.js';
-import { REVIEWER_SUBAGENT_TYPE } from './tool-names.js';
+} from './assurance.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../tool-names.js';
 import type {
   ReviewObligation,
   ReviewInvocationEvidence,
   ReviewFindings,
-} from '../state/evidence.js';
-import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../state/evidence.js';
+} from '../../state/evidence.js';
+import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../../state/evidence.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 

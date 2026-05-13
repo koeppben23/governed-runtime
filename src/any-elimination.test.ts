@@ -74,7 +74,7 @@ describe('helpers.ts', () => {
 describe('enforceBeforeVerdict signature', () => {
   describe('HAPPY — narrow carrier, not Partial<SessionState>', () => {
     it('uses selector-pattern parameter, not broad Partial', () => {
-      const source = readSource('integration/review-enforcement.ts');
+      const source = readSource('integration/review/enforcement/enforcement.ts');
       expect(source).toContain("reviewAssurance?: SessionState['reviewAssurance']");
       expect(source).not.toContain('Partial<SessionState>');
     });
@@ -102,7 +102,7 @@ describe('status.test.ts', () => {
 describe('review-enforcement-session.test.ts', () => {
   describe('HAPPY — no as any', () => {
     it('has no as any casts', () => {
-      const source = readSource('integration/review-enforcement-session.test.ts');
+      const source = readSource('integration/review/enforcement/session.test.ts');
       expect(source).not.toContain('as any');
     });
   });
@@ -111,7 +111,7 @@ describe('review-enforcement-session.test.ts', () => {
 describe('review-enforcement-mutation.test.ts', () => {
   describe('HAPPY — no as any', () => {
     it('has no as any casts', () => {
-      const source = readSource('integration/review-enforcement-mutation.test.ts');
+      const source = readSource('integration/review/enforcement/mutation.test.ts');
       expect(source).not.toContain('as any');
     });
   });

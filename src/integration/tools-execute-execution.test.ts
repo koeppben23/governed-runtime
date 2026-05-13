@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import {
   status,
   hydrate,

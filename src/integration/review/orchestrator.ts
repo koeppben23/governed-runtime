@@ -22,77 +22,29 @@
  * @version v2
  */
 
-import { REVIEW_REQUIRED_PREFIX } from './review-enforcement-types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
-import { parseToolResult } from './plugin-helpers.js';
+import { REVIEW_REQUIRED_PREFIX } from './enforcement/types.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
+import { parseToolResult } from '../plugin-helpers.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
   RECOVERY_HOST_SUBAGENT_TASK,
-} from '../shared/flowguard-identifiers.js';
+} from '../../shared/flowguard-identifiers.js';
+import type { OrchestratorClient } from './types.js';
 
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './review-findings-schema.js';
-import { extractJsonFromTextWithMethod } from './review-text-extraction.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+import { extractJsonFromTextWithMethod } from './text-extraction.js';
 import {
   resolveReviewerAgent,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
-} from './review-agent-resolution.js';
+} from './agent-resolution.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-/**
- * Minimal SDK client interface for the orchestrator.
- *
- * Mirrors the subset of OpencodeClient used by this module.
- * Defined as an interface (not imported from SDK) so this module
- * has zero runtime SDK dependency — testable with plain mocks.
- */
-export interface OrchestratorClient {
-  app: {
-    agents(): Promise<{ data?: Array<Record<string, unknown>> | undefined; error?: unknown }>;
-  };
-  session: {
-    create(opts: {
-      body?: { parentID?: string; title?: string };
-    }): Promise<{ data?: { id: string } | undefined; error?: unknown }>;
-    prompt(opts: {
-      path: { id: string };
-      body: {
-        agent?: string;
-        system?: string;
-        parts: Array<{ type: string; text: string }>;
-        format?: {
-          type: 'json_schema';
-          schema: Record<string, unknown>;
-          retryCount?: number;
-        };
-      };
-    }): Promise<{
-      data?:
-        | {
-            parts?: Array<{ type?: string; text?: string }>;
-            info?: {
-              structured_output?: unknown;
-              structured?: unknown;
-              error?: {
-                name: string;
-                message?: string;
-                data?: { message?: string; retries?: number };
-              };
-            };
-          }
-        | undefined;
-      error?: unknown;
-    }>;
-  };
-  /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
-  tui?: {
-    showToast(opts: {
-      body: { message: string; variant?: 'info' | 'success' | 'error' };
-    }): Promise<unknown>;
-  };
-}
+// OrchestratorClient lives in ./types.ts to break the circular type-only
+// dependency between orchestrator.ts and agent-resolution.ts.
+export type { OrchestratorClient } from './types.js';
 
 export interface ReviewerBlockedResult {
   readonly blocked: true;
@@ -402,10 +354,8 @@ export async function invokeReviewer(
     }
 
     if (info?.error) {
-      const errorObj =
-        typeof info.error === 'object' && info.error !== null
-          ? (info.error as Record<string, unknown>)
-          : { value: info.error };
+      const errorObj: Record<string, unknown> =
+        typeof info.error === 'object' && info.error !== null ? info.error : { value: info.error };
       onFailed({
         attempt,
         step: 'info_error',
@@ -540,8 +490,8 @@ export async function invokeReviewer(
           partsCount: promptResult.data.parts?.length ?? 0,
           textPartsLength:
             promptResult.data.parts
-              ?.filter((p) => p.type === 'text' && p.text)
-              .reduce((sum, p) => sum + (p.text?.length ?? 0), 0) ?? 0,
+              ?.filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
+              .reduce((sum: number, p: { text?: string }) => sum + (p.text?.length ?? 0), 0) ?? 0,
         },
       });
       if (attempt < maxAttempts) continue;
