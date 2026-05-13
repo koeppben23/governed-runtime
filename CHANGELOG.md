@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-QUAL-001 (Issue #213):** Decompose 590-line god function `runReviewOrchestration` into single-responsibility helpers:
+  - Extracted `validateStrictAttestation`, `recordEvidenceOrBlockReuse`, `blockReviewOutcomeHelper` as shared strict enforcement helpers
+  - Extracted `loadContentForReview`, `validateContentFindings`, `enforceContentStrictGate` for the content analysis pipeline (TOOL_FLOWGUARD_REVIEW)
+  - Extracted `emitObligationCreatedAudit`, `buildStandardPromptAndLog`, `buildToolArgsDiagnostics`, `handleReviewerSuccess`, `enforceStandardStrictGate`, `emitStandardEvidenceAudit`, `finalizeReviewOutput`, `handleReviewerFailure` for the standard review pipeline
+  - Extracted `isStrictEnforcementEnabled`, `getReviewerPolicies`, `isOutputAlreadyBlocked` as shared pipeline utilities
+  - Introduced typed options interfaces (`ReviewSuccessOpts`, `EvidenceAuditOpts`, `FinalizeOutputOpts`) replacing 6-parameter positional signatures
+  - Replaced magic strings with module-level constants (`INVOCATION_MODE_SDK_SESSION`, `EVIDENCE_SOURCE_HOST`, `REASON_MANDATE_MISSING`, `REASON_MANDATE_MISMATCH`, `REASON_UNABLE_TO_REVIEW`)
+  - `runReviewOrchestration` reduced to ~30 lines thin dispatcher; all helpers under 80 lines, complexity ≤12, nesting ≤3
+  - Zero public API changes, zero behavioral changes, all 121 orchestrator tests pass unmodified
 - **FG-REL-050 (Issue #201):** Baseline quick wins — removed unused `eslint-disable` directive, consolidated `createLifecycleEvent`, `finalizeDecision`, `executeFormatFreePrompt`, `ensureMetaJson`, and `createPlanArtifact` from positional parameters to typed input objects; eliminated 7 `max-params`/`max-lines`/`unused-disable` warnings
 - **FG-REL-049 (Issue #200):** Split `normalizePolicySnapshotWithMeta` into auditable typed field normalizers — extracted `normalizeMode`, `normalizeHash`, `normalizeCoreFields`, `normalizePolicyFields`, `normalizeActorAssurance`, `normalizeIdpMode`, `normalizeActorClassification`, `normalizeAudit`, and `extractProvenanceFields` as private helpers; wrapper reduced to ~60 lines with complexity under 12 — zero public contract changes
 - **FG-REL-047 (Issue #198):** Start tool execute decomposition with status-tool extraction, hydrate policy resolution extraction, and local plan/implement/architecture phase extraction; no JSON output changes.
