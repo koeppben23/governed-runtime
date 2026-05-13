@@ -182,7 +182,7 @@ export const implement: ToolDefinition = {
         if (blocked) return blocked;
       }
 
-      if (isRecordImpl) {
+      async function handleImplRecord(): Promise<string> {
         // ── Mode A: Record implementation evidence ───────────────
         if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
           // Recovery: if phase is IMPL_REVIEW and the last implement obligation
@@ -309,7 +309,9 @@ export const implement: ToolDefinition = {
         }
 
         return appendNextAction(JSON.stringify(response), finalState);
-      } else {
+      }
+
+      async function handleImplReview(): Promise<string> {
         // ── Mode B: Implementation review verdict ────────────────
         const implementation = state.implementation;
         if (!implementation) {
@@ -520,6 +522,11 @@ export const implement: ToolDefinition = {
         response.status = `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`;
         return appendNextAction(JSON.stringify(response), finalState);
       }
+
+      if (isRecordImpl) {
+        return handleImplRecord();
+      }
+      return handleImplReview();
     } catch (err) {
       return formatError(err);
     }
