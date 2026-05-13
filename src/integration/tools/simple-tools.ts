@@ -37,8 +37,8 @@ import {
   InputOriginSchema,
   ExternalReferenceSchema,
   ReviewFindings,
+  type ReviewObligation,
 } from '../../state/evidence.js';
-import type { ReviewObligation } from '../../state/evidence-review.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewReferenceInput } from '../../rails/review.js';
 
