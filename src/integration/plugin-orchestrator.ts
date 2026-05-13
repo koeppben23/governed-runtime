@@ -166,6 +166,122 @@ function buildHostTaskPolicyOutput(
   return JSON.stringify(result);
 }
 
+// ─── Extracted orchestrator helpers ───────────────────────────────────────────
+
+interface ValidatedSession {
+  sessionState: SessionState;
+  sessDir: string;
+  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>;
+  parsedOutput: ReturnType<typeof parseToolResult> & Record<string, unknown>;
+  strictEnforcement: boolean | null;
+}
+
+async function validateSessionContext(
+  deps: OrchestratorDeps,
+  output: ToolCallEvent['output'],
+  toolName: string,
+  sessionId: string,
+): Promise<ValidatedSession | null> {
+  await deps.resolveFingerprint();
+  const sessDir = deps.getSessionDir(sessionId);
+
+  if (!sessDir) {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason: 'session directory unavailable for strict review orchestration',
+    });
+    return null;
+  }
+  const sessionState = await readState(sessDir);
+  if (!sessionState) {
+    output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason: 'session state unavailable for strict review orchestration',
+    });
+    return null;
+  }
+
+  const rawOutput = getToolOutput(output);
+  const parsedOutput = parseToolResult(rawOutput);
+  if (!parsedOutput || Array.isArray(parsedOutput)) {
+    output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'review-required tool output could not be parsed for strict orchestration',
+    });
+    return null;
+  }
+  const reviewCtx = extractReviewContext(toolName, parsedOutput);
+  let strictEnforcement: boolean | null = null;
+  if (!reviewCtx) {
+    strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
+    if (strictEnforcement) {
+      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        reason: 'review context missing for strict orchestration',
+      });
+    }
+    return null;
+  }
+
+  return { sessionState, sessDir, reviewCtx, parsedOutput, strictEnforcement };
+}
+
+async function handleHostTaskPolicy(
+  deps: OrchestratorDeps,
+  sessionState: SessionState,
+  sessDir: string,
+  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>,
+  output: ToolCallEvent['output'],
+): Promise<boolean> {
+  const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
+  if (invocationPolicy !== 'host_task_required' && invocationPolicy !== 'host_task_preferred') {
+    return false; // not handled, continue
+  }
+
+  const obligationId = reviewCtx.obligationId;
+  const preUpdateObligation = findReviewObligationById(
+    ensureReviewAssurance(sessionState.reviewAssurance),
+    obligationId,
+  );
+  const isRetry = preUpdateObligation?.pluginHandshakeAt !== null;
+
+  await deps.updateReviewAssurance(sessDir, (s, now2) =>
+    updateObligation(s, obligationId, (item) => ({
+      ...item,
+      pluginHandshakeAt: now2,
+    })),
+  );
+  const invocations = sessionState.reviewAssurance?.invocations ?? [];
+  const hostEvidence = invocations.find(
+    (inv) =>
+      inv.obligationId === obligationId &&
+      inv.invocationMode === 'host_subagent_task' &&
+      inv.hostVisible === true,
+  );
+
+  const rawOutput = getToolOutput(output);
+
+  if (hostEvidence) {
+    const mutated = buildHostTaskPolicyOutput(
+      rawOutput,
+      invocationPolicy,
+      hostEvidence.childSessionId,
+    );
+    if (mutated) output.output = mutated;
+    return true; // handled, return early
+  }
+
+  if (invocationPolicy === 'host_task_required') {
+    const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
+    if (mutated) output.output = mutated;
+    return true;
+  }
+
+  if (!isRetry) {
+    const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
+    if (mutated) output.output = mutated;
+    return true;
+  }
+
+  return false; // retry + preferred + no evidence → fall through to SDK
+}
+
 /**
  * Run the review orchestrator for a single tool invocation.
  */
@@ -175,103 +291,19 @@ export async function runReviewOrchestration(
 ): Promise<void> {
   const { toolName, input, output, sessionId, now } = event;
 
-  const rawOutput = getToolOutput(output);
   let strictEnforcement: boolean | null = null;
-  const inReviewPath = isReviewRequired(rawOutput, toolName);
+  const inReviewPath = isReviewRequired(getToolOutput(output), toolName);
   if (!inReviewPath) return;
 
   try {
-    await deps.resolveFingerprint();
-    const sessDir = deps.getSessionDir(sessionId);
+    const v = await validateSessionContext(deps, output, toolName, sessionId);
+    if (!v) return;
+    strictEnforcement = v.strictEnforcement;
+    const { sessionState, sessDir, reviewCtx, parsedOutput } = v;
+    const rawOutput = getToolOutput(output);
 
-    if (!sessDir) {
-      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        reason: 'session directory unavailable for strict review orchestration',
-      });
+    if (await handleHostTaskPolicy(deps, sessionState, sessDir, reviewCtx, output)) {
       return;
-    }
-    const sessionState = await readState(sessDir);
-    if (!sessionState) {
-      output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        reason: 'session state unavailable for strict review orchestration',
-      });
-      return;
-    }
-
-    const parsedOutput = parseToolResult(rawOutput);
-    if (!parsedOutput || Array.isArray(parsedOutput)) {
-      output.output = strictBlockedOutput('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        reason: 'review-required tool output could not be parsed for strict orchestration',
-      });
-      return;
-    }
-    const reviewCtx = extractReviewContext(toolName, parsedOutput);
-    if (!reviewCtx) {
-      strictEnforcement = sessionState?.policySnapshot?.selfReview?.strictEnforcement === true;
-      if (strictEnforcement) {
-        output.output = strictBlockedOutput('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-          reason: 'review context missing for strict orchestration',
-        });
-      }
-      return;
-    }
-
-    // P35 host_task_required / host_task_preferred: policy-gated invocation.
-    // For host_task_required: always emit host-visible Task requirement; SDK
-    // path is never entered (blocked in invokeReviewer).
-    // For host_task_preferred: first call requests host Task; on retry
-    // (obligation already handshook) without host evidence, fall through to
-    // SDK invocation.
-    const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
-    if (invocationPolicy === 'host_task_required' || invocationPolicy === 'host_task_preferred') {
-      const obligationId = reviewCtx.obligationId;
-      const preUpdateObligation = findReviewObligationById(
-        ensureReviewAssurance(sessionState.reviewAssurance),
-        obligationId,
-      );
-      const isRetry = preUpdateObligation?.pluginHandshakeAt !== null;
-
-      await deps.updateReviewAssurance(sessDir, (s, now2) =>
-        updateObligation(s, obligationId, (item) => ({
-          ...item,
-          pluginHandshakeAt: now2,
-        })),
-      );
-      const invocations = sessionState.reviewAssurance?.invocations ?? [];
-      const hostEvidence = invocations.find(
-        (inv) =>
-          inv.obligationId === obligationId &&
-          inv.invocationMode === 'host_subagent_task' &&
-          inv.hostVisible === true,
-      );
-
-      if (hostEvidence) {
-        // Host evidence exists → emit INDEPENDENT_REVIEW_COMPLETED.
-        const mutated = buildHostTaskPolicyOutput(
-          rawOutput,
-          invocationPolicy,
-          hostEvidence.childSessionId,
-        );
-        if (mutated) output.output = mutated;
-        return;
-      }
-
-      // No host evidence.
-      if (invocationPolicy === 'host_task_required') {
-        // Required: always block until host Task is performed.
-        const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
-        if (mutated) output.output = mutated;
-        return;
-      }
-
-      // host_task_preferred without evidence:
-      // First call → request host Task; retry → fall through to SDK.
-      if (!isRetry) {
-        const mutated = buildHostTaskPolicyOutput(rawOutput, invocationPolicy, null);
-        if (mutated) output.output = mutated;
-        return;
-      }
-      // Fall through to SDK invocation path below.
     }
 
     // Host-orchestrated /review content analysis.
