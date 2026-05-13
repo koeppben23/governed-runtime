@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-046 (Issue #197):** Decompose plugin orchestration and hook handlers to reduce function sizes:
+  - `plugin-audit.ts`: extracted `resolveAuditContext` (fingerprint + session + policy + parse), `emitDecisionReceipt` (80-line decision event block), and `maybeCompleteAndArchive` (completion detection + auto-archive) — `runAudit` reduced from 299 to ~135 lines; prevHash threaded explicitly in/out
+  - `plugin.ts`: extracted `handleHostTaskEvidence` (81-line host-task evidence binding block) into new `plugin-task-evidence.ts`; after hook reduced by 81 lines
+  - `plugin-orchestrator.ts`: extracted `validateSessionContext` (session validation preamble), `handleHostTaskPolicy` (P35 invocation policy gate), and `buildToolPrompt` (3-way prompt selector with typed params object) — `runReviewOrchestration` reduced from 716 to ~520 lines
+  - `emitDecisionReceipt` and `buildToolPrompt` use typed params objects instead of wide positional parameter lists
+  - Zero enforcement semantic changes, no new error codes, no recovery text changes
 - **FG-REL-044 (Issue #194):** Eliminate remaining `any` types in production and test code:
   - Production: removed 2 `any` + 2 `eslint-disable` from `plugin-logging.ts` by introducing typed `PluginLogClient`/`PluginLogMessage` interfaces matching the OpenCode SDK log shape; kept 1 `any` in `helpers.ts` `execute(args: any)` with improved Zod runtime validation justification
   - `enforceBeforeVerdict` in `review-enforcement.ts`: narrowed `sessionState` parameter from `SessionState | null` to `{ reviewAssurance?: SessionState['reviewAssurance'] | null } | null` — function only accesses `reviewAssurance?.obligations`, no longer accepts arbitrary `Partial<SessionState>`
