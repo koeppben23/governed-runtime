@@ -236,12 +236,198 @@ export function normalizePolicySnapshot(
   return normalizePolicySnapshotWithMeta(snapshot).snapshot;
 }
 
+// ─── Private Field Normalizers ────────────────────────────────────────────────
+
+interface NormalizedField<T> {
+  value: T;
+  normalized: boolean;
+}
+
+function normalizeMode(s: Record<string, unknown>): NormalizedField<PolicyMode> {
+  const raw = s.mode;
+  if (isValidMode(raw)) return { value: raw, normalized: false };
+  return { value: 'team', normalized: true };
+}
+
+function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {
+  const raw = s.hash;
+  if (typeof raw === 'string' && raw.length > 0) return { value: raw, normalized: false };
+  return { value: 'UNKNOWN_LEGACY', normalized: true };
+}
+
+function normalizeCoreFields(
+  s: Record<string, unknown>,
+  defaults: ReturnType<typeof modeConsistentDefaults>,
+): {
+  requireHumanGates: boolean;
+  maxSelfReviewIterations: number;
+  maxImplReviewIterations: number;
+  allowSelfApproval: boolean;
+  normalized: boolean;
+} {
+  let norm = false;
+
+  const rawHuman = s.requireHumanGates;
+  const requireHumanGates = typeof rawHuman === 'boolean' ? rawHuman : defaults.requireHumanGates;
+  if (typeof rawHuman !== 'boolean') norm = true;
+
+  const rawMaxSelf = s.maxSelfReviewIterations;
+  const maxSelfReviewIterations =
+    typeof rawMaxSelf === 'number' ? rawMaxSelf : defaults.maxSelfReviewIterations;
+  if (typeof rawMaxSelf !== 'number') norm = true;
+
+  const rawMaxImpl = s.maxImplReviewIterations;
+  const maxImplReviewIterations =
+    typeof rawMaxImpl === 'number' ? rawMaxImpl : defaults.maxImplReviewIterations;
+  if (typeof rawMaxImpl !== 'number') norm = true;
+
+  const rawAllowSelf = s.allowSelfApproval;
+  const allowSelfApproval =
+    typeof rawAllowSelf === 'boolean' ? rawAllowSelf : defaults.allowSelfApproval;
+  if (typeof rawAllowSelf !== 'boolean') norm = true;
+
+  return {
+    requireHumanGates,
+    maxSelfReviewIterations,
+    maxImplReviewIterations,
+    allowSelfApproval,
+    normalized: norm,
+  };
+}
+
+function normalizePolicyFields(
+  s: Record<string, unknown>,
+  defaults: ReturnType<typeof modeConsistentDefaults>,
+): {
+  effectiveGateBehavior: EffectiveGateBehavior;
+  requireVerifiedActorsForApproval: boolean;
+  reviewOutputPolicy: ReviewOutputPolicy;
+  reviewInvocationPolicy: ReviewInvocationPolicy;
+  normalized: boolean;
+} {
+  let norm = false;
+
+  const rawGate = s.effectiveGateBehavior;
+  const effectiveGateBehavior = isValidGateBehavior(rawGate)
+    ? rawGate
+    : defaults.effectiveGateBehavior;
+  if (!isValidGateBehavior(rawGate)) norm = true;
+
+  const rawReqVerified = s.requireVerifiedActorsForApproval;
+  const requireVerifiedActorsForApproval =
+    typeof rawReqVerified === 'boolean' ? rawReqVerified : false;
+  if (typeof rawReqVerified !== 'boolean') norm = true;
+
+  const rawReviewOut = s.reviewOutputPolicy;
+  const reviewOutputPolicy = isValidReviewOutputPolicy(rawReviewOut)
+    ? rawReviewOut
+    : defaults.reviewOutputPolicy;
+  if (!isValidReviewOutputPolicy(rawReviewOut)) norm = true;
+
+  const rawReviewInv = s.reviewInvocationPolicy;
+  const reviewInvocationPolicy = isValidReviewInvocationPolicy(rawReviewInv)
+    ? rawReviewInv
+    : defaults.reviewInvocationPolicy;
+  if (!isValidReviewInvocationPolicy(rawReviewInv)) norm = true;
+
+  return {
+    effectiveGateBehavior,
+    requireVerifiedActorsForApproval,
+    reviewOutputPolicy,
+    reviewInvocationPolicy,
+    normalized: norm,
+  };
+}
+
+function normalizeActorAssurance(
+  s: Record<string, unknown>,
+  modeDefaults: ReturnType<typeof modeConsistentDefaults>,
+  requireVerifiedActors: boolean,
+): NormalizedField<'best_effort' | 'claim_validated' | 'idp_verified'> {
+  const raw = s.minimumActorAssuranceForApproval;
+  if (isValidAssurance(raw)) return { value: raw, normalized: false };
+  if (requireVerifiedActors) return { value: 'claim_validated', normalized: true };
+  return { value: modeDefaults.minimumActorAssuranceForApproval, normalized: true };
+}
+
+function normalizeIdpMode(s: Record<string, unknown>): NormalizedField<IdentityProviderMode> {
+  const raw = s.identityProviderMode;
+  if (isValidIdpMode(raw)) return { value: raw, normalized: false };
+  return { value: 'optional', normalized: true };
+}
+
+function normalizeActorClassification(
+  s: Record<string, unknown>,
+): NormalizedField<Record<string, string>> {
+  const raw = s.actorClassification;
+  if (raw !== null && typeof raw === 'object') {
+    return { value: raw as Record<string, string>, normalized: false };
+  }
+  return { value: {}, normalized: true };
+}
+
+function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
+  emitTransitions: boolean;
+  emitToolCalls: boolean;
+  enableChainHash: boolean;
+}> {
+  const raw = s.audit as Record<string, unknown> | null | undefined;
+  if (!raw || typeof raw !== 'object') {
+    return {
+      value: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      normalized: true,
+    };
+  }
+  const emitTransitions = typeof raw.emitTransitions === 'boolean' ? raw.emitTransitions : true;
+  const emitToolCalls = typeof raw.emitToolCalls === 'boolean' ? raw.emitToolCalls : true;
+  const enableChainHash = typeof raw.enableChainHash === 'boolean' ? raw.enableChainHash : true;
+  return { value: { emitTransitions, emitToolCalls, enableChainHash }, normalized: false };
+}
+
+function normalizeSelfReviewCheck(s: Record<string, unknown>): boolean {
+  const raw = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
+  return (
+    !raw ||
+    raw.subagentEnabled !== true ||
+    raw.fallbackToSelf !== false ||
+    raw.strictEnforcement !== true
+  );
+}
+
+function extractProvenanceFields(s: Record<string, unknown>, fallbackMode: PolicyMode) {
+  const rawReqMode = s.requestedMode;
+  return {
+    requestedMode: typeof rawReqMode === 'string' ? rawReqMode : fallbackMode,
+    reqModeNormalized: !isValidMode(rawReqMode),
+    resolvedAt:
+      typeof s.resolvedAt === 'string'
+        ? s.resolvedAt
+        : new Date('2026-01-01T00:00:00.000Z').toISOString(),
+    source: typeof s.source === 'string' ? (s.source as PolicySource) : undefined,
+    degradedReason: typeof s.degradedReason === 'string' ? s.degradedReason : undefined,
+    resolutionReason: typeof s.resolutionReason === 'string' ? s.resolutionReason : undefined,
+    centralMinimumMode:
+      typeof s.centralMinimumMode === 'string'
+        ? (s.centralMinimumMode as CentralMinimumMode)
+        : undefined,
+    policyDigest: typeof s.policyDigest === 'string' ? s.policyDigest : undefined,
+    policyVersion: typeof s.policyVersion === 'string' ? s.policyVersion : undefined,
+    policyPathHint: typeof s.policyPathHint === 'string' ? s.policyPathHint : undefined,
+    identityProvider:
+      s.identityProvider !== null && typeof s.identityProvider === 'object'
+        ? (s.identityProvider as IdpConfig)
+        : undefined,
+  };
+}
+
+// ─── Public Wrapper ──────────────────────────────────────────────────────────
+
 /**
  * Normalize and return meta-information about what was changed.
  *
- * Enriches incomplete/legacy snapshots with safe defaults.
- * Marks whether normalization occurred so runtime can distinguish
- * authoritative snapshots from legacy-fallback reconstructions.
+ * Composes private field normalizers into a single normalization pass.
+ * Each normalizer validates its field and returns a value plus a flag.
+ * The wrapper aggregates flags into the public `normalized` indicator.
  *
  * @param snapshot — Raw snapshot from session state.
  * @returns Normalized snapshot with normalization meta.
@@ -250,154 +436,65 @@ export function normalizePolicySnapshotWithMeta(
   snapshot: Record<string, unknown> | null | undefined,
 ): NormalizedSnapshotResult {
   const s = snapshot ?? {};
-  let normalized = false;
 
-  // Resolve mode first — other defaults depend on it
-  const rawMode = s.mode;
-  const mode: PolicyMode = isValidMode(rawMode) ? rawMode : 'team';
-  if (!isValidMode(rawMode)) normalized = true;
+  const { value: mode, normalized: modeNorm } = normalizeMode(s);
+  const defaults = modeConsistentDefaults(mode);
 
-  // Derive mode-consistent defaults
-  const modeDefaults = modeConsistentDefaults(mode);
+  const { value: hash, normalized: hashNorm } = normalizeHash(s);
+  const core = normalizeCoreFields(s, defaults);
+  const policy = normalizePolicyFields(s, defaults);
+  const { value: minimumActorAssuranceForApproval, normalized: assuranceNorm } =
+    normalizeActorAssurance(s, defaults, policy.requireVerifiedActorsForApproval);
+  const { value: identityProviderMode, normalized: idpNorm } = normalizeIdpMode(s);
+  const { value: actorClassification, normalized: actorNorm } = normalizeActorClassification(s);
+  const { value: audit, normalized: auditNorm } = normalizeAudit(s);
+  const selfReviewNorm = normalizeSelfReviewCheck(s);
+  const proven = extractProvenanceFields(s, mode);
 
-  // Build normalized snapshot field by field with validation
-  const rawHash = s.hash;
-  const hash: string =
-    typeof rawHash === 'string' && rawHash.length > 0 ? rawHash : 'UNKNOWN_LEGACY';
-  if (hash === 'UNKNOWN_LEGACY') normalized = true;
-
-  const rawRequestedMode = s.requestedMode;
-  const requestedMode: string = typeof rawRequestedMode === 'string' ? rawRequestedMode : mode;
-  if (!isValidMode(rawRequestedMode)) normalized = true;
-
-  const rawGateBehavior = s.effectiveGateBehavior;
-  const effectiveGateBehavior: EffectiveGateBehavior = isValidGateBehavior(rawGateBehavior)
-    ? rawGateBehavior
-    : modeDefaults.effectiveGateBehavior;
-  if (!isValidGateBehavior(rawGateBehavior)) normalized = true;
-
-  const rawRequireHuman = s.requireHumanGates;
-  const requireHumanGates: boolean =
-    typeof rawRequireHuman === 'boolean' ? rawRequireHuman : modeDefaults.requireHumanGates;
-  if (typeof rawRequireHuman !== 'boolean') normalized = true;
-
-  const rawMaxSelf = s.maxSelfReviewIterations;
-  const maxSelfReviewIterations: number =
-    typeof rawMaxSelf === 'number' ? rawMaxSelf : modeDefaults.maxSelfReviewIterations;
-  if (typeof rawMaxSelf !== 'number') normalized = true;
-
-  const rawMaxImpl = s.maxImplReviewIterations;
-  const maxImplReviewIterations: number =
-    typeof rawMaxImpl === 'number' ? rawMaxImpl : modeDefaults.maxImplReviewIterations;
-  if (typeof rawMaxImpl !== 'number') normalized = true;
-
-  const rawAllowSelf = s.allowSelfApproval;
-  const allowSelfApproval: boolean =
-    typeof rawAllowSelf === 'boolean' ? rawAllowSelf : modeDefaults.allowSelfApproval;
-  if (typeof rawAllowSelf !== 'boolean') normalized = true;
-
-  const rawReqVerified = s.requireVerifiedActorsForApproval;
-  const requireVerifiedActorsForApproval: boolean =
-    typeof rawReqVerified === 'boolean' ? rawReqVerified : false;
-  if (typeof rawReqVerified !== 'boolean') normalized = true;
-
-  const rawAssurance = s.minimumActorAssuranceForApproval;
-  let minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
-  if (isValidAssurance(rawAssurance)) {
-    minimumActorAssuranceForApproval = rawAssurance;
-  } else if (typeof rawReqVerified === 'boolean' && rawReqVerified) {
-    minimumActorAssuranceForApproval = 'claim_validated';
-  } else {
-    minimumActorAssuranceForApproval = modeDefaults.minimumActorAssuranceForApproval;
-  }
-  if (!isValidAssurance(rawAssurance)) normalized = true;
-
-  const rawIdpMode = s.identityProviderMode;
-  const identityProviderMode: IdentityProviderMode = isValidIdpMode(rawIdpMode)
-    ? rawIdpMode
-    : 'optional';
-  if (!isValidIdpMode(rawIdpMode)) normalized = true;
-
-  const rawActorClass = s.actorClassification;
-  const actorClassification: Record<string, string> =
-    rawActorClass !== null && typeof rawActorClass === 'object'
-      ? (rawActorClass as Record<string, string>)
-      : {};
-  if (typeof rawActorClass !== 'object' || rawActorClass === null) normalized = true;
-
-  const rawAudit = s.audit as Record<string, unknown> | null | undefined;
-  const audit: { emitTransitions: boolean; emitToolCalls: boolean; enableChainHash: boolean } = {
-    emitTransitions:
-      typeof rawAudit?.emitTransitions === 'boolean' ? rawAudit.emitTransitions : true,
-    emitToolCalls: typeof rawAudit?.emitToolCalls === 'boolean' ? rawAudit.emitToolCalls : true,
-    enableChainHash:
-      typeof rawAudit?.enableChainHash === 'boolean' ? rawAudit.enableChainHash : true,
-  };
-  if (!rawAudit || typeof rawAudit !== 'object') normalized = true;
+  const anyNormalized =
+    modeNorm ||
+    hashNorm ||
+    core.normalized ||
+    policy.normalized ||
+    assuranceNorm ||
+    idpNorm ||
+    actorNorm ||
+    auditNorm ||
+    selfReviewNorm ||
+    proven.reqModeNormalized;
 
   const rawSelfReview = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
-  if (
-    !rawSelfReview ||
-    rawSelfReview.subagentEnabled !== true ||
-    rawSelfReview.fallbackToSelf !== false ||
-    rawSelfReview.strictEnforcement !== true
-  ) {
-    normalized = true;
-  }
-
-  const rawReviewOutputPolicy = s.reviewOutputPolicy;
-  const reviewOutputPolicy: ReviewOutputPolicy = isValidReviewOutputPolicy(rawReviewOutputPolicy)
-    ? rawReviewOutputPolicy
-    : modeDefaults.reviewOutputPolicy;
-  if (!isValidReviewOutputPolicy(rawReviewOutputPolicy)) normalized = true;
-
-  const rawReviewInvocationPolicy = s.reviewInvocationPolicy;
-  const reviewInvocationPolicy: ReviewInvocationPolicy = isValidReviewInvocationPolicy(
-    rawReviewInvocationPolicy,
-  )
-    ? rawReviewInvocationPolicy
-    : modeDefaults.reviewInvocationPolicy;
-  if (!isValidReviewInvocationPolicy(rawReviewInvocationPolicy)) normalized = true;
 
   return {
     snapshot: {
       mode,
       hash,
-      resolvedAt:
-        typeof s.resolvedAt === 'string'
-          ? s.resolvedAt
-          : new Date('2026-01-01T00:00:00.000Z').toISOString(),
-      requestedMode,
-      source: typeof s.source === 'string' ? (s.source as PolicySource) : undefined,
-      effectiveGateBehavior,
-      degradedReason: typeof s.degradedReason === 'string' ? s.degradedReason : undefined,
-      resolutionReason: typeof s.resolutionReason === 'string' ? s.resolutionReason : undefined,
-      centralMinimumMode:
-        typeof s.centralMinimumMode === 'string'
-          ? (s.centralMinimumMode as CentralMinimumMode)
-          : undefined,
-      policyDigest: typeof s.policyDigest === 'string' ? s.policyDigest : undefined,
-      policyVersion: typeof s.policyVersion === 'string' ? s.policyVersion : undefined,
-      policyPathHint: typeof s.policyPathHint === 'string' ? s.policyPathHint : undefined,
-      requireHumanGates,
-      maxSelfReviewIterations,
-      maxImplReviewIterations,
-      allowSelfApproval,
-      requireVerifiedActorsForApproval,
+      resolvedAt: proven.resolvedAt,
+      requestedMode: proven.requestedMode,
+      source: proven.source,
+      effectiveGateBehavior: policy.effectiveGateBehavior,
+      degradedReason: proven.degradedReason,
+      resolutionReason: proven.resolutionReason,
+      centralMinimumMode: proven.centralMinimumMode,
+      policyDigest: proven.policyDigest,
+      policyVersion: proven.policyVersion,
+      policyPathHint: proven.policyPathHint,
+      requireHumanGates: core.requireHumanGates,
+      maxSelfReviewIterations: core.maxSelfReviewIterations,
+      maxImplReviewIterations: core.maxImplReviewIterations,
+      allowSelfApproval: core.allowSelfApproval,
+      requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
       audit,
       actorClassification,
       minimumActorAssuranceForApproval,
-      identityProvider:
-        s.identityProvider !== null && typeof s.identityProvider === 'object'
-          ? (s.identityProvider as IdpConfig)
-          : undefined,
+      identityProvider: proven.identityProvider,
       identityProviderMode,
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
-      reviewOutputPolicy,
-      reviewInvocationPolicy,
+      reviewOutputPolicy: policy.reviewOutputPolicy,
+      reviewInvocationPolicy: policy.reviewInvocationPolicy,
     },
-    normalized,
-    reason: normalized ? 'incomplete_snapshot_normalized' : undefined,
+    normalized: anyNormalized,
+    reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
   };
 }
 
