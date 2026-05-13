@@ -219,7 +219,7 @@ export const hydrate: ToolDefinition = {
 
       // Resolve policy for context
       const {
-        policy,
+        policy: _policy,
         policyResolution,
         ctx,
         existingWithCentralEvidence,
