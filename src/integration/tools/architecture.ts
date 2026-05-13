@@ -172,7 +172,7 @@ export const architecture: ToolDefinition = {
         }
       }
 
-      if (isInitialSubmission) {
+      async function handleAdrSubmission(): Promise<string> {
         // ── Mode A: Initial ADR submission (delegates to rail) ────
         if (!args.title) {
           return formatBlocked('EMPTY_ADR_TITLE');
@@ -256,7 +256,9 @@ export const architecture: ToolDefinition = {
         };
 
         return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
-      } else {
+      }
+
+      async function handleAdrReview(): Promise<string> {
         // ── Mode B: Review verdict (F13 slice 7c: subagent-driven by default) ──
         // Admissibility: Mode B is only valid from ARCHITECTURE phase.
         if (state.phase !== 'ARCHITECTURE') {
@@ -566,6 +568,11 @@ export const architecture: ToolDefinition = {
 
         return appendNextAction(JSON.stringify(nonConvergedResp), stateToPersist);
       }
+
+      if (isInitialSubmission) {
+        return handleAdrSubmission();
+      }
+      return handleAdrReview();
     } catch (err) {
       return formatError(err);
     }
