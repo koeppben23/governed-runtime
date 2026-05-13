@@ -52,6 +52,21 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),
+  withMutableSession: vi.fn(async (ctx) => {
+    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const state = await mocks.requireStateForMutation();
+    const policy = mocks.resolvePolicyFromState();
+    const ctx2 = mocks.createPolicyContext();
+    return {
+      worktree: paths.worktree ?? '/tmp/test',
+      fingerprint: paths.fingerprint ?? 'test',
+      sessDir: paths.sessDir,
+      wsDir: paths.wsDir ?? '/tmp/ws',
+      state,
+      policy,
+      ctx: ctx2,
+    };
+  }),
   resolveWorkspacePaths: mocks.resolveWorkspacePaths,
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
