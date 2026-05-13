@@ -461,7 +461,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'my plan', selfReviewVerdict: null },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true, // strict
     );
     expect(result.allowed).toBe(true);
@@ -473,7 +473,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_implement',
       { reviewVerdict: null },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -485,7 +485,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'plan', selfReviewVerdict: null, reviewVerdict: null },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -497,7 +497,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'plan', selfReviewVerdict: '' },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -509,7 +509,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'plan' },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -521,7 +521,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'plan', selfReviewVerdict: 0 },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -533,7 +533,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { planText: 'plan', selfReviewVerdict: false },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -550,9 +550,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       LATER,
     );
 
-    const result = enforceBeforeVerdict(state, 'flowguard_plan', { selfReviewVerdict: 'approve' }, {
-      reviewAssurance: { obligations: [], invocations: [] },
-    } as any);
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { selfReviewVerdict: 'approve' },
+      {
+        reviewAssurance: { obligations: [], invocations: [] },
+      },
+    );
     expect(result.allowed).toBe(true);
   });
 
@@ -561,9 +566,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
     // No Task call
 
-    const result = enforceBeforeVerdict(state, 'flowguard_plan', { selfReviewVerdict: 'approve' }, {
-      reviewAssurance: { obligations: [], invocations: [] },
-    } as any);
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { selfReviewVerdict: 'approve' },
+      {
+        reviewAssurance: { obligations: [], invocations: [] },
+      },
+    );
     expect(result.allowed).toBe(false);
     expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
   });
@@ -576,7 +586,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { selfReviewVerdict: 'approve' },
-      { reviewAssurance: undefined } as any,
+      { reviewAssurance: undefined },
       true, // strict
     );
     expect(result.allowed).toBe(true);
@@ -588,7 +598,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { selfReviewVerdict: 'approve' },
-      { reviewAssurance: null } as any,
+      { reviewAssurance: null },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -600,7 +610,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { selfReviewVerdict: 'approve' },
-      { reviewAssurance: { obligations: [], invocations: [] } } as any,
+      { reviewAssurance: { obligations: [], invocations: [] } },
       true,
     );
     expect(result.allowed).toBe(true);
@@ -667,7 +677,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
         ],
         invocations: [],
       },
-    } as any;
+    };
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
@@ -703,7 +713,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
         ],
         invocations: [],
       },
-    } as any;
+    };
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
@@ -719,13 +729,8 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
 
   it('E2E SMOKE: DeepSeek R1 sends { planText, selfReviewVerdict: null } after /ticket → allowed', () => {
     const state = createSessionState();
-    // After /ticket: sessionState exists, reviewAssurance undefined, strict policy
-    const sessionState = {
-      phase: 'PLAN',
-      ticket: { text: 'some ticket' },
-      reviewAssurance: undefined,
-      policySnapshot: { selfReview: { strictEnforcement: true } },
-    } as any;
+    // After /ticket: sessionState exists, reviewAssurance undefined
+    const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
@@ -738,12 +743,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
 
   it('E2E SMOKE: DeepSeek R1 sends { planText, selfReviewVerdict: "approve" } after /ticket → allowed (proceeds to tool for PLAN_APPROVE_WITH_TEXT)', () => {
     const state = createSessionState();
-    const sessionState = {
-      phase: 'PLAN',
-      ticket: { text: 'ticket' },
-      reviewAssurance: undefined,
-      policySnapshot: { selfReview: { strictEnforcement: true } },
-    } as any;
+    const sessionState = { reviewAssurance: undefined };
     // This should NOT be blocked by enforcement — the PLAN_APPROVE_WITH_TEXT
     // error comes from the tool's own mode detection, not from enforcement.
     const result = enforceBeforeVerdict(
@@ -773,7 +773,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       state,
       'flowguard_plan',
       { selfReviewVerdict: 'approve', reviewFindings: null },
-      { reviewAssurance: { obligations: [], invocations: [] } } as any,
+      { reviewAssurance: { obligations: [], invocations: [] } },
     );
     expect(result.allowed).toBe(true);
   });

@@ -22,6 +22,31 @@ import { createConsoleSink } from '../logging/console-sink.js';
 import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
 
 /**
+ * Shape of the log message accepted by the OpenCode SDK client.log().
+ * Extracted from actual call site at buildLogSinks() — service, level, message
+ * are always present; extra is an optional Record.
+ */
+interface PluginLogMessage {
+  body: {
+    service: string;
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    extra?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Compatibility type for the OpenCode plugin client.
+ * Only the app.log method is used — the rest of the client surface is ignored.
+ * The log signature matches our actual call shape and the SDK return type.
+ */
+interface PluginLogClient {
+  app?: {
+    log: (msg: PluginLogMessage) => Promise<unknown>;
+  };
+}
+
+/**
  * Maximum number of UI sink failures before stderr warnings are suppressed.
  * Prevents flooding stderr when the SDK connection is persistently broken.
  */
@@ -43,8 +68,7 @@ export function buildLogSinks(
       retentionDays: number;
     };
   },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: { app?: { log: (msg: any) => Promise<unknown> } } | undefined,
+  client: PluginLogClient | undefined,
   workspaceDir: string | null,
 ): LogSink[] {
   const sinks: LogSink[] = [];
@@ -101,12 +125,7 @@ export function buildLogSinks(
  * @returns Logger instance and resolved config
  */
 export async function createPluginLogger(
-  client:
-    | {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        app?: { log: (msg: any) => Promise<unknown> };
-      }
-    | undefined,
+  client: PluginLogClient | undefined,
   workspaceDir: string | null,
   worktree: string | undefined,
   fingerprint: string | null,

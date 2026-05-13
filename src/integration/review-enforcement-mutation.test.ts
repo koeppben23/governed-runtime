@@ -502,7 +502,7 @@ describe('review-enforcement mutation kills', () => {
             },
           ],
         },
-      } as any;
+      };
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
@@ -539,7 +539,7 @@ describe('review-enforcement mutation kills', () => {
             },
           ],
         },
-      } as any;
+      };
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
