@@ -294,6 +294,162 @@ describe('normalizePolicySnapshotWithMeta', () => {
     expect(result.snapshot.mode).toBe('team');
     expect(result.snapshot.identityProviderMode).toBe('optional');
   });
+
+  describe('NEGATIVE — invalid audit config', () => {
+    it('non-object audit defaults to all-true and marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        audit: 'not-an-object',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.audit.emitTransitions).toBe(true);
+      expect(result.snapshot.audit.emitToolCalls).toBe(true);
+      expect(result.snapshot.audit.enableChainHash).toBe(true);
+    });
+
+    it('null audit defaults to all-true and marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'team',
+        audit: null,
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.audit.emitTransitions).toBe(true);
+    });
+
+    it('undefined audit defaults to all-true and marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'team',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.audit.emitTransitions).toBe(true);
+    });
+
+    it('partial audit with one missing boolean falls back to true for missing field', () => {
+      const complete = freezePolicySnapshot(soloResolution(), NOW, sha256);
+      const result = normalizePolicySnapshotWithMeta({
+        ...complete,
+        audit: { emitTransitions: false, enableChainHash: false },
+      });
+      expect(result.normalized).toBe(false);
+      expect(result.snapshot.audit.emitTransitions).toBe(false);
+      expect(result.snapshot.audit.emitToolCalls).toBe(true);
+      expect(result.snapshot.audit.enableChainHash).toBe(false);
+    });
+  });
+
+  describe('NEGATIVE — invalid self-review config', () => {
+    it('null selfReview marks normalized and resolves to strict default', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        selfReview: null,
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.selfReview.subagentEnabled).toBe(true);
+      expect(result.snapshot.selfReview.fallbackToSelf).toBe(false);
+      expect(result.snapshot.selfReview.strictEnforcement).toBe(true);
+    });
+
+    it('undefined selfReview marks normalized and resolves to strict default', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.selfReview.subagentEnabled).toBe(true);
+    });
+
+    it('weakened selfReview (subagentEnabled=false) marks normalized and resolves to strict default', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        selfReview: { subagentEnabled: false, fallbackToSelf: false, strictEnforcement: true },
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.selfReview.subagentEnabled).toBe(true);
+    });
+
+    it('weakened selfReview (fallbackToSelf=true) marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        selfReview: { subagentEnabled: true, fallbackToSelf: true, strictEnforcement: true },
+      });
+      expect(result.normalized).toBe(true);
+    });
+
+    it('weakened selfReview (strictEnforcement=false) marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      expect(result.normalized).toBe(true);
+    });
+  });
+
+  describe('NEGATIVE — invalid actor assurance', () => {
+    it('invalid assurance defaults to best_effort in solo mode and marks normalized', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        minimumActorAssuranceForApproval: 'super_strong',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('invalid assurance with requireVerifiedActors=true defaults to claim_validated', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'regulated',
+        minimumActorAssuranceForApproval: 'invalid',
+        requireVerifiedActorsForApproval: true,
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
+    });
+
+    it('invalid assurance with requireVerifiedActors=false defaults to mode default', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'regulated',
+        minimumActorAssuranceForApproval: 'invalid',
+        requireVerifiedActorsForApproval: false,
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+  });
+
+  describe('NEGATIVE — invalid review invocation policy', () => {
+    it('invalid reviewOutputPolicy defaults to mode-consistent value', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'regulated',
+        reviewOutputPolicy: 'bogus_output',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.reviewOutputPolicy).toBe('structured_required');
+    });
+
+    it('invalid reviewInvocationPolicy defaults to mode-consistent value', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'solo',
+        reviewInvocationPolicy: 'bogus_invocation',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.snapshot.reviewInvocationPolicy).toBe('host_task_preferred');
+    });
+  });
+
+  describe('CORNER — composite invalidity', () => {
+    it('multiple invalid fields all normalize and single reason is set', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'bogus',
+        audit: null,
+        selfReview: null,
+        minimumActorAssuranceForApproval: 'nonsense',
+        reviewInvocationPolicy: 'bad',
+      });
+      expect(result.normalized).toBe(true);
+      expect(result.reason).toBe('incomplete_snapshot_normalized');
+      expect(result.snapshot.mode).toBe('team');
+      expect(result.snapshot.audit.emitTransitions).toBe(true);
+      expect(result.snapshot.selfReview.subagentEnabled).toBe(true);
+    });
+  });
 });
 
 // ─── resolvePolicyFromSnapshot ────────────────────────────────────────────
