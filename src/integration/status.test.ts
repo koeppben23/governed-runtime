@@ -644,13 +644,19 @@ describe('context and readiness projections', () => {
   });
 
   it('includes warning when legacy selfReview config is normalized', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     // Inject legacy config
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: false,
-        fallbackToSelf: true,
-        strictEnforcement: false,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: false,
+            fallbackToSelf: true,
+            strictEnforcement: false,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -663,12 +669,18 @@ describe('context and readiness projections', () => {
   // ─── MUTATION KILL: selfReview config check (lines 350-355) ────────────────
 
   it('readiness HAPPY returns no warnings when selfReview config is correct', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -676,12 +688,18 @@ describe('context and readiness projections', () => {
   });
 
   it('readiness warning when subagentEnabled is false (survivor kill)', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: false,
-        fallbackToSelf: false,
-        strictEnforcement: true,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: false,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -690,12 +708,18 @@ describe('context and readiness projections', () => {
   });
 
   it('readiness warning when fallbackToSelf is true (survivor kill)', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: true,
-        strictEnforcement: true,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: true,
+            strictEnforcement: true,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -704,12 +728,18 @@ describe('context and readiness projections', () => {
   });
 
   it('readiness warning when strictEnforcement is false (survivor kill)', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: false,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: false,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -718,12 +748,18 @@ describe('context and readiness projections', () => {
   });
 
   it('readiness warning when all three selfReview flags are wrong (survivor kill)', () => {
-    const state = makeMinimalState('READY');
+    let state = makeMinimalState('READY');
     if (state.policySnapshot) {
-      (state.policySnapshot as any).selfReview = {
-        subagentEnabled: false,
-        fallbackToSelf: true,
-        strictEnforcement: false,
+      state = {
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          selfReview: {
+            subagentEnabled: false,
+            fallbackToSelf: true,
+            strictEnforcement: false,
+          },
+        },
       };
     }
     const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
@@ -813,7 +849,7 @@ describe('context and readiness projections', () => {
     const policy = resolvePolicy('solo');
     const pendingPhases = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
     for (const phase of pendingPhases) {
-      const state = makeMinimalState(phase as any);
+      const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
       expect(projection.blocker).not.toBeNull();
       expect(projection.blocker!.reasonCode).toBeNull();
@@ -1010,7 +1046,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           source: 'claim',
           assurance: 'claim_validated',
           email: 'actor@example.com',
-        } as any,
+        },
       };
 
       const projection = buildStatusProjection(state, solo);
@@ -1175,7 +1211,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           source: 'oidc',
           assurance: 'idp_verified',
           email: 'reviewer@example.com',
-        } as any,
+        },
         archiveStatus: 'pending',
         policySnapshot: {
           ...makeMinimalState('READY').policySnapshot!,
@@ -1246,7 +1282,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         source: 'unknown',
         assurance: 'best_effort',
         email: null,
-      } as any;
+      };
 
       const claim = makeMinimalState('READY');
       claim.actorInfo = {
@@ -1254,7 +1290,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         source: 'claim',
         assurance: 'claim_validated',
         email: 'claim@example.com',
-      } as any;
+      };
 
       const absent = makeMinimalState('READY');
 
@@ -1264,32 +1300,56 @@ describe('status.ts MUTATION_KILL matrix', () => {
     });
 
     it('strict selfReview config produces no warning while each legacy flag does', () => {
-      const strict = makeMinimalState('READY');
-      (strict.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: true,
+      let strict = makeMinimalState('READY');
+      strict = {
+        ...strict,
+        policySnapshot: {
+          ...strict.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
       };
 
-      const weakSubagent = makeMinimalState('READY');
-      (weakSubagent.policySnapshot as any).selfReview = {
-        subagentEnabled: false,
-        fallbackToSelf: false,
-        strictEnforcement: true,
+      let weakSubagent = makeMinimalState('READY');
+      weakSubagent = {
+        ...weakSubagent,
+        policySnapshot: {
+          ...weakSubagent.policySnapshot,
+          selfReview: {
+            subagentEnabled: false,
+            fallbackToSelf: false,
+            strictEnforcement: true,
+          },
+        },
       };
 
-      const weakFallback = makeMinimalState('READY');
-      (weakFallback.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: true,
-        strictEnforcement: true,
+      let weakFallback = makeMinimalState('READY');
+      weakFallback = {
+        ...weakFallback,
+        policySnapshot: {
+          ...weakFallback.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: true,
+            strictEnforcement: true,
+          },
+        },
       };
 
-      const weakStrict = makeMinimalState('READY');
-      (weakStrict.policySnapshot as any).selfReview = {
-        subagentEnabled: true,
-        fallbackToSelf: false,
-        strictEnforcement: false,
+      let weakStrict = makeMinimalState('READY');
+      weakStrict = {
+        ...weakStrict,
+        policySnapshot: {
+          ...weakStrict.policySnapshot,
+          selfReview: {
+            subagentEnabled: true,
+            fallbackToSelf: false,
+            strictEnforcement: false,
+          },
+        },
       };
 
       expect(buildReadinessProjection(strict, solo).warnings).toEqual([]);

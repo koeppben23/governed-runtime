@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-044 (Issue #194):** Eliminate remaining `any` types in production and test code:
+  - Production: removed 2 `any` + 2 `eslint-disable` from `plugin-logging.ts` by introducing typed `PluginLogClient`/`PluginLogMessage` interfaces matching the OpenCode SDK log shape; kept 1 `any` in `helpers.ts` `execute(args: any)` with improved Zod runtime validation justification
+  - `enforceBeforeVerdict` in `review-enforcement.ts`: narrowed `sessionState` parameter from `SessionState | null` to `{ reviewAssurance?: SessionState['reviewAssurance'] | null } | null` — function only accesses `reviewAssurance?.obligations`, no longer accepts arbitrary `Partial<SessionState>`
+  - `status.test.ts`: 15 `(state.policySnapshot as any).selfReview = {...}` mutations replaced with typed spread using the already-typed `PolicySnapshot.selfReview` field
+  - `review-enforcement-session.test.ts`: 17 `as any` casts removed by narrowing `enforceBeforeVerdict` to the review-assurance carrier shape
+  - `audit-completeness.test.ts`: 8 `as any` casts removed — tested phases already members of `Phase` enum
+  - Zero runtime behavior changes, zero schema changes
 - **FG-REL-043 (Issue #193):** Add barrel exports to `src/adapters/workspace/` and `src/presentation/`:
   - `adapters/workspace/index.ts` extended with `materializeEvidenceArtifacts`, `materializeReviewCardArtifact`, `verifyEvidenceArtifacts` re-exports from `evidence-artifacts.js`
   - New `presentation/index.ts` barrel exports 5 public presentation symbols: `PHASE_LABELS`, `buildProductNextAction`, `buildPlanReviewCard`, `buildArchitectureReviewCard`, `buildReviewReportCard` (explicit named exports only, no `export *`)

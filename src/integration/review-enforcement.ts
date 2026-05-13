@@ -332,7 +332,7 @@ export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
-  sessionState?: SessionState | null,
+  sessionState?: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null,
   strictEnforcement = false,
 ): EnforcementResult {
   if (!isReviewableTool(toolName)) {

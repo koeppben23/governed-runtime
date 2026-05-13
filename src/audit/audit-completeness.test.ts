@@ -204,6 +204,7 @@ describe('audit completeness', () => {
     });
 
     it("no policy snapshot → policyMode is 'unknown'", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const state = makeState('TICKET', { policySnapshot: undefined as any });
       const report = evaluateCompleteness(state);
       expect(report.policyMode).toBe('unknown');
@@ -302,9 +303,7 @@ describe('audit completeness', () => {
       ];
       for (const { phase, expectedRequired } of phases) {
         const state =
-          phase === 'READY' || phase === 'TICKET'
-            ? makeState(phase as any)
-            : makeProgressedState(phase as any);
+          phase === 'READY' || phase === 'TICKET' ? makeState(phase) : makeProgressedState(phase);
         const report = evaluateCompleteness(state);
         const required = report.slots.filter((s) => s.required);
         expect(required.length).toBe(expectedRequired);
@@ -353,7 +352,7 @@ describe('audit completeness', () => {
 
     // ─── MUTATION KILL: arch flow and error conditions ────────
     it('archReviewDecision slot is NOT present at ARCH_COMPLETE with error', () => {
-      const state = makeState('ARCH_COMPLETE' as any, {
+      const state = makeState('ARCH_COMPLETE', {
         ...makeProgressedState('ARCH_COMPLETE'),
         error: {
           code: 'ADR_REJECTED',
@@ -378,7 +377,7 @@ describe('audit completeness', () => {
     });
 
     it('archReviewDecision slot is NOT present at ARCH_REVIEW (wrong phase)', () => {
-      const state = makeState('ARCH_REVIEW' as any, {
+      const state = makeState('ARCH_REVIEW', {
         architecture: makeProgressedState('ARCH_COMPLETE').architecture,
         selfReview: {
           iteration: 1,
@@ -405,7 +404,7 @@ describe('audit completeness', () => {
     });
 
     it('archReviewDecision detail at ARCH_COMPLETE with error is undefined', () => {
-      const state = makeState('ARCH_COMPLETE' as any, {
+      const state = makeState('ARCH_COMPLETE', {
         ...makeProgressedState('ARCH_COMPLETE'),
         error: {
           code: 'ADR_REJECTED',
@@ -443,7 +442,7 @@ describe('audit completeness', () => {
     });
 
     it('arch flow slots at ARCHITECTURE phase: only architecture required', () => {
-      const state = makeState('ARCHITECTURE' as any, {
+      const state = makeState('ARCHITECTURE', {
         architecture: null,
       });
       const report = evaluateCompleteness(state);
@@ -499,7 +498,7 @@ describe('audit completeness', () => {
     it('archReviewDecision detail is undefined at ARCHITECTURE phase', () => {
       // Kill: state.phase === 'ARCH_COMPLETE' → true
       // At ARCHITECTURE (not ARCH_COMPLETE), detail should NOT be the topology-invariant string
-      const state = makeState('ARCHITECTURE' as any, {
+      const state = makeState('ARCHITECTURE', {
         architecture: null,
       });
       const report = evaluateCompleteness(state);
@@ -695,7 +694,7 @@ describe('audit completeness', () => {
     });
 
     it('arch flow: at ARCHITECTURE only architecture slot required', () => {
-      const state = makeState('ARCHITECTURE' as any, {
+      const state = makeState('ARCHITECTURE', {
         architecture: null,
       });
       const report = evaluateCompleteness(state);

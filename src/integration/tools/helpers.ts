@@ -87,6 +87,10 @@ export type ToolResult = string | { output: string; metadata?: Record<string, un
 export type ToolDefinition = {
   description: string;
   args: Record<string, z.ZodType>;
+  // args shape is defined at runtime by this.args via Zod validation.
+  // any is required because OpenCode passes tool args as plain objects
+  // and the concrete type depends on each tool's runtime Zod schema,
+  // which cannot be known at the ToolDefinition level.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute(args: any, context: ToolContext): Promise<ToolResult>;
 };
