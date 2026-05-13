@@ -30,7 +30,7 @@ import {
 } from './install-helpers.js';
 
 /** True if a vendor entry is a FlowGuard-owned tarball with a valid semver/pre-release version. */
-export function isFlowGuardVendorArtifact(entry: string): boolean {
+function isFlowGuardVendorArtifact(entry: string): boolean {
   return FLOWGUARD_TARBALL_PATTERN.test(entry);
 }
 

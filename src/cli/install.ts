@@ -47,7 +47,7 @@ export {
 } from './install-helpers.js';
 export { checkLastSessionHandshake, checkPluginActivation, doctor } from './doctor-command.js';
 export { detectPackageManager, install } from './install-command.js';
-export { isFlowGuardVendorArtifact, uninstall } from './uninstall-command.js';
+export { uninstall } from './uninstall-command.js';
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
