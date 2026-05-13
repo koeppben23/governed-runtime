@@ -20,23 +20,22 @@ import { getAdapterLogger } from '../../logging/adapter-logger.js';
 /**
  * Finalize a decision rail result: write MADR artifact if needed,
  * execute regulated completion if applicable.
- *
- * @param sessDir - Session directory path
- * @param fingerprint - Workspace fingerprint
- * @param sessionID - Session identifier
- * @param priorPhase - The phase BEFORE the decision was applied
- * @param verdict - The verdict that was applied ('approve', 'changes_requested', 'reject')
- * @param result - The rail result from executeReviewDecision
+ */
+export interface FinalizeDecisionInput {
+  readonly sessDir: string;
+  readonly fingerprint: string;
+  readonly sessionID: string;
+  readonly priorPhase: string;
+  readonly verdict: string;
+  readonly result: RailResult;
+}
+
+/**
+ * @param input - The finalized decision input
  * @returns The (potentially modified) RailResult — caller must persist via persistAndFormat
  */
-export async function finalizeDecision(
-  sessDir: string,
-  fingerprint: string,
-  sessionID: string,
-  priorPhase: string,
-  verdict: string,
-  result: RailResult,
-): Promise<RailResult> {
+export async function finalizeDecision(input: FinalizeDecisionInput): Promise<RailResult> {
+  const { sessDir, fingerprint, sessionID, priorPhase, verdict, result } = input;
   // ── MADR artifact for architecture completion ──
   if (result.kind === 'ok' && result.state.phase === 'ARCH_COMPLETE' && result.state.architecture) {
     getAdapterLogger().info('services', 'Writing MADR artifact for architecture completion', {

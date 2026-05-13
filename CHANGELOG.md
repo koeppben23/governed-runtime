@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-050 (Issue #201):** Baseline quick wins — removed unused `eslint-disable` directive, consolidated `createLifecycleEvent`, `finalizeDecision`, `executeFormatFreePrompt`, `ensureMetaJson`, and `createPlanArtifact` from positional parameters to typed input objects; eliminated 7 `max-params`/`max-lines`/`unused-disable` warnings
 - **FG-REL-049 (Issue #200):** Split `normalizePolicySnapshotWithMeta` into auditable typed field normalizers — extracted `normalizeMode`, `normalizeHash`, `normalizeCoreFields`, `normalizePolicyFields`, `normalizeActorAssurance`, `normalizeIdpMode`, `normalizeActorClassification`, `normalizeAudit`, and `extractProvenanceFields` as private helpers; wrapper reduced to ~60 lines with complexity under 12 — zero public contract changes
 - **FG-REL-047 (Issue #198):** Start tool execute decomposition with status-tool extraction, hydrate policy resolution extraction, and local plan/implement/architecture phase extraction; no JSON output changes.
 - **FG-REL-048 (Issue #199):** Replace smoke-only architecture boundary checks with robust import boundary enforcement:

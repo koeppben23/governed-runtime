@@ -87,7 +87,14 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'ARCH_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'ARCH_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(writeMadrArtifact).toHaveBeenCalledOnce();
       expect(writeMadrArtifact).toHaveBeenCalledWith('/sess', state.architecture);
@@ -99,14 +106,14 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      const finalResult = await finalizeDecision(
-        '/sess',
-        'fp',
-        'sid',
-        'EVIDENCE_REVIEW',
-        'approve',
+      const finalResult = await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'approve',
         result,
-      );
+      });
 
       expect(executeRegulatedCompletion).toHaveBeenCalledOnce();
       expect(executeRegulatedCompletion).toHaveBeenCalledWith('/sess', 'fp', 'sid', state);
@@ -125,14 +132,14 @@ describe('finalizeDecision', () => {
         reason: 'test',
       };
 
-      const result = await finalizeDecision(
-        '/sess',
-        'fp',
-        'sid',
-        'EVIDENCE_REVIEW',
-        'approve',
-        blocked,
-      );
+      const result = await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'approve',
+        result: blocked,
+      });
 
       expect(result).toBe(blocked);
       expect(writeMadrArtifact).not.toHaveBeenCalled();
@@ -145,7 +152,14 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'PLAN_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'PLAN_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -154,7 +168,14 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'EVIDENCE_REVIEW', 'changes_requested', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'changes_requested',
+        result,
+      });
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -163,7 +184,14 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: false });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'EVIDENCE_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -172,7 +200,14 @@ describe('finalizeDecision', () => {
       const state = makeCompleteState({ regulated: true, error: true });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'EVIDENCE_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -188,7 +223,14 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'EVIDENCE_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'EVIDENCE_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(executeRegulatedCompletion).not.toHaveBeenCalled();
     });
@@ -202,7 +244,14 @@ describe('finalizeDecision', () => {
       });
       const result = makeOkResult(state);
 
-      await finalizeDecision('/sess', 'fp', 'sid', 'ARCH_REVIEW', 'approve', result);
+      await finalizeDecision({
+        sessDir: '/sess',
+        fingerprint: 'fp',
+        sessionID: 'sid',
+        priorPhase: 'ARCH_REVIEW',
+        verdict: 'approve',
+        result,
+      });
 
       expect(writeMadrArtifact).not.toHaveBeenCalled();
     });
