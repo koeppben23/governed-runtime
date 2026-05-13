@@ -28,7 +28,7 @@ import {
   FIXED_UUID,
   VALIDATION_FAILED,
 } from '../__fixtures__.js';
-import { benchmarkSync, PERF_BUDGETS, measureAsync } from '../test-policy.js';
+import { benchmarkAsync, PERF_BUDGETS } from '../test-policy.js';
 import { createTestContext } from '../testing.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -572,22 +572,11 @@ describe('review rail', () => {
 
   // ─── PERF ───────────────────────────────────────────────────
   describe('PERF', () => {
-    it('executeReview < 5ms without LLM executor (p99 over 50 iterations)', async () => {
+    it(`executeReview < ${PERF_BUDGETS.reviewReportMs}ms without LLM executor (p99)`, async () => {
       const state = makeProgressedState('COMPLETE');
-      // Measure async, but since there's no LLM call, it's effectively sync
-      const times: number[] = [];
-      // Warmup
-      for (let i = 0; i < 10; i++) {
-        await executeReview(state, NOW);
-      }
-      // Measure
-      for (let i = 0; i < 50; i++) {
-        const { elapsedMs } = await measureAsync(() => executeReview(state, NOW));
-        times.push(elapsedMs);
-      }
-      times.sort((a, b) => a - b);
-      const p99 = times[Math.floor(times.length * 0.99)] ?? times[times.length - 1] ?? 0;
-      expect(p99).toBeLessThan(5);
+      const { p99Ms } = await benchmarkAsync(() => executeReview(state, NOW), 50, 10);
+
+      expect(p99Ms).toBeLessThan(PERF_BUDGETS.reviewReportMs);
     });
   });
 

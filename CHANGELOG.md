@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-017 (Issue #126):** Split the CLI installer monolith into cohesive command authorities while preserving the executable `src/cli/install.ts` facade:
+  - New `install-command.ts`, `uninstall-command.ts`, and `doctor-command.ts` own install, uninstall, and doctor behavior respectively
+  - `install.ts` remains the public CLI/bin entrypoint with compatibility re-exports, argument parsing, output formatting, and `main()` dispatch
+  - Shared FlowGuard tarball filename authority moved to `install-helpers.ts` so install validation and uninstall ownership checks use the same regex
+  - Added an architecture smoke check to prevent the command implementations from drifting back into the facade
 - **FG-REL-016 (Issue #125):** Split `src/config/policy.ts` into focused policy implementation modules while preserving the stable `config/policy.js` facade:
   - New `policy-errors.ts`, `policy-presets.ts`, `policy-ci.ts`, `policy-central.ts`, and `policy-resolver.ts` modules separate error taxonomy, preset authority, CI detection, central policy validation, and runtime/hydrate resolution
   - `policy.ts` is now a compatibility facade with the same existing public exports, avoiding public API expansion

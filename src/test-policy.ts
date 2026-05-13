@@ -129,6 +129,9 @@ export const PERF_BUDGETS = {
 
   /** validateBinding (2x path normalize + string compare). */
   validateBindingMs: 0.5 * CI_MULTIPLIER,
+
+  /** Read-only review report generation without an LLM executor. */
+  reviewReportMs: 5 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 };
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
