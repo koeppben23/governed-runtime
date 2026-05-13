@@ -313,7 +313,7 @@ export const review: ToolDefinition = {
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
-    // eslint-disable-next-line complexity -- multi-path tool routing (session boot, obligation lifecycle, state validation, review startup, content resolution)
+    // eslint-disable-next-line max-lines-per-function, complexity -- review tool orchestrates session boot, obligation lifecycle, state validation, review startup, content resolution, and response construction
   },
   async execute(args, context) {
     try {

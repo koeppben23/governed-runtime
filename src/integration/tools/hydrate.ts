@@ -204,6 +204,7 @@ export const hydrate: ToolDefinition = {
       .default('baseline')
       .describe("Governance profile ID. Defaults to 'baseline'."),
   },
+  // eslint-disable-next-line max-lines-per-function, complexity -- hydrate orchestrates workspace init, policy resolution, discovery, profile, and rail execution; policy resolution extracted to resolveHydratePolicy
   async execute(args, context) {
     try {
       const worktree = getWorktree(context);
