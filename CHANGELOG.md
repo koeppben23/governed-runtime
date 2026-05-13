@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-047 (Issue #198):** Begin decomposing FlowGuard tool execute handlers — started with status-tool only:
+  - `status-tool.ts`: extracted `resolveProjection()` typed dispatch for 4 focused projections (whyBlocked, evidence, context, readiness) and `buildFullStatusResponse()` pure function — execute reduced from 191 to ~40 lines; `latestReviewSummary()` shared helper with `includePlanVersion` option preserves all 3 review summary shapes (plan, implementation, architecture)
 - **FG-REL-048 (Issue #199):** Replace smoke-only architecture boundary checks with robust import boundary enforcement:
   - Removed "smoke test" disclaimer from dependency-rules.test.ts — now treated as authoritative boundary enforcement
   - Registered `presentation/` layer in FF_MODULES and added deny-list rule (forbids imports from integration, rails, cli, audit, archive)

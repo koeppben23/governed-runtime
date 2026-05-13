@@ -8,7 +8,7 @@
  * Supports focused projections via optional boolean flags:
  * whyBlocked, evidence, context, readiness.
  *
- * @version v1
+ * @version v2 (extracted projection dispatch and full status builder)
  */
 
 import { z } from 'zod';
@@ -21,6 +21,12 @@ import {
   formatEval,
   appendNextAction,
 } from './helpers.js';
+
+import type { SessionState } from '../../state/schema.js';
+import type { ReviewFindings } from '../../state/evidence.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
+import type { EvalResult } from '../../machine/evaluate.js';
+import type { CompletenessReport } from '../../audit/completeness.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -37,6 +43,158 @@ import {
   buildContextProjection,
   buildReadinessProjection,
 } from '../status.js';
+
+// ─── Projection dispatch ──────────────────────────────────────────────────────
+
+interface StatusArgs {
+  whyBlocked?: boolean;
+  evidence?: boolean;
+  context?: boolean;
+  readiness?: boolean;
+}
+
+/**
+ * Resolve a focused projection response, or null if no projection flag is set.
+ */
+function resolveProjection(
+  args: StatusArgs,
+  state: SessionState,
+  policy: FlowGuardPolicy,
+): string | null {
+  if (args.whyBlocked) {
+    const blocked = buildBlockedProjection(state, policy);
+    return appendNextAction(
+      JSON.stringify({ phase: state.phase, sessionId: state.id, whyBlocked: blocked }),
+      state,
+    );
+  }
+  if (args.evidence) {
+    const evidenceDetail = buildEvidenceDetailProjection(state);
+    return appendNextAction(
+      JSON.stringify({ phase: state.phase, sessionId: state.id, evidence: evidenceDetail }),
+      state,
+    );
+  }
+  if (args.context) {
+    const contextDetail = buildContextProjection(state);
+    return appendNextAction(
+      JSON.stringify({ phase: state.phase, sessionId: state.id, context: contextDetail }),
+      state,
+    );
+  }
+  if (args.readiness) {
+    const readinessDetail = buildReadinessProjection(state, policy);
+    return appendNextAction(
+      JSON.stringify({ phase: state.phase, sessionId: state.id, readiness: readinessDetail }),
+      state,
+    );
+  }
+  return null;
+}
+
+// ─── Full status builder ──────────────────────────────────────────────────────
+
+function latestReviewSummary(
+  findings: ReadonlyArray<ReviewFindings> | null | undefined,
+  opts: { includePlanVersion: boolean },
+): Record<string, unknown> | null {
+  if (!findings || findings.length === 0) return null;
+  const latest = findings[findings.length - 1];
+  if (!latest) return null;
+  return {
+    iteration: latest.iteration,
+    ...(opts.includePlanVersion ? { planVersion: latest.planVersion } : {}),
+    overallVerdict: latest.overallVerdict,
+    blockingIssueCount: latest.blockingIssues.length,
+    majorRiskCount: latest.majorRisks.length,
+    missingVerificationCount: latest.missingVerification.length,
+    reviewMode: latest.reviewMode,
+    reviewedAt: latest.reviewedAt,
+  };
+}
+
+function buildFullStatusResponse(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+  ev: EvalResult,
+  completeness: CompletenessReport,
+): string {
+  const projection = buildStatusProjection(state, policy);
+  const profileRules = (() => {
+    const base = state.activeProfile?.ruleContent ?? '';
+    const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
+    return phaseExtra ? base + '\n\n' + phaseExtra : base;
+  })();
+
+  return appendNextAction(
+    JSON.stringify({
+      status: projection,
+      phase: state.phase,
+      sessionId: state.id,
+      policyMode: state.policySnapshot?.mode ?? 'unknown',
+      archiveStatus: state.archiveStatus ?? null,
+      appliedPolicy: {
+        source: state.policySnapshot?.source ?? 'unknown',
+        requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
+        effectiveMode: state.policySnapshot?.mode ?? 'unknown',
+        effectiveGateBehavior: state.policySnapshot?.effectiveGateBehavior ?? 'unknown',
+        degradedReason: state.policySnapshot?.degradedReason ?? null,
+        resolutionReason: state.policySnapshot?.resolutionReason ?? null,
+        centralMinimumMode: state.policySnapshot?.centralMinimumMode ?? null,
+        centralPolicyDigest: state.policySnapshot?.policyDigest ?? null,
+        centralPolicyVersion: state.policySnapshot?.policyVersion ?? null,
+        centralPolicyPathHint: state.policySnapshot?.policyPathHint ?? null,
+      },
+      initiatedBy: state.initiatedBy,
+      profileId: state.activeProfile?.id ?? 'none',
+      profileName: state.activeProfile?.name ?? 'None',
+      profileRules,
+      detectedStack: state.detectedStack ?? null,
+      verificationCandidates: state.verificationCandidates ?? [],
+      hasTicket: state.ticket !== null,
+      hasPlan: state.plan !== null,
+      planVersion: state.plan ? state.plan.history.length + 1 : 0,
+      selfReviewIteration: state.selfReview?.iteration ?? null,
+      selfReviewConverged: state.selfReview
+        ? state.selfReview.iteration >= state.selfReview.maxIterations ||
+          (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
+        : null,
+      latestReview: latestReviewSummary(state.plan?.reviewFindings ?? null, {
+        includePlanVersion: true,
+      }),
+      validationResults: state.validation.map((v) => ({
+        checkId: v.checkId,
+        passed: v.passed,
+        ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
+        ...(v.command ? { command: v.command } : {}),
+        ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
+      })),
+      hasImplementation: state.implementation !== null,
+      implReviewIteration: state.implReview?.iteration ?? null,
+      implReviewConverged: state.implReview
+        ? state.implReview.iteration >= state.implReview.maxIterations ||
+          (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
+        : null,
+      latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
+        includePlanVersion: false,
+      }),
+      latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
+        includePlanVersion: true,
+      }),
+      hasReviewDecision: state.reviewDecision !== null,
+      reviewVerdict: state.reviewDecision?.verdict ?? null,
+      error: state.error,
+      evalKind: ev.kind,
+      next: formatEval(ev),
+      completeness: {
+        overallComplete: completeness.overallComplete,
+        fourEyes: completeness.fourEyes,
+        summary: completeness.summary,
+      },
+    }),
+    state,
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_status — Read-Only State Check
@@ -73,176 +231,12 @@ export const status: ToolDefinition = {
 
       const ev = evaluate(state, policy);
       const completeness = evaluateCompleteness(state);
-      const args = _args as {
-        whyBlocked?: boolean;
-        evidence?: boolean;
-        context?: boolean;
-        readiness?: boolean;
-      };
+      const args = _args as StatusArgs;
 
-      if (args.whyBlocked === true) {
-        const blocked = buildBlockedProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            whyBlocked: blocked,
-          }),
-          state,
-        );
-      }
+      const projection = resolveProjection(args, state, policy);
+      if (projection !== null) return projection;
 
-      if (args.evidence === true) {
-        const evidenceDetail = buildEvidenceDetailProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            evidence: evidenceDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.context === true) {
-        const contextDetail = buildContextProjection(state);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            context: contextDetail,
-          }),
-          state,
-        );
-      }
-
-      if (args.readiness === true) {
-        const readinessDetail = buildReadinessProjection(state, policy);
-        return appendNextAction(
-          JSON.stringify({
-            phase: state.phase,
-            sessionId: state.id,
-            readiness: readinessDetail,
-          }),
-          state,
-        );
-      }
-
-      const projection = buildStatusProjection(state, policy);
-
-      return appendNextAction(
-        JSON.stringify({
-          status: projection,
-          phase: state.phase,
-          sessionId: state.id,
-          policyMode: state.policySnapshot?.mode ?? 'unknown',
-          archiveStatus: state.archiveStatus ?? null,
-          appliedPolicy: {
-            source: state.policySnapshot?.source ?? 'unknown',
-            requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
-            effectiveMode: state.policySnapshot?.mode ?? 'unknown',
-            effectiveGateBehavior: state.policySnapshot?.effectiveGateBehavior ?? 'unknown',
-            degradedReason: state.policySnapshot?.degradedReason ?? null,
-            resolutionReason: state.policySnapshot?.resolutionReason ?? null,
-            centralMinimumMode: state.policySnapshot?.centralMinimumMode ?? null,
-            centralPolicyDigest: state.policySnapshot?.policyDigest ?? null,
-            centralPolicyVersion: state.policySnapshot?.policyVersion ?? null,
-            centralPolicyPathHint: state.policySnapshot?.policyPathHint ?? null,
-          },
-          initiatedBy: state.initiatedBy,
-          profileId: state.activeProfile?.id ?? 'none',
-          profileName: state.activeProfile?.name ?? 'None',
-          profileRules: (() => {
-            const base = state.activeProfile?.ruleContent ?? '';
-            const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
-            return phaseExtra ? base + '\n\n' + phaseExtra : base;
-          })(),
-          detectedStack: state.detectedStack ?? null,
-          verificationCandidates: state.verificationCandidates ?? [],
-          hasTicket: state.ticket !== null,
-          hasPlan: state.plan !== null,
-          planVersion: state.plan ? state.plan.history.length + 1 : 0,
-          selfReviewIteration: state.selfReview?.iteration ?? null,
-          selfReviewConverged: state.selfReview
-            ? state.selfReview.iteration >= state.selfReview.maxIterations ||
-              (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
-            : null,
-          // Latest independent plan review summary
-          latestReview: (() => {
-            const findings = state.plan?.reviewFindings;
-            if (!findings || findings.length === 0) return null;
-            const latest = findings[findings.length - 1];
-            if (!latest) return null;
-            return {
-              iteration: latest.iteration,
-              planVersion: latest.planVersion,
-              overallVerdict: latest.overallVerdict,
-              blockingIssueCount: latest.blockingIssues.length,
-              majorRiskCount: latest.majorRisks.length,
-              missingVerificationCount: latest.missingVerification.length,
-              reviewMode: latest.reviewMode,
-              reviewedAt: latest.reviewedAt,
-            };
-          })(),
-          validationResults: state.validation.map((v) => ({
-            checkId: v.checkId,
-            passed: v.passed,
-            ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
-            ...(v.command ? { command: v.command } : {}),
-            ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
-          })),
-          hasImplementation: state.implementation !== null,
-          implReviewIteration: state.implReview?.iteration ?? null,
-          implReviewConverged: state.implReview
-            ? state.implReview.iteration >= state.implReview.maxIterations ||
-              (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
-            : null,
-          // Latest independent implementation review summary
-          latestImplementationReview: (() => {
-            const findings = state.implReviewFindings;
-            if (!findings || findings.length === 0) return null;
-            const latest = findings[findings.length - 1];
-            if (!latest) return null;
-            return {
-              iteration: latest.iteration,
-              overallVerdict: latest.overallVerdict,
-              blockingIssueCount: latest.blockingIssues.length,
-              majorRiskCount: latest.majorRisks.length,
-              missingVerificationCount: latest.missingVerification.length,
-              reviewMode: latest.reviewMode,
-              reviewedAt: latest.reviewedAt,
-            };
-          })(),
-          // Latest independent architecture (ADR) review summary (F13 slice 9)
-          latestArchitectureReview: (() => {
-            const findings = state.architecture?.reviewFindings;
-            if (!findings || findings.length === 0) return null;
-            const latest = findings[findings.length - 1];
-            if (!latest) return null;
-            return {
-              iteration: latest.iteration,
-              planVersion: latest.planVersion,
-              overallVerdict: latest.overallVerdict,
-              blockingIssueCount: latest.blockingIssues.length,
-              majorRiskCount: latest.majorRisks.length,
-              missingVerificationCount: latest.missingVerification.length,
-              reviewMode: latest.reviewMode,
-              reviewedAt: latest.reviewedAt,
-            };
-          })(),
-          hasReviewDecision: state.reviewDecision !== null,
-          reviewVerdict: state.reviewDecision?.verdict ?? null,
-          error: state.error,
-          evalKind: ev.kind,
-          next: formatEval(ev),
-          completeness: {
-            overallComplete: completeness.overallComplete,
-            fourEyes: completeness.fourEyes,
-            summary: completeness.summary,
-          },
-        }),
-        state,
-      );
+      return buildFullStatusResponse(state, policy, ev, completeness);
     } catch (err) {
       if (err instanceof ActorClaimError) {
         return formatBlocked(err.code);
