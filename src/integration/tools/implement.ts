@@ -54,7 +54,7 @@
 
 import { z } from 'zod';
 
-import type { ToolDefinition } from './helpers.js';
+import type { ToolDefinition, ToolContext } from './helpers.js';
 import {
   withMutableSession,
   formatEval,
@@ -70,13 +70,15 @@ import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
+import type { RailContext } from '../../rails/types.js';
 import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
 import { changedFiles } from '../../adapters/git.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
 
 // Evidence types
-import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
+import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
@@ -107,6 +109,463 @@ function nextImplementationReviewIteration(state: SessionState): number {
     latest = Math.max(latest, findings.iteration);
   }
   return latest + 1;
+}
+
+type ImplementArgs = {
+  reviewVerdict?: 'approve' | 'changes_requested';
+  reviewFindings?: ReviewFindings;
+  reviewerUnavailable?: boolean;
+};
+
+type ImplementRuntime = {
+  args: ImplementArgs;
+  context: ToolContext;
+  worktree: string;
+  sessDir: string;
+  state: SessionState;
+  policy: FlowGuardPolicy;
+  ctx: RailContext;
+  maxImplReviewIterations: number;
+  subagentEnabled: boolean;
+  fallbackToSelf: boolean;
+  strictEnforcement: boolean;
+};
+
+type ImplementFlags = {
+  hasVerdict: boolean;
+  hasFindings: boolean;
+  isRecordImpl: boolean;
+};
+
+function classifyImplementArgs(args: ImplementArgs): ImplementFlags {
+  const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
+  return {
+    hasVerdict,
+    hasFindings: args.reviewFindings != null && typeof args.reviewFindings === 'object',
+    isRecordImpl: !hasVerdict,
+  };
+}
+
+function buildImplementRuntime(input: {
+  args: ImplementArgs;
+  context: ToolContext;
+  worktree: string;
+  sessDir: string;
+  state: SessionState;
+  policy: FlowGuardPolicy;
+  ctx: RailContext;
+}): ImplementRuntime {
+  return {
+    ...input,
+    maxImplReviewIterations: input.policy.maxImplReviewIterations,
+    subagentEnabled: input.policy.selfReview?.subagentEnabled ?? false,
+    fallbackToSelf: input.policy.selfReview?.fallbackToSelf ?? false,
+    strictEnforcement: input.policy.selfReview?.strictEnforcement ?? false,
+  };
+}
+
+function validateImplementSequence(
+  args: ImplementArgs,
+  state: SessionState,
+  hasVerdict: boolean,
+  hasFindings: boolean,
+): string | null {
+  if (hasFindings && !hasVerdict) return formatBlocked('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+  if (hasVerdict && !state.implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+  if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
+    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
+  }
+  return null;
+}
+
+function validateInitialReviewFindings(input: ImplementRuntime): string | null {
+  if (!input.args.reviewFindings) return null;
+  return validateReviewFindings(input.args.reviewFindings, {
+    subagentEnabled: input.subagentEnabled,
+    fallbackToSelf: input.fallbackToSelf,
+    expectedIteration: 0,
+    expectedPlanVersion: (input.state.plan?.history.length ?? 0) + 1,
+    strictEnforcement: false,
+    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
+    reviewParentSessionId: input.context.sessionID,
+  });
+}
+
+function blockedImplRecovery(state: SessionState): string | null {
+  if (state.phase !== 'IMPL_REVIEW') {
+    return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/implement', phase: state.phase });
+  }
+
+  const assurance = ensureReviewAssurance(state.reviewAssurance);
+  const blockedImplObligations = assurance.obligations.filter(
+    (o) => o.obligationType === 'implement' && o.status === 'blocked',
+  );
+  const lastImplObligation = [...assurance.obligations]
+    .reverse()
+    .find((o) => o.obligationType === 'implement');
+
+  if (lastImplObligation?.status !== 'blocked') {
+    return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/implement', phase: state.phase });
+  }
+  if (blockedImplObligations.length >= 3) {
+    return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
+      attempts: String(blockedImplObligations.length),
+    });
+  }
+  return null;
+}
+
+function validateImplRecordPrerequisites(input: ImplementRuntime): string | null {
+  if (!isCommandAllowed(input.state.phase, Command.IMPLEMENT)) {
+    const blocked = blockedImplRecovery(input.state);
+    if (blocked) return blocked;
+  }
+  if (!input.state.ticket) return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
+  if (!input.state.plan) return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
+  return null;
+}
+
+function buildImplRecordedResponse(input: {
+  finalState: SessionState;
+  files: string[];
+  domainFiles: string[];
+  reviewIteration: number;
+  planVersion: number;
+  nextObligation: ReturnType<typeof createReviewObligation> | null;
+  transitions: ReadonlyArray<unknown>;
+  reviewFindings: ReviewFindings[];
+}): Record<string, unknown> {
+  const response: Record<string, unknown> = {
+    phase: input.finalState.phase,
+    status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
+    changedFiles: input.files,
+    domainFiles: input.domainFiles,
+    reviewMode: 'subagent',
+    ...reviewObligationResponseFields(input.nextObligation),
+    next:
+      `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
+      `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
+      `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
+      '(1) the implementation summary and changed files, ' +
+      '(2) the approved plan text, (3) the ticket text, (4) iteration=' +
+      input.reviewIteration +
+      ', ' +
+      '(5) planVersion=' +
+      input.planVersion +
+      '. Instruct the subagent to read and review the changed files. ' +
+      'Parse the JSON ReviewFindings from the subagent response. ' +
+      'Then call flowguard_implement with reviewVerdict based on the findings ' +
+      'overallVerdict, and include the reviewFindings object.',
+    _audit: { transitions: input.transitions },
+  };
+
+  if (input.reviewFindings.length > 0) {
+    response.latestImplementationReview = buildLatestImplementationReviewSummary(
+      input.reviewFindings,
+    );
+  }
+  return response;
+}
+
+async function handleImplRecord(input: ImplementRuntime): Promise<string> {
+  const blocked = validateImplRecordPrerequisites(input);
+  if (blocked) return blocked;
+
+  const files = await changedFiles(input.worktree);
+  if (files.length === 0) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+      reason: 'no changed files detected in worktree',
+    });
+  }
+
+  const domainFiles = files.filter((f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'));
+  const implEvidence = {
+    changedFiles: files,
+    domainFiles,
+    digest: input.ctx.digest(files.sort().join('\n')),
+    executedAt: input.ctx.now(),
+  };
+  const existingFindings = input.state.implReviewFindings ?? [];
+  const newReviewFindings = input.args.reviewFindings
+    ? [...existingFindings, input.args.reviewFindings]
+    : existingFindings;
+  const reviewIteration = nextImplementationReviewIteration(input.state);
+  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  const nextObligation = input.subagentEnabled
+    ? createReviewObligation({
+        obligationType: 'implement',
+        iteration: reviewIteration,
+        planVersion,
+        now: input.ctx.now(),
+      })
+    : null;
+  const nextState: SessionState = {
+    ...input.state,
+    implementation: implEvidence,
+    implReview: null,
+    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    reviewAssurance: appendReviewObligation(input.state.reviewAssurance, nextObligation),
+    error: null,
+  };
+  const { state: finalState, transitions } = autoAdvance(nextState, (s) => evaluate(s, input.policy), input.ctx);
+  await writeStateWithArtifacts(input.sessDir, finalState);
+
+  return appendNextAction(
+    JSON.stringify(
+      buildImplRecordedResponse({
+        finalState,
+        files,
+        domainFiles,
+        reviewIteration,
+        planVersion,
+        nextObligation,
+        transitions,
+        reviewFindings: newReviewFindings,
+      }),
+    ),
+    finalState,
+  );
+}
+
+function findPendingImplObligation(state: SessionState) {
+  const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
+  return (
+    [...assuranceBase.obligations]
+      .reverse()
+      .find(
+        (item) =>
+          item.obligationType === 'implement' &&
+          item.status !== 'consumed' &&
+          item.consumedAt == null,
+      ) ?? null
+  );
+}
+
+function resolveImplementationFindings(input: ImplementRuntime, iteration: number, planVersion: number) {
+  const pendingObligation = findPendingImplObligation(input.state);
+  const resolved = resolveHostTaskEffectiveFindings({
+    pendingObligation,
+    expected: { obligationType: 'implement', iteration, planVersion },
+    policy: {
+      reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
+      strictEnforcement: input.strictEnforcement,
+      subagentEnabled: input.subagentEnabled,
+      fallbackToSelf: input.fallbackToSelf,
+    },
+    input: {
+      reviewFindings: input.args.reviewFindings,
+      reviewerUnavailable: input.args.reviewerUnavailable,
+      verdict: input.args.reviewVerdict,
+    },
+    state: { assurance: input.state.reviewAssurance, sessionId: input.context.sessionID },
+  });
+  return { pendingObligation, resolved };
+}
+
+function validateEffectiveFindings(
+  findings: ReviewFindings | undefined,
+  submittedVerdict: LoopVerdict,
+  obligationId: string,
+): string | null {
+  if (!findings) return requireReviewFindings(false);
+  if (findings.overallVerdict === 'unable_to_review') {
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
+  }
+  if (findings.overallVerdict !== submittedVerdict) {
+    return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+      reviewVerdict: submittedVerdict,
+      overallVerdict: findings.overallVerdict,
+    });
+  }
+  return null;
+}
+
+function appendImplReviewState(input: {
+  runtime: ImplementRuntime;
+  iteration: number;
+  planVersion: number;
+  effectiveFindings?: ReviewFindings;
+  evidenceInvocationId?: string;
+}) {
+  const { runtime, iteration, planVersion, effectiveFindings, evidenceInvocationId } = input;
+  const implementation = runtime.state.implementation!;
+  const assuranceBase = ensureReviewAssurance(runtime.state.reviewAssurance);
+  const strictObligation = runtime.strictEnforcement
+    ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, planVersion)
+    : null;
+  const consumedAssurance = consumeReviewObligation(
+    assuranceBase,
+    strictObligation,
+    runtime.ctx.now(),
+    evidenceInvocationId ??
+      findAcceptedInvocationForFindings(
+        assuranceBase,
+        strictObligation,
+        runtime.args.reviewFindings,
+      )?.invocationId,
+  );
+  const existingFindings = runtime.state.implReviewFindings ?? [];
+  const newReviewFindings = effectiveFindings
+    ? [...existingFindings, effectiveFindings]
+    : existingFindings;
+  const reviewedState: SessionState = {
+    ...runtime.state,
+    implReview: {
+      iteration,
+      maxIterations: runtime.maxImplReviewIterations,
+      prevDigest: implementation.digest,
+      currDigest: implementation.digest,
+      revisionDelta: 'none',
+      verdict: runtime.args.reviewVerdict as LoopVerdict,
+      executedAt: runtime.ctx.now(),
+    },
+    implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
+    reviewAssurance: {
+      obligations: consumedAssurance.obligations,
+      invocations: consumedAssurance.invocations,
+    },
+    error: null,
+  };
+  return { reviewedState, newReviewFindings };
+}
+
+function addLatestImplementationReview(
+  response: Record<string, unknown>,
+  reviewFindings: ReviewFindings[],
+): void {
+  if (reviewFindings.length > 0) {
+    response.latestImplementationReview = buildLatestImplementationReviewSummary(reviewFindings);
+  }
+}
+
+async function handleChangesRequestedReview(input: {
+  runtime: ImplementRuntime;
+  reviewedState: SessionState;
+  iteration: number;
+  reviewFindings: ReviewFindings[];
+}): Promise<string> {
+  const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
+  if (target === undefined) {
+    return formatBlocked('INVALID_TRANSITION', {
+      event: 'CHANGES_REQUESTED',
+      phase: input.runtime.state.phase,
+    });
+  }
+
+  const at = input.runtime.ctx.now();
+  const finalState = applyTransition(
+    { ...input.reviewedState, implementation: null, implReview: null },
+    input.runtime.state.phase,
+    target,
+    'CHANGES_REQUESTED',
+    at,
+  );
+  const transitions = [{ from: input.runtime.state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at }];
+  await writeStateWithArtifacts(input.runtime.sessDir, finalState);
+
+  const response: Record<string, unknown> = {
+    phase: finalState.phase,
+    implReviewIteration: input.iteration,
+    status: `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
+    next:
+      'Make the requested code changes using read/write/bash tools, ' +
+      'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
+      `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
+    _audit: { transitions },
+  };
+  addLatestImplementationReview(response, input.reviewFindings);
+  return appendNextAction(JSON.stringify(response), finalState);
+}
+
+async function handleApprovedReview(input: {
+  runtime: ImplementRuntime;
+  reviewedState: SessionState;
+  iteration: number;
+  reviewFindings: ReviewFindings[];
+}): Promise<string> {
+  const { state: finalState, evalResult: ev, transitions } = autoAdvance(
+    input.reviewedState,
+    (s) => evaluate(s, input.runtime.policy),
+    input.runtime.ctx,
+  );
+  await writeStateWithArtifacts(input.runtime.sessDir, finalState);
+
+  const response: Record<string, unknown> = {
+    phase: finalState.phase,
+    implReviewIteration: input.iteration,
+    next: input.runtime.args.reviewVerdict === 'approve' ? formatEval(ev) : undefined,
+    _audit: { transitions },
+  };
+  addLatestImplementationReview(response, input.reviewFindings);
+
+  if (input.runtime.args.reviewVerdict === 'approve') {
+    response.status = `Implementation review converged at iteration ${input.iteration}. Approved.`;
+  } else {
+    response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+  }
+  return appendNextAction(JSON.stringify(response), finalState);
+}
+
+async function handleImplReview(input: ImplementRuntime): Promise<string> {
+  const implementation = input.state.implementation;
+  if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+
+  const iteration = nextImplementationReviewIteration(input.state);
+  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  const submittedVerdict = input.args.reviewVerdict;
+  if (!submittedVerdict) return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
+
+  const { pendingObligation, resolved } = resolveImplementationFindings(input, iteration, planVersion);
+  if (resolved.blocked) return resolved.blocked;
+
+  const findingsBlocked = validateEffectiveFindings(
+    resolved.effectiveFindings,
+    submittedVerdict,
+    pendingObligation?.obligationId ?? 'unknown',
+  );
+  if (findingsBlocked) return findingsBlocked;
+
+  const { reviewedState, newReviewFindings } = appendImplReviewState({
+    runtime: input,
+    iteration,
+    planVersion,
+    effectiveFindings: resolved.effectiveFindings,
+    evidenceInvocationId: resolved.evidenceInvocationId,
+  });
+
+  if (input.args.reviewVerdict === 'changes_requested') {
+    return handleChangesRequestedReview({
+      runtime: input,
+      reviewedState,
+      iteration,
+      reviewFindings: newReviewFindings,
+    });
+  }
+  return handleApprovedReview({
+    runtime: input,
+    reviewedState,
+    iteration,
+    reviewFindings: newReviewFindings,
+  });
+}
+
+async function executeImplement(args: ImplementArgs, context: ToolContext): Promise<string> {
+  const { worktree, sessDir, state, policy, ctx } = await withMutableSession(context);
+  const runtime = buildImplementRuntime({ args, context, worktree, sessDir, state, policy, ctx });
+  const flags = classifyImplementArgs(args);
+
+  const sequenceBlocked = validateImplementSequence(
+    args,
+    state,
+    flags.hasVerdict,
+    flags.hasFindings,
+  );
+  if (sequenceBlocked) return sequenceBlocked;
+
+  const findingsBlocked = flags.isRecordImpl ? validateInitialReviewFindings(runtime) : null;
+  if (findingsBlocked) return findingsBlocked;
+
+  return flags.isRecordImpl ? handleImplRecord(runtime) : handleImplReview(runtime);
 }
 
 export const implement: ToolDefinition = {
@@ -140,394 +599,9 @@ export const implement: ToolDefinition = {
           'agent unavailable). Allows self-review fallback in host_task_required mode.',
       ),
   },
-  // eslint-disable-next-line max-lines-per-function, complexity -- multi-mode dispatch (Mode A/B) is the canonical governance entry point; each mode extracted as a local closure
   async execute(args, context) {
     try {
-      const { worktree, sessDir, state, policy, ctx } = await withMutableSession(context);
-      const maxImplReviewIterations = policy.maxImplReviewIterations;
-
-      // Policy config for review findings validation
-      const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
-      const fallbackToSelf = policy.selfReview?.fallbackToSelf ?? false;
-      const strictEnforcement = policy.selfReview?.strictEnforcement ?? false;
-      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
-      // may send for absent optional fields). Defense-in-depth.
-      const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-      const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
-      const isRecordImpl = !hasVerdict;
-
-      // Runtime sequence contract: implementation evidence and review verdict are separate phases.
-      if (hasFindings && !hasVerdict) {
-        return formatBlocked('INVALID_IMPLEMENT_TOOL_SEQUENCE');
-      }
-
-      if (hasVerdict && !state.implementation) {
-        return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-      }
-
-      if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
-        return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
-      }
-
-      // Validate review findings for Mode A
-      if (args.reviewFindings && isRecordImpl) {
-        const blocked = validateReviewFindings(args.reviewFindings as ReviewFindings, {
-          subagentEnabled,
-          fallbackToSelf,
-          expectedIteration: 0,
-          expectedPlanVersion: (state.plan?.history.length ?? 0) + 1,
-          strictEnforcement: false,
-          reviewInvocationPolicy: policy.reviewInvocationPolicy,
-          reviewParentSessionId: context.sessionID,
-        });
-        if (blocked) return blocked;
-      }
-
-      async function handleImplRecord(): Promise<string> {
-        // ── Mode A: Record implementation evidence ───────────────
-        if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
-          // Recovery: if phase is IMPL_REVIEW and the last implement obligation
-          // is blocked (orchestration failed), allow re-recording to create a
-          // fresh obligation and retry. The agent re-records implementation
-          // evidence which resets the review loop.
-          // Max-cap: if >=3 implement obligations are blocked, report permanent failure.
-          if (state.phase === 'IMPL_REVIEW') {
-            const assurance = ensureReviewAssurance(state.reviewAssurance);
-            const blockedImplObligations = assurance.obligations.filter(
-              (o) => o.obligationType === 'implement' && o.status === 'blocked',
-            );
-            const lastImplObligation = [...assurance.obligations]
-              .reverse()
-              .find((o) => o.obligationType === 'implement');
-
-            if (lastImplObligation?.status === 'blocked') {
-              if (blockedImplObligations.length >= 3) {
-                return formatBlocked('ORCHESTRATION_PERMANENTLY_FAILED', {
-                  attempts: String(blockedImplObligations.length),
-                });
-              }
-              // Fall through to Mode A — treat as fresh implementation recording.
-              // The state will be reset below (implementation, implReview, etc.).
-            } else {
-              return formatBlocked('COMMAND_NOT_ALLOWED', {
-                command: '/implement',
-                phase: state.phase,
-              });
-            }
-          } else {
-            return formatBlocked('COMMAND_NOT_ALLOWED', {
-              command: '/implement',
-              phase: state.phase,
-            });
-          }
-        }
-
-        if (!state.ticket) {
-          return formatBlocked('TICKET_REQUIRED', { action: 'implementation' });
-        }
-        if (!state.plan) {
-          return formatBlocked('PLAN_REQUIRED', { action: 'implementation' });
-        }
-
-        // Auto-detect changed files via git
-        const files = await changedFiles(worktree);
-        if (files.length === 0) {
-          return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-            reason: 'no changed files detected in worktree',
-          });
-        }
-        // Separate domain files (non-config, non-test, non-infrastructure)
-        const domainFiles = files.filter(
-          (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),
-        );
-
-        const implEvidence = {
-          changedFiles: files,
-          domainFiles,
-          digest: ctx.digest(files.sort().join('\n')),
-          executedAt: ctx.now(),
-        };
-
-        // Persist review findings if provided (Mode A with findings)
-        const existingFindings = state.implReviewFindings ?? [];
-        const newReviewFindings = args.reviewFindings
-          ? [...existingFindings, args.reviewFindings as ReviewFindings]
-          : existingFindings;
-
-        const reviewIteration = nextImplementationReviewIteration(state);
-        const nextObligation = subagentEnabled
-          ? createReviewObligation({
-              obligationType: 'implement',
-              iteration: reviewIteration,
-              planVersion: (state.plan?.history.length ?? 0) + 1,
-              now: ctx.now(),
-            })
-          : null;
-
-        const nextState: SessionState = {
-          ...state,
-          implementation: implEvidence,
-          implReview: null,
-          implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-          reviewAssurance: appendReviewObligation(state.reviewAssurance, nextObligation),
-          error: null,
-        };
-
-        // Auto-advance to IMPL_REVIEW (policy-aware)
-        const evalFn = (s: SessionState) => evaluate(s, policy);
-        const { state: finalState, transitions } = autoAdvance(nextState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
-
-        // Build response with latestImplementationReview summary
-        const response: Record<string, unknown> = {
-          phase: finalState.phase,
-          status: `Implementation recorded. ${files.length} files changed, ${domainFiles.length} domain files.`,
-          changedFiles: files,
-          domainFiles,
-          reviewMode: 'subagent',
-          ...reviewObligationResponseFields(nextObligation),
-          next:
-            `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
-            `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
-            `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
-            '(1) the implementation summary and changed files, ' +
-            '(2) the approved plan text, (3) the ticket text, (4) iteration=' +
-            reviewIteration +
-            ', ' +
-            '(5) planVersion=' +
-            ((state.plan?.history.length ?? 0) + 1) +
-            '. ' +
-            'Instruct the subagent to read and review the changed files. ' +
-            'Parse the JSON ReviewFindings from the subagent response. ' +
-            'Then call flowguard_implement with reviewVerdict based on the findings ' +
-            'overallVerdict, and include the reviewFindings object.',
-          _audit: { transitions },
-        };
-
-        if (newReviewFindings.length > 0) {
-          response.latestImplementationReview =
-            buildLatestImplementationReviewSummary(newReviewFindings);
-        }
-
-        return appendNextAction(JSON.stringify(response), finalState);
-      }
-
-      async function handleImplReview(): Promise<string> {
-        // ── Mode B: Implementation review verdict ────────────────
-        const implementation = state.implementation;
-        if (!implementation) {
-          return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-        }
-
-        // Compute iteration before findings resolution
-        const iteration = nextImplementationReviewIteration(state);
-        const implPlanVersion = (state.plan?.history.length ?? 0) + 1;
-
-        // ── Resolve effective findings ──────────────────────────────
-        // BUG-15 Stufe 2: For host_task_required, resolve findings from
-        // invocation evidence (plugin first-party) instead of requiring
-        // agent reconstruction. Eliminates attestation copy errors.
-        const assuranceBase = state.reviewAssurance ?? { obligations: [], invocations: [] };
-
-        // Find the unconsumed obligation for evidence lookup
-        const pendingImplObligation =
-          [...assuranceBase.obligations]
-            .reverse()
-            .find(
-              (item) =>
-                item.obligationType === 'implement' &&
-                item.status !== 'consumed' &&
-                item.consumedAt == null,
-            ) ?? null;
-
-        // ── Resolve effective findings ──────────────────────────────
-        // BUG-17: In host_task_required mode, plugin-captured evidence is
-        // the SSOT. Agent-submitted reviewFindings are ignored — the
-        // non-deterministic LLM reconstruction adds zero information and
-        // non-zero risk (key reordering, Zod stripping, hallucinated fields).
-        // SDK path (sdk_session_prompt) continues to use agent-submitted
-        // findings with full validation.
-        const resolved = resolveHostTaskEffectiveFindings({
-          pendingObligation: pendingImplObligation,
-          expected: {
-            obligationType: 'implement',
-            iteration,
-            planVersion: implPlanVersion,
-          },
-          policy: {
-            reviewInvocationPolicy: policy.reviewInvocationPolicy,
-            strictEnforcement,
-            subagentEnabled,
-            fallbackToSelf,
-          },
-          input: {
-            reviewFindings: args.reviewFindings,
-            reviewerUnavailable: args.reviewerUnavailable,
-            verdict: args.reviewVerdict,
-          },
-          state: {
-            assurance: state.reviewAssurance,
-            sessionId: context.sessionID,
-          },
-        });
-        if (resolved.blocked) return resolved.blocked;
-        const effectiveFindings = resolved.effectiveFindings;
-        const evidenceInvocationId = resolved.evidenceInvocationId;
-
-        if (!effectiveFindings) {
-          const blocked = requireReviewFindings(false);
-          if (blocked) return blocked;
-        }
-
-        // Defense-in-depth: unable_to_review must never reach state persistence.
-        if (effectiveFindings?.overallVerdict === 'unable_to_review') {
-          return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-            obligationId: pendingImplObligation?.obligationId ?? 'unknown',
-          });
-        }
-
-        // Guard: submitted reviewVerdict must match the findings overallVerdict.
-        if (effectiveFindings && effectiveFindings.overallVerdict !== args.reviewVerdict) {
-          return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-            reviewVerdict: args.reviewVerdict,
-            overallVerdict: effectiveFindings.overallVerdict,
-          });
-        }
-
-        const verdict = args.reviewVerdict as LoopVerdict;
-        const prevDigest = implementation.digest;
-
-        // For changes_requested, the LLM should make changes and call
-        // flowguard_implement({}) again (Mode A). Here we just record
-        // the review verdict.
-        const revisionDelta: RevisionDelta = 'none';
-
-        // Persist review findings in Mode B
-        const existingFindings = state.implReviewFindings ?? [];
-        const newReviewFindings = effectiveFindings
-          ? [...existingFindings, effectiveFindings]
-          : existingFindings;
-
-        const strictObligation = strictEnforcement
-          ? findLatestObligation(assuranceBase.obligations, 'implement', iteration, implPlanVersion)
-          : null;
-        // BUG-15 Stufe 2: For evidence-resolved findings, use known invocationId
-        const consumedAssurance = consumeReviewObligation(
-          assuranceBase,
-          strictObligation,
-          ctx.now(),
-          evidenceInvocationId ??
-            findAcceptedInvocationForFindings(
-              assuranceBase,
-              strictObligation,
-              args.reviewFindings as ReviewFindings | undefined,
-            )?.invocationId,
-        );
-
-        const reviewedState: SessionState = {
-          ...state,
-          implReview: {
-            iteration,
-            maxIterations: maxImplReviewIterations,
-            prevDigest,
-            currDigest: implementation.digest,
-            revisionDelta,
-            verdict,
-            executedAt: ctx.now(),
-          },
-          implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-          reviewAssurance: {
-            obligations: consumedAssurance.obligations,
-            invocations: consumedAssurance.invocations,
-          },
-          error: null,
-        };
-
-        if (verdict === 'changes_requested') {
-          const target = evaluateWithEvent(state.phase, 'CHANGES_REQUESTED');
-          if (target === undefined) {
-            return formatBlocked('INVALID_TRANSITION', {
-              event: 'CHANGES_REQUESTED',
-              phase: state.phase,
-            });
-          }
-
-          const at = ctx.now();
-          const finalState = applyTransition(
-            {
-              ...reviewedState,
-              implementation: null,
-              implReview: null,
-            },
-            state.phase,
-            target,
-            'CHANGES_REQUESTED',
-            at,
-          );
-          const transitions = [
-            { from: state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at },
-          ];
-          await writeStateWithArtifacts(sessDir, finalState);
-
-          const response: Record<string, unknown> = {
-            phase: finalState.phase,
-            implReviewIteration: iteration,
-            status: `Implementation review iteration ${iteration}/${maxImplReviewIterations}. Changes requested.`,
-            next:
-              'Make the requested code changes using read/write/bash tools, ' +
-              'then call flowguard_implement (without reviewVerdict) to re-record the implementation. ' +
-              `After re-recording, call the ${REVIEWER_SUBAGENT_TYPE} subagent again for independent review.`,
-            _audit: { transitions },
-          };
-
-          if (newReviewFindings.length > 0) {
-            response.latestImplementationReview =
-              buildLatestImplementationReviewSummary(newReviewFindings);
-          }
-
-          return appendNextAction(JSON.stringify(response), finalState);
-        }
-
-        // Evaluate + autoAdvance (policy-aware)
-        const evalFn = (s: SessionState) => evaluate(s, policy);
-        const {
-          state: finalState,
-          evalResult: ev,
-          transitions,
-        } = autoAdvance(reviewedState, evalFn, ctx);
-        await writeStateWithArtifacts(sessDir, finalState);
-
-        const converged =
-          iteration >= maxImplReviewIterations ||
-          (revisionDelta === 'none' && verdict === 'approve');
-
-        // Build response with latestImplementationReview summary
-        const response: Record<string, unknown> = {
-          phase: finalState.phase,
-          implReviewIteration: iteration,
-          next: verdict === 'approve' ? formatEval(ev) : undefined,
-          _audit: { transitions },
-        };
-
-        if (newReviewFindings.length > 0) {
-          response.latestImplementationReview =
-            buildLatestImplementationReviewSummary(newReviewFindings);
-        }
-
-        if (converged && verdict === 'approve') {
-          response.status = `Implementation review converged at iteration ${iteration}. Approved.`;
-          return appendNextAction(JSON.stringify(response), finalState);
-        }
-
-        // Forced convergence (max iterations reached, verdict was not approve)
-        response.status = `Implementation review reached max iterations (${iteration}/${maxImplReviewIterations}). Force-converged.`;
-        return appendNextAction(JSON.stringify(response), finalState);
-      }
-
-      if (isRecordImpl) {
-        return handleImplRecord();
-      }
-      return handleImplReview();
+      return await executeImplement(args, context);
     } catch (err) {
       return formatError(err);
     }

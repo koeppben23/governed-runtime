@@ -113,6 +113,102 @@ function latestReviewSummary(
   };
 }
 
+function selfReviewConverged(state: SessionState): boolean | null {
+  if (!state.selfReview) return null;
+  return (
+    state.selfReview.iteration >= state.selfReview.maxIterations ||
+    (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
+  );
+}
+
+function implReviewConverged(state: SessionState): boolean | null {
+  if (!state.implReview) return null;
+  return (
+    state.implReview.iteration >= state.implReview.maxIterations ||
+    (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
+  );
+}
+
+function buildAppliedPolicyStatus(state: SessionState): Record<string, unknown> {
+  const snapshot = state.policySnapshot;
+  if (!snapshot) {
+    return {
+      source: 'unknown',
+      requestedMode: 'unknown',
+      effectiveMode: 'unknown',
+      effectiveGateBehavior: 'unknown',
+      degradedReason: null,
+      resolutionReason: null,
+      centralMinimumMode: null,
+      centralPolicyDigest: null,
+      centralPolicyVersion: null,
+      centralPolicyPathHint: null,
+    };
+  }
+  return {
+    source: snapshot.source ?? 'unknown',
+    requestedMode: snapshot.requestedMode ?? 'unknown',
+    effectiveMode: snapshot.mode ?? 'unknown',
+    effectiveGateBehavior: snapshot.effectiveGateBehavior ?? 'unknown',
+    degradedReason: snapshot.degradedReason ?? null,
+    resolutionReason: snapshot.resolutionReason ?? null,
+    centralMinimumMode: snapshot.centralMinimumMode ?? null,
+    centralPolicyDigest: snapshot.policyDigest ?? null,
+    centralPolicyVersion: snapshot.policyVersion ?? null,
+    centralPolicyPathHint: snapshot.policyPathHint ?? null,
+  };
+}
+
+function buildProfileStatus(state: SessionState): Record<string, unknown> {
+  const base = state.activeProfile?.ruleContent ?? '';
+  const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
+  return {
+    initiatedBy: state.initiatedBy,
+    profileId: state.activeProfile?.id ?? 'none',
+    profileName: state.activeProfile?.name ?? 'None',
+    profileRules: phaseExtra ? base + '\n\n' + phaseExtra : base,
+    detectedStack: state.detectedStack ?? null,
+    verificationCandidates: state.verificationCandidates ?? [],
+  };
+}
+
+function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
+  return {
+    hasTicket: state.ticket !== null,
+    hasPlan: state.plan !== null,
+    planVersion: state.plan ? state.plan.history.length + 1 : 0,
+    selfReviewIteration: state.selfReview?.iteration ?? null,
+    selfReviewConverged: selfReviewConverged(state),
+    latestReview: latestReviewSummary(state.plan?.reviewFindings ?? null, {
+      includePlanVersion: true,
+    }),
+    validationResults: state.validation.map((v) => ({
+      checkId: v.checkId,
+      passed: v.passed,
+      ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
+      ...(v.command ? { command: v.command } : {}),
+      ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
+    })),
+  };
+}
+
+function buildImplementationStatus(state: SessionState): Record<string, unknown> {
+  return {
+    hasImplementation: state.implementation !== null,
+    implReviewIteration: state.implReview?.iteration ?? null,
+    implReviewConverged: implReviewConverged(state),
+    latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
+      includePlanVersion: false,
+    }),
+    latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
+      includePlanVersion: true,
+    }),
+    hasReviewDecision: state.reviewDecision !== null,
+    reviewVerdict: state.reviewDecision?.verdict ?? null,
+    error: state.error,
+  };
+}
+
 function buildFullStatusResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
@@ -120,11 +216,6 @@ function buildFullStatusResponse(
   completeness: CompletenessReport,
 ): string {
   const projection = buildStatusProjection(state, policy);
-  const profileRules = (() => {
-    const base = state.activeProfile?.ruleContent ?? '';
-    const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
-    return phaseExtra ? base + '\n\n' + phaseExtra : base;
-  })();
 
   return appendNextAction(
     JSON.stringify({
@@ -133,57 +224,10 @@ function buildFullStatusResponse(
       sessionId: state.id,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       archiveStatus: state.archiveStatus ?? null,
-      appliedPolicy: {
-        source: state.policySnapshot?.source ?? 'unknown',
-        requestedMode: state.policySnapshot?.requestedMode ?? 'unknown',
-        effectiveMode: state.policySnapshot?.mode ?? 'unknown',
-        effectiveGateBehavior: state.policySnapshot?.effectiveGateBehavior ?? 'unknown',
-        degradedReason: state.policySnapshot?.degradedReason ?? null,
-        resolutionReason: state.policySnapshot?.resolutionReason ?? null,
-        centralMinimumMode: state.policySnapshot?.centralMinimumMode ?? null,
-        centralPolicyDigest: state.policySnapshot?.policyDigest ?? null,
-        centralPolicyVersion: state.policySnapshot?.policyVersion ?? null,
-        centralPolicyPathHint: state.policySnapshot?.policyPathHint ?? null,
-      },
-      initiatedBy: state.initiatedBy,
-      profileId: state.activeProfile?.id ?? 'none',
-      profileName: state.activeProfile?.name ?? 'None',
-      profileRules,
-      detectedStack: state.detectedStack ?? null,
-      verificationCandidates: state.verificationCandidates ?? [],
-      hasTicket: state.ticket !== null,
-      hasPlan: state.plan !== null,
-      planVersion: state.plan ? state.plan.history.length + 1 : 0,
-      selfReviewIteration: state.selfReview?.iteration ?? null,
-      selfReviewConverged: state.selfReview
-        ? state.selfReview.iteration >= state.selfReview.maxIterations ||
-          (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
-        : null,
-      latestReview: latestReviewSummary(state.plan?.reviewFindings ?? null, {
-        includePlanVersion: true,
-      }),
-      validationResults: state.validation.map((v) => ({
-        checkId: v.checkId,
-        passed: v.passed,
-        ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
-        ...(v.command ? { command: v.command } : {}),
-        ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
-      })),
-      hasImplementation: state.implementation !== null,
-      implReviewIteration: state.implReview?.iteration ?? null,
-      implReviewConverged: state.implReview
-        ? state.implReview.iteration >= state.implReview.maxIterations ||
-          (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
-        : null,
-      latestImplementationReview: latestReviewSummary(state.implReviewFindings ?? null, {
-        includePlanVersion: false,
-      }),
-      latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
-        includePlanVersion: true,
-      }),
-      hasReviewDecision: state.reviewDecision !== null,
-      reviewVerdict: state.reviewDecision?.verdict ?? null,
-      error: state.error,
+      appliedPolicy: buildAppliedPolicyStatus(state),
+      ...buildProfileStatus(state),
+      ...buildEvidenceStatus(state),
+      ...buildImplementationStatus(state),
       evalKind: ev.kind,
       next: formatEval(ev),
       completeness: {

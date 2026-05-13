@@ -16,7 +16,7 @@ import { z } from 'zod';
 // Crypto — fingerprint generation
 import { createHash } from 'node:crypto';
 
-import type { ToolDefinition } from './helpers.js';
+import type { ToolContext, ToolDefinition } from './helpers.js';
 import {
   withMutableSession,
   formatBlocked,
@@ -38,6 +38,8 @@ import {
   ExternalReferenceSchema,
   ReviewFindings,
 } from '../../state/evidence.js';
+import type { ReviewObligation } from '../../state/evidence-review.js';
+import type { SessionState } from '../../state/schema.js';
 import type { ReviewReferenceInput } from '../../rails/review.js';
 
 // Review assurance (mandate digest, obligation lifecycle)
@@ -278,6 +280,612 @@ function formatBlockedReviewReport(report: unknown): string {
   });
 }
 
+type ReviewToolArgs = {
+  inputOrigin?: ReviewReferenceInput['inputOrigin'];
+  references?: ReviewReferenceInput['references'];
+  text?: string;
+  prNumber?: number;
+  branch?: string;
+  url?: string;
+  analysisFindings?: ReviewFindings;
+};
+
+type StartedReviewResult = Extract<ReturnType<typeof startReviewFlow>, { kind: 'ok' }>;
+
+type ReviewExecutionContext = {
+  args: ReviewToolArgs;
+  context: ToolContext;
+  now: string;
+  policy: string;
+};
+
+type ReviewPreparation = {
+  result: StartedReviewResult;
+  refInput?: ReviewReferenceInput;
+  validatedReviewObligation: ReviewObligation | null;
+};
+
+type ReviewReportResult = Exclude<Awaited<ReturnType<typeof executeReview>>, { kind: 'blocked' }>;
+
+const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
+  critical: 'error',
+  major: 'error',
+  minor: 'warning',
+  info: 'info',
+  error: 'error',
+  warning: 'warning',
+};
+
+async function persistReviewObligation(
+  sessDir: string,
+  state: SessionState,
+  obligation: ReviewObligation,
+): Promise<void> {
+  await writeStateWithArtifacts(sessDir, {
+    ...state,
+    reviewAssurance: appendReviewObligation(state.reviewAssurance, obligation),
+  });
+}
+
+async function ensureMissingAnalysisObligation(
+  sessDir: string,
+  state: SessionState,
+  args: ReviewToolArgs,
+  now: string,
+): Promise<string | null> {
+  if (!hasReviewContentInput(args) || args.analysisFindings !== undefined) return null;
+  const fingerprint = fingerprintReviewInput(args);
+  let obligation = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  if (!obligation) {
+    obligation = createReviewObligation({
+      obligationType: 'review',
+      iteration: 1,
+      planVersion: 1,
+      now,
+      metadata: { fingerprint },
+    });
+    await persistReviewObligation(sessDir, state, obligation);
+  }
+  return formatMissingContentAnalysis(obligation.obligationId);
+}
+
+async function resolveSubmittedReviewObligation(
+  sessDir: string,
+  state: SessionState,
+  args: ReviewToolArgs,
+  now: string,
+): Promise<{ obligation: ReviewObligation; blocked?: string }> {
+  const findings = args.analysisFindings as Record<string, unknown>;
+  const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
+    ?.toolObligationId as string | undefined;
+  const obligationById = attToolObligationId
+    ? findReviewObligationById(state.reviewAssurance, attToolObligationId)
+    : null;
+  const fingerprint = fingerprintReviewInput(args);
+  let obligation =
+    obligationById ?? findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+
+  if (!obligation) {
+    obligation = createReviewObligation({
+      obligationType: 'review',
+      iteration: 1,
+      planVersion: 1,
+      now,
+      metadata: { fingerprint },
+    });
+    await persistReviewObligation(sessDir, state, obligation);
+    return {
+      obligation,
+      blocked: formatSubagentReviewNotInvoked(
+        'no review obligation found — a fresh obligation has been created. Re-submit your findings with the toolObligationId from the returned requiredReviewAttestation.',
+        obligation.obligationId,
+      ),
+    };
+  }
+  return { obligation };
+}
+
+function validateSubmittedReviewFindings(
+  args: ReviewToolArgs,
+  obligation: ReviewObligation,
+): string | null {
+  if (obligation.status === 'consumed') {
+    return formatSubagentReviewNotInvoked(
+      'this review obligation has already been consumed. Start a fresh /review to create a new obligation.',
+      obligation.obligationId,
+    );
+  }
+
+  const findings = args.analysisFindings as Record<string, unknown>;
+  if ((findings.reviewMode as string) !== 'subagent') {
+    return formatSubagentReviewNotInvoked(
+      `reviewMode is not "subagent" — findings did not come from the ${REVIEWER_SUBAGENT_TYPE} subagent`,
+      obligation.obligationId,
+    );
+  }
+
+  const verdict = validateStrictAttestation(
+    findings as unknown as Parameters<typeof validateStrictAttestation>[0],
+    {
+      obligationId: obligation.obligationId,
+      iteration: obligation.iteration,
+      planVersion: obligation.planVersion,
+    },
+  );
+  return verdict
+    ? formatSubagentReviewNotInvoked(
+        `validateStrictAttestation returned ${verdict}`,
+        obligation.obligationId,
+      )
+    : null;
+}
+
+function validateTextCompatInvocation(
+  findings: Record<string, unknown>,
+  obligation: ReviewObligation,
+  hostInvForObligation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
+): string | null {
+  const submittedReviewOutput = findings.pluginReviewOutput as Record<string, unknown> | undefined;
+  if (submittedReviewOutput?.reviewOutputMode !== 'text_compat') return null;
+  if (hostInvForObligation?.reviewOutputMode !== 'text_compat') {
+    return formatBlockedWithAttestation(
+      'SUBAGENT_MANDATE_MISMATCH',
+      'Submitted text-compat findings require matching host-orchestrated ReviewInvocationEvidence with reviewOutputMode: text_compat.',
+      obligation.obligationId,
+    );
+  }
+  if (
+    hostInvForObligation.reviewAssuranceLevel !== 'text_compat_lower' ||
+    hostInvForObligation.structuredOutputUsed !== false ||
+    !hostInvForObligation.extractionMethod
+  ) {
+    return formatBlockedWithAttestation(
+      'SUBAGENT_MANDATE_MISMATCH',
+      'Submitted text-compat findings require complete lower-assurance invocation metadata.',
+      obligation.obligationId,
+    );
+  }
+  return null;
+}
+
+function validateHostInvocationEvidence(input: {
+  hostInvForObligation: ReturnType<typeof ensureReviewAssurance>['invocations'][number];
+  findingsHash: string;
+  childSessionId: string;
+  policy: string;
+  context: ToolContext;
+  obligation: ReviewObligation;
+}): string | null {
+  const { hostInvForObligation, findingsHash, childSessionId, policy, context, obligation } = input;
+  const policyMismatch =
+    policy === 'host_task_required' &&
+    (hostInvForObligation.invocationMode !== 'host_subagent_task' ||
+      hostInvForObligation.hostVisible !== true ||
+      hostInvForObligation.parentSessionId !== context.sessionID ||
+      hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
+      hostInvForObligation.mandateDigest !== obligation.mandateDigest);
+  if (hostInvForObligation.findingsHash === findingsHash && hostInvForObligation.childSessionId === childSessionId && !policyMismatch) return null;
+  return formatBlockedWithAttestation(
+    'SUBAGENT_MANDATE_MISMATCH',
+    'Submitted findings do not match the host-orchestrated reviewer findings for this obligation. Re-submit with the exact pluginReviewFindings provided by the plugin.',
+    obligation.obligationId,
+  );
+}
+
+function buildManualInvocationState(input: {
+  result: StartedReviewResult;
+  obligation: ReviewObligation;
+  context: ToolContext;
+  childSessionId: string;
+  findingsHash: string;
+  promptHash: string;
+  now: string;
+}): StartedReviewResult {
+  const { result, obligation, context, childSessionId, findingsHash, promptHash, now } = input;
+  const invocation = buildInvocationEvidence({
+    obligationId: obligation.obligationId,
+    obligationType: 'review',
+    parentSessionId: context.sessionID,
+    childSessionId,
+    invocationMode: 'manual_attested',
+    hostVisible: false,
+    promptHash,
+    findingsHash,
+    invokedAt: now,
+    fulfilledAt: now,
+    source: 'agent-submitted-attested',
+  });
+  return {
+    ...result,
+    state: {
+      ...result.state,
+      reviewAssurance: appendInvocationEvidence(
+        fulfillObligation(
+          ensureReviewAssurance(result.state.reviewAssurance),
+          obligation.obligationId,
+          invocation.invocationId,
+          now,
+        ),
+        invocation,
+      ),
+    },
+  };
+}
+
+function recordSubmittedReviewInvocation(
+  result: StartedReviewResult,
+  obligation: ReviewObligation,
+  exec: ReviewExecutionContext,
+): { result: StartedReviewResult; blocked?: string } {
+  const findings = exec.args.analysisFindings as Record<string, unknown>;
+  const childSessionId = String((findings.reviewedBy as Record<string, unknown>).sessionId ?? '');
+  if (!childSessionId) {
+    return {
+      result,
+      blocked: formatSubagentReviewNotInvoked(
+        'Subagent findings must include reviewedBy.sessionId.',
+        obligation.obligationId,
+      ),
+    };
+  }
+
+  const findingsHash = hashFindings(findings);
+  const assurance = ensureReviewAssurance(result.state.reviewAssurance);
+  const hostInvForObligation = assurance.invocations.find(
+    (inv) => inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
+  );
+  const textCompatBlock = validateTextCompatInvocation(findings, obligation, hostInvForObligation);
+  if (textCompatBlock) return { result, blocked: textCompatBlock };
+  if (hostInvForObligation) {
+    return {
+      result,
+      blocked: validateHostInvocationEvidence({
+        hostInvForObligation,
+        findingsHash,
+        childSessionId,
+        policy: exec.policy,
+        context: exec.context,
+        obligation,
+      }) ?? undefined,
+    };
+  }
+  return recordManualReviewInvocation({
+    result,
+    obligation,
+    exec,
+    childSessionId,
+    findingsHash,
+    assurance,
+  });
+}
+
+function recordManualReviewInvocation(input: {
+  result: StartedReviewResult;
+  obligation: ReviewObligation;
+  exec: ReviewExecutionContext;
+  childSessionId: string;
+  findingsHash: string;
+  assurance: ReturnType<typeof ensureReviewAssurance>;
+}): { result: StartedReviewResult; blocked?: string } {
+  const { result, obligation, exec, childSessionId, findingsHash, assurance } = input;
+  if (exec.policy === 'host_task_required') {
+    return {
+      result,
+      blocked: formatBlockedWithAttestation(
+        'HOST_SUBAGENT_TASK_REQUIRED',
+        `This policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; manual-attested /review findings are not accepted.`,
+        obligation.obligationId,
+      ),
+    };
+  }
+  if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
+    return {
+      result,
+      blocked: formatBlockedWithAttestation(
+        'SUBAGENT_EVIDENCE_REUSED',
+        'The submitted subagent findings have already been used for a prior review obligation.',
+        obligation.obligationId,
+      ),
+    };
+  }
+  return {
+    result: buildManualInvocationState({
+      result,
+      obligation,
+      context: exec.context,
+      childSessionId,
+      findingsHash,
+      promptHash: hashText(fingerprintReviewInput(exec.args)),
+      now: exec.now,
+    }),
+  };
+}
+
+async function prepareReviewExecution(
+  sessDir: string,
+  state: SessionState,
+  result: StartedReviewResult,
+  exec: ReviewExecutionContext,
+): Promise<ReviewPreparation | string> {
+  const missingAnalysis = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now);
+  if (missingAnalysis) return missingAnalysis;
+
+  let refInput = buildReviewReferenceInput(exec.args);
+  if (exec.args.analysisFindings === undefined) {
+    return { result, refInput, validatedReviewObligation: null };
+  }
+
+  const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
+  if (resolved.blocked) return resolved.blocked;
+  const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
+  if (validationBlock) return validationBlock;
+  const recorded = recordSubmittedReviewInvocation(result, resolved.obligation, exec);
+  if (recorded.blocked) return recorded.blocked;
+  if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
+  return { result: recorded.result, refInput, validatedReviewObligation: resolved.obligation };
+}
+
+function mapReviewFindingsToReport(analysisFindings: Record<string, unknown>): Array<{
+  severity: 'info' | 'warning' | 'error';
+  category: string;
+  message: string;
+  location?: string;
+}> {
+  const allFindings: Array<Record<string, unknown>> = [
+    ...((analysisFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
+    ...((analysisFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
+    ...((analysisFindings.missingVerification as string[]) ?? []).map((message) => ({
+      severity: 'warning' as const,
+      category: 'missing-verification',
+      message,
+    })),
+    ...((analysisFindings.scopeCreep as string[]) ?? []).map((message) => ({
+      severity: 'warning' as const,
+      category: 'scope-creep',
+      message,
+    })),
+    ...((analysisFindings.unknowns as string[]) ?? []).map((message) => ({
+      severity: 'info' as const,
+      category: 'unknown',
+      message,
+    })),
+  ];
+
+  return allFindings
+    .filter((f) => f.severity && f.category && f.message)
+    .map((f) => ({
+      severity: reviewSeverityMap[f.severity as string] ?? 'warning',
+      category: f.category as string,
+      message: f.message as string,
+      ...(f.location ? { location: f.location as string } : {}),
+    }));
+}
+
+function buildReviewExecutors(args: ReviewToolArgs): ReviewExecutors {
+  return {
+    analyze: async () => {
+      if (!args.analysisFindings) return [];
+      return mapReviewFindingsToReport(args.analysisFindings);
+    },
+  };
+}
+
+function consumeValidatedReviewObligation(
+  result: StartedReviewResult,
+  obligation: ReviewObligation | null,
+  args: ReviewToolArgs,
+  now: string,
+): StartedReviewResult {
+  if (!obligation) return result;
+  return {
+    ...result,
+    state: {
+      ...result.state,
+      reviewAssurance: consumeReviewObligation(
+        ensureReviewAssurance(result.state.reviewAssurance),
+        obligation,
+        now,
+        findAcceptedInvocationForFindings(
+          result.state.reviewAssurance,
+          obligation,
+          args.analysisFindings,
+        )?.invocationId,
+      ),
+    },
+  };
+}
+
+async function persistReviewCompletion(
+  sessDir: string,
+  result: StartedReviewResult,
+  report: ReviewReportResult,
+  ctx: Parameters<typeof createPolicyEvalFn>[0],
+): Promise<{ finalState: SessionState; allTransitions: StartedReviewResult['transitions'] }> {
+  await writeReport(sessDir, report);
+  const stateWithReportPath = { ...result.state, reviewReportPath: reportPath(sessDir) };
+  const { state: finalState, transitions: advanceTransitions } = autoAdvance(
+    stateWithReportPath,
+    createPolicyEvalFn(ctx),
+    ctx,
+  );
+  await writeStateWithArtifacts(sessDir, finalState);
+  return { finalState, allTransitions: [...result.transitions, ...advanceTransitions] };
+}
+
+async function buildReviewCompletionResponse(input: {
+  sessDir: string;
+  args: ReviewToolArgs;
+  result: StartedReviewResult;
+  finalState: SessionState;
+  report: ReviewReportResult;
+  allTransitions: StartedReviewResult['transitions'];
+  validatedReviewObligation: ReviewObligation | null;
+}): Promise<string> {
+  const { sessDir, args, result, finalState, report, allTransitions, validatedReviewObligation } = input;
+  const reviewCard = buildStandaloneReviewCard({
+    args,
+    result,
+    finalState,
+    report,
+    validatedReviewObligation,
+  });
+  const artifactWarning = await materializeStandaloneReviewCard({
+    sessDir,
+    result,
+    reviewCard,
+    validatedReviewObligation,
+  });
+  return formatReviewCompletionResponse({
+    finalState,
+    result,
+    report,
+    allTransitions,
+    reviewCard,
+    artifactWarning,
+  });
+}
+
+function buildStandaloneReviewCard(input: {
+  args: ReviewToolArgs;
+  result: StartedReviewResult;
+  finalState: SessionState;
+  report: ReviewReportResult;
+  validatedReviewObligation: ReviewObligation | null;
+}): string {
+  const { args, result, finalState, report, validatedReviewObligation } = input;
+  const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
+  return buildReviewReportCard({
+    phase: finalState.phase,
+    phaseLabel: PHASE_LABELS[finalState.phase],
+    overallStatus: report.overallStatus,
+    findings: report.findings ?? [],
+    completeness: reviewCardCompleteness(report),
+    inputOrigin: args.inputOrigin,
+    references: args.references as Array<{ ref: string; type: string }> | undefined,
+    obligationId: validatedReviewObligation?.obligationId,
+    ...reviewCardInvocationFields(boundInvocation, args),
+  });
+}
+
+function findBoundReviewInvocation(
+  result: StartedReviewResult,
+  obligation: ReviewObligation | null,
+): ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined {
+  if (!obligation) return undefined;
+  return ensureReviewAssurance(result.state.reviewAssurance).invocations.find(
+    (inv) => inv.obligationId === obligation.obligationId,
+  );
+}
+
+function reviewCardCompleteness(report: ReviewReportResult): {
+  overallComplete: boolean;
+  fourEyes: boolean;
+  summary: string;
+} {
+  return {
+    overallComplete: report.completeness.overallComplete,
+    fourEyes: report.completeness.fourEyes?.satisfied ?? false,
+    summary:
+      `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
+      `${report.completeness.summary.missing} missing`,
+  };
+}
+
+function reviewCardInvocationFields(
+  boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
+  args: ReviewToolArgs,
+): {
+  invocationSource?: string;
+  invocationMode?: string;
+  hostVisible?: boolean;
+  reviewOutputMode?: string;
+  structuredOutputUsed?: boolean;
+  reviewAssuranceLevel?: string;
+  extractionMethod?: string;
+  reviewerSessionId?: string;
+} {
+  return {
+    invocationSource: boundInvocation?.source,
+    invocationMode: boundInvocation?.invocationMode,
+    hostVisible: boundInvocation?.hostVisible,
+    reviewOutputMode: boundInvocation?.reviewOutputMode,
+    structuredOutputUsed: boundInvocation?.structuredOutputUsed,
+    reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
+    extractionMethod: boundInvocation?.extractionMethod,
+    reviewerSessionId: reviewerSessionId(boundInvocation, args),
+  };
+}
+
+function reviewerSessionId(
+  boundInvocation: ReturnType<typeof ensureReviewAssurance>['invocations'][number] | undefined,
+  args: ReviewToolArgs,
+): string | undefined {
+  return (
+    boundInvocation?.childSessionId ??
+    ((args.analysisFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
+      | string
+      | undefined)
+  );
+}
+
+async function materializeStandaloneReviewCard(input: {
+  sessDir: string;
+  result: StartedReviewResult;
+  reviewCard: string;
+  validatedReviewObligation: ReviewObligation | null;
+}): Promise<{ code: string; message: string } | undefined> {
+  const { sessDir, result, reviewCard, validatedReviewObligation } = input;
+  return (
+    (await materializeReviewCardArtifact(
+      sessDir,
+      'review-report-card',
+      reviewCard,
+      result.state,
+      validatedReviewObligation?.obligationId ??
+        createHash('sha256').update(reviewCard, 'utf-8').digest('hex').slice(0, 16),
+    )) ?? undefined
+  );
+}
+
+function formatReviewCompletionResponse(input: {
+  result: StartedReviewResult;
+  finalState: SessionState;
+  report: ReviewReportResult;
+  allTransitions: StartedReviewResult['transitions'];
+  reviewCard: string;
+  artifactWarning?: { code: string; message: string };
+}): string {
+  const { result, finalState, report, allTransitions, reviewCard, artifactWarning } = input;
+  return appendNextAction(
+    JSON.stringify({
+      reviewCard,
+      phase: finalState.phase,
+      ...(artifactWarning && { artifactWarning }),
+      status: 'Review flow complete. Report generated.',
+      overallStatus: report.overallStatus,
+      policyMode: result.state.policySnapshot?.mode ?? 'unknown',
+      completeness: {
+        overallComplete: report.completeness.overallComplete,
+        fourEyes: report.completeness.fourEyes,
+        summary: report.completeness.summary,
+        slots: report.completeness.slots.map((s) => ({
+          slot: s.slot,
+          label: s.label,
+          status: s.status,
+          detail: s.detail,
+        })),
+      },
+      findingsCount: report.findings.length,
+      findings: report.findings,
+      validationSummary: report.validationSummary,
+      references: report.references,
+      inputOrigin: report.inputOrigin,
+      _audit: { transitions: allTransitions },
+    }),
+    finalState,
+  );
+}
+
 export const review: ToolDefinition = {
   description:
     'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
@@ -313,458 +921,48 @@ export const review: ToolDefinition = {
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
-    // eslint-disable-next-line max-lines-per-function, complexity -- review tool orchestrates session boot, obligation lifecycle, state validation, review startup, content resolution, and response construction
   },
   async execute(args, context) {
     try {
       const { sessDir, state, ctx } = await withMutableSession(context);
-      const reviewInvocationPolicy =
-        state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required';
-
-      // 1. Transition READY → REVIEW (no autoAdvance — report must be written first, P8b).
+      const now = new Date().toISOString();
       let result = startReviewFlow(state, ctx);
 
-      if (result.kind === 'blocked') {
-        return formatRailResult(result);
-      }
+      if (result.kind === 'blocked') return formatRailResult(result);
 
-      // 2. Generate the compliance report using the final state
-      const now = new Date().toISOString();
-      let refInput = buildReviewReferenceInput(args);
+      const prepared = await prepareReviewExecution(sessDir, state, result, {
+        args,
+        context,
+        now,
+        policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
+      });
+      if (typeof prepared === 'string') return prepared;
 
-      // Content-aware review requires analysisFindings.
-      // When absent, create or reuse a pending review obligation for this
-      // specific input and return a blocked response so the agent gets the
-      // canonical attestation values.
-      const hasContentInput = hasReviewContentInput(args);
-      if (hasContentInput && args.analysisFindings === undefined) {
-        // Compute an input fingerprint so that different review inputs
-        // (e.g. prNumber=42 vs. prNumber=99) get different obligations.
-        const fingerprint = fingerprintReviewInput(args);
-        const assurance = state.reviewAssurance;
-        let obligation = findLatestPendingReviewObligation(assurance, 'review', fingerprint);
-        if (!obligation) {
-          obligation = createReviewObligation({
-            obligationType: 'review',
-            iteration: 1,
-            planVersion: 1,
-            now,
-            metadata: { fingerprint },
-          });
-          const augmentedState = {
-            ...state,
-            reviewAssurance: appendReviewObligation(assurance, obligation),
-          };
-          await writeStateWithArtifacts(sessDir, augmentedState);
-        }
-
-        return formatMissingContentAnalysis(obligation.obligationId);
-      }
-
-      // If analysisFindings provided, resolve the obligation it targets.
-      // Priority: attestation.toolObligationId (set by the blocked response or
-      // the plugin-orchestrator). Fallback: fingerprint + pending status (for
-      // manual submissions that predate the obligation).
-      let validatedReviewObligation: ReturnType<typeof findLatestPendingReviewObligation> = null;
-      if (args.analysisFindings !== undefined) {
-        const findings = args.analysisFindings as Record<string, unknown>;
-        const reviewMode = findings.reviewMode as string;
-        const fingerprint = fingerprintReviewInput(args);
-        const assurance = state.reviewAssurance;
-
-        // Resolve the obligation by its canonical UUID if the attestation
-        // carries one (both blocked response and plugin-orchestrator set it).
-        const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
-          ?.toolObligationId as string | undefined;
-        const obligationById = attToolObligationId
-          ? findReviewObligationById(assurance, attToolObligationId)
-          : null;
-        let obligation =
-          obligationById ?? findLatestPendingReviewObligation(assurance, 'review', fingerprint);
-
-        if (!obligation) {
-          obligation = createReviewObligation({
-            obligationType: 'review',
-            iteration: 1,
-            planVersion: 1,
-            now,
-            metadata: { fingerprint },
-          });
-          const augmentedState = {
-            ...state,
-            reviewAssurance: appendReviewObligation(assurance, obligation),
-          };
-          await writeStateWithArtifacts(sessDir, augmentedState);
-
-          return formatSubagentReviewNotInvoked(
-            'no review obligation found — a fresh obligation has been created. Re-submit your findings with the toolObligationId from the returned requiredReviewAttestation.',
-            obligation.obligationId,
-          );
-        }
-
-        // Guard consumed obligations (single-use enforcement).
-        if (obligation.status === 'consumed') {
-          return formatSubagentReviewNotInvoked(
-            'this review obligation has already been consumed. Start a fresh /review to create a new obligation.',
-            obligation.obligationId,
-          );
-        }
-
-        if (reviewMode !== 'subagent') {
-          return formatSubagentReviewNotInvoked(
-            `reviewMode is not "subagent" — findings did not come from the ${REVIEWER_SUBAGENT_TYPE} subagent`,
-            obligation.obligationId,
-          );
-        }
-
-        // Delegate to the central validateStrictAttestation gate that /plan,
-        // /architecture, and /implement use. This avoids duplicating attestation
-        // logic and guarantees the same enforcement.
-        const verdict = validateStrictAttestation(
-          findings as unknown as Parameters<typeof validateStrictAttestation>[0],
-          {
-            obligationId: obligation.obligationId,
-            iteration: obligation.iteration,
-            planVersion: obligation.planVersion,
-          },
-        );
-
-        if (verdict) {
-          return formatSubagentReviewNotInvoked(
-            `validateStrictAttestation returned ${verdict}`,
-            obligation.obligationId,
-          );
-        }
-
-        // Track the exact obligation that passed validation so it — and only it —
-        // is consumed on success. This prevents consuming a different pending
-        // obligation belonging to another review input.
-        validatedReviewObligation = obligation;
-
-        // Record invocation evidence from accepted subagent-attested findings.
-        // This reconstructs audit evidence from the fields in analysisFindings —
-        // childSessionId comes from the subagent's attested reviewedBy.sessionId
-        // (not from a host-side subagent invocation intercept, so this is
-        // attested/reconstructed evidence, not host-captured evidence).
-        if (args.analysisFindings) {
-          const findings = args.analysisFindings as Record<string, unknown>;
-          const childSessionId = String(
-            (findings.reviewedBy as Record<string, unknown>).sessionId ?? '',
-          );
-          if (!childSessionId) {
-            return formatSubagentReviewNotInvoked(
-              'Subagent findings must include reviewedBy.sessionId.',
-              obligation.obligationId,
-            );
-          }
-
-          const findingsHash = hashFindings(findings);
-          const promptHash = hashText(fingerprintReviewInput(args));
-
-          // Plugin-orchestrator path: if host-orchestrated evidence already
-          // exists for this obligation, the submitted findings MUST match it
-          // exactly. No downgrade to manual path — the host already captured
-          // authoritative evidence.
-          const assurance = ensureReviewAssurance(result.state.reviewAssurance);
-          const hostInvForObligation = assurance.invocations.find(
-            (inv) =>
-              inv.obligationId === obligation.obligationId && inv.source === 'host-orchestrated',
-          );
-          const submittedReviewOutput = findings.pluginReviewOutput as
-            | Record<string, unknown>
-            | undefined;
-
-          if (submittedReviewOutput?.reviewOutputMode === 'text_compat') {
-            if (hostInvForObligation?.reviewOutputMode !== 'text_compat') {
-              return formatBlockedWithAttestation(
-                'SUBAGENT_MANDATE_MISMATCH',
-                'Submitted text-compat findings require matching host-orchestrated ReviewInvocationEvidence with reviewOutputMode: text_compat.',
-                obligation.obligationId,
-              );
-            }
-            if (
-              hostInvForObligation.reviewAssuranceLevel !== 'text_compat_lower' ||
-              hostInvForObligation.structuredOutputUsed !== false ||
-              !hostInvForObligation.extractionMethod
-            ) {
-              return formatBlockedWithAttestation(
-                'SUBAGENT_MANDATE_MISMATCH',
-                'Submitted text-compat findings require complete lower-assurance invocation metadata.',
-                obligation.obligationId,
-              );
-            }
-          }
-
-          if (hostInvForObligation) {
-            // Host-orchestrated evidence exists for this obligation.
-            // Only accept findings that match it exactly.
-            if (
-              hostInvForObligation.findingsHash !== findingsHash ||
-              hostInvForObligation.childSessionId !== childSessionId ||
-              (reviewInvocationPolicy === 'host_task_required' &&
-                (hostInvForObligation.invocationMode !== 'host_subagent_task' ||
-                  hostInvForObligation.hostVisible !== true ||
-                  hostInvForObligation.parentSessionId !== context.sessionID ||
-                  hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
-                  hostInvForObligation.mandateDigest !== obligation.mandateDigest))
-            ) {
-              return formatBlockedWithAttestation(
-                'SUBAGENT_MANDATE_MISMATCH',
-                'Submitted findings do not match the host-orchestrated reviewer findings for this obligation. Re-submit with the exact pluginReviewFindings provided by the plugin.',
-                obligation.obligationId,
-              );
-            }
-            // Exact match — evidence already recorded by plugin, skip creation.
-          } else {
-            if (reviewInvocationPolicy === 'host_task_required') {
-              return formatBlockedWithAttestation(
-                'HOST_SUBAGENT_TASK_REQUIRED',
-                `This policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; manual-attested /review findings are not accepted.`,
-                obligation.obligationId,
-              );
-            }
-            // No host-orchestrated evidence — manual path.
-            if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
-              return formatBlockedWithAttestation(
-                'SUBAGENT_EVIDENCE_REUSED',
-                'The submitted subagent findings have already been used for a prior review obligation.',
-                obligation.obligationId,
-              );
-            }
-
-            // Manual path: create agent-submitted-attested evidence.
-            const invocation = buildInvocationEvidence({
-              obligationId: obligation.obligationId,
-              obligationType: 'review',
-              parentSessionId: context.sessionID,
-              childSessionId,
-              invocationMode: 'manual_attested',
-              hostVisible: false,
-              promptHash,
-              findingsHash,
-              invokedAt: now,
-              fulfilledAt: now,
-              source: 'agent-submitted-attested',
-            });
-
-            result = {
-              ...result,
-              state: {
-                ...result.state,
-                reviewAssurance: appendInvocationEvidence(
-                  fulfillObligation(
-                    ensureReviewAssurance(result.state.reviewAssurance),
-                    obligation.obligationId,
-                    invocation.invocationId,
-                    now,
-                  ),
-                  invocation,
-                ),
-              },
-            };
-          }
-          // Consumption happens below via validatedReviewObligation.
-        }
-
-        // Skip the external content reload: the subagent has already analysed
-        // the source content. Preserve every other refInput field for provenance.
-        if (refInput) {
-          refInput = { ...refInput, skipExternalContentLoad: true };
-        }
-      }
-
-      // Create executors with analyze function that maps ReviewFindings to report format
-      // Severity mapping
-      const severityMap: Record<string, 'info' | 'warning' | 'error'> = {
-        critical: 'error',
-        major: 'error',
-        minor: 'warning',
-        info: 'info',
-        error: 'error',
-        warning: 'warning',
-      };
-
-      // Helper: Map ReviewFindings to report findings
-      function mapReviewFindingsToReport(analysisFindings: Record<string, unknown>): Array<{
-        severity: 'info' | 'warning' | 'error';
-        category: string;
-        message: string;
-        location?: string;
-      }> {
-        const findings = analysisFindings;
-
-        // Extract all finding types from ReviewFindings
-        const allFindings: Array<Record<string, unknown>> = [
-          ...((findings.blockingIssues as Array<Record<string, unknown>>) ?? []),
-          ...((findings.majorRisks as Array<Record<string, unknown>>) ?? []),
-          ...((findings.missingVerification as string[]) ?? []).map((message) => ({
-            severity: 'warning' as const,
-            category: 'missing-verification',
-            message,
-          })),
-          ...((findings.scopeCreep as string[]) ?? []).map((message) => ({
-            severity: 'warning' as const,
-            category: 'scope-creep',
-            message,
-          })),
-          ...((findings.unknowns as string[]) ?? []).map((message) => ({
-            severity: 'info' as const,
-            category: 'unknown',
-            message,
-          })),
-        ];
-
-        return allFindings
-          .filter((f) => f.severity && f.category && f.message)
-          .map((f) => ({
-            severity: severityMap[f.severity as string] ?? 'warning',
-            category: f.category as string,
-            message: f.message as string,
-            ...(f.location ? { location: f.location as string } : {}),
-          }));
-      }
-
-      const executors: ReviewExecutors = {
-        analyze: async () => {
-          if (!args.analysisFindings) return [];
-          return mapReviewFindingsToReport(args.analysisFindings as Record<string, unknown>);
-        },
-      };
-
-      const reviewResult = await executeReview(result.state, now, executors, refInput);
-
+      result = prepared.result;
+      const reviewResult = await executeReview(
+        result.state,
+        now,
+        buildReviewExecutors(args),
+        prepared.refInput,
+      );
       if (reviewResult.kind === 'blocked') {
         return formatBlockedReviewReport(reviewResult);
       }
-      const report = reviewResult;
-
-      // Consume exactly the obligation that passed attestation validation.
-      // This prevents a race where two different review inputs (`prNumber=42`
-      // and `prNumber=99`) each have a pending obligation, and consuming the
-      // wrong one breaks the other review chain.
-      if (validatedReviewObligation) {
-        result = {
-          ...result,
-          state: {
-            ...result.state,
-            reviewAssurance: consumeReviewObligation(
-              ensureReviewAssurance(result.state.reviewAssurance),
-              validatedReviewObligation,
-              now,
-              findAcceptedInvocationForFindings(
-                result.state.reviewAssurance,
-                validatedReviewObligation,
-                args.analysisFindings as ReviewFindings | undefined,
-              )?.invocationId,
-            ),
-          },
-        };
-      }
-
-      // 3. Write report — if this fails, no REVIEW_COMPLETE state is persisted.
-      await writeReport(sessDir, report);
-
-      // 4. Set reviewReportPath on state, then autoAdvance REVIEW → REVIEW_COMPLETE.
-      //    The reviewDone guard (P8b) requires reviewReportPath to be set,
-      //    proving the report was actually persisted before advancing.
-      const stateWithReportPath = {
-        ...result.state,
-        reviewReportPath: reportPath(sessDir),
-      };
-      const evalFn = createPolicyEvalFn(ctx);
-      const { state: finalState, transitions: advanceTransitions } = autoAdvance(
-        stateWithReportPath,
-        evalFn,
-        ctx,
+      result = consumeValidatedReviewObligation(
+        result,
+        prepared.validatedReviewObligation,
+        args,
+        now,
       );
-      // Merge transitions from startReviewFlow + autoAdvance
-      const allTransitions = [
-        ...(result.kind === 'ok' ? result.transitions : []),
-        ...advanceTransitions,
-      ];
-
-      await writeStateWithArtifacts(sessDir, finalState);
-
-      // Build the review report card as a markdown presentation layer.
-      const assurance = ensureReviewAssurance(result.state.reviewAssurance);
-      const boundInvocation = validatedReviewObligation
-        ? assurance.invocations.find(
-            (inv) => inv.obligationId === validatedReviewObligation.obligationId,
-          )
-        : undefined;
-      const findingsForCard = args.analysisFindings
-        ? (args.analysisFindings as Record<string, unknown>)
-        : undefined;
-      const reviewCard = buildReviewReportCard({
-        phase: finalState.phase,
-        phaseLabel: PHASE_LABELS[finalState.phase],
-        overallStatus: report.overallStatus,
-        findings: report.findings ?? [],
-        completeness: {
-          overallComplete: report.completeness.overallComplete,
-          fourEyes: report.completeness.fourEyes?.satisfied ?? false,
-          summary:
-            `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
-            `${report.completeness.summary.missing} missing`,
-        },
-        inputOrigin: args.inputOrigin as string | undefined,
-        references: args.references as Array<{ ref: string; type: string }> | undefined,
-        obligationId: validatedReviewObligation?.obligationId,
-        invocationSource: boundInvocation?.source,
-        invocationMode: boundInvocation?.invocationMode,
-        hostVisible: boundInvocation?.hostVisible,
-        reviewOutputMode: boundInvocation?.reviewOutputMode,
-        structuredOutputUsed: boundInvocation?.structuredOutputUsed,
-        reviewAssuranceLevel: boundInvocation?.reviewAssuranceLevel,
-        extractionMethod: boundInvocation?.extractionMethod,
-        reviewerSessionId:
-          boundInvocation?.childSessionId ??
-          ((findingsForCard?.reviewedBy as Record<string, unknown>)?.sessionId as
-            | string
-            | undefined),
-      });
-
-      // Materialize the review card as an immutable evidence artifact.
-      const artifactErr = await materializeReviewCardArtifact(
+      const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+      return buildReviewCompletionResponse({
         sessDir,
-        'review-report-card',
-        reviewCard,
-        result.state,
-        validatedReviewObligation?.obligationId ??
-          // Fallback: content-derived digest so two different review cards
-          // in the same session still get different artifact files.
-          createHash('sha256').update(reviewCard, 'utf-8').digest('hex').slice(0, 16),
-      );
-      const artifactWarning = artifactErr ?? undefined;
-
-      return appendNextAction(
-        JSON.stringify({
-          reviewCard,
-          phase: finalState.phase,
-          ...(artifactWarning && { artifactWarning }),
-          status: 'Review flow complete. Report generated.',
-          overallStatus: report.overallStatus,
-          policyMode: result.state.policySnapshot?.mode ?? 'unknown',
-          completeness: {
-            overallComplete: report.completeness.overallComplete,
-            fourEyes: report.completeness.fourEyes,
-            summary: report.completeness.summary,
-            slots: report.completeness.slots.map((s) => ({
-              slot: s.slot,
-              label: s.label,
-              status: s.status,
-              detail: s.detail,
-            })),
-          },
-          findingsCount: report.findings.length,
-          findings: report.findings,
-          validationSummary: report.validationSummary,
-          references: report.references,
-          inputOrigin: report.inputOrigin,
-          _audit: { transitions: allTransitions },
-        }),
-        finalState,
-      );
+        args,
+        result,
+        report: reviewResult,
+        validatedReviewObligation: prepared.validatedReviewObligation,
+        ...completion,
+      });
     } catch (err) {
       return formatError(err);
     }

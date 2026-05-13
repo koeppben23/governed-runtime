@@ -249,6 +249,7 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.appendNextAction.mockImplementation((p: string) => p);
     mocks.state = {
       phase: 'IMPLEMENTATION',
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
