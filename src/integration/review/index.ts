@@ -8,6 +8,7 @@
  *
  * Architecture: review/ is a cohesive bounded context that owns:
  * - Review obligation lifecycle and tool mapping
+ * - Obligation state transforms (updateObligation, blockObligation)
  * - Enforcement types, state, and validation (4-level integrity)
  * - Reviewer subagent orchestration (SDK invocation, retry, output parsing)
  * - Review assurance state management (obligations, invocations, evidence)
@@ -16,11 +17,13 @@
  * - Agent resolution (registry probe + cache)
  * - Text/JSON extraction from unstructured responses
  * - Findings JSON Schema definition
+ * - Review audit event emission
  *
- * Dependency direction: review/ depends on state/, shared/, templates/, config/.
+ * Dependency direction: review/ depends on state/, shared/, templates/,
+ * config/, and adapters/persistence (audit trail I/O).
  * review/ MUST NOT import from plugin-*, tools/, or integration root.
  *
- * @version v1
+ * @version v2
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -159,3 +162,11 @@ export { extractJsonFromText, extractJsonFromTextWithMethod } from './text-extra
 // ─── Findings Schema ─────────────────────────────────────────────────────────
 
 export { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+
+// ─── Obligation State ────────────────────────────────────────────────────────
+
+export { updateObligation, blockObligation } from './obligation-state.js';
+
+// ─── Audit Events ────────────────────────────────────────────────────────────
+
+export { appendReviewAuditEvent } from './audit-events.js';

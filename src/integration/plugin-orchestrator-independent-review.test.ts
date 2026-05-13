@@ -10,7 +10,7 @@ vi.mock('../adapters/persistence.js', () => ({
   writeState: vi.fn(),
 }));
 
-vi.mock('./plugin-review-audit.js', () => ({
+vi.mock('./review/audit-events.js', () => ({
   appendReviewAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-QUAL-003 (Issue #224):** Move `plugin-review-state.ts` and `plugin-review-audit.ts` into review bounded context:
+  - Renamed `plugin-review-state.ts` → `review/obligation-state.ts`, `plugin-review-audit.ts` → `review/audit-events.ts`
+  - Updated barrel `review/index.ts` with `updateObligation`, `blockObligation`, `appendReviewAuditEvent` exports
+  - Documented `adapters/persistence` as allowed infrastructure dependency for `review/` context
+  - Updated 3 production consumers and 8 test files (vi.mock paths + direct imports)
+  - Added 5 architecture boundary assertions proving moved files respect layer rules
+  - Zero runtime behavior changes, zero schema changes, zero public API changes
+
 - **FG-QUAL-002 (Issue #214):** Extract review subsystem into bounded context `integration/review/`:
   - Moved 11 review modules + 6 test files into `src/integration/review/` with `enforcement/` sub-directory
   - Created barrel exports for clean public API surface

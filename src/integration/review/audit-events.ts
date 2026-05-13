@@ -1,16 +1,21 @@
 /**
- * @module integration/plugin-review-audit
- * @description Review audit event helper extracted from plugin.ts.
+ * @module integration/review/audit-events
+ * @description Review audit event emission.
  *
  * Wraps appendAuditEvent from the persistence adapter with standard
  * audit event fields (machine actor, timestamp, random UUID id).
- * Used exclusively by the review orchestrator block in plugin.ts.
+ * Used by the plugin orchestration layer for review audit trail.
+ *
+ * NOTE: This module depends on adapters/persistence for audit trail I/O.
+ * This is an intentional architectural decision — audit event append is
+ * a core review capability, and adapters/ is the canonical persistence
+ * abstraction (not a business-logic layer).
  *
  * @version v1
  */
 
 import * as crypto from 'node:crypto';
-import { appendAuditEvent } from '../adapters/persistence.js';
+import { appendAuditEvent } from '../../adapters/persistence.js';
 
 /**
  * Append a review-related audit event to the session trail.

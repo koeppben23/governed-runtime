@@ -17,7 +17,7 @@ import {
   getToolOutput,
   getToolArgs,
 } from './plugin-helpers.js';
-import { updateObligation, blockObligation } from './plugin-review-state.js';
+import { updateObligation, blockObligation } from './review/obligation-state.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
 

@@ -978,6 +978,51 @@ describe('Layer Dependency Rules', () => {
         'All review-* source files should be in review/ subdirectory',
       ).toEqual([]);
     });
+
+    it('no plugin-review-* files remain at integration/ root level', async () => {
+      const integrationDir = path.join(SRC_DIR, 'integration');
+      const entries = await fs.readdir(integrationDir);
+      const stalePluginReviewFiles = entries.filter(
+        (e) => e.startsWith('plugin-review-') && e.endsWith('.ts') && !e.endsWith('.test.ts'),
+      );
+
+      expect(
+        stalePluginReviewFiles,
+        'plugin-review-state.ts and plugin-review-audit.ts should be in review/ subdirectory (FG-QUAL-003)',
+      ).toEqual([]);
+    });
+
+    it('review/ obligation-state.ts and audit-events.ts exist', () => {
+      const obligationState = path.join(SRC_DIR, 'integration', 'review', 'obligation-state.ts');
+      const auditEvents = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      expect(existsSync(obligationState), 'Expected review/obligation-state.ts').toBe(true);
+      expect(existsSync(auditEvents), 'Expected review/audit-events.ts').toBe(true);
+    });
+
+    it('review/ barrel exports updateObligation, blockObligation, and appendReviewAuditEvent', async () => {
+      const barrelPath = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
+      const content = await fs.readFile(barrelPath, 'utf-8');
+      expect(content).toContain('updateObligation');
+      expect(content).toContain('blockObligation');
+      expect(content).toContain('appendReviewAuditEvent');
+    });
+
+    it('review/ adapters/persistence dependency is allowed (audit trail I/O)', async () => {
+      // audit-events.ts imports from adapters/persistence — this is an intentional
+      // architectural decision documented in the barrel header. Verify it compiles
+      // and the import is to adapters/ only, not to plugin-* or tools/.
+      const auditEventsPath = path.join(SRC_DIR, 'integration', 'review', 'audit-events.ts');
+      const content = await fs.readFile(auditEventsPath, 'utf-8');
+      const imports = parseImports(content);
+      const adapterImports = imports.filter((i) => i.module.includes('adapters/'));
+      const pluginImports = imports.filter(
+        (i) => i.module.includes('plugin-') || i.module.includes('/plugin.'),
+      );
+      expect(adapterImports.length, 'audit-events.ts should import from adapters/').toBeGreaterThan(
+        0,
+      );
+      expect(pluginImports, 'audit-events.ts must NOT import from plugin-*').toEqual([]);
+    });
   });
 
   describe('Directory existence', () => {

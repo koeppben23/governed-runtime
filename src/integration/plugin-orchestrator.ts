@@ -55,8 +55,8 @@ import {
 } from './plugin-helpers.js';
 import { loadExternalContent } from '../rails/review.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
-import { updateObligation } from './plugin-review-state.js';
-import { appendReviewAuditEvent } from './plugin-review-audit.js';
+import { updateObligation } from './review/obligation-state.js';
+import { appendReviewAuditEvent } from './review/audit-events.js';
 import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_IMPLEMENT,
