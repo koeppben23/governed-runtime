@@ -778,7 +778,8 @@ describe('evidence-architecture', () => {
       const adr = {
         id: 'ADR-1',
         title: 'Use PostgreSQL',
-        adrText: '## Context\nWe need a DB\n\n## Decision\nUse PostgreSQL\n\n## Consequences\nMaintain DB infra',
+        adrText:
+          '## Context\nWe need a DB\n\n## Decision\nUse PostgreSQL\n\n## Consequences\nMaintain DB infra',
         status: 'proposed' as const,
         createdAt: FIXED_TIME,
         digest: 'sha256-adr',
@@ -800,7 +801,8 @@ describe('evidence-architecture', () => {
     });
 
     it('validateAdrSections returns empty for valid ADR', () => {
-      const adrText = '## Context\nBackground\n\n## Decision\nDo X\n\n## Consequences\nY will happen';
+      const adrText =
+        '## Context\nBackground\n\n## Decision\nDo X\n\n## Consequences\nY will happen';
       expect(validateAdrSections(adrText)).toEqual([]);
     });
 
@@ -843,11 +845,7 @@ describe('evidence-architecture', () => {
         '## Decision',
         '## Consequences',
       ]);
-      expect(validateAdrSections('')).toEqual([
-        '## Context',
-        '## Decision',
-        '## Consequences',
-      ]);
+      expect(validateAdrSections('')).toEqual(['## Context', '## Decision', '## Consequences']);
     });
 
     it('ArchitectureDecision with absent reviewFindings is valid (legacy compat)', () => {
