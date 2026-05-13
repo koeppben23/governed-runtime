@@ -4,10 +4,14 @@
  *              All implementation lives in focused evidence-* modules.
  *              Keep this file as the entry point for existing imports from 'state/evidence.js'.
  *
- * @version v2 (split into focused modules, no behavior change)
+ *              evidence-assurance-internal.ts MUST NOT appear in these re-exports —
+ *              OpenCodeSessionId, coerceAssurance, and assuranceSchema are internal helpers
+ *              and were never part of the public evidence.ts API surface.
+ *
+ * @version v2 (split into focused modules, no behavior change, no API expansion)
  */
 
-// ─── Primitives ────────────────────────────────────────────────────────────────
+// ─── Primitives (public enums, scalars) — no internal helpers ────────────────
 
 export * from './evidence-primitives.js';
 export type * from './evidence-primitives.js';
@@ -47,7 +51,7 @@ export type * from './evidence-plan.js';
 export * from './evidence-architecture.js';
 export type * from './evidence-architecture.js';
 
-// ─── Review ────────────────────────────────────────────────────────────────────
+// ─── Review (findings, obligations, assurance, completeness, report, decision) ─
 
 export * from './evidence-review.js';
 export type * from './evidence-review.js';

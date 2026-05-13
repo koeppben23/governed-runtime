@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { OpenCodeSessionId } from './evidence-primitives.js';
+import { OpenCodeSessionId } from './evidence-assurance-internal.js';
 import { ActorInfoSchema } from './evidence-identity.js';
 
 /**

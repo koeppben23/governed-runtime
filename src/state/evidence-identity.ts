@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { assuranceSchema } from './evidence-primitives.js';
+import { assuranceSchema } from './evidence-assurance-internal.js';
 
 /**
  * Structured identity for decision attribution (P30/P33/P34).

@@ -1,6 +1,6 @@
 /**
  * @module evidence-primitives
- * @description Foundation enums, scalar types, and helper functions for FlowGuard evidence schemas.
+ * @description Foundation enums, scalar types for FlowGuard evidence schemas.
  *              All schemas in this module depend only on Zod and shared identifiers —
  *              no dependencies on other state modules.
  *
@@ -59,9 +59,6 @@ export type RevisionDelta = z.infer<typeof RevisionDelta>;
 export const LoopVerdict = z.enum(['approve', 'changes_requested', 'unable_to_review']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
-/** Safe opaque OpenCode session ID segment (e.g. `ses_...`). */
-export const OpenCodeSessionId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
-
 /** Independent review obligation type. */
 export const ReviewObligationType = z.enum(['plan', 'implement', 'architecture', 'review']);
 export type ReviewObligationType = z.infer<typeof ReviewObligationType>;
@@ -102,36 +99,6 @@ export const ExternalReferenceSchema = z
   })
   .readonly();
 export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
-
-// ─── Assurance ─────────────────────────────────────────────────────────────────
-
-/**
- * P34: Coerce P33 v0 'verified' to 'claim_validated'.
- * Any unknown value falls through to 'best_effort' (safe default for backward compat).
- */
-export function coerceAssurance(raw: unknown): 'best_effort' | 'claim_validated' | 'idp_verified' {
-  if (raw === 'verified' || raw === 'claim_validated' || raw === 'idp_verified') {
-    if (raw === 'verified') return 'claim_validated';
-    return raw as 'claim_validated' | 'idp_verified';
-  }
-  return 'best_effort';
-}
-
-/**
- * Assurance value parser with P33 v0 backward compat.
- * "verified" passes through the union and is coerced to "claim_validated".
- * Unknown values fall back to "best_effort".
- */
-export function assuranceSchema() {
-  return z
-    .union([
-      z.literal('verified'),
-      z.literal('best_effort'),
-      z.literal('claim_validated'),
-      z.literal('idp_verified'),
-    ])
-    .transform((val) => coerceAssurance(val));
-}
 
 /** How the reviewer was invoked — host-visible Task tool vs SDK vs manual attested. */
 export type ReviewInvocationMode = 'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested';

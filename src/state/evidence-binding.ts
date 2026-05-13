@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
-import { OpenCodeSessionId } from './evidence-primitives.js';
+import { OpenCodeSessionId } from './evidence-assurance-internal.js';
 
 /**
  * Workspace binding resolved during init().
