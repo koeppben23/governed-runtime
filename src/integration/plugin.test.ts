@@ -1436,7 +1436,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('EDGE — bash with unknown session (no state) is allowed (fail-open)', async () => {
+    it('CORNER — bash with no session dir is allowed (no FlowGuard state to enforce)', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -1444,11 +1444,99 @@ describe('plugin bootstrap fail-closed', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // Use a session ID that has no persisted state
+        // Use a session ID that has no persisted FlowGuard session directory
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        // No session state → fail-open → allowed
+        // No known FlowGuard session directory → no governance state to enforce against → allowed
         await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — bash blocked when session dir exists but state file is missing (fail-closed)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Create the session directory but DON'T write state into it
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        // No writeState — session dir exists but session-state.json is absent
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'rm -rf /' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('EDGE — bash blocked when session state exists but is invalid/corrupt (fail-closed)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Create session directory with deliberately invalid JSON
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          '{ this is not valid json !!! }',
+          'utf-8',
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'rm -rf /' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('SMOKE — PLUGIN_ENFORCEMENT_UNAVAILABLE has correct code and structured message', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Create session directory but no state file
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'write', sessionID, callID: 'c1' };
+        const output = { args: { filePath: '/tmp/file.ts', content: 'x' } };
+        try {
+          await beforeHook(input, output);
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err).toBeInstanceOf(Error);
+          expect((err as Error).name).toBe('FlowGuardEnforcementError');
+          // Message format: "[FlowGuard] <JSON>"
+          const msg = (err as Error).message;
+          expect(msg).toContain('[FlowGuard]');
+          const json = JSON.parse(msg.slice(msg.indexOf('{')));
+          expect(json.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+          expect(json.message).toContain('Cannot verify host tool phase gate');
+          expect(json.message).toContain('session directory exists');
+        }
       } finally {
         await ws.cleanup();
       }

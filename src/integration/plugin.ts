@@ -246,34 +246,63 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         // ── Phase-aware host tool gate (BUG-03) ─────────────────────────
         // Investigation-only phases (TICKET, PLAN, ARCHITECTURE) restrict
         // mutating host tools (bash, write, edit). Read-only tools pass.
-        // Fail-open: if session state is unreadable (e.g. reviewer subagent
-        // session without FlowGuard state), the check is skipped.
+        //
+        // No known FlowGuard session directory for this host session
+        // (fingerprint not resolved or session dir does not exist on disk).
+        // Allow only because there is no FlowGuard session state to enforce
+        // against here; known sessions with missing/unreadable state fail
+        // closed below.
         if (isMutatingHostTool(toolName)) {
+          const sessDir = ws.getSessionDir(sessionId);
+          if (!sessDir) return;
+
+          // Fail-open: session dir path computed but directory does not exist
+          // on disk (e.g. reviewer subagent session without FlowGuard state).
+          if (!existsSync(sessDir)) {
+            return;
+          }
+
+          let state: SessionState | null;
           try {
-            const sessDir = ws.getSessionDir(sessionId);
-            if (sessDir) {
-              const state = await readState(sessDir);
-              if (state) {
-                const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
-                if (!gateResult.allowed) {
-                  log.warn('enforcement', 'blocked host tool in investigation-only phase', {
-                    tool: toolName,
-                    sessionId,
-                    phase: state.phase,
-                    code: gateResult.code,
-                  });
-                  throw buildEnforcementError(gateResult.code!, gateResult.reason!);
-                }
-              }
-            }
+            state = await readState(sessDir);
           } catch (err) {
-            // Re-throw enforcement errors — they are intentional blocks.
-            if (err instanceof Error && err.name === 'FlowGuardEnforcementError') throw err;
-            // Fail-open on state read failure — log for diagnostics.
             log.warn('enforcement', 'Failed to read session state for phase gate check', {
               sessionId,
               tool: toolName,
+              error: err instanceof Error ? err.message : String(err),
             });
+            throw buildEnforcementError(
+              'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+              `Cannot verify host tool phase gate — session state exists at ` +
+                `"${sessDir}" but is unreadable ` +
+                `(${err instanceof Error ? err.message : String(err)}). ` +
+                `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+            );
+          }
+
+          if (!state) {
+            log.warn('enforcement', 'Session directory exists but no state file for phase gate', {
+              sessionId,
+              tool: toolName,
+              sessDir,
+            });
+            throw buildEnforcementError(
+              'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+              `Cannot verify host tool phase gate — session directory exists at ` +
+                `"${sessDir}" but contains no state file. ` +
+                `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+            );
+          }
+
+          const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
+          if (!gateResult.allowed) {
+            log.warn('enforcement', 'blocked host tool in investigation-only phase', {
+              tool: toolName,
+              sessionId,
+              phase: state.phase,
+              code: gateResult.code,
+            });
+            throw buildEnforcementError(gateResult.code!, gateResult.reason!);
           }
         }
 
