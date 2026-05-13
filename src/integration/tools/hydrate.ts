@@ -69,6 +69,87 @@ function throwHydrateError(code: string, message: string): never {
   throw Object.assign(new Error(message), { code });
 }
 
+async function resolveHydratePolicy(
+  existing: ReturnType<typeof readState> extends Promise<infer T> ? T : never,
+  config: Awaited<ReturnType<typeof readConfig>>,
+  args: { policyMode?: string },
+) {
+  const ciContext = detectCiContext();
+  const centralEvidenceForExisting = existing
+    ? await validateExistingPolicyAgainstCentral({
+        existingMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
+        centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
+        digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+      })
+    : undefined;
+  const existingWithCentralEvidence =
+    existing && centralEvidenceForExisting
+      ? {
+          ...existing,
+          policySnapshot: {
+            ...existing.policySnapshot,
+            centralMinimumMode: centralEvidenceForExisting.minimumMode,
+            policyDigest: centralEvidenceForExisting.digest,
+            policyVersion: centralEvidenceForExisting.version,
+            policyPathHint: centralEvidenceForExisting.pathHint,
+          },
+        }
+      : existing;
+  const policyResolution = existing
+    ? ({
+        requestedMode: existing.policySnapshot.requestedMode as
+          | 'solo'
+          | 'team'
+          | 'team-ci'
+          | 'regulated',
+        requestedSource: (existing.policySnapshot.source ?? 'default') as
+          | 'explicit'
+          | 'repo'
+          | 'default',
+        effectiveMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
+        effectiveSource: existing.policySnapshot.source ?? 'default',
+        effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
+        degradedReason: existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined,
+        policy: resolvePolicyFromState(existing),
+        resolutionReason: existing.policySnapshot.resolutionReason as
+          | 'repo_weaker_than_central'
+          | 'default_weaker_than_central'
+          | 'explicit_stronger_than_central'
+          | undefined,
+        centralEvidence:
+          centralEvidenceForExisting ??
+          (existing.policySnapshot.centralMinimumMode
+            ? {
+                minimumMode: existing.policySnapshot.centralMinimumMode,
+                digest: existing.policySnapshot.policyDigest ?? '',
+                ...(existing.policySnapshot.policyVersion
+                  ? { version: existing.policySnapshot.policyVersion }
+                  : {}),
+                pathHint: existing.policySnapshot.policyPathHint ?? 'basename:unknown',
+              }
+            : undefined),
+      } as Awaited<ReturnType<typeof resolvePolicyForHydrate>>)
+    : await resolvePolicyForHydrate({
+        explicitMode: args.policyMode as 'solo' | 'team' | 'team-ci' | 'regulated' | undefined,
+        repoMode: config.policy.defaultMode,
+        defaultMode: 'solo',
+        ciContext,
+        centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
+        digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+        configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
+        configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
+        configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
+        configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
+        configIdentityProvider: config.policy.identityProvider,
+        configIdentityProviderMode: config.policy.identityProviderMode,
+      });
+  const policy = existing
+    ? resolvePolicyFromState(existingWithCentralEvidence ?? existing)
+    : policyResolution.policy;
+  const ctx = createPolicyContext(policy);
+  return { policy, policyResolution, ctx, existingWithCentralEvidence, centralEvidenceForExisting };
+}
+
 function requireDiscoveryContract(
   discoveryDigest: string | undefined,
   discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined,
@@ -137,85 +218,13 @@ export const hydrate: ToolDefinition = {
       const existing = await readState(sessDir);
 
       // Resolve policy for context
-      const ciContext = detectCiContext();
-      const centralEvidenceForExisting = existing
-        ? await validateExistingPolicyAgainstCentral({
-            existingMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
-            centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
-            digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
-          })
-        : undefined;
-      const existingWithCentralEvidence =
-        existing && centralEvidenceForExisting
-          ? {
-              ...existing,
-              policySnapshot: {
-                ...existing.policySnapshot,
-                centralMinimumMode: centralEvidenceForExisting.minimumMode,
-                policyDigest: centralEvidenceForExisting.digest,
-                policyVersion: centralEvidenceForExisting.version,
-                policyPathHint: centralEvidenceForExisting.pathHint,
-              },
-            }
-          : existing;
-      const policyResolution = existing
-        ? {
-            requestedMode: existing.policySnapshot.requestedMode as
-              | 'solo'
-              | 'team'
-              | 'team-ci'
-              | 'regulated',
-            requestedSource: (existing.policySnapshot.source ?? 'default') as
-              | 'explicit'
-              | 'repo'
-              | 'default',
-            effectiveMode: existing.policySnapshot.mode as
-              | 'solo'
-              | 'team'
-              | 'team-ci'
-              | 'regulated',
-            effectiveSource: existing.policySnapshot.source ?? 'default',
-            effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
-            degradedReason: existing.policySnapshot.degradedReason as
-              | 'ci_context_missing'
-              | undefined,
-            policy: resolvePolicyFromState(existing),
-            resolutionReason: existing.policySnapshot.resolutionReason as
-              | 'repo_weaker_than_central'
-              | 'default_weaker_than_central'
-              | 'explicit_stronger_than_central'
-              | undefined,
-            centralEvidence:
-              centralEvidenceForExisting ??
-              (existing.policySnapshot.centralMinimumMode
-                ? {
-                    minimumMode: existing.policySnapshot.centralMinimumMode,
-                    digest: existing.policySnapshot.policyDigest ?? '',
-                    ...(existing.policySnapshot.policyVersion
-                      ? { version: existing.policySnapshot.policyVersion }
-                      : {}),
-                    pathHint: existing.policySnapshot.policyPathHint ?? 'basename:unknown',
-                  }
-                : undefined),
-          }
-        : await resolvePolicyForHydrate({
-            explicitMode: args.policyMode,
-            repoMode: config.policy.defaultMode,
-            defaultMode: 'solo',
-            ciContext,
-            centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
-            digestFn: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
-            configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
-            configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
-            configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
-            configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
-            configIdentityProvider: config.policy.identityProvider,
-            configIdentityProviderMode: config.policy.identityProviderMode,
-          });
-      const policy = existing
-        ? resolvePolicyFromState(existingWithCentralEvidence ?? existing)
-        : policyResolution.policy;
-      const ctx = createPolicyContext(policy);
+      const {
+        policy,
+        policyResolution,
+        ctx,
+        existingWithCentralEvidence,
+        centralEvidenceForExisting,
+      } = await resolveHydratePolicy(existing, config, args);
 
       // ── Discovery (only for new sessions) ──────────────────────
       const repoSignals = existing ? undefined : await listRepoSignals(worktree);
