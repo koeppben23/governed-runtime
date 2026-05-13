@@ -37,7 +37,10 @@ import { buildCompactionContext, type CompactionDeps } from './plugin-compaction
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
-import { enforceBeforeVerdict, enforceBeforeSubagentCall } from './review/enforcement/enforcement.js';
+import {
+  enforceBeforeVerdict,
+  enforceBeforeSubagentCall,
+} from './review/enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import {

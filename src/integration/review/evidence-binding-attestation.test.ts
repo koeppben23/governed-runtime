@@ -12,7 +12,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './enforcement/enforcement.js';
+import {
+  createSessionState,
+  onFlowGuardToolAfter,
+  onTaskToolAfter,
+} from './enforcement/enforcement.js';
 import { buildHostTaskEvidence } from './evidence-binding.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {

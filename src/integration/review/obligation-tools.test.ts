@@ -6,11 +6,7 @@ import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
 } from '../tool-names.js';
-import {
-  REVIEWABLE_TOOLS,
-  isReviewableTool,
-  obligationTypeForTool,
-} from './obligation-tools.js';
+import { REVIEWABLE_TOOLS, isReviewableTool, obligationTypeForTool } from './obligation-tools.js';
 
 describe('review-obligation-tools', () => {
   describe('HAPPY', () => {

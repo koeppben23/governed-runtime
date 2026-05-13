@@ -24,12 +24,7 @@ import {
   REVIEWER_SUBAGENT_TYPE,
   type SessionEnforcementState,
 } from './types.js';
-import {
-  NOW,
-  LATER,
-  modeASubagentResponse,
-  taskResultWithFindings,
-} from './test-helpers.js';
+import { NOW, LATER, modeASubagentResponse, taskResultWithFindings } from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUG-14: resolveSessionIdFromMetadata
