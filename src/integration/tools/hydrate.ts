@@ -146,7 +146,9 @@ function snapshotCentralEvidence(existing: NonNullable<ExistingHydrateState>) {
   return {
     minimumMode: existing.policySnapshot.centralMinimumMode,
     digest: existing.policySnapshot.policyDigest ?? '',
-    ...(existing.policySnapshot.policyVersion ? { version: existing.policySnapshot.policyVersion } : {}),
+    ...(existing.policySnapshot.policyVersion
+      ? { version: existing.policySnapshot.policyVersion }
+      : {}),
     pathHint: existing.policySnapshot.policyPathHint ?? 'basename:unknown',
   };
 }
@@ -161,7 +163,10 @@ function resolveExistingPolicyResolution(
       | 'team'
       | 'team-ci'
       | 'regulated',
-    requestedSource: (existing.policySnapshot.source ?? 'default') as 'explicit' | 'repo' | 'default',
+    requestedSource: (existing.policySnapshot.source ?? 'default') as
+      | 'explicit'
+      | 'repo'
+      | 'default',
     effectiveMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
     effectiveSource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
@@ -276,10 +281,7 @@ async function writeRequiredDiscovery(wsDir: string, discoveryResult: DiscoveryR
   }
 }
 
-async function writeRequiredProfileResolution(
-  wsDir: string,
-  profileResolution: ProfileResolution,
-) {
+async function writeRequiredProfileResolution(wsDir: string, profileResolution: ProfileResolution) {
   try {
     await writeProfileResolution(wsDir, profileResolution);
   } catch (err) {
@@ -347,7 +349,8 @@ function collectProfileCandidates(
     const profile = profileRegistryForResolution.get(pid);
     if (!profile?.detect || profile.id === selectedProfile?.id) continue;
     const score = profile.detect(detectionInput);
-    if (score > 0) secondary.push({ id: profile.id, name: profile.name, confidence: score, evidence: [] });
+    if (score > 0)
+      secondary.push({ id: profile.id, name: profile.name, confidence: score, evidence: [] });
     else rejected.push({ id: profile.id, score: 0, reason: 'No matching signals' });
   }
 
@@ -400,7 +403,11 @@ async function computeDiscoveryHydration(
 ) {
   const discoveryDigest = computeDiscoveryDigest(discoveryResult);
   const discoverySummary = extractDiscoverySummary(discoveryResult);
-  const detectedStack = await extractDetectedStack(discoveryResult, repoSignals.files, readRepoFile);
+  const detectedStack = await extractDetectedStack(
+    discoveryResult,
+    repoSignals.files,
+    readRepoFile,
+  );
   const verificationCandidates = await planVerificationCandidates({
     detectedStack,
     allFiles: repoSignals.files,
@@ -429,7 +436,12 @@ async function hydrateDiscoveryForNewSession(
   const detectionInput = { repoSignals, discovery: discoveryResult };
   const detectedProfile = profileRegistryForResolution.detect(detectionInput);
   const selectedProfile = selectProfile(args, resolveConfiguredProfile(config), detectedProfile);
-  const profileResolution = buildProfileResolution(detectionInput, selectedProfile, config, resolvedAt);
+  const profileResolution = buildProfileResolution(
+    detectionInput,
+    selectedProfile,
+    config,
+    resolvedAt,
+  );
   await writeRequiredProfileResolution(workspace.workspaceDir, profileResolution);
   await writeRequiredDiscoverySnapshot(workspace.sessionDir, discoveryResult);
   await writeRequiredProfileSnapshot(workspace.sessionDir, profileResolution);
@@ -469,13 +481,16 @@ function buildExistingPolicyInput(
       | 'regulated',
     policySource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
-    policyDegradedReason: existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined,
+    policyDegradedReason: existing.policySnapshot.degradedReason as
+      | 'ci_context_missing'
+      | undefined,
     policyResolutionReason: existing.policySnapshot.resolutionReason as
       | 'repo_weaker_than_central'
       | 'default_weaker_than_central'
       | 'explicit_stronger_than_central'
       | undefined,
-    centralMinimumMode: centralEvidenceForExisting?.minimumMode ?? existing.policySnapshot.centralMinimumMode,
+    centralMinimumMode:
+      centralEvidenceForExisting?.minimumMode ?? existing.policySnapshot.centralMinimumMode,
     policyDigest: centralEvidenceForExisting?.digest ?? existing.policySnapshot.policyDigest,
     policyVersion: centralEvidenceForExisting
       ? centralEvidenceForExisting.version
@@ -526,7 +541,9 @@ function buildProfileInput(
   actorInfo: Awaited<ReturnType<typeof resolveActor>>,
 ): HydrateProfileInput {
   return {
-    profileId: existing ? existing.activeProfile?.id : (discovery.profileResolution?.primary?.id ?? 'baseline'),
+    profileId: existing
+      ? existing.activeProfile?.id
+      : (discovery.profileResolution?.primary?.id ?? 'baseline'),
     activeChecks: existing ? undefined : config.profile.activeChecks,
     repoSignals: discovery.repoSignals,
     discoveryResult: discovery.discoveryResult,
@@ -543,7 +560,8 @@ function buildProfileInput(
 
 function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput {
   const { context, worktree, workspace, policyContext, config, discovery, actorInfo } = params;
-  const { existingWithCentralEvidence, centralEvidenceForExisting, policyResolution } = policyContext;
+  const { existingWithCentralEvidence, centralEvidenceForExisting, policyResolution } =
+    policyContext;
   return {
     session: {
       sessionId: context.sessionID,
@@ -586,7 +604,9 @@ async function formatNewSessionResponse(
   return appendNextAction(JSON.stringify(response), state);
 }
 
-function formatPolicyResolution(policyResolution: HydratePolicyResolution): Record<string, unknown> {
+function formatPolicyResolution(
+  policyResolution: HydratePolicyResolution,
+): Record<string, unknown> {
   return {
     requestedMode: policyResolution.requestedMode,
     effectiveMode: policyResolution.effectiveMode,
@@ -642,7 +662,9 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<stri
     }),
     policyContext.ctx,
   );
-  writeSessionPointer(workspace.fingerprint, context.sessionID, workspace.sessionDir).catch(() => {});
+  writeSessionPointer(workspace.fingerprint, context.sessionID, workspace.sessionDir).catch(
+    () => {},
+  );
   return formatHydrateResult(
     workspace.sessionDir,
     existing,

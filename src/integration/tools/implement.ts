@@ -278,7 +278,9 @@ async function handleImplRecord(input: ImplementRuntime): Promise<string> {
     });
   }
 
-  const domainFiles = files.filter((f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'));
+  const domainFiles = files.filter(
+    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),
+  );
   const implEvidence = {
     changedFiles: files,
     domainFiles,
@@ -307,7 +309,11 @@ async function handleImplRecord(input: ImplementRuntime): Promise<string> {
     reviewAssurance: appendReviewObligation(input.state.reviewAssurance, nextObligation),
     error: null,
   };
-  const { state: finalState, transitions } = autoAdvance(nextState, (s) => evaluate(s, input.policy), input.ctx);
+  const { state: finalState, transitions } = autoAdvance(
+    nextState,
+    (s) => evaluate(s, input.policy),
+    input.ctx,
+  );
   await writeStateWithArtifacts(input.sessDir, finalState);
 
   return appendNextAction(
@@ -341,7 +347,11 @@ function findPendingImplObligation(state: SessionState) {
   );
 }
 
-function resolveImplementationFindings(input: ImplementRuntime, iteration: number, planVersion: number) {
+function resolveImplementationFindings(
+  input: ImplementRuntime,
+  iteration: number,
+  planVersion: number,
+) {
   const pendingObligation = findPendingImplObligation(input.state);
   const resolved = resolveHostTaskEffectiveFindings({
     pendingObligation,
@@ -460,7 +470,9 @@ async function handleChangesRequestedReview(input: {
     'CHANGES_REQUESTED',
     at,
   );
-  const transitions = [{ from: input.runtime.state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at }];
+  const transitions = [
+    { from: input.runtime.state.phase, to: finalState.phase, event: 'CHANGES_REQUESTED', at },
+  ];
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
@@ -483,11 +495,11 @@ async function handleApprovedReview(input: {
   iteration: number;
   reviewFindings: ReviewFindings[];
 }): Promise<string> {
-  const { state: finalState, evalResult: ev, transitions } = autoAdvance(
-    input.reviewedState,
-    (s) => evaluate(s, input.runtime.policy),
-    input.runtime.ctx,
-  );
+  const {
+    state: finalState,
+    evalResult: ev,
+    transitions,
+  } = autoAdvance(input.reviewedState, (s) => evaluate(s, input.runtime.policy), input.runtime.ctx);
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {
@@ -513,9 +525,14 @@ async function handleImplReview(input: ImplementRuntime): Promise<string> {
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const submittedVerdict = input.args.reviewVerdict;
-  if (!submittedVerdict) return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
+  if (!submittedVerdict)
+    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
 
-  const { pendingObligation, resolved } = resolveImplementationFindings(input, iteration, planVersion);
+  const { pendingObligation, resolved } = resolveImplementationFindings(
+    input,
+    iteration,
+    planVersion,
+  );
   if (resolved.blocked) return resolved.blocked;
 
   const findingsBlocked = validateEffectiveFindings(

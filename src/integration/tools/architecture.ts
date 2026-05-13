@@ -218,19 +218,23 @@ async function handleAdrSubmission(
 
 function buildSubmissionNextAction(subagentEnabled: boolean, archPlanVersion: number): string {
   if (!subagentEnabled) {
-    return 'Self-review needed. Review the ADR critically against MADR standards. '
-      + 'Check for completeness, clarity, and consequences coverage. '
-      + 'Then call flowguard_architecture with selfReviewVerdict.';
+    return (
+      'Self-review needed. Review the ADR critically against MADR standards. ' +
+      'Check for completeness, clarity, and consequences coverage. ' +
+      'Then call flowguard_architecture with selfReviewVerdict.'
+    );
   }
-  return `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, `
-    + `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. `
-    + `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: `
-    + '(1) the full ADR text, (2) the ADR title, (3) the ticket text, '
-    + `(4) iteration=0, (5) planVersion=${archPlanVersion}. `
-    + 'Parse the JSON ReviewFindings from the subagent response. '
-    + 'Then call flowguard_architecture with selfReviewVerdict based on '
-    + 'the findings overallVerdict, and include the reviewFindings object. '
-    + 'If the subagent returns changes_requested, revise the ADR and resubmit.';
+  return (
+    `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
+    `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
+    `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
+    '(1) the full ADR text, (2) the ADR title, (3) the ticket text, ' +
+    `(4) iteration=0, (5) planVersion=${archPlanVersion}. ` +
+    'Parse the JSON ReviewFindings from the subagent response. ' +
+    'Then call flowguard_architecture with selfReviewVerdict based on ' +
+    'the findings overallVerdict, and include the reviewFindings object. ' +
+    'If the subagent returns changes_requested, revise the ADR and resubmit.'
+  );
 }
 
 function validateReviewEntryState(state: SessionState): string | null {
@@ -336,7 +340,10 @@ function validateResolvedFindings(
   return null;
 }
 
-function applyAdrRevision(args: ArchitectureArgs, session: ArchitectureSession): AdrRevision | string {
+function applyAdrRevision(
+  args: ArchitectureArgs,
+  session: ArchitectureSession,
+): AdrRevision | string {
   const { state, ctx } = session;
   const verdict = args.selfReviewVerdict as LoopVerdict;
   const prevDigest = state.architecture!.digest;
@@ -383,11 +390,8 @@ function buildReviewedState(
     strictObligation,
     ctx.now(),
     review.evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        review.assuranceBase,
-        strictObligation,
-        args.reviewFindings,
-      )?.invocationId,
+      findAcceptedInvocationForFindings(review.assuranceBase, strictObligation, args.reviewFindings)
+        ?.invocationId,
   );
 
   return {
@@ -577,7 +581,11 @@ async function persistAndFormatNonConvergedReview(
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation),
-    next: buildNonConvergedNextAction(review.subagentEnabled, iteration, review.expectedPlanVersion),
+    next: buildNonConvergedNextAction(
+      review.subagentEnabled,
+      iteration,
+      review.expectedPlanVersion,
+    ),
     _audit: { transitions: advanced.transitions },
   };
   return appendNextAction(JSON.stringify(resp), stateToPersist);
@@ -589,14 +597,18 @@ function buildNonConvergedNextAction(
   expectedPlanVersion: number,
 ): string {
   if (!subagentEnabled) {
-    return 'Review the ADR again. Check if the revisions address all issues. '
-      + 'Call flowguard_architecture with selfReviewVerdict.';
+    return (
+      'Review the ADR again. Check if the revisions address all issues. ' +
+      'Call flowguard_architecture with selfReviewVerdict.'
+    );
   }
-  return `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool `
-    + `to review the revised ADR. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt `
-    + 'that includes: (1) the revised ADR text, (2) the ADR title, (3) the ticket text, '
-    + `(4) iteration=${nextIteration}, (5) planVersion=${expectedPlanVersion}. `
-    + 'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.';
+  return (
+    `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool ` +
+    `to review the revised ADR. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
+    'that includes: (1) the revised ADR text, (2) the ADR title, (3) the ticket text, ' +
+    `(4) iteration=${nextIteration}, (5) planVersion=${expectedPlanVersion}. ` +
+    'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.'
+  );
 }
 
 export const architecture: ToolDefinition = {

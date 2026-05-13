@@ -211,7 +211,12 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
   const mixedInputBlocked = validatePlanInputShape(scope.args, input, state);
   if (mixedInputBlocked) return mixedInputBlocked;
 
-  if (input.isInitialSubmission && input.hasPlanText && state.phase === 'PLAN' && state.selfReview) {
+  if (
+    input.isInitialSubmission &&
+    input.hasPlanText &&
+    state.phase === 'PLAN' &&
+    state.selfReview
+  ) {
     const blocked = blockedPlanReviewInProgress(state);
     if (blocked) return blocked;
   }
@@ -373,10 +378,15 @@ function findUnconsumedPlanObligation(state: SessionState) {
 function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
   const { assuranceBase, pendingObligation } = findUnconsumedPlanObligation(scope.state);
   const expectedIteration = pendingObligation?.iteration ?? scope.state.selfReview!.iteration;
-  const expectedPlanVersion = pendingObligation?.planVersion ?? scope.state.plan!.history.length + 1;
+  const expectedPlanVersion =
+    pendingObligation?.planVersion ?? scope.state.plan!.history.length + 1;
   const resolved = resolveHostTaskEffectiveFindings({
     pendingObligation: pendingObligation ?? null,
-    expected: { obligationType: 'plan', iteration: expectedIteration, planVersion: expectedPlanVersion },
+    expected: {
+      obligationType: 'plan',
+      iteration: expectedIteration,
+      planVersion: expectedPlanVersion,
+    },
     policy: {
       reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
       strictEnforcement: scope.reviewPolicy.strictEnforcement,
@@ -480,7 +490,12 @@ function consumePlanObligation(
   evidenceInvocationId: string | null,
 ) {
   const strictObligation = scope.reviewPolicy.strictEnforcement
-    ? findLatestObligation(assuranceBase.obligations, 'plan', expectedIteration, expectedPlanVersion)
+    ? findLatestObligation(
+        assuranceBase.obligations,
+        'plan',
+        expectedIteration,
+        expectedPlanVersion,
+      )
     : null;
   // BUG-15 Stufe 2: For evidence-resolved findings, use the known invocationId directly.
   return consumeReviewObligation(
@@ -488,11 +503,8 @@ function consumePlanObligation(
     strictObligation,
     scope.ctx.now(),
     evidenceInvocationId ??
-      findAcceptedInvocationForFindings(
-        assuranceBase,
-        strictObligation,
-        scope.args.reviewFindings,
-      )?.invocationId,
+      findAcceptedInvocationForFindings(assuranceBase, strictObligation, scope.args.reviewFindings)
+        ?.invocationId,
   );
 }
 
@@ -500,10 +512,7 @@ async function persistConvergedPlanReview(input: ConvergedPlanReviewInput): Prom
   const { scope, finalState } = input;
   await writeStateWithArtifacts(scope.sessDir, finalState);
   if (finalState.phase !== 'PLAN_REVIEW') {
-    return appendNextAction(
-      JSON.stringify(convergedPlanResponse(input)),
-      finalState,
-    );
+    return appendNextAction(JSON.stringify(convergedPlanResponse(input)), finalState);
   }
 
   const response = await convergedPlanReviewCardResponse(input);
@@ -581,7 +590,9 @@ async function persistNonConvergedPlanReview(
     : finalState;
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
   return appendNextAction(
-    JSON.stringify(nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation)),
+    JSON.stringify(
+      nonConvergedPlanResponse(scope, finalState, transitions, revision, nextObligation),
+    ),
     stateToPersist,
   );
 }
@@ -678,7 +689,11 @@ async function persistPlanReview(
 ): Promise<string> {
   const nextState = buildReviewedPlanState(scope, revision, effectiveFindings, consumedAssurance);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const { state: finalState, evalResult: ev, transitions } = autoAdvance(nextState, evalFn, scope.ctx);
+  const {
+    state: finalState,
+    evalResult: ev,
+    transitions,
+  } = autoAdvance(nextState, evalFn, scope.ctx);
   const iteration = scope.state.selfReview!.iteration + 1;
   const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'approve';
   const maxReached = iteration >= scope.maxSelfReviewIterations;
@@ -752,7 +767,9 @@ export const plan: ToolDefinition = {
       };
       const blocked = validatePlanRequest(scope);
       if (blocked) return blocked;
-      return scope.input.isInitialSubmission ? handlePlanSubmission(scope) : handlePlanReview(scope);
+      return scope.input.isInitialSubmission
+        ? handlePlanSubmission(scope)
+        : handlePlanReview(scope);
     } catch (err) {
       return formatError(err);
     }

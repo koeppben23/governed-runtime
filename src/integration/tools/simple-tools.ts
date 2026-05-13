@@ -363,7 +363,8 @@ async function resolveSubmittedReviewObligation(
     : null;
   const fingerprint = fingerprintReviewInput(args);
   let obligation =
-    obligationById ?? findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+    obligationById ??
+    findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
 
   if (!obligation) {
     obligation = createReviewObligation({
@@ -464,7 +465,12 @@ function validateHostInvocationEvidence(input: {
       hostInvForObligation.parentSessionId !== context.sessionID ||
       hostInvForObligation.criteriaVersion !== obligation.criteriaVersion ||
       hostInvForObligation.mandateDigest !== obligation.mandateDigest);
-  if (hostInvForObligation.findingsHash === findingsHash && hostInvForObligation.childSessionId === childSessionId && !policyMismatch) return null;
+  if (
+    hostInvForObligation.findingsHash === findingsHash &&
+    hostInvForObligation.childSessionId === childSessionId &&
+    !policyMismatch
+  )
+    return null;
   return formatBlockedWithAttestation(
     'SUBAGENT_MANDATE_MISMATCH',
     'Submitted findings do not match the host-orchestrated reviewer findings for this obligation. Re-submit with the exact pluginReviewFindings provided by the plugin.',
@@ -539,14 +545,15 @@ function recordSubmittedReviewInvocation(
   if (hostInvForObligation) {
     return {
       result,
-      blocked: validateHostInvocationEvidence({
-        hostInvForObligation,
-        findingsHash,
-        childSessionId,
-        policy: exec.policy,
-        context: exec.context,
-        obligation,
-      }) ?? undefined,
+      blocked:
+        validateHostInvocationEvidence({
+          hostInvForObligation,
+          findingsHash,
+          childSessionId,
+          policy: exec.policy,
+          context: exec.context,
+          obligation,
+        }) ?? undefined,
     };
   }
   return recordManualReviewInvocation({
@@ -607,7 +614,12 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  const missingAnalysis = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now);
+  const missingAnalysis = await ensureMissingAnalysisObligation(
+    sessDir,
+    state,
+    exec.args,
+    exec.now,
+  );
   if (missingAnalysis) return missingAnalysis;
 
   let refInput = buildReviewReferenceInput(exec.args);
@@ -721,7 +733,8 @@ async function buildReviewCompletionResponse(input: {
   allTransitions: StartedReviewResult['transitions'];
   validatedReviewObligation: ReviewObligation | null;
 }): Promise<string> {
-  const { sessDir, args, result, finalState, report, allTransitions, validatedReviewObligation } = input;
+  const { sessDir, args, result, finalState, report, allTransitions, validatedReviewObligation } =
+    input;
   const reviewCard = buildStandaloneReviewCard({
     args,
     result,
