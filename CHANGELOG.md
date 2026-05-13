@@ -9,11 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **FG-REL-047 (Issue #198):** Decompose FlowGuard tool execute handlers across all 6 target files:
+- **FG-REL-047 (Issue #198):** Decompose FlowGuard tool execute handlers across all target files:
   - `status-tool.ts`: extracted `resolveProjection()` typed dispatch and `buildFullStatusResponse()` pure function — execute reduced from 191 to ~40 lines; `latestReviewSummary()` parameterized by `includePlanVersion`
-  - `plan.ts`, `implement.ts`, `architecture.ts`: replaced duplicated 4-step bootstrap with `withMutableSession` wrapper — eliminates 4 unused imports each
+  - `plan.ts`, `implement.ts`, `architecture.ts`: replaced duplicated 4-step bootstrap with `withMutableSession`; extracted Mode A/B branches as local async closures inside execute using scope-capture to avoid parameter bloat
   - `hydrate.ts`: extracted `resolveHydratePolicy()` function encapsulating the 80-line policy resolution block — execute reduced from 405 to ~325 lines
-  - `simple-tools.ts`: added `safeExecute()` error handling wrapper for the repeated try/catch pattern across 4 tools
   - Updated `vi.mock('./helpers.js')` in 4 test files to export `withMutableSession`
   - Zero JSON output changes, zero behavior changes
 - **FG-REL-048 (Issue #199):** Replace smoke-only architecture boundary checks with robust import boundary enforcement:
