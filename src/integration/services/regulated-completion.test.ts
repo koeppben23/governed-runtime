@@ -51,8 +51,38 @@ vi.mock('../../audit/integrity.js', () => ({
   getLastChainHash: vi.fn().mockReturnValue(null),
 }));
 
+const helperMocks = vi.hoisted(() => ({
+  resolveWorkspacePaths: vi.fn(async () => ({})),
+  requireStateForMutation: vi.fn(async () => ({ phase: 'COMPLETE' })),
+  resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+  createPolicyContext: vi.fn(() => ({
+    policy: { maxSelfReviewIterations: 3 },
+    now: () => '2026-01-01T00:00:00.000Z',
+    digest: (s: string) => `digest:${s}`,
+  })),
+}));
+
 vi.mock('../tools/helpers.js', () => ({
   writeStateWithArtifacts: vi.fn().mockResolvedValue(undefined),
+  withMutableSession: vi.fn(async (ctx: unknown) => {
+    const paths = await helperMocks.resolveWorkspacePaths(ctx);
+    const state = await helperMocks.requireStateForMutation();
+    const policy = helperMocks.resolvePolicyFromState();
+    const ctx2 = helperMocks.createPolicyContext();
+    return {
+      worktree: (paths as Record<string, string>).worktree ?? '/tmp/test',
+      fingerprint: (paths as Record<string, string>).fingerprint ?? 'test',
+      sessDir: (paths as Record<string, string>).sessDir,
+      wsDir: (paths as Record<string, string>).wsDir ?? '/tmp/ws',
+      state,
+      policy,
+      ctx: ctx2,
+    };
+  }),
+  resolveWorkspacePaths: helperMocks.resolveWorkspacePaths,
+  requireStateForMutation: helperMocks.requireStateForMutation,
+  resolvePolicyFromState: helperMocks.resolvePolicyFromState,
+  createPolicyContext: helperMocks.createPolicyContext,
 }));
 
 import { readAuditTrail, appendAuditEvent } from '../../adapters/persistence.js';

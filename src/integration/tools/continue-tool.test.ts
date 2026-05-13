@@ -52,6 +52,21 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./helpers.js', () => ({
   withReadOnlySession: vi.fn(async () => mocks.readOnlySession),
+  withMutableSession: vi.fn(async (ctx) => {
+    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const state = await mocks.requireStateForMutation();
+    const policy = mocks.resolvePolicyFromState();
+    const ctx2 = mocks.createPolicyContext();
+    return {
+      worktree: paths.worktree ?? '/tmp/test',
+      fingerprint: paths.fingerprint ?? 'test',
+      sessDir: paths.sessDir,
+      wsDir: paths.wsDir ?? '/tmp/ws',
+      state,
+      policy,
+      ctx: ctx2,
+    };
+  }),
   resolveWorkspacePaths: mocks.resolveWorkspacePaths,
   requireStateForMutation: mocks.requireStateForMutation,
   resolvePolicyFromState: mocks.resolvePolicyFromState,
@@ -234,6 +249,7 @@ describe('flowguard_continue (runtime)', () => {
 describe('implement: empty evidence guard (P8a.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.appendNextAction.mockImplementation((p: string) => p);
     mocks.state = {
       phase: 'IMPLEMENTATION',
       ticket: { text: 't', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },

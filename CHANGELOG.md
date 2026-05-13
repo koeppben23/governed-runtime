@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-047 (Issue #198):** Start tool execute decomposition with status-tool extraction, hydrate policy resolution extraction, and local plan/implement/architecture phase extraction; no JSON output changes.
 - **FG-REL-048 (Issue #199):** Replace smoke-only architecture boundary checks with robust import boundary enforcement:
   - Removed "smoke test" disclaimer from dependency-rules.test.ts — now treated as authoritative boundary enforcement
   - Registered `presentation/` layer in FF_MODULES and added deny-list rule (forbids imports from integration, rails, cli, audit, archive)
