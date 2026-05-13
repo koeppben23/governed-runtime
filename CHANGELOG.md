@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-043 (Issue #193):** Add barrel exports to `src/adapters/workspace/` and `src/presentation/`:
+  - `adapters/workspace/index.ts` extended with `materializeEvidenceArtifacts`, `materializeReviewCardArtifact`, `verifyEvidenceArtifacts` re-exports from `evidence-artifacts.js`
+  - New `presentation/index.ts` barrel exports 5 public presentation symbols: `PHASE_LABELS`, `buildProductNextAction`, `buildPlanReviewCard`, `buildArchitectureReviewCard`, `buildReviewReportCard` (explicit named exports only, no `export *`)
+  - 4 integration files updated from deep imports to barrel imports (`helpers.ts`, `plan.ts`, `architecture.ts`, `simple-tools.ts`)
+  - 37 barrel export regression tests (HAPPY/BAD/CORNER/EDGE/SMOKE/E2E) proving no API expansion and correct import paths
+  - No new public API surface, no runtime behavior changes
 - **FG-REL-017 (Issue #126):** Split the CLI installer monolith into cohesive command authorities while preserving the executable `src/cli/install.ts` facade:
   - New `install-command.ts`, `uninstall-command.ts`, and `doctor-command.ts` own install, uninstall, and doctor behavior respectively
   - `install.ts` remains the public CLI/bin entrypoint with compatibility re-exports, argument parsing, output formatting, and `main()` dispatch

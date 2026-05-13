@@ -51,10 +51,12 @@ import {
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
-import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
-import { buildPlanReviewCard } from '../../presentation/plan-review-card.js';
-import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
+import {
+  PHASE_LABELS,
+  buildProductNextAction,
+  buildPlanReviewCard,
+} from '../../presentation/index.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // State & Machine

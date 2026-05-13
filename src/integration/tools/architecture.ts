@@ -68,10 +68,12 @@ import { resolveHostTaskEffectiveFindings, requireReviewFindings } from './revie
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Presentation
-import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildArchitectureReviewCard } from '../../presentation/architecture-review-card.js';
-import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
-import { buildProductNextAction } from '../../presentation/next-action-copy.js';
+import {
+  PHASE_LABELS,
+  buildArchitectureReviewCard,
+  buildProductNextAction,
+} from '../../presentation/index.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════

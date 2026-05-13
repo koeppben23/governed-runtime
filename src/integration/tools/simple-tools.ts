@@ -62,9 +62,8 @@ import {
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Presentation
-import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildReviewReportCard } from '../../presentation/review-report-card.js';
-import { materializeReviewCardArtifact } from '../../adapters/workspace/evidence-artifacts.js';
+import { PHASE_LABELS, buildReviewReportCard } from '../../presentation/index.js';
+import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 
 // Adapters
 import { writeReport, reportPath } from '../../adapters/persistence.js';
