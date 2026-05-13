@@ -29,7 +29,7 @@ export interface PolicyResolution {
   readonly policy: FlowGuardPolicy;
 }
 
-interface HydratePolicyOptions {
+export interface HydratePolicyOptions {
   explicitMode?: PolicyMode;
   repoMode?: PolicyMode;
   defaultMode: PolicyMode;

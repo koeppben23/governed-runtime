@@ -49,7 +49,7 @@ export {
   resolvePolicyWithContext,
   resolveRuntimePolicyMode,
 } from './policy-resolver.js';
-export type { PolicyResolution } from './policy-resolver.js';
+export type { HydratePolicyOptions, PolicyResolution } from './policy-resolver.js';
 
 export {
   createPolicySnapshot,
