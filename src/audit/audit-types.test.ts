@@ -83,13 +83,13 @@ describe('audit types', () => {
     });
 
     it('createLifecycleEvent produces valid chained event', () => {
-      const event = createLifecycleEvent(
-        SESSION_ID,
-        { action: 'session_created', finalPhase: 'TICKET' },
-        TS1,
-        'system',
-        GENESIS_HASH,
-      );
+      const event = createLifecycleEvent({
+        sessionId: SESSION_ID,
+        detail: { action: 'session_created', finalPhase: 'TICKET' },
+        timestamp: TS1,
+        actor: 'system',
+        prevHash: GENESIS_HASH,
+      });
       expect(event.event).toBe('lifecycle:session_created');
       expect(event.actor).toBe('system');
       expect(event.detail.kind).toBe('lifecycle');
@@ -125,14 +125,14 @@ describe('audit types', () => {
 
     it('lifecycle event contains actorInfo when provided', () => {
       const actor: ActorInfo = { id: 'jane', email: 'jane@dev.io', source: 'git' };
-      const event = createLifecycleEvent(
-        SESSION_ID,
-        { action: 'session_created', finalPhase: 'TICKET' },
-        TS1,
-        'system',
-        GENESIS_HASH,
-        actor,
-      );
+      const event = createLifecycleEvent({
+        sessionId: SESSION_ID,
+        detail: { action: 'session_created', finalPhase: 'TICKET' },
+        timestamp: TS1,
+        actor: 'system',
+        prevHash: GENESIS_HASH,
+        actorInfo: actor,
+      });
       expect(event.actorInfo).toEqual(actor);
       expect(event.actor).toBe('system');
     });
@@ -179,14 +179,14 @@ describe('audit types', () => {
 
     it('sessionID is still present separately from actorInfo', () => {
       const actor: ActorInfo = { id: 'dev1', email: null, source: 'git' };
-      const event = createLifecycleEvent(
-        SESSION_ID,
-        { action: 'session_created', finalPhase: 'TICKET' },
-        TS1,
-        'system',
-        GENESIS_HASH,
-        actor,
-      );
+      const event = createLifecycleEvent({
+        sessionId: SESSION_ID,
+        detail: { action: 'session_created', finalPhase: 'TICKET' },
+        timestamp: TS1,
+        actor: 'system',
+        prevHash: GENESIS_HASH,
+        actorInfo: actor,
+      });
       expect(event.sessionId).toBe(SESSION_ID);
       expect(event.actorInfo).toBeDefined();
       expect(event.sessionId).not.toBe(event.actorInfo!.id);
@@ -308,13 +308,13 @@ describe('audit types', () => {
         TS1,
         GENESIS_HASH,
       );
-      const l = createLifecycleEvent(
-        SESSION_ID,
-        { action: 'session_created', finalPhase: 'TICKET' },
-        TS1,
-        'system',
-        GENESIS_HASH,
-      );
+      const l = createLifecycleEvent({
+        sessionId: SESSION_ID,
+        detail: { action: 'session_created', finalPhase: 'TICKET' },
+        timestamp: TS1,
+        actor: 'system',
+        prevHash: GENESIS_HASH,
+      });
       const d = createDecisionEvent({
         sessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
@@ -346,13 +346,13 @@ describe('audit types', () => {
 
     it('event without actorInfo has same hash as event created before P27', () => {
       // Simulate a "pre-P27" event — no actorInfo parameter
-      const withoutActor = createLifecycleEvent(
-        SESSION_ID,
-        { action: 'session_created', finalPhase: 'TICKET' },
-        TS1,
-        'system',
-        GENESIS_HASH,
-      );
+      const withoutActor = createLifecycleEvent({
+        sessionId: SESSION_ID,
+        detail: { action: 'session_created', finalPhase: 'TICKET' },
+        timestamp: TS1,
+        actor: 'system',
+        prevHash: GENESIS_HASH,
+      });
       // actorInfo should be absent from the object (not undefined-as-value)
       expect('actorInfo' in withoutActor).toBe(false);
 

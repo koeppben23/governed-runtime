@@ -1614,13 +1614,13 @@ describe('verifyArchive', () => {
 
   /** Build a properly chained lifecycle event. */
   function buildChainedEvent(sessionId: string, prevHash: string) {
-    return createLifecycleEvent(
+    return createLifecycleEvent({
       sessionId,
-      { action: 'session_created', finalPhase: 'READY' },
-      new Date().toISOString(),
-      'machine',
+      detail: { action: 'session_created', finalPhase: 'READY' },
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
       prevHash,
-    );
+    });
   }
 
   it('reports audit_chain_invalid when regulated state has legacy unchained events', async () => {

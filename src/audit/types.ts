@@ -277,17 +277,23 @@ export function createErrorEvent(
 }
 
 /**
+ * Input object for createLifecycleEvent.
+ */
+export interface LifecycleEventInput {
+  readonly sessionId: string;
+  readonly detail: Omit<LifecycleDetail, 'kind'>;
+  readonly timestamp: string;
+  readonly actor: string;
+  readonly prevHash: string;
+  readonly actorInfo?: ActorInfo;
+}
+
+/**
  * Create a lifecycle audit event.
  * Emitted on session creation, completion, or abortion.
  */
-export function createLifecycleEvent(
-  sessionId: string,
-  detail: Omit<LifecycleDetail, 'kind'>,
-  timestamp: string,
-  actor: string,
-  prevHash: string,
-  actorInfo?: ActorInfo,
-): ChainedAuditEvent {
+export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEvent {
+  const { sessionId, detail, timestamp, actor, prevHash, actorInfo } = input;
   const eventName = `lifecycle:${detail.action}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),

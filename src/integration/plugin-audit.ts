@@ -270,14 +270,14 @@ async function maybeCompleteAndArchive(
   const toolLayerHandled = !!freshState?.archiveStatus;
 
   if (!toolLayerHandled) {
-    const evt = createLifecycleEvent(
+    const evt = createLifecycleEvent({
       sessionId,
-      { action: 'session_completed', finalPhase: 'COMPLETE' },
-      ctx.now,
-      'machine',
+      detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
+      timestamp: ctx.now,
+      actor: 'machine',
       prevHash,
-      state?.actorInfo,
-    );
+      actorInfo: state?.actorInfo,
+    });
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
   } else {
@@ -390,18 +390,18 @@ export async function runAudit(
             }`
           : undefined;
 
-      const evt = createLifecycleEvent(
+      const evt = createLifecycleEvent({
         sessionId,
-        {
+        detail: {
           action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
           finalPhase,
           ...(lifecycleReason ? { reason: lifecycleReason } : {}),
         },
-        ctx.now,
-        ctx.actor,
-        ctx.prevHash,
-        state?.actorInfo,
-      );
+        timestamp: ctx.now,
+        actor: ctx.actor,
+        prevHash: ctx.prevHash,
+        actorInfo: state?.actorInfo,
+      });
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
     }

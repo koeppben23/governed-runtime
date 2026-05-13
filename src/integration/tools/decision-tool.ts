@@ -82,14 +82,14 @@ export const decision: ToolDefinition = {
       );
 
       // Delegate post-rail finalization (MADR + P26 regulated completion)
-      const finalResult = await finalizeDecision(
+      const finalResult = await finalizeDecision({
         sessDir,
         fingerprint,
-        context.sessionID,
-        state.phase,
-        args.verdict,
+        sessionID: context.sessionID,
+        priorPhase: state.phase,
+        verdict: args.verdict,
         result,
-      );
+      });
 
       return await persistAndFormat(sessDir, finalResult);
     } catch (err) {

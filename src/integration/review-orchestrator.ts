@@ -187,24 +187,29 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   _onAttemptFailed: () => {},
 };
 
-/**
- * Execute a format-free prompt on a child session and extract JSON findings.
- * @internal
- */
-async function executeFormatFreePrompt(
-  client: OrchestratorClient,
-  agent: string,
-  prompt: string,
-  sessionId: string,
-  attempt: number,
-  modelCapabilityError: string,
+interface ExecuteFormatFreePromptInput {
+  client: OrchestratorClient;
+  agent: string;
+  prompt: string;
+  sessionId: string;
+  attempt: number;
+  modelCapabilityError: string;
   onFailed: (info: {
     attempt: number;
     step: 'format_free_retry_failed' | 'format_free_retry_empty' | 'format_free_retry_parse_failed';
     error?: unknown;
     details?: Record<string, unknown>;
-  }) => void,
+  }) => void;
+}
+
+/**
+ * Execute a format-free prompt on a child session and extract JSON findings.
+ * @internal
+ */
+async function executeFormatFreePrompt(
+  input: ExecuteFormatFreePromptInput,
 ): Promise<ReviewerResult | null> {
+  const { client, agent, prompt, sessionId, attempt, modelCapabilityError, onFailed } = input;
   const formatFreeBody: {
     agent: string;
     parts: Array<{ type: 'text'; text: string }>;
@@ -500,15 +505,15 @@ export async function invokeReviewer(
 
         const retrySessionId = retryCreateResult.data.id;
 
-        const result = await executeFormatFreePrompt(
+        const result = await executeFormatFreePrompt({
           client,
           agent,
           prompt,
-          retrySessionId,
+          sessionId: retrySessionId,
           attempt,
-          capabilityError,
+          modelCapabilityError: capabilityError,
           onFailed,
-        );
+        });
         if (result) return result;
         return null;
       }

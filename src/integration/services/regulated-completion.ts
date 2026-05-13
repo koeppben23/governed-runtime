@@ -60,14 +60,14 @@ export async function executeRegulatedCompletion(
     //    Failure here is fatal — no archive without terminal audit event.
     const { events } = await readAuditTrail(sessDir);
     const prevHash = getLastChainHash(events);
-    const completionEvt = createLifecycleEvent(
-      sessionID,
-      { action: 'session_completed', finalPhase: 'COMPLETE' as const },
-      new Date().toISOString(),
-      'machine',
+    const completionEvt = createLifecycleEvent({
+      sessionId: sessionID,
+      detail: { action: 'session_completed', finalPhase: 'COMPLETE' as const },
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
       prevHash,
-      resultState.actorInfo,
-    );
+      actorInfo: resultState.actorInfo,
+    });
     await appendAuditEvent(sessDir, completionEvt);
 
     // 2. Archive session (synchronous, not fire-and-forget).

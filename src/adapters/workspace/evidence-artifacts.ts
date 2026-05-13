@@ -139,15 +139,15 @@ export async function materializeReviewCardArtifact(
       const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
       if (existingHash === markdownSha256) {
         // P1#3: verify .json metadata exists and matches. Recreate if missing.
-        await ensureMetaJson(
+        await ensureMetaJson({
           jsonPath,
           artifactType,
           state,
-          sourceStateHash,
+          stateHash: sourceStateHash,
           markdownSha256,
           base,
           contentDigest,
-        );
+        });
         return null; // no-op
       }
       return {
@@ -190,16 +190,19 @@ export async function materializeReviewCardArtifact(
   }
 }
 
+interface EnsureMetaJsonInput {
+  jsonPath: string;
+  artifactType: string;
+  state: SessionState;
+  stateHash: string;
+  markdownSha256: string;
+  base: string;
+  contentDigest: string;
+}
+
 /** Ensure the metadata JSON exists. Recreates it if missing after a partial write. */
-async function ensureMetaJson(
-  jsonPath: string,
-  artifactType: string,
-  state: SessionState,
-  stateHash: string,
-  markdownSha256: string,
-  base: string,
-  contentDigest: string,
-): Promise<void> {
+async function ensureMetaJson(input: EnsureMetaJsonInput): Promise<void> {
+  const { jsonPath, artifactType, state, stateHash, markdownSha256, base, contentDigest } = input;
   try {
     await fs.access(jsonPath);
   } catch {
@@ -284,14 +287,14 @@ async function materializePlanArtifacts(
     const ordered = [...plan.history].reverse().concat(plan.current);
     let version = 1;
     for (const evidence of ordered) {
-      await createPlanArtifact(
+      await createPlanArtifact({
         artifactsDir,
         state,
         sourceStateHash,
         evidence,
         version,
         createdPaths,
-      );
+      });
       version += 1;
     }
     return;
@@ -300,14 +303,14 @@ async function materializePlanArtifacts(
   const latest = existing[existing.length - 1];
   if (!latest || latest.meta.contentHash !== plan.current.digest) {
     const nextVersion = (latest?.meta.version ?? 0) + 1;
-    await createPlanArtifact(
+    await createPlanArtifact({
       artifactsDir,
       state,
       sourceStateHash,
-      plan.current,
-      nextVersion,
+      evidence: plan.current,
+      version: nextVersion,
       createdPaths,
-    );
+    });
     existing = await readArtifactVersions(artifactsDir, 'plan');
   }
 
@@ -318,14 +321,17 @@ async function materializePlanArtifacts(
   );
 }
 
-async function createPlanArtifact(
-  artifactsDir: string,
-  state: SessionState,
-  sourceStateHash: string,
-  evidence: { body: string; digest: string; createdAt: string },
-  version: number,
-  createdPaths: string[],
-): Promise<void> {
+interface CreatePlanArtifactInput {
+  artifactsDir: string;
+  state: SessionState;
+  sourceStateHash: string;
+  evidence: { body: string; digest: string; createdAt: string };
+  version: number;
+  createdPaths: string[];
+}
+
+async function createPlanArtifact(input: CreatePlanArtifactInput): Promise<void> {
+  const { artifactsDir, state, sourceStateHash, evidence, version, createdPaths } = input;
   const file = artifactFile(artifactsDir, 'plan', version);
   const markdown = formatPlanMarkdown(version, evidence.body, evidence.createdAt, state.id);
   const meta: EvidenceArtifactMeta = {
