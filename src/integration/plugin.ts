@@ -37,13 +37,13 @@ import { buildCompactionContext, type CompactionDeps } from './plugin-compaction
 import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
-import { enforceBeforeVerdict, enforceBeforeSubagentCall } from './review-enforcement.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+import { enforceBeforeVerdict, enforceBeforeSubagentCall } from './review/enforcement/enforcement.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import {
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
-} from './review-enforcement-extraction.js';
+} from './review/enforcement/extraction.js';
 
 import type {
   ToolHookBeforeInput,
@@ -58,7 +58,7 @@ import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
 } from './tool-names.js';
-import type { OrchestratorClient } from './review-orchestrator.js';
+import type { OrchestratorClient } from './review/orchestrator.js';
 
 const FG_PREFIX = 'flowguard_';
 

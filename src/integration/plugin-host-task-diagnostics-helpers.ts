@@ -3,13 +3,13 @@
  * @description Shared test factories and constants for plugin-host-task-diagnostics test suites.
  */
 
-import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './review-enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './review/enforcement/enforcement.js';
+import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import {
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-} from './review-assurance.js';
+} from './review/assurance.js';
 import type { ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────

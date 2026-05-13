@@ -23,7 +23,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
 } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 
 const PARENT_SESSION_ID = 'parent-session-review-1';

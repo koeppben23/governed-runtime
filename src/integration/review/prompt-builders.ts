@@ -12,7 +12,7 @@
  * @version v1
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

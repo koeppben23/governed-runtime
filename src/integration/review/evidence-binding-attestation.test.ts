@@ -12,18 +12,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './review-enforcement.js';
-import { buildHostTaskEvidence } from './review-evidence-binding.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+import { createSessionState, onFlowGuardToolAfter, onTaskToolAfter } from './enforcement/enforcement.js';
+import { buildHostTaskEvidence } from './evidence-binding.js';
+import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   hashFindings,
   appendInvocationEvidence,
   ensureReviewAssurance,
-} from './review-assurance.js';
-import type { ReviewObligation } from '../state/evidence.js';
-import { resolveHostTaskFindings } from './tools/review-validation.js';
+} from './assurance.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import { resolveHostTaskFindings } from '../tools/review-validation.js';
 
 import {
   NOW,
@@ -35,7 +35,7 @@ import {
   taskResultWithAttestation,
   pendingObligation,
   setupFullCycle,
-} from './plugin-host-task-diagnostics-helpers.js';
+} from '../plugin-host-task-diagnostics-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUG-20: Attestation-Free Fallback Binding

@@ -871,7 +871,7 @@ describe('Layer Dependency Rules', () => {
     it('detects a prohibited state → integration import edge', () => {
       const fakeFile = 'state/deliberate-violation.ts';
       const fakeAnalysis: FileAnalysis = {
-        filePath: path.join(SRC_DIR, fakeFile),
+        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
         relativePath: fakeFile,
         imports: [
           {
@@ -896,7 +896,7 @@ describe('Layer Dependency Rules', () => {
     it('detects prohibited presentation → integration re-export edge', () => {
       const fakeFile = 'presentation/deliberate-violation.ts';
       const fakeAnalysis: FileAnalysis = {
-        filePath: path.join(SRC_DIR, fakeFile),
+        filePath: normalizeSep(path.join(SRC_DIR, fakeFile)),
         relativePath: fakeFile,
         imports: [
           {
@@ -916,6 +916,67 @@ describe('Layer Dependency Rules', () => {
       expect(violations).toHaveLength(1);
       expect(violations[0]!.message).toContain('integration');
       expect(violations[0]!.rule).toBe('presentation-deny');
+    });
+  });
+
+  describe('Review bounded context boundary (FG-QUAL-002)', () => {
+    it('integration/review/ directory exists', () => {
+      const reviewDir = path.join(SRC_DIR, 'integration', 'review');
+      expect(existsSync(reviewDir), 'Expected integration/review/ directory to exist').toBe(true);
+    });
+
+    it('integration/review/enforcement/ directory exists', () => {
+      const enfDir = path.join(SRC_DIR, 'integration', 'review', 'enforcement');
+      expect(
+        existsSync(enfDir),
+        'Expected integration/review/enforcement/ directory to exist',
+      ).toBe(true);
+    });
+
+    it('review/ has a barrel index.ts', () => {
+      const barrel = path.join(SRC_DIR, 'integration', 'review', 'index.ts');
+      expect(existsSync(barrel), 'Expected integration/review/index.ts barrel').toBe(true);
+    });
+
+    it('review/ must NOT import from plugin-* files (inward dependency only)', async () => {
+      const reviewDir = path.join(SRC_DIR, 'integration', 'review');
+      const reviewFiles = await collectFiles(reviewDir, /\.ts$/);
+      const violations: string[] = [];
+
+      for (const filePath of reviewFiles) {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const imports = parseImports(content);
+        for (const imp of imports) {
+          // plugin-helpers is a pure stateless utility (no lifecycle coupling),
+          // so it's allowed as an inward dependency for review/
+          if (imp.module.includes('plugin-helpers')) continue;
+          if (imp.module.includes('plugin-') || imp.module.includes('/plugin.')) {
+            violations.push(
+              `${normalizeSep(path.relative(SRC_DIR, filePath))}: imports ${imp.module}`,
+            );
+          }
+        }
+      }
+
+      expect(violations, 'review/ must not import from plugin-* files').toEqual([]);
+    });
+
+    it('no review-* files remain at integration/ root level', async () => {
+      const integrationDir = path.join(SRC_DIR, 'integration');
+      const entries = await fs.readdir(integrationDir);
+      const staleReviewFiles = entries.filter(
+        (e) =>
+          e.startsWith('review-') &&
+          e.endsWith('.ts') &&
+          !e.endsWith('.test.ts') &&
+          e !== 'review-validation.ts' &&
+          e !== 'review-summary.ts',
+      );
+
+      expect(
+        staleReviewFiles,
+        'All review-* source files should be in review/ subdirectory',
+      ).toEqual([]);
     });
   });
 

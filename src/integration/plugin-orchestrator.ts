@@ -16,8 +16,8 @@
 
 import { readState } from '../adapters/persistence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../state/evidence.js';
-import type { CapturedFindings, SessionEnforcementState } from './review-enforcement-types.js';
-import { recordPluginReview } from './review-enforcement.js';
+import type { CapturedFindings, SessionEnforcementState } from './review/enforcement/types.js';
+import { recordPluginReview } from './review/enforcement/enforcement.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -28,7 +28,7 @@ import {
   hashFindings,
   hashText,
   appendInvocationEvidence,
-} from './review-assurance.js';
+} from './review/assurance.js';
 import {
   isReviewRequired,
   extractReviewContext,
@@ -37,14 +37,14 @@ import {
   buildReviewContentMutatedOutput,
   REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
-} from './review-orchestrator.js';
+} from './review/orchestrator.js';
 import {
   buildPlanReviewPrompt,
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
   selectReviewerProfileRules,
-} from './review-prompt-builders.js';
+} from './review/prompt-builders.js';
 import {
   getToolOutput,
   getToolArgs,
@@ -60,9 +60,9 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
 } from './tool-names.js';
-import { obligationTypeForTool } from './review-obligation-tools.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
-import { extractContentMeta } from './review-enforcement-extraction.js';
+import { obligationTypeForTool } from './review/obligation-tools.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { extractContentMeta } from './review/enforcement/extraction.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
 import type { ReviewInvocationPolicy } from '../config/policy-types.js';

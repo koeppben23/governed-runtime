@@ -60,7 +60,7 @@ import {
   hashText,
   appendInvocationEvidence,
   fulfillObligation,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Presentation

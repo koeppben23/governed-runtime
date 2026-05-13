@@ -36,7 +36,7 @@ import {
   findLatestObligation,
   hashFindings,
   hashText,
-} from './review-assurance.js';
+} from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 // ─── Safety Guards ───────────────────────────────────────────────────────────

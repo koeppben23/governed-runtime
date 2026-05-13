@@ -15,7 +15,7 @@
  * @version v1
  */
 
-import type { CapturedFindings } from './review-enforcement-types.js';
+import type { CapturedFindings } from './types.js';
 
 // ─── Content Metadata Extraction ─────────────────────────────────────────────
 

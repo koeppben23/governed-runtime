@@ -13,23 +13,23 @@ import {
   onFlowGuardToolAfter,
   onTaskToolAfter,
   enforceBeforeVerdict,
-} from './review-enforcement.js';
+} from './enforcement.js';
 import {
   extractCapturedFindings,
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
-} from './review-enforcement-extraction.js';
+} from './extraction.js';
 import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   type SessionEnforcementState,
-} from './review-enforcement-types.js';
+} from './types.js';
 import {
   NOW,
   LATER,
   modeASubagentResponse,
   taskResultWithFindings,
-} from './review-enforcement-test-helpers.js';
+} from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUG-14: resolveSessionIdFromMetadata

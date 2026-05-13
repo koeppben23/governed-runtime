@@ -3,7 +3,7 @@
  * @description Shared test factories and constants for review-enforcement test suites.
  */
 
-import { REVIEW_REQUIRED_PREFIX } from './review-enforcement-types.js';
+import { REVIEW_REQUIRED_PREFIX } from './types.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

@@ -16,20 +16,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { invokeReviewer, type OrchestratorClient } from './review-orchestrator.js';
+import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
 import {
   _resetAgentResolutionCache,
   _resetModelCapabilityCache,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
-} from './review-agent-resolution.js';
+} from './agent-resolution.js';
 import {
   makeClient,
   NO_SLEEP,
   TEXT_COMPAT_OPTIONS,
   validFindings as sharedValidFindings,
   PROMPT as SHARED_PROMPT,
-} from './review-orchestrator-test-helpers.js';
+} from './orchestrator-test-helpers.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

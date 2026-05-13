@@ -15,14 +15,14 @@ import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
   recordPluginReview,
-} from './review-enforcement.js';
-import { extractCapturedFindings, promptContainsValue } from './review-enforcement-extraction.js';
+} from './enforcement.js';
+import { extractCapturedFindings, promptContainsValue } from './extraction.js';
 import {
   REVIEW_REQUIRED_PREFIX,
   REVIEWER_SUBAGENT_TYPE,
   MIN_SUBAGENT_PROMPT_LENGTH,
-} from './review-enforcement-types.js';
-import { NOW, LATER, modeASubagentResponse } from './review-enforcement-test-helpers.js';
+} from './types.js';
+import { NOW, LATER, modeASubagentResponse } from './test-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests

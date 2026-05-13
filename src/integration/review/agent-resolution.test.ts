@@ -10,16 +10,16 @@ import {
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
-} from './review-agent-resolution.js';
-import { invokeReviewer } from './review-orchestrator.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+} from './agent-resolution.js';
+import { invokeReviewer } from './orchestrator.js';
+import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {
   makeClient,
   NO_SLEEP,
   TEXT_COMPAT_OPTIONS,
   validFindings,
   PROMPT,
-} from './review-orchestrator-test-helpers.js';
+} from './orchestrator-test-helpers.js';
 
 describe('Agent Resolution Constants', () => {
   it('REVIEWER_AGENT_PRIMARY equals REVIEWER_SUBAGENT_TYPE', () => {

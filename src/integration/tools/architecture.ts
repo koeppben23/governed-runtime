@@ -57,7 +57,7 @@ import {
   findLatestObligation,
   findLatestUnconsumedObligation,
   reviewObligationResponseFields,
-} from '../review-assurance.js';
+} from '../review/assurance.js';
 
 // Review findings validation (shared with plan.ts and implement.ts; F13 slice 7c)
 import { resolveHostTaskEffectiveFindings, requireReviewFindings } from './review-validation.js';

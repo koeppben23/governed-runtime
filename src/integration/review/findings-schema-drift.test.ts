@@ -29,8 +29,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './review-findings-schema.js';
-import { ReviewFindings } from '../state/evidence.js';
+import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+import { ReviewFindings } from '../../state/evidence.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -9,8 +9,8 @@
  * @version v2
  */
 
-import { onFlowGuardToolAfter, onTaskToolAfter } from './review-enforcement.js';
-import type { SessionEnforcementState } from './review-enforcement-types.js';
+import { onFlowGuardToolAfter, onTaskToolAfter } from './review/enforcement/enforcement.js';
+import type { SessionEnforcementState } from './review/enforcement/types.js';
 import { getToolArgs, getToolOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
 
 /**

@@ -19,9 +19,9 @@ import {
 } from './plugin-helpers.js';
 import { updateObligation, blockObligation } from './plugin-review-state.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
-import * as reviewEnforcement from './review-enforcement.js';
+import * as reviewEnforcement from './review/enforcement/enforcement.js';
 
-vi.mock('./review-enforcement.js', () => ({
+vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: vi.fn(),
   onTaskToolAfter: vi.fn(),
   resolveSessionEnforcementState: vi.fn(),

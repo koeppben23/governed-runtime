@@ -12,8 +12,8 @@
  * @version v1
  */
 
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import type { OrchestratorClient } from './review-orchestrator.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import type { OrchestratorClient } from './types.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

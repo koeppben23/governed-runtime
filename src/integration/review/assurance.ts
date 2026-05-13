@@ -4,7 +4,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { hashText } from '../shared/hashing.js';
+import { hashText } from '../../shared/hashing.js';
 export { hashText };
 
 import type {
@@ -14,11 +14,11 @@ import type {
   ReviewInvocationMode,
   ReviewObligation,
   ReviewObligationType,
-} from '../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+} from '../../state/evidence.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
 // Static import - mandate content is a constant in ESM
-import { REVIEWER_AGENT } from '../templates/mandates.js';
+import { REVIEWER_AGENT } from '../../templates/mandates.js';
 
 export const REVIEW_CRITERIA_VERSION = 'p35-v1';
 

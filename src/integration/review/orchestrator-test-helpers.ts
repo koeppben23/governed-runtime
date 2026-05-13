@@ -4,7 +4,7 @@
  */
 
 import { vi } from 'vitest';
-import type { OrchestratorClient } from './review-orchestrator.js';
+import type { OrchestratorClient } from './types.js';
 
 export function validFindings(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

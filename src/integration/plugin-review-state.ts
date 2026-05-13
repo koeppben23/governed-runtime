@@ -10,7 +10,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ReviewObligation } from '../state/evidence.js';
-import { ensureReviewAssurance } from './review-assurance.js';
+import { ensureReviewAssurance } from './review/assurance.js';
 
 /**
  * Apply a transform to the review obligation with the given ID.

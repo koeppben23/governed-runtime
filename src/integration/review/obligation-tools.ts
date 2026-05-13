@@ -9,12 +9,12 @@
  * @version v1
  */
 
-import type { ReviewObligationType } from '../state/evidence.js';
+import type { ReviewObligationType } from '../../state/evidence.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
-} from './tool-names.js';
+} from '../tool-names.js';
 
 /** Tools that can trigger independent review obligations. */
 export type ReviewableTool =

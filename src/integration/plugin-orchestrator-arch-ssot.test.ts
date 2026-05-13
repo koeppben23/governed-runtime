@@ -26,7 +26,7 @@ import { makeState, POLICY_SNAPSHOT, TICKET, ARCHITECTURE_DECISION } from '../__
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
-import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review-assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
 
 const PARENT_SESSION_ID = 'parent-session-arch-ssot-1';

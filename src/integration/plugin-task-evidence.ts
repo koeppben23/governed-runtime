@@ -9,10 +9,10 @@
  */
 
 import { readState } from '../adapters/persistence.js';
-import { buildHostTaskEvidence } from './review-evidence-binding.js';
-import { appendInvocationEvidence, ensureReviewAssurance } from './review-assurance.js';
+import { buildHostTaskEvidence } from './review/evidence-binding.js';
+import { appendInvocationEvidence, ensureReviewAssurance } from './review/assurance.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
-import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 
 import type { PluginWorkspace } from './plugin-workspace.js';
 
