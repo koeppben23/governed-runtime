@@ -73,11 +73,14 @@ import { ActorClaimError } from '../../adapters/actor.js';
 
 import { writeStateWithArtifacts } from './helpers.js';
 
-async function safeExecute(fn: () => Promise<string>): Promise<string> {
+async function safeExecute(
+  fn: () => Promise<string>,
+  opts: { actorClaimErrorAsBlocked: boolean },
+): Promise<string> {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof ActorClaimError) {
+    if (opts.actorClaimErrorAsBlocked && err instanceof ActorClaimError) {
       return formatBlocked(err.code);
     }
     return formatError(err);
@@ -113,20 +116,23 @@ export const ticket: ToolDefinition = {
       ),
   },
   async execute(args, context) {
-    return safeExecute(async () => {
-      const { sessDir, state, ctx } = await withMutableSession(context);
-      const result = executeTicket(
-        state,
-        {
-          text: args.text,
-          source: args.source,
-          inputOrigin: args.inputOrigin,
-          references: args.references,
-        },
-        ctx,
-      );
-      return persistAndFormat(sessDir, result);
-    });
+    return safeExecute(
+      async () => {
+        const { sessDir, state, ctx } = await withMutableSession(context);
+        const result = executeTicket(
+          state,
+          {
+            text: args.text,
+            source: args.source,
+            inputOrigin: args.inputOrigin,
+            references: args.references,
+          },
+          ctx,
+        );
+        return persistAndFormat(sessDir, result);
+      },
+      { actorClaimErrorAsBlocked: true },
+    );
   },
 };
 
@@ -998,11 +1004,14 @@ export const abort_session: ToolDefinition = {
       .describe('Reason for aborting. Recorded in audit trail.'),
   },
   async execute(args, context) {
-    return safeExecute(async () => {
-      const { sessDir, state, ctx } = await withMutableSession(context);
-      const result = executeAbort(state, { reason: args.reason, actor: context.sessionID }, ctx);
-      return persistAndFormat(sessDir, result);
-    });
+    return safeExecute(
+      async () => {
+        const { sessDir, state, ctx } = await withMutableSession(context);
+        const result = executeAbort(state, { reason: args.reason, actor: context.sessionID }, ctx);
+        return persistAndFormat(sessDir, result);
+      },
+      { actorClaimErrorAsBlocked: false },
+    );
   },
 };
 
