@@ -14,7 +14,6 @@ import { appendInvocationEvidence, ensureReviewAssurance } from './review-assura
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
 
-import type { SessionState } from '../state/schema.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 
 interface HostTaskEvidenceDeps {

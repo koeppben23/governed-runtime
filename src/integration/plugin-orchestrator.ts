@@ -284,20 +284,24 @@ async function handleHostTaskPolicy(
 
 // ─── Prompt building ─────────────────────────────────────────────────────────
 
-function buildToolPrompt(
-  toolName: string,
-  planText: string,
-  ticketText: string,
-  adrText: string,
-  adrTitle: string,
-  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>,
-  parsedOutput: ReturnType<typeof parseToolResult> & Record<string, unknown>,
-  sessionState: SessionState,
-  planRules: ReturnType<typeof selectReviewerProfileRules>,
-  implRules: ReturnType<typeof selectReviewerProfileRules>,
-  archRules: ReturnType<typeof selectReviewerProfileRules>,
-  deps: OrchestratorDeps,
-): string | null {
+interface BuildToolPromptParams {
+  toolName: string;
+  texts: { planText: string; ticketText: string; adrText: string; adrTitle: string };
+  reviewCtx: NonNullable<ReturnType<typeof extractReviewContext>>;
+  parsedOutput: ReturnType<typeof parseToolResult> & Record<string, unknown>;
+  sessionState: SessionState;
+  rules: {
+    planRules: ReturnType<typeof selectReviewerProfileRules>;
+    implRules: ReturnType<typeof selectReviewerProfileRules>;
+    archRules: ReturnType<typeof selectReviewerProfileRules>;
+  };
+  deps: OrchestratorDeps;
+}
+
+function buildToolPrompt(params: BuildToolPromptParams): string | null {
+  const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps } = params;
+  const { planText, ticketText, adrText, adrTitle } = texts;
+  const { planRules, implRules, archRules } = rules;
   if (toolName === TOOL_FLOWGUARD_PLAN) {
     return buildPlanReviewPrompt({
       planText,
@@ -599,20 +603,15 @@ export async function runReviewOrchestration(
     const archRules = selectReviewerProfileRules(sessionState.activeProfile, 'ARCH_REVIEW');
 
     // F13 slice 6: 3-way prompt selection by reviewable tool.
-    const prompt = buildToolPrompt(
+    const prompt = buildToolPrompt({
       toolName,
-      planText,
-      ticketText,
-      adrText,
-      adrTitle,
+      texts: { planText, ticketText, adrText, adrTitle },
       reviewCtx,
       parsedOutput,
       sessionState,
-      planRules,
-      implRules,
-      archRules,
+      rules: { planRules, implRules, archRules },
       deps,
-    );
+    });
     if (!prompt) return;
 
     deps.log.info('orchestrator', 'invoking reviewer subagent', {

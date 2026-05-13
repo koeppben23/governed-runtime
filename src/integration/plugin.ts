@@ -38,14 +38,12 @@ import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
 import { enforceBeforeVerdict, enforceBeforeSubagentCall } from './review-enforcement.js';
-import { buildHostTaskEvidence } from './review-evidence-binding.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review-enforcement-types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import {
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
 } from './review-enforcement-extraction.js';
-import { appendInvocationEvidence, ensureReviewAssurance } from './review-assurance.js';
 
 import type {
   ToolHookBeforeInput,

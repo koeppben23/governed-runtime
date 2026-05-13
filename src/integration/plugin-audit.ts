@@ -82,7 +82,6 @@ interface AuditContext {
 async function resolveAuditContext(
   deps: AuditDeps,
   toolName: string,
-  input: unknown,
   output: unknown,
   sessionId: string,
 ): Promise<{
@@ -162,15 +161,18 @@ async function resolveAuditContext(
   };
 }
 
-async function emitDecisionReceipt(
-  deps: AuditDeps,
-  ctx: AuditContext,
-  toolName: string,
-  input: unknown,
-  sessionId: string,
-  policyMode: string,
-  state: SessionState | null,
-): Promise<string> {
+interface DecisionReceiptParams {
+  deps: AuditDeps;
+  ctx: AuditContext;
+  toolName: string;
+  input: unknown;
+  sessionId: string;
+  policyMode: string;
+  state: SessionState | null;
+}
+
+async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<string> {
+  const { deps, ctx, toolName, input, sessionId, policyMode, state } = params;
   let prevHash = ctx.prevHash;
   if (toolName !== 'flowguard_decision' || !ctx.success || ctx.transitions.length === 0)
     return prevHash;
@@ -188,7 +190,7 @@ async function emitDecisionReceipt(
 
   const sequence = await deps.nextDecisionSequence(ctx.sessDir, sessionId);
   const decisionId = `DEC-${String(sequence).padStart(3, '0')}`;
-  const pd = ctx.parsed as Record<string, unknown> | null;
+  const pd = ctx.parsed;
   const parsedDecision =
     pd?.reviewDecision !== null && typeof pd?.reviewDecision === 'object'
       ? (pd.reviewDecision as Record<string, unknown>)
@@ -313,7 +315,7 @@ export async function runAudit(
   let policyResolved = false;
   let effectiveMode: string = deps.mode;
   try {
-    const resolved = await resolveAuditContext(deps, toolName, input, output, sessionId);
+    const resolved = await resolveAuditContext(deps, toolName, output, sessionId);
     if (!resolved) return;
     policyResolved = resolved.policyResolved;
     effectiveMode = resolved.effectiveMode;
@@ -360,15 +362,15 @@ export async function runAudit(
     }
 
     // ── 3. Emit decision receipt ────────────────────────────────────────
-    ctx.prevHash = await emitDecisionReceipt(
+    ctx.prevHash = await emitDecisionReceipt({
       deps,
       ctx,
       toolName,
       input,
       sessionId,
-      state?.policySnapshot.mode ?? policy.mode,
+      policyMode: state?.policySnapshot.mode ?? effectiveMode,
       state,
-    );
+    });
 
     // ── 4. Emit lifecycle events ────────────────────────────────────────
     const lifecycleAction = LIFECYCLE_TOOLS[toolName];
