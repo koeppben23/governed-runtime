@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **FG-REL-011 (Issue #120):** Opt-in fail-closed tarball integrity verification via `--checksums-file`. The installer now supports verifying tarball SHA-256 integrity against a `sha256sum`-format checksums file before writing any artifacts. When `--checksums-file` is provided, hash mismatch, missing entries, or duplicate entries in the checksums file produce an explicit error and stop the install before any file is written (fail-closed). Without `--checksums-file`, the installer emits a warning recommending the flag but proceeds as before.
+- **`hashFile()`** in `src/shared/hashing.ts` — streaming SHA-256 for byte-level file hashing, canonical authority for binary artifact hashing (separate from `hashText()` for text hashing).
+
 - **Project governance contracts:** Added GitHub issue templates, PR template, project governance documentation, and drift guards requiring clean conventional branches, docs/changelog decisions, risk classification, verification evidence, and high-risk fail-closed coverage.
 
 ### Fixed

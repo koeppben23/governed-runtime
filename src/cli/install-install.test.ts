@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { install, uninstall, mergeReviewerTaskPermission } from './install.js';
 import {
   TOOL_WRAPPER,
@@ -80,6 +81,8 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
       expect(result.warnings).toEqual([
+        'Tarball integrity not verified. ' +
+          'Use --checksums-file ./checksums.sha256 for cryptographic verification.',
         'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
       ]);
 
@@ -636,6 +639,72 @@ describe('cli/install', () => {
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }
+    });
+  });
+
+  // ─── tarball-integrity ──────────────────────────────────────
+  describe('tarball-integrity', () => {
+    function sha256Hex(content: string): string {
+      return createHash('sha256').update(content, 'utf-8').digest('hex');
+    }
+
+    async function createChecksumsFile(filename: string, hash: string): Promise<string> {
+      const checksumsPath = path.join(tmpDir, 'checksums.sha256');
+      await fs.writeFile(checksumsPath, `${hash}  ${filename}\n`);
+      return checksumsPath;
+    }
+
+    it('HAPPY: install with valid --checksums-file succeeds and writes all artifacts', async () => {
+      const tarball = await createMockTarball();
+      const expectedHash = sha256Hex('mock tarball content');
+      const checksumsFile = await createChecksumsFile(path.basename(tarball), expectedHash);
+      const result = await install(repoArgs({ coreTarball: tarball, checksumsFile }));
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toContainEqual(expect.stringContaining('Restart OpenCode'));
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
+    });
+
+    it('BAD: tampered tarball fails integrity check and writes no artifacts', async () => {
+      const tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
+      await fs.writeFile(tarballPath, 'tampered content');
+      const expectedHash = sha256Hex('original content');
+      const checksumsFile = await createChecksumsFile(path.basename(tarballPath), expectedHash);
+      const result = await install(repoArgs({ coreTarball: tarballPath, checksumsFile }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('integrity check failed');
+      expect(result.errors[0]).toContain('SHA-256 mismatch');
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(false);
+    });
+
+    it('BAD: checksums file does not exist returns error', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({
+          coreTarball: tarball,
+          checksumsFile: path.join(tmpDir, 'nonexistent.sha256'),
+        }),
+      );
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('integrity check failed');
+      expect(result.errors[0]).toContain('Cannot read');
+    });
+
+    it('BAD: tarball not listed in checksums file returns error', async () => {
+      const tarball = await createMockTarball();
+      const checksumsFile = await createChecksumsFile('other.tgz', '0'.repeat(64));
+      const result = await install(repoArgs({ coreTarball: tarball, checksumsFile }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('integrity check failed');
+      expect(result.errors[0]).toContain('not found');
+    });
+
+    it('WARNING: install without --checksums-file warns about missing verification', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toContainEqual(
+        expect.stringContaining('Tarball integrity not verified'),
+      );
     });
   });
 
