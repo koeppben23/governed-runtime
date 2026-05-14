@@ -1,0 +1,74 @@
+name: High-Risk Governance Change
+description: State, policy, audit, archive, release, installer, CI, persistence, migration, or security change
+title: 'fix: '
+labels: ['high-risk']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+    validations:
+      required: true
+  - type: textarea
+    id: governing-evidence
+    attributes:
+      label: Governing Evidence And Authority
+      description: Contract, SSOT, schema, policy, or runtime authority that governs this change.
+    validations:
+      required: true
+  - type: checkboxes
+    id: touched-surface
+    attributes:
+      label: Touched Surface
+      options:
+        - label: State or session lifecycle
+        - label: Policy or risk logic
+        - label: Identity or trust boundary
+        - label: Audit or hash-chain
+        - label: Archive
+        - label: Release or installer
+        - label: CI or supply chain
+        - label: Persistence, migration, or compatibility
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants And Failure Modes
+      value: |
+        - [ ] Fail-closed behavior preserved.
+        - [ ] No silent fallback hides failure.
+        - [ ] No duplicate runtime authority introduced.
+        - [ ] Negative path and recovery behavior defined.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Required Verification
+      value: |
+        - [ ] Negative-path tests.
+        - [ ] Typecheck, lint, tests, build.
+        - [ ] Relevant integration/e2e or install verification if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Rollback Or Recovery
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition Of Done
+      value: |
+        - [ ] Clean conventional branch created from current main.
+        - [ ] Change is scoped to this ticket.
+        - [ ] Conventional commit and PR title used.
+        - [ ] Tests added or updated where needed.
+        - [ ] Negative-path tests added for governance/fail-closed behavior.
+        - [ ] Documentation updated or explicitly marked not needed with reason.
+        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] Verification commands recorded in PR.
+        - [ ] PR links/closes this issue.
+    validations:
+      required: true

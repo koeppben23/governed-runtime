@@ -1,0 +1,30 @@
+name: Release
+description: Prepare a FlowGuard release through protected main
+title: 'chore(release): cut v'
+labels: ['release']
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 1.2.0-rc.4
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Protected Main Release Checklist
+      value: |
+        - [ ] Start from current main: `git switch main && git pull --ff-only origin main`.
+        - [ ] Create branch: `git switch -c release/vX.Y.Z`.
+        - [ ] Prepare files: `npm run release:prepare -- X.Y.Z`.
+        - [ ] Update release-pinned docs/tests when changelog entries move out of Unreleased.
+        - [ ] Run: `npm run release:verify`.
+        - [ ] Open PR to main and wait for required checks.
+        - [ ] Squash-merge PR.
+        - [ ] Refresh main: `git switch main && git pull --ff-only origin main`.
+        - [ ] Assert tag safety: `npm run release:assert-main-tag -- vX.Y.Z`.
+        - [ ] Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+        - [ ] Verify GitHub Release artifacts, checksums, SBOM, and provenance.
+    validations:
+      required: true
