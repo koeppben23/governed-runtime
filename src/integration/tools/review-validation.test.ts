@@ -56,6 +56,11 @@ function parseBlocked(result: string): { code: string; error: boolean } {
   return JSON.parse(result) as { code: string; error: boolean };
 }
 
+function parseDiagnosticCode(result: string): string | undefined {
+  const parsed = JSON.parse(result) as { diagnostics?: { diagnosticCode?: string } };
+  return parsed.diagnostics?.diagnosticCode;
+}
+
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
@@ -568,6 +573,8 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     expect(result).not.toBeNull();
     const blocked = JSON.parse(result!);
     expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(parseDiagnosticCode(result!)).toBe('REVIEW_INVOCATION_EVIDENCE_MISSING');
+    expect(blocked.diagnosticCard).toContain('FlowGuard blocked this action.');
   });
 
   it('correct attestation without matching invocation evidence is rejected', () => {
@@ -581,6 +588,9 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     expect(result).not.toBeNull();
     const blocked = JSON.parse(result!);
     expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
+    expect(blocked.diagnostics.required).toContain(
+      'matching ReviewInvocationEvidence for the active obligation',
+    );
   });
 
   it('accepts matching fulfilled obligation and matching invocation evidence', () => {

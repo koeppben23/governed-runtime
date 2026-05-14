@@ -92,6 +92,10 @@ export async function handleHostTaskEvidence(
       });
       hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
         reason: `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
+        policy,
+        policyMode: policy,
+        bindOutcome: bindResult.bindOutcome,
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
       });
     } else {
       deps.log.warn('host-task', 'bind failed', {
@@ -104,6 +108,9 @@ export async function handleHostTaskEvidence(
     deps.logError('host task evidence creation failed', err);
     hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
       reason: err instanceof Error ? err.message : String(err),
+      policy: 'host_task_required',
+      policyMode: 'host_task_required',
+      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     });
   }
 }

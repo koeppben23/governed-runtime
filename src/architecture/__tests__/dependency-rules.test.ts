@@ -200,6 +200,7 @@ const FF_MODULES = new Set([
   'identity',
   'telemetry',
   'presentation',
+  'diagnostics',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -273,6 +274,7 @@ function getLayerFromPath(filePath: string): string | null {
   if (filePath.includes('/logging/')) return 'logging';
   if (filePath.includes('/cli/')) return 'cli';
   if (filePath.includes('/presentation/')) return 'presentation';
+  if (filePath.includes('/diagnostics/')) return 'diagnostics';
   return null;
 }
 
@@ -1040,6 +1042,7 @@ describe('Layer Dependency Rules', () => {
       'cli',
       'identity',
       'presentation',
+      'diagnostics',
     ] as const;
 
     it('all core layer directories exist', () => {

@@ -1536,6 +1536,9 @@ describe('plugin bootstrap fail-closed', () => {
           expect(json.code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
           expect(json.message).toContain('Cannot verify host tool phase gate');
           expect(json.message).toContain('session directory exists');
+          expect(json.diagnostics.diagnosticCode).toBe('RUNTIME_ENFORCEMENT_CONTEXT_UNAVAILABLE');
+          expect(json.diagnostics.missingEvidence).toContain('readable_session_state');
+          expect(json.diagnosticCard).toContain('FlowGuard blocked this action.');
         }
       } finally {
         await ws.cleanup();

@@ -8,6 +8,7 @@
  */
 
 import { defaultReasonRegistry } from '../config/reasons.js';
+import { buildBlockedDiagnostics, formatDiagnosticCard } from '../diagnostics/index.js';
 
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
@@ -57,6 +58,10 @@ export function parseToolResult(rawOutput: unknown): Record<string, unknown> | n
  */
 export function strictBlockedOutput(code: string, detail: Record<string, string>): string {
   const formatted = defaultReasonRegistry.format(code, detail);
+  const diagnostics = buildBlockedDiagnostics(formatted.code, detail);
+  const diagnosticCard = diagnostics
+    ? formatDiagnosticCard({ code: formatted.code, message: formatted.reason, diagnostics })
+    : null;
   return JSON.stringify({
     error: true,
     code: formatted.code,
@@ -64,6 +69,8 @@ export function strictBlockedOutput(code: string, detail: Record<string, string>
     detail,
     recovery: formatted.recovery,
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
+    ...(diagnosticCard ? { diagnosticCard } : {}),
   });
 }
 
@@ -89,15 +96,22 @@ export function buildEnforcementError(
   detail: Record<string, string> = {},
 ): Error {
   const formatted = defaultReasonRegistry.format(code, detail);
+  const effectiveMessage = reason && reason.length > 0 ? reason : formatted.reason;
+  const diagnostics = buildBlockedDiagnostics(code, { ...detail, reason: effectiveMessage });
+  const diagnosticCard = diagnostics
+    ? formatDiagnosticCard({ code, message: effectiveMessage, diagnostics })
+    : null;
   const payload = {
     error: true,
     code,
     // Prefer the live enforcement reason (carries dynamic context like session IDs)
     // over the registry template, but fall back to the registry message when reason is empty.
-    message: reason && reason.length > 0 ? reason : formatted.reason,
+    message: effectiveMessage,
     detail,
     recovery: formatted.recovery,
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
+    ...(diagnostics ? { diagnostics } : {}),
+    ...(diagnosticCard ? { diagnosticCard } : {}),
   };
   const err = new Error(`[FlowGuard] ${JSON.stringify(payload)}`);
   err.name = 'FlowGuardEnforcementError';
