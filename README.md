@@ -187,6 +187,9 @@ npm run test:coverage
 npm run build
 ```
 
+For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate, see
+[Debugging FlowGuard inside OpenCode with IntelliJ IDEA Ultimate](docs/development/debug-opencode-intellij.md).
+
 ### CI Jobs
 
 | Job                 | Script                                         | What It Proves                                         |
