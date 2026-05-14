@@ -34,6 +34,18 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
+vi.mock('./git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./git.js')>();
+  (globalThis as Record<string, unknown>).__gitActual = actual;
+  return {
+    ...actual,
+    isGitRepo: vi.fn((...args: Parameters<typeof actual.isGitRepo>) => actual.isGitRepo(...args)),
+    resolveRoot: vi.fn((...args: Parameters<typeof actual.resolveRoot>) =>
+      actual.resolveRoot(...args),
+    ),
+  };
+});
+
 /** Restore fs.rename to its original implementation after a failure simulation. */
 function restoreRename(): void {
   const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
@@ -73,7 +85,8 @@ import {
   isEnoent,
   atomicWrite,
 } from './persistence.js';
-import { validateBinding, fromOpenCodeContext, BindingError } from './binding.js';
+import { validateBinding, fromOpenCodeContext, BindingError, resolveBinding } from './binding.js';
+import { isGitRepo, resolveRoot } from './git.js';
 import { createRailContext } from './context.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditEvent, ReviewReport } from '../state/evidence.js';
@@ -1342,6 +1355,95 @@ describe('binding', () => {
       const binding = { worktreeRoot: worktree, sessionId: 's1' };
       const { p99Ms } = benchmarkSync(() => validateBinding(state, binding), 200, 50);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.validateBindingMs);
+    });
+  });
+
+  // ── resolveBinding ────────────────────────────────────────
+  describe('resolveBinding', () => {
+    const validCtx = {
+      sessionId: 'test-session',
+      worktree: '/tmp/test-repo',
+      directory: '/tmp/test-repo/src',
+    };
+
+    it('throws MISSING_SESSION_ID for empty sessionId', async () => {
+      await expect(resolveBinding({ ...validCtx, sessionId: '' })).rejects.toThrow(BindingError);
+      try {
+        await resolveBinding({ ...validCtx, sessionId: '' });
+      } catch (err) {
+        expect((err as BindingError).code).toBe('MISSING_SESSION_ID');
+      }
+    });
+
+    it('throws MISSING_SESSION_ID for whitespace-only sessionId', async () => {
+      await expect(resolveBinding({ ...validCtx, sessionId: '   ' })).rejects.toThrow(BindingError);
+    });
+
+    it('uses worktree when provided (fast path, no git subprocess)', async () => {
+      const result = await resolveBinding(validCtx);
+      expect(result.sessionId).toBe('test-session');
+      expect(result.worktreeRoot).toContain('test-repo');
+    });
+
+    it('throws NO_WORKTREE when both worktree and directory are empty', async () => {
+      await expect(resolveBinding({ sessionId: 's', worktree: '', directory: '' })).rejects.toThrow(
+        BindingError,
+      );
+      try {
+        await resolveBinding({ sessionId: 's', worktree: '', directory: '' });
+      } catch (err) {
+        expect((err as BindingError).code).toBe('NO_WORKTREE');
+      }
+    });
+
+    it('throws NOT_GIT_REPO when directory is not a git repo', async () => {
+      vi.mocked(isGitRepo).mockResolvedValueOnce(false);
+
+      let caught: unknown;
+      try {
+        await resolveBinding({ sessionId: 's', worktree: '', directory: '/tmp/not-repo' });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(BindingError);
+      expect((caught as BindingError).code).toBe('NOT_GIT_REPO');
+    });
+  });
+
+  // ── fromOpenCodeContext coverage ──────────────────────────
+  describe('fromOpenCodeContext', () => {
+    it('returns empty worktree when context.worktree is empty', () => {
+      const ctx = fromOpenCodeContext({ sessionID: 's', worktree: '', directory: '/tmp' });
+      expect(ctx.sessionId).toBe('s');
+      expect(ctx.worktree).toBe('');
+      expect(ctx.directory).toBe('/tmp');
+    });
+
+    it('maps all fields correctly including directory', () => {
+      const ctx = fromOpenCodeContext({ sessionID: 's1', worktree: '/tmp', directory: '/tmp/src' });
+      expect(ctx.sessionId).toBe('s1');
+      expect(ctx.worktree).toBe('/tmp');
+      expect(ctx.directory).toBe('/tmp/src');
+    });
+  });
+
+  // ── validateBinding edge cases ────────────────────────────
+  describe('validateBinding — edge', () => {
+    it('returns true for identical worktrees', () => {
+      const wt = path.resolve('/tmp/test-repo');
+      const state = makeState('TICKET', {
+        binding: { sessionId: 's', worktree: wt, resolvedAt: FIXED_TIME },
+      });
+      expect(validateBinding(state, { worktreeRoot: wt, sessionId: 'x' })).toBe(true);
+    });
+
+    it('throws for worktree with different trailing content', () => {
+      const state = makeState('TICKET', {
+        binding: { sessionId: 's', worktree: '/tmp/repo-a', resolvedAt: FIXED_TIME },
+      });
+      expect(() => validateBinding(state, { worktreeRoot: '/tmp/repo-b', sessionId: 's' })).toThrow(
+        BindingError,
+      );
     });
   });
 });
