@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-QUAL-004 (Issue #226):** Close logging gaps across I/O-critical error paths:
+  - `persistence.ts`: added `getAdapterLogger().error()` before throw in `readReport`, `readAuditTrail`, `readDiscovery`; added try/catch logging in `appendAuditEvent`; added non-ENOENT diagnostic in `stateExists`
+  - `plugin.ts`: added `console.warn` for silently swallowed fingerprint resolution failure
+  - `plugin-logging.ts`: added `console.warn` for silent config fallback to defaults
+  - `plugin-policy.ts`: distinguish EACCES/EPERM from ENOENT/ENOTDIR, log abnormal access errors via `log.warn`
+  - `cli/run.ts`: added `getAdapterLogger()` calls in `executeOpenCode` error, `run` failure, `serve` startup failure paths (effective when CLI logger context is active; noop-safe otherwise)
+  - `cli/install-command.ts`, `cli/uninstall-command.ts`: added `getAdapterLogger().error()` in outer catch blocks
+  - No control-flow, policy, state, or output JSON semantics changed; added diagnostics/logging only
+
 - **FG-QUAL-003 (Issue #224):** Move `plugin-review-state.ts` and `plugin-review-audit.ts` into review bounded context:
   - Renamed `plugin-review-state.ts` → `review/obligation-state.ts`, `plugin-review-audit.ts` → `review/audit-events.ts`
   - Updated barrel `review/index.ts` with `updateObligation`, `blockObligation`, `appendReviewAuditEvent` exports

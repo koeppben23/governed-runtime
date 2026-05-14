@@ -281,7 +281,15 @@ export async function stateExists(sessionDir: string): Promise<boolean> {
   try {
     await fs.access(statePath(sessionDir));
     return true;
-  } catch {
+  } catch (err: unknown) {
+    if (isEnoent(err)) return false;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR') return false;
+    getAdapterLogger().warn('persistence', 'Failed to check state existence', {
+      filePath: statePath(sessionDir),
+      code: code ?? 'unknown',
+      error: err instanceof Error ? err.message : String(err),
+    });
     return false;
   }
 }
@@ -320,6 +328,10 @@ export async function readReport(sessionDir: string): Promise<ReviewReport | nul
     raw = await fs.readFile(reportPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
+    getAdapterLogger().error('persistence', 'Failed to read report file', {
+      filePath: reportPath(sessionDir),
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new PersistenceError(
       'READ_FAILED',
       `Failed to read report: ${err instanceof Error ? err.message : String(err)}`,
@@ -370,7 +382,15 @@ export async function appendAuditEvent(sessionDir: string, event: AuditEvent): P
 
   await ensureDir(sessionDir);
   const line = JSON.stringify(result.data) + '\n';
-  await fs.appendFile(auditPath(sessionDir), line, 'utf-8');
+  try {
+    await fs.appendFile(auditPath(sessionDir), line, 'utf-8');
+  } catch (err: unknown) {
+    getAdapterLogger().error('persistence', 'Failed to append audit event', {
+      sessionDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 }
 
 /**
@@ -393,6 +413,10 @@ export async function readAuditTrail(
     raw = await fs.readFile(auditPath(sessionDir), 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return { events: [], skipped: 0 };
+    getAdapterLogger().error('persistence', 'Failed to read audit trail', {
+      filePath: auditPath(sessionDir),
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new PersistenceError(
       'READ_FAILED',
       `Failed to read audit trail: ${err instanceof Error ? err.message : String(err)}`,
@@ -587,6 +611,10 @@ export async function readDiscovery(workspaceDir: string): Promise<DiscoveryResu
     raw = await fs.readFile(filePath, 'utf-8');
   } catch (err: unknown) {
     if (isEnoent(err)) return null;
+    getAdapterLogger().error('persistence', 'Failed to read discovery file', {
+      filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw new PersistenceError(
       'READ_FAILED',
       `Failed to read discovery file: ${err instanceof Error ? err.message : String(err)}`,

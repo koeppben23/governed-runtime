@@ -64,8 +64,18 @@ export async function resolvePluginSessionPolicy(
   try {
     await fs.access(sessDir + '/session-state.json');
     stateFileExists = true;
-  } catch {
-    stateFileExists = false;
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      stateFileExists = false;
+    } else {
+      log?.warn('policy', 'Failed to access session state file', {
+        sessionDir: sessDir,
+        code,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      stateFileExists = false;
+    }
   }
 
   // Case 2a: State file missing → config > solo fallback

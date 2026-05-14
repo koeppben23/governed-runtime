@@ -10,6 +10,7 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ function executeOpenCode(
 
     proc.on('error', (err) => {
       stderr += err.message;
+      getAdapterLogger().error('cli', 'opencode process failed', { error: err.message });
       resolve({ exitCode: 1, stdout, stderr });
     });
   });
@@ -114,6 +116,10 @@ export async function run(config: HeadlessConfig): Promise<RunResult> {
   const result = await executeOpenCode(['run', prompt], { cwd, env });
 
   if (result.exitCode !== 0) {
+    getAdapterLogger().warn('cli', 'run command failed', {
+      exitCode: result.exitCode,
+      stderr: result.stderr,
+    });
     return {
       success: false,
       error: result.stderr || `Exit code: ${result.exitCode}`,
@@ -172,6 +178,10 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
   const ready = await waitForServer(port, STARTUP_TIMEOUT_MS);
 
   if (!ready || startupError) {
+    getAdapterLogger().error('cli', 'serve startup failed', {
+      port,
+      error: startupError || 'Server failed to start',
+    });
     return { success: false, port, error: startupError || 'Server failed to start' };
   }
 
