@@ -11,11 +11,29 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { withTestEnv } from '../integration/test-helpers.js';
-import * as fs from 'node:fs/promises';
+import * as fsActual from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  (globalThis as Record<string, unknown>).__fsActualCFG = actual;
+  return {
+    ...actual,
+    readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
+  };
+});
+
+import * as fs from 'node:fs/promises';
+
+function restoreReadFile(): void {
+  const actual = (globalThis as Record<string, unknown>).__fsActualCFG as typeof fsActual;
+  vi.mocked(fs.readFile).mockImplementation((...args: Parameters<(typeof fs)['readFile']>) =>
+    actual.readFile(...args),
+  );
+}
 import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import {
   readConfig,
@@ -704,6 +722,196 @@ describe('config file I/O', () => {
     );
     const raw = await fs.readFile(repoConfigPath(tmpDir), 'utf-8');
     expect(() => JSON.parse(raw)).not.toThrow();
+  });
+});
+
+// =============================================================================
+// readConfig — precedence (repo → global → default)
+// =============================================================================
+
+describe('readConfig — precedence', () => {
+  let worktree: string;
+  let globalCfgDir: string;
+  let restoreEnv: () => void;
+
+  beforeEach(async () => {
+    worktree = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-precedence-repo-'));
+    globalCfgDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-precedence-global-'));
+    restoreEnv = withTestEnv({ OPENCODE_CONFIG_DIR: globalCfgDir });
+  });
+
+  afterEach(async () => {
+    restoreEnv();
+    try {
+      await fs.rm(worktree, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+    try {
+      await fs.rm(globalCfgDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+    restoreReadFile();
+  });
+
+  async function writeGlobalConfig(content: string): Promise<void> {
+    await fs.mkdir(globalCfgDir, { recursive: true });
+    await fs.writeFile(path.join(globalCfgDir, 'flowguard.json'), content, 'utf-8');
+  }
+
+  const REPO_CUSTOM: FlowGuardConfig = {
+    schemaVersion: 'v1',
+    logging: { level: 'debug' },
+    policy: { defaultMode: 'regulated' },
+    profile: {},
+    archive: { redaction: { mode: 'basic', includeRaw: false } },
+  };
+
+  const GLOBAL_CUSTOM: FlowGuardConfig = {
+    schemaVersion: 'v1',
+    logging: { level: 'warn' },
+    policy: {},
+    profile: { defaultId: 'global-profile' },
+    archive: { redaction: { mode: 'basic', includeRaw: false } },
+  };
+
+  // ── HAPPY ──────────────────────────────────────────────────
+
+  it('repo config present → returned, global ignored', async () => {
+    await writeRawConfig(worktree, JSON.stringify(REPO_CUSTOM));
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+
+    const config = await readConfig(worktree);
+    expect(config.logging.level).toBe('debug');
+    expect(config.policy.defaultMode).toBe('regulated');
+    expect(config.profile.defaultId).toBeUndefined();
+  });
+
+  it('repo config missing → falls through to global', async () => {
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+
+    const config = await readConfig(worktree);
+    expect(config.logging.level).toBe('warn');
+    expect(config.profile.defaultId).toBe('global-profile');
+    expect(config.policy.defaultMode).toBeUndefined();
+  });
+
+  it('both missing → returns DEFAULT_CONFIG', async () => {
+    const config = await readConfig(worktree);
+    expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config.logging.level).toBe('info');
+  });
+
+  it('readConfig without worktree → skips repo, only checks global', async () => {
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+
+    const config = await readConfig();
+    expect(config.logging.level).toBe('warn');
+    expect(config.profile.defaultId).toBe('global-profile');
+  });
+
+  // ── BAD ────────────────────────────────────────────────────
+
+  it('repo config present but INVALID → throws (no fallthrough to global)', async () => {
+    await writeRawConfig(worktree, 'not json {{{');
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+
+    let caught: PersistenceError | undefined;
+    try {
+      await readConfig(worktree);
+    } catch (err) {
+      caught = err as PersistenceError;
+    }
+    expect(caught).toBeInstanceOf(PersistenceError);
+    expect(caught!.code).toBe('PARSE_FAILED');
+  });
+
+  it('repo missing, global INVALID schema → throws (no fallthrough to default)', async () => {
+    await writeGlobalConfig(JSON.stringify({ schemaVersion: 'v99' }));
+
+    let caught: PersistenceError | undefined;
+    try {
+      await readConfig(worktree);
+    } catch (err) {
+      caught = err as PersistenceError;
+    }
+    expect(caught).toBeInstanceOf(PersistenceError);
+    expect(caught!.code).toBe('SCHEMA_VALIDATION_FAILED');
+  });
+
+  // ── CORNER ─────────────────────────────────────────────────
+
+  it('repo valid, global INVALID → repo returned (global never reached)', async () => {
+    await writeRawConfig(worktree, JSON.stringify(REPO_CUSTOM));
+    await writeGlobalConfig('not json {{{');
+
+    const config = await readConfig(worktree);
+    expect(config.logging.level).toBe('debug');
+    expect(config.policy.defaultMode).toBe('regulated');
+  });
+
+  it('repo ENOENT, global EACCES → throws READ_FAILED', async () => {
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+    vi.mocked(fs.readFile).mockImplementation((...args: unknown[]) => {
+      const [filePathStr] = args;
+      if (
+        typeof filePathStr === 'string' &&
+        filePathStr.includes(globalCfgDir) &&
+        filePathStr.includes('flowguard.json')
+      ) {
+        const err = new Error('permission denied') as NodeJS.ErrnoException;
+        err.code = 'EACCES';
+        return Promise.reject(err);
+      }
+      const actual = (globalThis as Record<string, unknown>).__fsActualCFG as typeof fsActual;
+      return actual.readFile(...(args as Parameters<typeof actual.readFile>));
+    });
+
+    let caught: PersistenceError | undefined;
+    try {
+      await readConfig(worktree);
+    } catch (err) {
+      caught = err as PersistenceError;
+    }
+    expect(caught).toBeInstanceOf(PersistenceError);
+    expect(caught!.code).toBe('READ_FAILED');
+  });
+
+  it('both present and valid → repo wins', async () => {
+    await writeRawConfig(worktree, JSON.stringify(REPO_CUSTOM));
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+
+    const config = await readConfig(worktree);
+    expect(config.logging.level).toBe('debug');
+    expect(config.policy.defaultMode).toBe('regulated');
+    expect(config.profile.defaultId).toBeUndefined();
+  });
+
+  // ── EDGE ───────────────────────────────────────────────────
+
+  it('returned config is a deep clone (mutation safe)', async () => {
+    const config1 = await readConfig(worktree);
+    const config2 = await readConfig(worktree);
+
+    expect(config1).not.toBe(config2);
+    expect(config1).toEqual(config2);
+
+    config1.logging.level = 'debug';
+    const config3 = await readConfig(worktree);
+    expect(config3.logging.level).toBe('info');
+  });
+
+  it('global config returns defaults when absent', async () => {
+    // Neither repo nor global present
+    const config = await readConfig(worktree);
+    expect(config).toEqual(DEFAULT_CONFIG);
+
+    // Only global present
+    await writeGlobalConfig(JSON.stringify(GLOBAL_CUSTOM));
+    const config2 = await readConfig(worktree);
+    expect(config2.logging.level).toBe('warn');
+    expect(config2).not.toEqual(DEFAULT_CONFIG);
   });
 });
 

@@ -27,6 +27,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     rename: vi.fn((...args: Parameters<typeof actual.rename>) => actual.rename(...args)),
+    appendFile: vi.fn((...args: Parameters<typeof actual.appendFile>) =>
+      actual.appendFile(...args),
+    ),
+    writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
   };
 });
 
@@ -35,6 +39,22 @@ function restoreRename(): void {
   const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
   vi.mocked(fs.rename).mockImplementation((...args: Parameters<(typeof fs)['rename']>) =>
     actual.rename(...args),
+  );
+}
+
+/** Restore fs.appendFile to its original implementation after a failure simulation. */
+function restoreAppendFile(): void {
+  const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
+  vi.mocked(fs.appendFile).mockImplementation((...args: Parameters<(typeof fs)['appendFile']>) =>
+    actual.appendFile(...args),
+  );
+}
+
+/** Restore fs.writeFile to its original implementation after a failure simulation. */
+function restoreWriteFile(): void {
+  const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
+  vi.mocked(fs.writeFile).mockImplementation((...args: Parameters<(typeof fs)['writeFile']>) =>
+    actual.writeFile(...args),
   );
 }
 
@@ -632,6 +652,596 @@ describe('persistence', () => {
         cleanupEnv();
         await cleanTmpDir(configDir);
       }
+    });
+  });
+
+  // ── readState — schema validation ────────────────────────────
+  describe('readState — schema validation', () => {
+    beforeEach(async () => {
+      await fs.mkdir(tmpDir, { recursive: true });
+    });
+
+    async function assertReadFails(
+      json: unknown,
+      expectedCode: 'SCHEMA_VALIDATION_FAILED' | 'PARSE_FAILED',
+    ) {
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      let caught: unknown;
+      try {
+        await readState(tmpDir);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe(expectedCode);
+    }
+
+    // ── BAD ────────────────────────────────────────────────
+
+    it('rejects missing required field "id"', () => {
+      const state = makeState('TICKET');
+      const { id: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "schemaVersion"', () => {
+      const state = makeState('TICKET');
+      const { schemaVersion: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "phase"', () => {
+      const state = makeState('TICKET');
+      const { phase: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "binding"', () => {
+      const state = makeState('TICKET');
+      const { binding: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "policySnapshot"', () => {
+      const state = makeState('TICKET');
+      const { policySnapshot: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "initiatedBy"', () => {
+      const state = makeState('TICKET');
+      const { initiatedBy: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "createdAt"', () => {
+      const state = makeState('TICKET');
+      const { createdAt: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing required field "nextAdrNumber"', () => {
+      const state = makeState('TICKET');
+      const { nextAdrNumber: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects invalid UUID for id', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), id: 'not-a-uuid' },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects wrong schemaVersion', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), schemaVersion: 'v2' },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects invalid phase value', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), phase: 'NONSENSE' },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects invalid createdAt datetime', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), createdAt: 'yesterday' },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects empty sessionId', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), binding: { ...makeState('TICKET').binding, sessionId: '' } },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects sessionId longer than 128 characters', () => {
+      return assertReadFails(
+        {
+          ...makeState('TICKET'),
+          binding: { ...makeState('TICKET').binding, sessionId: 'a'.repeat(129) },
+        },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects non-positive nextAdrNumber (0)', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), nextAdrNumber: 0 },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects negative nextAdrNumber', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), nextAdrNumber: -1 },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects non-integer nextAdrNumber', () => {
+      return assertReadFails(
+        { ...makeState('TICKET'), nextAdrNumber: 1.5 },
+        'SCHEMA_VALIDATION_FAILED',
+      );
+    });
+
+    it('rejects missing nullable key "ticket" (key absent, not null)', () => {
+      const state = makeState('TICKET');
+      const { ticket: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    // ── HAPPY ───────────────────────────────────────────────
+
+    it('accepts state with all nullable fields set to null', async () => {
+      const state = makeState('READY');
+      await writeState(tmpDir, state);
+      const loaded = await readState(tmpDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.phase).toBe('READY');
+      expect(loaded!.ticket).toBeNull();
+      expect(loaded!.plan).toBeNull();
+      expect(loaded!.implementation).toBeNull();
+    });
+
+    // ── CORNER ──────────────────────────────────────────────
+
+    it('rejects missing "validation" array (required, not optional)', () => {
+      const state = makeState('TICKET');
+      const { validation: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects missing "activeChecks" array', () => {
+      const state = makeState('TICKET');
+      const { activeChecks: _, ...rest } = state;
+      return assertReadFails(rest, 'SCHEMA_VALIDATION_FAILED');
+    });
+  });
+
+  // ── appendAuditEvent — validation and hash-field preservation
+  describe('appendAuditEvent — validation and hash-field preservation', () => {
+    const CHAIN_HASH_64 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1';
+    const PREV_HASH_64 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2';
+
+    // ── BAD ────────────────────────────────────────────────
+
+    it('rejects event missing required field "id"', async () => {
+      const { id: _, ...invalid } = makeValidAuditEvent();
+      let caught: unknown;
+      try {
+        await appendAuditEvent(tmpDir, invalid as AuditEvent);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects event missing required field "sessionId"', async () => {
+      const { sessionId: _, ...invalid } = makeValidAuditEvent();
+      await expect(appendAuditEvent(tmpDir, invalid as AuditEvent)).rejects.toThrow(
+        PersistenceError,
+      );
+    });
+
+    it('rejects event with invalid UUID id', async () => {
+      let caught: unknown;
+      try {
+        await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: 'bad-uuid' }));
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+    });
+
+    it('rejects event with invalid sessionId (empty)', async () => {
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: '' })),
+      ).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects event with invalid sessionId (special characters)', async () => {
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ sessionId: 'bad.id' })),
+      ).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects event with invalid timestamp', async () => {
+      await expect(
+        appendAuditEvent(tmpDir, makeValidAuditEvent({ timestamp: 'now' })),
+      ).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects event where detail is a string (not an object)', async () => {
+      await expect(
+        appendAuditEvent(
+          tmpDir,
+          makeValidAuditEvent({ detail: 'string' as unknown as Record<string, unknown> }),
+        ),
+      ).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects event where detail is an array (not an object)', async () => {
+      await expect(
+        appendAuditEvent(
+          tmpDir,
+          makeValidAuditEvent({ detail: [] as unknown as Record<string, unknown> }),
+        ),
+      ).rejects.toThrow(PersistenceError);
+    });
+
+    it('does not write trail on schema rejection', async () => {
+      await expect(appendAuditEvent(tmpDir, makeValidAuditEvent({ id: 'bad' }))).rejects.toThrow(
+        PersistenceError,
+      );
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(0);
+      expect(skipped).toBe(0);
+    });
+
+    // ── CORNER ──────────────────────────────────────────────
+
+    it('re-throws raw error (not PersistenceError) on filesystem failure', async () => {
+      vi.mocked(fs.appendFile).mockRejectedValueOnce(
+        Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
+      );
+      try {
+        try {
+          await appendAuditEvent(tmpDir, makeValidAuditEvent());
+        } catch (err) {
+          expect(err).not.toBeInstanceOf(PersistenceError);
+          expect(err).toBeInstanceOf(Error);
+          expect((err as NodeJS.ErrnoException).code).toBe('ENOSPC');
+        }
+        const { events } = await readAuditTrail(tmpDir);
+        expect(events).toHaveLength(0);
+      } finally {
+        restoreAppendFile();
+      }
+    });
+
+    // ── HAPPY ───────────────────────────────────────────────
+
+    it('preserves chainHash and prevHash through append/read round-trip', async () => {
+      const event = makeValidAuditEvent({
+        prevHash: PREV_HASH_64,
+        chainHash: CHAIN_HASH_64,
+      });
+      await appendAuditEvent(tmpDir, event);
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.prevHash).toBe(PREV_HASH_64);
+      expect(events[0]!.chainHash).toBe(CHAIN_HASH_64);
+    });
+
+    it('accepts event with optional actorInfo', async () => {
+      const event = makeValidAuditEvent({
+        actorInfo: {
+          id: 'actor-1',
+          email: 'actor@test.com',
+          source: 'env' as const,
+          assurance: 'best_effort' as const,
+        },
+      });
+      await appendAuditEvent(tmpDir, event);
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.actorInfo?.id).toBe('actor-1');
+      expect(events[0]!.actorInfo?.source).toBe('env');
+    });
+
+    it('accepts event without optional actorInfo', async () => {
+      const event = makeValidAuditEvent();
+      await appendAuditEvent(tmpDir, event);
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.actorInfo).toBeUndefined();
+    });
+
+    it('creates session directory if missing', async () => {
+      const nestedDir = path.join(tmpDir, 'deep', 'nested', 'session');
+      const event = makeValidAuditEvent();
+      await appendAuditEvent(nestedDir, event);
+      const { events } = await readAuditTrail(nestedDir);
+      expect(events).toHaveLength(1);
+    });
+
+    it('accumulates events with correct ordering', async () => {
+      for (let i = 0; i < 5; i++) {
+        await appendAuditEvent(
+          tmpDir,
+          makeValidAuditEvent({
+            id: `00000000-0000-4000-8000-00000000000${i}`,
+            event: `step_${i}`,
+          }),
+        );
+      }
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(5);
+      expect(events[0]!.event).toBe('step_0');
+      expect(events[4]!.event).toBe('step_4');
+    });
+  });
+
+  // ── readAuditTrail — JSONL parsing ──────────────────────────
+  describe('readAuditTrail — JSONL parsing', () => {
+    beforeEach(async () => {
+      await fs.mkdir(tmpDir, { recursive: true });
+    });
+
+    // ── CORNER ──────────────────────────────────────────────
+
+    it('handles truncated last line (partial JSON)', async () => {
+      const validEvent = makeValidAuditEvent();
+      const content = [
+        JSON.stringify(validEvent),
+        '{"id":"00000000-0000-4000-8000', // truncated, no closing brace
+      ].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(skipped).toBe(1);
+    });
+
+    it('ignores empty lines between valid events', async () => {
+      const e1 = JSON.stringify(makeValidAuditEvent({ event: 'first' }));
+      const e2 = JSON.stringify(
+        makeValidAuditEvent({
+          id: '11111111-1111-4111-8111-111111111111',
+          event: 'second',
+        }),
+      );
+      const content = [e1, '', '', e2, ''].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(2);
+      expect(skipped).toBe(0);
+    });
+
+    it('handles lines with leading and trailing whitespace', async () => {
+      const event = makeValidAuditEvent({ event: 'whitespace-test' });
+      const content = ['  ', `  ${JSON.stringify(event)}  `, '\t'].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.event).toBe('whitespace-test');
+      expect(skipped).toBe(0);
+    });
+
+    it('handles file with only blank lines', async () => {
+      await fs.writeFile(auditPath(tmpDir), '\n\n\n', 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(0);
+      expect(skipped).toBe(0);
+    });
+
+    it('skips valid JSON that is not an AuditEvent (array)', async () => {
+      const validEvent = JSON.stringify(makeValidAuditEvent());
+      const content = [validEvent, '[1,2,3]', validEvent].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(2);
+      expect(skipped).toBe(1);
+    });
+
+    it('skips valid JSON primitives (string, number, boolean)', async () => {
+      const validEvent = JSON.stringify(makeValidAuditEvent());
+      const content = ['"just a string"', validEvent, '42', 'true', validEvent].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(2);
+      expect(skipped).toBe(3);
+    });
+
+    // ── EDGE ─────────────────────────────────────────────────
+
+    it('handles UTF-8 BOM at start of file', async () => {
+      const event = makeValidAuditEvent();
+      const json = JSON.stringify(event);
+      const bom = '\uFEFF';
+      await fs.writeFile(auditPath(tmpDir), bom + json + '\n', 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(skipped).toBe(0);
+    });
+
+    it('counts skipped lines accurately with mixed content', async () => {
+      const valid = JSON.stringify(makeValidAuditEvent());
+      const content = [
+        valid,
+        'not json',
+        '{"invalid":"schema"}',
+        valid,
+        '',
+        valid,
+        '{truncated',
+      ].join('\n');
+      await fs.writeFile(auditPath(tmpDir), content, 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(3);
+      expect(skipped).toBe(3);
+    });
+
+    // ── PERF ─────────────────────────────────────────────────
+
+    it('handles large audit trail (500 events) correctly', async () => {
+      const lines: string[] = [];
+      for (let i = 0; i < 500; i++) {
+        const idSuffix = String(i).padStart(12, '0');
+        lines.push(
+          JSON.stringify(
+            makeValidAuditEvent({
+              id: `00000000-0000-4000-8000-${idSuffix}`,
+              event: `event_${i}`,
+            }),
+          ),
+        );
+      }
+      await fs.writeFile(auditPath(tmpDir), lines.join('\n'), 'utf-8');
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(500);
+      expect(skipped).toBe(0);
+    });
+  });
+
+  // ── atomicWrite — retry & errors ────────────────────────────
+  describe('atomicWrite — retry & errors', () => {
+    beforeEach(async () => {
+      await fs.mkdir(tmpDir, { recursive: true });
+      vi.mocked(fs.rename).mockClear();
+      vi.mocked(fs.writeFile).mockClear();
+    });
+
+    afterEach(() => {
+      restoreRename();
+      restoreWriteFile();
+    });
+
+    // ── EDGE ─────────────────────────────────────────────────
+
+    it('succeeds after EPERM retries (2 failures, 3rd succeeds)', async () => {
+      const filePath = path.join(tmpDir, 'retry-eperm.json');
+      const content = JSON.stringify({ ok: true }) + '\n';
+      vi.mocked(fs.rename).mockRejectedValueOnce(
+        Object.assign(new Error('EPERM'), { code: 'EPERM' }),
+      );
+      vi.mocked(fs.rename).mockRejectedValueOnce(
+        Object.assign(new Error('EPERM'), { code: 'EPERM' }),
+      );
+
+      await atomicWrite(filePath, content);
+      const written = await fs.readFile(filePath, 'utf-8');
+      expect(written).toBe(content);
+      // Two rejections consumed + one real call = 3 total
+      expect(vi.mocked(fs.rename)).toHaveBeenCalledTimes(3);
+    });
+
+    it('succeeds after EBUSY retry (1 failure, 2nd succeeds)', async () => {
+      const filePath = path.join(tmpDir, 'retry-ebusy.json');
+      const content = JSON.stringify({ ok: true }) + '\n';
+      vi.mocked(fs.rename).mockRejectedValueOnce(
+        Object.assign(new Error('EBUSY'), { code: 'EBUSY' }),
+      );
+
+      await atomicWrite(filePath, content);
+      const written = await fs.readFile(filePath, 'utf-8');
+      expect(written).toBe(content);
+      expect(vi.mocked(fs.rename)).toHaveBeenCalledTimes(2);
+    });
+
+    // ── BAD ──────────────────────────────────────────────────
+
+    it('throws WRITE_FAILED after 3 EPERM retries exhausted', async () => {
+      const filePath = path.join(tmpDir, 'retry-exhaust.json');
+      vi.mocked(fs.rename).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+      const original = JSON.stringify({ original: true }) + '\n';
+      await fs.writeFile(filePath, original, 'utf-8');
+
+      let caught: PersistenceError | undefined;
+      try {
+        await atomicWrite(filePath, JSON.stringify({ new: true }) + '\n');
+      } catch (err) {
+        caught = err as PersistenceError;
+        expect(caught).toBeInstanceOf(PersistenceError);
+        expect(caught.code).toBe('WRITE_FAILED');
+      }
+      expect(caught).toBeDefined();
+      expect(vi.mocked(fs.rename)).toHaveBeenCalledTimes(3);
+      const after = await fs.readFile(filePath, 'utf-8');
+      expect(after).toBe(original);
+    });
+
+    it('throws WRITE_FAILED when writeFile fails with EACCES', async () => {
+      const filePath = path.join(tmpDir, 'write-eacces.json');
+      vi.mocked(fs.writeFile).mockRejectedValueOnce(
+        Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+      );
+
+      let caught: unknown;
+      try {
+        await atomicWrite(filePath, 'content');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('WRITE_FAILED');
+    });
+
+    it('throws WRITE_FAILED when writeFile fails with ENOSPC', async () => {
+      const filePath = path.join(tmpDir, 'write-enospc.json');
+      vi.mocked(fs.writeFile).mockRejectedValueOnce(
+        Object.assign(new Error('no space'), { code: 'ENOSPC' }),
+      );
+
+      let caught: unknown;
+      try {
+        await atomicWrite(filePath, 'content');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PersistenceError);
+      expect((caught as PersistenceError).code).toBe('WRITE_FAILED');
+    });
+
+    it('cleans up temp file after writeFile failure', async () => {
+      const filePath = path.join(tmpDir, 'write-cleanup.json');
+      vi.mocked(fs.writeFile).mockRejectedValueOnce(
+        Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+      );
+
+      try {
+        await atomicWrite(filePath, 'content');
+      } catch {
+        // expected
+      }
+      const entries = await fs.readdir(tmpDir);
+      const tmpFiles = entries.filter((e) => e.startsWith('.') && e.includes('.tmp'));
+      expect(tmpFiles).toHaveLength(0);
+    });
+
+    // ── EDGE ─────────────────────────────────────────────────
+
+    it('does not retry non-EPERM/EBUSY errors', async () => {
+      const filePath = path.join(tmpDir, 'no-retry-exdev.json');
+      vi.mocked(fs.rename).mockRejectedValue(Object.assign(new Error('EXDEV'), { code: 'EXDEV' }));
+
+      await expect(atomicWrite(filePath, JSON.stringify({}) + '\n')).rejects.toThrow(
+        PersistenceError,
+      );
+      expect(vi.mocked(fs.rename)).toHaveBeenCalledTimes(1);
     });
   });
 });
