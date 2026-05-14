@@ -54,6 +54,39 @@ describe('runtime diagnostics', () => {
     expect(diagnostics?.missingEvidence).toContain('readable_session_state');
   });
 
+  it('HAPPY: builds session-directory-missing diagnostics with actionable recovery', () => {
+    const diagnostics = buildBlockedDiagnostics('SESSION_DIR_NOT_FOUND', {
+      sessionId: 'ses-abc',
+      tool: 'bash',
+      sessDir: '/tmp/ws/fp/ses-abc',
+      stateReadable: 'false',
+    });
+
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics?.diagnosticCode).toBe('SESSION_DIRECTORY_MISSING');
+    expect(diagnostics?.rootCause).toContain(
+      'session directory from the workspace context, but the directory no longer exists',
+    );
+    expect(diagnostics?.observed).toContain('sessionId=ses-abc');
+    expect(diagnostics?.observed).toContain('sessDir=/tmp/ws/fp/ses-abc');
+    expect(diagnostics?.required).toContain('expected directory: /tmp/ws/fp/ses-abc');
+    expect(diagnostics?.missingEvidence).toContain('existing_session_directory');
+    expect(diagnostics?.safeNextActions).toContain(
+      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+    );
+  });
+
+  it('HAPPY: builds session-directory-missing diagnostics with sparse detail (no crash)', () => {
+    const diagnostics = buildBlockedDiagnostics('SESSION_DIR_NOT_FOUND');
+
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics?.diagnosticCode).toBe('SESSION_DIRECTORY_MISSING');
+    expect(diagnostics?.observed).toEqual([]);
+    expect(diagnostics?.safeNextActions).toContain(
+      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+    );
+  });
+
   it('EDGE: does not invent strict orchestration missing evidence from generic failures', () => {
     const diagnostics = buildBlockedDiagnostics('STRICT_REVIEW_ORCHESTRATION_FAILED', {
       reason: 'reviewer response did not match ReviewFindings schema',

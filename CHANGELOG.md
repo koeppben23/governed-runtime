@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project governance contracts:** Added GitHub issue templates, PR template, project governance documentation, and drift guards requiring clean conventional branches, docs/changelog decisions, risk classification, verification evidence, and high-risk fail-closed coverage.
 
+### Fixed
+
+- **FG-QUAL-003 (Issue #215):** Eliminate inconsistent fail-open behavior in `tool.execute.before` host-tool phase gate:
+  - Replaced documented fail-open `return` at `plugin.ts:266` with fail-closed `throw buildEnforcementError('SESSION_DIR_NOT_FOUND', ...)` — mutating host tools (bash, write, edit) are now blocked when the FlowGuard session directory is computed but missing from disk
+  - Added `SESSION_DIR_NOT_FOUND` reason code in `reasons-precondition.ts` with explicit recovery steps (`/hydrate`)
+  - Added `SESSION_DIRECTORY_MISSING` runtime diagnostics via `diagnostics/builders.ts`
+  - Added `isFlowGuardVerdictTool()` in `tool-names.ts` to replace ad-hoc 4-way `!==` chain
+  - Preserved pre-session path: `getSessionDir()` returning `null` (no fingerprint) still allows host tools
+  - Added negative-path tests: missing directory, race-condition directory deletion, non-git worktree pre-session, read-only tool immunity, and `resolveEnforcement` null-safety
+
 ## [1.2.0-rc.3] - 2026-05-14
 
 ### Changed

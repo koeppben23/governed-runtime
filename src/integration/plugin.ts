@@ -60,6 +60,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
+  isFlowGuardVerdictTool,
 } from './tool-names.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
 
@@ -252,19 +253,25 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         // Investigation-only phases (TICKET, PLAN, ARCHITECTURE) restrict
         // mutating host tools (bash, write, edit). Read-only tools pass.
         //
-        // No known FlowGuard session directory for this host session
-        // (fingerprint not resolved or session dir does not exist on disk).
-        // Allow only because there is no FlowGuard session state to enforce
-        // against here; known sessions with missing/unreadable state fail
-        // closed below.
+        // Two distinct paths:
+        //   (A) sessDir === null  → no FlowGuard fingerprint → allow
+        //       (pre-session, no governance context to enforce)
+        //   (B) sessDir computed  → directory MUST exist on disk
+        //       (governance context gap → fail-closed: SESSION_DIR_NOT_FOUND)
         if (isMutatingHostTool(toolName)) {
           const sessDir = ws.getSessionDir(sessionId);
           if (!sessDir) return;
 
-          // Fail-open: session dir path computed but directory does not exist
-          // on disk (e.g. reviewer subagent session without FlowGuard state).
+          // If the session directory is computed from fingerprint but not present
+          // on disk, this is a governance context gap → fail-closed. Recovery is
+          // explicit: run /hydrate to initialise the session directory.
           if (!existsSync(sessDir)) {
-            return;
+            throw buildEnforcementError(
+              'SESSION_DIR_NOT_FOUND',
+              `FlowGuard session directory expected at "${sessDir}" but not found on disk. ` +
+                `Run /hydrate to initialize the session.`,
+              { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
+            );
           }
 
           let state: SessionState | null;
@@ -328,13 +335,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           }
         }
 
-        if (
-          toolName !== TOOL_FLOWGUARD_PLAN &&
-          toolName !== TOOL_FLOWGUARD_IMPLEMENT &&
-          toolName !== TOOL_FLOWGUARD_ARCHITECTURE &&
-          toolName !== TOOL_FLOWGUARD_REVIEW
-        )
-          return;
+        if (!isFlowGuardVerdictTool(toolName)) return;
 
         // BUG-21: LLMs (notably DeepSeek R1) send explicit null for optional fields.
         // Zod .optional() rejects null — strip null-valued keys so they become

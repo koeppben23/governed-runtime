@@ -1436,7 +1436,7 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('CORNER — bash with no session dir is allowed (no FlowGuard state to enforce)', async () => {
+    it('BAD — bash blocked when sessDir computed but directory missing (fail-closed)', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -1444,13 +1444,59 @@ describe('plugin bootstrap fail-closed', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // Use a session ID that has no persisted FlowGuard session directory
+        // Fingerprint is resolved (git repo) → sessDir is computed.
+        // But directory does not exist on disk (no /hydrate yet).
+        // This MUST fail-closed with SESSION_DIR_NOT_FOUND.
         const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { command: 'echo hello' } };
-        // No known FlowGuard session directory → no governance state to enforce against → allowed
-        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await ws.cleanup();
+      }
+    });
+
+    it('BAD — bash blocked when session dir existed but was deleted before hook (race)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        // Create session directory on disk, so it exists when plugin loads
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('IMPLEMENTATION'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // Simulate race: delete the session directory after plugin init
+        await fs.rm(sessDir, { recursive: true, force: true });
+
+        const input = { tool: 'bash', sessionID, callID: 'c1' };
+        const output = { args: { command: 'echo hello' } };
+        await expect(beforeHook(input, output)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — bash allowed in non-git worktree (pre-session, sessDir=null)', async () => {
+      // Non-git worktree → isUsableWorktree returns false → fingerprint
+      // never resolved → getSessionDir returns null → tool allowed.
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-no-git-gate-'));
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: tmp, directory: tmp }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { command: 'echo hello' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
       }
     });
 
@@ -1595,6 +1641,68 @@ describe('plugin bootstrap fail-closed', () => {
           expect(error.message).toContain('HOST_TOOL_PHASE_DENIED');
           expect(error.message).toContain('bash');
         }
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('CORNER — resolveEnforcement throws → sessionState=null, blocks with controlled error', async () => {
+      // When resolveEnforcement fails (e.g. corrupt state), it returns
+      // { strictEnforcement: true, sessionState: null }. enforceBeforeVerdict
+      // MUST handle null sessionState with a controlled block, not an
+      // unhandled crash from null.property access.
+      //
+      // In strict mode with null session state and no pending review,
+      // enforceBeforeVerdict returns REVIEW_ASSURANCE_STATE_UNAVAILABLE.
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        // Write corrupt state — resolveEnforcement will catch the readState error
+        await fs.writeFile(
+          path.join(sessDir, 'session-state.json'),
+          '{ corrupt json causes readState to throw }',
+          'utf-8',
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // Use a verdict tool with a selfReviewVerdict so enforceBeforeVerdict
+        // reaches the sessionState null path (instead of short-circuiting).
+        const input = { tool: 'flowguard_plan', sessionID, callID: 'c1' };
+        const output = { args: { selfReviewVerdict: 'approve' } };
+
+        // strictEnforcement=true + sessionState=null → controlled block
+        await expect(beforeHook(input, output)).rejects.toThrow(
+          'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+        );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('HAPPY — read tool with missing sessDir is allowed (non-mutating, never gated)', async () => {
+      // read is not in MUTATING_HOST_TOOLS — isMutatingHostTool('read') is false.
+      // The phase gate is never consulted. This remains allowed regardless of
+      // session directory state.
+      const ws = await createTestWorkspace();
+      try {
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        // Fingerprint resolved (git repo), but no session dir on disk.
+        // read is non-mutating → isMutatingHostTool returns false → gate skipped.
+        const input = { tool: 'read', sessionID: crypto.randomUUID(), callID: 'c1' };
+        const output = { args: { filePath: '/tmp/some-file.ts' } };
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }

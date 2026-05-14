@@ -54,6 +54,38 @@ function enforcementUnavailable(detail: DiagnosticDetail): RuntimeDiagnostics {
   };
 }
 
+function sessionDirMissing(detail: DiagnosticDetail): RuntimeDiagnostics {
+  const tool = optionalField(detail.tool) ?? optionalField(detail.command) ?? 'host tool';
+  const sessDir = optionalField(detail.sessDir);
+  return {
+    diagnosticCode: 'SESSION_DIRECTORY_MISSING',
+    severity: 'error',
+    command: tool,
+    phase: optionalField(detail.phase),
+    policyMode: optionalField(detail.policyMode),
+    rootCause:
+      'FlowGuard had a session directory from the workspace context, but the directory no longer exists on disk.',
+    observed: clean([
+      optionalField(detail.sessionId) ? `sessionId=${detail.sessionId}` : undefined,
+      sessDir ? `sessDir=${sessDir}` : undefined,
+      optionalField(detail.stateReadable) ? `stateReadable=${detail.stateReadable}` : undefined,
+    ]),
+    required: clean([
+      'existing FlowGuard session directory on disk',
+      sessDir ? `expected directory: ${sessDir}` : 'expected session directory',
+    ]),
+    missingEvidence: clean([
+      detail.stateReadable === 'false' ? 'readable_session_state' : undefined,
+      'existing_session_directory',
+    ]),
+    safeNextActions: [
+      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+      'Verify the workspace/session directory exists and is writable.',
+      'Restart OpenCode if the sidecar session points to stale workspace state.',
+    ],
+  };
+}
+
 function hostToolPhaseDenied(detail: DiagnosticDetail): RuntimeDiagnostics {
   const tool = optionalField(detail.tool) ?? optionalField(detail.command) ?? 'mutating host tool';
   const phase = optionalField(detail.phase) ?? 'current investigation phase';
@@ -190,6 +222,8 @@ export function buildBlockedDiagnostics(
   switch (code) {
     case 'PLUGIN_ENFORCEMENT_UNAVAILABLE':
       return enforcementUnavailable(detail);
+    case 'SESSION_DIR_NOT_FOUND':
+      return sessionDirMissing(detail);
     case 'HOST_TOOL_PHASE_DENIED':
       return hostToolPhaseDenied(detail);
     case 'HOST_SUBAGENT_TASK_REQUIRED':
