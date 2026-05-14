@@ -1646,10 +1646,14 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
-    it('CORNER — resolveEnforcement throws → sessionState=null, downstream does not crash', async () => {
+    it('CORNER — resolveEnforcement throws → sessionState=null, blocks with controlled error', async () => {
       // When resolveEnforcement fails (e.g. corrupt state), it returns
       // { strictEnforcement: true, sessionState: null }. enforceBeforeVerdict
-      // MUST handle null sessionState without throwing unhandled.
+      // MUST handle null sessionState with a controlled block, not an
+      // unhandled crash from null.property access.
+      //
+      // In strict mode with null session state and no pending review,
+      // enforceBeforeVerdict returns REVIEW_ASSURANCE_STATE_UNAVAILABLE.
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1673,17 +1677,11 @@ describe('plugin bootstrap fail-closed', () => {
         // reaches the sessionState null path (instead of short-circuiting).
         const input = { tool: 'flowguard_plan', sessionID, callID: 'c1' };
         const output = { args: { selfReviewVerdict: 'approve' } };
-        // Must not crash unhandled — either resolves (allowed) or throws controlled
-        // FlowGuardEnforcementError (not a raw TypeError from null.property access).
-        try {
-          await beforeHook(input, output);
-          // If it resolves, sessionState=null with strictEnforcement=true in
-          // non-strict fallback path is allowed.
-        } catch (err) {
-          expect(err).toBeInstanceOf(Error);
-          expect((err as Error).name).toBe('FlowGuardEnforcementError');
-          // crash type errors would have different error.name
-        }
+
+        // strictEnforcement=true + sessionState=null → controlled block
+        await expect(beforeHook(input, output)).rejects.toThrow(
+          'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }
