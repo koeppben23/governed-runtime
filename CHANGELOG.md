@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-QUAL-005 (Issue #228):** Add structured runtime diagnostics for blocked FlowGuard actions:
+  - Added pure `src/diagnostics/` presentation layer with typed `RuntimeDiagnostics`, stable diagnostic builders, and standalone deterministic failure-card formatting
+  - Added machine-readable `diagnostics` payloads to `strictBlockedOutput`, `buildEnforcementError`, `formatRailResult`, and `formatBlocked` without changing existing `code`, `message`, `detail`, `recovery`, or `quickFix` fields
+  - Covered the first high-value block codes: `PLUGIN_ENFORCEMENT_UNAVAILABLE`, `HOST_TOOL_PHASE_DENIED`, `HOST_SUBAGENT_TASK_REQUIRED`, `SUBAGENT_EVIDENCE_MISSING`, `SUBAGENT_EVIDENCE_REUSED`, and `STRICT_REVIEW_ORCHESTRATION_FAILED`
+  - Enriched phase-gate and host-task evidence failures with non-authoritative context for root-cause explanation
+  - No command admissibility, policy, evidence validation, state transition, gate, or fail-closed semantics changed; diagnostics remain presentation-only
+
 - **FG-QUAL-004 (Issue #226):** Close logging gaps across I/O-critical error paths:
   - `persistence.ts`: added `getAdapterLogger().error()` before throw in `readReport`, `readAuditTrail`, `readDiscovery`; added try/catch logging in `appendAuditEvent`; added non-ENOENT diagnostic in `stateExists`
   - `plugin.ts`: added `console.warn` for silently swallowed fingerprint resolution failure

@@ -282,6 +282,13 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 `"${sessDir}" but is unreadable ` +
                 `(${err instanceof Error ? err.message : String(err)}). ` +
                 `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+              {
+                sessionId,
+                tool: toolName,
+                stateFile: `${sessDir}/session-state.json`,
+                stateReadable: 'false',
+                error: err instanceof Error ? err.message : String(err),
+              },
             );
           }
 
@@ -296,6 +303,12 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               `Cannot verify host tool phase gate — session directory exists at ` +
                 `"${sessDir}" but contains no state file. ` +
                 `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+              {
+                sessionId,
+                tool: toolName,
+                stateFile: `${sessDir}/session-state.json`,
+                stateReadable: 'false',
+              },
             );
           }
 
@@ -307,7 +320,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               phase: state.phase,
               code: gateResult.code,
             });
-            throw buildEnforcementError(gateResult.code!, gateResult.reason!);
+            throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
+              sessionId,
+              tool: toolName,
+              phase: state.phase,
+            });
           }
         }
 

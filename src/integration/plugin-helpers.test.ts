@@ -85,6 +85,22 @@ describe('strictBlockedOutput', () => {
     expect(hasInterpolation).toBe(true);
   });
 
+  it('HAPPY: includes diagnostics for known strict blocked codes', () => {
+    const json = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+      obligationId: 'rev-ob-123',
+      policyMode: 'host_task_required',
+    });
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const diagnostics = parsed.diagnostics as Record<string, unknown>;
+
+    expect(diagnostics.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
+    expect(diagnostics.rootCause).toContain('host-visible');
+    expect(diagnostics.safeNextActions).toEqual(
+      expect.arrayContaining([expect.stringContaining('Do not submit manual')]),
+    );
+    expect(parsed.diagnosticCard).toBeUndefined();
+  });
+
   it('CORNER: unknown code falls back to generic message + empty recovery', () => {
     const json = strictBlockedOutput('UNKNOWN_CODE_NEVER_REGISTERED_XYZ', {});
     const parsed = JSON.parse(json) as Record<string, unknown>;
@@ -92,6 +108,7 @@ describe('strictBlockedOutput', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('UNKNOWN_CODE_NEVER_REGISTERED_XYZ');
     expect(parsed.recovery).toEqual([]);
+    expect(parsed.diagnostics).toBeUndefined();
   });
 });
 
@@ -118,6 +135,22 @@ describe('buildEnforcementError (F2 — structured BLOCKED responses)', () => {
     expect(payload.detail).toEqual({ sessionId: 'sess_123' });
     expect(Array.isArray(payload.recovery)).toBe(true);
     expect((payload.recovery as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('EDGE: enforcement errors include diagnostics without changing the thrown error contract', () => {
+    const err = buildEnforcementError('HOST_TOOL_PHASE_DENIED', 'write is denied in PLAN', {
+      tool: 'write',
+      phase: 'PLAN',
+    });
+    const payload = JSON.parse(err.message.slice('[FlowGuard] '.length)) as Record<string, unknown>;
+    const diagnostics = payload.diagnostics as Record<string, unknown>;
+
+    expect(err.name).toBe('FlowGuardEnforcementError');
+    expect(payload.code).toBe('HOST_TOOL_PHASE_DENIED');
+    expect(payload.message).toBe('write is denied in PLAN');
+    expect(diagnostics.diagnosticCode).toBe('HOST_TOOL_MUTATION_DENIED_IN_PHASE');
+    expect(diagnostics.phase).toBe('PLAN');
+    expect(payload.diagnosticCard).toBeUndefined();
   });
 
   it('GOOD: live enforcement reason overrides registry template', () => {
