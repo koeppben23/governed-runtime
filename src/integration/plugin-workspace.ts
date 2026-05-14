@@ -25,8 +25,8 @@ import {
 import { GENESIS_HASH, type ChainedAuditEvent } from '../audit/types.js';
 import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
-import { appendReviewAuditEvent } from './plugin-review-audit.js';
-import { blockObligation } from './plugin-review-state.js';
+import { appendReviewAuditEvent } from './review/audit-events.js';
+import { blockObligation } from './review/obligation-state.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';

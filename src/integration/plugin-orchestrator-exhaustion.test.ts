@@ -19,12 +19,12 @@ vi.mock('../adapters/persistence.js', () => ({
   writeState: vi.fn(),
 }));
 
-vi.mock('./plugin-review-audit.js', () => ({
+vi.mock('./review/audit-events.js', () => ({
   appendReviewAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { readState } from '../adapters/persistence.js';
-import { appendReviewAuditEvent } from './plugin-review-audit.js';
+import { appendReviewAuditEvent } from './review/audit-events.js';
 import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';

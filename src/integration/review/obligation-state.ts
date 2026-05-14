@@ -1,6 +1,6 @@
 /**
- * @module integration/plugin-review-state
- * @description Pure review state helpers extracted from plugin.ts.
+ * @module integration/review/obligation-state
+ * @description Pure review obligation state helpers.
  *
  * These helpers do not perform I/O. They return updated SessionState
  * values and are intended for use inside updateReviewAssurance callbacks.
@@ -8,9 +8,9 @@
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
-import type { ReviewObligation } from '../state/evidence.js';
-import { ensureReviewAssurance } from './review/assurance.js';
+import type { SessionState } from '../../state/schema.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import { ensureReviewAssurance } from './assurance.js';
 
 /**
  * Apply a transform to the review obligation with the given ID.
