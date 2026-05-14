@@ -117,8 +117,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   try {
     await ws.resolveFingerprint();
-  } catch {
-    /* non-blocking */
+  } catch (err) {
+    console.warn(
+      '[flowguard] workspace fingerprint resolution failed (non-blocking):',
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   const { log, config } = await createPluginLogger(

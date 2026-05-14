@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   MANDATES_FILENAME,
   extractManagedBody,
@@ -178,6 +179,9 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     const removedCfg = await safeUnlink(cfgPath);
     ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
   } catch (err) {
+    getAdapterLogger().error('cli', 'uninstall command failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     errors.push(err instanceof Error ? err.message : String(err));
   }
 

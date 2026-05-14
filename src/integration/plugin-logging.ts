@@ -138,8 +138,11 @@ export async function createPluginLogger(
     } else {
       config = DEFAULT_CONFIG;
     }
-  } catch {
-    // Config fallback for logging only - runtime behavior uses validated config
+  } catch (err) {
+    console.warn(
+      '[flowguard] failed to read plugin log config, using defaults:',
+      err instanceof Error ? err.message : String(err),
+    );
     config = DEFAULT_CONFIG;
   }
 

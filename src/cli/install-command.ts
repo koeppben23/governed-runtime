@@ -13,6 +13,7 @@ import {
   writeGlobalConfig,
   writeRepoConfig,
 } from '../adapters/persistence.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import {
   COMMANDS,
@@ -328,6 +329,9 @@ export async function install(args: CliArgs): Promise<CliResult> {
     // Emit restart reminder as a warning (always shown, even on success)
     warnings.push('Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).');
   } catch (err) {
+    getAdapterLogger().error('cli', 'install command failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
