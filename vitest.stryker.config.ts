@@ -17,6 +17,13 @@ export default defineConfig({
       'src/integration/command-aliases.test.ts',
       'src/integration/status.test.ts',
       'src/integration/tool-classification.test.ts',
+      'src/integration/review/orchestrator.test.ts',
+      'src/integration/review/orchestrator-invoke.test.ts',
+      'src/integration/review/orchestrator-retry.test.ts',
+      'src/integration/review/enforcement/enforcement.test.ts',
+      'src/integration/review/enforcement/mutation.test.ts',
+      'src/integration/review/enforcement/extraction.test.ts',
+      'src/integration/review/enforcement/session.test.ts',
     ],
     exclude: [
       'src/security/actions-pinning.test.ts',
