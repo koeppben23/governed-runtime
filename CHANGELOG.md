@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project governance contracts:** Added GitHub issue templates, PR template, project governance documentation, and drift guards requiring clean conventional branches, docs/changelog decisions, risk classification, verification evidence, and high-risk fail-closed coverage.
 
 ## [1.2.0-rc.3] - 2026-05-14
 

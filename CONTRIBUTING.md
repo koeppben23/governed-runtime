@@ -252,6 +252,75 @@ The following checks must pass for a PR to be merged:
 
 ## Pull Request Process
 
+### Ticket Readiness Contract
+
+Tickets should be considered ready for implementation only when the following
+items are explicit:
+
+- Objective is clear
+- Scope and non-goals are clear
+- Risk class is set (`TRIVIAL`, `STANDARD`, or `HIGH-RISK`)
+- Touched surface is identified
+- Acceptance criteria are testable
+- Verification expectations are stated
+- Documentation expectation is stated
+- Changelog expectation is stated
+
+Recommended GitHub Project fields:
+
+| Field                | Values                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `Risk`               | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                                 |
+| `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests`        |
+| `Docs Required`      | `Yes`, `No`, `Unknown`                                                                             |
+| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                             |
+| `Verification Level` | `Targeted`, `Full`, `Release`                                                                      |
+| `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                            |
+| `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                                     |
+
+### Documentation Contract
+
+Documentation must stay aligned with runtime behavior, CLI output, commands,
+configuration, policies, schemas, tests, and release process.
+
+Update user-facing docs when behavior, command syntax, config fields, policy
+semantics, install/upgrade/release steps, error codes, recovery guidance, or
+support expectations change. Update developer docs when architecture boundaries,
+SSOT ownership, test strategy, release process, or contribution workflow changes.
+
+If docs are not updated, the PR must state why no documentation change is needed.
+
+### Changelog Contract
+
+Update `CHANGELOG.md` for release-relevant changes:
+
+- user-visible behavior
+- CLI, API, or config changes
+- policy or governance semantics
+- release, install, upgrade, or rollback behavior
+- security or fail-closed behavior
+- error or recovery text
+- meaningful test or quality gate changes
+
+`CHANGELOG.md` is not required for typo-only docs, formatting, internal-only
+cleanup without behavior change, or test refactors without new release-relevant
+coverage. If not updated, the PR must state why no changelog entry is needed.
+
+### High-Risk Contract
+
+Changes touching state/session lifecycle, policy/risk logic, identity, audit or
+hash-chain, archive, release or installer, CI or supply chain, persistence,
+migration, compatibility, or security trust boundaries are `HIGH-RISK`.
+
+High-risk work must include:
+
+- governing contract and owning authority
+- fail-closed behavior preservation
+- no duplicate runtime authority
+- negative-path tests
+- docs and changelog decision
+- rollback or recovery notes
+
 ### 1. Before Starting
 
 - Check existing issues and PRs

@@ -171,6 +171,12 @@ function stopOpenCodeServer(proc) {
   });
 }
 
+function randomOpenCodePort() {
+  // Avoid the Fetch spec's blocked ports (for example 5060/5061), which cause
+  // undici to fail with "bad port" even when the server starts successfully.
+  return 18080 + Math.floor(Math.random() * 1000);
+}
+
 async function fetchJson(url, headers = {}) {
   const response = await fetch(url, { headers });
   if (!response.ok) {
@@ -250,7 +256,7 @@ async function verifyOpenCodeRuntimeE2E() {
     }
 
     const { command, argsPrefix } = resolveOpenCodeCommand();
-    const port = 4200 + Math.floor(Math.random() * 1000);
+    const port = randomOpenCodePort();
     const serverPassword = 'flowguard-independent-review-e2e';
     server = spawn(command, [...argsPrefix, 'serve', '--hostname=127.0.0.1', `--port=${port}`], {
       cwd: projectDir,

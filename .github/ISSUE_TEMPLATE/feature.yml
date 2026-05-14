@@ -1,0 +1,70 @@
+name: Feature
+description: Propose a new capability or user-visible enhancement
+title: 'feat: '
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope And Non-Goals
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Class
+      options: [TRIVIAL, STANDARD, HIGH-RISK]
+    validations:
+      required: true
+  - type: checkboxes
+    id: touched-surface
+    attributes:
+      label: Touched Surface
+      options:
+        - label: Docs
+        - label: CLI or installer
+        - label: Policy or config
+        - label: State or session lifecycle
+        - label: Audit, archive, or hash-chain
+        - label: Release, CI, or supply chain
+        - label: Security or trust boundary
+        - label: Tests only
+  - type: textarea
+    id: ssot
+    attributes:
+      label: SSOT / Authority
+      description: Which existing authority owns this behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Behavior is implemented through the owning authority, without duplicate runtime authority.
+        - [ ] Tests cover happy path and relevant negative path.
+        - [ ] Docs updated or explicitly not needed.
+        - [ ] CHANGELOG.md updated or explicitly not needed.
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition Of Done
+      value: |
+        - [ ] Clean conventional branch created from current main.
+        - [ ] Change is scoped to this ticket.
+        - [ ] Conventional commit and PR title used.
+        - [ ] Tests added or updated where needed.
+        - [ ] Documentation updated or explicitly marked not needed with reason.
+        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] Verification commands recorded in PR.
+        - [ ] PR links/closes this issue.
+    validations:
+      required: true

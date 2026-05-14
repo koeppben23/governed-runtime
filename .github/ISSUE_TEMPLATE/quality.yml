@@ -1,0 +1,50 @@
+name: Refactor / Quality
+description: Improve maintainability, tests, architecture, or internal quality
+title: 'refactor: '
+labels: ['quality']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope And Non-Goals
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Class
+      options: [TRIVIAL, STANDARD, HIGH-RISK]
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract Preservation
+      description: Which public/runtime contracts must remain unchanged?
+      value: |
+        - [ ] No public API drift unless explicitly accepted.
+        - [ ] No runtime behavior drift unless explicitly accepted.
+        - [ ] No schema or SSOT drift.
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition Of Done
+      value: |
+        - [ ] Clean conventional branch created from current main.
+        - [ ] Change is scoped to this ticket.
+        - [ ] Conventional commit and PR title used.
+        - [ ] Tests added or updated where needed.
+        - [ ] Documentation updated or explicitly marked not needed with reason.
+        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] Verification commands recorded in PR.
+        - [ ] PR links/closes this issue.
+    validations:
+      required: true

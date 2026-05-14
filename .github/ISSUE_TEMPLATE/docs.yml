@@ -1,0 +1,41 @@
+name: Documentation
+description: Update product, user, developer, release, or governance documentation
+title: 'docs: '
+labels: ['documentation']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+    validations:
+      required: true
+  - type: checkboxes
+    id: docs-surface
+    attributes:
+      label: Documentation Surface
+      options:
+        - label: README or product docs
+        - label: User commands or configuration
+        - label: Release, install, upgrade, or rollback
+        - label: Architecture, policy, testing, or contribution docs
+        - label: Troubleshooting, reason codes, or recovery guidance
+  - type: textarea
+    id: alignment
+    attributes:
+      label: Runtime Alignment
+      description: Which runtime/code/test authority does this documentation reflect?
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition Of Done
+      value: |
+        - [ ] Clean conventional branch created from current main.
+        - [ ] Docs reflect current behavior and do not invent unsupported behavior.
+        - [ ] Docs drift tests updated where relevant.
+        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] Verification commands recorded in PR.
+        - [ ] PR links/closes this issue.
+    validations:
+      required: true

@@ -1,0 +1,84 @@
+name: Bug
+description: Report a defect or regression
+title: 'fix: '
+labels: ['bug']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: What is broken and what should be true instead?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Error output, reproduction steps, affected files, or observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope And Non-Goals
+      description: What must change, and what must not change?
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Class
+      options:
+        - TRIVIAL
+        - STANDARD
+        - HIGH-RISK
+    validations:
+      required: true
+  - type: checkboxes
+    id: touched-surface
+    attributes:
+      label: Touched Surface
+      options:
+        - label: Docs
+        - label: CLI or installer
+        - label: Policy or config
+        - label: State or session lifecycle
+        - label: Audit, archive, or hash-chain
+        - label: Release, CI, or supply chain
+        - label: Security or trust boundary
+        - label: Tests only
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Root cause is addressed, not hidden by fallback.
+        - [ ] Existing behavior is preserved unless explicitly changed.
+        - [ ] Tests cover the fix and relevant negative path.
+        - [ ] Docs updated or explicitly not needed.
+        - [ ] CHANGELOG.md updated or explicitly not needed.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification Required
+      description: Which commands or checks must pass?
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition Of Done
+      value: |
+        - [ ] Clean conventional branch created from current main.
+        - [ ] Change is scoped to this ticket.
+        - [ ] Conventional commit and PR title used.
+        - [ ] Tests added or updated where needed.
+        - [ ] Negative-path tests added for governance/fail-closed behavior.
+        - [ ] Documentation updated or explicitly marked not needed with reason.
+        - [ ] CHANGELOG.md updated or explicitly marked not needed with reason.
+        - [ ] Verification commands recorded in PR.
+        - [ ] PR links/closes this issue.
+    validations:
+      required: true
