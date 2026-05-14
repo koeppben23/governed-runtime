@@ -52,6 +52,33 @@ The following are considered breaking governance semantics changes (major versio
 
 ## Release Process
 
+### Protected Main Release Flow
+
+`main` is the canonical release authority and is protected by repository rules.
+Release changes must be merged through a pull request before a release tag is
+created. A `v*` tag must point at a commit already contained in `origin/main`.
+
+1. Start from current `main`: `git switch main && git pull --ff-only origin main`
+2. Create a release branch: `git switch -c release/vX.Y.Z`
+3. Prepare files without committing or tagging: `npm run release:prepare -- X.Y.Z`
+4. Update release-pinned documentation tests if the changelog cut moves required entries out of `[Unreleased]`
+5. Run the full local gate: `npm run release:verify`
+6. Commit with hooks enabled: `git commit -m "chore(release): cut vX.Y.Z"`
+7. Open a pull request to `main` and wait for required checks
+8. Squash-merge the pull request
+9. Refresh local `main`: `git switch main && git pull --ff-only origin main`
+10. Prove the checkout is safe to tag: `npm run release:assert-main-tag -- vX.Y.Z`
+11. Create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+12. Verify the GitHub Release and attached artifacts
+
+Do not use `npm version` for FlowGuard releases. It creates local commit/tag
+state before branch protection and required checks have accepted the release.
+
+If a release tag is pushed before the release commit is merged to `main`, stop
+and treat the release as inconsistent. Do not overwrite or force-push the tag.
+Either merge the exact tagged commit through the protected PR path or publish a
+new patch/prerelease tag from the corrected `main` commit.
+
 ### Artifact Creation
 
 1. Build: TypeScript compiled to JavaScript

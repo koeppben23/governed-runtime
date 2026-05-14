@@ -205,15 +205,21 @@ See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tie
 
 ### Release Checklist
 
-1. `npm run check` — type check clean
-2. `npm run lint` — no lint errors
-3. `npm test` — all tests pass (pre-existing PERF flakes acceptable)
-4. `npm run build` — build succeeds
-5. `npm run check:esm` — ESM imports valid
-6. `npm run test:install-verify` — tarball pack/install/doctor passes
-7. `npm version <patch|minor|major>` — bumps version, syncs VERSION/docs
-8. `git push --follow-tags` — triggers release workflow
-9. Verify GitHub Release artifact and SBOM attachment
+Releases are PR-first because `main` is protected. Do not use `npm version` for
+FlowGuard releases: it creates local commit/tag state before branch protection
+and required checks have accepted the release.
+
+1. `git switch main && git pull --ff-only origin main` — start from current `main`
+2. `git switch -c release/vX.Y.Z` — create a release branch
+3. `npm run release:prepare -- X.Y.Z` — update `VERSION`, package metadata, lockfile, changelog, and generated docs without committing or tagging
+4. Update release-pinned documentation tests when the release cut moves entries out of `[Unreleased]`
+5. `npm run release:verify` — type check, lint, tests, build, ESM check, and tarball install verification
+6. `git commit -m "chore(release): cut vX.Y.Z"` — commit on the release branch with hooks enabled
+7. Open a PR to `main`, wait for required checks, then squash-merge
+8. `git switch main && git pull --ff-only origin main` — move local `main` to the merged commit
+9. `npm run release:assert-main-tag -- vX.Y.Z` — prove `HEAD == origin/main`, versions match, changelog is cut, and the tag does not already exist
+10. `git tag vX.Y.Z && git push origin vX.Y.Z` — trigger the release workflow from the merged `main` commit
+11. Verify the GitHub Release artifact, checksum file, SBOM attachment, and provenance attestation
 
 The `release.yml` workflow handles: build, pack, naming validation, install-verify on
 tarball, SHA-256 checksums, CycloneDX SBOM generation, build provenance attestation,
