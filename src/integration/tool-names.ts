@@ -25,3 +25,14 @@ export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 
 export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+
+const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_REVIEW,
+]);
+
+export function isFlowGuardVerdictTool(toolName: string): boolean {
+  return FLOWGUARD_VERDICT_TOOLS.has(toolName);
+}

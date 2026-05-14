@@ -428,4 +428,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Do not spawn unauthorized subagents — FlowGuard governance restricts subagent types',
     ],
   },
+
+  {
+    code: 'SESSION_DIR_NOT_FOUND',
+    category: 'precondition',
+    messageTemplate:
+      'FlowGuard session directory expected at {sessDir} but not found on disk. Run /hydrate to initialize the session in this workspace.',
+    recoverySteps: [
+      'Run /hydrate to recreate or bind a valid FlowGuard session.',
+      'Verify the workspace/session directory still exists and is writable.',
+      'Restart OpenCode if the sidecar session points to stale workspace state.',
+    ],
+  },
 ];
