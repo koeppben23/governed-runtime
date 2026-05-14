@@ -159,5 +159,5 @@ Bug fixes and improvements are welcome. See [CONTRIBUTING.md](../CONTRIBUTING.md
 
 ---
 
-FlowGuard Version: 1.2.0-rc.2
+FlowGuard Version: 1.2.0-rc.3
 _Last Updated: 2026-04-15_

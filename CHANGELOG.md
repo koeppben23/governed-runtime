@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.2.0-rc.3] - 2026-05-14
+
 ### Changed
 
 - **Test coverage for persistence.ts SSOT:** Contract-level coverage for writeState atomicity (rename retry, writeFile failures), readState schema validation failure modes (20+ specific field violations), appendAuditEvent validation and hash-field preservation, readAuditTrail JSONL parsing edge cases (truncation, whitespace, BOM, non-AuditEvent JSON, large trails), and readConfig precedence (repo→global→default with fail-closed validation of both layers). 60+ tests across `src/adapters/adapters.test.ts` and `src/config/flowguard-config.test.ts`.
