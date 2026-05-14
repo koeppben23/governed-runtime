@@ -69,9 +69,7 @@ describe('runtime diagnostics', () => {
     );
     expect(diagnostics?.observed).toContain('sessionId=ses-abc');
     expect(diagnostics?.observed).toContain('sessDir=/tmp/ws/fp/ses-abc');
-    expect(diagnostics?.required).toContain(
-      'expected directory: /tmp/ws/fp/ses-abc',
-    );
+    expect(diagnostics?.required).toContain('expected directory: /tmp/ws/fp/ses-abc');
     expect(diagnostics?.missingEvidence).toContain('existing_session_directory');
     expect(diagnostics?.safeNextActions).toContain(
       'Run /hydrate to recreate or bind a valid FlowGuard session.',
