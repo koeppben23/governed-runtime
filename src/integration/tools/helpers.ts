@@ -41,7 +41,7 @@ import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
-import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
+import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -118,9 +118,6 @@ export function formatRailResult(result: RailResult): string {
     const diagnostics = buildBlockedDiagnostics(result.code, {
       reason: result.reason,
     });
-    const diagnosticCard = diagnostics
-      ? formatDiagnosticCard({ code: result.code, message: result.reason, diagnostics })
-      : null;
     return JSON.stringify({
       error: true,
       code: result.code,
@@ -128,7 +125,6 @@ export function formatRailResult(result: RailResult): string {
       recovery: result.recovery,
       quickFix: result.quickFix,
       ...(diagnostics ? { diagnostics } : {}),
-      ...(diagnosticCard ? { diagnosticCard } : {}),
     });
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
@@ -165,9 +161,6 @@ export function formatRailResult(result: RailResult): string {
 export function formatBlocked(code: string, vars?: Record<string, string>): string {
   const info = defaultReasonRegistry.format(code, vars);
   const diagnostics = buildBlockedDiagnostics(info.code, vars);
-  const diagnosticCard = diagnostics
-    ? formatDiagnosticCard({ code: info.code, message: info.reason, diagnostics })
-    : null;
   return JSON.stringify({
     error: true,
     code: info.code,
@@ -175,7 +168,6 @@ export function formatBlocked(code: string, vars?: Record<string, string>): stri
     recovery: info.recovery,
     quickFix: info.quickFix,
     ...(diagnostics ? { diagnostics } : {}),
-    ...(diagnosticCard ? { diagnosticCard } : {}),
   });
 }
 

@@ -98,8 +98,7 @@ describe('strictBlockedOutput', () => {
     expect(diagnostics.safeNextActions).toEqual(
       expect.arrayContaining([expect.stringContaining('Do not submit manual')]),
     );
-    expect(parsed.diagnosticCard).toContain('FlowGuard blocked this action.');
-    expect(parsed.diagnosticCard).toContain('Root cause:');
+    expect(parsed.diagnosticCard).toBeUndefined();
   });
 
   it('CORNER: unknown code falls back to generic message + empty recovery', () => {
@@ -151,7 +150,7 @@ describe('buildEnforcementError (F2 — structured BLOCKED responses)', () => {
     expect(payload.message).toBe('write is denied in PLAN');
     expect(diagnostics.diagnosticCode).toBe('HOST_TOOL_MUTATION_DENIED_IN_PHASE');
     expect(diagnostics.phase).toBe('PLAN');
-    expect(payload.diagnosticCard).toContain('HOST_TOOL_PHASE_DENIED: write is denied in PLAN');
+    expect(payload.diagnosticCard).toBeUndefined();
   });
 
   it('GOOD: live enforcement reason overrides registry template', () => {

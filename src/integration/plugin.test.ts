@@ -1538,7 +1538,7 @@ describe('plugin bootstrap fail-closed', () => {
           expect(json.message).toContain('session directory exists');
           expect(json.diagnostics.diagnosticCode).toBe('RUNTIME_ENFORCEMENT_CONTEXT_UNAVAILABLE');
           expect(json.diagnostics.missingEvidence).toContain('readable_session_state');
-          expect(json.diagnosticCard).toContain('FlowGuard blocked this action.');
+          expect(json.diagnosticCard).toBeUndefined();
         }
       } finally {
         await ws.cleanup();

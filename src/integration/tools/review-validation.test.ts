@@ -574,7 +574,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     const blocked = JSON.parse(result!);
     expect(blocked.code).toBe('SUBAGENT_EVIDENCE_MISSING');
     expect(parseDiagnosticCode(result!)).toBe('REVIEW_INVOCATION_EVIDENCE_MISSING');
-    expect(blocked.diagnosticCard).toContain('FlowGuard blocked this action.');
+    expect(blocked.diagnosticCard).toBeUndefined();
   });
 
   it('correct attestation without matching invocation evidence is rejected', () => {

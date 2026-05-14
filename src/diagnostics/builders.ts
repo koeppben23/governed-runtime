@@ -78,6 +78,7 @@ function hostToolPhaseDenied(detail: DiagnosticDetail): RuntimeDiagnostics {
 
 function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics {
   const obligationId = optionalField(detail.obligationId);
+  const bindOutcome = optionalField(detail.bindOutcome);
   return {
     diagnosticCode: 'REVIEW_HOST_TASK_EVIDENCE_MISSING',
     severity: 'error',
@@ -98,7 +99,9 @@ function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics 
       'ReviewFindings bound to the active review obligation',
       'matching mandateDigest and criteriaVersion',
     ],
-    missingEvidence: ['host_subagent_task_invocation', 'review_findings_attestation'],
+    ...(bindOutcome
+      ? { missingEvidence: ['host_subagent_task_invocation', 'review_findings_attestation'] }
+      : {}),
     safeNextActions: [
       'Run the FlowGuard reviewer subagent via the OpenCode Task tool.',
       'Submit the complete ReviewFindings object returned by the reviewer.',
@@ -173,7 +176,6 @@ function strictReviewOrchestrationFailed(detail: DiagnosticDetail): RuntimeDiagn
       'valid strict attestation',
       'bindable review invocation evidence',
     ],
-    missingEvidence: ['strict_review_orchestration_evidence'],
     safeNextActions: [
       'Re-run the FlowGuard command to create a fresh review obligation and retry orchestration.',
       'Run flowguard doctor if orchestration failures repeat.',

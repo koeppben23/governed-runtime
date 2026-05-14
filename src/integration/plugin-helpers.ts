@@ -8,7 +8,7 @@
  */
 
 import { defaultReasonRegistry } from '../config/reasons.js';
-import { buildBlockedDiagnostics, formatDiagnosticCard } from '../diagnostics/index.js';
+import { buildBlockedDiagnostics } from '../diagnostics/index.js';
 
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
@@ -59,9 +59,6 @@ export function parseToolResult(rawOutput: unknown): Record<string, unknown> | n
 export function strictBlockedOutput(code: string, detail: Record<string, string>): string {
   const formatted = defaultReasonRegistry.format(code, detail);
   const diagnostics = buildBlockedDiagnostics(formatted.code, detail);
-  const diagnosticCard = diagnostics
-    ? formatDiagnosticCard({ code: formatted.code, message: formatted.reason, diagnostics })
-    : null;
   return JSON.stringify({
     error: true,
     code: formatted.code,
@@ -70,7 +67,6 @@ export function strictBlockedOutput(code: string, detail: Record<string, string>
     recovery: formatted.recovery,
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
     ...(diagnostics ? { diagnostics } : {}),
-    ...(diagnosticCard ? { diagnosticCard } : {}),
   });
 }
 
@@ -98,9 +94,6 @@ export function buildEnforcementError(
   const formatted = defaultReasonRegistry.format(code, detail);
   const effectiveMessage = reason && reason.length > 0 ? reason : formatted.reason;
   const diagnostics = buildBlockedDiagnostics(code, { ...detail, reason: effectiveMessage });
-  const diagnosticCard = diagnostics
-    ? formatDiagnosticCard({ code, message: effectiveMessage, diagnostics })
-    : null;
   const payload = {
     error: true,
     code,
@@ -111,7 +104,6 @@ export function buildEnforcementError(
     recovery: formatted.recovery,
     ...(formatted.quickFix !== undefined ? { quickFix: formatted.quickFix } : {}),
     ...(diagnostics ? { diagnostics } : {}),
-    ...(diagnosticCard ? { diagnosticCard } : {}),
   };
   const err = new Error(`[FlowGuard] ${JSON.stringify(payload)}`);
   err.name = 'FlowGuardEnforcementError';

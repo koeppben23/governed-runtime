@@ -25,6 +25,15 @@ describe('runtime diagnostics', () => {
     expect(buildBlockedDiagnostics('UNKNOWN_CODE', { reason: 'unknown' })).toBeNull();
   });
 
+  it('BAD: does not claim missing host evidence without bind evidence context', () => {
+    const diagnostics = buildBlockedDiagnostics('HOST_SUBAGENT_TASK_REQUIRED', {
+      reason: 'review invocation blocked by policy',
+    });
+
+    expect(diagnostics?.diagnosticCode).toBe('REVIEW_HOST_TASK_EVIDENCE_MISSING');
+    expect(diagnostics?.missingEvidence).toBeUndefined();
+  });
+
   it('CORNER: builds enforcement-unavailable diagnostics with sparse detail', () => {
     const diagnostics = buildBlockedDiagnostics('PLUGIN_ENFORCEMENT_UNAVAILABLE');
 
@@ -43,6 +52,16 @@ describe('runtime diagnostics', () => {
     expect(diagnostics?.observed).toContain('stateFile=/tmp/session-state.json');
     expect(diagnostics?.observed).toContain('stateReadable=false');
     expect(diagnostics?.missingEvidence).toContain('readable_session_state');
+  });
+
+  it('EDGE: does not invent strict orchestration missing evidence from generic failures', () => {
+    const diagnostics = buildBlockedDiagnostics('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      reason: 'reviewer response did not match ReviewFindings schema',
+    });
+
+    expect(diagnostics?.diagnosticCode).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    expect(diagnostics?.missingEvidence).toBeUndefined();
+    expect(diagnostics?.required).toContain('parseable reviewer output');
   });
 
   it('SMOKE: formats a deterministic human-readable failure card', () => {

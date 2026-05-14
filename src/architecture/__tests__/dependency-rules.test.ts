@@ -11,13 +11,13 @@
  * ARCHITECTURE RULES (verified by these tests):
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
- *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/
+ *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/
  *    - state/ may import from shared/ (neutral constants with zero dependencies)
  *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
  * 2. MACHINE LAYER: machine/ may only import from state/
- *    - machine/ must not import from rails/, adapters/, integration/, config/, audit/, discovery/, archive/, logging/, cli/
+ *    - machine/ must not import from rails/, adapters/, integration/, config/, audit/, discovery/, archive/, logging/, cli/, diagnostics/
  *
  * 3. RAILS LAYER: rails/ must NOT import from integration/ (prevents circular dependencies)
  *    - rails/ may import from config/, audit/, discovery/types, state/, machine/
@@ -299,6 +299,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
         'archive',
         'logging',
         'cli',
+        'diagnostics',
       ]);
       for (const imp of ffImports) {
         if (imp.targetModule && forbidden.has(imp.targetModule)) {
@@ -322,6 +323,7 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
         'archive',
         'logging',
         'cli',
+        'diagnostics',
       ]);
       for (const imp of ffImports) {
         if (imp.targetModule && forbidden.has(imp.targetModule)) {
@@ -422,6 +424,7 @@ describe('Layer Dependency Rules', () => {
       'cli',
       'discovery',
       'telemetry',
+      'diagnostics',
     ]);
     // Intentional exception: state/evidence.ts imports IdpConfigSchema from
     // identity/types.js for policy snapshot validation. Do not expand this
@@ -620,6 +623,51 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
+  describe('Rule 3c: diagnostics/ is outbound-only presentation, never authority input', () => {
+    const violations: ImportViolation[] = [];
+    const authorityPaths = [
+      '/state/',
+      '/config/',
+      '/machine/',
+      '/rails/',
+      '/audit/',
+      '/integration/tools/review-validation.ts',
+      '/integration/plugin-task-evidence.ts',
+      '/integration/review/',
+    ];
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (analysis.filePath.includes('.test.')) continue;
+        if (!authorityPaths.some((authorityPath) => analysis.filePath.includes(authorityPath))) {
+          continue;
+        }
+
+        const diagnosticsImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule === 'diagnostics',
+        );
+        for (const imp of diagnosticsImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'diagnostics-outbound-only',
+            message: `${analysis.relativePath} imports outbound-only diagnostics module`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have no authority imports from diagnostics', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\ndiagnostics authority import violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
   describe('Rule 4: machine/ may only import from state/', () => {
     const violations: ImportViolation[] = [];
     const forbiddenFromMachine = new Set([
@@ -632,6 +680,7 @@ describe('Layer Dependency Rules', () => {
       'archive',
       'logging',
       'cli',
+      'diagnostics',
     ]);
 
     beforeAll(() => {
