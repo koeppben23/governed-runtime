@@ -178,6 +178,21 @@ import { defaultProfileRegistry } from '../config/profile';
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
   - `chore/<description>` — maintenance tasks
+  - `release/vX.Y.Z` — release preparation branches
+
+### Release Branches
+
+Release work follows the same protected-`main` PR model as all other changes.
+Prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait for required
+checks, and squash-merge. Create and push the `vX.Y.Z` tag only after local
+`main` has been fast-forwarded to the merged `origin/main` commit.
+
+Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
+`npm version` for FlowGuard releases because it creates local commit/tag state
+before branch protection and required checks have accepted the release. Before
+tagging, run `npm run release:assert-main-tag -- vX.Y.Z` to fail closed unless
+the checkout is clean, on `main`, equal to `origin/main`, version-consistent, and
+untagged.
 
 ### Conventional Commits
 
