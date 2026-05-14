@@ -177,5 +177,15 @@ describe('install-verify', () => {
       expect(files.length).toBeGreaterThan(10);
       await fs.rm(tmp, { recursive: true, force: true });
     });
+
+    it('checksums.sha256 matches tarball (integrity smoke)', async () => {
+      const { verifyTarballChecksum } = await import('./install-helpers.js');
+      const { hashFile } = await import('../shared/hashing.js');
+      const checksumsPath = path.join(tmpDir, 'checksums.sha256');
+      const tarballName = path.basename(tarballPath);
+      const sha256 = await hashFile(tarballPath);
+      await fs.writeFile(checksumsPath, `${sha256}  ${tarballName}\n`);
+      await expect(verifyTarballChecksum(tarballPath, checksumsPath)).resolves.toBeUndefined();
+    });
   });
 });

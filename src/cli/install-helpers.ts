@@ -28,7 +28,8 @@ import {
 
 import type { PolicyMode } from '../config/policy-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import { hashText } from '../shared/hashing.js';
+import { timingSafeEqual } from 'node:crypto';
+import { hashText, hashFile } from '../shared/hashing.js';
 export { hashText as sha256 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ export interface CliArgs {
   policyMode: PolicyMode;
   force: boolean;
   coreTarball?: string;
+  checksumsFile?: string;
   logMode?: 'file' | 'console' | 'file+console';
 }
 
@@ -164,6 +166,92 @@ export function resolveTarget(scope: InstallScope): string {
  */
 export function computeMandatesDigest(): string {
   return hashText(FLOWGUARD_MANDATES_BODY);
+}
+
+// ─── Tarball Integrity Verification ──────────────────────────────────────────
+
+const SHA256_HEX_RE = /^[0-9a-fA-F]{64}$/;
+const CHECKSUM_LINE_RE = /^([0-9a-fA-F]{64})\s+[*]?\s*(.+)$/;
+
+function safeHashHexEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+/**
+ * Verify tarball cryptographic integrity against a sha256sum-format checksums file.
+ *
+ * Parsing rules (strict):
+ * - Each line matches `<hex hash>  <filename>` or `<hex hash> *<filename>`.
+ * - Hash must be 64 uppercase/lowercase hex characters.
+ * - Filename entries are matched by basename against the tarball basename.
+ * - Duplicate filename entries are fail-closed (ambiguous verification).
+ * - Malformed lines (non-64-hex hash, unparseable format) are silently skipped.
+ * - Missing entry for the target tarball is fail-closed.
+ *
+ * @param tarballPath - Absolute or relative path to the tarball.
+ * @param checksumsFilePath - Path to the sha256sum-format checksums file.
+ * @throws If the checksums file cannot be read, the tarball is not listed,
+ *         duplicate entries exist, or the computed hash does not match.
+ */
+export async function verifyTarballChecksum(
+  tarballPath: string,
+  checksumsFilePath: string,
+): Promise<void> {
+  const tarballName = basename(tarballPath);
+
+  let content: string;
+  try {
+    content = readFileSync(checksumsFilePath, 'utf-8');
+  } catch (err) {
+    throw new Error(
+      `Cannot read checksums file: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const lines = content.split('\n');
+  let matchedHash: string | undefined;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const match = trimmed.match(CHECKSUM_LINE_RE);
+    if (!match) continue;
+
+    const hashHex = match[1]!;
+    const filename = match[2]!;
+
+    if (!SHA256_HEX_RE.test(hashHex)) continue;
+
+    if (basename(filename) === tarballName) {
+      if (matchedHash !== undefined) {
+        throw new Error(
+          `Duplicate entry for "${tarballName}" in checksums file. ` +
+            `Ambiguous integrity verification is denied.`,
+        );
+      }
+      matchedHash = hashHex.toLowerCase();
+    }
+  }
+
+  if (matchedHash === undefined) {
+    throw new Error(`Tarball "${tarballName}" not found in checksums file "${checksumsFilePath}".`);
+  }
+
+  const expectedHash = matchedHash;
+  const actualHash = await hashFile(tarballPath);
+
+  if (!safeHashHexEqual(actualHash, expectedHash)) {
+    throw new Error(
+      `Tarball SHA-256 mismatch.\n` +
+        `  Expected: ${expectedHash}\n` +
+        `  Actual:   ${actualHash}\n` +
+        `  The tarball may be corrupted or tampered.`,
+    );
+  }
 }
 
 // ─── Reviewer Agent Model Override ───────────────────────────────────────────

@@ -13,12 +13,20 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 ### 1. Download the Release Artifact
 
-Download `flowguard-core-{version}.tgz` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
+Download `flowguard-core-{version}.tgz` and `checksums.sha256` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
 
-Verify the checksum:
+Verify the checksum manually:
 
 ```bash
-sha256sum flowguard-core-{version}.tgz
+sha256sum -c checksums.sha256
+```
+
+For automated integrity verification during install, use the `--checksums-file` flag (opt-in, fail-closed — the installer stops before writing any files if the hash does not match):
+
+```bash
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --core-tarball ./flowguard-core-{version}.tgz \
+  --checksums-file ./checksums.sha256
 ```
 
 ### 2. Initialize OpenCode Integration (Standard)

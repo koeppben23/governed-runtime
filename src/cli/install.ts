@@ -80,6 +80,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let policyMode: PolicyMode = 'solo';
   let force = false;
   let coreTarball: string | undefined;
+  let checksumsFile: string | undefined;
   let logMode: 'file' | 'console' | 'file+console' | undefined;
   const deprecations: string[] = [];
 
@@ -116,6 +117,16 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         const next = argv[i + 1];
         if (next) {
           coreTarball = next;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
+      case '--checksums-file': {
+        const next = argv[i + 1];
+        if (next) {
+          checksumsFile = next;
           i++;
         } else {
           return null;
@@ -161,7 +172,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   return {
-    args: { action, installScope, policyMode, force, coreTarball, logMode },
+    args: { action, installScope, policyMode, force, coreTarball, checksumsFile, logMode },
     deprecations,
   };
 }
@@ -255,6 +266,7 @@ Options:
   --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
+  --checksums-file Path to checksums.sha256 for opt-in tarball integrity verification
 
 Deprecated (still work):
   --global    → --install-scope global

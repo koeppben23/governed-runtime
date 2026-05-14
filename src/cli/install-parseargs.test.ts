@@ -86,6 +86,23 @@ describe('cli/parseArgs', () => {
       expect(result!.args.force).toBe(true);
     });
 
+    it('parses --checksums-file', () => {
+      const result = parseArgs([
+        'install',
+        '--core-tarball',
+        './flowguard-core-1.0.0.tgz',
+        '--checksums-file',
+        './checksums.sha256',
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.args.checksumsFile).toBe('./checksums.sha256');
+    });
+
+    it('rejects --checksums-file without value', () => {
+      const result = parseArgs(['install', '--core-tarball', './x.tgz', '--checksums-file']);
+      expect(result).toBeNull();
+    });
+
     it("parses 'uninstall --install-scope global'", () => {
       const result = parseArgs(['uninstall', '--install-scope', 'global']);
       expect(result).not.toBeNull();

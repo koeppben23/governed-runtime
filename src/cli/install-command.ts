@@ -37,6 +37,7 @@ import {
   mergePackageJson,
   resolveOpencodeConfigPath,
   resolveTarget,
+  verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
 
@@ -173,6 +174,23 @@ export async function install(args: CliArgs): Promise<CliResult> {
           `  Please use the correct tarball version.`,
       );
       return { target, ops, errors, warnings };
+    }
+
+    // 0e. Opt-in tarball integrity verification via checksums file
+    if (args.checksumsFile) {
+      try {
+        await verifyTarballChecksum(tarballPath, args.checksumsFile);
+      } catch (err) {
+        errors.push(
+          `ERROR: Tarball integrity check failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return { target, ops, errors, warnings };
+      }
+    } else {
+      warnings.push(
+        'Tarball integrity not verified. ' +
+          'Use --checksums-file ./checksums.sha256 for cryptographic verification.',
+      );
     }
 
     // Ensure base directories
