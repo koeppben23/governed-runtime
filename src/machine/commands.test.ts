@@ -170,32 +170,13 @@ describe('commands', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('all terminal phases block ALL mutating commands', () => {
+    it('terminal phases block all commands', () => {
       const terminals: Phase[] = ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'];
-      const mutatingCommands: Command[] = [
-        Command.HYDRATE,
-        Command.TICKET,
-        Command.PLAN,
-        Command.CONTINUE,
-        Command.IMPLEMENT,
-        Command.REVIEW_DECISION,
-        Command.VALIDATE,
-        Command.REVIEW,
-        Command.ARCHITECTURE,
-        Command.ABORT,
-      ];
       for (const phase of terminals) {
-        for (const cmd of mutatingCommands) {
+        for (const cmd of Object.values(Command)) {
           expect(isCommandAllowed(phase, cmd)).toBe(false);
         }
       }
-    });
-
-    it('no commands allowed at terminal phases (all are mutating)', () => {
-      // All commands are mutating, so terminals block everything
-      expect(isCommandAllowed('COMPLETE', Command.HYDRATE)).toBe(false);
-      expect(isCommandAllowed('ARCH_COMPLETE', Command.HYDRATE)).toBe(false);
-      expect(isCommandAllowed('REVIEW_COMPLETE', Command.HYDRATE)).toBe(false);
     });
   });
 
