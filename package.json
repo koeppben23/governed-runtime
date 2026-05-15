@@ -21,6 +21,10 @@
     "./integration/plugin": {
       "import": "./dist/integration/plugin.js",
       "types": "./dist/integration/plugin.d.ts"
+    },
+    "./testing": {
+      "import": "./dist/testing.js",
+      "types": "./dist/testing.d.ts"
     }
   },
   "bin": {

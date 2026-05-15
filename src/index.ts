@@ -12,9 +12,10 @@
  *
  * | Entry Point | Purpose |
  * |-------------|---------|
- * | `@flowguard/core` | Types, config, policy, audit, archive — the core API |
+ * | `@flowguard/core` | Core schemas, machine/policy APIs, audit/archive verification, logging |
  * | `@flowguard/core/integration` | OpenCode tool definitions + audit plugin |
  * | `@flowguard/core/integration/tools` | Individual tool definitions |
+ * | `@flowguard/core/testing` | Test utilities (`createTestContext`) |
  *
  * ## Quick Start
  *
@@ -44,14 +45,19 @@
  * are available via direct imports for tests and internal tooling.
  *
  * Consumer entry points:
- * - `@flowguard/core`                — this file (types, config, audit, archive)
+ * - `@flowguard/core`                — this file (schemas, machine, policy, audit, archive, logging)
  * - `@flowguard/core/integration`    — OpenCode tool definitions + audit plugin
+ * - `@flowguard/core/testing`         — Test utilities only
  *
- * @version v2
+ * Several exports, such as `SessionState`, are runtime Zod schemas.
+ * Use `z.infer<typeof SessionState>` for the corresponding TypeScript type.
+ *
+ * @version v3
  */
 
 // ─── State Model ─────────────────────────────────────────────────────────────
 
+/** @public */
 export { Phase, Event, Transition, SessionState } from './state/schema.js';
 
 export type {
@@ -82,8 +88,11 @@ export {
 
 // ─── Machine (High-Level Control Flow) ───────────────────────────────────────
 
+/** @public */
 export { Command, isCommandAllowed } from './machine/commands.js';
+/** @public */
 export { evaluate } from './machine/evaluate.js';
+/** @public */
 export type { EvalResult } from './machine/evaluate.js';
 export { resolveNextAction, ACTION_CODES } from './machine/next-action.js';
 export type { NextAction } from './machine/next-action.js';
@@ -114,6 +123,7 @@ export {
   defaultProfileRegistry,
 } from './config/profile.js';
 
+/** @public */
 export {
   type AuditPolicy,
   type FlowGuardPolicy,
@@ -123,9 +133,9 @@ export {
   REGULATED_POLICY,
   resolvePolicy,
   policyModes,
-  createPolicySnapshot,
 } from './config/policy.js';
 
+/** @internal */
 export {
   type BlockedCategory,
   type BlockedReason,
@@ -134,7 +144,9 @@ export {
   defaultReasonRegistry,
   blocked,
 } from './config/reasons.js';
+export { createPolicySnapshot } from './config/policy.js';
 
+/** @public */
 export {
   FlowGuardConfigSchema,
   type FlowGuardConfig,
@@ -144,13 +156,9 @@ export {
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-export {
-  type FlowGuardLogger,
-  type LogEntry,
-  type LogSink,
-  createLogger,
-  createNoopLogger,
-} from './logging/index.js';
+export { type LogEntry, type LogSink } from './logging/index.js';
+/** @public */
+export { type FlowGuardLogger, createLogger, createNoopLogger } from './logging/index.js';
 
 // ─── Audit ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +171,10 @@ export {
   type LifecycleDetail,
   type TypedDetail,
   type ChainedAuditEvent,
+} from './audit/types.js';
+
+/** @internal */
+export {
   GENESIS_HASH,
   computeChainHash,
   createTransitionEvent,
@@ -172,6 +184,7 @@ export {
   summarizeArgs,
 } from './audit/types.js';
 
+/** @public */
 export {
   type EventVerification,
   type ChainVerification,
@@ -180,6 +193,7 @@ export {
   getLastChainHash,
 } from './audit/integrity.js';
 
+/** @internal */
 export {
   type AuditFilter,
   bySession,
@@ -236,25 +250,5 @@ export {
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
 } from './archive/types.js';
 
+/** @public */
 export { verifyArchive } from './adapters/workspace/index.js';
-
-// ─── Integration (OpenCode Tools + Plugin) ───────────────────────────────────
-
-export {
-  status,
-  hydrate,
-  ticket,
-  plan,
-  decision,
-  implement,
-  validate,
-  review,
-  abort_session,
-  archive,
-  architecture,
-  FlowGuardAuditPlugin,
-} from './integration/index.js';
-
-// ─── Testing Utilities ───────────────────────────────────────────────────────
-
-export { createTestContext } from './testing.js';

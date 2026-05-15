@@ -170,6 +170,40 @@ describe('install-verify', () => {
       expect(res.code).toBe(0);
     }, 240000);
 
+    it('@flowguard/core/testing exports createTestContext', async () => {
+      const p = path.join(tmpDir, 'api-smoke-testing');
+      await fs.mkdir(p, { recursive: true });
+      await fs.writeFile(
+        path.join(p, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+      const installCmd = `npm install --no-audit --no-fund "${tarballPath}"`;
+      assertSuccess(run(installCmd, p), installCmd);
+
+      const res = run(
+        `node --input-type=module -e "import('@flowguard/core/testing').then(m => { if (typeof m.createTestContext !== 'function') { console.error('createTestContext not found'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })"`,
+        p,
+      );
+      expect(res.code).toBe(0);
+    }, 480000);
+
+    it('@flowguard/core excludes integration and testing exports', async () => {
+      const p = path.join(tmpDir, 'api-smoke-core');
+      await fs.mkdir(p, { recursive: true });
+      await fs.writeFile(
+        path.join(p, 'package.json'),
+        JSON.stringify({ name: 'test', type: 'module' }),
+      );
+      const installCmd = `npm install --no-audit --no-fund "${tarballPath}"`;
+      assertSuccess(run(installCmd, p), installCmd);
+
+      const res = run(
+        `node --input-type=module -e "import('@flowguard/core').then(m => { if (typeof m.createTestContext !== 'undefined') { console.error('createTestContext leaked'); process.exit(1); } if (typeof m.plan !== 'undefined') { console.error('plan leaked'); process.exit(1); } if (typeof m.FlowGuardAuditPlugin !== 'undefined') { console.error('FlowGuardAuditPlugin leaked'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })"`,
+        p,
+      );
+      expect(res.code).toBe(0);
+    }, 480000);
+
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
       execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
