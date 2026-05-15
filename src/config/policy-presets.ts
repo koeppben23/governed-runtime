@@ -98,7 +98,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     flowguard_decision: 'human',
     flowguard_abort_session: 'human',
   },
-  minimumActorAssuranceForApproval: 'best_effort',
+  minimumActorAssuranceForApproval: 'claim_validated',
   requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',

@@ -155,11 +155,11 @@ real, registered reason.
 
 ### Identity & Approvals
 
-| Code                           | Description                                                             | Solution                                                    |
-| ------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `ACTOR_ASSURANCE_INSUFFICIENT` | Approver assurance below `policy.minimumActorAssuranceForApproval`      | Configure stronger actor assurance (see `docs/policies.md`) |
-| `ACTOR_IDP_MODE_REQUIRED`      | `policy.identityProviderMode=required` but actor cannot be IdP-verified | Provide a valid `FLOWGUARD_ACTOR_TOKEN_PATH`                |
-| `FOUR_EYES_ACTOR_MATCH`        | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                     |
+| Code                           | Description                                                             | Solution                                                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ACTOR_ASSURANCE_INSUFFICIENT` | Approver assurance below `policy.minimumActorAssuranceForApproval`      | Set `FLOWGUARD_ACTOR_CLAIMS_PATH` to a valid claim file or configure an identity provider (see `docs/policies.md`) |
+| `ACTOR_IDP_MODE_REQUIRED`      | `policy.identityProviderMode=required` but actor cannot be IdP-verified | Provide a valid `FLOWGUARD_ACTOR_TOKEN_PATH`                                                                       |
+| `FOUR_EYES_ACTOR_MATCH`        | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                                                                            |
 
 ### Configuration & Central Policy
 

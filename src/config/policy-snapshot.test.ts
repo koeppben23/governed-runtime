@@ -403,14 +403,14 @@ describe('normalizePolicySnapshotWithMeta', () => {
       expect(result.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
-    it('invalid assurance with requireVerifiedActors=false defaults to mode default', () => {
+    it('invalid assurance with requireVerifiedActors=false defaults to regulated mode default', () => {
       const result = normalizePolicySnapshotWithMeta({
         mode: 'regulated',
         minimumActorAssuranceForApproval: 'invalid',
         requireVerifiedActorsForApproval: false,
       });
       expect(result.normalized).toBe(true);
-      expect(result.snapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(result.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
   });
 

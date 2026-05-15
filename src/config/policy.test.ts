@@ -134,7 +134,7 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.allowSelfApproval).toBe(false);
       expect(REGULATED_POLICY.requireHumanGates).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
-      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
       expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
     });
@@ -211,7 +211,7 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.audit.emitTransitions).toBe(true);
       expect(REGULATED_POLICY.audit.emitToolCalls).toBe(true);
       expect(REGULATED_POLICY.audit.enableChainHash).toBe(true);
-      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(REGULATED_POLICY.minimumActorAssuranceForApproval).toBe('claim_validated');
       expect(REGULATED_POLICY.requireVerifiedActorsForApproval).toBe(false);
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
       expect(REGULATED_POLICY.selfReview?.subagentEnabled).toBe(true);
@@ -1171,7 +1171,7 @@ describe('config/policy', () => {
       expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
-    it('legacy requireVerifiedActors=false does NOT produce claim_validated (central)', async () => {
+    it('legacy requireVerifiedActors=false preserves regulated claim_validated default (central)', async () => {
       const result = await resolvePolicyForHydrate({
         defaultMode: 'solo',
         ciContext: false,
@@ -1180,7 +1180,7 @@ describe('config/policy', () => {
         readFileFn: async () => centralRegulated,
         configRequireVerifiedActorsForApproval: false,
       });
-      expect(result.policy.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(result.policy.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
     it('legacy requireVerifiedActors=true produces claim_validated (central)', async () => {

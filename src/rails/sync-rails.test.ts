@@ -728,8 +728,8 @@ describe('review-decision rail', () => {
         {
           verdict: 'approve',
           rationale: 'LGTM',
-          decidedBy: DECISION_IDENTITY_REVIEWER.actorId,
-          decisionIdentity: DECISION_IDENTITY_REVIEWER,
+          decidedBy: DECISION_IDENTITY_VERIFIED_REVIEWER.actorId,
+          decisionIdentity: DECISION_IDENTITY_VERIFIED_REVIEWER,
         },
         regulatedCtx,
       );
@@ -855,11 +855,19 @@ describe('review-decision rail', () => {
     it('P33: allow approve when requireVerifiedActorsForApproval=false (P30 behavior)', () => {
       const state = {
         ...makeProgressedState('PLAN_REVIEW'),
-        policySnapshot: { ...REGULATED_POLICY_SNAPSHOT, requireVerifiedActorsForApproval: false },
+        policySnapshot: {
+          ...REGULATED_POLICY_SNAPSHOT,
+          requireVerifiedActorsForApproval: false,
+          minimumActorAssuranceForApproval: 'best_effort',
+        },
       };
       const regulatedCtx = {
         ...ctx,
-        policy: { ...REGULATED_POLICY, requireVerifiedActorsForApproval: false },
+        policy: {
+          ...REGULATED_POLICY,
+          requireVerifiedActorsForApproval: false,
+          minimumActorAssuranceForApproval: 'best_effort',
+        },
       };
       const result = executeReviewDecision(
         state,
