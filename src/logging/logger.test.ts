@@ -225,6 +225,47 @@ describe('createLogger with multiple sinks', () => {
     expect(entries).toHaveLength(1);
   });
 
+  it('post-error recovery: logging works after sink crash', () => {
+    const firstEntries: LogEntry[] = [];
+    const secondEntries: LogEntry[] = [];
+    let throwNext = true;
+    const flakySink = (e: LogEntry) => {
+      if (throwNext) {
+        throwNext = false;
+        throw new Error('temporary failure');
+      }
+      firstEntries.push(e);
+    };
+    const stableSink = (e: LogEntry) => secondEntries.push(e);
+
+    const log = createLogger('info', [flakySink, stableSink]);
+
+    // First call: flakySink throws (swallowed), stableSink records
+    expect(() => log.info('s', 'first')).not.toThrow();
+    expect(firstEntries).toHaveLength(0); // flakySink threw
+    expect(secondEntries).toHaveLength(1);
+    expect(secondEntries[0]!.message).toBe('first');
+
+    // Second call: flakySink recovered, both sinks record
+    const msg = log.info('s', 'second');
+    expect(firstEntries).toHaveLength(1);
+    expect(firstEntries[0]!.message).toBe('second');
+    expect(secondEntries).toHaveLength(2);
+    expect(secondEntries[1]!.message).toBe('second');
+    void msg; // suppress unused
+  });
+
+  it('sink failure does not propagate to caller', () => {
+    const throwingSink = () => {
+      throw new Error('fatal sink');
+    };
+    const log = createLogger('info', throwingSink);
+    // Logger contract: sink failures are contained, callers never see them
+    expect(() => log.info('s', 'm')).not.toThrow();
+    expect(() => log.warn('s', 'm')).not.toThrow();
+    expect(() => log.error('s', 'm')).not.toThrow();
+  });
+
   it('works with single sink passed as non-array', () => {
     const entries: LogEntry[] = [];
     const sink = (e: LogEntry) => entries.push(e);
