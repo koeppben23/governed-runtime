@@ -292,7 +292,7 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
 /**
  * Dependencies needed by {@link recordAssuranceWithAudit}.
  *
- * Uses {@link SessionState} (imported above at line 36).
+ * Uses {@link SessionState} for state mutation typing.
  */
 export interface AssuranceAuditDeps {
   updateReviewAssurance(
