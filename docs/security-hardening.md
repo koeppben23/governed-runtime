@@ -267,13 +267,13 @@ This implementation explicitly excludes OIDC discovery and stale/last-known-good
 
 ### Policy Gate
 
-In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum required tier:
+In regulated mode, `minimumActorAssuranceForApproval` specifies the minimum required tier and defaults to `claim_validated`:
 
 - `best_effort` — any actor may approve
-- `claim_validated` — only claim-validated actors may approve (verified equivalent)
+- `claim_validated` — only claim-validated actors may approve (verified equivalent; regulated default)
 - `idp_verified` — only IdP-verified actors may approve
 
-Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`.
+Actors below the threshold are blocked with reason `ACTOR_ASSURANCE_INSUFFICIENT`. To satisfy the regulated default without IdP, set `FLOWGUARD_ACTOR_CLAIMS_PATH` to a valid claim file. For stronger assurance, configure an identity provider and provide `FLOWGUARD_ACTOR_TOKEN_PATH`.
 
 ### Fail-Closed Identity Behavior
 

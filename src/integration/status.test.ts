@@ -1243,7 +1243,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
   });
 
   describe('HAPPY/BAD/CORNER readiness projection', () => {
-    it('regulated readiness defaults minimum assurance to best_effort', () => {
+    it('regulated readiness defaults minimum assurance to claim_validated', () => {
       const state: SessionState = {
         ...makeMinimalState('PLAN_REVIEW'),
         policySnapshot: {
@@ -1259,7 +1259,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
 
       expect(readiness.policyMode).toBe('regulated');
       expect(readiness.blocked).toBe(true);
-      expect(readiness.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(readiness.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
     it('non-regulated readiness does not expose minimum assurance even if snapshot contains one', () => {
@@ -1430,8 +1430,8 @@ describe('status.ts MUTATION_KILL matrix', () => {
   });
 
   describe('SURVIVOR_KILL buildContextProjection', () => {
-    it('uses "best_effort" as the explicit fallback for minimumActorAssuranceForApproval in regulated mode', () => {
-      // Kills L330 StringLiteral mutant `'best_effort'` → `''`.
+    it('uses "claim_validated" as the explicit fallback for minimumActorAssuranceForApproval in regulated mode', () => {
+      // Kills L330 StringLiteral mutant `'claim_validated'` → `''`.
       const state: SessionState = {
         ...makeMinimalState('EVIDENCE_REVIEW'),
         policySnapshot: {
@@ -1443,7 +1443,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
         },
       };
       const ctx = buildContextProjection(state);
-      expect(ctx.regulated.minimumActorAssuranceForApproval).toBe('best_effort');
+      expect(ctx.regulated.minimumActorAssuranceForApproval).toBe('claim_validated');
     });
 
     it('fourEyesRelevant tracks allowSelfApproval === false (not just truthy) in regulated mode', () => {

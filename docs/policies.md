@@ -169,9 +169,9 @@ Assurance is ordinal: `best_effort` (0) < `claim_validated` (1) < `idp_verified`
 
 ### Default Behavior
 
-All policy modes default to `minimumActorAssuranceForApproval: best_effort`. This means any resolved actor identity — even from environment variables or git config — satisfies the approval threshold.
+`solo`, `team`, and `team-ci` default to `minimumActorAssuranceForApproval: best_effort`. In those modes, any resolved actor identity — even from environment variables or git config — satisfies the approval threshold.
 
-**Stronger assurance requires explicit configuration.** FlowGuard does not silently escalate identity requirements based on policy mode alone.
+`regulated` defaults to `minimumActorAssuranceForApproval: claim_validated`. Regulated approvals therefore require either a valid claim file via `FLOWGUARD_ACTOR_CLAIMS_PATH` or stronger `idp_verified` identity. Environment-variable or git-derived `best_effort` identities do not satisfy the default regulated approval threshold.
 
 ### Configuring Stronger Assurance
 
@@ -196,7 +196,7 @@ To require verified identity for approvals, set both fields in `flowguard.json`:
 Identity policy enforcement follows **Option B** semantics:
 
 - **`/hydrate`** resolves actor identity **best-effort** (without IdP context). Even when `identityProviderMode: required`, hydrate succeeds and creates the session. The policy snapshot records the configured identity requirements.
-- **`/review-decision`** resolves actor identity **with full IdP/policy context** from the session's policy snapshot. If the actor's assurance is below the configured `minimumActorAssuranceForApproval` threshold, the decision is **BLOCKED** with `ACTOR_ASSURANCE_INSUFFICIENT`.
+- **`/review-decision`** resolves actor identity **with full IdP/policy context** from the session's policy snapshot. If the actor's assurance is below the configured `minimumActorAssuranceForApproval` threshold, the decision is **BLOCKED** with `ACTOR_ASSURANCE_INSUFFICIENT`. For the regulated default, set `FLOWGUARD_ACTOR_CLAIMS_PATH` to a valid claim file or configure an identity provider for `idp_verified` approval.
 - **If `identityProviderMode: required`** and `resolveActor` cannot verify the actor (no token path, invalid token), the decision is **BLOCKED** with `ACTOR_IDP_MODE_REQUIRED`.
 
 This design separates session creation (diagnostic, always possible) from mutating decisions (enforced, fail-closed).

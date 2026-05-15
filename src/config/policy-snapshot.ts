@@ -527,7 +527,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         maxSelfReviewIterations: 3,
         maxImplReviewIterations: 3,
         allowSelfApproval: false,
-        minimumActorAssuranceForApproval: 'best_effort',
+        minimumActorAssuranceForApproval: 'claim_validated',
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'host_task_required',
@@ -586,7 +586,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       modeConsistentDefaults(snapshot.mode as PolicyMode).reviewInvocationPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
-      (snapshot.requireVerifiedActorsForApproval ? 'claim_validated' : 'best_effort'),
+      (snapshot.requireVerifiedActorsForApproval
+        ? 'claim_validated'
+        : modeConsistentDefaults(snapshot.mode as PolicyMode).minimumActorAssuranceForApproval),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {
       emitTransitions: snapshot.audit.emitTransitions,

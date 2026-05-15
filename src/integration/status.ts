@@ -328,7 +328,7 @@ export function buildContextProjection(state: SessionState): ContextProjection {
     regulated: {
       applicable: isRegulated,
       minimumActorAssuranceForApproval: isRegulated
-        ? (snapshot.minimumActorAssuranceForApproval ?? 'best_effort')
+        ? (snapshot.minimumActorAssuranceForApproval ?? 'claim_validated')
         : null,
       centralPolicyActive: snapshot.centralMinimumMode ? true : null,
       fourEyesRelevant: isRegulated ? snapshot.allowSelfApproval === false : null,
@@ -372,7 +372,7 @@ export function buildReadinessProjection(
     actorKnown: state.actorInfo?.source !== 'unknown',
     minimumActorAssuranceForApproval:
       snapshot.mode === 'regulated'
-        ? (snapshot.minimumActorAssuranceForApproval ?? 'best_effort')
+        ? (snapshot.minimumActorAssuranceForApproval ?? 'claim_validated')
         : null,
     warnings,
   };

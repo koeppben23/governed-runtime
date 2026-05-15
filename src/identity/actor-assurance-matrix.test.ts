@@ -34,6 +34,44 @@ function makeDecisionInput(actual: ActualTier) {
 }
 
 describe('actor assurance matrix', () => {
+  describe('REGULATED defaults — claim_validated approval threshold', () => {
+    it('BAD: regulated preset blocks best_effort approval by default', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(state, makeDecisionInput('best_effort'), {
+        now: () => NOW,
+        digest: (text) => text,
+        policy: getPolicyPreset('regulated'),
+      });
+
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+      }
+    });
+
+    it('HAPPY: regulated preset allows claim_validated approval by default', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(state, makeDecisionInput('claim_validated'), {
+        now: () => NOW,
+        digest: (text) => text,
+        policy: getPolicyPreset('regulated'),
+      });
+
+      expect(result.kind).toBe('ok');
+    });
+
+    it('HAPPY: regulated preset allows idp_verified approval by default', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(state, makeDecisionInput('idp_verified'), {
+        now: () => NOW,
+        digest: (text) => text,
+        policy: getPolicyPreset('regulated'),
+      });
+
+      expect(result.kind).toBe('ok');
+    });
+  });
+
   describe('HAPPY/BAD/CORNER — required x actual matrix via decision enforcement', () => {
     const requiredTiers: RequiredTier[] = ['best_effort', 'claim_validated', 'idp_verified'];
     const actualTiers: ActualTier[] = ['best_effort', 'claim_validated', 'idp_verified', 'unknown'];

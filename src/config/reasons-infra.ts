@@ -182,8 +182,8 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Regulated approval requires minimum actor assurance "{minimum}". Current actor has "{current}" assurance.',
     recoverySteps: [
       'Ensure the actor identity meets the minimum assurance requirement for this policy mode',
-      'For claim_validated requirement: configure FLOWGUARD_ACTOR_CLAIMS_PATH with a valid claim file',
-      'For idp_verified requirement: configure FLOWGUARD_ACTOR_IDP_CONFIG with a valid IdP token (P35)',
+      'Set FLOWGUARD_ACTOR_CLAIMS_PATH to a valid claim file for claim_validated approval',
+      'Configure an identity provider and provide a valid FLOWGUARD_ACTOR_TOKEN_PATH for idp_verified approval',
       'Adjust minimumActorAssuranceForApproval in the policy if a lower assurance level is acceptable',
     ],
   },

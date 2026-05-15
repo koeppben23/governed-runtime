@@ -149,7 +149,7 @@ describe('policy snapshot regression', () => {
     const normalized = normalizePolicySnapshotWithMeta(legacy);
     expect(normalized.normalized).toBe(true);
     expect(normalized.reason).toBe('incomplete_snapshot_normalized');
-    expect(normalized.snapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+    expect(normalized.snapshot.minimumActorAssuranceForApproval).toBe('claim_validated');
     expect(normalized.snapshot.identityProviderMode).toBe('optional');
   });
 
