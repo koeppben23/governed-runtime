@@ -37,7 +37,6 @@ export {
   TEAM_POLICY,
   REGULATED_POLICY,
   getPolicyPreset,
-  resolvePolicy,
   resolvePolicyForHydrate,
   resolveRuntimePolicyMode,
   loadCentralPolicyEvidence,

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   SOLO_POLICY,
@@ -7,7 +8,6 @@ import {
   PolicyConfigurationError,
   detectCiContext,
   getPolicyPreset,
-  resolvePolicy,
   resolvePolicyWithContext,
   resolvePolicyForHydrate,
   policyModes,
@@ -33,15 +33,15 @@ describe('config/policy', () => {
       expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
     });
 
-    it('resolvePolicy returns correct preset for each mode', () => {
-      expect(resolvePolicy('solo')).toBe(SOLO_POLICY);
-      expect(resolvePolicy('team')).toBe(TEAM_POLICY);
-      expect(resolvePolicy('team-ci')).toBe(TEAM_CI_POLICY);
-      expect(resolvePolicy('regulated')).toBe(REGULATED_POLICY);
+    it('getPolicyPreset returns correct preset for each mode', () => {
+      expect(getPolicyPreset('solo')).toBe(SOLO_POLICY);
+      expect(getPolicyPreset('team')).toBe(TEAM_POLICY);
+      expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
+      expect(getPolicyPreset('regulated')).toBe(REGULATED_POLICY);
     });
 
-    it('resolvePolicy vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
-      expect(resolvePolicy('team-ci')).toBe(TEAM_CI_POLICY);
+    it('getPolicyPreset vs resolvePolicyWithContext — team-ci authority is in WithContext', () => {
+      expect(getPolicyPreset('team-ci')).toBe(TEAM_CI_POLICY);
       const withContext = resolvePolicyWithContext('team-ci', false);
       expect(withContext.policy.mode).toBe('team-ci');
       expect(withContext.effectiveMode).toBe('team');
@@ -246,9 +246,9 @@ describe('config/policy', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
-    it('resolvePolicy throws PolicyConfigurationError for unknown mode', () => {
-      expect(() => resolvePolicy('enterprise')).toThrow(PolicyConfigurationError);
-      expect(() => resolvePolicy('enterprise')).toThrow(/Unsupported policy mode/);
+    it('getPolicyPreset throws PolicyConfigurationError for unknown mode', () => {
+      expect(() => getPolicyPreset('enterprise')).toThrow(PolicyConfigurationError);
+      expect(() => getPolicyPreset('enterprise')).toThrow(/Unsupported policy mode/);
     });
 
     it('getPolicyPreset throws PolicyConfigurationError for unknown mode', () => {
@@ -265,7 +265,7 @@ describe('config/policy', () => {
 
     it('PolicyConfigurationError carries code and message', () => {
       try {
-        resolvePolicy('typo');
+        getPolicyPreset('typo');
         expect.unreachable('should have thrown');
       } catch (err) {
         expect(err).toBeInstanceOf(PolicyConfigurationError);
@@ -514,8 +514,8 @@ describe('config/policy', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
-    it(`resolvePolicy < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
-      const result = benchmarkSync(() => resolvePolicy('team'));
+    it(`getPolicyPreset < ${PERF_BUDGETS.guardPredicateMs}ms (p99)`, () => {
+      const result = benchmarkSync(() => getPolicyPreset('team'));
       expect(result.p99Ms).toBeLessThan(PERF_BUDGETS.guardPredicateMs);
     });
   });
@@ -1284,5 +1284,25 @@ describe('config/policy', () => {
         }),
       ).rejects.toThrow(/plain string failure/);
     });
+  });
+});
+
+describe('policy barrel guard', () => {
+  it('ARCHITECTURE: resolvePolicy is not exported or callable from policy modules', () => {
+    const files = [
+      'src/index.ts',
+      'src/config/index.ts',
+      'src/config/policy.ts',
+      'src/config/policy-presets.ts',
+    ];
+    for (const file of files) {
+      const content = readFileSync(file, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (/\bresolvePolicy\b/.test(line)) {
+          expect(line).toMatch(/resolvePolicyFrom|resolvePolicyWith|resolvePolicyFor/);
+        }
+      }
+    }
   });
 });

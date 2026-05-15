@@ -5,7 +5,7 @@ import { evaluate } from './evaluate.js';
 import { resolveNextAction } from './next-action.js';
 import { Command, isCommandAllowed } from './commands.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
-import { resolvePolicy } from '../config/policy.js';
+import { getPolicyPreset } from '../config/policy.js';
 import { USER_GATES } from './topology.js';
 
 const ALL_PHASES: Phase[] = [
@@ -64,7 +64,7 @@ describe('state machine invariants', () => {
           {
             now: () => '2026-04-29T00:00:00.000Z',
             digest: (text) => text,
-            policy: resolvePolicy('team'),
+            policy: getPolicyPreset('team'),
           },
         );
 
@@ -82,7 +82,7 @@ describe('state machine invariants', () => {
     for (const phase of ALL_PHASES) {
       it(`${phase}: repeated evaluate(...) and resolveNextAction(...) are identical`, () => {
         const state = makeProgressedState(phase);
-        const policy = resolvePolicy('team');
+        const policy = getPolicyPreset('team');
 
         const evalA = evaluate(state, policy);
         const evalB = evaluate(state, policy);
@@ -124,7 +124,7 @@ describe('state machine invariants', () => {
         const state = makeProgressedState(phase);
         const results = POLICY_MODES.map((mode) => ({
           mode,
-          evalResult: evaluate(state, resolvePolicy(mode)),
+          evalResult: evaluate(state, getPolicyPreset(mode)),
         }));
 
         if (USER_GATES.has(phase)) {

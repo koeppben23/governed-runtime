@@ -4,7 +4,7 @@ import * as crypto from 'node:crypto';
 
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { makeProgressedState } from '../__fixtures__.js';
-import { resolvePolicy } from '../config/policy.js';
+import { getPolicyPreset } from '../config/policy.js';
 import {
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
@@ -67,7 +67,7 @@ describe('policy snapshot regression', () => {
       },
     };
 
-    const presetPolicy = resolvePolicy('regulated');
+    const presetPolicy = getPolicyPreset('regulated');
     const presetResult = executeReviewDecision(state, reviewerDecision, {
       now: () => '2026-04-29T00:00:00.000Z',
       digest: (text) => text,

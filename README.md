@@ -242,6 +242,18 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 > Use `z.infer<typeof SessionState>` for the corresponding TypeScript type
 > unless a separate exported type exists.
 
+### Policy Resolution APIs
+
+| Use Case                                | API                                                 |
+| --------------------------------------- | --------------------------------------------------- |
+| Static preset lookup                    | `getPolicyPreset(mode)`                             |
+| Runtime-aware with CI degradation       | `resolvePolicyWithContext(mode, ciContext?).policy` |
+| Snapshot-based authoritative resolution | `resolvePolicyFromSnapshot(snapshot)`               |
+| Hydrate lifecycle (full pipeline)       | `resolvePolicyForHydrate(opts)`                     |
+
+> `resolvePolicy()` was removed in v1.3.0. Use `getPolicyPreset()` for the
+> same behavior, or the context/snapshot-aware APIs for authoritative resolution.
+
 ---
 
 ## Architecture Principles
