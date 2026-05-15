@@ -28,11 +28,11 @@ import { decisionReceipts } from '../audit/query.js';
 import { getLastChainHash } from '../audit/integrity.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { blockObligation } from './review/obligation-state.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
+import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
-
-import type { SessionState } from '../state/schema.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -196,14 +196,29 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     detail: Record<string, string>,
     output: { output: string },
   ): Promise<void> {
-    await this.updateReviewAssurance(ctx.sessDir, (s) => blockObligation(s, obligationId, code));
-    await appendReviewAuditEvent(
+    const result = await recordAssuranceWithAudit(
+      {
+        updateReviewAssurance: (sessDir, update) => this.updateReviewAssurance(sessDir, update),
+        appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail2) =>
+          appendReviewAuditEvent(sessDir, sessionId, phase, event, detail2),
+        logError: (msg, err) => getAdapterLogger().error('workspace', msg, { error: String(err) }),
+      },
       ctx.sessDir,
       ctx.sessionId,
       ctx.phase,
+      (s) => blockObligation(s, obligationId, code),
       'review:obligation_blocked',
       { obligationId, code },
+      'block',
     );
+
+    if (!result.auditOk && result.block) {
+      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+        reason: result.reason ?? 'audit write failed',
+      });
+      return;
+    }
+
     output.output = strictBlockedOutput(code, detail);
   }
 
@@ -270,4 +285,71 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
       return impl.cachedWsDir;
     },
   };
+}
+
+// ─── State + Audit Persistence Helper ────────────────────────────────────────
+
+/**
+ * Dependencies needed by {@link recordAssuranceWithAudit}.
+ *
+ * Uses {@link SessionState} for state mutation typing.
+ */
+export interface AssuranceAuditDeps {
+  updateReviewAssurance(
+    sessDir: string,
+    update: (state: SessionState, now: string) => SessionState,
+  ): Promise<void>;
+  appendReviewAuditEvent(
+    sessDir: string,
+    sessionId: string,
+    phase: string,
+    event: string,
+    detail: Record<string, unknown>,
+  ): Promise<void>;
+  logError(message: string, err: unknown): void;
+}
+
+/**
+ * Record a review assurance state mutation together with its audit event.
+ *
+ * State is committed first (under the session-state write lock). If the
+ * audit event fails to persist, the failure is surfaced based on
+ * {@code auditFailureBehavior}:
+ *
+ * - {@code 'block'} — returns a blocked result with code
+ *   {@code AUDIT_PERSISTENCE_FAILED}. The state was committed; the
+ *   corresponding audit event is missing from the trail.
+ * - {@code 'warn'} — logs the error and returns {@code auditOk: false}
+ *   without blocking. State was committed; audit event is missing.
+ *
+ * This helper does NOT make policy decisions. The {@code auditFailureBehavior}
+ * parameter must be derived from the active policy by the caller.
+ */
+export async function recordAssuranceWithAudit(
+  deps: AssuranceAuditDeps,
+  sessDir: string,
+  sessionId: string,
+  phase: string,
+  stateMutation: (state: SessionState, now: string) => SessionState,
+  auditEventName: string,
+  auditDetail: Record<string, unknown>,
+  auditFailureBehavior: 'block' | 'warn',
+): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string }> {
+  await deps.updateReviewAssurance(sessDir, stateMutation);
+
+  try {
+    await deps.appendReviewAuditEvent(sessDir, sessionId, phase, auditEventName, auditDetail);
+    return { auditOk: true };
+  } catch (err) {
+    deps.logError('Proof persistence failure: audit write failed', err);
+    if (auditFailureBehavior === 'block') {
+      return {
+        auditOk: false,
+        block: true,
+        code: 'AUDIT_PERSISTENCE_FAILED', // centrally registered in reasons-infra.ts
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
+    return { auditOk: false };
+  }
 }
