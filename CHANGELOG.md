@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **FG-QUAL-007 (Issue #219):** [BREAKING] OpenCode tools (`plan`, `implement`, `validate`, `review`, `status`, `hydrate`, `ticket`, `decision`, `abort_session`, `archive`, `architecture`) and `FlowGuardAuditPlugin` are no longer re-exported from `@flowguard/core`. Import them from `@flowguard/core/integration`.
+- **FG-QUAL-007 (Issue #219):** [BREAKING] `createTestContext` is no longer exported from `@flowguard/core`. Import it from `@flowguard/core/testing`.
+
 ### Added
 
 - **FG-REL-019 (Issue #128):** Serialize session-state write operations via lockfile-based file locking. All known session-state write paths (`writeState()`, `writeStateWithArtifacts()`, `updateReviewAssurance()`) are now serialized through `withSessionWriteLock()` to prevent interleaved writes. `updateReviewAssurance()` additionally gains read-modify-write isolation. Lock acquisition is atomic (O_EXCL lockfile), stale locks from dead processes are auto-recovered via PID liveness check, and lock timeout produces a typed `LOCK_TIMEOUT` error with the blocking PID and recovery path. Tool-layer read-modify-write isolation across individual tool invocations remains follow-up work (documented gap).

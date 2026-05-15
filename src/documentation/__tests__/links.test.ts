@@ -181,7 +181,6 @@ describe('Documentation Links', () => {
   describe('Distribution Consistency', () => {
     it('README should not reference public npm registry', async () => {
       const content = await fs.readFile(README_PATH, 'utf-8');
-      expect(content).not.toContain('@flowguard/core');
       expect(content).not.toContain('npmjs.com');
     });
 

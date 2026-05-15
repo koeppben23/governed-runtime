@@ -229,6 +229,21 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 
 ---
 
+## Canonical Import Paths
+
+| Entry Point                         | Purpose                                                                |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `@flowguard/core`                   | Core schemas, machine/policy APIs, audit/archive verification, logging |
+| `@flowguard/core/integration`       | OpenCode tool definitions + audit plugin                               |
+| `@flowguard/core/integration/tools` | Individual tool definitions                                            |
+| `@flowguard/core/testing`           | Test utilities (`createTestContext`)                                   |
+
+> Some exports, such as `SessionState`, are runtime Zod schemas.
+> Use `z.infer<typeof SessionState>` for the corresponding TypeScript type
+> unless a separate exported type exists.
+
+---
+
 ## Architecture Principles
 
 1. **Fail-closed** — ambiguity blocks, never guesses
