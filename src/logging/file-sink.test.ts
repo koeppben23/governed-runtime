@@ -55,6 +55,32 @@ describe('createFileSink', () => {
       expect(parsed.fields).toEqual({ fingerprint: 'abc123' });
     });
 
+    it('JSONL entry always contains all required fields', async () => {
+      const sink = createFileSink(testDir, 7);
+      await sink({ level: 'info', service: 'test', message: 'hello' });
+      // Without extra field
+      await sink({ level: 'error', service: 'core', message: 'oops', extra: { code: 'E1' } });
+
+      const files = await readdir(join(testDir, '.opencode/logs'));
+      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const lines = content.trim().split('\n');
+      expect(lines.length).toBe(2);
+
+      for (const line of lines) {
+        const entry = JSON.parse(line);
+        expect(typeof entry.ts).toBe('string');
+        expect(entry.ts).toBeTruthy();
+        expect(entry.level).toBeDefined();
+        expect(entry.component).toBe('flowguard');
+        expect(typeof entry.message).toBe('string');
+        expect(typeof entry.service).toBe('string');
+      }
+      // First entry has no extra → no fields
+      expect(JSON.parse(lines[0]!).fields).toBeUndefined();
+      // Second entry has extra → fields present
+      expect(JSON.parse(lines[1]!).fields).toEqual({ code: 'E1' });
+    });
+
     it('appends to existing daily log file', async () => {
       const sink = createFileSink(testDir, 7);
       await sink({ level: 'info', service: 'test', message: 'first' });
@@ -176,6 +202,94 @@ describe('createFileSink', () => {
       await sink({ level: 'info', service: 'test', message: 'HこんにちはWorld🌍' });
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ─── RETENTION ─────────────────────────────────────────────────
+
+  describe('retention', () => {
+    const oneDayMs = 86_400_000;
+
+    function makeLogFileName(date: Date): string {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `flowguard-${y}-${m}-${d}.log`;
+    }
+
+    async function createLogFile(dir: string, filename: string, mtime: Date): Promise<string> {
+      const logDir = join(dir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+      const filePath = join(logDir, filename);
+      await writeFile(filePath, '{"level":"info","message":"old"}\n');
+      await utimes(filePath, mtime, mtime);
+      return filePath;
+    }
+
+    it('recent file within retention window survives', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-survive-'));
+      try {
+        const recentDate = new Date(Date.now() - oneDayMs + 60_000); // 23h ago
+        const recentFile = await createLogFile(testDir, makeLogFileName(recentDate), recentDate);
+
+        const sink = createFileSink(testDir, 1);
+        await sink({ level: 'info', service: 'test', message: 'trigger' });
+
+        // Recent file should still exist
+        await expect(stat(recentFile)).resolves.toBeDefined();
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('expired file outside retention window is deleted', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-delete-'));
+      try {
+        const expiredDate = new Date(Date.now() - oneDayMs - 60_000); // 25h ago
+        const expiredFile = await createLogFile(testDir, makeLogFileName(expiredDate), expiredDate);
+
+        const sink = createFileSink(testDir, 1);
+        await sink({ level: 'info', service: 'test', message: 'trigger' });
+
+        // Expired file should be deleted
+        await expect(stat(expiredFile)).rejects.toThrow();
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('mixed old and new: only expired files are deleted', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-mixed-'));
+      try {
+        // Two recent files on different days (different filenames)
+        const recent1 = await createLogFile(testDir, 'flowguard-recent-1.log', new Date());
+        const recent2 = await createLogFile(
+          testDir,
+          'flowguard-recent-2.log',
+          new Date(Date.now() - oneDayMs / 2),
+        );
+        // Two old files on different days
+        const old1 = await createLogFile(
+          testDir,
+          'flowguard-old-1.log',
+          new Date(Date.now() - oneDayMs * 2),
+        );
+        const old2 = await createLogFile(
+          testDir,
+          'flowguard-old-2.log',
+          new Date(Date.now() - oneDayMs * 3),
+        );
+
+        const sink = createFileSink(testDir, 1);
+        await sink({ level: 'info', service: 'test', message: 'trigger' });
+
+        await expect(stat(recent1)).resolves.toBeDefined();
+        await expect(stat(recent2)).resolves.toBeDefined();
+        await expect(stat(old1)).rejects.toThrow();
+        await expect(stat(old2)).rejects.toThrow();
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
     });
   });
 

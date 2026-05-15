@@ -174,6 +174,57 @@ describe('CLI structured logging', () => {
   });
 
   describe('CORNER', () => {
+    it('file+console mode writes to both sinks', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-fc-'));
+      const restoreEnv = withTestEnv({
+        OPENCODE_CONFIG_DIR: tmpDir,
+        FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      });
+      await fs.mkdir(path.join(tmpDir, '.git'));
+
+      const stderrLines: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        stderrLines.push(String(chunk));
+        return true;
+      });
+      vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+      try {
+        await main(['doctor', '--install-scope', 'global', '--log-mode', 'file+console']);
+
+        // Stderr (console sink) should have log output
+        const stderr = stderrLines.join('');
+        expect(stderr).toContain('[INFO]');
+
+        // Poll for log file (deterministic, no fixed sleep)
+        const logDir = path.join(tmpDir, '.opencode', 'logs');
+        let logFile: string | undefined;
+        const deadline = Date.now() + 2000;
+        while (Date.now() < deadline && !logFile) {
+          await new Promise((r) => setTimeout(r, 50));
+          try {
+            const entries = await fs.readdir(logDir);
+            logFile = entries.find((f) => f.startsWith('flowguard-') && f.endsWith('.log'));
+          } catch {
+            /* dir may not exist yet */
+          }
+        }
+        expect(logFile).toBeTruthy();
+        if (logFile) {
+          const content = await fs.readFile(path.join(logDir, logFile), 'utf-8');
+          expect(content).toContain('"component":"flowguard"');
+        }
+      } finally {
+        restoreEnv();
+        vi.restoreAllMocks();
+        try {
+          await fs.rm(tmpDir, { recursive: true, force: true });
+        } catch {
+          /* ok */
+        }
+      }
+    });
+
     it('unknown action returns 1', async () => {
       vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
