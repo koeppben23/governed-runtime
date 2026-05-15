@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Issue #264:** Remove the hardcoded reviewer `temperature` sampling parameter so Claude Opus 4.7 can invoke the FlowGuard reviewer without unsupported-parameter 400 errors.
+
 - **FG-REL-015 (Issue #124):** Removed the dead private `MUTATING` command set from `commands.ts`. Terminal phases now use the equivalent direct `TERMINAL.has(phase)` check; command admissibility behavior is unchanged.
 
 - **FG-QUAL-003 (Issue #215):** Eliminate inconsistent fail-open behavior in `tool.execute.before` host-tool phase gate:
