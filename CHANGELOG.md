@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FG-REL-015 (Issue #124):** Removed the dead private `MUTATING` command set from `commands.ts`. Terminal phases now use the equivalent direct `TERMINAL.has(phase)` check; command admissibility behavior is unchanged.
+
 - **FG-QUAL-003 (Issue #215):** Eliminate inconsistent fail-open behavior in `tool.execute.before` host-tool phase gate:
   - Replaced documented fail-open `return` at `plugin.ts:266` with fail-closed `throw buildEnforcementError('SESSION_DIR_NOT_FOUND', ...)` — mutating host tools (bash, write, edit) are now blocked when the FlowGuard session directory is computed but missing from disk
   - Added `SESSION_DIR_NOT_FOUND` reason code in `reasons-precondition.ts` with explicit recovery steps (`/hydrate`)

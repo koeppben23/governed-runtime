@@ -8,9 +8,9 @@
  * - Command → Rail → State mutation → evaluate() → Event → Transition.
  * - /continue is the routing command (deterministic, guard-determined event).
  * - READY is the entry phase where users select a flow (/ticket, /architecture, /review).
- * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) block all mutating commands.
+ * - Terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE) block all commands.
  *
- * @version v2
+ * @version v3
  */
 
 import type { Phase } from '../state/schema.js';
@@ -38,22 +38,7 @@ export type Command = (typeof Command)[keyof typeof Command];
 /** Allowed-in specification: explicit set of phases, or "*" for all phases. */
 type AllowedIn = ReadonlySet<Phase> | '*';
 
-/**
- * Command admissibility map.
- *
- * | Command          | Allowed In                                    | Mutating | Notes                                    |
- * |------------------|-----------------------------------------------|----------|------------------------------------------|
- * | /hydrate         | * (all)                                       | Yes      | Bootstrap — creates or loads state       |
- * | /ticket          | READY, TICKET                                 | Yes      | Starts ticket flow or updates ticket     |
- * | /plan            | TICKET, PLAN                                  | Yes      | Generates plan + self-review loop        |
- * | /continue        | * (all)                                       | Yes      | Routing — guards decide event            |
- * | /implement       | IMPLEMENTATION                                | Yes      | Executes implementation + review loop    |
- * | /review-decision | PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW     | Yes      | Human verdict at User Gate               |
- * | /validate        | VALIDATION                                    | Yes      | Runs active validation checks            |
- * | /review          | READY                                         | Yes      | Starts review flow                       |
- * | /architecture    | READY, ARCHITECTURE                           | Yes      | Starts or revises architecture flow   |
- * | /abort           | * (all, except terminals)                     | Yes      | Emergency termination                    |
- */
+/** Command admissibility map. */
 const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, AllowedIn>([
   [Command.HYDRATE, '*'],
   [Command.TICKET, new Set<Phase>(['READY', 'TICKET'])],
@@ -67,37 +52,25 @@ const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, Allowed
   [Command.ABORT, '*'],
 ]);
 
-/** Set of commands that mutate state (all commands are mutating now). */
-const MUTATING: ReadonlySet<Command> = new Set<Command>([
-  Command.HYDRATE,
-  Command.TICKET,
-  Command.PLAN,
-  Command.CONTINUE,
-  Command.IMPLEMENT,
-  Command.REVIEW_DECISION,
-  Command.VALIDATE,
-  Command.REVIEW,
-  Command.ARCHITECTURE,
-  Command.ABORT,
-]);
-
 // ─── Admissibility Check ──────────────────────────────────────────────────────
 
 /**
  * Check if a command is allowed in the given phase.
  *
  * Rules:
- * 1. Terminal phases block ALL mutating commands.
+ * 1. Terminal phases block ALL FlowGuard commands.
  * 2. Otherwise, check the COMMAND_POLICY map.
  * 3. Unknown commands → false (fail-closed).
  */
 export function isCommandAllowed(phase: Phase, command: Command): boolean {
-  // Rule 1: Terminal — only non-mutating commands (none currently)
-  if (TERMINAL.has(phase) && MUTATING.has(command)) {
+  // Terminal phases block all current FlowGuard commands.
+  // If a future read-only command is introduced (e.g., /status as a
+  // first-class Command), model it explicitly instead of reintroducing
+  // a catch-all placeholder set.
+  if (TERMINAL.has(phase)) {
     return false;
   }
 
-  // Rule 2: Check policy
   const allowedIn = COMMAND_POLICY.get(command);
   if (allowedIn === undefined) return false;
   if (allowedIn === '*') return true;
