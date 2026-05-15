@@ -322,7 +322,6 @@ export const REVIEWER_AGENT = `\
 description: Independent reviewer for FlowGuard plan, implementation, and architecture phases. Produces structured ReviewFindings.
 mode: subagent
 hidden: true
-temperature: 0.1
 steps: 10
 permission:
   edit: deny

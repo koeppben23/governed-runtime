@@ -194,7 +194,7 @@ The installer (`flowguard install`) automatically deploys all required artifacts
 
 The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
-- `mode: subagent`, `hidden: true`, `temperature: 0.1`
+- `mode: subagent`, `hidden: true`, `steps: 10`
 - Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`
 - Adversarial, falsification-first review prompt
 - Returns structured ReviewFindings JSON

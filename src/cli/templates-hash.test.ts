@@ -44,32 +44,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
-    // Refreshed in P9a: webfetch contradiction fixed — reviewer frontmatter
-    // has `webfetch: deny` but the Content Review section told reviewers to
-    // use `webfetch`. P9a removed `webfetch` from the Content Review tool list
-    // and replaced it with "provided content and available read, glob, grep".
-    // See src/templates/mandates.ts:369 (Content Review section).
-    //
-    // Predecessor: F13 slice 4 extended REVIEWER_AGENT with ADR review criteria.
-    // Predecessor: P1.3 slice 3 added the validity-conditions section.
-    //
-    // Cross-session compatibility: this hash gates ONLY the template-body
-    // byte-stability of REVIEWER_AGENT (the markdown a CLI install writes
-    // to .opencode/agent/flowguard-reviewer.md). It is independent from
-    // REVIEW_MANDATE_DIGEST (src/integration/review-assurance.ts:24), which
-    // is sha256(REVIEWER_AGENT) at module-load time.
-    //
-    // This P9a slice modifies REVIEWER_AGENT (the Content Review section of
-    // mandates.ts), therefore both the template-body hash AND the runtime
-    // REVIEW_MANDATE_DIGEST change. Persisted obligations from prior sessions
-    // that reference the old mandateDigest will fail validation — the user
-    // must re-hydrate or re-create affected sessions.
-    //
-    // This is the expected behaviour: the changed text hardens the manual
-    // fallback contract so copied attestation fields are diagnostic only until
-    // FlowGuard persists matching ReviewInvocationEvidence.
+    // Refreshed for #264: REVIEWER_AGENT no longer hardcodes sampling
+    // parameters in frontmatter. Removing `temperature: 0.1` changes both the
+    // installed reviewer markdown and the runtime REVIEW_MANDATE_DIGEST.
+    // Existing sessions with obligations bound to the previous digest must be
+    // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '3bd9a4e14bea34a0a694a30737ddff727baf9dfcc14abc5b08b89bfc406580a0',
+      '4ac316e4f293b39cd7984283fc0f72021d6012c5843198df45fa37469e47b4ca',
     );
   });
 

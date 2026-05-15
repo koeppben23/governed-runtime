@@ -109,6 +109,30 @@ describe('REVIEWER_AGENT template: steps limit (M1)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// M1b: Reviewer Agent must not hardcode sampling parameters
+// ---------------------------------------------------------------------------
+
+describe('REVIEWER_AGENT template: no hardcoded sampling parameters', () => {
+  function reviewerFrontmatter(): string {
+    const fmMatch = REVIEWER_AGENT.match(/^---\n([\s\S]*?)\n---/);
+    expect(fmMatch).not.toBeNull();
+    return fmMatch![1]!;
+  }
+
+  it('BAD — frontmatter does not contain temperature', () => {
+    expect(reviewerFrontmatter()).not.toMatch(/^temperature:/m);
+  });
+
+  it('BAD — frontmatter does not contain top_p', () => {
+    expect(reviewerFrontmatter()).not.toMatch(/^top_p:/m);
+  });
+
+  it('BAD — frontmatter does not contain top_k', () => {
+    expect(reviewerFrontmatter()).not.toMatch(/^top_k:/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // M4: Reviewer prompt StructuredOutput tool compatibility (audit fix)
 // ---------------------------------------------------------------------------
 
