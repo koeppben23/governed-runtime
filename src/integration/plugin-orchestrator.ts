@@ -67,6 +67,7 @@ import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { extractContentMeta } from './review/enforcement/extraction.js';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewSessionContext } from './plugin-workspace.js';
+import { recordAssuranceWithAudit } from './plugin-workspace.js';
 import type { ReviewInvocationPolicy, ReviewOutputPolicy } from '../config/policy-types.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -827,22 +828,6 @@ async function enforceContentStrictGate(
 
 // ─── Standard Review Pipeline ────────────────────────────────────────────────
 
-async function emitObligationCreatedAudit(
-  ctx: PipelineContext,
-  obligationType: string,
-): Promise<void> {
-  const { sessDir, sessionId, parsedOutput, sessionState, reviewCtx } = ctx;
-  const phase = String(parsedOutput.phase ?? sessionState.phase);
-  await appendReviewAuditEvent(sessDir, sessionId, phase, 'review:obligation_created', {
-    obligationId: reviewCtx.obligationId,
-    obligationType,
-    iteration: reviewCtx.iteration,
-    planVersion: reviewCtx.planVersion,
-    criteriaVersion: reviewCtx.criteriaVersion,
-    mandateDigest: reviewCtx.mandateDigest,
-  });
-}
-
 async function runStandardReviewPipeline(
   ctx: PipelineContext,
   toolName: string,
@@ -861,13 +846,39 @@ async function runStandardReviewPipeline(
 
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
-  await deps.updateReviewAssurance(sessDir, (s, now2) =>
-    updateObligation(s, reviewCtx.obligationId, (item) => ({
-      ...item,
-      pluginHandshakeAt: now2,
-    })),
+  const assuranceResult = await recordAssuranceWithAudit(
+    {
+      updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
+      appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
+        appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
+      logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
+    },
+    sessDir,
+    sessionId,
+    String(ctx.parsedOutput.phase ?? sessionState.phase),
+    (s, now2) =>
+      updateObligation(s, reviewCtx.obligationId, (item) => ({
+        ...item,
+        pluginHandshakeAt: now2,
+      })),
+    'review:obligation_created',
+    {
+      obligationId: reviewCtx.obligationId,
+      obligationType,
+      iteration: reviewCtx.iteration,
+      planVersion: reviewCtx.planVersion,
+      criteriaVersion: reviewCtx.criteriaVersion,
+      mandateDigest: reviewCtx.mandateDigest,
+    },
+    strictEnforcement ? 'block' : 'warn',
   );
-  await emitObligationCreatedAudit(ctx, obligationType);
+
+  if (!assuranceResult.auditOk && assuranceResult.block) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: assuranceResult.reason ?? 'audit write failed',
+    });
+    return;
+  }
 
   const prompt = buildStandardPromptAndLog(ctx, toolName, input);
   if (!prompt) return;
@@ -1086,13 +1097,23 @@ async function enforceStandardStrictGate(
     currentAssuranceInvocations: sessionState.reviewAssurance?.invocations ?? [],
   });
 
-  await emitStandardEvidenceAudit(ctx, {
-    result,
-    obligationType,
-    promptHash,
-    findingsHash,
-    reviewerResult,
-  });
+  try {
+    await emitStandardEvidenceAudit(ctx, {
+      result,
+      obligationType,
+      promptHash,
+      findingsHash,
+      reviewerResult,
+    });
+  } catch (err) {
+    deps.log.warn('orchestrator', 'Proof persistence failure: audit write failed', {
+      error: String(err),
+    });
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    return true;
+  }
 
   if (result === 'reused') {
     output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
@@ -1234,17 +1255,29 @@ async function handleReviewerFailure(
     );
   } else {
     // Non-strict: block the obligation to prevent infinite re-invocation.
-    await deps.updateReviewAssurance(sessDir, (s) =>
-      updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        status: 'blocked' as const,
-        blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
-      })),
+    await recordAssuranceWithAudit(
+      {
+        updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
+        appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
+          appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
+        logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
+      },
+      sessDir,
+      sessionId,
+      phase,
+      (s) =>
+        updateObligation(s, reviewCtx.obligationId, (item) => ({
+          ...item,
+          status: 'blocked' as const,
+          blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+        })),
+      'review:obligation_blocked',
+      {
+        obligationId: reviewCtx.obligationId,
+        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+      },
+      'warn',
     );
-    await appendReviewAuditEvent(sessDir, sessionId, phase, 'review:obligation_blocked', {
-      obligationId: reviewCtx.obligationId,
-      code: 'REVIEWER_INVOCATION_EXHAUSTED',
-    });
   }
 }
 

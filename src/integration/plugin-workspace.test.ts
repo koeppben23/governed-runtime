@@ -6,12 +6,38 @@
  * and initChain (GENESIS_HASH fallback).
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE
- * @version v1
+ * @version v2
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// ─── Hoisted mocks for call-site tests ──────────────────────────────────────
+
+const { mockAppendReviewAudit, mockWithSessionWriteLock, mockReadState } = vi.hoisted(() => ({
+  mockAppendReviewAudit: vi.fn(),
+  mockWithSessionWriteLock: vi.fn(),
+  mockReadState: vi.fn(),
+}));
+
+vi.mock('./review/audit-events.js', () => ({
+  appendReviewAuditEvent: mockAppendReviewAudit,
+}));
+
+vi.mock('../adapters/persistence.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../adapters/persistence.js')>();
+  return {
+    ...actual,
+    withSessionWriteLock: mockWithSessionWriteLock,
+    readState: mockReadState,
+    writeStateAlreadyLocked: vi.fn(),
+    appendAuditEvent: actual.appendAuditEvent,
+    readAuditTrail: actual.readAuditTrail,
+  };
+});
+
 import { PluginWorkspaceImpl, type WorkspaceDeps } from './plugin-workspace.js';
 import type { MutableChainState } from './plugin-workspace.js';
+import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './plugin-workspace.js';
 
 function fakeDeps(overrides?: Partial<WorkspaceDeps>): WorkspaceDeps {
   return { auditWorktree: undefined, ...overrides };
@@ -147,5 +173,140 @@ describe('integration/plugin-workspace', () => {
         expect(h1).toBe(h2);
       });
     });
+  });
+});
+
+// ─── recordAssuranceWithAudit ─────────────────────────────────────────────────
+
+function mockAssuranceDeps(overrides?: Partial<AssuranceAuditDeps>): AssuranceAuditDeps {
+  return {
+    updateReviewAssurance: vi.fn(),
+    appendReviewAuditEvent: vi.fn(),
+    logError: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe('recordAssuranceWithAudit', () => {
+  it('HAPPY: state and audit both succeed', async () => {
+    const updateReviewAssurance = vi.fn();
+    const appendReviewAuditEvent = vi.fn();
+    const deps = mockAssuranceDeps({ updateReviewAssurance, appendReviewAuditEvent });
+    const result = await recordAssuranceWithAudit(
+      deps,
+      '/tmp/sess',
+      's1',
+      'PLAN',
+      () => ({ phase: 'PLAN' }) as never,
+      'review:obligation_blocked',
+      { code: 'X' },
+      'block',
+    );
+    expect(result.auditOk).toBe(true);
+    expect(updateReviewAssurance).toHaveBeenCalled();
+    expect(appendReviewAuditEvent).toHaveBeenCalled();
+    // State is committed first, then audit is appended
+    expect(updateReviewAssurance.mock.invocationCallOrder[0]!).toBeLessThan(
+      appendReviewAuditEvent.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('BAD: audit failure blocks with auditFailureBehavior: block', async () => {
+    const deps = mockAssuranceDeps({
+      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
+    });
+    const result = await recordAssuranceWithAudit(
+      deps,
+      '/tmp/sess',
+      's1',
+      'PLAN',
+      () => ({ phase: 'PLAN' }) as never,
+      'review:obligation_blocked',
+      { code: 'X' },
+      'block',
+    );
+    expect(result.auditOk).toBe(false);
+    expect(result.block).toBe(true);
+    expect(result.code).toBe('AUDIT_PERSISTENCE_FAILED');
+    expect(deps.logError).toHaveBeenCalled();
+    // State was committed despite audit failure
+    expect(deps.updateReviewAssurance).toHaveBeenCalled();
+  });
+
+  it('BAD: audit failure warns with auditFailureBehavior: warn', async () => {
+    const deps = mockAssuranceDeps({
+      appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
+    });
+    const result = await recordAssuranceWithAudit(
+      deps,
+      '/tmp/sess',
+      's1',
+      'PLAN',
+      () => ({ phase: 'PLAN' }) as never,
+      'review:obligation_blocked',
+      { code: 'X' },
+      'warn',
+    );
+    expect(result.auditOk).toBe(false);
+    expect(result.block).toBeUndefined();
+    expect(deps.logError).toHaveBeenCalled();
+    expect(deps.updateReviewAssurance).toHaveBeenCalled();
+  });
+
+  it('BAD: state failure propagates and prevents audit write', async () => {
+    const deps = mockAssuranceDeps({
+      updateReviewAssurance: vi.fn().mockRejectedValue(new Error('LOCK_TIMEOUT')),
+    });
+    await expect(
+      recordAssuranceWithAudit(
+        deps,
+        '/tmp/sess',
+        's1',
+        'PLAN',
+        () => ({ phase: 'PLAN' }) as never,
+        'review:obligation_blocked',
+        { code: 'X' },
+        'block',
+      ),
+    ).rejects.toThrow('LOCK_TIMEOUT');
+    // Audit must NOT be called when state fails
+    expect(deps.appendReviewAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('CALL-SITE: blockReviewOutcome produces AUDIT_PERSISTENCE_FAILED when audit write fails', async () => {
+    // Setup mocks: state reads work, lock runs callback, audit throws
+    const mockState = {
+      reviewAssurance: { obligations: [] },
+      phase: 'PLAN',
+      policySnapshot: { mode: 'regulated', effectiveGateBehavior: 'human_gated' },
+    };
+    mockReadState.mockResolvedValue(mockState);
+    mockWithSessionWriteLock.mockImplementation(async (_dir: string, fn: () => Promise<void>) =>
+      fn(),
+    );
+    mockAppendReviewAudit.mockRejectedValue(new Error('ENOSPC'));
+
+    const ws = new PluginWorkspaceImpl({ auditWorktree: '/tmp' } as WorkspaceDeps);
+    const output: { output: string } = { output: '' };
+
+    await ws.blockReviewOutcome(
+      { sessDir: '/tmp/sess', sessionId: 's1', phase: 'PLAN' },
+      'obl-1',
+      'SUBAGENT_REVIEW_NOT_INVOKED',
+      { reason: 'test' },
+      output,
+    );
+
+    expect(output.output).toContain('AUDIT_PERSISTENCE_FAILED');
+    expect(output.output).not.toContain('SUBAGENT_REVIEW_NOT_INVOKED');
+  });
+
+  it('REGISTRY: AUDIT_PERSISTENCE_FAILED is centrally registered with recovery', async () => {
+    const { defaultReasonRegistry } = await import('../config/reasons.js');
+    const reason = defaultReasonRegistry.get('AUDIT_PERSISTENCE_FAILED');
+    expect(reason).toBeDefined();
+    expect(reason!.code).toBe('AUDIT_PERSISTENCE_FAILED');
+    expect(reason!.category).toBe('adapter');
+    expect(reason!.recoverySteps.length).toBeGreaterThan(0);
   });
 });

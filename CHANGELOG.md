@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-REL-020 (Issue #129):** Surface partial plugin hook audit persistence failures via `recordAssuranceWithAudit()`. Review-assurance state mutations commit first under the session-state write lock; if the corresponding audit event cannot be persisted, strict paths return a blocked result (`AUDIT_PERSISTENCE_FAILED`) and non-strict paths log a warning. The call sites `blockReviewOutcome`, `runStandardReviewPipeline`, and `handleReviewerFailure` were migrated to use the centralized helper.
 - **FG-REL-014 (Issue #123):** [BREAKING] Remove deprecated `resolvePolicy()` export from `@flowguard/core` and config policy barrels. Use `getPolicyPreset()` for static preset lookup (identical behavior), `resolvePolicyWithContext()` for runtime authority, or `resolvePolicyFromSnapshot()` for canonical snapshot-based resolution.
 
 - **FG-QUAL-007 (Issue #219):** [BREAKING] OpenCode tools (`plan`, `implement`, `validate`, `review`, `status`, `hydrate`, `ticket`, `decision`, `abort_session`, `archive`, `architecture`) and `FlowGuardAuditPlugin` are no longer re-exported from `@flowguard/core`. Import them from `@flowguard/core/integration`.
