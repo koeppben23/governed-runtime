@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { redactDecisionReceipts, redactReviewReport } from './export-redaction.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
+type ReceiptOutput = { receipts: Array<Record<string, unknown>> };
+type ReportOutput = { findings: Array<Record<string, unknown>> };
+
 describe('redaction/export-redaction', () => {
   // ─── HAPPY ────────────────────────────────────────────────────────────────
 
@@ -427,6 +430,136 @@ describe('redaction/export-redaction', () => {
       redactDecisionReceipts(input, 'basic');
       redactReviewReport(input, 'basic');
       expect(JSON.stringify(input)).toBe(snapshot);
+    });
+  });
+
+  // ─── SECURITY PATTERNS ──────────────────────────────────────────────────
+
+  describe('SECURITY PATTERNS', () => {
+    it('redacts explicit token formats in basic and strict modes', () => {
+      const input = {
+        receipts: [
+          {
+            decidedBy: 'ci-bot',
+            rationale:
+              'Used ghp_abcdefghijklmnopqrstuvwxyz123456 for auth ' +
+              'and sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 in step 2 ' +
+              'and sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 in step 2 ' +
+              'and xoxb-123456789012-123456789012-abcdefghijklmnopqrstuv for slack',
+          },
+        ],
+      };
+      const outBasic = redactDecisionReceipts(input, 'basic') as ReceiptOutput;
+      const rBasic = outBasic.receipts[0]!;
+      expect(rBasic.decidedBy).toBe('[REDACTED]');
+      expect(rBasic.rationale).toBe('[REDACTED]');
+
+      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const rStrict = outStrict.receipts[0]!;
+      expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    });
+
+    it('JWK-like key material in review finding message is redacted', () => {
+      const input = {
+        findings: [
+          {
+            checkId: 'secret_detection',
+            message:
+              'JWK: {"kty":"RSA","n":"AAAAvT8u...","e":"AQAB","d":"c2VjcmV0LWtleS1tYXRlcmlhbA==","p":"...","q":"..."}',
+          },
+        ],
+      };
+      const out = redactReviewReport(input, 'strict') as ReportOutput;
+      const finding = out.findings[0]!;
+      expect(String(finding.message)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(String(finding.message)).not.toContain('RSA');
+    });
+
+    it('file paths in rationale are fully redacted', () => {
+      const input = {
+        receipts: [
+          {
+            decidedBy: 'alice',
+            rationale:
+              'Approved based on review of /home/user/.ssh/id_rsa and /etc/ssl/private/key.pem',
+          },
+        ],
+      };
+      const out = redactDecisionReceipts(input, 'basic') as ReceiptOutput;
+      const r = out.receipts[0]!;
+      expect(r.rationale).toBe('[REDACTED]');
+      expect(String(r.rationale)).not.toContain('id_rsa');
+      expect(String(r.rationale)).not.toContain('/home/user');
+    });
+
+    it('same value across artifacts produces same strict token', () => {
+      const sharedValue = 'alice@corp.com';
+      const receiptInput = { receipts: [{ decidedBy: 'bot', rationale: sharedValue }] };
+      const reportInput = { findings: [{ checkId: 'c1', message: sharedValue }] };
+
+      const receiptOut = redactDecisionReceipts(receiptInput, 'strict') as ReceiptOutput;
+      const reportOut = redactReviewReport(reportInput, 'strict') as ReportOutput;
+
+      const receiptToken = String(receiptOut.receipts[0]!.rationale);
+      const reportToken = String(reportOut.findings[0]!.message);
+
+      expect(receiptToken).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(receiptToken).toBe(reportToken);
+    });
+
+    it('mixed sensitive patterns in one field: email, token, URL, path', () => {
+      const input = {
+        receipts: [
+          {
+            decidedBy: 'alice@corp.com',
+            rationale:
+              'alice@corp.com approved via token ghp_abcdefghijklmnopqrstuvwxyz123456 ' +
+              'from https://auth.internal.example.com at /home/alice/config',
+          },
+        ],
+      };
+
+      const outBasic = redactDecisionReceipts(input, 'basic') as ReceiptOutput;
+      const rBasic = outBasic.receipts[0]!;
+      expect(rBasic.decidedBy).toBe('[REDACTED]');
+      expect(rBasic.rationale).toBe('[REDACTED]');
+
+      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const rStrict = outStrict.receipts[0]!;
+      expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+
+      const outStrictB = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const rStrictB = outStrictB.receipts[0]!;
+      expect(rStrictB.rationale).toBe(rStrict.rationale);
+    });
+
+    it('documents current non-object payload behavior', () => {
+      // mode=none: returns input as-is (reference equality)
+      expect(redactDecisionReceipts(null as unknown as Record<string, unknown>, 'none')).toBe(null);
+      expect(redactReviewReport(null as unknown as Record<string, unknown>, 'none')).toBe(null);
+
+      // mode !== none on null → TypeError (structuredClone(null) = null, then .receipts/.findings fails)
+      expect(() =>
+        redactDecisionReceipts(null as unknown as Record<string, unknown>, 'basic'),
+      ).toThrow(TypeError);
+      expect(() => redactReviewReport(null as unknown as Record<string, unknown>, 'basic')).toThrow(
+        TypeError,
+      );
+
+      // string primitive: structuredClone returns the string, property access on string
+      // returns undefined, Array.isArray(undefined) → false → skips redaction loop
+      expect(redactDecisionReceipts('string' as unknown as Record<string, unknown>, 'basic')).toBe(
+        'string',
+      );
+      expect(redactReviewReport('string' as unknown as Record<string, unknown>, 'basic')).toBe(
+        'string',
+      );
+
+      // array: structuredClone([]) = []; .receipts/.findings → undefined; returns []
+      expect(redactDecisionReceipts([] as unknown as Record<string, unknown>, 'basic')).toEqual([]);
+      expect(redactReviewReport([] as unknown as Record<string, unknown>, 'basic')).toEqual([]);
     });
   });
 
