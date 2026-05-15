@@ -33,7 +33,6 @@ export {
   TEAM_CI_POLICY,
   REGULATED_POLICY,
   getPolicyPreset,
-  resolvePolicy,
   policyModes,
 } from './policy-presets.js';
 

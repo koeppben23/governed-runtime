@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 
 import { executeReviewDecision } from '../rails/review-decision.js';
-import { resolvePolicy } from '../config/policy.js';
+import { getPolicyPreset } from '../config/policy.js';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
 import { makeProgressedState } from '../__fixtures__.js';
 
@@ -67,7 +67,7 @@ describe('actor assurance matrix', () => {
             now: () => NOW,
             digest: (text) => text,
             policy: {
-              ...resolvePolicy('regulated'),
+              ...getPolicyPreset('regulated'),
               allowSelfApproval: false,
               minimumActorAssuranceForApproval: required,
               requireVerifiedActorsForApproval: false,
@@ -107,7 +107,7 @@ describe('actor assurance matrix', () => {
 
     it('required + missing config -> block', async () => {
       const policy = {
-        ...resolvePolicy('regulated'),
+        ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
         identityProvider: undefined,
       };
@@ -118,7 +118,7 @@ describe('actor assurance matrix', () => {
 
     it('required + invalid config {} -> block', async () => {
       const policy = {
-        ...resolvePolicy('regulated'),
+        ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
         identityProvider: {} as never,
       };
@@ -129,7 +129,7 @@ describe('actor assurance matrix', () => {
 
     it('required + no token -> block', async () => {
       const policy = {
-        ...resolvePolicy('regulated'),
+        ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
         identityProvider: {
           mode: 'static' as const,
@@ -158,7 +158,7 @@ describe('actor assurance matrix', () => {
     it('optional + no token -> fallback allowed, not idp_verified', async () => {
       process.env.FLOWGUARD_ACTOR_ID = 'fallback-user';
       const policy = {
-        ...resolvePolicy('team'),
+        ...getPolicyPreset('team'),
         identityProviderMode: 'optional' as const,
         identityProvider: {
           mode: 'static' as const,
@@ -211,7 +211,7 @@ describe('actor assurance matrix', () => {
       process.env.FLOWGUARD_ACTOR_TOKEN_PATH = tokenPath;
 
       const policy = {
-        ...resolvePolicy('regulated'),
+        ...getPolicyPreset('regulated'),
         identityProviderMode: 'required' as const,
         identityProvider: {
           mode: 'static' as const,

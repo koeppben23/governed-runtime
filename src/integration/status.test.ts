@@ -30,7 +30,7 @@ import {
   buildContextProjection,
   buildReadinessProjection,
 } from './status.js';
-import { resolvePolicy } from '../config/policy.js';
+import { getPolicyPreset } from '../config/policy.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 
@@ -117,7 +117,7 @@ function makeActorState(
 // ─── HAPPY: All Phases, All Flows ─────────────────────────────────────────────
 
 describe('policyMode — from policySnapshot', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should project solo mode', () => {
     const state = makeMinimalState('READY');
@@ -152,7 +152,7 @@ describe('policyMode — from policySnapshot', () => {
 });
 
 describe('profileId — from activeProfile', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should project profile id when set', () => {
     const state = {
@@ -180,7 +180,7 @@ describe('profileId — from activeProfile', () => {
 // ─── BAD: Invalid / Missing Data ─────────────────────────────────────────────
 
 describe('buildStatusProjection — BAD', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should handle minimal state without policySnapshot', () => {
     const state: SessionState = {
@@ -219,7 +219,7 @@ describe('buildStatusProjection — BAD', () => {
 // ─── CORNER: Terminal Phases, READY Routing ───────────────────────────────────
 
 describe('buildStatusProjection — CORNER', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   for (const phase of TERMINAL) {
     it(`terminal phase ${phase}: no blocker`, () => {
@@ -245,7 +245,7 @@ describe('buildStatusProjection — CORNER', () => {
 // ─── EDGE: Evidence Edge Cases ────────────────────────────────────────────────
 
 describe('buildStatusProjection — EDGE evidence', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should count all zero when no slots required (REVIEW flow)', () => {
     const state = makeMinimalState('REVIEW_COMPLETE');
@@ -512,7 +512,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
 // ─── nextAction field mapping ──────────────────────────────────────────────────
 
 describe('nextAction field mapping', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should map nextAction.primaryCommand to first available primaryCommand', () => {
     const state = makeMinimalState('READY');
@@ -534,7 +534,7 @@ describe('nextAction field mapping', () => {
 // ─── blocker field mapping ─────────────────────────────────────────────────────
 
 describe('blocker field mapping', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should have null blocker at terminal phases', () => {
     for (const phase of TERMINAL) {
@@ -580,8 +580,8 @@ describe('blocker field mapping', () => {
 // ─── why-blocked projection ───────────────────────────────────────────────────
 
 describe('buildBlockedProjection', () => {
-  const solo = resolvePolicy('solo');
-  const regulated = resolvePolicy('regulated');
+  const solo = getPolicyPreset('solo');
+  const regulated = getPolicyPreset('regulated');
 
   it('reports blocked=false on terminal phase', () => {
     const blocked = buildBlockedProjection(makeMinimalState('COMPLETE'), solo);
@@ -634,7 +634,7 @@ describe('context and readiness projections', () => {
 
   it('buildReadinessProjection is pure projection over canonical evaluators', () => {
     const state = makeMinimalState('READY');
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
 
     expect(readiness.phase).toBe('READY');
     expect(readiness.policyMode).toBe('solo');
@@ -659,7 +659,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
 
     expect(readiness.warnings).toBeDefined();
     expect(readiness.warnings.length).toBeGreaterThan(0);
@@ -683,7 +683,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings).toHaveLength(0);
   });
 
@@ -702,7 +702,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings.length).toBeGreaterThan(0);
     expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
@@ -722,7 +722,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings.length).toBeGreaterThan(0);
     expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
@@ -742,7 +742,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings.length).toBeGreaterThan(0);
     expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
@@ -762,7 +762,7 @@ describe('context and readiness projections', () => {
         },
       };
     }
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.warnings.length).toBeGreaterThan(0);
     expect(readiness.warnings[0]).toContain('Legacy selfReview config');
   });
@@ -772,35 +772,35 @@ describe('context and readiness projections', () => {
   it('readiness actorKnown is true when actorInfo source is env (survivor kill)', () => {
     const state = makeMinimalState('READY');
     state.actorInfo = { id: 'u1', source: 'env', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is git (survivor kill)', () => {
     const state = makeMinimalState('READY');
     state.actorInfo = { id: 'u1', source: 'git', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is claim (survivor kill)', () => {
     const state = makeMinimalState('READY');
     state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is oidc (survivor kill)', () => {
     const state = makeMinimalState('READY');
     state.actorInfo = { id: 'u1', source: 'oidc', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is false when actorInfo source is unknown (survivor kill)', () => {
     const state = makeMinimalState('READY');
     state.actorInfo = { id: 'u1', source: 'unknown', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(false);
   });
 
@@ -808,7 +808,7 @@ describe('context and readiness projections', () => {
 
   it('readiness returns minimumActorAssuranceForApproval only in regulated mode (survivor kill)', () => {
     const soloState = makeMinimalState('READY');
-    const soloReadiness = buildReadinessProjection(soloState, resolvePolicy('solo'));
+    const soloReadiness = buildReadinessProjection(soloState, getPolicyPreset('solo'));
     expect(soloReadiness.minimumActorAssuranceForApproval).toBeNull();
 
     const regulatedState = {
@@ -819,14 +819,17 @@ describe('context and readiness projections', () => {
         minimumActorAssuranceForApproval: 'claim_validated' as const,
       },
     };
-    const regulatedReadiness = buildReadinessProjection(regulatedState, resolvePolicy('regulated'));
+    const regulatedReadiness = buildReadinessProjection(
+      regulatedState,
+      getPolicyPreset('regulated'),
+    );
     expect(regulatedReadiness.minimumActorAssuranceForApproval).toBe('claim_validated');
   });
 
   // ─── MUTATION KILL: buildBlocker function (lines 390-405) ──────────────────
 
   it('blocker is null for terminal phases in buildStatusProjection (survivor kill)', () => {
-    const policy = resolvePolicy('solo');
+    const policy = getPolicyPreset('solo');
     for (const phase of TERMINAL) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
@@ -835,7 +838,7 @@ describe('context and readiness projections', () => {
   });
 
   it('blocker has reasonText for waiting phases (survivor kill)', () => {
-    const policy = resolvePolicy('regulated');
+    const policy = getPolicyPreset('regulated');
     for (const phase of USER_GATES) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
@@ -846,7 +849,7 @@ describe('context and readiness projections', () => {
   });
 
   it('blocker has null reasonText for pending phases (survivor kill)', () => {
-    const policy = resolvePolicy('solo');
+    const policy = getPolicyPreset('solo');
     const pendingPhases = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
     for (const phase of pendingPhases) {
       const state = makeMinimalState(phase);
@@ -862,7 +865,7 @@ describe('context and readiness projections', () => {
     const state = makeMinimalState('TICKET');
     state.ticket = { text: 't', digest: 'd', source: 'user', createdAt: new Date().toISOString() };
     state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
-    const readiness = buildReadinessProjection(state, resolvePolicy('solo'));
+    const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.phase).toBe('TICKET');
     expect(readiness.blocked).toBe(true); // pending phase
     expect(readiness.evidenceComplete).toBe(true);
@@ -875,7 +878,7 @@ describe('context and readiness projections', () => {
 
 describe('buildStatusProjection — E2E', () => {
   it('should project complete TICKET flow lifecycle', () => {
-    const policy = resolvePolicy('solo');
+    const policy = getPolicyPreset('solo');
 
     const phases = [
       'READY',
@@ -900,7 +903,7 @@ describe('buildStatusProjection — E2E', () => {
   });
 
   it('should handle regulated mode with four-eyes policy', () => {
-    const policy = resolvePolicy('regulated');
+    const policy = getPolicyPreset('regulated');
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
       policySnapshot: {
@@ -924,7 +927,7 @@ describe('buildStatusProjection — E2E', () => {
   });
 
   it('should handle team-ci mode with ci_context_missing', () => {
-    const policy = resolvePolicy('team-ci');
+    const policy = getPolicyPreset('team-ci');
     const state: SessionState = {
       ...makeMinimalState('READY'),
       policySnapshot: {
@@ -942,7 +945,7 @@ describe('buildStatusProjection — E2E', () => {
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 describe('buildStatusProjection — Profile Projection', () => {
-  const policy = resolvePolicy('solo');
+  const policy = getPolicyPreset('solo');
 
   it('should project java profile', () => {
     const state: SessionState = {
@@ -1008,8 +1011,8 @@ describe('buildStatusProjection — Profile Projection', () => {
 // ─── Status Mutation Kill Matrix ─────────────────────────────────────────────
 
 describe('status.ts MUTATION_KILL matrix', () => {
-  const solo = resolvePolicy('solo');
-  const regulated = resolvePolicy('regulated');
+  const solo = getPolicyPreset('solo');
+  const regulated = getPolicyPreset('regulated');
 
   const fixedTime = '2026-04-30T12:00:00.000Z';
 
@@ -1390,7 +1393,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       // PLAN_REVIEW with team policy (requireHumanGates=true) must be blocked,
       // while solo (requireHumanGates=false) auto-resolves and is not blocked.
       const state = stateWithPlan('PLAN_REVIEW');
-      const team = resolvePolicy('team');
+      const team = getPolicyPreset('team');
       const teamBlocked = buildBlockedProjection(state, team);
       const soloBlocked = buildBlockedProjection(state, solo);
       expect(teamBlocked.blocked).toBe(true);
@@ -1416,7 +1419,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       // Kills L298 ConditionalExpression `true` mutant: hint must be null when status is 'missing',
       // but slot.detail when status is 'failed'.
       const stateWithMissingPlan = stateWithTicket('PLAN');
-      const team = resolvePolicy('team');
+      const team = getPolicyPreset('team');
       const blocked = buildBlockedProjection(stateWithMissingPlan, team);
       // The plan slot is required and missing → must appear with hint === null.
       const planSlot = blocked.missingEvidence.find((e) => e.slot === 'plan');
@@ -1463,7 +1466,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('respects requireHumanGates from policy when computing blocked field', () => {
       // Kills L344 ObjectLiteral mutant `evaluate(state, {})`.
       const state = stateWithPlan('PLAN_REVIEW');
-      const team = resolvePolicy('team');
+      const team = getPolicyPreset('team');
       const teamReadiness = buildReadinessProjection(state, team);
       const soloReadiness = buildReadinessProjection(state, solo);
       expect(teamReadiness.blocked).toBe(true);

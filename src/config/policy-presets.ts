@@ -125,16 +125,7 @@ export function normalizePolicyMode(mode: string): PolicyMode {
 
 /** Resolve a FlowGuard policy preset by mode name. */
 export function getPolicyPreset(mode: string): FlowGuardPolicy {
-  const m = normalizePolicyMode(mode);
-  return POLICIES[m];
-}
-
-/**
- * @deprecated Use getPolicyPreset() for preset lookup, or
- * resolvePolicyWithContext() for runtime authority.
- */
-export function resolvePolicy(mode: string): FlowGuardPolicy {
-  return getPolicyPreset(mode);
+  return POLICIES[normalizePolicyMode(mode)];
 }
 
 /** All known policy mode names. */
