@@ -25,7 +25,11 @@ import { resolveNextAction } from '../../machine/next-action.js';
 import type { RailResult, RailContext } from '../../rails/types.js';
 
 // Adapters
-import { readState, atomicWrite, statePath } from '../../adapters/persistence.js';
+import {
+  readState,
+  withSessionWriteLock,
+  writeStateAlreadyLocked,
+} from '../../adapters/persistence.js';
 
 // Workspace
 import {
@@ -255,6 +259,13 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  * The sourceStateHash is pre-computed from the serialized nextState so that
  * materializeEvidenceArtifacts does not need to read state from disk.
  *
+ * The session write lock is acquired over both artifact materialization and
+ * state write to prevent interleaved writes from corrupting the artifact-state
+ * relationship.
+ *
+ * ASSERTION: materializeEvidenceArtifacts does NOT recursively acquire the
+ * session-state lock. If it ever does, this will deadlock.
+ *
  * Failure semantics:
  * - If validation fails: nothing written.
  * - If artifact materialization fails: no state change persisted.
@@ -279,11 +290,11 @@ export async function writeStateWithArtifacts(
     .update(serialized, 'utf-8')
     .digest('hex');
 
-  // 3. Materialize artifacts FIRST (uses pre-computed hash, no disk read needed)
-  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
-
-  // 4. Write state LAST (atomic: temp → rename)
-  await atomicWrite(statePath(sessDir), serialized);
+  // 3. Materialize artifacts and write state atomically under the session lock
+  await withSessionWriteLock(sessDir, async () => {
+    await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
+    await writeStateAlreadyLocked(sessDir, nextState);
+  });
 }
 
 /**
