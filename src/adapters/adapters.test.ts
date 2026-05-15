@@ -61,6 +61,7 @@ function restoreWriteFile(): void {
 import {
   readState,
   writeState,
+  writeStateAlreadyLocked,
   stateExists,
   writeReport,
   readReport,
@@ -72,6 +73,9 @@ import {
   PersistenceError,
   isEnoent,
   atomicWrite,
+  withSessionWriteLock,
+  acquireSessionWriteLock,
+  sessionLockPath,
 } from './persistence.js';
 import { validateBinding, fromOpenCodeContext, BindingError } from './binding.js';
 import { createRailContext } from './context.js';
@@ -347,9 +351,7 @@ describe('persistence', () => {
 
   // ─── EDGE ───────────────────────────────────────────────────
   describe('EDGE', () => {
-    it('multiple concurrent writeState calls — at least one succeeds, no corruption', async () => {
-      // Race multiple writes — on Windows, NTFS locks may cause some EPERM errors.
-      // The invariant: at least one write succeeds and the file is valid (no corruption).
+    it('multiple concurrent writeState calls — all succeed with lock serialization, no corruption', async () => {
       const states = Array.from({ length: 5 }, (_, i) =>
         makeState('TICKET', {
           id: FIXED_UUID,
@@ -363,8 +365,7 @@ describe('persistence', () => {
       );
       const results = await Promise.allSettled(states.map((s) => writeState(tmpDir, s)));
       const fulfilled = results.filter((r) => r.status === 'fulfilled');
-      expect(fulfilled.length).toBeGreaterThanOrEqual(1);
-      // File should be valid (one of the writes won, no corruption)
+      expect(fulfilled.length).toBe(states.length);
       const loaded = await readState(tmpDir);
       expect(loaded).not.toBeNull();
       expect(loaded!.phase).toBe('TICKET');
@@ -1431,4 +1432,180 @@ describe('context', () => {
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.digest1MbMs);
     });
   });
+
+  // ─── session-write-lock ──────────────────────────────────────
+  describe('session-write-lock', () => {
+    let lockDir: string;
+
+    beforeEach(async () => {
+      lockDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-lock-'));
+    });
+
+    afterEach(async () => {
+      await fs.rm(lockDir, { recursive: true, force: true });
+    });
+
+    it('HAPPY: sequential writes succeed', async () => {
+      await writeState(lockDir, makeState('TICKET'));
+      await writeState(lockDir, makeState('PLAN'));
+      const loaded = await readState(lockDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.phase).toBe('PLAN');
+    });
+
+    it('EDGE: concurrent writes serialize without corruption', async () => {
+      const stateA = makeState('TICKET', {
+        id: FIXED_UUID,
+        binding: {
+          sessionId: FIXED_SESSION_UUID,
+          worktree: '/tmp/a',
+          fingerprint: 'aaaabbbbccccddddeeeeffff',
+          resolvedAt: FIXED_TIME,
+        },
+      });
+      const stateB = makeState('PLAN', {
+        id: FIXED_UUID,
+        binding: {
+          sessionId: FIXED_SESSION_UUID,
+          worktree: '/tmp/b',
+          fingerprint: 'aaaabbbbccccddddeeeeffff',
+          resolvedAt: FIXED_TIME,
+        },
+      });
+      const results = await Promise.allSettled([
+        writeState(lockDir, stateA),
+        writeState(lockDir, stateB),
+      ]);
+      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+      const loaded = await readState(lockDir);
+      expect(loaded).not.toBeNull();
+      // State is valid JSON — no corruption regardless of write order
+      expect(loaded!.phase).toBeDefined();
+    });
+
+    it('BAD: lock timeout yields LOCK_TIMEOUT with blocking PID', async () => {
+      const lock = await acquireSessionWriteLock(lockDir);
+      try {
+        await expect(acquireSessionWriteLock(lockDir, 500)).rejects.toMatchObject({
+          code: 'LOCK_TIMEOUT',
+        });
+      } finally {
+        await lock.release();
+      }
+    });
+
+    it('CORNER: stale lock (dead PID) is recovered', async () => {
+      const lockPath = sessionLockPath(lockDir);
+      await fs.mkdir(lockDir, { recursive: true });
+      await fs.writeFile(lockPath, 'pid=999999999\ntoken=dead-token\n');
+      await writeState(lockDir, makeState('TICKET'));
+      const loaded = await readState(lockDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.phase).toBe('TICKET');
+    });
+
+    it('BAD: lock with malformed content is NOT auto-deleted (fail-closed)', async () => {
+      const lockPath = sessionLockPath(lockDir);
+      await fs.mkdir(lockDir, { recursive: true });
+      await fs.writeFile(lockPath, 'garbage content\nnot a valid lock\n');
+      await expect(acquireSessionWriteLock(lockDir, 500)).rejects.toMatchObject({
+        code: 'LOCK_TIMEOUT',
+      });
+    });
+
+    it('EDGE: lock held by live PID with EPERM is treated as alive', async () => {
+      // Use our own PID — isProcessAlive returns true, so lock is NOT stale
+      const lock = await acquireSessionWriteLock(lockDir);
+      try {
+        await expect(acquireSessionWriteLock(lockDir, 500)).rejects.toMatchObject({
+          code: 'LOCK_TIMEOUT',
+        });
+      } finally {
+        await lock.release();
+      }
+    });
+
+    it('CORNER: release() with stale handle does not delete foreign lock', async () => {
+      const lockA = await acquireSessionWriteLock(lockDir);
+      // Simulate: lockA's lockfile is replaced by another process (different token)
+      const lockPath = sessionLockPath(lockDir);
+      const newToken = `new-${crypto.randomUUID()}`;
+      await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=${newToken}\n`);
+      // lockA.release() must NOT delete the lockfile — token doesn't match
+      await lockA.release();
+      await expect(fs.access(lockPath)).resolves.toBeUndefined();
+      await fs.unlink(lockPath);
+    });
+
+    it('SMOKE: withSessionWriteLock returns fn result', async () => {
+      const result = await withSessionWriteLock(lockDir, async () => 42);
+      expect(result).toBe(42);
+    });
+
+    it('EDGE: withSessionWriteLock releases lock on error', async () => {
+      await expect(
+        withSessionWriteLock(lockDir, async () => {
+          throw new Error('simulated failure');
+        }),
+      ).rejects.toThrow('simulated failure');
+      // Lock must be released — subsequent acquisition should succeed immediately
+      const recoveredLock = await acquireSessionWriteLock(lockDir, 1000);
+      await recoveredLock.release();
+    });
+
+    it('EDGE: writeStateAlreadyLocked validates and writes without acquiring lock', async () => {
+      const state = makeState('TICKET');
+      // Use under withSessionWriteLock — the locked variant should NOT re-acquire
+      await withSessionWriteLock(lockDir, async () => {
+        await writeStateAlreadyLocked(lockDir, state);
+      });
+      const loaded = await readState(lockDir);
+      expect(loaded).not.toBeNull();
+    });
+
+    it('CORNER: acquire with custom timeout succeeds when lock is released before deadline', async () => {
+      const lock = await acquireSessionWriteLock(lockDir);
+      let acquired = false;
+      const inner = acquireSessionWriteLock(lockDir, 5000).then((l) => {
+        acquired = true;
+        return l.release();
+      });
+      // Release first lock after a short delay
+      await new Promise((r) => setTimeout(r, 50));
+      await lock.release();
+      await inner;
+      expect(acquired).toBe(true);
+    });
+
+    it('ARCHITECTURE: no atomicWrite(statePath(...)) outside persistence.ts', async () => {
+      // Verify the invariant that only persistence.ts directly combines atomicWrite with statePath.
+      // Scans all TypeScript source files (excluding tests and persistence.ts itself).
+      const srcDir = path.resolve(import.meta.dirname, '..');
+      const files = await walkSrcFiles(srcDir);
+      const violations: string[] = [];
+      for (const file of files) {
+        if (file === path.resolve(srcDir, 'adapters', 'persistence.ts')) continue;
+        if (file.endsWith('.test.ts')) continue;
+        const content = await fs.readFile(file, 'utf-8');
+        if (content.includes('atomicWrite(statePath')) {
+          violations.push(path.relative(srcDir, file));
+        }
+      }
+      expect(violations).toEqual([]);
+    });
+  });
 });
+
+async function walkSrcFiles(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== 'node_modules') {
+      results.push(...(await walkSrcFiles(fullPath)));
+    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}

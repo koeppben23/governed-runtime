@@ -13,7 +13,8 @@
 
 import {
   readState,
-  writeState,
+  writeStateAlreadyLocked,
+  withSessionWriteLock,
   appendAuditEvent,
   readAuditTrail,
 } from '../adapters/persistence.js';
@@ -179,11 +180,13 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     sessDir: string,
     update: (state: SessionState, now: string) => SessionState,
   ): Promise<void> {
-    const current = await readState(sessDir);
-    if (!current) return;
-    const now = new Date().toISOString();
-    const next = update(current, now);
-    await writeState(sessDir, next);
+    await withSessionWriteLock(sessDir, async () => {
+      const current = await readState(sessDir);
+      if (!current) return;
+      const now = new Date().toISOString();
+      const next = update(current, now);
+      await writeStateAlreadyLocked(sessDir, next);
+    });
   }
 
   async blockReviewOutcome(
