@@ -38,6 +38,7 @@ import { buildProductNextAction } from '../presentation/next-action-copy.js';
 const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -96,6 +97,8 @@ export interface StatusProjection {
     notYetRequired: number;
     failed: number;
   };
+  /** Review loop progress during review phases (null when not in a review phase). */
+  reviewLoop: ReviewLoopProgress | null;
 }
 
 /**
@@ -242,6 +245,7 @@ export function buildStatusProjection(
       notYetRequired: completeness.summary.notYetRequired,
       failed: completeness.summary.failed,
     },
+    reviewLoop: getReviewLoopProgress(state),
   };
 }
 

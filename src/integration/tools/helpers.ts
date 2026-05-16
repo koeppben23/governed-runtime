@@ -43,6 +43,7 @@ import {
 // Config
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
+import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
 import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
@@ -135,6 +136,7 @@ export function formatRailResult(result: RailResult): ToolResult {
   const productNext = buildProductNextAction(nextAction, result.state.phase);
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
+  const reviewLoop = getReviewLoopProgress(result.state);
   const json = JSON.stringify({
     phase: result.state.phase,
     phaseLabel: PHASE_LABELS[result.state.phase],
@@ -153,6 +155,7 @@ export function formatRailResult(result: RailResult): ToolResult {
         }
       : {}),
     ...(archiveStatus ? { archiveStatus } : {}),
+    ...(reviewLoop ? { reviewLoop } : {}),
   });
   return { output: json, metadata: { transitions: result.transitions } };
 }
