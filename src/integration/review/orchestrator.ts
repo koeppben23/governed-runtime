@@ -536,7 +536,7 @@ export function buildMutatedOutput(
   parsed.next =
     `${REVIEW_COMPLETED_PREFIX}: The FlowGuard plugin has automatically invoked the ` +
     `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
-    `pluginReviewFindings. Submit your selfReviewVerdict based on the ` +
+    `pluginReviewFindings. Submit your reviewVerdict based on the ` +
     `overallVerdict, and include the reviewFindings object from ` +
     `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
 
@@ -573,7 +573,7 @@ export function buildReviewContentMutatedOutput(
     `PLUGIN_REVIEW_COMPLETED: The FlowGuard plugin has automatically invoked the ` +
     `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
     `pluginReviewFindings. Call flowguard_review again with the same content ` +
-    `input (prNumber/branch/url/text) and set analysisFindings to the ` +
+    `input (prNumber/branch/url/text) and set reviewFindings to the ` +
     `complete pluginReviewFindings object. Do NOT modify or map the findings. ` +
     `Include attestation.toolObligationId from requiredReviewAttestation.`;
 

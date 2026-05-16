@@ -76,10 +76,10 @@ describe('documentation/review-capabilities-doc-drift', () => {
   // HAPPY — README documents content-aware /review
   // =========================================================================
   describe('HAPPY — README documents content-aware /review', () => {
-    it('describes content-aware review flow with prNumber and analysisFindings', () => {
+    it('describes content-aware review flow with prNumber and reviewFindings', () => {
       const readme = readDoc('README.md');
       expect(readme).toContain('prNumber');
-      expect(readme).toContain('analysisFindings');
+      expect(readme).toContain('reviewFindings');
       expect(readme).toContain('reviewCard');
     });
 
@@ -99,10 +99,10 @@ describe('documentation/review-capabilities-doc-drift', () => {
   // HAPPY — commands.md documents /review content-aware args
   // =========================================================================
   describe('HAPPY — commands.md documents /review args', () => {
-    it('lists prNumber and analysisFindings', () => {
+    it('lists prNumber and reviewFindings', () => {
       const cmds = readDoc('docs/commands.md');
       expect(cmds).toContain('prNumber');
-      expect(cmds).toContain('analysisFindings');
+      expect(cmds).toContain('reviewFindings');
       expect(cmds).toContain('reviewCard');
     });
   });

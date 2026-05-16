@@ -211,7 +211,7 @@ Create or revise an Architecture Decision Record (ADR).
 Two modes:
 
 - **Mode A (submit ADR):** Provide `title`, `adrText`. ADR ID is auto-generated (`ADR-001`, `ADR-002`, ...). Records ADR and starts the **independent subagent review loop**.
-- **Mode B (ADR review):** Provide `selfReviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
+- **Mode B (ADR review):** Provide `reviewVerdict` plus `reviewFindings` from the `flowguard-reviewer` subagent. On convergence, advances to ARCH_REVIEW.
 
 ADR must include `## Context`, `## Decision`, and `## Consequences` sections (MADR format).
 
@@ -232,13 +232,13 @@ Start the standalone review flow. Supports content-aware review (PR, branch, URL
 - `url` (optional): URL content to review.
 - `inputOrigin` (optional): Where the content originated — `pr`, `branch`, `external_reference`, `mixed`, `manual_text`, etc.
 - `references` (optional): Array of external references with audit provenance. Same structure as `/ticket` references with types like `pr`, `branch`, `commit`, etc.
-- `analysisFindings` (optional): Complete `ReviewFindings` object from `flowguard-reviewer` subagent. Required when content-aware fields are provided.
+- `reviewFindings` (optional): Complete `ReviewFindings` object from `flowguard-reviewer` subagent. Required when content-aware fields are provided.
 
 **Examples:**
 
 - `/review` — plain compliance report (no external content)
 - `/review prNumber=42` — content-aware review with PR diff (blocked, agent invokes subagent)
-- `/review prNumber=42 analysisFindings=<ReviewFindings>` — submit subagent findings
+- `/review prNumber=42 reviewFindings=<ReviewFindings>` — submit subagent findings
 
 **Produces:**
 

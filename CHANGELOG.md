@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-266 (Issue #266):** [BREAKING] Normalized tool parameter names for LLM disambiguation: `selfReviewVerdict` → `reviewVerdict` in `flowguard_plan` and `flowguard_architecture`; `analysisFindings` → `reviewFindings` in `flowguard_review`. Removed internal jargon (`F13`, `canonical evaluator/completeness truth`, `flowguard-review-report.v1`) from tool descriptions. Added `/status` vs `/continue` disambiguation guidance.
+
 - **Issue #270:** Regulated mode now defaults approval actor assurance to `claim_validated`, so four-eyes approvals require a validated claim file or stronger IdP-verified identity unless explicitly lowered by policy.
 
 - **FG-REL-020 (Issue #129):** Surface partial plugin hook audit persistence failures via `recordAssuranceWithAudit()`. Review-assurance state mutations commit first under the session-state write lock; if the corresponding audit event cannot be persisted, strict paths return a blocked result (`AUDIT_PERSISTENCE_FAILED`) and non-strict paths log a warning. The call sites `blockReviewOutcome`, `runStandardReviewPipeline`, and `handleReviewerFailure` were migrated to use the centralized helper.

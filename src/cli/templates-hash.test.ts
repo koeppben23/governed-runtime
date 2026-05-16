@@ -50,7 +50,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Existing sessions with obligations bound to the previous digest must be
     // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '4ac316e4f293b39cd7984283fc0f72021d6012c5843198df45fa37469e47b4ca',
+      'e32de00c6776d70fafcbc7dcbb50f59627a8d2383dbefaa78c244037e4bc91d3',
     );
   });
 
@@ -80,7 +80,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // in Done-when. This ensures LLMs cannot skip or summarize reviewCard.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '0df83521211e25232a69afc6c45eb952a624329eee2f4223f96b991dcc2e7d5a',
+      'b9e435390debb1140d840bd843961c81a0aeb2ac58e479496351f61b6478c5e7',
     );
   });
 

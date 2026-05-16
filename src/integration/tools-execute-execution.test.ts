@@ -247,7 +247,7 @@ describe('implement', () => {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
     const planReviewFindings = await fulfillReview('plan', 0, 'approve');
-    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings: planReviewFindings }, ctx);
+    await plan.execute({ reviewVerdict: 'approve', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION
     // Submit validation results
     await validate.execute(
@@ -771,7 +771,7 @@ describe('validate', () => {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan' }, ctx);
     const reviewFindings = await fulfillReview('plan', 0, 'approve');
-    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     // Solo: auto-advances to VALIDATION
   }
 
@@ -910,7 +910,7 @@ describe('review', () => {
       expect(review.args.prNumber).toBeDefined();
       expect(review.args.branch).toBeDefined();
       expect(review.args.url).toBeDefined();
-      expect(review.args.analysisFindings).toBeDefined();
+      expect(review.args.reviewFindings).toBeDefined();
     });
 
     it('requires analysis findings for content-aware review inputs', async () => {
@@ -969,7 +969,7 @@ describe('review', () => {
         {
           inputOrigin: 'manual_text',
           text: 'diff --git a/file.ts b/file.ts',
-          analysisFindings: findings,
+          reviewFindings: findings,
         },
         ctx,
       );

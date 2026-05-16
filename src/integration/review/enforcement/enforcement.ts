@@ -94,7 +94,7 @@ export function onFlowGuardToolAfter(
   // BUG-21: Use value-based checks — the `in` operator returns true for keys
   // with null values (LLMs may send explicit nulls for absent optional fields).
   const hasSelfReviewVerdict =
-    (typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0) ||
+    (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0) ||
     (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0);
   if (hasSelfReviewVerdict) {
     // Only clear if the call succeeded (no error in output)
@@ -344,7 +344,7 @@ export function enforceBeforeVerdict(
   // Only enforce on Mode B calls (verdict submission).
   // BUG-21: Use value-based checks — the `in` operator returns true for keys
   // with null values (DeepSeek R1 sends explicit nulls for optional fields).
-  const selfReviewValue = args.selfReviewVerdict;
+  const selfReviewValue = args.reviewVerdict;
   const reviewVerdictValue = args.reviewVerdict;
   const hasSelfReviewVerdict =
     (typeof selfReviewValue === 'string' && selfReviewValue.length > 0) ||

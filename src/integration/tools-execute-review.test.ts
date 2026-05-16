@@ -254,7 +254,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -265,7 +265,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -279,7 +279,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
     const raw = await plan.execute(
-      { selfReviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
+      { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -293,7 +293,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
     const raw = await plan.execute(
-      { selfReviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
+      { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -306,7 +306,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -325,7 +325,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -345,7 +345,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -356,7 +356,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
 
     expect(result.error).toBeUndefined();
@@ -428,7 +428,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -454,7 +454,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -482,7 +482,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -509,7 +509,7 @@ describe('P34a: Policy-Driven Branches', () => {
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
     expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -538,7 +538,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
   });
@@ -559,7 +559,7 @@ describe('decision', () => {
       const s = parseToolResult(await status.execute({}, ctx));
       if (s.phase === 'PLAN_REVIEW') break;
       const reviewFindings = await fulfillPlanReview(i, 'approve');
-      await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+      await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
     }
   }
 
@@ -758,7 +758,7 @@ describe('review (standalone flow)', () => {
   ) {
     const uuid = await obtainObligationUuid(contentArg);
     const findings = { ...buildAnalysisFindings(overallVerdict, uuid), ...findingOverrides };
-    const raw = await review.execute({ ...contentArg, analysisFindings: findings as never }, ctx);
+    const raw = await review.execute({ ...contentArg, reviewFindings: findings as never }, ctx);
     return parseToolResult(raw);
   }
 
@@ -766,7 +766,7 @@ describe('review (standalone flow)', () => {
   // HAPPY PATHS - Successful review flows
   // =========================================================================
   describe('HAPPY', () => {
-    it('content-aware review with PR number succeeds with analysisFindings', async () => {
+    it('content-aware review with PR number succeeds with reviewFindings', async () => {
       const result = await submitContentReview({ prNumber: 123, inputOrigin: 'pr' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
@@ -775,14 +775,14 @@ describe('review (standalone flow)', () => {
       expect(result.inputOrigin).toBe('pr');
     });
 
-    it('content-aware review with branch succeeds with analysisFindings', async () => {
+    it('content-aware review with branch succeeds with reviewFindings', async () => {
       const result = await submitContentReview({ branch: 'feature-auth', inputOrigin: 'branch' });
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('branch');
     });
 
-    it('content-aware review with URL succeeds with analysisFindings', async () => {
+    it('content-aware review with URL succeeds with reviewFindings', async () => {
       const result = await submitContentReview({
         url: 'https://example.com/api-doc',
         inputOrigin: 'external_reference',
@@ -802,7 +802,7 @@ describe('review (standalone flow)', () => {
       expect(result.inputOrigin).toBe('manual_text');
     });
 
-    it('non-content review (no external content) succeeds without analysisFindings', async () => {
+    it('non-content review (no external content) succeeds without reviewFindings', async () => {
       await hydrateAndGetReady();
 
       const raw = await review.execute({}, ctx);
@@ -835,7 +835,7 @@ describe('review (standalone flow)', () => {
   // BAD PATHS - Invalid inputs, missing content, subagent failures
   // =========================================================================
   describe('BAD', () => {
-    it('BLOCKED: content-aware review without analysisFindings', async () => {
+    it('BLOCKED: content-aware review without reviewFindings', async () => {
       await hydrateAndGetReady();
 
       const raw = await review.execute({ prNumber: 123, inputOrigin: 'pr' }, ctx);
@@ -858,7 +858,7 @@ describe('review (standalone flow)', () => {
       await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);
 
       const findings = buildAnalysisFindings('approve');
-      const raw = await review.execute({ prNumber: 123, analysisFindings: findings }, ctx);
+      const raw = await review.execute({ prNumber: 123, reviewFindings: findings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
@@ -980,7 +980,7 @@ describe('review (standalone flow)', () => {
   describe('attestation contract', () => {
     // ---------- HAPPY ----------
     describe('HAPPY (attestation)', () => {
-      it('H1: content-aware /review without analysisFindings returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
+      it('H1: content-aware /review without reviewFindings returns CONTENT_ANALYSIS_REQUIRED with requiredReviewAttestation', async () => {
         await hydrateAndGetReady();
 
         const raw = await review.execute({ prNumber: 42, inputOrigin: 'pr' }, ctx);
@@ -1026,7 +1026,7 @@ describe('review (standalone flow)', () => {
         expect((result.references as unknown[]).length).toBe(1);
       });
 
-      it('H3: plain /review without content fields still works (no analysisFindings needed)', async () => {
+      it('H3: plain /review without content fields still works (no reviewFindings needed)', async () => {
         await hydrateAndGetReady();
 
         const raw = await review.execute({}, ctx);
@@ -1059,7 +1059,7 @@ describe('review (standalone flow)', () => {
           reviewMode: 'human',
         } as unknown;
         const raw = await review.execute(
-          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1071,7 +1071,7 @@ describe('review (standalone flow)', () => {
         const { attestation: _omit, ...rest } = base;
         void _omit;
         const raw = await review.execute(
-          { prNumber: 1, analysisFindings: rest as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewFindings: rest as never, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1085,7 +1085,7 @@ describe('review (standalone flow)', () => {
           attestation: { ...base.attestation, reviewedBy: 'someone-else' },
         };
         const raw = await review.execute(
-          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1099,7 +1099,7 @@ describe('review (standalone flow)', () => {
           attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
         };
         const raw = await review.execute(
-          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1113,7 +1113,7 @@ describe('review (standalone flow)', () => {
           attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
         };
         const raw = await review.execute(
-          { prNumber: 1, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 1, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         expectAttestationBlocked(parseToolResult(raw));
@@ -1124,7 +1124,7 @@ describe('review (standalone flow)', () => {
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
         const findings1 = buildAnalysisFindings('approve', uuid);
         const raw1 = await review.execute(
-          { prNumber: 42, analysisFindings: findings1 as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewFindings: findings1 as never, inputOrigin: 'pr' },
           ctx,
         );
         const result1 = parseToolResult(raw1);
@@ -1134,7 +1134,7 @@ describe('review (standalone flow)', () => {
         // Step 2: Re-submit the SAME findings with the SAME (now consumed) UUID.
         // The obligation was consumed on success — this must be rejected.
         const raw2 = await review.execute(
-          { prNumber: 42, analysisFindings: findings1 as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewFindings: findings1 as never, inputOrigin: 'pr' },
           ctx,
         );
         const result2 = parseToolResult(raw2);
@@ -1178,7 +1178,7 @@ describe('review (standalone flow)', () => {
         };
 
         const raw = await review.execute(
-          { text: 'diff content', analysisFindings: findings, inputOrigin: 'manual_text' },
+          { text: 'diff content', reviewFindings: findings, inputOrigin: 'manual_text' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1271,7 +1271,7 @@ describe('review (standalone flow)', () => {
       it('EE1: hydrate -> blocked with attestation -> consume payload -> succeed with complete ReviewFindings', async () => {
         await hydrateAndGetReady();
 
-        // Step 1: call /review with content but no analysisFindings -> blocked
+        // Step 1: call /review with content but no reviewFindings -> blocked
         const refs = [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }];
         const blockedRaw = await review.execute(
           { prNumber: 42, inputOrigin: 'pr', references: refs },
@@ -1310,7 +1310,7 @@ describe('review (standalone flow)', () => {
         const raw = await review.execute(
           {
             prNumber: 42,
-            analysisFindings: findings as never,
+            reviewFindings: findings as never,
             inputOrigin: 'pr',
             references: refs,
           },
@@ -1337,7 +1337,7 @@ describe('review (standalone flow)', () => {
       it('S2: CONTENT_ANALYSIS_REQUIRED and SUBAGENT_REVIEW_NOT_INVOKED return identical attestation payload', async () => {
         await hydrateAndGetReady();
 
-        // CONTENT_ANALYSIS_REQUIRED: triggered by content fields without analysisFindings.
+        // CONTENT_ANALYSIS_REQUIRED: triggered by content fields without reviewFindings.
         const rawA = await review.execute({ prNumber: 7, inputOrigin: 'pr' }, ctx);
         const a = parseToolResult(rawA);
         expect(a.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -1349,7 +1349,7 @@ describe('review (standalone flow)', () => {
           reviewMode: 'human',
         } as unknown;
         const rawB = await review.execute(
-          { prNumber: 7, analysisFindings: tampered as never, inputOrigin: 'pr' },
+          { prNumber: 7, reviewFindings: tampered as never, inputOrigin: 'pr' },
           ctx,
         );
         const b = parseToolResult(rawB);
@@ -1366,7 +1366,7 @@ describe('review (standalone flow)', () => {
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
         const findings = buildAnalysisFindings('approve', uuid);
         const raw = await review.execute(
-          { prNumber: 42, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 42, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1393,7 +1393,7 @@ describe('review (standalone flow)', () => {
         const uuid = await obtainObligationUuid({ prNumber: 43, inputOrigin: 'pr' });
         const findings = buildAnalysisFindings('approve', uuid);
         const raw = await review.execute(
-          { prNumber: 43, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 43, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1427,7 +1427,7 @@ describe('review (standalone flow)', () => {
         };
 
         const raw = await review.execute(
-          { prNumber: 44, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 44, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -1563,7 +1563,7 @@ describe('review (standalone flow)', () => {
         // the missing reviewInvocationPolicy falls back to host_task_required.
         const findings = buildAnalysisFindings('approve', uuid);
         const raw = await review.execute(
-          { prNumber: 55, analysisFindings: findings as never, inputOrigin: 'pr' },
+          { prNumber: 55, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
         );
         const result = parseToolResult(raw);

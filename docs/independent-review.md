@@ -114,7 +114,7 @@ The reviewer subagent returns one of three `overallVerdict` values:
 
 `unable_to_review` is enforced fail-closed at every layer:
 
-- **Tool layer (`review-validation.ts`):** rejects findings.overallVerdict='unable_to_review' regardless of submitted `selfReviewVerdict` / `reviewVerdict`.
+- **Tool layer (`review-validation.ts`):** rejects findings.overallVerdict='unable_to_review' regardless of the submitted reviewer verdict.
 - **Orchestrator (`plugin-orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
 - **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
@@ -332,7 +332,7 @@ Standalone `/review` creates its own obligation lifecycle (obligationType `revie
 
 1. Content-aware `/review` without findings → blocked with `CONTENT_ANALYSIS_REQUIRED` + `requiredReviewAttestation` (containing the obligation UUID)
 2. Subagent invoked (plugin-orchestrated or manual)
-3. `/review` with `analysisFindings` matching the obligation UUID → validated via `validateStrictAttestation`
+3. `/review` with `reviewFindings` matching the obligation UUID → validated via `validateStrictAttestation`
 4. Obligation consumed on success (single-use enforcement)
 
 Invocation evidence carries source marking:

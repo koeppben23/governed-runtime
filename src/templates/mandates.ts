@@ -409,7 +409,7 @@ When the prompt contains PR diff, branch diff, URL content, or manual text to re
    - Cannot analyze the content at all -> \`"unable_to_review"\` (see validity conditions below)
 
 3. **Pass the complete object through.** The primary agent must hand the entire
-   ReviewFindings object to \`flowguard_review\` as \`analysisFindings\`. Do NOT convert
+   ReviewFindings object to \`flowguard_review\` as \`reviewFindings\`. Do NOT convert
    to an array and do NOT drop \`reviewMode\`, \`reviewedBy\`, \`reviewedAt\`, \`attestation\`,
    \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
    In strict governance, copied JSON or attestation fields alone are diagnostic

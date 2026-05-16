@@ -30,7 +30,7 @@
  *
  * Validation rules:
  * - reviewMode=self → BLOCKED
- * - selfReviewVerdict=approve + missing reviewFindings → BLOCKED
+ * - reviewVerdict=approve + missing reviewFindings → BLOCKED
  * - reviewFindings.planVersion mismatch → BLOCKED
  *
  * @version v6
@@ -92,7 +92,7 @@ import {
 
 type PlanArgs = {
   planText?: string;
-  selfReviewVerdict?: 'approve' | 'changes_requested';
+  reviewVerdict?: 'approve' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
@@ -162,8 +162,7 @@ function planInputFlags(args: PlanArgs): PlanInputFlags {
   // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
   // may send for absent optional fields). Post-Zod these can only be string/object
   // or undefined, but defense-in-depth protects against schema changes.
-  const hasVerdict =
-    typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0;
+  const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
   const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
   return {
     hasPlanText,
@@ -236,7 +235,7 @@ function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): st
   if (input.hasPlanText && input.hasFindings && !input.hasVerdict) {
     return formatBlocked('PLAN_SUBMISSION_MIXED_INPUTS');
   }
-  if (input.hasPlanText && input.hasVerdict && args.selfReviewVerdict !== 'changes_requested') {
+  if (input.hasPlanText && input.hasVerdict && args.reviewVerdict !== 'changes_requested') {
     return formatBlocked('PLAN_APPROVE_WITH_TEXT');
   }
   return null;
@@ -342,7 +341,7 @@ function initialPlanReviewNext(planVersion: number): string {
     planVersion +
     '. ' +
     'Parse the JSON ReviewFindings from the subagent response. ' +
-    'Then call flowguard_plan with selfReviewVerdict based on the findings ' +
+    'Then call flowguard_plan with reviewVerdict based on the findings ' +
     'overallVerdict, and include the reviewFindings object. ' +
     'If the subagent returns changes_requested, revise the plan and resubmit.'
   );
@@ -396,7 +395,7 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
     input: {
       reviewFindings: scope.args.reviewFindings,
       reviewerUnavailable: scope.args.reviewerUnavailable,
-      verdict: scope.args.selfReviewVerdict,
+      verdict: scope.args.reviewVerdict,
     },
     state: { assurance: scope.state.reviewAssurance, sessionId: scope.context.sessionID },
   });
@@ -417,9 +416,9 @@ function blockedInvalidPlanFindings(
       obligationId: obligationId ?? 'unknown',
     });
   }
-  if (effectiveFindings && effectiveFindings.overallVerdict !== args.selfReviewVerdict) {
+  if (effectiveFindings && effectiveFindings.overallVerdict !== args.reviewVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      submittedVerdict: args.selfReviewVerdict as string,
+      submittedVerdict: args.reviewVerdict as string,
       findingsVerdict: effectiveFindings.overallVerdict,
     });
   }
@@ -428,7 +427,7 @@ function blockedInvalidPlanFindings(
 
 function applyPlanRevision(scope: PlanExecutionScope): PlanRevisionResult | string {
   const state = scope.state;
-  const verdict = scope.args.selfReviewVerdict as LoopVerdict;
+  const verdict = scope.args.reviewVerdict as LoopVerdict;
   const prevDigest = state.plan!.current.digest;
   let currentPlan = state.plan!.current;
   let history = [...state.plan!.history];
@@ -627,7 +626,7 @@ function revisedPlanReviewNext(nextIteration: number, nextPlanVersion: number): 
     ', (4) planVersion=' +
     nextPlanVersion +
     '. ' +
-    'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.'
+    'Parse the JSON ReviewFindings and submit with your next reviewVerdict.'
   );
 }
 
@@ -720,7 +719,7 @@ export const plan: ToolDefinition = {
   description:
     'Submit a plan OR record an independent review verdict. Two modes:\n' +
     'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
-    "Mode B (review verdict): provide selfReviewVerdict ('approve' or 'changes_requested') with reviewFindings. " +
+    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested') with reviewFindings. " +
     "If 'changes_requested', also provide revised planText.\n" +
     'The independent review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to PLAN_REVIEW.\n' +
@@ -731,9 +730,9 @@ export const plan: ToolDefinition = {
       .optional()
       .describe(
         'Plan body text (markdown). Required for Mode A (initial submission) ' +
-          "and when selfReviewVerdict is 'changes_requested' (revised plan).",
+          "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
-    selfReviewVerdict: z
+    reviewVerdict: z
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
@@ -743,7 +742,7 @@ export const plan: ToolDefinition = {
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
       'Structured review findings from independent review. ' +
-        'Required when selfReviewVerdict is "approve" and subagentEnabled=true.',
+        'Required when reviewVerdict is "approve" and subagentEnabled=true.',
     ),
     reviewerUnavailable: z
       .boolean()

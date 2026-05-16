@@ -150,7 +150,7 @@ export interface ReviewReferenceInput {
   readonly branch?: string;
   /** URL to fetch content from. */
   readonly url?: string;
-  /** Skip external content loading (when analysisFindings provided by subagent). */
+  /** Skip external content loading (when reviewFindings provided by subagent). */
   readonly skipExternalContentLoad?: boolean;
 }
 

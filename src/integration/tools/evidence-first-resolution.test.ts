@@ -325,7 +325,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ selfReviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
     const parsed = JSON.parse(String(res));
     // Evidence-resolved findings used — no BLOCKED
     expect(parsed.error).toBeUndefined();
@@ -366,7 +366,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ selfReviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -391,14 +391,14 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
       {
-        selfReviewVerdict: 'approve',
+        reviewVerdict: 'approve',
         // Agent submits WRONG iteration — would normally be BLOCKED, but BUG-17 ignores
         reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
       },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    // Succeeds because evidence 'approve' matches selfReviewVerdict 'approve'
+    // Succeeds because evidence 'approve' matches reviewVerdict 'approve'
     expect(parsed.error).toBeUndefined();
   });
 
@@ -413,7 +413,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ selfReviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -663,7 +663,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'approve', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -704,7 +704,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'approve', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -732,7 +732,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
     }));
 
     const { plan } = await import('./plan.js');
-    await plan.execute({ selfReviewVerdict: 'approve', reviewerUnavailable: true }, {} as never);
+    await plan.execute({ reviewVerdict: 'approve', reviewerUnavailable: true }, {} as never);
 
     const ps = persistedState as { plan?: { reviewFindings?: Array<{ reviewMode: string }> } };
     expect(ps?.plan?.reviewFindings).toHaveLength(1);
@@ -769,7 +769,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { selfReviewVerdict: 'approve', reviewerUnavailable: false },
+      { reviewVerdict: 'approve', reviewerUnavailable: false },
       {} as never,
     );
     const parsed = JSON.parse(String(res));

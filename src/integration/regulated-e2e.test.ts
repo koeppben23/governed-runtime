@@ -118,7 +118,7 @@ async function bootstrapRegulatedPlanReview(): Promise<void> {
   await callOk(ticket, { text: 'Regulated task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nImplement the task with tests.' });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
   }
   expect(await phase()).toBe('PLAN_REVIEW');
 }

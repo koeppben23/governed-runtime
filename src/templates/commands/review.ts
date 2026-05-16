@@ -48,16 +48,16 @@ Start the compliance review flow for the current FlowGuard session.
     Both paths converge at step 4.
 
     - If the subagent returns \`overallVerdict: "unable_to_review"\` (for example because the
-      content was unparseable), do NOT submit \`analysisFindings\`. Report the reason to the user.
+      content was unparseable), do NOT submit \`reviewFindings\`. Report the reason to the user.
       The tool will handle this as \`SUBAGENT_UNABLE_TO_REVIEW\` and exit the flow.
-      Only submit \`analysisFindings\` when the subagent returns \`approve\` or \`changes_requested\`.
+      Only submit \`reviewFindings\` when the subagent returns \`approve\` or \`changes_requested\`.
 
 4. Call \`flowguard_review\` with:
     - The matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`)
     - Optional \`inputOrigin\` and \`references\`
-    - \`analysisFindings\`: the complete \`ReviewFindings\` object returned by the subagent
+    - \`reviewFindings\`: the complete \`ReviewFindings\` object returned by the subagent
       (REQUIRED when content was provided). Pass the object as-is — no mapping, no array.
-    Do not call content-aware \`flowguard_review\` without \`analysisFindings\`; the tool blocks fail-closed.
+    Do not call content-aware \`flowguard_review\` without \`reviewFindings\`; the tool blocks fail-closed.
 
 5. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 

@@ -268,15 +268,15 @@ items are explicit:
 
 Recommended GitHub Project fields:
 
-| Field                | Values                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `Risk`               | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                                 |
-| `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests`        |
-| `Docs Required`      | `Yes`, `No`, `Unknown`                                                                             |
-| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                             |
-| `Verification Level` | `Targeted`, `Full`, `Release`                                                                      |
-| `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                            |
-| `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                                     |
+| Field                | Values                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `Risk`               | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
+| `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
+| `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
+| `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
+| `Verification Level` | `Targeted`, `Full`, `Release`                                                               |
+| `Release Impact`     | `None`, `Patch`, `Minor`, `Major`, `RC`                                                     |
+| `Status`             | `Backlog`, `Ready`, `In Progress`, `Review`, `Blocked`, `Done`                              |
 
 ### Documentation Contract
 

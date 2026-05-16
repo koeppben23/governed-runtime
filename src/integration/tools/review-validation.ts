@@ -79,7 +79,7 @@ export function validateReviewFindings(
   //   unable_to_review to BLOCKED before the tool ever sees the findings.
   // - In non-strict / submit-driven flows, a caller passing such findings
   //   would otherwise cause rails to advance state on a 2-valued
-  //   selfReviewVerdict ('approve' or 'changes_requested') while the
+  //   reviewVerdict ('approve' or 'changes_requested') while the
   //   findings declare the verdict unreviewable — a fabrication-of-
   //   convergence bypass.
   // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)

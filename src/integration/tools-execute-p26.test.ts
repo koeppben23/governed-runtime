@@ -346,7 +346,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
-        await executeWithStrictReview(plan, { selfReviewVerdict: 'approve' });
+        await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
       }
       await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
       await validate.execute(
@@ -383,7 +383,7 @@ describe('P26: regulated archive completion', () => {
       // Solo auto-approves at gates — simple workflow
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-      await executeWithStrictReview(plan, { selfReviewVerdict: 'approve' });
+      await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
       await validate.execute(
         {
           results: [
