@@ -4,9 +4,9 @@
  *
  * Covers:
  * - parseToolResult: full JSON, first-line fallback, complete failure
- * - strictBlockedOutput: registry lookup, recovery population, unknown-code fallback
+ * - strictBlockedOutput: registry lookup, recovery population, marked unknown-code fallback
  * - buildEnforcementError: structured JSON message, name, recovery from registry,
- *   reason override, unknown-code fallback (F2 — structured BLOCKED responses)
+ *   reason override, marked unknown-code fallback (F2 — structured BLOCKED responses)
  *
  * @version v1
  */
@@ -101,13 +101,16 @@ describe('strictBlockedOutput', () => {
     expect(parsed.diagnosticCard).toBeUndefined();
   });
 
-  it('CORNER: unknown code falls back to generic message + empty recovery', () => {
+  it('CORNER: unknown code is marked unregistered with recovery', () => {
     const json = strictBlockedOutput('UNKNOWN_CODE_NEVER_REGISTERED_XYZ', {});
     const parsed = JSON.parse(json) as Record<string, unknown>;
 
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('UNKNOWN_CODE_NEVER_REGISTERED_XYZ');
-    expect(parsed.recovery).toEqual([]);
+    expect(parsed.message).toContain('[UNREGISTERED_REASON: UNKNOWN_CODE_NEVER_REGISTERED_XYZ]');
+    expect(parsed.recovery).toEqual(
+      expect.arrayContaining([expect.stringContaining('[UNREGISTERED_REASON]')]),
+    );
     expect(parsed.diagnostics).toBeUndefined();
   });
 });
@@ -177,8 +180,12 @@ describe('buildEnforcementError (F2 — structured BLOCKED responses)', () => {
 
     const payload = JSON.parse(err.message.slice('[FlowGuard] '.length)) as Record<string, unknown>;
     expect(payload.code).toBe('UNKNOWN_CODE_F2_TEST');
-    expect(payload.message).toBe('some reason');
-    expect(payload.recovery).toEqual([]);
+    expect(payload.message).not.toBe('some reason');
+    expect(payload.message).toContain('[UNREGISTERED_REASON: UNKNOWN_CODE_F2_TEST]');
+    expect(payload.message).toContain('Context: some reason');
+    expect(payload.recovery).toEqual(
+      expect.arrayContaining([expect.stringContaining('[UNREGISTERED_REASON]')]),
+    );
   });
 
   it('GOOD: detail vars are interpolated into recovery steps', () => {

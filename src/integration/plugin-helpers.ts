@@ -48,9 +48,8 @@ export function parseToolResult(rawOutput: unknown): Record<string, unknown> | n
  * is injected into the tool response to signal the failure to the agent.
  *
  * Looks up the reason in the default registry to populate `message` and
- * `recovery`. Falls back to a generic message and empty recovery if the
- * code is not registered (unknown codes are still surfaced; the block
- * itself is enforced by the caller, not by the registry).
+ * `recovery`. Unknown codes are surfaced with marked unregistered output;
+ * the block itself is enforced by the caller, not by the registry.
  *
  * @param code - Error/reason code (e.g. 'SUBAGENT_MANDATE_MISMATCH')
  * @param detail - Key-value detail map for the error payload (also used for template interpolation)
@@ -92,7 +91,11 @@ export function buildEnforcementError(
   detail: Record<string, string> = {},
 ): Error {
   const formatted = defaultReasonRegistry.format(code, detail);
-  const effectiveMessage = reason && reason.length > 0 ? reason : formatted.reason;
+  const registeredReason = defaultReasonRegistry.get(code);
+  const effectiveMessage =
+    registeredReason && reason.length > 0
+      ? reason
+      : appendUnregisteredContext(formatted.reason, reason);
   const diagnostics = buildBlockedDiagnostics(code, { ...detail, reason: effectiveMessage });
   const payload = {
     error: true,
@@ -108,6 +111,11 @@ export function buildEnforcementError(
   const err = new Error(`[FlowGuard] ${JSON.stringify(payload)}`);
   err.name = 'FlowGuardEnforcementError';
   return err;
+}
+
+function appendUnregisteredContext(formattedReason: string, reason: string): string {
+  if (!reason) return formattedReason;
+  return `${formattedReason} Context: ${reason}`;
 }
 
 /**

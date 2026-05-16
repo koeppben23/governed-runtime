@@ -4,9 +4,8 @@
  * literal in non-test source files MUST be registered in SEED_REASONS.
  *
  * Prevents F1-class regressions where a new error path emits a code that
- * has no recovery steps. An unregistered code falls back to a generic
- * "Blocked: {code}" message with empty recovery[], which gives LLMs
- * (and humans) no actionable guidance.
+ * has no recovery steps. Runtime formatting marks unregistered codes visibly,
+ * but production code should not rely on that fallback for governance paths.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
