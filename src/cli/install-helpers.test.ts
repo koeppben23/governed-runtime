@@ -17,6 +17,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
+    writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
     unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
   };
 });
@@ -33,6 +34,7 @@ import {
   resolveOpencodeConfigPath,
   parseJsonc,
   buildReviewerAgentContent,
+  createMalformedJsonBackup,
   FLOWGUARD_REVIEWER_MODEL_ENV,
   verifyTarballChecksum,
 } from './install-helpers.js';
@@ -41,6 +43,13 @@ import { hashFile } from '../shared/hashing.js';
 
 describe('install-helpers', () => {
   let tmpDir: string;
+
+  async function findBackupFor(filePath: string): Promise<string | null> {
+    const entries = await fs.readdir(path.dirname(filePath));
+    const prefix = `${path.basename(filePath)}.flowguard-backup-`;
+    const backup = entries.find((entry) => entry.startsWith(prefix));
+    return backup ? path.join(path.dirname(filePath), backup) : null;
+  }
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-install-test-'));
@@ -110,14 +119,44 @@ describe('install-helpers', () => {
     it('handles malformed JSON by overwriting', async () => {
       const pkgPath = path.join(tmpDir, 'package.json');
       // Covers catch block: malformed JSON → overwrite with template
-      await fs.writeFile(pkgPath, '{ not valid json }');
+      const malformed = '{ not valid json }';
+      await fs.writeFile(pkgPath, malformed);
 
       const result = await mergePackageJson(pkgPath, '1.0.0');
       expect(result.action).toBe('written');
       expect(result.reason).toContain('malformed');
+      expect(result.reason).toContain('.flowguard-backup-');
+
+      const backupPath = await findBackupFor(pkgPath);
+      expect(backupPath).not.toBeNull();
+      await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
 
       const content = await fs.readFile(pkgPath, 'utf-8');
       expect(content).toContain('@flowguard/core');
+    });
+
+    it('EDGE: backup failure blocks malformed package.json overwrite', async () => {
+      const pkgPath = path.join(tmpDir, 'package.json');
+      const malformed = '{ not valid json }';
+      await fs.writeFile(pkgPath, malformed);
+      const realImpl = vi.mocked(fs.writeFile).getMockImplementation()!;
+      try {
+        vi.mocked(fs.writeFile).mockImplementation(
+          async (...args: Parameters<typeof fs.writeFile>) => {
+            const options = args[2];
+            if (typeof options === 'object' && options !== null && 'flag' in options) {
+              throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+            }
+            return realImpl(...args);
+          },
+        );
+
+        await expect(mergePackageJson(pkgPath, '1.0.0')).rejects.toThrow('ENOSPC');
+      } finally {
+        vi.mocked(fs.writeFile).mockImplementation(realImpl);
+      }
+
+      await expect(fs.readFile(pkgPath, 'utf-8')).resolves.toBe(malformed);
     });
   });
 
@@ -210,6 +249,22 @@ describe('install-helpers', () => {
       } finally {
         vi.mocked(fs.readFile).mockImplementation(realImpl);
       }
+    });
+  });
+
+  describe('createMalformedJsonBackup', () => {
+    it('creates a timestamped backup path with exact original content', async () => {
+      const filePath = path.join(tmpDir, 'opencode.json');
+      const malformed = '{ this is not valid json }';
+
+      const backupPath = await createMalformedJsonBackup(
+        filePath,
+        malformed,
+        new Date('2026-05-16T14:30:12.123Z'),
+      );
+
+      expect(backupPath).toBe(`${filePath}.flowguard-backup-20260516T143012123Z`);
+      await expect(fs.readFile(backupPath, 'utf-8')).resolves.toBe(malformed);
     });
   });
 
@@ -444,14 +499,53 @@ describe('install-helpers', () => {
       expect(result.action).toBe('written');
       expect(result.reason).toContain('backup');
 
-      // Verify backup file exists with original content
-      const backupPath = `${filePath}.flowguard-backup`;
-      const backupContent = await fs.readFile(backupPath, 'utf-8');
+      // Verify timestamped backup file exists with original content
+      const backupPath = await findBackupFor(filePath);
+      expect(backupPath).not.toBeNull();
+      const backupContent = await fs.readFile(backupPath!, 'utf-8');
       expect(backupContent).toBe(malformed);
 
       // Verify the new file is valid JSON with FlowGuard template
       const newContent = await fs.readFile(filePath, 'utf-8');
       expect(() => JSON.parse(newContent)).not.toThrow();
+    });
+
+    it('BAD: truly malformed JSONC config creates backup before overwriting', async () => {
+      const filePath = path.join(tmpDir, 'opencode.jsonc');
+      const malformed = 'this is not jsonc at all {{{{';
+      await fs.writeFile(filePath, malformed, 'utf-8');
+
+      const result = await mergeOpencodeJson(filePath, 'repo');
+      expect(result.action).toBe('written');
+      expect(result.reason).toContain('.flowguard-backup-');
+
+      const backupPath = await findBackupFor(filePath);
+      expect(backupPath).not.toBeNull();
+      await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
+    });
+
+    it('EDGE: backup failure blocks malformed opencode.json overwrite', async () => {
+      const filePath = path.join(tmpDir, 'opencode.json');
+      const malformed = 'this is not json at all {{{{';
+      await fs.writeFile(filePath, malformed, 'utf-8');
+      const realImpl = vi.mocked(fs.writeFile).getMockImplementation()!;
+      try {
+        vi.mocked(fs.writeFile).mockImplementation(
+          async (...args: Parameters<typeof fs.writeFile>) => {
+            const options = args[2];
+            if (typeof options === 'object' && options !== null && 'flag' in options) {
+              throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            }
+            return realImpl(...args);
+          },
+        );
+
+        await expect(mergeOpencodeJson(filePath, 'repo')).rejects.toThrow('EACCES');
+      } finally {
+        vi.mocked(fs.writeFile).mockImplementation(realImpl);
+      }
+
+      await expect(fs.readFile(filePath, 'utf-8')).resolves.toBe(malformed);
     });
 
     it('CORNER: JSONC with comments inside string values (should preserve)', async () => {
@@ -672,9 +766,10 @@ describe('install-helpers', () => {
       expect(result.action).toBe('written');
       expect(result.reason).toContain('backup');
 
-      // Verify backup file exists with original content
-      const backupPath = `${filePath}.flowguard-backup`;
-      const backupContent = await fs.readFile(backupPath, 'utf-8');
+      // Verify timestamped backup file exists with original content
+      const backupPath = await findBackupFor(filePath);
+      expect(backupPath).not.toBeNull();
+      const backupContent = await fs.readFile(backupPath!, 'utf-8');
       expect(backupContent).toBe(malformed);
 
       // Verify the new file is valid JSON with FlowGuard template

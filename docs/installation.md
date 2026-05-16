@@ -137,6 +137,12 @@ npm run flowguard:doctor
 | `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`) |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`    |
 
+## Malformed JSON Recovery
+
+When FlowGuard recovers from malformed JSON by rewriting an installer-managed config file, it first writes a timestamped `.flowguard-backup-*` file next to the original. If the backup cannot be written, install stops and does not overwrite the malformed file.
+
+Inspect the backup, repair the malformed JSON if needed, then rerun `flowguard install --force`.
+
 ## How It Works
 
 FlowGuard integrates with OpenCode via a two-level command surface:
