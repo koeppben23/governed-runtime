@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { BlockedReasonRegistry, defaultReasonRegistry, blocked } from '../config/reasons.js';
+import {
+  BlockedReasonRegistry,
+  defaultReasonRegistry,
+  blocked,
+  type ReasonWarningEvent,
+} from '../config/reasons.js';
 import { COMMANDS } from '../cli/templates.js';
 import { resolveRuntimePolicyMode } from '../config/policy.js';
 import { benchmarkSync } from '../test-policy.js';
@@ -33,15 +38,82 @@ describe('config/reasons', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
-    it('format returns generic message for unknown code', () => {
+    it('format returns marked unregistered message for unknown code', () => {
       const result = defaultReasonRegistry.format('TOTALLY_UNKNOWN');
       expect(result.code).toBe('TOTALLY_UNKNOWN');
-      expect(result.reason).toContain('TOTALLY_UNKNOWN');
-      expect(result.recovery).toEqual([]);
+      expect(result.reason).toContain('[UNREGISTERED_REASON: TOTALLY_UNKNOWN]');
+      expect(result.recovery).toEqual(
+        expect.arrayContaining([expect.stringContaining('[UNREGISTERED_REASON]')]),
+      );
+    });
+
+    it('format with unknown code does not use vars.message as clean output', () => {
+      const result = defaultReasonRegistry.format('CUSTOM_CODE', { message: 'bypass' });
+      expect(result.reason).not.toBe('bypass');
+      expect(result.reason).toContain('[UNREGISTERED_REASON: CUSTOM_CODE]');
+      expect(result.reason).toContain('Context: bypass');
     });
 
     it('get returns undefined for unknown code', () => {
       expect(defaultReasonRegistry.get('NOPE')).toBeUndefined();
+    });
+
+    it('register throws on duplicate reason code', () => {
+      const registry = new BlockedReasonRegistry();
+      registry.register({
+        code: 'DUPLICATE',
+        category: 'input',
+        messageTemplate: 'A',
+        recoverySteps: [],
+      });
+      expect(() =>
+        registry.register({
+          code: 'DUPLICATE',
+          category: 'input',
+          messageTemplate: 'B',
+          recoverySteps: [],
+        }),
+      ).toThrow(/already registered/);
+    });
+
+    it('registerAll throws when batch contains duplicate reason code', () => {
+      const registry = new BlockedReasonRegistry();
+      expect(() =>
+        registry.registerAll([
+          { code: 'A', category: 'input', messageTemplate: 'A', recoverySteps: [] },
+          { code: 'A', category: 'input', messageTemplate: 'B', recoverySteps: [] },
+        ]),
+      ).toThrow(/already registered/);
+    });
+
+    it('register throws after registry is frozen', () => {
+      const registry = new BlockedReasonRegistry();
+      registry.register({
+        code: 'BEFORE_FREEZE',
+        category: 'input',
+        messageTemplate: 'A',
+        recoverySteps: [],
+      });
+      registry.freeze();
+      expect(() =>
+        registry.register({
+          code: 'AFTER_FREEZE',
+          category: 'input',
+          messageTemplate: 'B',
+          recoverySteps: [],
+        }),
+      ).toThrow(/frozen/);
+    });
+
+    it('default registry is frozen after initialization', () => {
+      expect(() =>
+        defaultReasonRegistry.register({
+          code: 'POST_INIT_CODE',
+          category: 'input',
+          messageTemplate: 'Nope',
+          recoverySteps: [],
+        }),
+      ).toThrow(/frozen/);
     });
   });
 
@@ -61,12 +133,52 @@ describe('config/reasons', () => {
       expect(result.reason).toContain('{phase}');
     });
 
+    it('format reports missing interpolation variables in message and recovery to warning sink', () => {
+      const events: ReasonWarningEvent[] = [];
+      const registry = new BlockedReasonRegistry((event) => events.push(event));
+      registry.register({
+        code: 'NEEDS_NAME',
+        category: 'input',
+        messageTemplate: 'Hello {name}',
+        recoverySteps: ['Provide {name}'],
+      });
+
+      const result = registry.format('NEEDS_NAME', {});
+
+      expect(result.reason).toBe('Hello {name}');
+      expect(events).toEqual([
+        { kind: 'missing_interpolation_variable', code: 'NEEDS_NAME', placeholder: 'name' },
+        { kind: 'missing_interpolation_variable', code: 'NEEDS_NAME', placeholder: 'name' },
+      ]);
+    });
+
+    it('format preserves output when warning sink throws', () => {
+      const registry = new BlockedReasonRegistry(() => {
+        throw new Error('sink failed');
+      });
+      registry.register({
+        code: 'NEEDS_NAME',
+        category: 'input',
+        messageTemplate: 'Hello {name}',
+        recoverySteps: [],
+      });
+
+      expect(registry.format('NEEDS_NAME', {}).reason).toBe('Hello {name}');
+    });
+
     it('registerAll adds multiple reasons', () => {
       const registry = new BlockedReasonRegistry();
       registry.registerAll([
         { code: 'A', category: 'input', messageTemplate: 'A', recoverySteps: [] },
         { code: 'B', category: 'input', messageTemplate: 'B', recoverySteps: [] },
       ]);
+      expect(registry.size).toBe(2);
+    });
+
+    it('new registries remain mutable until explicitly frozen', () => {
+      const registry = new BlockedReasonRegistry();
+      registry.register({ code: 'A', category: 'input', messageTemplate: 'A', recoverySteps: [] });
+      registry.register({ code: 'B', category: 'input', messageTemplate: 'B', recoverySteps: [] });
       expect(registry.size).toBe(2);
     });
   });
@@ -80,9 +192,14 @@ describe('config/reasons', () => {
       }
     });
 
-    it('blocked() with unknown code and vars.message uses it', () => {
+    it('blocked() with unknown code and vars.message is marked unregistered', () => {
       const result = blocked('CUSTOM_CODE', { message: 'Custom error' });
-      expect(result.reason).toBe('Custom error');
+      expect(result.reason).not.toBe('Custom error');
+      expect(result.reason).toContain('[UNREGISTERED_REASON: CUSTOM_CODE]');
+      expect(result.reason).toContain('Context: Custom error');
+      expect(result.recovery).toEqual(
+        expect.arrayContaining([expect.stringContaining('[UNREGISTERED_REASON]')]),
+      );
     });
 
     it('codes() returns array of strings', () => {

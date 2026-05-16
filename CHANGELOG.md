@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FG-QUAL-009 (Issue #221):** Hardened `BlockedReasonRegistry` so duplicate reason codes fail fast, the default reason catalog is frozen after initialization, unregistered code formatting is visibly marked as invalid instead of accepting clean caller-provided messages, and missing interpolation variables emit deterministic warning events without importing logging-layer authority.
+
 - **Issue #264:** Remove the hardcoded reviewer `temperature` sampling parameter so Claude Opus 4.7 can invoke the FlowGuard reviewer without unsupported-parameter 400 errors.
 
 - **FG-REL-015 (Issue #124):** Removed the dead private `MUTATING` command set from `commands.ts`. Terminal phases now use the equivalent direct `TERMINAL.has(phase)` check; command admissibility behavior is unchanged.

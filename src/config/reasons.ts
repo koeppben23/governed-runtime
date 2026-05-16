@@ -12,9 +12,9 @@
  * Design:
  * - All rails use `blocked(code, vars)` instead of inline error strings.
  *   This ensures consistent messaging and structured recovery guidance.
- * - New codes can be registered at runtime (extension point for profiles/addons).
- * - Unknown codes fall back to a generic message (fail-open for messaging;
- *   the block itself is already enforced by the rail logic, not by the registry).
+ * - Built-in codes are registered during module initialization, then frozen.
+ * - Unknown codes are marked as unregistered so audit output cannot look like
+ *   catalog-backed governance messaging.
  *
  * Categories:
  * - admissibility: Command not allowed in current phase
@@ -70,15 +70,41 @@ export interface FormattedBlock {
   readonly quickFix?: string;
 }
 
+/** Warning event emitted by the reason registry without depending on logging layers. */
+export interface ReasonWarningEvent {
+  readonly kind: 'missing_interpolation_variable';
+  readonly code: string;
+  readonly placeholder: string;
+}
+
+/** Minimal optional warning sink for deterministic tests and outer-layer logging adapters. */
+export type ReasonWarningSink = (event: ReasonWarningEvent) => void;
+
 // ─── Interpolation ────────────────────────────────────────────────────────────
 
 /**
  * Replace {variable} placeholders in a template string.
- * Unknown variables are left as-is (visible in output for debugging).
+ * Unknown variables are left as-is (visible in output for debugging) and reported.
  */
-function interpolate(template: string, vars?: Record<string, string>): string {
-  if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => vars[key] ?? match);
+function interpolate(
+  code: string,
+  template: string,
+  vars: Record<string, string> | undefined,
+  warn: ReasonWarningSink | undefined,
+): string {
+  const values = vars ?? {};
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = values[key];
+    if (value === undefined) {
+      try {
+        warn?.({ kind: 'missing_interpolation_variable', code, placeholder: key });
+      } catch {
+        // Warning sinks must not turn formatting into a secondary failure.
+      }
+      return match;
+    }
+    return value;
+  });
 }
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
@@ -87,13 +113,22 @@ function interpolate(template: string, vars?: Record<string, string>): string {
  * Blocked reason registry.
  *
  * Central catalog of all known blocked/error codes.
- * Pre-seeded with built-in codes, extensible at runtime.
+ * Pre-seeded with built-in codes and frozen after initialization.
  */
 export class BlockedReasonRegistry {
   private readonly reasons = new Map<string, BlockedReason>();
+  private frozen = false;
 
-  /** Register a blocked reason. Overwrites existing entries with the same code. */
+  constructor(private readonly warn?: ReasonWarningSink) {}
+
+  /** Register a blocked reason. Duplicate codes and frozen registries fail fast. */
   register(reason: BlockedReason): void {
+    if (this.frozen) {
+      throw new Error(`Reason registry is frozen; cannot register ${reason.code}`);
+    }
+    if (this.reasons.has(reason.code)) {
+      throw new Error(`Reason code ${reason.code} is already registered`);
+    }
     this.reasons.set(reason.code, reason);
   }
 
@@ -107,27 +142,37 @@ export class BlockedReasonRegistry {
     return this.reasons.get(code);
   }
 
+  /** Prevent further registration after the registry has been initialized. */
+  freeze(): void {
+    this.frozen = true;
+  }
+
   /**
    * Format a blocked reason with variable interpolation.
    *
    * Returns a structured result ready for RailBlocked construction.
-   * Falls back to generic message for unknown codes — the block itself
-   * is already enforced by the rail logic, not by the registry.
+   * Unknown codes are marked explicitly so they cannot be confused with
+   * catalog-backed governance messages.
    */
   format(code: string, vars?: Record<string, string>): FormattedBlock {
     const reason = this.reasons.get(code);
     if (!reason) {
+      const context = vars?.message ? ` Context: ${vars.message}` : '';
       return {
         code,
-        reason: vars?.message ?? `Blocked: ${code}`,
-        recovery: [],
+        reason: `[UNREGISTERED_REASON: ${code}] No registered reason found.${context}`,
+        recovery: [
+          '[UNREGISTERED_REASON] Register this code in the FlowGuard reason catalog before emitting it.',
+        ],
       };
     }
     return {
       code: reason.code,
-      reason: interpolate(reason.messageTemplate, vars),
-      recovery: reason.recoverySteps.map((step) => interpolate(step, vars)),
-      quickFix: reason.quickFixCommand ? interpolate(reason.quickFixCommand, vars) : undefined,
+      reason: interpolate(reason.code, reason.messageTemplate, vars, this.warn),
+      recovery: reason.recoverySteps.map((step) => interpolate(reason.code, step, vars, this.warn)),
+      quickFix: reason.quickFixCommand
+        ? interpolate(reason.code, reason.quickFixCommand, vars, this.warn)
+        : undefined,
     };
   }
 
@@ -142,7 +187,7 @@ export class BlockedReasonRegistry {
   }
 }
 
-/** The default registry, pre-seeded with all built-in codes (103).
+/** The default registry, pre-seeded with all built-in codes.
  *  P10c: Reason codes split by category into 3 files.
  *  Registration order: precondition, validation, infra.
  */
@@ -150,6 +195,7 @@ export const defaultReasonRegistry = new BlockedReasonRegistry();
 defaultReasonRegistry.registerAll(PRECONDITION_REASONS);
 defaultReasonRegistry.registerAll(VALIDATION_REASONS);
 defaultReasonRegistry.registerAll(INFRA_REASONS);
+defaultReasonRegistry.freeze();
 
 // ─── Convenience Helper ───────────────────────────────────────────────────────
 
