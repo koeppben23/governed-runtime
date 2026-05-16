@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **FG-268 (Issue #268):** Add an additive `reviewLoop` projection to tool responses and `flowguard_status` output during review phases (PLAN_REVIEW, IMPL_REVIEW, ARCH_REVIEW), including iteration count, max iterations, previous verdict, convergence status, and outstanding blocking issues (max 3).
+
 - **FG-REL-021 (Issue #130):** Added dedicated plugin orchestrator happy-path assertions for plan, implementation, architecture, and content-review flows, covering obligation fulfillment, invocation evidence, attestation binding, output mutation, and standard review audit effects.
 
 - **FG-REL-019 (Issue #128):** Serialize session-state write operations via lockfile-based file locking. All known session-state write paths (`writeState()`, `writeStateWithArtifacts()`, `updateReviewAssurance()`) are now serialized through `withSessionWriteLock()` to prevent interleaved writes. `updateReviewAssurance()` additionally gains read-modify-write isolation. Lock acquisition is atomic (O_EXCL lockfile), stale locks from dead processes are auto-recovered via PID liveness check, and lock timeout produces a typed `LOCK_TIMEOUT` error with the blocking PID and recovery path. Tool-layer read-modify-write isolation across individual tool invocations remains follow-up work (documented gap).
