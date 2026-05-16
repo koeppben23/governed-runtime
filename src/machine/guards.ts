@@ -15,6 +15,7 @@
  * @version v2
  */
 
+import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,13 +65,13 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  * 'unable_to_review'. The order matters; do not reorder these.
  *
  * Structural interface — works with SelfReviewLoop, ImplReviewResult,
- * or any object with the required shape. No type imports needed.
+ * or any object with the required shape.
  */
 export function isConverged(review: {
   readonly iteration: number;
   readonly maxIterations: number;
   readonly revisionDelta: string;
-  readonly verdict: string;
+  readonly verdict: LoopVerdict;
 }): boolean {
   // P1.3 slice 4a: unable_to_review never converges, even on the
   // iteration >= maxIterations disjunct. Routed to BLOCKED in slice 4c.
@@ -127,7 +128,7 @@ export const implReviewMet: GuardFn = (s) => {
 export const implReviewPending: GuardFn = (s) => s.implReview !== null && !implReviewMet(s);
 
 /** Review report has been generated (review flow completion). */
-export const reviewDone: GuardFn = (s) => s.phase === 'REVIEW' && s.reviewReportPath !== null;
+export const reviewDone: GuardFn = (s) => s.reviewReportPath !== null;
 
 // ─── Guard Table ──────────────────────────────────────────────────────────────
 

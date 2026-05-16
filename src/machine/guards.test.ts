@@ -79,8 +79,13 @@ describe('guards', () => {
       ).toBe(true);
     });
 
-    it('reviewDone fires when phase is REVIEW and report path is set', () => {
+    it('reviewDone fires when report path is set', () => {
       expect(reviewDone(makeState('REVIEW', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
+    });
+
+    it('reviewDone is phase-agnostic and only checks the report slot', () => {
+      expect(reviewDone(makeState('TICKET', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
+      expect(reviewDone(makeState('READY', { reviewReportPath: '/tmp/report.json' }))).toBe(true);
     });
 
     it('reviewDone does not fire when REVIEW phase has no report path (P8b)', () => {
@@ -212,6 +217,16 @@ describe('guards', () => {
         }),
       ).toBe(false);
     });
+
+    it('isConverged rejects misspelled verdicts at compile time', () => {
+      isConverged({
+        iteration: 1,
+        maxIterations: 3,
+        revisionDelta: 'major',
+        // @ts-expect-error — misspelled verdict is not a LoopVerdict.
+        verdict: 'unable_to_reveiw',
+      });
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────
@@ -252,7 +267,7 @@ describe('guards', () => {
       expect(implReviewMet(makeState('IMPL_REVIEW'))).toBe(false);
     });
 
-    it('reviewDone does not fire when phase is not REVIEW', () => {
+    it('reviewDone does not fire without a report path', () => {
       expect(reviewDone(makeState('TICKET'))).toBe(false);
       expect(reviewDone(makeState('READY'))).toBe(false);
     });
@@ -465,8 +480,8 @@ describe('guards', () => {
       expect(reviewDone(makeState('REVIEW', { reviewReportPath: null }))).toBe(false);
     });
 
-    it('reviewDone: false when phase is not REVIEW (kills conditional→true)', () => {
-      expect(reviewDone(makeState('PLAN', { reviewReportPath: '/report.json' }))).toBe(false);
+    it('reviewDone: true outside REVIEW when reportPath is set (phase-agnostic predicate)', () => {
+      expect(reviewDone(makeState('PLAN', { reviewReportPath: '/report.json' }))).toBe(true);
     });
 
     it('implReviewPending: true when implReview non-null and not converged', () => {

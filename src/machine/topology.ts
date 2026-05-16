@@ -184,11 +184,16 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
 // ─── Phase Classifications ────────────────────────────────────────────────────
 
 /** User-gate phases: machine waits for explicit human input via /review-decision. */
-export const USER_GATES: ReadonlySet<Phase> = new Set<Phase>([
+export const USER_GATE_PHASES = [
   'PLAN_REVIEW',
   'EVIDENCE_REVIEW',
   'ARCH_REVIEW',
-]);
+] as const satisfies readonly Phase[];
+
+export type UserGatePhase = (typeof USER_GATE_PHASES)[number];
+
+/** Runtime lookup for user-gate phases. Keep tuple above as compile-time authority. */
+export const USER_GATES: ReadonlySet<Phase> = new Set<Phase>(USER_GATE_PHASES);
 
 /** Terminal phases: no outgoing transitions, workflow complete. */
 export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
