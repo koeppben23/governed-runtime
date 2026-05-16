@@ -30,7 +30,7 @@ const AGENTS_MD = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf-8').replace(/\
  * Version footer appended to FLOWGUARD_MANDATES_BODY after the shared sections.
  * This is NOT part of AGENTS.md but is a runtime installation marker.
  */
-const VERSION_FOOTER = '\n\n---\n\n[End of v3 Agent Rules]';
+const VERSION_FOOTER = '\n\n---\n\n[End of v4 Agent Rules]';
 
 /**
  * Strip the version footer from mandates body for section comparison.
@@ -44,13 +44,11 @@ const MANDATES_BASE = FLOWGUARD_MANDATES_BODY.replace(VERSION_FOOTER, '');
  */
 const SHARED_SECTIONS: readonly string[] = [
   '## 1. Mission',
-  '## Language Conventions',
+  '## Red Lines',
   '## 2. Priority Ladder',
+  '## Language Conventions',
   '## 3. Task Class Router',
   '## 4. Hard Invariants',
-  '## Red Lines',
-  '## Before Acting Rule',
-  '## Before Completing Rule',
   '## 5. Evidence Rules',
   '## 6. Tool and Verification Policy',
   '## 7. Ambiguity Policy',
@@ -59,6 +57,8 @@ const SHARED_SECTIONS: readonly string[] = [
   '## 10. Review Checklist',
   '## 11. High-Risk Extension',
   '## 12. Extended Guidance',
+  '## Before Acting Rule',
+  '## Before Completing Rule',
 ];
 
 /** Runtime-only extensions in FLOWGUARD_MANDATES_BODY (not in AGENTS.md). */

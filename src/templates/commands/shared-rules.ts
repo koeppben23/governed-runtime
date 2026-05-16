@@ -16,7 +16,7 @@ These rules apply to every FlowGuard command:
 - Use only FlowGuard tools for state changes (shell commands and file edits bypass governance and break audit integrity).
 - Trust tool responses as the single source of truth for session state.
 - Complete this command fully, then stop — the user invokes the next command explicitly.
-- Only an explicit slash-command (e.g. \`/plan\`, \`/implement\`) triggers a command. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
+- Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
 - On tool error: report the specific reason, state one recovery action, and stop.
 - End every response with exactly one \`Next action:\` line.
 `;

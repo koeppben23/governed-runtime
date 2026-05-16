@@ -296,11 +296,11 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
     });
 
-    it('v3 sections are followed by end marker (no legacy sections)', () => {
-      const v3EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## 12. Extended Guidance');
-      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
-      expect(v3EndIdx).toBeGreaterThan(-1);
-      expect(endMarkerIdx).toBeGreaterThan(v3EndIdx);
+    it('v4 sections are followed by end marker (no legacy sections)', () => {
+      const v4EndIdx = FLOWGUARD_MANDATES_BODY.indexOf('## Before Completing Rule');
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v4 Agent Rules]');
+      expect(v4EndIdx).toBeGreaterThan(-1);
+      expect(endMarkerIdx).toBeGreaterThan(v4EndIdx);
     });
 
     it('FLOWGUARD_MANDATES_BODY does not reference AGENTS.md', () => {
@@ -316,7 +316,7 @@ describe('cli/templates', () => {
 
     it('FLOWGUARD_MANDATES_BODY is self-contained (no dead links)', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('docs/agent-guidance/');
-      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v3 Agent Rules]');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Deprecated');
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Legacy');
     });
@@ -363,9 +363,11 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).not.toContain('Cross-Cutting');
     });
 
-    it('FLOWGUARD_MANDATES_BODY ends cleanly after v3 rules', () => {
-      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v3 Agent Rules]');
-      const afterEnd = FLOWGUARD_MANDATES_BODY.substring(endMarkerIdx + 30);
+    it('FLOWGUARD_MANDATES_BODY ends cleanly after v4 rules', () => {
+      const endMarkerIdx = FLOWGUARD_MANDATES_BODY.indexOf('[End of v4 Agent Rules]');
+      const afterEnd = FLOWGUARD_MANDATES_BODY.substring(
+        endMarkerIdx + '[End of v4 Agent Rules]'.length,
+      );
       expect(afterEnd.trim()).toBe('');
     });
   });
