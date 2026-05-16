@@ -126,6 +126,18 @@ async function resolveAuditContext(
   let transitions: AuditContext['transitions'] = [];
   let success = true;
   let errorMessage: string | undefined;
+
+  // FG-267: Read transitions from metadata channel first (new),
+  // then fall back to _audit.transitions from the parsed JSON (legacy).
+  const metaTransitions =
+    typeof output === 'object' && output !== null
+      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
+          ?.transitions
+      : undefined;
+  if (Array.isArray(metaTransitions)) {
+    transitions = metaTransitions as AuditContext['transitions'];
+  }
+
   const parsed = parseToolResult(
     typeof output === 'object' && output !== null && 'output' in output ? output.output : output,
   );
@@ -133,9 +145,12 @@ async function resolveAuditContext(
     phase = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
     success = parsed.error !== true;
     errorMessage = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
-    const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)?.transitions;
-    if (Array.isArray(rawTransitions)) {
-      transitions = rawTransitions as AuditContext['transitions'];
+    // Metadata-first: only fall back to _audit if metadata didn't provide transitions
+    if (transitions.length === 0) {
+      const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)?.transitions;
+      if (Array.isArray(rawTransitions)) {
+        transitions = rawTransitions as AuditContext['transitions'];
+      }
     }
   }
 

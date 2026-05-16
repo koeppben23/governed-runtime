@@ -42,18 +42,16 @@ type ReviewableCase = {
 };
 
 function reviewRequiredOutput(phase: string): string {
-  return (
-    JSON.stringify({
-      phase,
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-      reviewObligationId: OBLIGATION_ID,
-      reviewObligationIteration: 1,
-      reviewObligationPlanVersion: 1,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-      changedFiles: ['src/auth.ts'],
-    }) + '\nNext action: Run /continue'
-  );
+  return JSON.stringify({
+    phase,
+    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewObligationId: OBLIGATION_ID,
+    reviewObligationIteration: 1,
+    reviewObligationPlanVersion: 1,
+    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    changedFiles: ['src/auth.ts'],
+  });
 }
 
 function buildFindings() {

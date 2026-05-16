@@ -24,6 +24,7 @@ import {
   formatRailResult,
   persistAndFormat,
   appendNextAction,
+  type ToolResult,
 } from './helpers.js';
 
 // Rails
@@ -74,9 +75,9 @@ import { ActorClaimError } from '../../adapters/actor.js';
 import { writeStateWithArtifacts } from './helpers.js';
 
 async function safeExecute(
-  fn: () => Promise<string>,
+  fn: () => Promise<ToolResult>,
   opts: { actorClaimErrorAsBlocked: boolean },
-): Promise<string> {
+): Promise<ToolResult> {
   try {
     return await fn();
   } catch (err) {

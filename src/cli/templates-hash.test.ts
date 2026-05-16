@@ -69,18 +69,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for P35-fix: command templates now pin `agent: build` in
-    // frontmatter for plan, implement, review, and architecture commands.
-    // This ensures FlowGuard governance runs under the build agent's
-    // permission.task restrictions regardless of active primary agent.
-    //
-    // Refreshed for reviewCard presentation mandate: plan, implement,
-    // architecture, and review commands now have dedicated ## Presentation
-    // sections with mandatory verbatim display instructions and reviewCard
-    // in Done-when. This ensures LLMs cannot skip or summarize reviewCard.
+    // Refreshed for FG-267: extracted shared review-loop template, replaced
+    // review-loop sections in plan, implement, architecture commands.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'b9e435390debb1140d840bd843961c81a0aeb2ac58e479496351f61b6478c5e7',
+      'f31d1e81b88acaf1e2eeb81604d4e3e7461fefba80b1ed6577261c8ae006cd7e',
     );
   });
 

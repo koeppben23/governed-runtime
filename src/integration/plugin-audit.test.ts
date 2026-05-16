@@ -156,6 +156,90 @@ describe('runAudit', () => {
       expect(secondEvt.prevHash).toBe('chain-000');
     });
 
+    // ─── H4b: metadata.transitions channel (contract gate) ───────────
+
+    it('reads transitions from metadata.transitions (FG-267 contract gate)', async () => {
+      resetChainSeq();
+      const deps = makeDeps();
+      const output = {
+        title: 'flowguard_plan',
+        output: JSON.stringify({ phase: 'PLAN', error: false }),
+        metadata: {
+          transitions: [
+            {
+              event: 'PLAN_READY',
+              from: 'TICKET',
+              to: 'PLAN',
+              at: FIXED_DECISION_AT,
+            },
+          ],
+        },
+      };
+
+      await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
+
+      expect(deps.appendAndTrack).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: expect.objectContaining({ kind: 'transition' }) }),
+        expect.any(String),
+        true,
+        SESSION_ID,
+      );
+    });
+
+    it('falls back to _audit.transitions when metadata is absent', async () => {
+      resetChainSeq();
+      const deps = makeDeps();
+      const output = {
+        title: 'flowguard_plan',
+        output: JSON.stringify({
+          phase: 'PLAN',
+          error: false,
+          _audit: {
+            transitions: [
+              { event: 'PLAN_READY', from: 'TICKET', to: 'PLAN', at: FIXED_DECISION_AT },
+            ],
+          },
+        }),
+      };
+
+      await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
+
+      expect(deps.appendAndTrack).toHaveBeenCalledWith(
+        expect.objectContaining({ detail: expect.objectContaining({ kind: 'transition' }) }),
+        expect.any(String),
+        true,
+        SESSION_ID,
+      );
+    });
+
+    it('metadata.transitions wins when both channels are present', async () => {
+      resetChainSeq();
+      const deps = makeDeps();
+      const output = {
+        title: 'flowguard_plan',
+        output: JSON.stringify({
+          phase: 'PLAN',
+          error: false,
+          _audit: { transitions: [{ event: 'LEGACY', from: 'X', to: 'Y', at: FIXED_DECISION_AT }] },
+        }),
+        metadata: {
+          transitions: [{ event: 'PLAN_READY', from: 'TICKET', to: 'PLAN', at: FIXED_DECISION_AT }],
+        },
+      };
+
+      await runAudit(deps, 'flowguard_plan', {}, output, SESSION_ID);
+
+      const transitionCalls = (deps.appendAndTrack as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c: unknown[]) => {
+          const evtDetail = (c[0] as Record<string, unknown>).detail as Record<string, unknown>;
+          return evtDetail?.kind === 'transition';
+        },
+      );
+      const evtDetail = transitionCalls[0]![0] as Record<string, unknown>;
+      const transitionDetail = evtDetail.detail as Record<string, unknown>;
+      expect(transitionDetail.event).toBe('PLAN_READY');
+    });
+
     // ─── H5: hydrate lifecycle + reason string ──────────────────────
 
     it('emits session_created lifecycle for flowguard_hydrate with reason', async () => {

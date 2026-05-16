@@ -587,11 +587,14 @@ async function formatNewSessionResponse(
   result: Extract<ReturnType<typeof executeHydrate>, { kind: 'ok' }>,
   discovery: DiscoveryHydration,
   policyResolution: HydratePolicyResolution,
-): Promise<string> {
+): Promise<ToolResult> {
   const state = result.state;
-  const rawFormatted = await persistAndFormat(sessDir, result);
-  const jsonEnd = rawFormatted.indexOf('\n');
-  const formatted = JSON.parse(jsonEnd >= 0 ? rawFormatted.slice(0, jsonEnd) : rawFormatted);
+  const formattedResult = await persistAndFormat(sessDir, result);
+  const outputStr =
+    typeof formattedResult === 'object' && 'output' in formattedResult
+      ? formattedResult.output
+      : formattedResult;
+  const formatted = JSON.parse(outputStr) as Record<string, unknown>;
   const response: Record<string, unknown> = {
     ...formatted,
     profileId: state.activeProfile?.id ?? 'baseline',
@@ -627,14 +630,14 @@ async function formatHydrateResult(
   result: ReturnType<typeof executeHydrate>,
   discovery: DiscoveryHydration,
   policyResolution: HydratePolicyResolution,
-): Promise<string> {
+): Promise<ToolResult> {
   if (result.kind === 'ok' && !existing) {
     return formatNewSessionResponse(sessDir, result, discovery, policyResolution);
   }
   return persistAndFormat(sessDir, result);
 }
 
-async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<string> {
+async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
   const worktree = getWorktree(context);
   const workspace = await initWorkspace(worktree, context.sessionID);
   const config = await readConfig(worktree);

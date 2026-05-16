@@ -256,9 +256,16 @@ export const GIT_MOCK_DEFAULTS = {
  *
  * @throws if the string is not valid JSON (indicates a tool bug).
  */
-export function parseToolResult<T = Record<string, unknown>>(jsonStr: string): T {
-  // Tool output may include a "\nNext action: ..." footer after the JSON.
-  // JSON.stringify never produces literal newlines, so the first \n is the boundary.
+export function parseToolResult<T = Record<string, unknown>>(raw: unknown): T {
+  // FG-267: formatRailResult now returns { output, metadata } instead of string.
+  // Extract output for parsing.
+  const jsonStr =
+    typeof raw === 'string'
+      ? raw
+      : typeof raw === 'object' && raw !== null && 'output' in raw
+        ? (raw as Record<string, unknown>).output
+        : '';
+  if (typeof jsonStr !== 'string') return {} as T;
   const idx = jsonStr.indexOf('\n');
   const jsonPart = idx >= 0 ? jsonStr.slice(0, idx) : jsonStr;
   return JSON.parse(jsonPart) as T;

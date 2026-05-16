@@ -42,17 +42,15 @@ const SESS_DIR = '/tmp/fg-exhaustion-test';
 const NOW = '2026-05-10T12:00:00.000Z';
 
 function reviewRequiredOutput(): string {
-  return (
-    JSON.stringify({
-      phase: 'PLAN',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-      reviewObligationId: OBLIGATION_ID,
-      reviewObligationIteration: 1,
-      reviewObligationPlanVersion: 1,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    }) + '\nNext action: Run /continue'
-  );
+  return JSON.stringify({
+    phase: 'PLAN',
+    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewObligationId: OBLIGATION_ID,
+    reviewObligationIteration: 1,
+    reviewObligationPlanVersion: 1,
+    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+  });
 }
 
 function buildState(strictEnforcement: boolean): SessionState {

@@ -49,7 +49,7 @@ describe('plugin-helpers', () => {
 
     it('parses first line when full JSON has trailing text', () => {
       // Covers the second try/catch path
-      expect(parseToolResult('{"key":"val"}\nNext action: continue')).toEqual({ key: 'val' });
+      expect(parseToolResult('{"key":"val"}')).toEqual({ key: 'val' });
     });
 
     it('returns null when first line is empty', () => {

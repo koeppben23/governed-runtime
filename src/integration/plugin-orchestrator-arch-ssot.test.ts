@@ -39,17 +39,15 @@ const STATE_ADR_TEXT = ARCHITECTURE_DECISION.adrText;
 const STATE_ADR_TITLE = ARCHITECTURE_DECISION.title;
 
 function reviewRequiredOutput(): string {
-  return (
-    JSON.stringify({
-      phase: 'ARCHITECTURE',
-      next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
-      reviewObligationId: OBLIGATION_ID,
-      reviewObligationIteration: 1,
-      reviewObligationPlanVersion: 1,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    }) + '\nNext action: Run /continue'
-  );
+  return JSON.stringify({
+    phase: 'ARCHITECTURE',
+    next: 'INDEPENDENT_REVIEW_REQUIRED: call flowguard-reviewer with iteration=1 and planVersion=1',
+    reviewObligationId: OBLIGATION_ID,
+    reviewObligationIteration: 1,
+    reviewObligationPlanVersion: 1,
+    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+  });
 }
 
 function buildFindings() {
