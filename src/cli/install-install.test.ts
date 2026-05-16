@@ -65,11 +65,19 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
+    writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
     unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
   };
 });
 
 setupCliTestEnvironment();
+
+async function findBackupFor(filePath: string): Promise<string | null> {
+  const entries = await fs.readdir(path.dirname(filePath));
+  const prefix = `${path.basename(filePath)}.flowguard-backup-`;
+  const backup = entries.find((entry) => entry.startsWith(prefix));
+  return backup ? path.join(path.dirname(filePath), backup) : null;
+}
 
 // ─── install ──────────────────────────────────────────────────────────────────
 
@@ -881,25 +889,59 @@ describe('cli/install', () => {
     it('handles malformed package.json by overwriting', async () => {
       const tarball = await createMockTarball();
       const pkgDir = path.join(tmpDir, '.opencode');
+      const pkgPath = path.join(pkgDir, 'package.json');
+      const malformed = '{ this is not valid json }}}';
       await fs.mkdir(pkgDir, { recursive: true });
-      await fs.writeFile(
-        path.join(pkgDir, 'package.json'),
-        '{ this is not valid json }}}',
-        'utf-8',
-      );
+      await fs.writeFile(pkgPath, malformed, 'utf-8');
       const result = await install(repoArgs({ coreTarball: tarball }));
       const pkgOp = result.ops.find((op) => op.path.includes('package.json'));
       expect(pkgOp?.action).toBe('written');
       expect(pkgOp?.reason).toContain('malformed');
+      expect(pkgOp?.reason).toContain('.flowguard-backup-');
+      const backupPath = await findBackupFor(pkgPath);
+      expect(backupPath).not.toBeNull();
+      await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
     });
 
     it('handles malformed opencode.json by overwriting', async () => {
       const tarball = await createMockTarball();
-      await fs.writeFile(path.join(tmpDir, 'opencode.json'), 'not json at all{{{', 'utf-8');
+      const configPath = path.join(tmpDir, 'opencode.json');
+      const malformed = 'not json at all{{{';
+      await fs.writeFile(configPath, malformed, 'utf-8');
       const result = await install(repoArgs({ coreTarball: tarball }));
       const ocOp = result.ops.find((op) => op.path.includes('opencode.json'));
       expect(ocOp?.action).toBe('written');
       expect(ocOp?.reason).toContain('malformed');
+      expect(ocOp?.reason).toContain('.flowguard-backup-');
+      const backupPath = await findBackupFor(configPath);
+      expect(backupPath).not.toBeNull();
+      await expect(fs.readFile(backupPath!, 'utf-8')).resolves.toBe(malformed);
+    });
+
+    it('EDGE: backup failure blocks malformed opencode.json overwrite', async () => {
+      const tarball = await createMockTarball();
+      const configPath = path.join(tmpDir, 'opencode.json');
+      const malformed = 'not json at all{{{';
+      await fs.writeFile(configPath, malformed, 'utf-8');
+      const realImpl = vi.mocked(fs.writeFile).getMockImplementation()!;
+      try {
+        vi.mocked(fs.writeFile).mockImplementation(
+          async (...args: Parameters<typeof fs.writeFile>) => {
+            const options = args[2];
+            if (typeof options === 'object' && options !== null && 'flag' in options) {
+              throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+            }
+            return realImpl(...args);
+          },
+        );
+
+        const result = await install(repoArgs({ coreTarball: tarball }));
+        expect(result.errors.some((error) => error.includes('EACCES'))).toBe(true);
+      } finally {
+        vi.mocked(fs.writeFile).mockImplementation(realImpl);
+      }
+
+      await expect(fs.readFile(configPath, 'utf-8')).resolves.toBe(malformed);
     });
 
     it('trailing commas in opencode.jsonc are parsed correctly (full JSONC compat)', async () => {
@@ -911,8 +953,8 @@ describe('cli/install', () => {
       const ocOp = result.ops.find((op) => op.path.includes('opencode.jsonc'));
       // Trailing commas are valid JSONC per OpenCode docs ÔÇö should merge, not fallback.
       expect(ocOp?.action).toBe('merged');
-      // No backup needed ÔÇö file was valid JSONC
-      expect(existsSync(`${jsoncPath}.flowguard-backup`)).toBe(false);
+      // No backup needed - file was valid JSONC
+      expect(await findBackupFor(jsoncPath)).toBeNull();
       // Verify the model field was preserved
       const content = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
       expect(content.model).toBe('claude');
@@ -1133,8 +1175,8 @@ describe('cli/uninstall', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
 
       expect(result.errors).toEqual([]);
-      // No backup needed ÔÇö trailing commas are valid JSONC per OpenCode docs
-      expect(existsSync(`${jsoncPath}.flowguard-backup`)).toBe(false);
+      // No backup needed - trailing commas are valid JSONC per OpenCode docs
+      expect(await findBackupFor(jsoncPath)).toBeNull();
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
       const parsed = JSON.parse(await fs.readFile(jsoncPath, 'utf-8'));
       expect(parsed.model).toBe('anthropic/claude');

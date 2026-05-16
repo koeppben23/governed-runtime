@@ -417,6 +417,21 @@ export async function safeUnlink(filePath: string): Promise<boolean> {
 }
 
 /**
+ * Create a timestamped backup before malformed JSON recovery overwrites a file.
+ * Uses exclusive creation so backup path collisions block the destructive write.
+ */
+export async function createMalformedJsonBackup(
+  filePath: string,
+  originalContent: string,
+  now = new Date(),
+): Promise<string> {
+  const timestamp = now.toISOString().replace(/[-:.]/g, '');
+  const backupPath = `${filePath}.flowguard-backup-${timestamp}`;
+  await writeFile(backupPath, originalContent, { encoding: 'utf-8', flag: 'wx' });
+  return backupPath;
+}
+
+/**
  * Generate the file:-dependency string for @flowguard/core.
  * Used by both PACKAGE_JSON_TEMPLATE and mergePackageJson() to ensure
  * consistent A1 model: local vendor directory with offline-resolvable file:-dependency.
@@ -464,24 +479,32 @@ export async function mergePackageJson(filePath: string, version: string): Promi
     return { path: filePath, action: 'written' };
   }
 
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(existing) as Record<string, unknown>;
-    const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
-    deps['@flowguard/core'] = vendorDependency(version);
-    if (!deps['zod']) deps['zod'] = '^4.0.0';
-    // Remove legacy dependency that is no longer needed
-    delete deps['@opencode-ai/plugin'];
-    parsed['dependencies'] = deps;
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return { path: filePath, action: 'merged' };
+    parsed = JSON.parse(existing) as Record<string, unknown>;
   } catch {
     // Malformed JSON — overwrite with template
-    getAdapterLogger().warn('cli', 'Package.json malformed, overwriting with template', {
+    const backupPath = await createMalformedJsonBackup(filePath, existing);
+    getAdapterLogger().warn('cli', 'Package.json malformed, creating backup and overwriting', {
       filePath,
+      backupPath,
     });
     await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
-    return { path: filePath, action: 'written', reason: 'existing file was malformed JSON' };
+    return {
+      path: filePath,
+      action: 'written',
+      reason: `existing file was malformed JSON (backup: ${backupPath})`,
+    };
   }
+
+  const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+  deps['@flowguard/core'] = vendorDependency(version);
+  if (!deps['zod']) deps['zod'] = '^4.0.0';
+  // Remove legacy dependency that is no longer needed
+  delete deps['@opencode-ai/plugin'];
+  parsed['dependencies'] = deps;
+  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+  return { path: filePath, action: 'merged' };
 }
 
 /**
@@ -558,77 +581,18 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
     return { path: filePath, action: 'written' };
   }
 
+  let parsed: Record<string, unknown>;
   try {
     // OpenCode officially supports JSONC (JSON with Comments) — strip before parse.
     // See: https://opencode.ai/docs/config/#format
-    const parsed = parseJsonc(existing);
-
-    // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
-    // Desktop app owns its own plugin/instruction config — do NOT touch it.
-    // FlowGuard only manages its own mandates entry.
-    const hasPluginField = 'plugin' in parsed;
-    const existingInstructions = Array.isArray(parsed['instructions'])
-      ? (parsed['instructions'] as string[])
-      : [];
-    const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
-
-    if (hasPluginField || hasDesktopInstructions) {
-      // Desktop app owns this config — only add our entries.
-      // The plugin array is NOT modified: OpenCode's plugin field is for npm
-      // packages only. Local discovery via .opencode/plugins/ handles loading.
-      const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
-      if (!instructions.includes(entry)) {
-        instructions.push(entry);
-      }
-      parsed['instructions'] = instructions;
-
-      // P35-fix: Task permission MUST be enforced regardless of config ownership.
-      // Without this, the build agent can spawn arbitrary subagents when running
-      // under a desktop-owned config, bypassing FlowGuard's governance model.
-      mergeReviewerTaskPermission(parsed);
-
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-      return {
-        path: filePath,
-        action: 'merged',
-        reason: 'desktop-owned config: merged with task permission',
-      };
-    }
-
-    // Standard merge for FlowGuard-only configs
-    let instructions = Array.isArray(parsed['instructions'])
-      ? (parsed['instructions'] as string[])
-      : [];
-
-    // Migration: remove legacy "AGENTS.md" entry (only the exact FlowGuard-owned one)
-    instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
-
-    // Deduplicate: remove our entry if already present, then add exactly once
-    instructions = instructions.filter((i) => i !== entry);
-    instructions.push(entry);
-
-    parsed['instructions'] = instructions;
-
-    // Ensure build agent has task permission for flowguard-reviewer subagent
-    mergeReviewerTaskPermission(parsed);
-
-    // Plugin loading: OpenCode auto-loads local plugin files from
-    // .opencode/plugins/. The "plugin" field in opencode.json is documented
-    // for npm packages only — FlowGuard relies on auto-discovery exclusively.
-
-    if (!parsed['$schema']) {
-      parsed['$schema'] = 'https://opencode.ai/config.json';
-    }
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return { path: filePath, action: 'merged' };
+    parsed = parseJsonc(existing);
   } catch {
     // Backup before destructive overwrite — preserves user data for recovery
-    const backupPath = `${filePath}.flowguard-backup`;
+    const backupPath = await createMalformedJsonBackup(filePath, existing);
     getAdapterLogger().warn('cli', 'Opencode.json malformed, creating backup and overwriting', {
       filePath,
       backupPath,
     });
-    await writeFile(backupPath, existing, 'utf-8');
     await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
     return {
       path: filePath,
@@ -636,6 +600,65 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
       reason: `existing file was malformed JSON/JSONC (backup: ${backupPath})`,
     };
   }
+
+  // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
+  // Desktop app owns its own plugin/instruction config — do NOT touch it.
+  // FlowGuard only manages its own mandates entry.
+  const hasPluginField = 'plugin' in parsed;
+  const existingInstructions = Array.isArray(parsed['instructions'])
+    ? (parsed['instructions'] as string[])
+    : [];
+  const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
+
+  if (hasPluginField || hasDesktopInstructions) {
+    // Desktop app owns this config — only add our entries.
+    // The plugin array is NOT modified: OpenCode's plugin field is for npm
+    // packages only. Local discovery via .opencode/plugins/ handles loading.
+    const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
+    if (!instructions.includes(entry)) {
+      instructions.push(entry);
+    }
+    parsed['instructions'] = instructions;
+
+    // P35-fix: Task permission MUST be enforced regardless of config ownership.
+    // Without this, the build agent can spawn arbitrary subagents when running
+    // under a desktop-owned config, bypassing FlowGuard's governance model.
+    mergeReviewerTaskPermission(parsed);
+
+    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    return {
+      path: filePath,
+      action: 'merged',
+      reason: 'desktop-owned config: merged with task permission',
+    };
+  }
+
+  // Standard merge for FlowGuard-only configs
+  let instructions = Array.isArray(parsed['instructions'])
+    ? (parsed['instructions'] as string[])
+    : [];
+
+  // Migration: remove legacy "AGENTS.md" entry (only the exact FlowGuard-owned one)
+  instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
+
+  // Deduplicate: remove our entry if already present, then add exactly once
+  instructions = instructions.filter((i) => i !== entry);
+  instructions.push(entry);
+
+  parsed['instructions'] = instructions;
+
+  // Ensure build agent has task permission for flowguard-reviewer subagent
+  mergeReviewerTaskPermission(parsed);
+
+  // Plugin loading: OpenCode auto-loads local plugin files from
+  // .opencode/plugins/. The "plugin" field in opencode.json is documented
+  // for npm packages only — FlowGuard relies on auto-discovery exclusively.
+
+  if (!parsed['$schema']) {
+    parsed['$schema'] = 'https://opencode.ai/config.json';
+  }
+  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+  return { path: filePath, action: 'merged' };
 }
 
 /**
