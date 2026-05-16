@@ -116,8 +116,8 @@ export function formatEval(ev: EvalResult): string {
   }
 }
 
-/** Format a RailResult for LLM consumption. Includes _audit for the audit plugin. */
-export function formatRailResult(result: RailResult): string {
+/** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
+export function formatRailResult(result: RailResult): ToolResult {
   if (result.kind === 'blocked') {
     const diagnostics = buildBlockedDiagnostics(result.code, {
       reason: result.reason,
@@ -153,9 +153,8 @@ export function formatRailResult(result: RailResult): string {
         }
       : {}),
     ...(archiveStatus ? { archiveStatus } : {}),
-    _audit: { transitions: result.transitions },
   });
-  return json + `\nNext action: ${productNext.text}`;
+  return { output: json, metadata: { transitions: result.transitions } };
 }
 
 /**
@@ -334,7 +333,7 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
  * Rails don't persist — the caller (this tool layer) does it atomically.
  */
-export async function persistAndFormat(sessDir: string, result: RailResult): Promise<string> {
+export async function persistAndFormat(sessDir: string, result: RailResult): Promise<ToolResult> {
   if (result.kind === 'ok') {
     await writeStateWithArtifacts(sessDir, result.state);
   }
@@ -358,7 +357,7 @@ export function appendNextAction(jsonStr: string, state: SessionState): string {
   parsed.nextAction = nextAction;
   parsed.phaseLabel = PHASE_LABELS[state.phase];
   parsed.productNextAction = productNext;
-  return JSON.stringify(parsed) + `\nNext action: ${productNext.text}`;
+  return JSON.stringify(parsed);
 }
 
 // ─── Plan Parsing ─────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ describe('parseToolResult', () => {
   });
 
   it('GOOD: falls back to first line on multi-line content', () => {
-    const result = parseToolResult('{"ok":true}\nNext action: continue');
+    const result = parseToolResult('{"ok":true}');
     expect(result).toEqual({ ok: true });
   });
 

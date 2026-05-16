@@ -37,21 +37,19 @@ const NOW = '2026-05-10T13:00:00.000Z';
  * This simulates the Mode A output that the orchestrator intercepts.
  */
 function reviewRequiredOutput(iteration: number, planVersion: number): string {
-  return (
-    JSON.stringify({
-      phase: 'PLAN',
-      next:
-        `INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool. ` +
-        `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
-        `(1) the full plan text, (2) the ticket text, (3) iteration=${iteration}, ` +
-        `(4) planVersion=${planVersion}.`,
-      reviewObligationId: OBLIGATION_ID,
-      reviewObligationIteration: iteration,
-      reviewObligationPlanVersion: planVersion,
-      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-    }) + '\nNext action: Run /continue'
-  );
+  return JSON.stringify({
+    phase: 'PLAN',
+    next:
+      `INDEPENDENT_REVIEW_REQUIRED: Call the flowguard-reviewer subagent via Task tool. ` +
+      `Use subagent_type "flowguard-reviewer" with a prompt that includes: ` +
+      `(1) the full plan text, (2) the ticket text, (3) iteration=${iteration}, ` +
+      `(4) planVersion=${planVersion}.`,
+    reviewObligationId: OBLIGATION_ID,
+    reviewObligationIteration: iteration,
+    reviewObligationPlanVersion: planVersion,
+    reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+    reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+  });
 }
 
 function buildState(overrides: Partial<SessionState> = {}): SessionState {
@@ -172,16 +170,15 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
 
   it('EDGE: missing iteration/planVersion in original next → no context suffix', async () => {
     // Original output has no iteration= or planVersion= pattern
-    const malformedOutput =
-      JSON.stringify({
-        phase: 'PLAN',
-        next: 'INDEPENDENT_REVIEW_REQUIRED: Review the plan.',
-        reviewObligationId: OBLIGATION_ID,
-        reviewObligationIteration: 0,
-        reviewObligationPlanVersion: 1,
-        reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
-        reviewMandateDigest: REVIEW_MANDATE_DIGEST,
-      }) + '\nNext action: Run /continue';
+    const malformedOutput = JSON.stringify({
+      phase: 'PLAN',
+      next: 'INDEPENDENT_REVIEW_REQUIRED: Review the plan.',
+      reviewObligationId: OBLIGATION_ID,
+      reviewObligationIteration: 0,
+      reviewObligationPlanVersion: 1,
+      reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
+      reviewMandateDigest: REVIEW_MANDATE_DIGEST,
+    });
 
     const state = buildState();
     const stateRef = { current: state };

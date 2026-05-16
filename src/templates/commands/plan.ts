@@ -1,5 +1,7 @@
+/* eslint-disable no-useless-escape */
+
 import { GOVERNANCE_RULES } from './shared-rules.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
 
 export const PLAN_COMMAND = `
 ---
@@ -39,16 +41,24 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
 ### Phase 3: Review Loop
 
 6. Follow the \`next\` field instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. In host_task_required mode, findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`. Otherwise, pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
-      - "approve": Call \`flowguard_plan({ reviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
-      - "changes_requested": Revise the plan to address blocking issues, then call \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <revised> })\` (or with \`reviewFindings\` in SDK mode).
-      - "unable_to_review": The reviewer declared the plan unreviewable (e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique). The plan tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same plan — that obligation is consumed. Report the reviewer's findings to the user, then either /ticket the prerequisite work first OR revise the plan substantially (new \`flowguard_plan({ planText })\` submission, which starts a fresh review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool, then submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable, or infrastructure missing), submit \`flowguard_plan({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
-   - If review converged: Report the result per the Presentation section below.
-   - If another iteration is needed: Repeat from step 6 (max 3 iterations).
-   - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
-   - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-submit the plan: call \`flowguard_plan({ planText: <same plan text> })\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-submissions are allowed.
-   - If the tool returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: The review orchestration has failed on multiple consecutive attempts. Report this to the user with the recovery steps from the error payload and stop.
+${SHARED_REVIEW_LOOP({
+  toolName: 'flowguard_plan',
+  artifactName: 'plan',
+  reviseParams: 'planText: <revised>',
+  changesRequestedExtra: '',
+  strictRecoveryCall: 'flowguard_plan({ planText: <same plan text> })',
+  strictRecoveryVerb: 'Re-submit',
+  strictRecoveryNoun: 're-submissions',
+  iterationNote: '(max 3 iterations)',
+  repeatStep: 6,
+  subagentExtra: '',
+  fallbackExtra: ', or infrastructure missing',
+  unableDescription:
+    'e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique',
+  unableRecoveryA: '/ticket the prerequisite work first',
+  unableRecoveryB:
+    'revise the plan substantially (new flowguard_plan({ planText }) submission, which starts a fresh review obligation)',
+})}
 
 ## Rules
 

@@ -41,19 +41,17 @@ const SESS_DIR = '/tmp/fg-review-content-sess-dir';
 const NOW = '2026-05-06T12:00:00.000Z';
 
 function contentAnalysisRequiredOutput(): string {
-  return (
-    JSON.stringify({
-      error: true,
-      code: 'CONTENT_ANALYSIS_REQUIRED',
-      phase: 'REVIEW',
-      requiredReviewAttestation: {
-        toolObligationId: OBLIGATION_ID,
-        mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: REVIEW_CRITERIA_VERSION,
-        reviewedBy: 'flowguard-reviewer',
-      },
-    }) + '\nNext action: Run /continue'
-  );
+  return JSON.stringify({
+    error: true,
+    code: 'CONTENT_ANALYSIS_REQUIRED',
+    phase: 'REVIEW',
+    requiredReviewAttestation: {
+      toolObligationId: OBLIGATION_ID,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      reviewedBy: 'flowguard-reviewer',
+    },
+  });
 }
 
 function buildFindings(overrides: Record<string, unknown> = {}): Record<string, unknown> {

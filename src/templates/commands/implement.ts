@@ -1,5 +1,7 @@
+/* eslint-disable no-useless-escape */
+
 import { GOVERNANCE_RULES } from './shared-rules.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
 
 export const IMPLEMENT_COMMAND = `
 ---
@@ -40,16 +42,25 @@ Implement the approved plan and obtain mandatory independent implementation revi
 ### Phase 4: Implementation Review Loop
 
 6. Read the \`next\` field from the tool response and follow its instructions exactly:
-   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED": Read \`overallVerdict\` from \`pluginReviewFindings\` in the response. In host_task_required mode, findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`. Otherwise, pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`:
-      - "approve": Call \`flowguard_implement({ reviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
-      - "changes_requested": Call \`flowguard_implement({ reviewVerdict: "changes_requested" })\` (or with \`reviewFindings\` in SDK mode), then make the code changes, then call \`flowguard_implement({})\` again to re-record.
-      - "unable_to_review": The reviewer declared the implementation unreviewable (e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique). The implement tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same evidence — that obligation is consumed. Report the reviewer's findings to the user, then either revise the plan via /plan first OR record substantially-new implementation evidence (new \`flowguard_implement({})\` call after additional code changes, which starts a fresh review obligation).
-   - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED": Call the ${REVIEWER_SUBAGENT_TYPE} subagent, then submit verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable), submit \`flowguard_implement({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.
-   - If review converged: Report the result per the Presentation section below.
-   - If another iteration is needed: Repeat from step 6 (max 3 iterations).
-   - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.
-   - If the tool returns BLOCKED with code \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: The plugin review pipeline encountered a transient failure. Re-record the implementation: call \`flowguard_implement({})\` to create a fresh review obligation and retry the orchestration. Do NOT treat this as a permanent failure — up to 3 re-recordings are allowed.
-   - If the tool returns BLOCKED with code \`ORCHESTRATION_PERMANENTLY_FAILED\`: The review orchestration has failed on multiple consecutive attempts. Report this to the user with the recovery steps from the error payload and stop.
+${SHARED_REVIEW_LOOP({
+  toolName: 'flowguard_implement',
+  artifactName: 'implementation',
+  reviseParams: '',
+  changesRequestedExtra:
+    '\n       Then make the code changes based on blockingIssues, then call flowguard_implement({}) again to re-record.',
+  strictRecoveryCall: 'flowguard_implement({})',
+  strictRecoveryVerb: 'Re-record',
+  strictRecoveryNoun: 're-recordings',
+  iterationNote: '(max 3 iterations)',
+  repeatStep: 6,
+  subagentExtra: '',
+  fallbackExtra: '',
+  unableDescription:
+    'e.g., contradictory plan vs. code, missing prerequisites, or scope ambiguity that prevents critique',
+  unableRecoveryA: 'revise the plan via /plan first',
+  unableRecoveryB:
+    'record substantially-new implementation evidence (new flowguard_implement({}) call after additional code changes, which starts a fresh review obligation)',
+})}
 
 ## Rules
 

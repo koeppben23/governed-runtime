@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-267 (Issue #267):** Extract shared review-loop command instructions; remove redundant plaintext next-action footers from tool responses; move internal audit transition data from LLM-visible JSON output into the tool-result metadata channel consumed by the audit plugin.
+
 - **FG-266 (Issue #266):** [BREAKING] Normalized tool parameter names for LLM disambiguation: `selfReviewVerdict` → `reviewVerdict` in `flowguard_plan` and `flowguard_architecture`; `analysisFindings` → `reviewFindings` in `flowguard_review`. Removed internal jargon (`F13`, `canonical evaluator/completeness truth`, `flowguard-review-report.v1`) from tool descriptions. Added `/status` vs `/continue` disambiguation guidance.
 
 - **Issue #270:** Regulated mode now defaults approval actor assurance to `claim_validated`, so four-eyes approvals require a validated claim file or stronger IdP-verified identity unless explicitly lowered by policy.
