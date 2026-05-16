@@ -39,7 +39,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'e282828517bc7891b2113bd5272377143e2e67eb56d17d44effb3d77d1fd8bdc',
+      '607d063f77a129788ffd10a7edfc779ba168e5db707d4d2bfd02694c38b21d62',
     );
   });
 
@@ -69,11 +69,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for FG-267: extracted shared review-loop template, replaced
-    // review-loop sections in plan, implement, architecture commands.
+    // Refreshed for FG-261: v4 mandates restructuring changes GOVERNANCE_RULES
+    // (platform-agnostic command trigger text), affecting all command templates.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'f31d1e81b88acaf1e2eeb81604d4e3e7461fefba80b1ed6577261c8ae006cd7e',
+      'b5b7ca57663d64be64891caccf100cdcebcf0c1082a4feb00217035129bfb204',
     );
   });
 

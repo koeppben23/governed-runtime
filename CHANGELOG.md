@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **FG-261 (Issue #261):** [BREAKING] v4 Agent Rules — restructured mandates for multi-LLM and multi-platform instruction following. Model-addressing preamble ("You are operating under FlowGuard governance"); Red Lines moved to primacy position (after Mission); Language Conventions moved after Priority Ladder; Before Acting/Completing rules moved to recency position (end of document); removed OpenCode-specific references ("AI-assisted engineering workflows"); generified verification commands (no longer hardcodes `npm run` scripts); GOVERNANCE_RULES uses platform-agnostic command trigger text. AGENTS.md synchronized. Drift-guard test updated for new section order.
+
 - **FG-267 (Issue #267):** Extract shared review-loop command instructions; remove redundant plaintext next-action footers from tool responses; move internal audit transition data from LLM-visible JSON output into the tool-result metadata channel consumed by the audit plugin.
 
 - **FG-266 (Issue #266):** [BREAKING] Normalized tool parameter names for LLM disambiguation: `selfReviewVerdict` → `reviewVerdict` in `flowguard_plan` and `flowguard_architecture`; `analysisFindings` → `reviewFindings` in `flowguard_review`. Removed internal jargon (`F13`, `canonical evaluator/completeness truth`, `flowguard-review-report.v1`) from tool descriptions. Added `/status` vs `/continue` disambiguation guidance.

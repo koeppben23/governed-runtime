@@ -182,16 +182,16 @@ describe('AGENTS v3 guidance', () => {
       expect(content).toContain(
         'RELEASE or INSTALLER changes: exact generated artifact install-verify is required.',
       );
-      expect(content).toContain('`npm run check`');
-      expect(content).toContain('`npm run lint`');
-      expect(content).toContain('`npm test`');
-      expect(content).toContain('`npm run build`');
-      expect(content).toContain('`npm run test:install-verify`');
+      expect(content).toContain('package.json scripts');
+      expect(content).toContain('Makefile');
+      expect(content).toContain('CI');
+      expect(content).toContain('typecheck');
+      expect(content).toContain('install-verification');
     });
 
     it('before completing rule covers all required self-check items', async () => {
       const content = await readAgents();
-      const completingMatch = content.match(/## Before Completing Rule\n([\s\S]*?)(?=\n## )/);
+      const completingMatch = content.match(/## Before Completing Rule\n([\s\S]*?)(?=\n## |$)/);
       expect(completingMatch).not.toBeNull();
       const section = completingMatch![1];
       // Must cover all 4 self-check dimensions before returning a final result
@@ -203,7 +203,7 @@ describe('AGENTS v3 guidance', () => {
 
     it('before completing rule references all three evidence marker names', async () => {
       const content = await readAgents();
-      const completingMatch = content.match(/## Before Completing Rule\n([\s\S]*?)(?=\n## )/);
+      const completingMatch = content.match(/## Before Completing Rule\n([\s\S]*?)(?=\n## |$)/);
       expect(completingMatch).not.toBeNull();
       const section = completingMatch![1];
       expect(section).toContain('ASSUMPTION');
