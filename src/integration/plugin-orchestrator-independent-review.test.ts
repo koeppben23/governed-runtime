@@ -15,6 +15,7 @@ vi.mock('./review/audit-events.js', () => ({
 }));
 
 import { readState } from '../adapters/persistence.js';
+import { appendReviewAuditEvent } from './review/audit-events.js';
 import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET, IMPL_EVIDENCE } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
@@ -216,6 +217,7 @@ async function runCase(testCase: ReviewableCase) {
 describe('runReviewOrchestration strict independent review with footer output', () => {
   beforeEach(() => {
     vi.mocked(readState).mockReset();
+    vi.mocked(appendReviewAuditEvent).mockClear();
   });
 
   const cases: ReviewableCase[] = [
@@ -263,19 +265,73 @@ describe('runReviewOrchestration strict independent review with footer output', 
 
       const invocation = state.reviewAssurance?.invocations[0];
       expect(invocation).toMatchObject({
+        invocationId: obligation?.invocationId,
         obligationId: OBLIGATION_ID,
         obligationType: testCase.obligationType,
         parentSessionId: PARENT_SESSION_ID,
         childSessionId: CHILD_SESSION_ID,
+        agentType: 'flowguard-reviewer',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
+        promptHash: expect.any(String),
+        findingsHash: expect.any(String),
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
+        invokedAt: NOW,
         fulfilledAt: NOW,
+        consumedByObligationId: null,
         source: 'host-orchestrated',
         reviewOutputMode: 'structured_output',
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',
+        capturedVerdict: 'approve',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
+
+      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
+        SESS_DIR,
+        PARENT_SESSION_ID,
+        testCase.phase,
+        'review:obligation_created',
+        expect.objectContaining({
+          obligationId: OBLIGATION_ID,
+          obligationType: testCase.obligationType,
+          iteration: 1,
+          planVersion: 1,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+        }),
+      );
+      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
+        SESS_DIR,
+        PARENT_SESSION_ID,
+        testCase.phase,
+        'review:subagent_invoked',
+        expect.objectContaining({
+          obligationId: OBLIGATION_ID,
+          obligationType: testCase.obligationType,
+          parentSessionId: PARENT_SESSION_ID,
+          childSessionId: CHILD_SESSION_ID,
+          agentType: 'flowguard-reviewer',
+          promptHash: invocation?.promptHash,
+          findingsHash: invocation?.findingsHash,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          reviewOutputMode: 'structured_output',
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high',
+        }),
+      );
+      expect(appendReviewAuditEvent).toHaveBeenCalledWith(
+        SESS_DIR,
+        PARENT_SESSION_ID,
+        testCase.phase,
+        'review:obligation_fulfilled',
+        expect.objectContaining({
+          obligationId: OBLIGATION_ID,
+          childSessionId: CHILD_SESSION_ID,
+        }),
+      );
 
       const pendingReview = deps
         .getEnforcementState(PARENT_SESSION_ID)
@@ -290,7 +346,15 @@ describe('runReviewOrchestration strict independent review with footer output', 
       expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_COMPLETED'));
       expect(parsed.pluginReviewFindings).toMatchObject({
         overallVerdict: 'approve',
-        attestation: { toolObligationId: OBLIGATION_ID },
+        reviewedBy: { sessionId: CHILD_SESSION_ID },
+        attestation: {
+          toolObligationId: OBLIGATION_ID,
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+        },
       });
       expect(parsed.pluginReviewOutput).toMatchObject({
         reviewOutputMode: 'structured_output',

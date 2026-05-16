@@ -346,14 +346,25 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     });
     const invocation = state.reviewAssurance?.invocations[0];
     expect(invocation).toMatchObject({
+      invocationId: obligation?.invocationId,
       obligationId: OBLIGATION_ID,
       obligationType: 'review',
       parentSessionId: PARENT_SESSION_ID,
       childSessionId: CHILD_SESSION_ID,
+      agentType: 'flowguard-reviewer',
+      invocationMode: 'sdk_session_prompt',
+      hostVisible: false,
+      promptHash: expect.any(String),
+      findingsHash: expect.any(String),
       mandateDigest: REVIEW_MANDATE_DIGEST,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
+      invokedAt: NOW,
       fulfilledAt: NOW,
+      consumedByObligationId: null,
       source: 'host-orchestrated',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     expect(invocation?.invocationId).toBe(obligation?.invocationId);
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
@@ -362,7 +373,15 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
     expect(parsed.pluginReviewFindings).toMatchObject({
       overallVerdict: 'approve',
-      attestation: { toolObligationId: OBLIGATION_ID },
+      reviewedBy: { sessionId: CHILD_SESSION_ID },
+      attestation: {
+        toolObligationId: OBLIGATION_ID,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 1,
+        planVersion: 1,
+        reviewedBy: 'flowguard-reviewer',
+      },
     });
     expect(parsed._pluginReviewSessionId).toBe(CHILD_SESSION_ID);
   });
