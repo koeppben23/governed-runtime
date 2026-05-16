@@ -319,7 +319,7 @@ describe('identity-policy-e2e', () => {
         if (s.phase === 'PLAN_REVIEW') break;
         const sessDir = await resolveSessionDirFor(ctx.sessionID);
         await plan.execute(
-          await withStrictReviewFindings(sessDir, { selfReviewVerdict: 'approve' }),
+          await withStrictReviewFindings(sessDir, { reviewVerdict: 'approve' }),
           ctx,
         );
       }

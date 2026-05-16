@@ -203,6 +203,68 @@ describe('integration/tools', () => {
     });
   });
 
+  // ── FG-266: Rename invariant tests ─────────────────────────
+  describe('FG-266 parameter name normalization', () => {
+    function toolArgs(tool: unknown): Record<string, unknown> {
+      const t = tool as Record<string, unknown>;
+      const args = (t.args ?? {}) as Record<string, unknown>;
+      return args;
+    }
+
+    function toolDesc(tool: unknown): string {
+      const t = tool as Record<string, unknown>;
+      return (t.description as string) ?? '';
+    }
+
+    it('plan exposes reviewVerdict, not selfReviewVerdict', () => {
+      expect(Object.keys(toolArgs(plan))).toContain('reviewVerdict');
+      expect(Object.keys(toolArgs(plan))).not.toContain('selfReviewVerdict');
+    });
+
+    it('architecture exposes reviewVerdict, not selfReviewVerdict', () => {
+      expect(Object.keys(toolArgs(architecture))).toContain('reviewVerdict');
+      expect(Object.keys(toolArgs(architecture))).not.toContain('selfReviewVerdict');
+    });
+
+    it('implement exposes reviewVerdict', () => {
+      expect(Object.keys(toolArgs(implement))).toContain('reviewVerdict');
+    });
+
+    it('review exposes reviewFindings, not analysisFindings', () => {
+      expect(Object.keys(toolArgs(review))).toContain('reviewFindings');
+      expect(Object.keys(toolArgs(review))).not.toContain('analysisFindings');
+    });
+
+    it('LLM-facing descriptions do not contain internal jargon', () => {
+      const reviewableTools = [plan, architecture, implement, review];
+      const inspectableTools = [status, continueTool, ...reviewableTools];
+      const allDescs = inspectableTools
+        .flatMap((t) => {
+          const tRec = t as Record<string, unknown>;
+          const args = (tRec.args as Record<string, unknown>) ?? {};
+          return [
+            (tRec.description as string) ?? '',
+            ...Object.values(args)
+              .filter((v) => v !== null && typeof v === 'object')
+              .map((schema) => {
+                const s = schema as { description?: string };
+                return s.description ?? '';
+              }),
+          ];
+        })
+        .join(' ');
+      expect(allDescs).not.toMatch(/F13/);
+      expect(allDescs).not.toMatch(/canonical evaluator/);
+      expect(allDescs).not.toMatch(/completeness truth/);
+      expect(allDescs).not.toMatch(/flowguard-review-report\.v1/);
+    });
+
+    it('status and continue descriptions contain disambiguation guidance', () => {
+      expect(toolDesc(status)).toMatch(/\/(status|continue)/);
+      expect(toolDesc(continueTool)).toMatch(/\/(status|continue)/);
+    });
+  });
+
   // ─── PERF ──────────────────────────────────────────────────
   describe('PERF', () => {
     it('importing all tools is effectively free (no side effects)', () => {

@@ -1301,7 +1301,7 @@ describe('buildReviewContentMutatedOutput', () => {
     const parsed = JSON.parse(result!);
     expect(parsed.pluginReviewFindings).toBeDefined();
     expect(parsed.next).toContain('flowguard_review');
-    expect(parsed.next).toContain('analysisFindings');
+    expect(parsed.next).toContain('reviewFindings');
     expect(parsed.next).toContain('pluginReviewFindings');
     expect(parsed._pluginReviewSessionId).toBe('child-1');
   });
@@ -1314,7 +1314,7 @@ describe('buildReviewContentMutatedOutput', () => {
     });
     const parsed = JSON.parse(result!);
     expect(parsed.next).not.toContain('flowguard_plan');
-    expect(parsed.next).not.toContain('selfReviewVerdict');
+    expect(parsed.next).not.toContain('reviewVerdict');
   });
 
   it('returns null on parse failure', () => {
@@ -1589,7 +1589,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       rawResponse: '',
     });
     const parsed = JSON.parse(result!);
-    expect(parsed.next).toContain('analysisFindings');
+    expect(parsed.next).toContain('reviewFindings');
     expect(parsed.next).toContain('pluginReviewFindings');
   });
 

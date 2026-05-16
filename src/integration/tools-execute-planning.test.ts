@@ -434,7 +434,7 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       // In solo mode, max iterations is 1, so should converge
@@ -451,7 +451,7 @@ describe('plan', () => {
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'changes_requested',
+          reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
           reviewFindings,
         },
@@ -469,7 +469,7 @@ describe('plan', () => {
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'changes_requested',
+          reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
           reviewFindings,
         },
@@ -513,14 +513,14 @@ describe('plan', () => {
       expect(result.code).toBe('NO_SESSION');
     });
 
-    it('blocks mixed first-call planText + selfReviewVerdict with PLAN_APPROVE_WITH_TEXT', async () => {
+    it('blocks mixed first-call planText + reviewVerdict with PLAN_APPROVE_WITH_TEXT', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan', selfReviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ planText: '## Plan', reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'For approval: call flowguard_plan({ selfReviewVerdict: "approve", reviewFindings })',
+        'For approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings })',
       );
     });
 
@@ -550,7 +550,7 @@ describe('plan', () => {
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: modeBSubagentFindings },
+        { reviewVerdict: 'approve', reviewFindings: modeBSubagentFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -563,7 +563,7 @@ describe('plan', () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'changes_requested',
+          reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings: { ...modeBSubagentFindings, overallVerdict: 'changes_requested' },
         },
@@ -580,10 +580,7 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
-      const raw = await plan.execute(
-        { selfReviewVerdict: 'changes_requested', reviewFindings },
-        ctx,
-      );
+      const raw = await plan.execute({ reviewVerdict: 'changes_requested', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVISED_PLAN_REQUIRED');
@@ -596,7 +593,7 @@ describe('plan', () => {
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'changes_requested',
+          reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings,
         },
@@ -628,7 +625,7 @@ describe('plan', () => {
       const findings = { ...modeBSelfFindings, overallVerdict: 'changes_requested' as const };
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'changes_requested',
+          reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings: findings,
         },
@@ -646,7 +643,7 @@ describe('plan', () => {
       const reviewFindings = await fulfillPlanReview(0, 'approve');
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'approve',
+          reviewVerdict: 'approve',
           reviewFindings: {
             ...reviewFindings,
             blockingIssues: [
@@ -666,13 +663,13 @@ describe('plan', () => {
       expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
     });
 
-    it('Mode B blocks when selfReviewVerdict does not match reviewFindings.overallVerdict', async () => {
+    it('Mode B blocks when reviewVerdict does not match reviewFindings.overallVerdict', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
-          selfReviewVerdict: 'approve',
+          reviewVerdict: 'approve',
           reviewFindings,
         },
         ctx,
@@ -696,7 +693,7 @@ describe('plan', () => {
         selfReview: null,
       });
 
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_REVIEW_LOOP_REQUIRED');
@@ -716,7 +713,7 @@ describe('plan', () => {
         plan: null,
       });
 
-      const raw = await plan.execute({ selfReviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
@@ -729,7 +726,7 @@ describe('plan', () => {
         '## Plan\n\n### Objective\nImplement payment validation.\n\n### Approach\nUse a validation pipeline.\n\n### Steps\n1. Add `validate.ts`.\n2. Add tests.\n\n### Files to Modify\n- `src/payments/validate.ts`\n\n### Edge Cases\n1. Empty input.\n\n### Validation Criteria\n1. `npm test` passes.\n\n### Verification Plan\n1. `npm test` — Source: package.json:scripts.test';
       await plan.execute({ planText }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -745,7 +742,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -758,7 +755,7 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ selfReviewVerdict: 'approve', reviewFindings }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       // Solo auto-advances through VALIDATION; if phase is not PLAN_REVIEW, no card
@@ -773,7 +770,7 @@ describe('plan', () => {
     it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW when findings.overallVerdict=unable_to_review (E2E)', async () => {
       // End-to-end: full plan submission flow, real fulfilled obligation,
       // findings mutated to unable_to_review. The tool layer (slice 4e)
-      // MUST short-circuit to BLOCKED before any selfReviewVerdict
+      // MUST short-circuit to BLOCKED before any reviewVerdict
       // semantics are evaluated.
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
@@ -782,7 +779,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
-        { selfReviewVerdict: 'changes_requested', reviewFindings: unableFindings },
+        { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -790,9 +787,9 @@ describe('plan', () => {
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
 
-    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW even when paired with selfReviewVerdict=approve (E2E precedence)', async () => {
+    it('blocks plan with SUBAGENT_UNABLE_TO_REVIEW even when paired with reviewVerdict=approve (E2E precedence)', async () => {
       // Slice 4e precedence: unable_to_review fails closed regardless of
-      // the agent's submitted selfReviewVerdict. There is no path where
+      // the agent's submitted reviewVerdict. There is no path where
       // an unreviewable finding can be coerced into convergence.
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
@@ -800,7 +797,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'approve', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -817,7 +814,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'approve', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -842,7 +839,7 @@ describe('plan', () => {
       // submission flow with a real fulfilled obligation; finding verdict
       // mutated to unable_to_review. The tool layer (slice 7c hooks
       // validateReviewFindings, which fail-closes per P1.3 slice 4e) MUST
-      // short-circuit to BLOCKED before any selfReviewVerdict semantics
+      // short-circuit to BLOCKED before any reviewVerdict semantics
       // are evaluated.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
@@ -850,7 +847,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
-        { selfReviewVerdict: 'changes_requested', reviewFindings: unableFindings },
+        { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -858,9 +855,9 @@ describe('plan', () => {
       expect(result.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
     });
 
-    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW even when paired with selfReviewVerdict=approve (E2E precedence)', async () => {
+    it('blocks architecture with SUBAGENT_UNABLE_TO_REVIEW even when paired with reviewVerdict=approve (E2E precedence)', async () => {
       // Slice 4e precedence parity for architecture: unable_to_review fails
-      // closed regardless of the agent's submitted selfReviewVerdict. There
+      // closed regardless of the agent's submitted reviewVerdict. There
       // is no path where an unreviewable finding can be coerced into
       // architecture convergence.
       await hydrateSession({ policyMode: 'solo' });
@@ -869,7 +866,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'approve', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -886,7 +883,7 @@ describe('plan', () => {
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'approve', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -909,7 +906,7 @@ describe('plan', () => {
       const driftFindings = { ...baseFindings, planVersion: 2 };
 
       const raw = await architecture.execute(
-        { selfReviewVerdict: 'approve', reviewFindings: driftFindings },
+        { reviewVerdict: 'approve', reviewFindings: driftFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -958,11 +955,11 @@ describe('plan', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   describe('BUG-21: null-tolerant mode detection (plan tool)', () => {
-    it('HAPPY: selfReviewVerdict=null + planText → Mode A (plan submitted)', async () => {
+    it('HAPPY: reviewVerdict=null + planText → Mode A (plan submitted)', async () => {
       await hydrateAndTicket();
-      // Simulate a Zod bypass: args.selfReviewVerdict is null
+      // Simulate a Zod bypass: args.reviewVerdict is null
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix auth', selfReviewVerdict: null } as any,
+        { planText: '## Plan\n1. Fix auth', reviewVerdict: null } as any,
         ctx,
       );
       const result = parseToolResult(raw);
@@ -981,10 +978,10 @@ describe('plan', () => {
       expect(result.status).toContain('Plan submitted');
     });
 
-    it('CORNER: both selfReviewVerdict=null + reviewFindings=null + planText → Mode A', async () => {
+    it('CORNER: both reviewVerdict=null + reviewFindings=null + planText → Mode A', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix auth', selfReviewVerdict: null, reviewFindings: null } as any,
+        { planText: '## Plan\n1. Fix auth', reviewVerdict: null, reviewFindings: null } as any,
         ctx,
       );
       const result = parseToolResult(raw);
@@ -992,18 +989,18 @@ describe('plan', () => {
       expect(result.status).toContain('Plan submitted');
     });
 
-    it('BAD: selfReviewVerdict=null + no planText → EMPTY_PLAN (not verdict path)', async () => {
+    it('BAD: reviewVerdict=null + no planText → EMPTY_PLAN (not verdict path)', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ selfReviewVerdict: null } as any, ctx);
+      const raw = await plan.execute({ reviewVerdict: null } as any, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('EMPTY_PLAN');
     });
 
-    it('EDGE: selfReviewVerdict="" (empty string) + planText → Mode A', async () => {
+    it('EDGE: reviewVerdict="" (empty string) + planText → Mode A', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix', selfReviewVerdict: '' } as any,
+        { planText: '## Plan\n1. Fix', reviewVerdict: '' } as any,
         ctx,
       );
       const result = parseToolResult(raw);

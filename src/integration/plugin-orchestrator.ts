@@ -207,7 +207,7 @@ function buildHostTaskBlockedOutput(
     (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_architecture) in its own session.` +
     ` FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), ` +
-    `submit your selfReviewVerdict directly with reviewerUnavailable: true. This proceeds with self-review assurance.`;
+    `submit your reviewVerdict directly with reviewerUnavailable: true. This proceeds with self-review assurance.`;
   result.reviewInvocation = {
     policy,
     status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',

@@ -63,7 +63,7 @@ describe('review-enforcement mutation kills', () => {
 
       // L1 check should pass now
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
-        selfReviewVerdict: 'approve',
+        reviewVerdict: 'approve',
         reviewFindings: {
           overallVerdict: 'approve',
           blockingIssues: [],
@@ -170,7 +170,7 @@ describe('review-enforcement mutation kills', () => {
 
       // Try to submit "approve" when reviewer said "changes_requested"
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
-        selfReviewVerdict: 'approve',
+        reviewVerdict: 'approve',
         reviewFindings: {
           overallVerdict: 'approve', // Tampered!
           blockingIssues: [],
@@ -201,7 +201,7 @@ describe('review-enforcement mutation kills', () => {
       );
 
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
-        selfReviewVerdict: 'approve', // submitter-side stays 2-valued
+        reviewVerdict: 'approve', // submitter-side stays 2-valued
         reviewFindings: {
           overallVerdict: 'unable_to_review', // matches captured
           blockingIssues: [],
@@ -230,7 +230,7 @@ describe('review-enforcement mutation kills', () => {
       );
 
       const enforcement = enforceBeforeVerdict(state, 'flowguard_plan', {
-        selfReviewVerdict: 'approve',
+        reviewVerdict: 'approve',
         reviewFindings: {
           overallVerdict: 'approve', // Tampered: real reviewer said unable_to_review
           blockingIssues: [],
@@ -408,7 +408,7 @@ describe('review-enforcement mutation kills', () => {
         onFlowGuardToolAfter(
           state,
           'flowguard_plan',
-          { selfReviewVerdict: 'approve' },
+          { reviewVerdict: 'approve' },
           JSON.stringify({ status: 'Plan approved' }),
           LATER,
         );
@@ -430,7 +430,7 @@ describe('review-enforcement mutation kills', () => {
         onFlowGuardToolAfter(
           state,
           'flowguard_plan',
-          { selfReviewVerdict: 'approve' },
+          { reviewVerdict: 'approve' },
           JSON.stringify({ error: true, code: 'SOME_ERROR' }),
           LATER,
         );
@@ -506,7 +506,7 @@ describe('review-enforcement mutation kills', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { selfReviewVerdict: 'approve' },
+        { reviewVerdict: 'approve' },
         sessionState,
       );
       expect(result.allowed).toBe(false);
@@ -543,7 +543,7 @@ describe('review-enforcement mutation kills', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { selfReviewVerdict: 'approve' },
+        { reviewVerdict: 'approve' },
         sessionState,
       );
       expect(result.allowed).toBe(true);
@@ -554,7 +554,7 @@ describe('review-enforcement mutation kills', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { selfReviewVerdict: 'approve' },
+        { reviewVerdict: 'approve' },
         null,
         true, // strictEnforcement
       );
@@ -570,7 +570,7 @@ describe('review-enforcement mutation kills', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { selfReviewVerdict: 'approve' },
+        { reviewVerdict: 'approve' },
         null,
         false,
       );

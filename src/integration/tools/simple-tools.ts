@@ -240,7 +240,7 @@ function buildRequiredReviewAttestationPayload(obligationId: string): {
       'Pass the requiredReviewAttestation values to the subagent so it populates attestation.reviewedBy, attestation.mandateDigest, attestation.criteriaVersion, and attestation.toolObligationId exactly as provided.',
       'Instruct the subagent to return a complete ReviewFindings object (reviewMode, reviewedBy, reviewedAt, attestation, blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns).',
       'Parse the subagent response as a ReviewFindings object - do NOT convert it to an array and do NOT drop attestation fields.',
-      'Re-run flowguard_review with analysisFindings set to the complete ReviewFindings object. In strict mode, copied attestation fields alone are diagnostic context only; FlowGuard must persist matching ReviewInvocationEvidence before the findings satisfy governance.',
+      'Re-run flowguard_review with reviewFindings set to the complete ReviewFindings object. In strict mode, copied attestation fields alone are diagnostic context only; FlowGuard must persist matching ReviewInvocationEvidence before the findings satisfy governance.',
     ],
   };
 }
@@ -265,7 +265,7 @@ function formatMissingContentAnalysis(obligationId: string): string {
 function formatSubagentReviewNotInvoked(detail: string, obligationId: string): string {
   return formatBlockedWithAttestation(
     'SUBAGENT_REVIEW_NOT_INVOKED',
-    `Supplied analysisFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
+    `Supplied reviewFindings did not pass subagent attestation: ${detail}. Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent with the requiredReviewAttestation values and submit the complete ReviewFindings object. Copied attestation fields are diagnostic context only until FlowGuard persists matching ReviewInvocationEvidence.`,
     obligationId,
   );
 }
@@ -293,7 +293,7 @@ type ReviewToolArgs = {
   prNumber?: number;
   branch?: string;
   url?: string;
-  analysisFindings?: ReviewFindings;
+  reviewFindings?: ReviewFindings;
 };
 
 type StartedReviewResult = Extract<ReturnType<typeof startReviewFlow>, { kind: 'ok' }>;
@@ -339,7 +339,7 @@ async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
 ): Promise<string | null> {
-  if (!hasReviewContentInput(args) || args.analysisFindings !== undefined) return null;
+  if (!hasReviewContentInput(args) || args.reviewFindings !== undefined) return null;
   const fingerprint = fingerprintReviewInput(args);
   let obligation = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
   if (!obligation) {
@@ -361,7 +361,7 @@ async function resolveSubmittedReviewObligation(
   args: ReviewToolArgs,
   now: string,
 ): Promise<{ obligation: ReviewObligation; blocked?: string }> {
-  const findings = args.analysisFindings as Record<string, unknown>;
+  const findings = args.reviewFindings as Record<string, unknown>;
   const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
     ?.toolObligationId as string | undefined;
   const obligationById = attToolObligationId
@@ -403,7 +403,7 @@ function validateSubmittedReviewFindings(
     );
   }
 
-  const findings = args.analysisFindings as Record<string, unknown>;
+  const findings = args.reviewFindings as Record<string, unknown>;
   if ((findings.reviewMode as string) !== 'subagent') {
     return formatSubagentReviewNotInvoked(
       `reviewMode is not "subagent" — findings did not come from the ${REVIEWER_SUBAGENT_TYPE} subagent`,
@@ -529,7 +529,7 @@ function recordSubmittedReviewInvocation(
   obligation: ReviewObligation,
   exec: ReviewExecutionContext,
 ): { result: StartedReviewResult; blocked?: string } {
-  const findings = exec.args.analysisFindings as Record<string, unknown>;
+  const findings = exec.args.reviewFindings as Record<string, unknown>;
   const childSessionId = String((findings.reviewedBy as Record<string, unknown>).sessionId ?? '');
   if (!childSessionId) {
     return {
@@ -629,7 +629,7 @@ async function prepareReviewExecution(
   if (missingAnalysis) return missingAnalysis;
 
   let refInput = buildReviewReferenceInput(exec.args);
-  if (exec.args.analysisFindings === undefined) {
+  if (exec.args.reviewFindings === undefined) {
     return { result, refInput, validatedReviewObligation: null };
   }
 
@@ -643,26 +643,26 @@ async function prepareReviewExecution(
   return { result: recorded.result, refInput, validatedReviewObligation: resolved.obligation };
 }
 
-function mapReviewFindingsToReport(analysisFindings: Record<string, unknown>): Array<{
+function mapReviewFindingsToReport(reviewFindings: Record<string, unknown>): Array<{
   severity: 'info' | 'warning' | 'error';
   category: string;
   message: string;
   location?: string;
 }> {
   const allFindings: Array<Record<string, unknown>> = [
-    ...((analysisFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
-    ...((analysisFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
-    ...((analysisFindings.missingVerification as string[]) ?? []).map((message) => ({
+    ...((reviewFindings.blockingIssues as Array<Record<string, unknown>>) ?? []),
+    ...((reviewFindings.majorRisks as Array<Record<string, unknown>>) ?? []),
+    ...((reviewFindings.missingVerification as string[]) ?? []).map((message) => ({
       severity: 'warning' as const,
       category: 'missing-verification',
       message,
     })),
-    ...((analysisFindings.scopeCreep as string[]) ?? []).map((message) => ({
+    ...((reviewFindings.scopeCreep as string[]) ?? []).map((message) => ({
       severity: 'warning' as const,
       category: 'scope-creep',
       message,
     })),
-    ...((analysisFindings.unknowns as string[]) ?? []).map((message) => ({
+    ...((reviewFindings.unknowns as string[]) ?? []).map((message) => ({
       severity: 'info' as const,
       category: 'unknown',
       message,
@@ -682,8 +682,8 @@ function mapReviewFindingsToReport(analysisFindings: Record<string, unknown>): A
 function buildReviewExecutors(args: ReviewToolArgs): ReviewExecutors {
   return {
     analyze: async () => {
-      if (!args.analysisFindings) return [];
-      return mapReviewFindingsToReport(args.analysisFindings);
+      if (!args.reviewFindings) return [];
+      return mapReviewFindingsToReport(args.reviewFindings);
     },
   };
 }
@@ -706,7 +706,7 @@ function consumeValidatedReviewObligation(
         findAcceptedInvocationForFindings(
           result.state.reviewAssurance,
           obligation,
-          args.analysisFindings,
+          args.reviewFindings,
         )?.invocationId,
       ),
     },
@@ -841,7 +841,7 @@ function reviewerSessionId(
 ): string | undefined {
   return (
     boundInvocation?.childSessionId ??
-    ((args.analysisFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
+    ((args.reviewFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
       | string
       | undefined)
   );
@@ -909,8 +909,8 @@ export const review: ToolDefinition = {
   description:
     'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
     'Generates a compliance review report with evidence completeness matrix ' +
-    'and four-eyes principle status. Produces a flowguard-review-report.v1 artifact ' +
-    'written to the session directory. Only allowed in READY phase.',
+    'and four-eyes principle status, written to the session directory. ' +
+    'Only allowed in READY phase.',
   args: {
     inputOrigin: InputOriginSchema.optional().describe(
       'Where the review content originated. Set to "pr" when reviewing a pull request, ' +
@@ -934,7 +934,7 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
-    analysisFindings: ReviewFindings.optional().describe(
+    reviewFindings: ReviewFindings.optional().describe(
       `Complete findings from ${REVIEWER_SUBAGENT_TYPE} subagent analysis. ` +
         'Required when content-aware fields (text/prNumber/branch/url) are provided. ' +
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +

@@ -195,7 +195,7 @@ describe('e2e-workflow', () => {
 
       // 4. Plan (Mode B: approve self-review)
       // Solo: maxSelfReviewIterations=1, so first approve should converge
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       // Solo: auto-approves PLAN_REVIEW → advances to VALIDATION
       const afterPlan = await getPhase();
       expect(afterPlan).toBe('VALIDATION');
@@ -244,7 +244,7 @@ describe('e2e-workflow', () => {
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -285,7 +285,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -305,7 +305,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Original Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
 
       await callOk(decision, { verdict: 'changes_requested', rationale: 'More detail' });
@@ -320,7 +320,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       expect(await getPhase()).toBe('VALIDATION');
 
       // Fail validation
@@ -334,7 +334,7 @@ describe('e2e-workflow', () => {
 
       // Can re-plan and re-validate
       await callOk(plan, { planText: '## Better Plan with tests' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       // In solo, may stop at PLAN_REVIEW (user gate) — need to advance
       const phaseAfterReplan = await getPhase();
       if (phaseAfterReplan === 'PLAN_REVIEW') {
@@ -351,7 +351,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       await callOk(validate, {
@@ -395,7 +395,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Original Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       await callOk(validate, {
@@ -451,7 +451,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       await callOk(validate, {
         results: [
           { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -482,7 +482,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       phases.push(await getPhase()); // After plan submit
 
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       phases.push(await getPhase()); // After self-review converge (solo auto-approve → VALIDATION)
 
       await callOk(validate, {
@@ -551,7 +551,7 @@ describe('e2e-workflow', () => {
 
         await callOk(ticket, { text: 'CI-degrade task', source: 'user' });
         await callOk(plan, { planText: '## Plan\nHuman gate expected' });
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
         expect(await getPhase()).toBe('PLAN_REVIEW');
       } finally {
         cleanup();
@@ -571,7 +571,7 @@ describe('e2e-workflow', () => {
 
         await callOk(ticket, { text: 'CI auto gate', source: 'user' });
         await callOk(plan, { planText: '## Plan\nAuto gate expected' });
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
         expect(await getPhase()).toBe('VALIDATION');
       } finally {
         cleanup();
@@ -629,7 +629,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Local repo task', source: 'user' });
       await callOk(plan, { planText: '## Local Plan' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       await callOk(validate, {
         results: [
           { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -650,7 +650,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Audit test', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       await callOk(validate, {
         results: [
           { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -684,14 +684,14 @@ describe('e2e-workflow', () => {
 
       // Self-review: request changes with revised plan
       await callOk(plan, {
-        selfReviewVerdict: 'changes_requested',
+        reviewVerdict: 'changes_requested',
         planText: '## Revised Plan\n1. Concrete step A\n2. Concrete step B',
       });
 
       // Now approve the revised plan
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -742,7 +742,7 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('ARCHITECTURE');
 
       // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
-      await callOk(architecture, { selfReviewVerdict: 'approve' });
+      await callOk(architecture, { reviewVerdict: 'approve' });
       // Solo auto-approves ARCH_REVIEW → ARCH_COMPLETE
       expect(await getPhase()).toBe('ARCH_COMPLETE');
 
@@ -766,7 +766,7 @@ describe('e2e-workflow', () => {
       const adrText =
         '## Context\nAuth model.\n\n## Decision\nUse OAuth2.\n\n## Consequences\nNeed IdP integration.';
       await callOk(architecture, { title: 'OAuth2 for auth', adrText });
-      await callOk(architecture, { selfReviewVerdict: 'approve' });
+      await callOk(architecture, { reviewVerdict: 'approve' });
 
       const result = parseToolResult(await status.execute({}, ctx));
       expect(result.latestArchitectureReview).toBeDefined();
@@ -792,7 +792,7 @@ describe('e2e-workflow', () => {
       // 3. Self-review loop to ARCH_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { selfReviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -813,7 +813,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'ELK for logging', adrText });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { selfReviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -835,7 +835,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'REST APIs', adrText });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { selfReviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -849,7 +849,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'REST APIs', adrText: revisedAdr });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { selfReviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Better now' });
       expect(await getPhase()).toBe('ARCH_COMPLETE');
@@ -867,7 +867,7 @@ describe('e2e-workflow', () => {
       // Drive self-review to convergence
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -898,7 +898,7 @@ describe('e2e-workflow', () => {
       // Drive to PLAN_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -919,7 +919,7 @@ describe('e2e-workflow', () => {
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -942,7 +942,7 @@ describe('e2e-workflow', () => {
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
 
       vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
@@ -963,7 +963,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Bad Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       await callOk(validate, {
@@ -987,7 +987,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Better Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { selfReviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Good' });
       await callOk(validate, {
@@ -1020,7 +1020,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Perf test', source: 'user' });
       await callOk(plan, { planText: '## Plan\nSimple implementation' });
-      await callOk(plan, { selfReviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'approve' });
       await callOk(validate, {
         results: [
           { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -1041,7 +1041,7 @@ describe('e2e-workflow', () => {
         await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' }, ic);
         await callOk(ticket, { text: `Task ${i}`, source: 'user' }, ic);
         await callOk(plan, { planText: '## Plan' }, ic);
-        await callOk(plan, { selfReviewVerdict: 'approve' }, ic);
+        await callOk(plan, { reviewVerdict: 'approve' }, ic);
         await callOk(
           validate,
           {

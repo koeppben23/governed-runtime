@@ -140,7 +140,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
     recoverySteps: [
       'Submit the plan first with flowguard_plan({ planText }) only',
-      'Do not include selfReviewVerdict or reviewFindings in the plan submission call',
+      'Do not include reviewVerdict or reviewFindings in the plan submission call',
     ],
     quickFixCommand: '/plan',
   },
@@ -152,7 +152,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Plan submission included reviewFindings without a verdict. Findings belong to the verdict call, not the initial submission.',
     recoverySteps: [
       'Submit the plan with flowguard_plan({ planText }) only',
-      'Add reviewFindings in the verdict call: flowguard_plan({ selfReviewVerdict, reviewFindings })',
+      'Add reviewFindings in the verdict call: flowguard_plan({ reviewVerdict, reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -163,8 +163,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Plan approval included planText. For approval, send only the verdict and findings — planText is for revisions.',
     recoverySteps: [
-      'For approval: call flowguard_plan({ selfReviewVerdict: "approve", reviewFindings })',
-      'Include planText only when selfReviewVerdict is "changes_requested" (revised plan)',
+      'For approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings })',
+      'Include planText only when reviewVerdict is "changes_requested" (revised plan)',
     ],
     quickFixCommand: '/plan',
   },
@@ -175,8 +175,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The plan review loop is already active. Submit a review verdict to continue it, not a new plan.',
     recoverySteps: [
-      'The review loop is active — send selfReviewVerdict + reviewFindings to continue it',
-      'Call flowguard_plan({ selfReviewVerdict: "approve"|"changes_requested", reviewFindings })',
+      'The review loop is active — send reviewVerdict + reviewFindings to continue it',
+      'Call flowguard_plan({ reviewVerdict: "approve"|"changes_requested", reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -185,10 +185,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'PLAN_FINDINGS_WITHOUT_VERDICT',
     category: 'precondition',
     messageTemplate:
-      'Review findings were submitted without a verdict. Include selfReviewVerdict alongside reviewFindings.',
+      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
     recoverySteps: [
-      'Include selfReviewVerdict alongside reviewFindings',
-      'Call flowguard_plan({ selfReviewVerdict: "approve"|"changes_requested", reviewFindings })',
+      'Include reviewVerdict alongside reviewFindings',
+      'Call flowguard_plan({ reviewVerdict: "approve"|"changes_requested", reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -210,7 +210,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'A plan review verdict requires an active plan review loop.',
     recoverySteps: [
       'Submit the plan first and wait for the review obligation',
-      'Then submit selfReviewVerdict together with reviewFindings',
+      'Then submit reviewVerdict together with reviewFindings',
     ],
     quickFixCommand: '/plan',
   },
@@ -238,8 +238,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Invalid flowguard_architecture call sequence: ADR submission and review verdict inputs must be separate calls.',
     recoverySteps: [
       'Submit the ADR first with flowguard_architecture({ title, adrText }) only',
-      'Do not include selfReviewVerdict in the ADR submission call',
-      'During an active ADR review loop, submit only selfReviewVerdict and revised adrText when changes are requested',
+      'Do not include reviewVerdict in the ADR submission call',
+      'During an active ADR review loop, submit only reviewVerdict and revised adrText when changes are requested',
     ],
     quickFixCommand: '/architecture',
   },
@@ -251,7 +251,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'ADR submission included a review verdict. Submission and verdict are separate calls.',
     recoverySteps: [
       'Submit the ADR with flowguard_architecture({ id, title, adrText }) only',
-      'Submit the review verdict separately: flowguard_architecture({ selfReviewVerdict })',
+      'Submit the review verdict separately: flowguard_architecture({ reviewVerdict })',
     ],
     quickFixCommand: '/architecture',
   },
@@ -262,8 +262,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The ADR review loop is already active. Submit a review verdict to continue it, not a new ADR.',
     recoverySteps: [
-      'The review loop is active — send selfReviewVerdict to continue it',
-      'Call flowguard_architecture({ selfReviewVerdict: "approve"|"changes_requested" })',
+      'The review loop is active — send reviewVerdict to continue it',
+      'Call flowguard_architecture({ reviewVerdict: "approve"|"changes_requested" })',
     ],
     quickFixCommand: '/architecture',
   },
@@ -274,7 +274,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'An architecture review verdict requires an active ADR review loop.',
     recoverySteps: [
       'Submit the ADR first and wait for the architecture review loop',
-      'Then submit selfReviewVerdict for the active ADR review loop',
+      'Then submit reviewVerdict for the active ADR review loop',
     ],
     quickFixCommand: '/architecture',
   },

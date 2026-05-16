@@ -133,7 +133,7 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
     } else if (lastPhase === 'TICKET') {
       await callOk(plan, { planText: '## Plan\nTest' }, context);
     } else if (lastPhase === 'PLAN') {
-      await callOk(plan, { selfReviewVerdict: 'approve' }, context);
+      await callOk(plan, { reviewVerdict: 'approve' }, context);
     } else if (lastPhase === 'VALIDATION') {
       await callOk(
         validate,
@@ -194,7 +194,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
     await callOk(ticket, { text: 'Team status test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     const result = parseToolResult(await status.execute({}, ctx));
 
     expect(result.phase).toBe('PLAN_REVIEW');
@@ -207,7 +207,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Complete test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     await callOk(validate, {
       results: [
         { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -248,7 +248,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four eyes test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     const result = parseToolResult(
       await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
     );
@@ -261,7 +261,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     await callOk(validate, {
       results: [
         { checkId: 'test_quality', passed: true, detail: 'OK' },
@@ -350,7 +350,7 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four CLI test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
 
     const result = parseToolResult(
       await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
@@ -363,7 +363,7 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Identity CLI test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     await writeState(sessDir, { ...state!, initiatedByIdentity: undefined });
@@ -379,7 +379,7 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Unknown actor test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     vi.mocked(actorMock.resolveActor).mockResolvedValue({
       id: 'unknown-cli',
       email: null,
@@ -423,7 +423,7 @@ describe('BAD: invalid input returns structured error', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error === true || result.phase !== undefined).toBe(true);
@@ -460,7 +460,7 @@ describe('CORNER: CLI edge cases', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Enum test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error === true || result.phase !== undefined).toBe(true);

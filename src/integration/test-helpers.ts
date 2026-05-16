@@ -407,18 +407,18 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   const record = args as Record<string, unknown>;
   if (record.reviewFindings) return args;
 
-  const planVerdict = record.selfReviewVerdict;
-  const implVerdict = record.reviewVerdict;
-  const verdict = planVerdict ?? implVerdict;
+  const verdict =
+    typeof record.reviewVerdict === 'string' && record.reviewVerdict.length > 0
+      ? record.reviewVerdict
+      : undefined;
   if (verdict !== 'approve' && verdict !== 'changes_requested') return args;
 
   const state = await readState(sessDir);
   if (!state) return args;
 
-  // F13 slice 7c: selfReviewVerdict is shared between plan and architecture
-  // tools. Distinguish by inspecting the active obligation: if a pending
-  // architecture obligation exists, route as 'architecture'; otherwise
-  // default to 'plan'. The reviewVerdict path remains 'implement'.
+  // P35: Determine obligation type from pending obligations now that all
+  // reviewable tools share the `reviewVerdict` parameter (was selfReviewVerdict
+  // for plan/architecture, reviewVerdict for implement).
   const allObligations = state.reviewAssurance?.obligations ?? [];
   const findPending = (type: ReviewObligationType) =>
     [...allObligations]
@@ -430,20 +430,23 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
 
   let obligationType: ReviewObligationType;
   let obligation;
-  if (planVerdict) {
-    const archPending = findPending('architecture');
-    if (archPending) {
-      obligationType = 'architecture';
-      obligation = archPending;
-    } else {
-      obligationType = 'plan';
-      obligation = findPending('plan');
-    }
-  } else {
+
+  const archPending = findPending('architecture');
+  const planPending = findPending('plan');
+  const implPending = findPending('implement');
+
+  if (archPending) {
+    obligationType = 'architecture';
+    obligation = archPending;
+  } else if (implPending) {
     obligationType = 'implement';
-    obligation = findPending('implement');
+    obligation = implPending;
+  } else if (planPending) {
+    obligationType = 'plan';
+    obligation = planPending;
+  } else {
+    return args;
   }
-  if (!obligation) return args;
 
   const reviewFindings = await fulfillStrictReviewObligation(sessDir, {
     obligationType,

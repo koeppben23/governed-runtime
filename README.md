@@ -102,7 +102,7 @@ Three governed flows are available after `/start` (or `/hydrate`):
 3. When plugin orchestration is active, FlowGuard may invoke the reviewer
    subagent and inject `pluginReviewFindings`; otherwise the blocked response
    instructs manual subagent invocation.
-4. `/review prNumber=42 analysisFindings=<complete object>` →
+4. `/review prNumber=42 reviewFindings=<complete object>` →
    REVIEW_COMPLETE, receives structured `reviewCard`
 
 **Diagnostic commands:** `/status` — current phase, next action, evidence summary.

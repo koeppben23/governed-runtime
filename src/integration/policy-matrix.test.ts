@@ -142,7 +142,7 @@ async function drivePastPlan(mode: Mode, ctx: TestToolContext): Promise<string> 
   for (let i = 0; i < 5; i++) {
     const phase = await currentPhase(ctx);
     if (phase === 'PLAN_REVIEW' || phase === 'VALIDATION') return phase;
-    await callOk(plan, { selfReviewVerdict: 'approve' }, ctx);
+    await callOk(plan, { reviewVerdict: 'approve' }, ctx);
   }
   return currentPhase(ctx);
 }

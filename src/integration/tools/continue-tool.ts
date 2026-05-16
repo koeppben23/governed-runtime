@@ -56,7 +56,8 @@ export const continue_cmd: ToolDefinition = {
   description:
     'Deterministic phase dispatcher. Returns guidance on which command to execute next ' +
     'based on the current workflow phase. Blocks at user-gate and terminal phases with ' +
-    'explicit decision options.',
+    'explicit decision options. Use /continue for routing decisions (which command next). ' +
+    'Use /status to inspect detailed session state and evidence slots.',
   args: {},
   async execute(_args, context) {
     try {

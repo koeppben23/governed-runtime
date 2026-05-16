@@ -173,8 +173,8 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'REVISED_PLAN_REQUIRED',
     category: 'input',
     messageTemplate:
-      "When selfReviewVerdict is 'changes_requested', planText with the revised plan is required.",
-    recoverySteps: ["Provide revised planText alongside selfReviewVerdict: 'changes_requested'"],
+      "When reviewVerdict is 'changes_requested', planText with the revised plan is required.",
+    recoverySteps: ["Provide revised planText alongside reviewVerdict: 'changes_requested'"],
   },
 
   {
@@ -192,21 +192,21 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:
-      'Content-aware /review requires analysisFindings. Analyze the supplied content before calling flowguard_review.',
+      'Content-aware /review requires reviewFindings. Analyze the supplied content before calling flowguard_review.',
     recoverySteps: [
       'Fetch or inspect the referenced text, PR, branch, or URL content',
       'Create concrete findings with severity, category, and message',
-      'Re-run flowguard_review with analysisFindings populated',
+      'Re-run flowguard_review with reviewFindings populated',
     ],
   },
 
   {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
-    messageTemplate: `analysisFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
+    messageTemplate: `reviewFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
     recoverySteps: [
       `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}"`,
-      'Pass the subagent output as analysisFindings',
+      'Pass the subagent output as reviewFindings',
       `Ensure findings include reviewedBy.sessionId containing "${REVIEWER_SUBAGENT_TYPE}" or attestation.reviewedBy === "${REVIEWER_SUBAGENT_TYPE}"`,
     ],
   },

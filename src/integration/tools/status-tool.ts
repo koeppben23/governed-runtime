@@ -248,16 +248,17 @@ export const status: ToolDefinition = {
   description:
     'Read the current FlowGuard session state. Returns phase, evidence summary, ' +
     'policy info, completeness matrix, and next action. ' +
-    'Does NOT mutate state. Use this to understand where the workflow is before taking action.',
+    'Does NOT mutate state. Use /status to inspect session state or debug blockers. ' +
+    'Use /continue for deterministic next-action routing (tells you which command to run next).',
   args: {
     whyBlocked: z
       .boolean()
       .optional()
-      .describe('Return focused blocker surface from canonical evaluator/completeness truth.'),
+      .describe('Return focused blocker surface from the state machine evaluator.'),
     evidence: z
       .boolean()
       .optional()
-      .describe('Return per-slot evidence detail from canonical completeness truth.'),
+      .describe('Return per-slot evidence detail from the session completeness check.'),
     context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
     readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
   },

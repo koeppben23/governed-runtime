@@ -110,20 +110,20 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 Twelve installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
-| Command            | Purpose                                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                          |
-| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                      |
-| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs. |
-| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.            |
+| Command            | Purpose                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                              |
+| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                         |
+| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.     |
+| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                |
 | `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
 | `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
-| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                      |
-| `/implement`       | Execute implementation, record evidence, run review loop                                                       |
-| `/validate`        | Run validation checks (test quality, rollback safety)                                                          |
-| `/continue`        | Universal routing — do the next appropriate action for the current phase                                       |
-| `/abort`           | Emergency session termination                                                                                  |
-| `/archive`         | Archive a completed session as `.tar.gz`                                                                       |
+| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                          |
+| `/implement`       | Execute implementation, record evidence, run review loop                                                           |
+| `/validate`        | Run validation checks (test quality, rollback safety)                                                              |
+| `/continue`        | Universal routing — do the next appropriate action for the current phase                                           |
+| `/abort`           | Emergency session termination                                                                                      |
+| `/archive`         | Archive a completed session as `.tar.gz`                                                                           |
 
 Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 

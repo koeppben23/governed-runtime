@@ -94,7 +94,7 @@ async function completeRegulatedSession(): Promise<{
   await callOk(plan, { planText: '## Plan\n1. Build\n2. Verify' });
 
   for (let i = 0; i < 4 && (await currentPhase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { selfReviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'approve' });
   }
 
   vi.mocked(actorMock.resolveActor).mockResolvedValue({

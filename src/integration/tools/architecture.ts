@@ -8,8 +8,8 @@
  *   -> Tool records ADR, initializes self-review loop, returns "self-review needed"
  *
  * Step 2: LLM reviews ADR critically, calls flowguard_architecture({
- *   selfReviewVerdict: "changes_requested", adrText: "revised..."
- * }) OR flowguard_architecture({ selfReviewVerdict: "approve" })
+ *   reviewVerdict: "changes_requested", adrText: "revised..."
+ * }) OR flowguard_architecture({ reviewVerdict: "approve" })
  *   -> Tool records iteration, checks convergence
  *
  * Repeat Step 2 until converged or max iterations (from policy).
@@ -80,7 +80,7 @@ import { resolveNextAction } from '../../machine/next-action.js';
 type ArchitectureArgs = {
   title?: string;
   adrText?: string;
-  selfReviewVerdict?: LoopVerdict;
+  reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
@@ -133,7 +133,7 @@ function validateInitialSubmissionGate(
   const hasTitle = hasText(args.title);
   const hasAdrText = hasText(args.adrText);
 
-  if (hasTitle && hasText(args.selfReviewVerdict)) {
+  if (hasTitle && hasText(args.reviewVerdict)) {
     return formatBlocked('ADR_SUBMISSION_MIXED_INPUTS');
   }
 
@@ -221,7 +221,7 @@ function buildSubmissionNextAction(subagentEnabled: boolean, archPlanVersion: nu
     return (
       'Self-review needed. Review the ADR critically against MADR standards. ' +
       'Check for completeness, clarity, and consequences coverage. ' +
-      'Then call flowguard_architecture with selfReviewVerdict.'
+      'Then call flowguard_architecture with reviewVerdict.'
     );
   }
   return (
@@ -231,7 +231,7 @@ function buildSubmissionNextAction(subagentEnabled: boolean, archPlanVersion: nu
     '(1) the full ADR text, (2) the ADR title, (3) the ticket text, ' +
     `(4) iteration=0, (5) planVersion=${archPlanVersion}. ` +
     'Parse the JSON ReviewFindings from the subagent response. ' +
-    'Then call flowguard_architecture with selfReviewVerdict based on ' +
+    'Then call flowguard_architecture with reviewVerdict based on ' +
     'the findings overallVerdict, and include the reviewFindings object. ' +
     'If the subagent returns changes_requested, revise the ADR and resubmit.'
   );
@@ -296,7 +296,7 @@ function resolveArchitectureReview(
     input: {
       reviewFindings: args.reviewFindings,
       reviewerUnavailable: args.reviewerUnavailable,
-      verdict: args.selfReviewVerdict,
+      verdict: args.reviewVerdict,
     },
     state: { assurance: state.reviewAssurance, sessionId: context.sessionID },
   });
@@ -305,7 +305,7 @@ function resolveArchitectureReview(
 
   const findingsBlocked = validateResolvedFindings(
     resolved.effectiveFindings,
-    args.selfReviewVerdict,
+    args.reviewVerdict,
     pendingObligation?.obligationId,
   );
   if (findingsBlocked) return findingsBlocked;
@@ -345,7 +345,7 @@ function applyAdrRevision(
   session: ArchitectureSession,
 ): AdrRevision | string {
   const { state, ctx } = session;
-  const verdict = args.selfReviewVerdict as LoopVerdict;
+  const verdict = args.reviewVerdict as LoopVerdict;
   const prevDigest = state.architecture!.digest;
   let currentAdr = state.architecture!;
   let revisionDelta: RevisionDelta = 'none';
@@ -405,7 +405,7 @@ function buildReviewedState(
       prevDigest: revision.prevDigest,
       currDigest: revision.currentAdr.digest,
       revisionDelta: revision.revisionDelta,
-      verdict: args.selfReviewVerdict as LoopVerdict,
+      verdict: args.reviewVerdict as LoopVerdict,
     },
     reviewAssurance: {
       obligations: consumedAssurance.obligations,
@@ -447,7 +447,7 @@ async function handleAdrReview(
 
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
   const iteration = input.session.state.selfReview!.iteration + 1;
-  const verdict = input.args.selfReviewVerdict as LoopVerdict;
+  const verdict = input.args.reviewVerdict as LoopVerdict;
   const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'approve';
   const maxReached = iteration >= input.session.policy.maxSelfReviewIterations;
   const context = { ...input, iteration };
@@ -599,7 +599,7 @@ function buildNonConvergedNextAction(
   if (!subagentEnabled) {
     return (
       'Review the ADR again. Check if the revisions address all issues. ' +
-      'Call flowguard_architecture with selfReviewVerdict.'
+      'Call flowguard_architecture with reviewVerdict.'
     );
   }
   return (
@@ -607,7 +607,7 @@ function buildNonConvergedNextAction(
     `to review the revised ADR. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
     'that includes: (1) the revised ADR text, (2) the ADR title, (3) the ticket text, ' +
     `(4) iteration=${nextIteration}, (5) planVersion=${expectedPlanVersion}. ` +
-    'Parse the JSON ReviewFindings and submit with your next selfReviewVerdict.'
+    'Parse the JSON ReviewFindings and submit with your next reviewVerdict.'
   );
 }
 
@@ -615,7 +615,7 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide selfReviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
     'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
     `by the ${REVIEWER_SUBAGENT_TYPE} subagent and the verdict submission MUST include reviewFindings ` +
@@ -623,7 +623,7 @@ export const architecture: ToolDefinition = {
     'The review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to ARCH_REVIEW.\n' +
     'Only allowed in READY phase (starts the architecture flow) or ARCHITECTURE phase (re-submit after revision).\n' +
-    'Optionally accepts reviewFindings from an independent review agent (F13).',
+    'Optionally accepts reviewFindings from an independent review agent.',
   args: {
     title: z
       .string()
@@ -635,9 +635,9 @@ export const architecture: ToolDefinition = {
       .describe(
         'Full ADR body in MADR Markdown format. ' +
           'Must include ## Context, ## Decision, and ## Consequences sections. ' +
-          "Required for Mode A and when selfReviewVerdict is 'changes_requested'.",
+          "Required for Mode A and when reviewVerdict is 'changes_requested'.",
       ),
-    selfReviewVerdict: z
+    reviewVerdict: z
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
@@ -646,8 +646,8 @@ export const architecture: ToolDefinition = {
           "'changes_requested' = ADR needs revision, provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      `Structured findings from the ${REVIEWER_SUBAGENT_TYPE} subagent (F13). ` +
-        'Required when selfReviewVerdict is "approve" and subagentEnabled=true. ' +
+      `Structured findings from the ${REVIEWER_SUBAGENT_TYPE} subagent. ` +
+        'Required when reviewVerdict is "approve" and subagentEnabled=true. ' +
         'Use exactly the JSON object the subagent returned — do not modify it.',
     ),
     reviewerUnavailable: z
@@ -663,8 +663,7 @@ export const architecture: ToolDefinition = {
       const session = await withMutableSession(context);
       // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
       // may send for absent optional fields). Defense-in-depth.
-      const hasVerdict =
-        typeof args.selfReviewVerdict === 'string' && args.selfReviewVerdict.length > 0;
+      const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
       const isInitialSubmission = !hasVerdict;
 
       const gateBlocked = validateInitialSubmissionGate(args, session.state, isInitialSubmission);
