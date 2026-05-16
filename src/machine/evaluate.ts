@@ -29,6 +29,7 @@
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import { GUARDS } from './guards.js';
 import { resolveTransition, USER_GATES, TERMINAL } from './topology.js';
+import type { UserGatePhase } from './topology.js';
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
@@ -72,11 +73,11 @@ export type EvalResult = EvalTransition | EvalWaiting | EvalTerminal | EvalPendi
 
 // ─── Waiting Reason Messages ──────────────────────────────────────────────────
 
-const GATE_REASONS: Record<string, string> = {
+const GATE_REASONS = {
   PLAN_REVIEW: 'Awaiting plan review decision (approve / changes_requested / reject)',
   EVIDENCE_REVIEW: 'Awaiting evidence review decision (approve / changes_requested / reject)',
   ARCH_REVIEW: 'Awaiting architecture decision review (approve / changes_requested / reject)',
-};
+} satisfies Record<UserGatePhase, string>;
 
 // ─── Evaluator ────────────────────────────────────────────────────────────────
 
@@ -118,9 +119,10 @@ export function evaluate(
 
   // 3. User Gate — policy-dependent
   if (USER_GATES.has(phase)) {
+    const gatePhase = phase as UserGatePhase;
     // Solo mode: auto-approve at user gates.
     if (policy?.requireHumanGates === false) {
-      const target = resolveTransition(phase, 'APPROVE');
+      const target = resolveTransition(gatePhase, 'APPROVE');
       if (target) {
         return { kind: 'transition', event: 'APPROVE', target };
       }
@@ -129,8 +131,8 @@ export function evaluate(
     // Team/regulated mode (or no policy): wait for human decision.
     return {
       kind: 'waiting',
-      phase,
-      reason: GATE_REASONS[phase] ?? `Awaiting review decision at ${phase}`,
+      phase: gatePhase,
+      reason: GATE_REASONS[gatePhase],
     };
   }
 

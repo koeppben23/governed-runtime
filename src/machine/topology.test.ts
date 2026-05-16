@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { TRANSITIONS, USER_GATES, TERMINAL, resolveTransition } from '../machine/topology.js';
+import {
+  TRANSITIONS,
+  USER_GATE_PHASES,
+  USER_GATES,
+  TERMINAL,
+  resolveTransition,
+} from '../machine/topology.js';
 import { Event, type Phase, type Event as EventType } from '../state/schema.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -214,6 +220,10 @@ describe('topology', () => {
       expect(USER_GATES.has('PLAN_REVIEW')).toBe(true);
       expect(USER_GATES.has('EVIDENCE_REVIEW')).toBe(true);
       expect(USER_GATES.has('ARCH_REVIEW')).toBe(true);
+    });
+
+    it('USER_GATES mirrors the compile-time USER_GATE_PHASES tuple', () => {
+      expect([...USER_GATES].sort()).toEqual([...USER_GATE_PHASES].sort());
     });
 
     it('TERMINAL contains exactly COMPLETE, ARCH_COMPLETE, and REVIEW_COMPLETE', () => {
