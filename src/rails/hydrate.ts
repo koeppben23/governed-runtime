@@ -6,7 +6,8 @@
  * Named "hydrate" (not "init") because OpenCode already has /init.
  *
  * Behavior:
- * 1. If state already exists → return it unchanged (idempotent)
+ * 1. If state already exists → return it unchanged except explicit risk-class
+ *    recovery may update claimedTaskClass and clear a blocked riskGate
  * 2. If state is null → create a new SessionState:
  *    - Generate UUID
  *    - Resolve binding from OpenCode tool context (sessionId, worktree)
@@ -17,15 +18,17 @@
  *    - All evidence slots = null
  * 3. Evaluate the new state (returns "pending" at READY — waiting for flow selection)
  *
- * Idempotent: calling /hydrate on an existing session is a no-op.
- * This makes it safe to call at the start of every command as a guard.
+ * Idempotent: calling /hydrate on an existing session is a no-op unless
+ * claimedTaskClass is provided for explicit riskGate recovery. That recovery
+ * may only update claimedTaskClass and clear riskGate; it must not rebind the
+ * session or rewrite the policy snapshot.
  *
  * Special: This is the ONLY rail that accepts `null` as state input.
  *
  * @version v1
  */
 
-import type { SessionState } from '../state/schema.js';
+import type { SessionState, TaskClass } from '../state/schema.js';
 import type { BindingInfo } from '../state/evidence.js';
 import { FINGERPRINT_PATTERN } from '../state/evidence.js';
 import type { ActorInfo } from '../audit/types.js';
@@ -67,6 +70,7 @@ export interface HydrateSessionInput {
   readonly discoverySummary?: DiscoverySummary;
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
+  readonly claimedTaskClass?: TaskClass;
 }
 
 /**
@@ -92,6 +96,8 @@ export interface HydratePolicyInput {
   readonly identityProvider?: IdpConfig;
   readonly identityProviderMode?: IdentityProviderMode;
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
+  readonly enforceRiskClassification?: boolean;
+  readonly allowRiskDowngradeOverride?: boolean;
   readonly policyResolution?: HydratePolicyResolution;
 }
 
@@ -153,6 +159,12 @@ function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): Fl
     ...(p.minimumActorAssuranceForApproval !== undefined
       ? { minimumActorAssuranceForApproval: p.minimumActorAssuranceForApproval }
       : {}),
+    ...(p.enforceRiskClassification !== undefined
+      ? { enforceRiskClassification: p.enforceRiskClassification }
+      : {}),
+    ...(p.allowRiskDowngradeOverride !== undefined
+      ? { allowRiskDowngradeOverride: p.allowRiskDowngradeOverride }
+      : {}),
   };
 }
 
@@ -179,8 +191,22 @@ export function executeHydrate(
 
   // 2. Idempotent: if state exists, return it unchanged
   if (existingState !== null) {
-    const result = evaluate(existingState, ctx.policy);
-    return { kind: 'ok', state: existingState, evalResult: result, transitions: [] };
+    const nextState = s.claimedTaskClass
+      ? {
+          ...existingState,
+          claimedTaskClass: s.claimedTaskClass,
+          riskGate:
+            existingState.riskGate?.status === 'blocked'
+              ? {
+                  status: 'clear' as const,
+                  lastDecisionId: existingState.riskGate.lastDecisionId,
+                  clearedAt: ctx.now(),
+                }
+              : existingState.riskGate,
+        }
+      : existingState;
+    const result = evaluate(nextState, ctx.policy);
+    return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
   }
 
   // 3. Resolve profile → activeChecks + activeProfile
@@ -251,6 +277,7 @@ export function executeHydrate(
     id: crypto.randomUUID(),
     schemaVersion: 'v1',
     phase: 'READY',
+    ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
 
     binding,
 

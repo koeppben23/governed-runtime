@@ -108,6 +108,39 @@ function hostToolPhaseDenied(detail: DiagnosticDetail): RuntimeDiagnostics {
   };
 }
 
+function riskClassificationBlocked(detail: DiagnosticDetail): RuntimeDiagnostics {
+  return {
+    diagnosticCode: 'RISK_CLASSIFICATION_GATE_BLOCKED',
+    severity: 'error',
+    command: optionalField(detail.tool) ?? optionalField(detail.command),
+    phase: optionalField(detail.phase),
+    policyMode: optionalField(detail.policyMode),
+    rootCause:
+      optionalField(detail.reason) ??
+      'Runtime evidence does not satisfy the claimed task risk classification.',
+    observed: clean([
+      optionalField(detail.sessionId) ? `sessionId=${detail.sessionId}` : undefined,
+      optionalField(detail.claimedTaskClass)
+        ? `claimedTaskClass=${detail.claimedTaskClass}`
+        : undefined,
+      optionalField(detail.minimumTaskClass)
+        ? `minimumTaskClass=${detail.minimumTaskClass}`
+        : undefined,
+      optionalField(detail.touchedSurface) ? `touchedSurface=${detail.touchedSurface}` : undefined,
+      optionalField(detail.decisionId) ? `decisionId=${detail.decisionId}` : undefined,
+    ]),
+    required: ['claimed task class greater than or equal to runtime-computed minimum'],
+    missingEvidence: clean([
+      detail.claimedTaskClass === 'missing' ? 'claimed_task_class' : undefined,
+      detail.stateReadable === 'false' ? 'readable_session_state' : undefined,
+    ]),
+    safeNextActions: [
+      'Reclassify the task at the runtime-required risk level.',
+      'Start a fresh governed session if the existing risk gate is blocked.',
+    ],
+  };
+}
+
 function hostSubagentTaskRequired(detail: DiagnosticDetail): RuntimeDiagnostics {
   const obligationId = optionalField(detail.obligationId);
   const bindOutcome = optionalField(detail.bindOutcome);
@@ -226,6 +259,12 @@ export function buildBlockedDiagnostics(
       return sessionDirMissing(detail);
     case 'HOST_TOOL_PHASE_DENIED':
       return hostToolPhaseDenied(detail);
+    case 'RISK_CLASSIFICATION_MISMATCH':
+    case 'RISK_CLASSIFICATION_REQUIRED':
+    case 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE':
+    case 'RISK_GATE_BLOCKED':
+    case 'RISK_DOWNGRADE_OVERRIDE_DENIED':
+      return riskClassificationBlocked(detail);
     case 'HOST_SUBAGENT_TASK_REQUIRED':
       return hostSubagentTaskRequired(detail);
     case 'SUBAGENT_EVIDENCE_MISSING':

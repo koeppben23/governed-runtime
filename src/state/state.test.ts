@@ -120,6 +120,37 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
+    it('SessionState parses legacy state without risk classification fields', () => {
+      const state = makeState('TICKET', { claimedTaskClass: 'HIGH-RISK' });
+      const legacy: Record<string, unknown> = { ...state };
+      delete legacy.claimedTaskClass;
+      delete legacy.riskGate;
+
+      const parsed = SessionState.parse(legacy);
+      expect(parsed.claimedTaskClass).toBeUndefined();
+      expect(parsed.riskGate).toBeUndefined();
+    });
+
+    it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {
+      for (const mode of ['regulated', 'team-ci'] as const) {
+        const state = makeState('TICKET');
+        const legacy = {
+          ...state,
+          policySnapshot: {
+            ...state.policySnapshot,
+            mode,
+            requestedMode: mode,
+          },
+        };
+        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+
+        const parsed = SessionState.parse(legacy);
+        expect(parsed.policySnapshot.enforceRiskClassification).toBe(true);
+        expect(parsed.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+      }
+    });
+
     it('AuditEvent parses valid event with hash chain fields', () => {
       const event = {
         id: FIXED_UUID,

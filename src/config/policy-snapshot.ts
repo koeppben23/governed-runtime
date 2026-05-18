@@ -138,6 +138,8 @@ export function createPolicySnapshot(
     ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
     reviewOutputPolicy: policy.reviewOutputPolicy,
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
+    enforceRiskClassification: policy.enforceRiskClassification,
+    allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
   };
 }
 
@@ -303,6 +305,8 @@ function normalizePolicyFields(
   requireVerifiedActorsForApproval: boolean;
   reviewOutputPolicy: ReviewOutputPolicy;
   reviewInvocationPolicy: ReviewInvocationPolicy;
+  enforceRiskClassification: boolean;
+  allowRiskDowngradeOverride: boolean;
   normalized: boolean;
 } {
   let norm = false;
@@ -330,11 +334,25 @@ function normalizePolicyFields(
     : defaults.reviewInvocationPolicy;
   if (!isValidReviewInvocationPolicy(rawReviewInv)) norm = true;
 
+  const rawRiskEnforcement = s.enforceRiskClassification;
+  const enforceRiskClassification =
+    typeof rawRiskEnforcement === 'boolean'
+      ? rawRiskEnforcement
+      : defaults.enforceRiskClassification;
+  if (typeof rawRiskEnforcement !== 'boolean') norm = true;
+
+  const rawRiskOverride = s.allowRiskDowngradeOverride;
+  const allowRiskDowngradeOverride =
+    typeof rawRiskOverride === 'boolean' ? rawRiskOverride : defaults.allowRiskDowngradeOverride;
+  if (typeof rawRiskOverride !== 'boolean') norm = true;
+
   return {
     effectiveGateBehavior,
     requireVerifiedActorsForApproval,
     reviewOutputPolicy,
     reviewInvocationPolicy,
+    enforceRiskClassification,
+    allowRiskDowngradeOverride,
     normalized: norm,
   };
 }
@@ -492,6 +510,8 @@ export function normalizePolicySnapshotWithMeta(
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
       reviewOutputPolicy: policy.reviewOutputPolicy,
       reviewInvocationPolicy: policy.reviewInvocationPolicy,
+      enforceRiskClassification: policy.enforceRiskClassification,
+      allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -508,6 +528,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly effectiveGateBehavior: EffectiveGateBehavior;
   readonly reviewOutputPolicy: ReviewOutputPolicy;
   readonly reviewInvocationPolicy: ReviewInvocationPolicy;
+  readonly enforceRiskClassification: boolean;
+  readonly allowRiskDowngradeOverride: boolean;
 } {
   switch (mode) {
     case 'solo':
@@ -520,6 +542,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         effectiveGateBehavior: 'auto_approve',
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'host_task_preferred',
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
       };
     case 'regulated':
       return {
@@ -531,6 +555,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'host_task_required',
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
       };
     case 'team':
       return {
@@ -542,6 +568,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'text_compat_allowed',
         reviewInvocationPolicy: 'host_task_required',
+        enforceRiskClassification: false,
+        allowRiskDowngradeOverride: false,
       };
     case 'team-ci':
       return {
@@ -553,6 +581,8 @@ function modeConsistentDefaults(mode: PolicyMode): {
         effectiveGateBehavior: 'human_gated',
         reviewOutputPolicy: 'structured_required',
         reviewInvocationPolicy: 'host_task_required',
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
       };
   }
 }
@@ -598,5 +628,11 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     actorClassification: { ...snapshot.actorClassification },
     identityProvider: snapshot.identityProvider,
     identityProviderMode: snapshot.identityProviderMode ?? 'optional',
+    enforceRiskClassification:
+      snapshot.enforceRiskClassification ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).enforceRiskClassification,
+    allowRiskDowngradeOverride:
+      snapshot.allowRiskDowngradeOverride ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).allowRiskDowngradeOverride,
   };
 }

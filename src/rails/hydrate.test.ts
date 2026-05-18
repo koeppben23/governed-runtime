@@ -131,6 +131,32 @@ describe('hydrate rail unit tests', () => {
       const state = expectOk(result);
       expect(state).toBe(existing);
     });
+
+    it('explicit reclassification updates claim and clears a blocked riskGate', () => {
+      const existing = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_CLASSIFICATION_MISMATCH',
+          message: 'blocked',
+          blockedAt: FIXED_TIME,
+          lastDecisionId: 'RISK-1',
+        },
+      });
+      const result = executeHydrate(
+        existing,
+        minimalInput({ session: { claimedTaskClass: 'HIGH-RISK' } }),
+        baseCtx,
+      );
+      const state = expectOk(result);
+      expect(state).not.toBe(existing);
+      expect(state.claimedTaskClass).toBe('HIGH-RISK');
+      expect(state.riskGate).toEqual({
+        status: 'clear',
+        lastDecisionId: 'RISK-1',
+        clearedAt: FIXED_TIME,
+      });
+    });
   });
 
   // ─── applyHydrateOverrides ────────────────────────────────────────────
@@ -153,6 +179,23 @@ describe('hydrate rail unit tests', () => {
       const result = hydrateNew(minimalInput({ policy: { maxImplReviewIterations: 7 } }));
       const state = expectOk(result);
       expect(state.policySnapshot.maxImplReviewIterations).toBe(7);
+    });
+
+    it('applies risk-classification policy overrides when provided', () => {
+      const result = hydrateNew(
+        minimalInput({
+          policy: { enforceRiskClassification: true, allowRiskDowngradeOverride: false },
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.policySnapshot.enforceRiskClassification).toBe(true);
+      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+    });
+
+    it('stores claimedTaskClass as a claim on new sessions', () => {
+      const result = hydrateNew(minimalInput({ session: { claimedTaskClass: 'STANDARD' } }));
+      const state = expectOk(result);
+      expect(state.claimedTaskClass).toBe('STANDARD');
     });
 
     it('preserves base maxImplReviewIterations when override is undefined', () => {

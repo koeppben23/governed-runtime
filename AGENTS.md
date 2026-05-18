@@ -60,6 +60,11 @@ Classify the task before acting:
 
 Use the smallest process that is safe for the class. If uncertain, classify one level higher.
 
+With runtime risk enforcement, `claimedTaskClass` is only a claim. FlowGuard computes the minimum
+from changed surfaces and blocks mutating tools when the claim is missing or too low. Text downgrade
+justifications are not accepted. Hydrate may only update `claimedTaskClass` and clear blocked
+`riskGate`; no rebinding or policy rewrite.
+
 ## 4. Hard Invariants
 
 These apply across all task classes:

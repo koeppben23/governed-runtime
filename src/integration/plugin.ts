@@ -13,7 +13,8 @@
 import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from '@opencode-ai/plugin';
-import { readState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { changedFiles } from '../adapters/git.js';
 import { createPluginLogger } from './plugin-logging.js';
 import { toAdapterLogger, runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import {
@@ -22,7 +23,12 @@ import {
   getToolArgs,
   getToolMetadata,
 } from './plugin-helpers.js';
-import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
+import {
+  isMutatingHostTool,
+  isHostToolAllowedInPhase,
+  isRiskClassificationAllowed,
+  type RiskClassificationDecision,
+} from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import {
   runReviewOrchestration as runOrchestrator,
@@ -200,6 +206,264 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     return { strictEnforcement, sessionState };
   }
 
+  function targetPathsForRisk(toolName: string, args: Record<string, unknown>): string[] {
+    if ((toolName === 'write' || toolName === 'edit') && typeof args.filePath === 'string') {
+      const worktreeRoot = auditWorktree ? path.resolve(auditWorktree) : null;
+      const filePath = path.resolve(args.filePath);
+      if (worktreeRoot && filePath.startsWith(`${worktreeRoot}${path.sep}`)) {
+        return [path.relative(worktreeRoot, filePath)];
+      }
+      return [args.filePath];
+    }
+    return [];
+  }
+
+  async function currentChangedFilesForRisk(): Promise<string[]> {
+    if (!auditWorktree) {
+      throw buildEnforcementError(
+        'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        'Cannot verify risk classification because the worktree is unavailable.',
+      );
+    }
+    try {
+      return await changedFiles(auditWorktree);
+    } catch (err) {
+      throw buildEnforcementError(
+        'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        `Cannot verify risk classification evidence: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  function evidenceUnavailableRiskDecision(
+    state: SessionState,
+    reason: string,
+  ): RiskClassificationDecision {
+    return {
+      allowed: false,
+      code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+      reason,
+      decisionId: `RISK-${new Date().toISOString().replace(/[^0-9]/g, '')}-evidence-unavailable`,
+      claimedTaskClass: state.claimedTaskClass,
+      minimumTaskClass: 'HIGH-RISK',
+      touchedSurfaces: ['risk-classification-evidence'],
+      changedFiles: [],
+    };
+  }
+
+  async function persistRiskDecisionBlock(
+    sessDir: string,
+    state: SessionState,
+    decision: RiskClassificationDecision,
+    code: string,
+    message: string,
+  ): Promise<void> {
+    const blockedAt = new Date().toISOString();
+    const nextState: SessionState = {
+      ...state,
+      riskGate: {
+        status: 'blocked',
+        code,
+        message,
+        blockedAt,
+        lastDecisionId: decision.decisionId,
+      },
+    };
+    await writeState(sessDir, nextState);
+    await appendRiskDecisionAudit(sessDir, state, decision, 'blocked', code);
+  }
+
+  async function appendRiskDecisionAudit(
+    sessDir: string,
+    state: SessionState,
+    decision: RiskClassificationDecision,
+    result: 'allowed' | 'blocked',
+    reasonCode: string,
+  ): Promise<void> {
+    await appendReviewAuditEvent(
+      sessDir,
+      state.binding.sessionId,
+      state.phase,
+      'risk:classification_checked',
+      {
+        decisionId: decision.decisionId,
+        decision: result,
+        reasonCode,
+        claimedTaskClass: decision.claimedTaskClass ?? null,
+        minimumTaskClass: decision.minimumTaskClass,
+        touchedSurfaces: decision.touchedSurfaces,
+        changedFilesSummary: decision.changedFiles,
+        policyMode: state.policySnapshot.mode,
+        enforceRiskClassification: state.policySnapshot.enforceRiskClassification,
+        allowRiskDowngradeOverride: state.policySnapshot.allowRiskDowngradeOverride,
+        riskGateStatus: result === 'blocked' ? 'blocked' : (state.riskGate?.status ?? 'clear'),
+      },
+    );
+  }
+
+  async function enforceRiskClassificationBefore(
+    sessDir: string,
+    state: SessionState,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (state.policySnapshot.enforceRiskClassification !== true) return;
+    let files: string[];
+    try {
+      files = await currentChangedFilesForRisk();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const decision = evidenceUnavailableRiskDecision(state, reason);
+      if (state.riskGate?.status !== 'blocked') {
+        try {
+          await persistRiskDecisionBlock(
+            sessDir,
+            state,
+            decision,
+            'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+            reason,
+          );
+        } catch (persistErr) {
+          throw buildEnforcementError(
+            'AUDIT_PERSISTENCE_FAILED',
+            persistErr instanceof Error ? persistErr.message : String(persistErr),
+          );
+        }
+      }
+      throw buildEnforcementError('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', reason, {
+        sessionId: state.binding.sessionId,
+        tool: toolName,
+        decisionId: decision.decisionId,
+      });
+    }
+    const decision = isRiskClassificationAllowed({
+      state,
+      changedFiles: files,
+      targetPaths: targetPathsForRisk(toolName, args),
+      now: new Date().toISOString(),
+    });
+    if (decision.allowed) {
+      try {
+        await appendRiskDecisionAudit(
+          sessDir,
+          state,
+          decision,
+          'allowed',
+          'RISK_CLASSIFICATION_ALLOWED',
+        );
+      } catch (err) {
+        throw buildEnforcementError(
+          'AUDIT_PERSISTENCE_FAILED',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      return;
+    }
+    const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+    const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+    if (state.riskGate?.status !== 'blocked') {
+      try {
+        await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+      } catch (err) {
+        throw buildEnforcementError(
+          'AUDIT_PERSISTENCE_FAILED',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    throw buildEnforcementError(code, reason, {
+      sessionId: state.binding.sessionId,
+      tool: toolName,
+      claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+      minimumTaskClass: decision.minimumTaskClass,
+      touchedSurface: decision.touchedSurfaces[0] ?? 'none',
+      decisionId: decision.decisionId,
+    });
+  }
+
+  async function enforceRiskClassificationAfterBash(
+    sessionId: string,
+    output: { output?: unknown },
+  ): Promise<void> {
+    const sessDir = ws.getSessionDir(sessionId);
+    if (!sessDir || !existsSync(sessDir)) return;
+    let state: SessionState | null;
+    try {
+      state = await readState(sessDir);
+    } catch (err) {
+      output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
+    let files: string[];
+    try {
+      files = await currentChangedFilesForRisk();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const decision = evidenceUnavailableRiskDecision(state, reason);
+      try {
+        if (state.riskGate?.status !== 'blocked') {
+          await persistRiskDecisionBlock(
+            sessDir,
+            state,
+            decision,
+            'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+            reason,
+          );
+        }
+      } catch (persistErr) {
+        output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+          reason: persistErr instanceof Error ? persistErr.message : String(persistErr),
+        });
+        return;
+      }
+      output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', { reason });
+      return;
+    }
+    const decision = isRiskClassificationAllowed({
+      state,
+      changedFiles: files,
+      now: new Date().toISOString(),
+    });
+    if (decision.allowed) {
+      try {
+        await appendRiskDecisionAudit(
+          sessDir,
+          state,
+          decision,
+          'allowed',
+          'RISK_CLASSIFICATION_ALLOWED',
+        );
+      } catch (err) {
+        output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+    const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+    const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
+    try {
+      if (state.riskGate?.status !== 'blocked') {
+        await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+      }
+      output.output = strictBlockedOutput(code, {
+        reason,
+        sessionId,
+        claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+        minimumTaskClass: decision.minimumTaskClass,
+        touchedSurface: decision.touchedSurfaces[0] ?? 'none',
+        decisionId: decision.decisionId,
+      });
+    } catch (err) {
+      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // ── Hook handlers ──────────────────────────────────────────────────────
   return {
     'tool.execute.before': async (input: unknown, output: unknown) => {
@@ -333,6 +597,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               phase: state.phase,
             });
           }
+
+          await enforceRiskClassificationBefore(sessDir, state, toolName, args);
         }
 
         if (!isFlowGuardVerdictTool(toolName)) return;
@@ -434,6 +700,10 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               hookOutput,
             );
           }
+        }
+
+        if (toolName === 'bash') {
+          await enforceRiskClassificationAfterBash(sessionId, hookOutput);
         }
 
         await runOrchestrator(orchestratorDeps, {

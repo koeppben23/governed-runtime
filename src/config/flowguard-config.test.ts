@@ -94,6 +94,8 @@ describe('FlowGuardConfigSchema', () => {
         defaultMode: 'regulated',
         maxSelfReviewIterations: 5,
         maxImplReviewIterations: 7,
+        enforceRiskClassification: true,
+        allowRiskDowngradeOverride: false,
       },
       profile: {
         defaultId: 'typescript',
@@ -113,6 +115,8 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy.defaultMode).toBe('regulated');
       expect(result.data.policy.maxSelfReviewIterations).toBe(5);
       expect(result.data.policy.maxImplReviewIterations).toBe(7);
+      expect(result.data.policy.enforceRiskClassification).toBe(true);
+      expect(result.data.policy.allowRiskDowngradeOverride).toBe(false);
       expect(result.data.profile.defaultId).toBe('typescript');
       expect(result.data.profile.activeChecks).toEqual([
         'test_quality',
