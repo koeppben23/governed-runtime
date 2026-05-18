@@ -239,6 +239,7 @@ function buildFullStatusResponse(
       governanceMandates: {
         source: 'src/templates/mandates.ts',
         projection: 'phase-aware',
+        mandatesVerbosity: 'explicit',
         renderFallbackIsPromptSafetyOnly: true,
         runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
         phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
@@ -282,6 +283,7 @@ export const status: ToolDefinition = {
           governanceMandates: {
             source: 'src/templates/mandates.ts',
             projection: 'none-without-canonical-session-state',
+            mandatesVerbosity: 'explicit',
             renderFallbackIsPromptSafetyOnly: true,
             runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
           },
