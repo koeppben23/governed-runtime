@@ -31,11 +31,19 @@ type AskInput = {
         [key: string]: any;
     };
 };
+export type ToolAttachment = {
+    type: "file";
+    mime: string;
+    url: string;
+    filename?: string;
+};
 export type ToolResult = string | {
+    title?: string;
     output: string;
     metadata?: {
         [key: string]: any;
     };
+    attachments?: ToolAttachment[];
 };
 export declare function tool<Args extends z.ZodRawShape>(input: {
     description: string;

@@ -1,5 +1,5 @@
-import type { Event, createOpencodeClient, Project, Model, Provider, Permission, UserMessage, Message, Part, Auth, Config as SDKConfig } from "@opencode-ai/sdk";
-import type { Provider as ProviderV2, Model as ModelV2 } from "@opencode-ai/sdk/v2";
+import type { Event, createOpencodeClient, Project, Model, Provider, Permission, UserMessage, Message, Part, Config as SDKConfig } from "@opencode-ai/sdk";
+import type { Provider as ProviderV2, Model as ModelV2, Auth } from "@opencode-ai/sdk/v2";
 import type { BunShell } from "./shell.js";
 import { type ToolDefinition } from "./tool.js";
 export * from "./tool.js";
@@ -117,6 +117,7 @@ export type AuthHook = {
             type: "success";
             key: string;
             provider?: string;
+            metadata?: Record<string, string>;
         } | {
             type: "failed";
         }>;
@@ -138,6 +139,7 @@ export type AuthOAuthResult = {
         enterpriseUrl?: string;
     } | {
         key: string;
+        metadata?: Record<string, string>;
     })) | {
         type: "failed";
     }>;
@@ -154,6 +156,7 @@ export type AuthOAuthResult = {
         enterpriseUrl?: string;
     } | {
         key: string;
+        metadata?: Record<string, string>;
     })) | {
         type: "failed";
     }>;
