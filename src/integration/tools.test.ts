@@ -29,6 +29,7 @@ import {
   abort_session,
   archive,
   architecture,
+  attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
 import { benchmarkSync } from '../test-policy.js';
@@ -195,6 +196,43 @@ describe('integration/tools', () => {
       for (const name of TOOL_NAMES) {
         expect(TOOLS[name]).toBe((barrel as Record<string, unknown>)[name]);
       }
+    });
+
+    it('governance footer preserves object semantics and metadata', () => {
+      const result = attachGovernanceFooter({
+        output: JSON.stringify({
+          phase: 'PLAN',
+          next: 'Keep existing next action.',
+          blocked: true,
+          error: 'Original failure',
+        }),
+        metadata: {
+          transition: { from: 'PLAN', to: 'PLAN' },
+          flowguardFooter: { source: 'existing-metadata' },
+        },
+      });
+
+      expect(typeof result).not.toBe('string');
+      const wrapped = result as { output: string; metadata?: Record<string, unknown> };
+      const output = JSON.parse(wrapped.output) as Record<string, unknown>;
+
+      expect(output.phase).toBe('PLAN');
+      expect(output.next).toBe('Keep existing next action.');
+      expect(output.blocked).toBe(true);
+      expect(output.error).toBe('Original failure');
+      expect(output.flowguardFooter).toMatchObject({
+        source: 'flowguard-tool-output-wrapper',
+        authority: 'diagnostic-only',
+        phase: 'PLAN',
+      });
+      expect(wrapped.metadata?.transition).toEqual({ from: 'PLAN', to: 'PLAN' });
+      expect(wrapped.metadata?.flowguardFooter).toEqual({ source: 'existing-metadata' });
+    });
+
+    it('governance footer leaves non-object JSON string outputs unchanged', () => {
+      expect(attachGovernanceFooter('[{"phase":"PLAN"}]')).toBe('[{"phase":"PLAN"}]');
+      expect(attachGovernanceFooter('null')).toBe('null');
+      expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
     });
 
     it('barrel has exactly 13 named exports (12 tools + 1 plugin)', () => {

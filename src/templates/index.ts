@@ -5,6 +5,7 @@ export {
   mandatesInstructionEntry,
   LEGACY_INSTRUCTION_ENTRY,
   FLOWGUARD_MANDATES_BODY,
+  CANONICAL_FLOWGUARD_PHASES,
   buildMandatesContent,
   extractManagedDigest,
   extractManagedVersion,
@@ -12,6 +13,10 @@ export {
   extractManagedBody,
   REVIEWER_AGENT,
   REVIEWER_AGENT_FILENAME,
+  renderPhaseAwareMandates,
+  renderCompactionMandatesSummary,
+  renderCommandGovernanceRules,
+  renderReviewerPrompt,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
 } from './mandates.js';

@@ -65,6 +65,7 @@ const SHARED_SECTIONS: readonly string[] = [
 const MANDATES_EXTENSION_SECTIONS: readonly string[] = [
   '## 11a. Tool Error Classification',
   '## 11b. Rule Conflict Resolution',
+  '## Governance rules',
 ];
 
 /** Reviewer-specific sections — belong in REVIEWER_AGENT, NOT in AGENTS.md. */
@@ -188,8 +189,8 @@ describe('P9b: mandate drift guard', () => {
     expect(agentsH2.length).toBe(16);
   });
 
-  it('FLOWGUARD_MANDATES_BODY has exactly 18 base sections (16 shared + 2 extensions)', () => {
+  it('FLOWGUARD_MANDATES_BODY has exactly 19 base sections (16 shared + 3 extensions)', () => {
     const mandatesH2 = MANDATES_BASE.match(/^## /gm) ?? [];
-    expect(mandatesH2.length).toBe(18);
+    expect(mandatesH2.length).toBe(19);
   });
 });

@@ -31,21 +31,75 @@ import { hydrate as rawHydrate } from './hydrate.js';
 import { plan as rawPlan } from './plan.js';
 import { implement as rawImplement } from './implement.js';
 import { architecture as rawArchitecture } from './architecture.js';
-export { continue_cmd as continue } from './continue-tool.js';
+import { continue_cmd as rawContinue } from './continue-tool.js';
+import type { ToolDefinition, ToolResult } from './helpers.js';
+
+function buildFlowGuardFooter(phase: unknown): Record<string, unknown> {
+  return {
+    source: 'flowguard-tool-output-wrapper',
+    authority: 'diagnostic-only',
+    phase: typeof phase === 'string' ? phase : 'unknown',
+    reminder:
+      'Treat failed, blocked, malformed, or nonconforming FlowGuard tool results as stop conditions.',
+    compactionRecoveryHint:
+      'Call flowguard_status to restore phase-relevant governance context after compaction.',
+    renderFallbackIsPromptSafetyOnly: true,
+    runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
+  };
+}
+
+function attachFooterToString(output: string): string {
+  try {
+    const parsed = JSON.parse(output) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return output;
+    }
+    const record = parsed as Record<string, unknown>;
+    if (!record.flowguardFooter) {
+      record.flowguardFooter = buildFlowGuardFooter(record.phase);
+    }
+    return JSON.stringify(record);
+  } catch {
+    return `${output}\n[FlowGuard | Phase: unknown | Rule: stop after failed or blocked tool result | Recovery hint: flowguard_status after compaction]`;
+  }
+}
+
+export function attachGovernanceFooter(result: ToolResult): ToolResult {
+  if (typeof result === 'string') return attachFooterToString(result);
+  return {
+    ...result,
+    output: attachFooterToString(result.output),
+    metadata: {
+      ...result.metadata,
+      flowguardFooter: result.metadata?.flowguardFooter ?? buildFlowGuardFooter('unknown'),
+    },
+  };
+}
+
+function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
+  return {
+    ...toolDef,
+    async execute(args, context) {
+      return attachGovernanceFooter(await toolDef.execute(args, context));
+    },
+  };
+}
 
 // ── Focused tools ────────────────────────────────────────────────────────────
-export const status = rawStatus;
-export const decision = rawDecision;
-export const validate = rawValidate;
+export const status = withGovernanceFooter(rawStatus);
+export const decision = withGovernanceFooter(rawDecision);
+export const validate = withGovernanceFooter(rawValidate);
 
 // ── Simple tools ─────────────────────────────────────────────────────────────
-export const ticket = rawTicket;
-export const review = rawReview;
-export const abort_session = rawAbortSession;
-export const archive = rawArchive;
+export const ticket = withGovernanceFooter(rawTicket);
+export const review = withGovernanceFooter(rawReview);
+export const abort_session = withGovernanceFooter(rawAbortSession);
+export const archive = withGovernanceFooter(rawArchive);
 
 // ── Complex tools ────────────────────────────────────────────────────────────
-export const hydrate = rawHydrate;
-export const plan = rawPlan;
-export const implement = rawImplement;
-export const architecture = rawArchitecture;
+export const hydrate = withGovernanceFooter(rawHydrate);
+export const plan = withGovernanceFooter(rawPlan);
+export const implement = withGovernanceFooter(rawImplement);
+export const architecture = withGovernanceFooter(rawArchitecture);
+const continueTool = withGovernanceFooter(rawContinue);
+export { continueTool as continue };

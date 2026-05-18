@@ -138,6 +138,18 @@ describe('integration/plugin-compaction', () => {
 
       expect(result).toContain('Use `/status` or `flowguard_status`');
     });
+
+    it('includes compact mandates projection without authorizing mutation', async () => {
+      const deps = createMockDeps({ 'sess-mandates': '/tmp/sess/mandates' });
+      mockReadState.mockResolvedValueOnce(createMockState({ phase: 'IMPLEMENTATION' }));
+
+      const result = await buildCompactionContext(deps, 'sess-mandates');
+
+      expect(result).toContain('## FlowGuard Compact Mandates Projection');
+      expect(result).toContain('## Red Lines');
+      expect(result).toContain('## 11a. Tool Error Classification');
+      expect(result).toContain('does not authorize mutating runtime behavior');
+    });
   });
 
   // ÔöÇÔöÇÔöÇ BAD ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
