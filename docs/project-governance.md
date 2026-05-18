@@ -16,6 +16,33 @@ Every ticket should state:
 - Documentation required or not required with reason
 - `CHANGELOG.md` required or not required with reason
 
+## Clean Code And Clean Architecture
+
+Every ticket MUST adhere to clean code and clean architecture. This is mandatory —
+no exceptions.
+
+- **Single Responsibility Principle** — Every module, file, and function MUST
+  have exactly one reason to change. No god-files, no god-functions.
+- **Layer Isolation** — Code MUST respect FlowGuard's documented layer boundaries
+  (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`). No upward
+  imports, no layer bypass.
+- **Extract, Don't Accumulate** — When a file exceeds 400–500 LOC, MUST split
+  along domain boundaries. Do not let files grow unbounded.
+- **No Duplicate Authority** — Every concept MUST have exactly one canonical
+  implementation. No duplicated logic, no parallel pipelines with identical
+  algorithms.
+- **Separation Of Content And Logic** — Template content and rendering/assembly
+  logic MUST live in separate modules. Content files define what; renderer files
+  define how.
+- **Infrastructure Isolation** — Concurrency, file I/O, and domain logic MUST
+  not be mixed in a single file. Infrastructure concerns (locking, atomic write)
+  belong in dedicated modules, not inside domain persistence files.
+- **Import Hygiene** — No file should import from more modules than its
+  responsibility demands. A god-file symptom is 15+ import statements from 8+
+  modules.
+- **Testability** — Every extracted module MUST be independently testable.
+  Existing test coverage MUST be preserved or migrated, never dropped.
+
 ## Definition Of Done
 
 - Clean conventional branch created from current `main`

@@ -167,6 +167,30 @@ import { readState } from '../adapters/persistence';
 import { defaultProfileRegistry } from '../config/profile';
 ```
 
+## Clean Code And Clean Architecture Principles
+
+Every ticket, PR, and merge MUST follow clean code and clean architecture. No exceptions.
+
+| Principle                     | Rule                                                                    | Red Flag                                                   |
+| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Single Responsibility**     | One reason to change per module/file/function                           | God-files > 400 LOC without natural domain split           |
+| **Layer Isolation**           | Respect `state/` → `machine/` → `rails/` → `adapters/` → `integration/` | Upward imports, layer bypass                               |
+| **Extract, Don't Accumulate** | Split files at 400–500 LOC along domain boundaries                      | Linear growth with every feature                           |
+| **No Duplicate Authority**    | One canonical implementation per concept                                | Near-identical functions in one file, duplicated pipelines |
+| **Content/Logic Separation**  | Template content in content files, assembly in renderer files           | Template strings mixed with business logic                 |
+| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules               | Concurrency code inside domain persistence files           |
+| **Import Hygiene**            | Imports proportional to responsibility                                  | 15+ imports from 8+ modules in one file                    |
+| **Testability**               | Every extracted module independently testable                           | Dropped coverage after extraction                          |
+
+### File Size Budget
+
+| Threshold    | Action Required                       |
+| ------------ | ------------------------------------- |
+| ≤ 400 LOC    | Healthy — no action                   |
+| 400–700 LOC  | Consider splitting at next touch      |
+| 700–1000 LOC | MUST split before adding new features |
+| > 1000 LOC   | Blocker — split required before merge |
+
 ## Repository Governance
 
 ### Branch Model
