@@ -1,14 +1,14 @@
 {
-  "updated": "2026-05-08T10:26:24.914Z",
-  "version": "1.14.33",
+  "updated": "2026-05-18T13:50:53.138Z",
+  "version": "1.15.4",
   "files": [
     {
       "label": "plugin/dist/index.d.ts",
-      "hash": "d98993464d4f49fc178dfe23902fc73865617d8dc449d0248f3ecbb2db303f85"
+      "hash": "cb1cc5da66fdf0cbaa19e89ed8dc45369f5ceab1f22408726e7e994048804f70"
     },
     {
       "label": "plugin/dist/tool.d.ts",
-      "hash": "d421dfee976e46b6a496781caedc845f07a067d6d9966a267a0583ddaa9b24bb"
+      "hash": "aff71774516eed860107b440d683ba2397cf10fe5fdfe34984b4326c80ff56a6"
     }
   ]
 }
