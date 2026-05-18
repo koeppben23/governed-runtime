@@ -12,6 +12,7 @@
 
 import { readState } from '../adapters/persistence.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
+import { renderCompactionMandatesSummary } from '../templates/mandates.js';
 
 /**
  * Dependencies for the compaction hook.
@@ -80,8 +81,21 @@ export async function buildCompactionContext(
       lines.push('- **Plan**: Active (approved plan exists in session state)');
     }
 
+    const mandatesSummary = renderCompactionMandatesSummary(state.phase);
+    if (mandatesSummary) {
+      lines.push('');
+      lines.push('## FlowGuard Compact Mandates Projection');
+      lines.push('');
+      lines.push(mandatesSummary);
+    }
+
     lines.push('');
-    lines.push('Use `/status` or `flowguard_status` to get full current state.');
+    lines.push(
+      'Use `/status` or `flowguard_status` to get full current state and phase-relevant mandates.',
+    );
+    lines.push(
+      'Full mandates render fallback is prompt-safety only; it does not authorize mutating runtime behavior.',
+    );
 
     return lines.join('\n');
   } catch (err) {

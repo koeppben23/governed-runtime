@@ -1,4 +1,5 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { Phase as PhaseSchema, type Phase } from '../state/schema.js';
 
 /** Filename for the FlowGuard mandates artifact. */
 export const MANDATES_FILENAME = 'flowguard-mandates.md';
@@ -224,6 +225,15 @@ Profile rules may narrow the solution space inside universal mandates.
 They must never override universal mandates, repository contracts, SSOT,
 schemas, runtime invariants, or fail-closed behavior.
 
+## Governance rules
+
+These rules apply to every FlowGuard command:
+
+- Use only FlowGuard tools for state changes (shell commands and file edits bypass governance and break audit integrity).
+- Complete this command fully, then stop — the user invokes the next command explicitly.
+- Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
+- End every response with exactly one \`Next action:\` line.
+
 ## 12. Extended Guidance
 
 This document is self-contained. All mandatory rules are above.
@@ -245,6 +255,350 @@ verification for the task class has been run, and no SSOT drift was introduced.
 
 [End of v4 Agent Rules]
 `;
+
+export type MandatesRenderPhase =
+  | 'PRE_SESSION'
+  | 'INVESTIGATION'
+  | 'PLAN'
+  | 'IMPLEMENTATION'
+  | 'REVIEW'
+  | 'ALL_PHASES';
+
+export interface MandatesRenderContext {
+  /**
+   * Rules already covered by the host prompt. These only allow conservative
+   * shortening; safety-critical sections are never removed.
+   */
+  hostCoveredRules?: ReadonlySet<string>;
+  progressive?: boolean;
+}
+
+interface MandatesSectionDefinition {
+  id: string;
+  heading: string | null;
+  phases: ReadonlySet<MandatesRenderPhase> | 'all';
+  priority: number;
+  safetyCritical?: boolean;
+}
+
+const ALL_RENDER_PHASES: ReadonlySet<MandatesRenderPhase> = new Set([
+  'PRE_SESSION',
+  'INVESTIGATION',
+  'PLAN',
+  'IMPLEMENTATION',
+  'REVIEW',
+]);
+
+const TOOL_ACTIVE_PHASES: ReadonlySet<MandatesRenderPhase> = new Set([
+  'PRE_SESSION',
+  'INVESTIGATION',
+  'PLAN',
+  'IMPLEMENTATION',
+  'REVIEW',
+]);
+
+const PHASE_TO_RENDER_PHASE = {
+  READY: 'INVESTIGATION',
+  TICKET: 'INVESTIGATION',
+  PLAN: 'PLAN',
+  PLAN_REVIEW: 'REVIEW',
+  VALIDATION: 'IMPLEMENTATION',
+  IMPLEMENTATION: 'IMPLEMENTATION',
+  IMPL_REVIEW: 'REVIEW',
+  EVIDENCE_REVIEW: 'REVIEW',
+  COMPLETE: 'REVIEW',
+  ARCHITECTURE: 'PLAN',
+  ARCH_REVIEW: 'REVIEW',
+  ARCH_COMPLETE: 'REVIEW',
+  REVIEW: 'REVIEW',
+  REVIEW_COMPLETE: 'REVIEW',
+} as const satisfies Record<Phase, MandatesRenderPhase>;
+
+export const CANONICAL_FLOWGUARD_PHASES = PhaseSchema.options;
+
+const MANDATES_SECTION_DEFINITIONS: readonly MandatesSectionDefinition[] = [
+  { id: 'grounding', heading: null, phases: 'all', priority: 0, safetyCritical: true },
+  { id: 'mission', heading: '## 1. Mission', phases: ALL_RENDER_PHASES, priority: 10 },
+  {
+    id: 'red-lines',
+    heading: '## Red Lines',
+    phases: TOOL_ACTIVE_PHASES,
+    priority: 20,
+    safetyCritical: true,
+  },
+  { id: 'priority', heading: '## 2. Priority Ladder', phases: ALL_RENDER_PHASES, priority: 30 },
+  { id: 'language', heading: '## Language Conventions', phases: ALL_RENDER_PHASES, priority: 40 },
+  {
+    id: 'task-router',
+    heading: '## 3. Task Class Router',
+    phases: new Set(['PRE_SESSION', 'INVESTIGATION', 'PLAN', 'IMPLEMENTATION', 'REVIEW']),
+    priority: 50,
+  },
+  {
+    id: 'hard-invariants',
+    heading: '## 4. Hard Invariants',
+    phases: ALL_RENDER_PHASES,
+    priority: 60,
+    safetyCritical: true,
+  },
+  {
+    id: 'evidence',
+    heading: '## 5. Evidence Rules',
+    phases: TOOL_ACTIVE_PHASES,
+    priority: 70,
+    safetyCritical: true,
+  },
+  {
+    id: 'tool-verification',
+    heading: '## 6. Tool and Verification Policy',
+    phases: new Set(['IMPLEMENTATION', 'REVIEW']),
+    priority: 80,
+    safetyCritical: true,
+  },
+  {
+    id: 'ambiguity',
+    heading: '## 7. Ambiguity Policy',
+    phases: new Set(['PRE_SESSION', 'INVESTIGATION', 'PLAN', 'IMPLEMENTATION', 'REVIEW']),
+    priority: 90,
+  },
+  {
+    id: 'output-contract',
+    heading: '## 8. Output Contract',
+    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
+    priority: 100,
+  },
+  {
+    id: 'implementation-checklist',
+    heading: '## 9. Implementation Checklist',
+    phases: new Set(['PLAN', 'IMPLEMENTATION']),
+    priority: 110,
+  },
+  {
+    id: 'review-checklist',
+    heading: '## 10. Review Checklist',
+    phases: new Set(['REVIEW']),
+    priority: 120,
+  },
+  {
+    id: 'high-risk',
+    heading: '## 11. High-Risk Extension',
+    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
+    priority: 130,
+  },
+  {
+    id: 'tool-error',
+    heading: '## 11a. Tool Error Classification',
+    phases: TOOL_ACTIVE_PHASES,
+    priority: 140,
+    safetyCritical: true,
+  },
+  {
+    id: 'rule-conflict',
+    heading: '## 11b. Rule Conflict Resolution',
+    phases: TOOL_ACTIVE_PHASES,
+    priority: 150,
+    safetyCritical: true,
+  },
+  {
+    id: 'command-execution',
+    heading: '## Governance rules',
+    phases: TOOL_ACTIVE_PHASES,
+    priority: 160,
+    safetyCritical: true,
+  },
+  {
+    id: 'extended-guidance',
+    heading: '## 12. Extended Guidance',
+    phases: ALL_RENDER_PHASES,
+    priority: 170,
+  },
+  {
+    id: 'before-acting',
+    heading: '## Before Acting Rule',
+    phases: ALL_RENDER_PHASES,
+    priority: 180,
+  },
+  {
+    id: 'before-completing',
+    heading: '## Before Completing Rule',
+    phases: new Set(['PLAN', 'IMPLEMENTATION', 'REVIEW']),
+    priority: 190,
+  },
+];
+
+function extractMandatesSection(heading: string | null): string {
+  if (heading === null) {
+    const firstHeading = FLOWGUARD_MANDATES_BODY.search(/^## /m);
+    return FLOWGUARD_MANDATES_BODY.slice(0, firstHeading).trim();
+  }
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = FLOWGUARD_MANDATES_BODY.match(new RegExp(`^${escaped}\\s*$`, 'm'));
+  if (!match || match.index === undefined) {
+    throw new Error(`Mandates section not found: ${heading}`);
+  }
+  const start = match.index;
+  const afterHeading = FLOWGUARD_MANDATES_BODY.slice(start + match[0].length);
+  const nextHeading = afterHeading.match(/^## /m);
+  const end = nextHeading
+    ? start + match[0].length + nextHeading.index!
+    : FLOWGUARD_MANDATES_BODY.length;
+  return FLOWGUARD_MANDATES_BODY.slice(start, end).trim();
+}
+
+function includesPhase(
+  phases: ReadonlySet<MandatesRenderPhase> | 'all',
+  phase: MandatesRenderPhase,
+): boolean {
+  return phases === 'all' || phases.has(phase);
+}
+
+function selectMandatesSections(phase: MandatesRenderPhase): readonly MandatesSectionDefinition[] {
+  return MANDATES_SECTION_DEFINITIONS.filter((section) =>
+    includesPhase(section.phases, phase),
+  ).sort((a, b) => a.priority - b.priority);
+}
+
+function normalizeRenderPhase(phase: Phase | MandatesRenderPhase | string | null | undefined): {
+  phase: MandatesRenderPhase;
+  fallback: boolean;
+} {
+  if (!phase) return { phase: 'ALL_PHASES', fallback: true };
+  if (phase === 'ALL_PHASES') return { phase: 'ALL_PHASES', fallback: true };
+  if (
+    phase === 'PRE_SESSION' ||
+    phase === 'INVESTIGATION' ||
+    phase === 'PLAN' ||
+    phase === 'IMPLEMENTATION' ||
+    phase === 'REVIEW'
+  ) {
+    return { phase, fallback: false };
+  }
+  const parsed = PhaseSchema.safeParse(phase);
+  if (!parsed.success) return { phase: 'ALL_PHASES', fallback: true };
+  return { phase: PHASE_TO_RENDER_PHASE[parsed.data], fallback: false };
+}
+
+function assertSafetyCriticalSections(rendered: string, phase: MandatesRenderPhase): void {
+  if (!TOOL_ACTIVE_PHASES.has(phase)) return;
+  for (const heading of [
+    '## Red Lines',
+    '## 5. Evidence Rules',
+    '## 11a. Tool Error Classification',
+    '## Governance rules',
+  ]) {
+    if (!rendered.includes(heading)) {
+      throw new Error(`Phase-aware mandates omitted safety-critical section: ${heading}`);
+    }
+  }
+}
+
+function applyHostHarmonization(content: string, ctx: MandatesRenderContext): string {
+  const covered = ctx.hostCoveredRules;
+  if (!covered || covered.size === 0) return content;
+
+  let next = content;
+  if (covered.has('read-before-editing')) {
+    next = next.replace(
+      '- Read relevant code, tests, and docs before changing behavior.',
+      '- Read relevant code, tests, and docs before changing behavior, as required by host policy and FlowGuard governance.',
+    );
+  }
+  if (covered.has('destructive-ops') || covered.has('ask-before-destructive-ops')) {
+    next = next.replace(
+      'Safety and security.',
+      'Safety and security, including host-enforced destructive-operation policy.',
+    );
+  }
+  return next;
+}
+
+function compactSectionForEarlyPhase(
+  section: MandatesSectionDefinition,
+  phase: MandatesRenderPhase,
+): string {
+  if (phase !== 'PRE_SESSION' && phase !== 'INVESTIGATION') {
+    return extractMandatesSection(section.heading);
+  }
+  switch (section.id) {
+    case 'red-lines':
+      return `## Red Lines
+
+- Do not hide failures with silent fallbacks; surface errors explicitly and stop.
+- Do not create duplicate runtime authority; extend the canonical authority.
+- Do not weaken fail-closed behavior; require explicit validated allow paths.
+- Do not claim verification that was not run; mark it \`NOT_VERIFIED\`.`;
+    case 'hard-invariants':
+      return `## 4. Hard Invariants
+
+- Preserve one canonical authority and SSOT ownership.
+- Make failures explicit and fail closed.
+- Ground claims in concrete evidence.
+- Keep runtime, docs, tests, schemas, and config aligned.`;
+    case 'evidence':
+      return `## 5. Evidence Rules
+
+- Use \`ASSUMPTION\`, \`NOT_VERIFIED\`, and \`BLOCKED\` explicitly.
+- Never present assumptions as runtime truth.
+- Never claim tests or verification passed unless they were run.`;
+    case 'tool-error':
+      return `## 11a. Tool Error Classification
+
+- Treat blocked, failed, malformed, nonconforming, network, process, or subprocess failures as stop conditions.
+- Report the blocker or exact error, give one recovery action, and stop.
+- Never continue to the next workflow step after a failed FlowGuard tool response.`;
+    case 'rule-conflict':
+      return `## 11b. Rule Conflict Resolution
+
+Universal FlowGuard mandates outrank slash-command rules, profile rules, and local style preferences.`;
+    case 'command-execution':
+      return `## Governance rules
+
+- Use only FlowGuard tools for state changes.
+- Complete this command fully, then stop.
+- Only explicit FlowGuard commands trigger workflow actions.
+- End every response with exactly one \`Next action:\` line.`;
+    default:
+      return extractMandatesSection(section.heading);
+  }
+}
+
+export function renderPhaseAwareMandates(
+  ctx: MandatesRenderContext = {},
+  phase: Phase | MandatesRenderPhase | string | null | undefined = 'ALL_PHASES',
+): string {
+  const normalized = normalizeRenderPhase(phase);
+  if (ctx.progressive === false || normalized.fallback || normalized.phase === 'ALL_PHASES') {
+    return FLOWGUARD_MANDATES_BODY;
+  }
+
+  const rendered = selectMandatesSections(normalized.phase)
+    .map((section) => compactSectionForEarlyPhase(section, normalized.phase))
+    .join('\n\n');
+
+  const harmonized = applyHostHarmonization(rendered, ctx);
+  assertSafetyCriticalSections(harmonized, normalized.phase);
+  return harmonized;
+}
+
+export function renderCommandGovernanceRules(): string {
+  return extractMandatesSection('## Governance rules');
+}
+
+export function renderCompactionMandatesSummary(
+  phase: Phase | MandatesRenderPhase | string | null | undefined,
+): string {
+  const normalized = normalizeRenderPhase(phase);
+  if (normalized.fallback || normalized.phase === 'ALL_PHASES') {
+    return renderPhaseAwareMandates({}, phase);
+  }
+  const keepIds = new Set(['red-lines', 'evidence', 'tool-error', 'command-execution']);
+  const summary = selectMandatesSections(normalized.phase)
+    .filter((section) => keepIds.has(section.id))
+    .map((section) => compactSectionForEarlyPhase(section, normalized.phase))
+    .join('\n\n');
+  assertSafetyCriticalSections(summary, normalized.phase);
+  return summary;
+}
 
 /**
  * Build the full flowguard-mandates.md content with managed-artifact header.
@@ -311,9 +665,51 @@ export function extractManagedBody(content: string): string | null {
   );
   return match?.[1] ?? null;
 }
-export const REVIEWER_AGENT = `\
+export type ReviewerPromptType = 'plan' | 'implementation' | 'adr' | 'content' | 'all';
+
+const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, string> = {
+  plan: `### For Plans
+- Completeness: covers all ticket requirements without scope creep.
+- Correctness: technical claims, authority boundaries, and assumptions are sound.
+- Feasibility: referenced files/APIs exist and the plan can be implemented.
+- Edge cases: unhappy paths and fail-closed behavior are concrete.
+- Verification: checks are testable and sourced from repo scripts/contracts.`,
+  implementation: `### For Implementations
+- Plan conformance: every approved step is implemented or explicitly marked NOT_VERIFIED.
+- Correctness: no logic, null-safety, fail-open, or state/policy bugs.
+- Edge coverage: negative paths from the plan are tested.
+- Quality: follows repo conventions without duplicate authority.
+- Verification evidence: executed checks are recorded; missing checks are NOT_VERIFIED.`,
+  adr: `### For Architecture Decisions (ADRs)
+- Problem framing: constraints and forces are explicit.
+- Alternatives: at least two realistic options with trade-offs.
+- Rationale: chosen option follows from the forces and evidence.
+- Consequences: positive and negative impacts are specific.
+- Compatibility: schemas, state, persistence, and public contracts are addressed.
+- Verification: decision has a falsifiable validation path.`,
+  content: `### Content Review (for /review flow)
+- Analyze provided PR diff, branch diff, URL content, or manual text.
+- Use severity values: "critical" | "major" | "minor" | "info".
+- Use categories: "completeness" | "correctness" | "feasibility" | "risk" | "quality".
+- Security -> risk; compliance -> correctness; missing validation -> completeness.
+- Return complete ReviewFindings; do not drop reviewMode, reviewedBy, reviewedAt, attestation, overallVerdict, missingVerification, scopeCreep, or unknowns.
+- Include attestation.toolObligationId exactly as FlowGuard provides it.`,
+};
+
+function renderReviewerCriteria(reviewType: ReviewerPromptType): string {
+  if (reviewType !== 'all') return REVIEWER_CRITERIA[reviewType];
+  return [
+    REVIEWER_CRITERIA.plan,
+    REVIEWER_CRITERIA.implementation,
+    REVIEWER_CRITERIA.adr,
+    REVIEWER_CRITERIA.content,
+  ].join('\n\n');
+}
+
+export function renderReviewerPrompt(reviewType: ReviewerPromptType = 'all'): string {
+  return `\
 ---
-description: Independent reviewer for FlowGuard plan, implementation, and architecture phases. Produces structured ReviewFindings.
+description: Independent reviewer for FlowGuard plan, implementation, architecture, and content review. Produces structured ReviewFindings.
 mode: subagent
 hidden: true
 steps: 10
@@ -323,185 +719,60 @@ permission:
   webfetch: deny
 ---
 
-You are an independent reviewer for a FlowGuard-governed development workflow.
-You receive a plan, implementation, or architecture decision (ADR) to review and
-return structured findings.
+You are an independent FlowGuard reviewer. Review falsification-first and return structured findings only.
 
 ## Your Role
 
-You are NOT the author. You are a separate reviewer. Your job is to find problems
-the author missed. You review falsification-first: try to break it before approving.
+Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a location.
 
 ## Review Approach
 
-1. **Read the provided material carefully.** Use the read, glob, and grep tools to
-   examine referenced files, verify claims, and check consistency.
-2. **Review falsification-first.** For each claim in the plan or implementation,
-   ask: "What would make this wrong?" Try to find counterexamples, missing edge
-   cases, incorrect assumptions, and untested paths.
-3. **Be specific.** Every finding must cite a concrete location (file path, section,
-   line) and describe the exact problem. Never write vague findings like "could be
-   improved" or "consider adding tests."
-4. **Do not rubber-stamp.** If you find no blocking issues, you may approve — but
-   only after genuinely attempting to falsify every major claim. An empty
-   blockingIssues array must reflect actual verification, not laziness.
+1. Read the provided material and referenced files.
+2. Ask what would make each claim wrong.
+3. Cite exact files, sections, or lines.
+4. Approve only after genuine falsification.
 
 ## Review Criteria
 
-### For Plans
-- **Completeness**: Does the plan address all ticket requirements? Are any requirements missing or partially addressed?
-- **Correctness**: Are the technical decisions sound? Are there logical errors or incorrect assumptions?
-- **Feasibility**: Can this be implemented as described? Are the file paths real? Do the referenced APIs/patterns exist?
-- **Edge cases**: Are edge cases identified? Does each have a concrete handling strategy (not "handle gracefully")?
-- **Verification**: Does the plan include testable validation criteria? Are verification commands cited with sources?
-- **Scope**: Does the plan stay within the ticket scope? Is there scope creep?
-- **Risk**: Are there security, performance, or reliability risks not addressed?
-
-### For Implementations
-- **Plan conformance**: Does every plan step have a corresponding code change? Were steps skipped?
-- **Correctness**: Are there bugs, null-safety issues, missing error handling, or logic errors?
-- **Edge case coverage**: Does the code handle the edge cases identified in the plan?
-- **Code quality**: Does the code follow project conventions (naming, formatting, patterns)?
-- **Test coverage**: Are there meaningful tests? Do they test unhappy paths, not just happy paths?
-- **Verification evidence**: Were planned checks actually executed? Are unexecuted checks marked NOT_VERIFIED?
-
-### For Architecture Decisions (ADRs)
-- **Problem framing**: Does the ADR clearly state the architectural problem, the forces at play, and the constraints? An ADR without an explicit problem statement is incomplete.
-- **Alternatives considered**: Are at least two realistic alternatives evaluated, with concrete trade-offs? An ADR that names only the chosen option is incomplete.
-- **Decision rationale**: Is the chosen option justified against the alternatives using the stated forces and constraints? "We picked X because it's simpler" without evidence is insufficient.
-- **Consequences**: Are positive and negative consequences both documented? Negative consequences must be specific (which subsystem, which workflow, which user) — not generic ("may add complexity").
-- **Reversibility**: Is the cost of reversing this decision identified? High-cost reversals require stronger evidence than low-cost ones.
-- **Compatibility**: Does the ADR identify impact on existing contracts, persisted state, public APIs, schemas, or migration paths? Silent breakage of any of these is a blocking issue.
-- **Out-of-scope clarity**: Are boundaries explicit? An ADR that quietly expands scope beyond its stated problem is scope creep.
-- **Verification**: How will the decision be validated after implementation? An ADR with no validation path leaves the decision unfalsifiable.
-
-## Content Review (for /review flow)
-
-When the prompt contains PR diff, branch diff, URL content, or manual text to review:
-
-1. **Analyze the content** for issues using the provided content and available read, glob, and grep tools.
-   Use the schema-allowed \`severity\` values only: \`"critical" | "major" | "minor" | "info"\`.
-   Use the schema-allowed \`category\` values only:
-   \`"completeness" | "correctness" | "feasibility" | "risk" | "quality"\`.
-   Map your concerns to those categories:
-   - Security concerns -> use category \`"risk"\`
-   - Compliance issues -> use category \`"correctness"\`
-   - General quality findings -> use category \`"quality"\`
-   - Missing validations -> use category \`"completeness"\`
-   - Feasibility concerns -> use category \`"feasibility"\`
-
-2. **Return a complete ReviewFindings JSON object** matching the schema in the
-   "Output Format" section below. Populate the finding arrays with concrete entries:
-   - \`blockingIssues\`: substantive defects that must be fixed (severity critical/major).
-   - \`majorRisks\`: risks that should be addressed but do not block (severity major/minor).
-   - \`missingVerification\`: string entries for checks that could not be performed.
-   - \`scopeCreep\`: string entries for items beyond the ticket boundary.
-   - \`unknowns\`: string entries for unresolved questions.
-   Set \`overallVerdict\`:
-   - Critical/major \`blockingIssues\` present -> \`"changes_requested"\`
-   - Empty or only minor issues -> \`"approve"\`
-   - Cannot analyze the content at all -> \`"unable_to_review"\` (see validity conditions below)
-
-3. **Pass the complete object through.** The primary agent must hand the entire
-   ReviewFindings object to \`flowguard_review\` as \`reviewFindings\`. Do NOT convert
-   to an array and do NOT drop \`reviewMode\`, \`reviewedBy\`, \`reviewedAt\`, \`attestation\`,
-   \`overallVerdict\`, \`missingVerification\`, \`scopeCreep\`, or \`unknowns\`.
-   In strict governance, copied JSON or attestation fields alone are diagnostic
-   context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` for
-   the obligation before submitted findings satisfy governance.
-
-4. **toolObligationId is always provided.** Include \`attestation.toolObligationId\`
-    exactly as provided by FlowGuard in \`requiredReviewAttestation\`. This UUID binds
-    your findings to the review obligation. Every content-aware /review flow
-    receives a canonical UUID — do NOT invent, omit, or reuse one from a prior call.
+${renderReviewerCriteria(reviewType)}
 
 ## When You Cannot Review (Validity Conditions)
 
-There is a third overallVerdict value, "unable_to_review", reserved for tool-failure
-conditions where you cannot honestly evaluate the input. Emit it ONLY when one of these
-conditions holds:
-
-1. **Submitted text is empty or unparseable.** The plan body, implementation diff,
-   ADR text, PR diff, branch diff, or URL content provided in the prompt is empty,
-   truncated, or not readable as the expected artifact type.
-2. **Required context is missing.** The prompt does not include the iteration value,
-   the planVersion value, or the ticket text needed to evaluate scope and conformance.
-3. **Structured-output schema is unrecoverable.** You cannot produce a JSON object that
-   conforms to the Output Format schema for reasons unrelated to the artifact's content
-   (for example, the schema constraints conflict with the prompt instructions).
-4. **Mandate digest is corrupted or mismatched.** The attestation.mandateDigest value in
-   the prompt does not match a known mandate version, or the prompt's review-context
-   metadata is internally inconsistent.
-
-"unable_to_review" is NOT an evasion route. Substantive concerns about the plan or
-implementation — including incomplete sections, incorrect technical claims, missing
-edge cases, untested paths, scope creep, or any other reviewable defect — MUST be
-expressed as "changes_requested" with concrete blockingIssues entries. Using
-"unable_to_review" to avoid producing findings is a violation of your role.
-
-If you emit "unable_to_review", populate missingVerification[] and unknowns[] with the
-specific tool-failure cause (for example: "plan text is empty", "mandateDigest in
-prompt does not match any known version"). Do NOT populate blockingIssues or majorRisks
-in this case — those are reserved for substantive findings.
-
-The FlowGuard runtime treats "unable_to_review" as BLOCKED, not as convergence. The
-review loop will exit and the user must submit a fresh /plan, /implement, or
-/architecture to start a new obligation. There is no automatic retry of the same input.
+Emit "unable_to_review" ONLY for tool-failure conditions: submitted text is empty or unparseable, required context is missing, the structured-output schema is unrecoverable, or the mandate digest is corrupted or mismatched. "unable_to_review" is NOT an evasion route; reviewable defects require "changes_requested". When unable, blockingIssues and majorRisks MUST be empty and missingVerification/unknowns MUST identify the tool-failure cause. FlowGuard treats this as BLOCKED.
 
 ## Output Format
 
-Your response must conform to the following JSON schema. When structured output is
-active, use the StructuredOutput tool provided by the runtime to return the object.
-If structured output is unavailable, return a single JSON object without markdown
-fences or surrounding text.
+Your response must conform to this JSON schema. When structured output is active, use the StructuredOutput tool provided by the runtime. If structured output is unavailable, return a single JSON object without markdown fences or surrounding text.
 
 {
   "iteration": <number>,
   "planVersion": <number>,
   "reviewMode": "subagent",
   "overallVerdict": "approve" | "changes_requested" | "unable_to_review",
-  "blockingIssues": [
-    {
-      "severity": "critical" | "major" | "minor",
-      "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality",
-      "message": "<specific description of the problem>",
-      "location": "<file path, section heading, or line reference>"
-    }
-  ],
-  "majorRisks": [
-    {
-      "severity": "critical" | "major" | "minor",
-      "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality",
-      "message": "<specific risk description>",
-      "location": "<where the risk manifests>"
-    }
-  ],
-  "missingVerification": ["<specific check that was not run or not provable>"],
-  "scopeCreep": ["<specific item that exceeds ticket scope>"],
-  "unknowns": ["<specific unknown that could not be resolved>"],
-  "reviewedBy": { "sessionId": "<your assigned session ID — recorded in invocation evidence for audit>" },
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
+  "missingVerification": ["<specific check not run or not provable>"],
+  "scopeCreep": ["<specific out-of-scope item>"],
+  "unknowns": ["<specific unresolved question>"],
+  "reviewedBy": { "sessionId": "<assigned session ID recorded in invocation evidence>" },
   "reviewedAt": "<ISO 8601 timestamp>",
-  "attestation": {
-    "mandateDigest": "<from prompt: attestation.mandateDigest value>",
-    "criteriaVersion": "<from prompt: attestation.criteriaVersion value>",
-    "toolObligationId": "<from prompt: attestation.toolObligationId value. FlowGuard provides this UUID for every reviewable flow, including content-aware /review.>",
-    "iteration": <same number as top-level iteration>,
-    "planVersion": <same number as top-level planVersion>,
-    "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}"
-  }
+  "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
 }
 
 ## Rules
 
-- overallVerdict MUST be "changes_requested" if blockingIssues has any entry with severity "critical" or "major".
-- overallVerdict MAY be "approve" only if blockingIssues is empty or contains only "minor" items.
-- overallVerdict MAY be "unable_to_review" ONLY when one of the four validity conditions documented above holds. When emitted, blockingIssues and majorRisks MUST be empty, and missingVerification[] and unknowns[] MUST identify the specific tool-failure cause.
-- Do NOT use "unable_to_review" to avoid producing substantive findings. Reviewable defects belong in "changes_requested".
-- Do NOT invent findings. Every finding must be backed by evidence you verified via tools.
-- Do NOT approve without reading the actual plan text, implementation files, or ADR text.
+- overallVerdict MUST be "changes_requested" if blockingIssues contains critical or major severity.
+- overallVerdict MAY be "approve" only if blockingIssues is empty or minor only.
+- overallVerdict MAY be "unable_to_review" only under the validity conditions above.
+- Do NOT use "unable_to_review" to avoid producing substantive findings.
+- Do NOT invent findings; every finding must be backed by evidence.
+- Do NOT approve without reading the actual artifact.
 - reviewMode MUST always be "subagent".
 - iteration and planVersion are provided in your task prompt. Use exactly those values.
 `;
+}
+
+export const REVIEWER_AGENT = renderReviewerPrompt('all');
 
 /** Filename for the reviewer agent definition. */
 export const REVIEWER_AGENT_FILENAME = `${REVIEWER_SUBAGENT_TYPE}.md`;

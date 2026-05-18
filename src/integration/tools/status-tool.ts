@@ -27,6 +27,7 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
+import { renderPhaseAwareMandates } from '../../templates/mandates.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -235,6 +236,13 @@ function buildFullStatusResponse(
         fourEyes: completeness.fourEyes,
         summary: completeness.summary,
       },
+      governanceMandates: {
+        source: 'src/templates/mandates.ts',
+        projection: 'phase-aware',
+        renderFallbackIsPromptSafetyOnly: true,
+        runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
+        phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
+      },
     }),
     state,
   );
@@ -271,6 +279,12 @@ export const status: ToolDefinition = {
           phase: null,
           status: 'No FlowGuard session found.',
           next: 'Run /hydrate to bootstrap a session.',
+          governanceMandates: {
+            source: 'src/templates/mandates.ts',
+            projection: 'none-without-canonical-session-state',
+            renderFallbackIsPromptSafetyOnly: true,
+            runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
+          },
         });
       }
 

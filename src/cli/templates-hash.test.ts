@@ -38,19 +38,20 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
+    // Refreshed for #262: mandates now include the Governance rules section
+    // used as the command-template governance projection.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '607d063f77a129788ffd10a7edfc779ba168e5db707d4d2bfd02694c38b21d62',
+      'c837d4c888a998ca83e649c85db7a453266c8d538dd83290df1f365924fd2788',
     );
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
-    // Refreshed for #264: REVIEWER_AGENT no longer hardcodes sampling
-    // parameters in frontmatter. Removing `temperature: 0.1` changes both the
-    // installed reviewer markdown and the runtime REVIEW_MANDATE_DIGEST.
+    // Refreshed for #262: REVIEWER_AGENT is compact and renderer-backed by
+    // review type. This changes the runtime REVIEW_MANDATE_DIGEST.
     // Existing sessions with obligations bound to the previous digest must be
     // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'e32de00c6776d70fafcbc7dcbb50f59627a8d2383dbefaa78c244037e4bc91d3',
+      '521f2f19847d232f54c29507af61c013154e8d986564a7ab3a37dfcc85b202ff',
     );
   });
 
@@ -69,11 +70,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('COMMANDS matches compiled output hash', () => {
-    // Refreshed for FG-261: v4 mandates restructuring changes GOVERNANCE_RULES
-    // (platform-agnostic command trigger text), affecting all command templates.
+    // Refreshed for #262: GOVERNANCE_RULES is now a projection from the
+    // mandates Governance rules section, affecting all command templates.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'b5b7ca57663d64be64891caccf100cdcebcf0c1082a4feb00217035129bfb204',
+      'e02971198fcfb6cfb5c29b1a0e5c98ec6013d6bec253ae61a7df787b7a20293d',
     );
   });
 

@@ -193,6 +193,43 @@ describe('status', () => {
       expect(result.next).toBeTruthy();
     });
 
+    it('includes mandates projection and recovery footer without runtime authorization', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+
+      const mandates = result.governanceMandates as Record<string, unknown>;
+      expect(mandates.source).toBe('src/templates/mandates.ts');
+      expect(mandates.renderFallbackIsPromptSafetyOnly).toBe(true);
+      expect(mandates.runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence).toBe(true);
+      expect(String(mandates.phaseRelevantRules)).toContain('# FlowGuard Agent Rules');
+
+      const footer = result.flowguardFooter as Record<string, unknown>;
+      expect(footer.source).toBe('flowguard-tool-output-wrapper');
+      expect(footer.authority).toBe('diagnostic-only');
+      expect(footer.next).toBeUndefined();
+      expect(footer.compactionRecoveryHint).toBeTruthy();
+      expect(footer.renderFallbackIsPromptSafetyOnly).toBe(true);
+      expect(footer.runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence).toBe(true);
+    });
+
+    it('footer preserves canonical status output fields and blocked semantics', async () => {
+      const noSession = parseToolResult(await status.execute({}, ctx));
+      expect(noSession.phase).toBeNull();
+      expect(noSession.status).toContain('No FlowGuard session');
+      expect(noSession.next).toBe('Run /hydrate to bootstrap a session.');
+      expect(noSession.flowguardFooter).toMatchObject({
+        authority: 'diagnostic-only',
+        phase: 'unknown',
+      });
+
+      await hydrateSession();
+      const hydrated = parseToolResult(await status.execute({}, ctx));
+      expect(hydrated.phase).toBe('READY');
+      expect(hydrated.next).toBeTruthy();
+      expect(hydrated.nextAction).toBeTruthy();
+      expect((hydrated.flowguardFooter as Record<string, unknown>).next).toBeUndefined();
+    });
+
     it('surfaces appliedPolicy provenance fields', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({}, ctx));
