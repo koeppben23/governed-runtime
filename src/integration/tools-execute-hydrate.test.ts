@@ -200,13 +200,16 @@ afterEach(async () => {
 
 /** Hydrate a session and return parsed result. Convenience for setup. */
 async function hydrateSession(
-  overrides: { policyMode?: string; profileId?: string } = {},
+  overrides: { policyMode?: string; profileId?: string; claimedTaskClass?: string } = {},
 ): Promise<Record<string, unknown>> {
-  const args: { policyMode: string; profileId?: string } = {
+  const args: { policyMode: string; profileId?: string; claimedTaskClass?: string } = {
     policyMode: overrides.policyMode ?? 'solo',
   };
   if (overrides.profileId !== undefined) {
     args.profileId = overrides.profileId;
+  }
+  if (overrides.claimedTaskClass !== undefined) {
+    args.claimedTaskClass = overrides.claimedTaskClass;
   }
   const raw = await hydrate.execute(args, ctx);
   return parseToolResult(raw);
@@ -508,6 +511,41 @@ describe('hydrate', () => {
       // Both should succeed, second returns existing
       expect(first.phase).toBe('READY');
       expect(second.phase).toBe('READY');
+    });
+
+    it('persists claimedTaskClass recovery and clears blocked riskGate on existing session', async () => {
+      await hydrateSession({ policyMode: 'regulated', claimedTaskClass: 'TRIVIAL' });
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const stateBefore = await readState(sessDir);
+      expect(stateBefore).not.toBeNull();
+      await writeState(sessDir, {
+        ...stateBefore!,
+        claimedTaskClass: 'TRIVIAL',
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_CLASSIFICATION_MISMATCH',
+          message: 'blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'RISK-1',
+        },
+      });
+
+      const result = await hydrateSession({ policyMode: 'solo', claimedTaskClass: 'HIGH-RISK' });
+      expect(result.error).toBeUndefined();
+
+      const stateAfter = await readState(sessDir);
+      expect(stateAfter).not.toBeNull();
+      expect(stateAfter!.claimedTaskClass).toBe('HIGH-RISK');
+      expect(stateAfter!.riskGate).toEqual({
+        status: 'clear',
+        lastDecisionId: 'RISK-1',
+        clearedAt: expect.any(String),
+      });
+      expect(stateAfter!.binding).toEqual(stateBefore!.binding);
+      expect(stateAfter!.policySnapshot.mode).toBe(stateBefore!.policySnapshot.mode);
     });
 
     it('idempotent hydrate preserves workspace metadata', async () => {

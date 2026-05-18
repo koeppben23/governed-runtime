@@ -153,6 +153,16 @@ export interface FlowGuardPolicy {
    * This mode only controls whether IdP failure blocks session creation.
    */
   readonly identityProviderMode: IdentityProviderMode;
+
+  /** Enforce machine-checked task risk classification at runtime. */
+  readonly enforceRiskClassification: boolean;
+
+  /**
+   * Allow runtime downgrade overrides below the computed minimum risk class.
+   * Initial Issue #271 slice keeps all presets false; text justification alone
+   * must not bypass the gate.
+   */
+  readonly allowRiskDowngradeOverride: boolean;
 }
 
 /** Supported policy modes. */

@@ -41,7 +41,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #262: mandates now include the Governance rules section
     // used as the command-template governance projection.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'c837d4c888a998ca83e649c85db7a453266c8d538dd83290df1f365924fd2788',
+      'b50b3258488ebcd43594cdf688bf06fcd3681a5871872377dd14540c8da402d0',
     );
   });
 

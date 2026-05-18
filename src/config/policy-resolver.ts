@@ -43,6 +43,8 @@ export interface HydratePolicyOptions {
   configRequireVerifiedActorsForApproval?: boolean;
   configIdentityProvider?: IdpConfig;
   configIdentityProviderMode?: IdentityProviderMode;
+  configEnforceRiskClassification?: boolean;
+  configAllowRiskDowngradeOverride?: boolean;
 }
 
 interface RequestedPolicyContext {
@@ -62,6 +64,8 @@ function applyConfigOverrides(
     configRequireVerifiedActorsForApproval?: boolean;
     configIdentityProvider?: IdpConfig;
     configIdentityProviderMode?: IdentityProviderMode;
+    configEnforceRiskClassification?: boolean;
+    configAllowRiskDowngradeOverride?: boolean;
   },
 ): FlowGuardPolicy {
   return {
@@ -78,6 +82,10 @@ function applyConfigOverrides(
       opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
     identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
+    enforceRiskClassification:
+      opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
+    allowRiskDowngradeOverride:
+      opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
   };
 }
 

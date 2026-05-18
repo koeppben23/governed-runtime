@@ -10,10 +10,13 @@ import { describe, it, expect } from 'vitest';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
+  assessMinimumTaskClass,
+  isRiskClassificationAllowed,
   MUTATING_HOST_TOOLS,
   INVESTIGATION_ONLY_PHASES,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
+import { makeState } from '../__fixtures__.js';
 
 // ─── isMutatingHostTool ──────────────────────────────────────────────────────
 
@@ -289,6 +292,136 @@ describe('phase-tool-gate', () => {
           });
         }
       }
+    });
+  });
+
+  describe('risk classification gate', () => {
+    it('BAD — TRIVIAL claim on src/state change is blocked', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['src/state/schema.ts'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('RISK_CLASSIFICATION_MISMATCH');
+      expect(result.minimumTaskClass).toBe('HIGH-RISK');
+    });
+
+    it('BAD — missing claim is blocked under enforced gate checks', () => {
+      const state = makeState('IMPLEMENTATION');
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['README.md'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('RISK_CLASSIFICATION_REQUIRED');
+    });
+
+    it('HAPPY — HIGH-RISK claim on sensitive change is allowed', () => {
+      const state = makeState('IMPLEMENTATION', { claimedTaskClass: 'HIGH-RISK' });
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['src/audit/types.ts'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(true);
+      expect(result.minimumTaskClass).toBe('HIGH-RISK');
+    });
+
+    it('HAPPY — narrow non-governance markdown typo may remain TRIVIAL', () => {
+      expect(assessMinimumTaskClass(['docs/usage-notes.md']).minimumTaskClass).toBe('TRIVIAL');
+    });
+
+    it('BAD — governance docs and sensitive tests are not TRIVIAL', () => {
+      expect(assessMinimumTaskClass(['AGENTS.md']).minimumTaskClass).toBe('HIGH-RISK');
+      expect(assessMinimumTaskClass(['CHANGELOG.md']).minimumTaskClass).toBe('STANDARD');
+      expect(assessMinimumTaskClass(['src/state/schema.test.ts']).minimumTaskClass).toBe(
+        'HIGH-RISK',
+      );
+    });
+
+    it('BAD — accepted governance surface matrix requires HIGH-RISK', () => {
+      const highRiskPaths = [
+        'src/identity/actor-info.ts',
+        'src/adapters/persistence.ts',
+        'src/adapters/persistence-logging.ts',
+        'src/cli/install.ts',
+        'src/cli/uninstall.ts',
+        'src/cli/doctor.ts',
+        'src/archive/verify.ts',
+        'src/evidence/decision.ts',
+        'src/rails/review.ts',
+        'src/rails/review-decision.ts',
+        'src/templates/commands/review.ts',
+        'src/integration/review/enforcement/session.ts',
+        'src/integration/phase-tool-gate.ts',
+        'src/security/actions-pinning.ts',
+        'src/config/policy-resolver.ts',
+        'src/migrations/session-state.ts',
+        'scripts/install.js',
+        'scripts/uninstall.js',
+        'scripts/release.js',
+        'docs/agent-guidance/context-aware-mandates.md',
+        'docs/agent-guidance/high-risk.md',
+        'docs/runtime-mandates.md',
+        'docs/project-governance.md',
+        'docs/bsi-c5-mapping.md',
+        'docs/policies.md',
+        'docs/configuration.md',
+        'docs/security-hardening.md',
+      ];
+
+      for (const filePath of highRiskPaths) {
+        expect(assessMinimumTaskClass([filePath]).minimumTaskClass, filePath).toBe('HIGH-RISK');
+      }
+    });
+
+    it('BAD — downgrade override flag is denied rather than accepted', () => {
+      const base = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
+      const state = {
+        ...base,
+        policySnapshot: {
+          ...base.policySnapshot,
+          allowRiskDowngradeOverride: true,
+        },
+      };
+
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['src/identity/actor-info.ts'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('RISK_DOWNGRADE_OVERRIDE_DENIED');
+      expect(result.minimumTaskClass).toBe('HIGH-RISK');
+    });
+
+    it('BAD — existing persistent riskGate block stops subsequent mutating paths', () => {
+      const state = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'HIGH-RISK',
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_CLASSIFICATION_MISMATCH',
+          message: 'previous block',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'RISK-1',
+        },
+      });
+      const result = isRiskClassificationAllowed({
+        state,
+        changedFiles: ['README.md'],
+        now: '2026-01-01T00:00:00.000Z',
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('RISK_GATE_BLOCKED');
+      expect(result.decisionId).toBe('RISK-1');
     });
   });
 });

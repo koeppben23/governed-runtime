@@ -186,6 +186,29 @@ describe('persistence', () => {
       expect(loaded!.plan!.current.digest).toBe(state.plan!.current.digest);
     });
 
+    it('readState normalizes legacy regulated/team-ci snapshots to risk enforcement on', async () => {
+      for (const mode of ['regulated', 'team-ci'] as const) {
+        const state = makeProgressedState('TICKET');
+        const legacy = {
+          ...state,
+          policySnapshot: {
+            ...state.policySnapshot,
+            mode,
+            requestedMode: mode,
+          },
+        };
+        delete (legacy.policySnapshot as Record<string, unknown>).enforceRiskClassification;
+        delete (legacy.policySnapshot as Record<string, unknown>).allowRiskDowngradeOverride;
+
+        await fs.mkdir(tmpDir, { recursive: true });
+        await fs.writeFile(statePath(tmpDir), JSON.stringify(legacy), 'utf-8');
+        const loaded = await readState(tmpDir);
+
+        expect(loaded?.policySnapshot.enforceRiskClassification).toBe(true);
+        expect(loaded?.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+      }
+    });
+
     it('stateExists returns true after writeState', async () => {
       expect(await stateExists(tmpDir)).toBe(false);
       await writeState(tmpDir, makeProgressedState('TICKET'));

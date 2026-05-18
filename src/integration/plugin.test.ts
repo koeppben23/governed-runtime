@@ -23,14 +23,22 @@ import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createTestWorkspace, withTestEnv } from './test-helpers.js';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { fileURLToPath } from 'node:url';
+
+const execFileAsync = promisify(execFile);
+
+async function initGitRepo(worktree: string): Promise<void> {
+  await execFileAsync('git', ['init'], { cwd: worktree });
+}
 
 // ─── Mock Plugin Input ────────────────────────────────────────────────────────
 
@@ -1703,6 +1711,211 @@ describe('plugin bootstrap fail-closed', () => {
         const input = { tool: 'read', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { filePath: '/tmp/some-file.ts' } };
         await expect(beforeHook(input, output)).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — TRIVIAL classification on src/state write is blocked and persisted', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            claimedTaskClass: 'TRIVIAL',
+            policySnapshot: {
+              ...makeState('IMPLEMENTATION').policySnapshot,
+              mode: 'regulated',
+              requestedMode: 'regulated',
+              enforceRiskClassification: true,
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+        const input = { tool: 'write', sessionID, callID: 'c1' };
+        const output = {
+          args: { filePath: path.join(ws.tmpDir, 'src/state/schema.ts'), content: 'x' },
+        };
+
+        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_MISMATCH');
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).toBe('blocked');
+        expect(state?.riskGate?.lastDecisionId).toMatch(/^RISK-/);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — missing classification in regulated enforcement is not warning-only', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            policySnapshot: {
+              ...makeState('IMPLEMENTATION').policySnapshot,
+              mode: 'regulated',
+              requestedMode: 'regulated',
+              enforceRiskClassification: true,
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+        const input = { tool: 'write', sessionID, callID: 'c1' };
+        const output = { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } };
+
+        await expect(beforeHook(input, output)).rejects.toThrow('RISK_CLASSIFICATION_REQUIRED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — changed-files evidence failure blocks under enforced policy', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            claimedTaskClass: 'HIGH-RISK',
+            policySnapshot: {
+              ...makeState('IMPLEMENTATION').policySnapshot,
+              mode: 'regulated',
+              requestedMode: 'regulated',
+              enforceRiskClassification: true,
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
+
+        const beforeHook = hooks['tool.execute.before']!;
+        await expect(
+          beforeHook(
+            { tool: 'write', sessionID, callID: 'c1' },
+            { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } },
+          ),
+        ).rejects.toThrow('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).toBe('blocked');
+        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+        const audit = await readAuditTrail(sessDir);
+        expect(audit.events.some((event) => event.event === 'risk:classification_checked')).toBe(
+          true,
+        );
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — bash after-hook mismatch hard-blocks output and next mutating tool', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            claimedTaskClass: 'TRIVIAL',
+            policySnapshot: {
+              ...makeState('IMPLEMENTATION').policySnapshot,
+              mode: 'regulated',
+              requestedMode: 'regulated',
+              enforceRiskClassification: true,
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const afterHook = hooks['tool.execute.after']!;
+        await fs.mkdir(path.join(ws.tmpDir, 'src/state'), { recursive: true });
+        await fs.writeFile(path.join(ws.tmpDir, 'src/state/risk-new.ts'), 'export const x = 1;');
+
+        const output = { output: 'bash ok' };
+        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
+        expect(output.output).toContain('RISK_CLASSIFICATION_MISMATCH');
+
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).toBe('blocked');
+
+        const beforeHook = hooks['tool.execute.before']!;
+        await expect(
+          beforeHook(
+            { tool: 'write', sessionID, callID: 'c2' },
+            { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } },
+          ),
+        ).rejects.toThrow('RISK_GATE_BLOCKED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('BAD — bash after-hook evidence failure produces strict blocked output', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            claimedTaskClass: 'HIGH-RISK',
+            policySnapshot: {
+              ...makeState('IMPLEMENTATION').policySnapshot,
+              mode: 'regulated',
+              requestedMode: 'regulated',
+              enforceRiskClassification: true,
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
+
+        const afterHook = hooks['tool.execute.after']!;
+        const output = { output: 'bash ok' };
+        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
+
+        expect(output.output).toContain('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+        expect(output.output).toContain('BLOCKED');
+        const state = await readState(sessDir);
+        expect(state?.riskGate?.status).toBe('blocked');
+        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
       } finally {
         await ws.cleanup();
       }

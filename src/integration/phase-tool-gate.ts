@@ -16,7 +16,8 @@
  * @version v1
  */
 
-import type { Phase } from '../state/schema.js';
+import type { Phase, SessionState, TaskClass } from '../state/schema.js';
+import { randomUUID } from 'node:crypto';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,199 @@ export interface PhaseGateResult {
   readonly allowed: boolean;
   readonly code?: string;
   readonly reason?: string;
+}
+
+export interface RiskClassificationDecision extends PhaseGateResult {
+  readonly decisionId: string;
+  readonly claimedTaskClass?: TaskClass;
+  readonly minimumTaskClass: TaskClass;
+  readonly touchedSurfaces: readonly string[];
+  readonly changedFiles: readonly string[];
+}
+
+export interface RiskClassificationInput {
+  readonly state: SessionState;
+  readonly changedFiles: readonly string[];
+  readonly targetPaths?: readonly string[];
+  readonly now: string;
+}
+
+const TASK_CLASS_ORDER: Readonly<Record<TaskClass, number>> = {
+  TRIVIAL: 0,
+  STANDARD: 1,
+  'HIGH-RISK': 2,
+};
+
+const HIGH_RISK_PREFIXES = [
+  'src/state/',
+  'src/machine/',
+  'src/audit/',
+  'src/archive/',
+  'src/config/',
+  'src/evidence/',
+  'src/identity/',
+  'src/security/',
+  'src/adapters/persistence',
+  'src/cli/uninstall',
+  'src/integration/review/',
+  'src/integration/plugin',
+  'src/integration/phase-tool-gate',
+  'src/rails/review',
+  'src/templates/commands/',
+  'scripts/release',
+  'scripts/install',
+  'scripts/uninstall',
+  '.github/',
+  '.opencode/',
+] as const;
+
+const HIGH_RISK_EXACT = new Set([
+  'AGENTS.md',
+  'docs/admin-model.md',
+  'docs/commands.md',
+  'docs/configuration.md',
+  'docs/data-classification.md',
+  'docs/phases.md',
+  'docs/policies.md',
+  'docs/profiles.md',
+  'docs/retention-recovery.md',
+  'docs/release-policy.md',
+  'docs/security-hardening.md',
+  'docs/trust-boundaries.md',
+  'docs/upgrade-rollback.md',
+  'package.json',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lockb',
+  'src/templates/mandates.ts',
+]);
+
+const HIGH_RISK_RE = [
+  /^docs\/agent-guidance\/.*(mandate|guidance|high-risk|review)/,
+  /^docs\/.*(mandates?|governance|mapping)\.md$/,
+  /^src\/cli\/(install|uninstall|doctor|release)/,
+  /^src\/config\/policy/,
+  /^src\/integration\/(phase-tool-gate|plugin|review|.*policy)/,
+  /^src\/migration(s)?\//,
+  /^src\/rails\/(review|review-decision)/,
+  /^src\/templates\/commands\//,
+  /(^|\/)release(\/|[-_].*)/,
+  /(^|\/)installer?(\/|[-_].*)/,
+  /(^|\/)migration(s)?(\/|[-_].*)/,
+] as const;
+
+const GOVERNANCE_DOC_RE =
+  /(^|\/)(architecture|security|compliance|release|governance|policy)(\/|[-_].*\.md$|\.md$)/;
+
+function normalizePathForRisk(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
+  return TASK_CLASS_ORDER[a] >= TASK_CLASS_ORDER[b] ? a : b;
+}
+
+function classifyPath(filePath: string): { minimumTaskClass: TaskClass; surface: string } {
+  const p = normalizePathForRisk(filePath);
+  if (
+    HIGH_RISK_EXACT.has(p) ||
+    HIGH_RISK_PREFIXES.some((prefix) => p.startsWith(prefix)) ||
+    HIGH_RISK_RE.some((pattern) => pattern.test(p))
+  ) {
+    return { minimumTaskClass: 'HIGH-RISK', surface: p };
+  }
+  if (p === 'CHANGELOG.md' || GOVERNANCE_DOC_RE.test(p)) {
+    return { minimumTaskClass: 'STANDARD', surface: p };
+  }
+  if (p.endsWith('.test.ts') || p.endsWith('.spec.ts')) {
+    return { minimumTaskClass: 'STANDARD', surface: p };
+  }
+  if (p.endsWith('.md')) {
+    return { minimumTaskClass: 'TRIVIAL', surface: p };
+  }
+  return { minimumTaskClass: 'STANDARD', surface: p };
+}
+
+export function assessMinimumTaskClass(paths: readonly string[]): {
+  readonly minimumTaskClass: TaskClass;
+  readonly touchedSurfaces: readonly string[];
+} {
+  if (paths.length === 0) return { minimumTaskClass: 'TRIVIAL', touchedSurfaces: [] };
+  let minimumTaskClass: TaskClass = 'TRIVIAL';
+  const touchedSurfaces = new Set<string>();
+  for (const filePath of paths) {
+    const classified = classifyPath(filePath);
+    minimumTaskClass = maxTaskClass(minimumTaskClass, classified.minimumTaskClass);
+    touchedSurfaces.add(classified.surface);
+  }
+  return { minimumTaskClass, touchedSurfaces: [...touchedSurfaces].sort() };
+}
+
+export function isRiskClassificationAllowed(
+  input: RiskClassificationInput,
+): RiskClassificationDecision {
+  const { state, now } = input;
+  const decisionId = `RISK-${now.replace(/[^0-9]/g, '')}-${randomUUID()}`;
+  const combinedPaths = [...input.changedFiles, ...(input.targetPaths ?? [])].map(
+    normalizePathForRisk,
+  );
+  const uniquePaths = [...new Set(combinedPaths)].sort();
+  const assessment = assessMinimumTaskClass(uniquePaths);
+
+  if (state.riskGate?.status === 'blocked') {
+    return {
+      allowed: false,
+      code: 'RISK_GATE_BLOCKED',
+      reason: state.riskGate.message,
+      decisionId: state.riskGate.lastDecisionId,
+      claimedTaskClass: state.claimedTaskClass,
+      minimumTaskClass: assessment.minimumTaskClass,
+      touchedSurfaces: assessment.touchedSurfaces,
+      changedFiles: uniquePaths,
+    };
+  }
+
+  const claimedTaskClass = state.claimedTaskClass;
+  if (!claimedTaskClass) {
+    return {
+      allowed: false,
+      code: 'RISK_CLASSIFICATION_REQUIRED',
+      reason: 'No task-class provided. Enforced policies require an explicit claimedTaskClass.',
+      decisionId,
+      minimumTaskClass: assessment.minimumTaskClass,
+      touchedSurfaces: assessment.touchedSurfaces,
+      changedFiles: uniquePaths,
+    };
+  }
+
+  if (TASK_CLASS_ORDER[claimedTaskClass] < TASK_CLASS_ORDER[assessment.minimumTaskClass]) {
+    const downgradeOverrideDenied = state.policySnapshot.allowRiskDowngradeOverride === true;
+    return {
+      allowed: false,
+      code: downgradeOverrideDenied
+        ? 'RISK_DOWNGRADE_OVERRIDE_DENIED'
+        : 'RISK_CLASSIFICATION_MISMATCH',
+      reason:
+        `Task classified as ${claimedTaskClass} but touches ${assessment.touchedSurfaces.join(', ') || 'runtime-sensitive surface'}. ` +
+        `Reclassify as ${assessment.minimumTaskClass}. Downgrade overrides are not accepted in this slice.`,
+      decisionId,
+      claimedTaskClass,
+      minimumTaskClass: assessment.minimumTaskClass,
+      touchedSurfaces: assessment.touchedSurfaces,
+      changedFiles: uniquePaths,
+    };
+  }
+
+  return {
+    allowed: true,
+    decisionId,
+    claimedTaskClass,
+    minimumTaskClass: assessment.minimumTaskClass,
+    touchedSurfaces: assessment.touchedSurfaces,
+    changedFiles: uniquePaths,
+  };
 }
 
 // ─── Gate Functions ───────────────────────────────────────────────────────────

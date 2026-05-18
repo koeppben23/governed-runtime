@@ -97,6 +97,10 @@ export const PolicySnapshotSchema = z
     reviewInvocationPolicy: z
       .enum(['host_task_required', 'host_task_preferred', 'sdk_allowed'])
       .optional(),
+    /** Runtime risk-classification enforcement frozen at hydrate time. */
+    enforceRiskClassification: z.boolean().optional(),
+    /** Structured downgrade override permission. Defaults closed for legacy snapshots. */
+    allowRiskDowngradeOverride: z.boolean().optional(),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
@@ -109,5 +113,12 @@ export const PolicySnapshotSchema = z
      */
     actorClassification: z.record(z.string(), z.string()),
   })
+  .transform((snapshot) => ({
+    ...snapshot,
+    enforceRiskClassification:
+      snapshot.enforceRiskClassification ??
+      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'),
+    allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
+  }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

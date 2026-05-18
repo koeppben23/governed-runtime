@@ -82,6 +82,32 @@ export const Phase = z.enum([
 ]);
 export type Phase = z.infer<typeof Phase>;
 
+// ─── Task Risk Classification ────────────────────────────────────────────────
+
+/**
+ * Agent-claimed task class. This is only an operator/agent claim, never the
+ * runtime truth. The runtime computes a minimum class per gate check.
+ */
+export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
+export type TaskClass = z.infer<typeof TaskClass>;
+
+/** Persistent risk gate state. A blocked gate must stop the next mutating tool. */
+export const RiskGate = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('clear'),
+    lastDecisionId: z.string().min(1).optional(),
+    clearedAt: z.string().datetime().optional(),
+  }),
+  z.object({
+    status: z.literal('blocked'),
+    code: z.string().min(1),
+    message: z.string().min(1),
+    blockedAt: z.string().datetime(),
+    lastDecisionId: z.string().min(1),
+  }),
+]);
+export type RiskGate = z.infer<typeof RiskGate>;
+
 // ─── Event ────────────────────────────────────────────────────────────────────
 
 /**
@@ -165,6 +191,12 @@ export const SessionState = z.object({
 
   /** Current FlowGuard phase. */
   phase: Phase,
+
+  /** Agent/operator risk-classification claim. Not runtime authority. */
+  claimedTaskClass: TaskClass.optional(),
+
+  /** Persistent runtime risk gate block state for mutating host tools. */
+  riskGate: RiskGate.optional(),
 
   /** Workspace binding (OpenCode session <-> git worktree). */
   binding: BindingInfo,

@@ -38,6 +38,52 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'RISK_CLASSIFICATION_MISMATCH',
+    category: 'admissibility',
+    messageTemplate:
+      'Task classified as {claimedTaskClass} but runtime evidence requires at least {minimumTaskClass} for {touchedSurface}',
+    recoverySteps: [
+      'Reclassify the task at the required risk level and re-hydrate the session',
+      'Do not use text justification to downgrade risk classification',
+    ],
+  },
+
+  {
+    code: 'RISK_CLASSIFICATION_REQUIRED',
+    category: 'admissibility',
+    messageTemplate: 'Risk classification is required before mutating tools may run',
+    recoverySteps: [
+      'Run flowguard_hydrate with claimedTaskClass set to HIGH-RISK, STANDARD, or TRIVIAL',
+    ],
+  },
+
+  {
+    code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+    category: 'admissibility',
+    messageTemplate: 'Cannot verify risk classification evidence. {reason}',
+    recoverySteps: [
+      'Restore readable session state and git worktree evidence',
+      'Run flowguard_status or flowguard_hydrate before retrying mutating tools',
+    ],
+  },
+
+  {
+    code: 'RISK_GATE_BLOCKED',
+    category: 'admissibility',
+    messageTemplate: 'Risk gate is already blocked for this session: {reason}',
+    recoverySteps: [
+      'Reclassify the task at the required risk level or start a fresh governed session',
+    ],
+  },
+
+  {
+    code: 'RISK_DOWNGRADE_OVERRIDE_DENIED',
+    category: 'admissibility',
+    messageTemplate: 'Risk downgrade overrides are disabled by policy',
+    recoverySteps: ['Reclassify the task at the runtime-computed minimum risk level'],
+  },
+
+  {
     code: 'EMPTY_TICKET',
     category: 'input',
     messageTemplate: 'Ticket text must not be empty',

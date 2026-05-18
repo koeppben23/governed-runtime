@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue #271:** Add runtime-enforced risk classification gate for mutating host tools. `claimedTaskClass` is stored only as an agent/operator claim while FlowGuard computes the minimum class per gate check, persists blocking `riskGate` state on mismatches, defaults enforcement on for `team-ci` and `regulated`, and rejects downgrade-by-text overrides.
+
 - **FG-268 (Issue #268):** Add an additive `reviewLoop` projection to tool responses and `flowguard_status` output during review phases (PLAN_REVIEW, IMPL_REVIEW, ARCH_REVIEW), including iteration count, max iterations, previous verdict, convergence status, and outstanding blocking issues (max 3).
 
 - **FG-REL-021 (Issue #130):** Added dedicated plugin orchestrator happy-path assertions for plan, implementation, architecture, and content-review flows, covering obligation fulfillment, invocation evidence, attestation binding, output mutation, and standard review audit effects.

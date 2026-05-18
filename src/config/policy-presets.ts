@@ -29,6 +29,8 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
+  enforceRiskClassification: false,
+  allowRiskDowngradeOverride: false,
 };
 
 /** TEAM mode -- collaborative workflow. */
@@ -53,6 +55,8 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
+  enforceRiskClassification: false,
+  allowRiskDowngradeOverride: false,
 };
 
 /** TEAM-CI mode -- CI pipeline workflow. */
@@ -77,6 +81,8 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
+  enforceRiskClassification: true,
+  allowRiskDowngradeOverride: false,
 };
 
 /** REGULATED mode -- full FlowGuard with four-eyes and complete audit trail. */
@@ -102,6 +108,8 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   requireVerifiedActorsForApproval: false,
   identityProvider: undefined,
   identityProviderMode: 'optional',
+  enforceRiskClassification: true,
+  allowRiskDowngradeOverride: false,
 };
 
 /** All known policy presets, indexed by mode. */

@@ -56,6 +56,8 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   identityProviderMode: 'optional',
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'sdk_allowed',
+  enforceRiskClassification: false,
+  allowRiskDowngradeOverride: false,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -74,6 +76,7 @@ export const REGULATED_POLICY_SNAPSHOT: PolicySnapshot = {
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,
   reviewOutputPolicy: 'structured_required',
+  enforceRiskClassification: true,
 };
 
 export const DECISION_IDENTITY_INITIATOR: DecisionIdentity = {

@@ -74,7 +74,7 @@ function throwHydrateError(code: string, message: string): never {
 type ExistingHydrateState = Awaited<ReturnType<typeof readState>>;
 type HydrateConfig = Awaited<ReturnType<typeof readConfig>>;
 type HydratePolicyResolution = Awaited<ReturnType<typeof resolvePolicyForHydrate>>;
-type HydrateArgs = { policyMode?: string; profileId?: string };
+type HydrateArgs = { policyMode?: string; profileId?: string; claimedTaskClass?: string };
 type HydrateWorkspace = Awaited<ReturnType<typeof initWorkspace>>;
 type HydratePolicyContext = Awaited<ReturnType<typeof resolveHydratePolicy>>;
 type ReadRepoFile = (relativePath: string) => Promise<string | undefined>;
@@ -109,6 +109,7 @@ interface BuildHydrateInputParams {
   readonly config: HydrateConfig;
   readonly discovery: DiscoveryHydration;
   readonly actorInfo: Awaited<ReturnType<typeof resolveActor>>;
+  readonly args: HydrateArgs;
 }
 
 function digestText(text: string): string {
@@ -195,6 +196,8 @@ async function resolveNewPolicyResolution(config: HydrateConfig, args: { policyM
     configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
     configIdentityProvider: config.policy.identityProvider,
     configIdentityProviderMode: config.policy.identityProviderMode,
+    configEnforceRiskClassification: config.policy.enforceRiskClassification,
+    configAllowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
   });
 }
 
@@ -520,6 +523,8 @@ function buildNewPolicyInput(
     identityProvider: config.policy.identityProvider,
     identityProviderMode: config.policy.identityProviderMode,
     minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
+    enforceRiskClassification: config.policy.enforceRiskClassification,
+    allowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
     policyResolution,
   };
 }
@@ -567,6 +572,7 @@ function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput {
       sessionId: context.sessionID,
       worktree,
       fingerprint: workspace.fingerprint,
+      claimedTaskClass: contextClaimedTaskClass(params),
       discoveryDigest: discovery.discoveryDigest,
       discoverySummary: discovery.discoverySummary,
       detectedStack: discovery.detectedStack,
@@ -580,6 +586,11 @@ function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput {
     ),
     profile: buildProfileInput(existingWithCentralEvidence, discovery, config, actorInfo),
   };
+}
+
+function contextClaimedTaskClass(params: BuildHydrateInputParams) {
+  const raw = params.args.claimedTaskClass;
+  return raw === 'TRIVIAL' || raw === 'STANDARD' || raw === 'HIGH-RISK' ? raw : undefined;
 }
 
 async function formatNewSessionResponse(
@@ -602,6 +613,7 @@ async function formatNewSessionResponse(
     profileDetected: !!discovery.repoSignals,
     discoveryComplete: !!discovery.discoveryResult,
     discoverySummary: discovery.discoverySummary ?? null,
+    claimedTaskClass: state.claimedTaskClass ?? null,
     policyResolution: formatPolicyResolution(policyResolution),
   };
   return appendNextAction(JSON.stringify(response), state);
@@ -662,6 +674,7 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
       config,
       discovery,
       actorInfo,
+      args,
     }),
     policyContext.ctx,
   );
@@ -693,7 +706,7 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
 export const hydrate: ToolDefinition = {
   description:
     'Bootstrap or reload the FlowGuard session. Creates a new session if none exists, ' +
-    'or returns the existing session unchanged (idempotent). ' +
+    'or returns the existing session unchanged except explicit claimedTaskClass risk recovery. ' +
     'Optionally configure policy mode (solo/team/regulated) and profile. ' +
     'This MUST be the first FlowGuard tool call in any workflow.',
   args: {
@@ -709,6 +722,13 @@ export const hydrate: ToolDefinition = {
       .string()
       .default('baseline')
       .describe("Governance profile ID. Defaults to 'baseline'."),
+    claimedTaskClass: z
+      .enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK'])
+      .optional()
+      .describe(
+        'Agent/operator risk-classification claim. Runtime still computes the minimum class. ' +
+          'On an existing session this may only update claimedTaskClass and clear a blocked riskGate.',
+      ),
   },
   async execute(args, context) {
     return executeHydrateTool(args, context);

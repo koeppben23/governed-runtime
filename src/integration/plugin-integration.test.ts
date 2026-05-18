@@ -901,12 +901,12 @@ describe('plugin-integration', () => {
   // ─── PERF ──────────────────────────────────────────────────
 
   describe('PERF', () => {
-    it('1000 non-FlowGuard tool calls complete in < 50ms', async () => {
+    it('1000 non-mutating non-FlowGuard tool calls complete in < 50ms', async () => {
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         await handler(
-          { tool: 'bash', sessionID: sessionId },
-          { title: 'bash', output: '', metadata: {} },
+          { tool: 'read', sessionID: sessionId },
+          { title: 'read', output: '', metadata: {} },
         );
       }
       const elapsed = performance.now() - start;
