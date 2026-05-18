@@ -855,7 +855,7 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     expect(existsSync(versionPath)).toBe(true);
 
     const meta = JSON.parse(readFileSync(versionPath, 'utf-8'));
-    expect(meta.version).toBe('1.14.48');
+    expect(meta.version).toBe('1.15.4');
     expect(meta.files).toHaveLength(2);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
