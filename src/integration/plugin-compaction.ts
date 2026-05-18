@@ -84,7 +84,7 @@ export async function buildCompactionContext(
     const mandatesSummary = renderCompactionMandatesSummary(state.phase);
     if (mandatesSummary) {
       lines.push('');
-      lines.push('## FlowGuard Compact Mandates Projection');
+      lines.push('## FlowGuard Diagnostic Mandates Summary');
       lines.push('');
       lines.push(mandatesSummary);
     }

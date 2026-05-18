@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #263:** Add operator-selected mandates verbosity rendering. `explicit` remains the default productive safe path, `concise` is explicit opt-in and preserves all normative anchors, and `diagnosticSummary` is restricted to recovery/status/compaction projections. Model IDs are metadata only and do not select mandate compression or create a frontier-model registry.
+
 - **Issue #262:** Add context-aware mandates rendering from the `src/templates/mandates.ts` SSOT. Phase-aware prompt rendering now supports safe full-mandates fallback for unknown phases while preserving fail-closed mutating runtime validation. Command governance rules, compaction context, `flowguard_status` governance projections, and reviewer prompt criteria now avoid duplicated governance text and keep static reviewer coverage for plan, implementation, ADR, and content review. Tool footers remain diagnostic wrappers, not mandate projections or next-action authorities.
 
 - **FG-261 (Issue #261):** [BREAKING] v4 Agent Rules — restructured mandates for multi-LLM and multi-platform instruction following. Model-addressing preamble ("You are operating under FlowGuard governance"); Red Lines moved to primacy position (after Mission); Language Conventions moved after Priority Ladder; Before Acting/Completing rules moved to recency position (end of document); removed OpenCode-specific references ("AI-assisted engineering workflows"); generified verification commands (no longer hardcodes `npm run` scripts); GOVERNANCE_RULES uses platform-agnostic command trigger text. AGENTS.md synchronized. Drift-guard test updated for new section order.

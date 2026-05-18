@@ -264,6 +264,10 @@ export type MandatesRenderPhase =
   | 'REVIEW'
   | 'ALL_PHASES';
 
+export type MandatesVerbosity = 'explicit' | 'concise' | 'diagnosticSummary';
+
+export type MandatesUsage = 'productive' | 'recovery';
+
 export interface MandatesRenderContext {
   /**
    * Rules already covered by the host prompt. These only allow conservative
@@ -271,6 +275,13 @@ export interface MandatesRenderContext {
    */
   hostCoveredRules?: ReadonlySet<string>;
   progressive?: boolean;
+  /**
+   * Operator-selected prompt representation depth. This is not model trust,
+   * runtime authorization, or compliance evidence.
+   */
+  mandatesVerbosity?: MandatesVerbosity | string;
+  /** Metadata only. Model IDs never select mandate verbosity. */
+  modelId?: string;
 }
 
 interface MandatesSectionDefinition {
@@ -315,6 +326,31 @@ const PHASE_TO_RENDER_PHASE = {
 } as const satisfies Record<Phase, MandatesRenderPhase>;
 
 export const CANONICAL_FLOWGUARD_PHASES = PhaseSchema.options;
+
+export const MANDATES_VERBOSITY_VALUES: readonly MandatesVerbosity[] = [
+  'explicit',
+  'concise',
+  'diagnosticSummary',
+] as const;
+
+/**
+ * Render-safety assertion catalog. Used by `assertMandatesAnchors` as a
+ * fail-closed guard that concise/diagnostic rendered output still contains
+ * every normative governance category. This is not a second mandates
+ * authority and does not define governance semantics — it only checks that
+ * required anchors are present in rendered text.
+ */
+export const MANDATES_ANCHOR_CATALOG = {
+  RED_LINES: ['## Red Lines', 'Do not hide failures'],
+  TOOL_ERROR_STOP: ['## 11a. Tool Error Classification', 'stop conditions'],
+  SSOT_SINGLE_AUTHORITY: ['one canonical authority', 'SSOT'],
+  FAIL_CLOSED_NO_SILENT_FALLBACK: ['fail-closed'],
+  EVIDENCE_MARKERS: ['ASSUMPTION', 'NOT_VERIFIED', 'BLOCKED'],
+  PHASE_GATES: ['FlowGuard tools'],
+  REVIEW_OBLIGATIONS: ['review'],
+  OUTPUT_CONTRACTS: ['Output Contract'],
+  VERIFICATION_POLICY: ['verification'],
+} as const;
 
 const MANDATES_SECTION_DEFINITIONS: readonly MandatesSectionDefinition[] = [
   { id: 'grounding', heading: null, phases: 'all', priority: 0, safetyCritical: true },
@@ -458,6 +494,15 @@ function selectMandatesSections(phase: MandatesRenderPhase): readonly MandatesSe
   ).sort((a, b) => a.priority - b.priority);
 }
 
+export function resolveMandatesVerbosity(
+  value: MandatesRenderContext['mandatesVerbosity'],
+  usage: MandatesUsage = 'productive',
+): MandatesVerbosity {
+  if (value === 'concise') return 'concise';
+  if (value === 'diagnosticSummary') return usage === 'recovery' ? 'diagnosticSummary' : 'explicit';
+  return 'explicit';
+}
+
 function normalizeRenderPhase(phase: Phase | MandatesRenderPhase | string | null | undefined): {
   phase: MandatesRenderPhase;
   fallback: boolean;
@@ -488,6 +533,28 @@ function assertSafetyCriticalSections(rendered: string, phase: MandatesRenderPha
   ]) {
     if (!rendered.includes(heading)) {
       throw new Error(`Phase-aware mandates omitted safety-critical section: ${heading}`);
+    }
+  }
+}
+
+function assertMandatesAnchors(
+  rendered: string,
+  usage: MandatesUsage,
+  selectedSectionIds?: ReadonlySet<string>,
+): void {
+  const anchors = Object.entries(MANDATES_ANCHOR_CATALOG).filter(([key]) => {
+    if (usage !== 'productive') return !['OUTPUT_CONTRACTS', 'REVIEW_OBLIGATIONS'].includes(key);
+    if (selectedSectionIds) {
+      if (key === 'OUTPUT_CONTRACTS' && !selectedSectionIds.has('output-contract')) return false;
+      if (key === 'REVIEW_OBLIGATIONS' && !selectedSectionIds.has('review-checklist')) return false;
+    }
+    return true;
+  });
+  for (const [name, terms] of anchors) {
+    for (const term of terms) {
+      if (!rendered.includes(term)) {
+        throw new Error(`Mandates ${usage} rendering omitted ${name} anchor: ${term}`);
+      }
     }
   }
 }
@@ -562,22 +629,136 @@ Universal FlowGuard mandates outrank slash-command rules, profile rules, and loc
   }
 }
 
+function conciseSectionForPhase(section: MandatesSectionDefinition): string {
+  switch (section.id) {
+    case 'grounding':
+      return `# FlowGuard Agent Rules
+
+You are operating under FlowGuard governance. FlowGuard is a deterministic, fail-closed governance runtime for AI-assisted engineering workflows.`;
+    case 'mission':
+      return `## 1. Mission
+
+Build the smallest correct change that satisfies user intent without contract drift. Preserve FlowGuard state, policy, evidence, audit, archive, and runtime command surfaces as canonical authorities.`;
+    case 'red-lines':
+      return `## Red Lines
+
+- Do not hide failures with silent fallbacks; surface errors explicitly, return BLOCKED or explicit failure, and stop.
+- Do not create duplicate runtime authority; extend the existing canonical authority.
+- Do not weaken fail-closed behavior; default deny and require explicit validated allow paths.
+- Do not claim verification that was not run; mark unexecuted or unproven claims as \`NOT_VERIFIED\`.`;
+    case 'priority':
+      return `## 2. Priority Ladder
+
+Priority order: safety/security, user intent, repository contracts and SSOT, minimal correct implementation, style, verbosity. Higher priority rules override lower priority rules.`;
+    case 'language':
+      return `## Language Conventions
+
+\`MUST\`/\`MUST NOT\` are mandatory. \`SHOULD\`/\`SHOULD NOT\` are expected unless justified. Evidence means concrete artifacts such as code, test output, schema, command result, trace, or file path.`;
+    case 'task-router':
+      return `## 3. Task Class Router and Phase Gates
+
+Classify before acting: TRIVIAL for no behavior risk, STANDARD for bounded behavior impact, HIGH-RISK for state, policy, risk, identity, audit, archive, release, persistence, migration, CI, or trust boundaries. If uncertain, classify higher. Respect the current workflow phase and use only FlowGuard tools for governed state changes.`;
+    case 'hard-invariants':
+      return `## 4. Hard Invariants
+
+- Preserve one canonical authority and SSOT ownership.
+- Make failures explicit and fail closed.
+- Ground claims in concrete evidence.
+- Keep runtime, docs, tests, schemas, and config aligned.
+- Approve only behavior that is tested, proven, and evidence-backed.`;
+    case 'evidence':
+      return `## 5. Evidence Rules
+
+Use \`ASSUMPTION\`, \`NOT_VERIFIED\`, and \`BLOCKED\` explicitly. Never present assumptions as runtime truth. Verify assumptions when cheap; otherwise flag them. Never claim tests passed unless they were run.`;
+    case 'tool-verification':
+      return `## 6. Tool and Verification Policy
+
+Run the narrowest sufficient verification: TRIVIAL optional, STANDARD targeted tests/checks, HIGH-RISK negative-path tests plus typecheck, lint, build, and relevant integration/e2e checks. Release or installer changes require exact artifact install-verification.`;
+    case 'ambiguity':
+      return `## 7. Ambiguity Policy
+
+Low-risk ambiguity may proceed with marked ASSUMPTION. Standard ambiguity proceeds only if contracts stay clear. High-risk ambiguity requires a question or BLOCKED. Non-interactive runtime must not guess missing safety-relevant input.`;
+    case 'output-contract':
+      return `## 8. Output Contract
+
+Use one task-class-scaled output contract: TRIVIAL has Result and Verification; STANDARD has Objective, Evidence, Changes, Verification, Risks and NOT_VERIFIED; HIGH-RISK has Objective, Governing Evidence, Touched Surface, Invariants and Failure Modes, Test Evidence, Contract and Authority Check, Residual Risks, and Rollback or Recovery. Reviews return verdict and evidence-backed findings.`;
+    case 'implementation-checklist':
+      return `## 9. Implementation Checklist
+
+Identify governing contract and authority, read relevant artifacts before changing behavior, keep scope minimal, preserve SSOT and schemas, add risky-path and negative-path coverage, and align runtime, docs, tests, and config.`;
+    case 'review-checklist':
+      return `## 10. Review Checklist
+
+Review falsification-first: unhappy paths, contract/schema/SSOT drift, correct authority layer, hidden fallback, negative tests, and unsupported claims.`;
+    case 'high-risk':
+      return `## 11. High-Risk Extension
+
+High-risk work MUST map governing contract and authority, show negative-path test evidence, verify no duplicate authority, preserve fail-closed behavior, document rollback/recovery, and mark explicit \`NOT_VERIFIED\` items.`;
+    case 'tool-error':
+      return `## 11a. Tool Error Classification
+
+Any blocked, failed, malformed, nonconforming, network, process, or subprocess tool result creates stop conditions. Report the exact reason, state one recovery action, and stop. Never continue to the next workflow phase after a failed FlowGuard tool response.`;
+    case 'rule-conflict':
+      return `## 11b. Rule Conflict Resolution
+
+Universal FlowGuard mandates outrank slash-command rules, profile rules, and local style. Profiles may narrow behavior but never override mandates, repository contracts, SSOT, schemas, runtime invariants, or fail-closed behavior.`;
+    case 'command-execution':
+      return `## Governance rules
+
+- Use only FlowGuard tools for state changes.
+- Complete the current command fully, then stop.
+- Only explicit FlowGuard commands trigger workflow actions.
+- End every response with exactly one \`Next action:\` line.`;
+    case 'extended-guidance':
+      return `## 12. Extended Guidance
+
+This document is self-contained. Optional deeper guidance may exist under docs/, but these mandates remain authoritative.`;
+    case 'before-acting':
+      return `## Before Acting Rule
+
+Before acting, classify the task, identify authority and SSOT, read relevant artifacts, choose the smallest safe change, and determine verification level.`;
+    case 'before-completing':
+      return `## Before Completing Rule
+
+Before returning, verify the output contract is satisfied, evidence markers are set, required verification ran, no SSOT drift was introduced, and review obligations or phase gates are not skipped.`;
+    default:
+      return extractMandatesSection(section.heading);
+  }
+}
+
 export function renderPhaseAwareMandates(
   ctx: MandatesRenderContext = {},
   phase: Phase | MandatesRenderPhase | string | null | undefined = 'ALL_PHASES',
 ): string {
   const normalized = normalizeRenderPhase(phase);
+  const verbosity = resolveMandatesVerbosity(ctx.mandatesVerbosity, 'productive');
   if (ctx.progressive === false || normalized.fallback || normalized.phase === 'ALL_PHASES') {
     return FLOWGUARD_MANDATES_BODY;
   }
 
-  const rendered = selectMandatesSections(normalized.phase)
-    .map((section) => compactSectionForEarlyPhase(section, normalized.phase))
+  const sections = selectMandatesSections(normalized.phase);
+  const rendered = sections
+    .map((section) =>
+      verbosity === 'concise'
+        ? conciseSectionForPhase(section)
+        : compactSectionForEarlyPhase(section, normalized.phase),
+    )
     .join('\n\n');
 
   const harmonized = applyHostHarmonization(rendered, ctx);
   assertSafetyCriticalSections(harmonized, normalized.phase);
+  if (verbosity === 'concise') {
+    const selectedIds = new Set(sections.map((s) => s.id));
+    assertMandatesAnchors(harmonized, 'productive', selectedIds);
+  }
   return harmonized;
+}
+
+export function renderMandates(
+  ctx: MandatesRenderContext = {},
+  phase: Phase | MandatesRenderPhase | string | null | undefined = 'ALL_PHASES',
+): string {
+  return renderPhaseAwareMandates(ctx, phase);
 }
 
 export function renderCommandGovernanceRules(): string {

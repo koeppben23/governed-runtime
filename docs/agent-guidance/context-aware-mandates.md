@@ -15,6 +15,29 @@ return the full mandates so the model does not lose governance instructions. Mut
 runtime paths must still validate canonical state, policy, phase, and evidence before
 changing anything. If that context is missing or invalid, the mutating path must block.
 
+## Mandates Verbosity
+
+FlowGuard may render the same mandates at different prompt-representation depths:
+
+- `explicit`: default productive rendering and the safe path for installed mandates.
+- `concise`: explicit operator opt-in only; reduces examples and repetition while keeping
+  all normative anchors.
+- `diagnosticSummary`: recovery/status/compaction summaries only; never installed as
+  productive mandates.
+
+Mandates verbosity is prompt representation only. It is not runtime allow, not model
+trust, not compliance evidence, and not a governance tier. Unknown, missing, or invalid
+verbosity resolves to `explicit`.
+
+`modelId` may be recorded as metadata or evidence, but it must never select mandate
+verbosity. FlowGuard must not ship a hardcoded frontier-model registry, a productive
+compact tier, or automatic promotion from compliance-runner output.
+
+Safety anchors outrank token targets. Concise rendering may remove examples and repeated
+wording, but it must preserve Red Lines, Tool Error Stop, SSOT/single authority,
+fail-closed/no-silent-fallback semantics, Evidence Markers, Phase Gates, Review
+Obligations, Output Contracts, and Verification Policy.
+
 ## Recovery Projections
 
 Compaction context and `flowguard_status` are recovery and presentation helpers. They do

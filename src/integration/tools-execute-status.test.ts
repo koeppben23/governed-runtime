@@ -199,6 +199,7 @@ describe('status', () => {
 
       const mandates = result.governanceMandates as Record<string, unknown>;
       expect(mandates.source).toBe('src/templates/mandates.ts');
+      expect(mandates.mandatesVerbosity).toBe('explicit');
       expect(mandates.renderFallbackIsPromptSafetyOnly).toBe(true);
       expect(mandates.runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence).toBe(true);
       expect(String(mandates.phaseRelevantRules)).toContain('# FlowGuard Agent Rules');

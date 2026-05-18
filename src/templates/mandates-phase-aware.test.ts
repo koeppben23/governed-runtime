@@ -5,15 +5,20 @@ import { fileURLToPath } from 'node:url';
 import {
   CANONICAL_FLOWGUARD_PHASES,
   FLOWGUARD_MANDATES_BODY,
+  MANDATES_ANCHOR_CATALOG,
+  MANDATES_VERBOSITY_VALUES,
   renderCommandGovernanceRules,
   renderCompactionMandatesSummary,
+  renderMandates,
   renderPhaseAwareMandates,
   renderReviewerPrompt,
+  resolveMandatesVerbosity,
   REVIEWER_AGENT,
 } from './mandates.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, 'commands');
+const MANDATES_SOURCE = join(__dirname, 'mandates.ts');
 
 function roughTokenBudget(text: string): { chars: number; words: number; lines: number } {
   return {
@@ -23,11 +28,108 @@ function roughTokenBudget(text: string): { chars: number; words: number; lines: 
   };
 }
 
+function expectAnchors(rendered: string, skipKeys?: readonly string[]): void {
+  const skip = new Set(skipKeys ?? []);
+  for (const [name, terms] of Object.entries(MANDATES_ANCHOR_CATALOG)) {
+    if (skip.has(name)) continue;
+    for (const term of terms) {
+      expect(rendered, `${name} missing ${term}`).toContain(term);
+    }
+  }
+}
+
+const COMPLIANCE_SCENARIOS = [
+  ...[
+    'silent fallback after tool block',
+    'duplicate runtime authority',
+    'unverified verification claim',
+    'fail-open missing policy',
+    'silent config fallback',
+    'unsupported allow path',
+    'state mutation outside FlowGuard',
+    'claim without artifact',
+    'schema drift ignored',
+    'unsafe destructive continuation',
+  ].map((name) => ({ category: 'red-line', name })),
+  ...[
+    'blocked tool result',
+    'malformed JSON output',
+    'network failure',
+    'subprocess failure',
+    'nonconforming result',
+    'missing recovery action',
+    'retry after blocked response',
+    'continue after crash',
+    'empty tool payload',
+    'unknown error code',
+  ].map((name) => ({ category: 'tool-error', name })),
+  ...[
+    'bash during investigation gate',
+    'implementation before plan approval',
+    'validation before implementation',
+    'archive before completion',
+    'review skipped after plan',
+    'unknown phase mutation',
+    'missing session state mutation',
+    'phase mismatch after compaction',
+    'state machine deny ignored',
+    'continue command bypass',
+  ].map((name) => ({ category: 'phase-gate', name })),
+  ...[
+    'assumption presented as fact',
+    'missing NOT_VERIFIED marker',
+    'blocked condition hidden',
+    'test output claimed without command',
+    'artifact path omitted',
+    'schema claim without read',
+    'cheap assumption not verified',
+    'unknown resolved silently',
+    'audit evidence missing',
+    'review evidence omitted',
+  ].map((name) => ({ category: 'evidence', name })),
+  ...[
+    'missing operator input high risk',
+    'unclear migration scope',
+    'ambiguous policy mode',
+    'noninteractive missing value',
+    'uncertain destructive request',
+    'unclear review verdict',
+    'ambiguous external contract',
+    'missing archive destination',
+    'unclear identity assurance',
+    'conflicting command instruction',
+  ].map((name) => ({ category: 'ambiguity', name })),
+] as const;
+
 describe('phase-aware mandates rendering', () => {
   it('falls back to full mandates for unknown, missing, or invalid phases', () => {
     expect(renderPhaseAwareMandates({}, undefined)).toBe(FLOWGUARD_MANDATES_BODY);
     expect(renderPhaseAwareMandates({}, null)).toBe(FLOWGUARD_MANDATES_BODY);
     expect(renderPhaseAwareMandates({}, 'UNKNOWN_PHASE')).toBe(FLOWGUARD_MANDATES_BODY);
+  });
+
+  it('uses explicit mandates verbosity as the fail-safe default', () => {
+    expect(MANDATES_VERBOSITY_VALUES).toEqual(['explicit', 'concise', 'diagnosticSummary']);
+    expect(resolveMandatesVerbosity(undefined)).toBe('explicit');
+    expect(resolveMandatesVerbosity('unknown')).toBe('explicit');
+    expect(resolveMandatesVerbosity('diagnosticSummary')).toBe('explicit');
+    expect(resolveMandatesVerbosity('diagnosticSummary', 'recovery')).toBe('diagnosticSummary');
+  });
+
+  it('does not let model metadata select concise rendering', () => {
+    expect(renderPhaseAwareMandates({ modelId: 'gpt-5' }, 'PLAN')).toBe(
+      renderPhaseAwareMandates({}, 'PLAN'),
+    );
+    expect(renderPhaseAwareMandates({ modelId: 'claude-opus-4-7' }, 'PLAN')).not.toBe(
+      renderPhaseAwareMandates({ mandatesVerbosity: 'concise' }, 'PLAN'),
+    );
+  });
+
+  it('does not hardcode a frontier model registry into mandates rendering', () => {
+    const source = readFileSync(MANDATES_SOURCE, 'utf-8');
+    for (const modelId of ['gpt-5', 'gpt-5-pro', 'claude-opus-4-7', 'claude-sonnet-4-6']) {
+      expect(source).not.toContain(modelId);
+    }
   });
 
   it('uses only phases from the canonical state schema', () => {
@@ -63,6 +165,51 @@ describe('phase-aware mandates rendering', () => {
       expect(rendered).toContain('## 11a. Tool Error Classification');
       expect(rendered).toContain('## Governance rules');
     }
+  });
+
+  it('renders concise mandates only by explicit operator opt-in and preserves anchors', () => {
+    const explicit = renderMandates({}, 'PLAN');
+    const concise = renderMandates({ mandatesVerbosity: 'concise' }, 'PLAN');
+
+    expect(concise).not.toBe(explicit);
+    expect(concise.length).toBeLessThan(explicit.length);
+    expectAnchors(concise);
+  });
+
+  it('composes concise verbosity with phase filtering', () => {
+    const investigation = renderMandates({ mandatesVerbosity: 'concise' }, 'INVESTIGATION');
+    expectAnchors(investigation, ['OUTPUT_CONTRACTS', 'REVIEW_OBLIGATIONS']);
+    expect(investigation).not.toContain('Review falsification-first');
+    expect(investigation).not.toContain('High-risk work MUST');
+    expect(investigation).not.toContain('task-class-scaled output contract');
+    expect(investigation).not.toContain('read relevant artifacts before changing behavior');
+
+    const implementation = renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION');
+    expectAnchors(implementation);
+    expect(implementation).toContain('High-risk work MUST');
+    expect(implementation).toContain('Run the narrowest sufficient verification');
+  });
+
+  it('keeps 50+ categorized mandate coverage cases', () => {
+    const categories = new Set(COMPLIANCE_SCENARIOS.map((scenario) => scenario.category));
+    expect(COMPLIANCE_SCENARIOS).toHaveLength(50);
+    expect(categories).toEqual(
+      new Set(['red-line', 'tool-error', 'phase-gate', 'evidence', 'ambiguity']),
+    );
+    expectAnchors(renderMandates({ mandatesVerbosity: 'concise' }, 'IMPLEMENTATION'));
+    expectAnchors(
+      renderMandates({ mandatesVerbosity: 'concise', modelId: 'metadata-only' }, 'REVIEW'),
+    );
+  });
+
+  it('treats diagnosticSummary as recovery-only, never productive installed mandates', () => {
+    expect(renderMandates({ mandatesVerbosity: 'diagnosticSummary' }, 'PLAN')).toBe(
+      renderMandates({}, 'PLAN'),
+    );
+    const summary = renderCompactionMandatesSummary('PLAN');
+    expect(summary).toContain('## Red Lines');
+    expect(summary).toContain('## 11a. Tool Error Classification');
+    expect(summary).not.toContain('## 8. Output Contract');
   });
 
   it('does not remove safety-critical sections when host rules are covered', () => {
@@ -121,7 +268,7 @@ describe('phase-aware mandates rendering', () => {
     }
   });
 
-  it('renders compact compaction mandates from the same SSOT', () => {
+  it('renders diagnostic compaction mandates from the same SSOT', () => {
     for (const phase of [
       'READY',
       'TICKET',
