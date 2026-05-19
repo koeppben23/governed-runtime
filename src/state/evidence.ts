@@ -70,3 +70,8 @@ export type * from './evidence-policy.js';
 
 export * from './evidence-audit.js';
 export type * from './evidence-audit.js';
+
+// ─── Timestamp ─────────────────────────────────────────────────────────────────
+
+export * from './evidence-timestamp.js';
+export type * from './evidence-timestamp.js';

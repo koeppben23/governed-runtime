@@ -8,6 +8,7 @@
 
 export type {
   AuditPolicy,
+  TimestampAssurancePolicy,
   SelfReviewConfig,
   FlowGuardPolicy,
   PolicyMode,

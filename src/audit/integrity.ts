@@ -29,6 +29,12 @@
 
 import { timingSafeEqual } from 'node:crypto';
 import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types.js';
+import {
+  verifyTimestampMonotonicity,
+  verifyTsaMessageImprint,
+  verifyTimestampEvidencePresence,
+} from './timestamp-verification.js';
+import type { AuditEvent } from '../state/evidence.js';
 
 /**
  * Constant-time string comparison for security-sensitive hash validation.
@@ -54,9 +60,18 @@ function safeHashEqual(a: string, b: string): boolean {
  * - `strict: true`: legacy events without chain fields are treated as integrity
  *   failures. `skippedCount > 0` makes the chain invalid. Regulated verification
  *   paths must use strict mode.
+ *
+ * - `strictTimestamps: false` (default): timestamp evidence is not checked.
+ *   Timestamp monotonicity, TSA message imprint matching, and required evidence
+ *   presence are only verified when this is enabled.
+ *
+ * - `strictTimestamps: true`: enables timestamp monotonicity checks, TSA message
+ *   imprint verification against canonicalEventDigest, and required evidence
+ *   presence for critical events. Additional reasons may be reported.
  */
 export interface ChainVerifyOptions {
   readonly strict?: boolean;
+  readonly strictTimestamps?: boolean;
 }
 
 /**
@@ -64,8 +79,16 @@ export interface ChainVerifyOptions {
  *
  * - `CHAIN_BREAK`: hash chain integrity failure (tampered, inserted, or deleted event).
  * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects unchained events.
+ * - `TIMESTAMP_NON_MONOTONIC`: event timestamps are not strictly non-decreasing.
+ * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
+ * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match canonicalEventDigest.
  */
-export type ChainVerificationReason = 'CHAIN_BREAK' | 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+export type ChainVerificationReason =
+  | 'CHAIN_BREAK'
+  | 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE'
+  | 'TIMESTAMP_NON_MONOTONIC'
+  | 'TIMESTAMP_EVIDENCE_MISSING'
+  | 'TSA_MESSAGE_IMPRINT_MISMATCH';
 
 // ─── Verification Result ──────────────────────────────────────────────────────
 
@@ -101,10 +124,23 @@ export interface ChainVerification {
    * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
    * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects
    *   unchained legacy events (skippedCount > 0).
+   * - `TIMESTAMP_NON_MONOTONIC`: timestamps decrease between events.
+   * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
+   * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
    *
-   * Priority: CHAIN_BREAK > LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE.
+   * Priority: CHAIN_BREAK > LEGACY > TIMESTAMP_*.
    */
   readonly reason: ChainVerificationReason | null;
+  /** Timestamp monotonicity result (null if strictTimestamps not enabled). */
+  readonly timestampMonotonicity: {
+    readonly valid: boolean;
+    readonly firstBreak: number | null;
+    readonly message: string | null;
+  } | null;
+  /** Indices of critical events missing timestamp evidence. */
+  readonly missingTimestampEvidence: readonly number[];
+  /** Indices of events with TSA messageImprint mismatch. */
+  readonly tsaImprintMismatches: readonly number[];
 }
 
 // ─── Verification Functions ──────────────────────────────────────────────────
@@ -166,10 +202,11 @@ export function verifyEvent(
  * @returns ChainVerification with full results.
  */
 export function verifyChain(
-  events: Array<Record<string, unknown>>,
+  events: Record<string, unknown>[],
   options?: ChainVerifyOptions,
 ): ChainVerification {
   const strict = options?.strict === true;
+  const strictTimestamps = options?.strictTimestamps === true;
   const results: EventVerification[] = [];
   let skippedCount = 0;
   let lastHash = GENESIS_HASH;
@@ -196,8 +233,34 @@ export function verifyChain(
     lastHash = event.chainHash;
   }
 
+  // Timestamp verification (if enabled)
+  let timestampMonotonicity: ChainVerification['timestampMonotonicity'] = null;
+  let missingTimestampEvidence: number[] = [];
+  const tsaImprintMismatches: number[] = [];
+
+  if (strictTimestamps) {
+    const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
+
+    const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
+    timestampMonotonicity = {
+      valid: monotonicityResult.valid,
+      firstBreak: monotonicityResult.firstBreak,
+      message: monotonicityResult.message,
+    };
+
+    const presenceCheck = verifyTimestampEvidencePresence(chainedEvents, ['decision', 'lifecycle']);
+    missingTimestampEvidence = presenceCheck.missingCriticalEvents;
+
+    for (let i = 0; i < chainedEvents.length; i++) {
+      const check = verifyTsaMessageImprint(chainedEvents[i]!);
+      if (!check.valid) {
+        tsaImprintMismatches.push(i);
+      }
+    }
+  }
+
   // Determine validity and reason.
-  // Priority: CHAIN_BREAK > LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE > valid.
+  // Priority: CHAIN_BREAK > LEGACY > TIMESTAMP_NON_MONOTONIC > IMPRINT_MISMATCH > EVIDENCE_MISSING.
   let valid: boolean;
   let reason: ChainVerificationReason | null;
 
@@ -207,6 +270,15 @@ export function verifyChain(
   } else if (strict && skippedCount > 0) {
     valid = false;
     reason = 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+  } else if (strictTimestamps && timestampMonotonicity && !timestampMonotonicity.valid) {
+    valid = false;
+    reason = 'TIMESTAMP_NON_MONOTONIC';
+  } else if (strictTimestamps && tsaImprintMismatches.length > 0) {
+    valid = false;
+    reason = 'TSA_MESSAGE_IMPRINT_MISMATCH';
+  } else if (strictTimestamps && missingTimestampEvidence.length > 0) {
+    valid = false;
+    reason = 'TIMESTAMP_EVIDENCE_MISSING';
   } else {
     valid = true;
     reason = null;
@@ -220,6 +292,9 @@ export function verifyChain(
     firstBreak,
     results,
     reason,
+    timestampMonotonicity,
+    missingTimestampEvidence,
+    tsaImprintMismatches,
   };
 }
 
@@ -230,7 +305,7 @@ export function verifyChain(
  * @param events - The audit trail events in chronological order.
  * @returns The chainHash of the last chained event, or GENESIS_HASH if none.
  */
-export function getLastChainHash(events: Array<Record<string, unknown>>): string {
+export function getLastChainHash(events: Record<string, unknown>[]): string {
   for (let i = events.length - 1; i >= 0; i--) {
     const raw = events[i]!;
     if (isChainedEvent(raw)) {

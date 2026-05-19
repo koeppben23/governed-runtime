@@ -3,9 +3,19 @@
  * @description Canonical FlowGuard policy presets and preset lookup.
  */
 
-import type { FlowGuardPolicy, PolicyMode } from './policy-types.js';
+import type { FlowGuardPolicy, PolicyMode, TimestampAssurancePolicy } from './policy-types.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+
+const DEFAULT_TIMESTAMP_ASSURANCE: TimestampAssurancePolicy = {
+  enabled: false,
+  mode: 'local_only',
+  strict: false,
+  criticalEvents: ['decision', 'lifecycle'],
+  ntpServers: ['pool.ntp.org'],
+  ntpDriftThresholdMs: 30000,
+  tsaTimeoutMs: 10000,
+};
 
 /** SOLO mode -- single developer, minimal ceremony. */
 export const SOLO_POLICY: FlowGuardPolicy = {
@@ -21,6 +31,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: false,
+    timestampAssurance: DEFAULT_TIMESTAMP_ASSURANCE,
   },
   actorClassification: {
     flowguard_decision: 'system',
@@ -48,6 +59,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
+    timestampAssurance: DEFAULT_TIMESTAMP_ASSURANCE,
   },
   actorClassification: {
     flowguard_decision: 'human',
@@ -75,6 +87,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
+    timestampAssurance: DEFAULT_TIMESTAMP_ASSURANCE,
   },
   actorClassification: {
     flowguard_decision: 'system',
@@ -102,6 +115,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
+    timestampAssurance: DEFAULT_TIMESTAMP_ASSURANCE,
   },
   actorClassification: {
     flowguard_decision: 'human',

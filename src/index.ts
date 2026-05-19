@@ -177,6 +177,7 @@ export {
 export {
   GENESIS_HASH,
   computeChainHash,
+  finalizeWithTimestampEvidence,
   createTransitionEvent,
   createToolCallEvent,
   createErrorEvent,
@@ -234,6 +235,40 @@ export {
   type CompletenessReport,
   evaluateCompleteness,
 } from './audit/completeness.js';
+
+// ─── Timestamp Assurance ────────────────────────────────────────────────────
+
+export {
+  type TimestampAssuranceStatus,
+  type TimestampSource,
+  type NtpEvidence,
+  type TsaEvidence,
+  type TsaVerificationStatus,
+  type TimestampEvidence,
+  type TimestampAssuranceMode,
+  DEFAULT_TIMESTAMP_ASSURANCE,
+} from './audit/timestamp-types.js';
+
+export { computeCanonicalEventDigest } from './audit/canonical-digest.js';
+
+export {
+  type TimestampAuthorityProvider,
+  type TimestampVerifier,
+  MockTimestampAuthorityProvider,
+  MockTimestampVerifier,
+  MOCK_TSA_FIXTURE_TOKEN,
+} from './audit/tsa-provider.js';
+
+export { checkNtpClock } from './audit/ntp-check.js';
+export type { NtpCheckResult } from './audit/ntp-check.js';
+
+export { resolveTimestampEvidence } from './audit/timestamp-resolution.js';
+
+export {
+  verifyTimestampMonotonicity,
+  verifyTsaMessageImprint,
+  verifyTimestampEvidencePresence,
+} from './audit/timestamp-verification.js';
 
 // ─── Archive ─────────────────────────────────────────────────────────────────
 

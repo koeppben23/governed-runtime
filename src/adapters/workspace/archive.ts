@@ -457,6 +457,33 @@ async function verifyAuditChainIntegrity(
           file: 'audit.jsonl',
         });
       }
+
+      if (chainResult.missingTimestampEvidence.length > 0) {
+        findings.push({
+          code: 'timestamp_unanchored',
+          severity: 'warning',
+          message: `${chainResult.missingTimestampEvidence.length} critical event(s) lack timestamp assurance evidence (indices: ${chainResult.missingTimestampEvidence.join(', ')})`,
+          file: 'audit.jsonl',
+        });
+      }
+
+      if (chainResult.tsaImprintMismatches.length > 0) {
+        findings.push({
+          code: 'tsa_verification_failed',
+          severity: 'warning',
+          message: `${chainResult.tsaImprintMismatches.length} event(s) have TSA messageImprint mismatch (indices: ${chainResult.tsaImprintMismatches.join(', ')})`,
+          file: 'audit.jsonl',
+        });
+      }
+
+      if (chainResult.timestampMonotonicity && !chainResult.timestampMonotonicity.valid) {
+        findings.push({
+          code: 'timestamp_unanchored',
+          severity: 'warning',
+          message: `Timestamp monotonicity violation: ${chainResult.timestampMonotonicity.message}`,
+          file: 'audit.jsonl',
+        });
+      }
     }
   } catch (error) {
     if (manifest.policyMode === 'regulated') {
