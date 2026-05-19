@@ -40,7 +40,7 @@ import {
   architecture,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import {
   computeFingerprint,

@@ -20,8 +20,9 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { atomicWrite } from '../persistence.js';
-import { readAuditTrail, readConfig, readState } from '../persistence.js';
+import { atomicWrite, readState } from '../persistence.js';
+import { readAuditTrail } from '../persistence-audit.js';
+import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain } from '../../audit/integrity.js';
 import {

@@ -484,7 +484,7 @@ describe('cli/doctor', () => {
       // Install in repo scope (creates .opencode/flowguard.json)
       await install(repoArgs({ coreTarball: tarball }));
       // Also write a global config
-      const { writeGlobalConfig } = await import('../adapters/persistence.js');
+      const { writeGlobalConfig } = await import('../adapters/persistence-config.js');
       const { DEFAULT_CONFIG } = await import('../config/flowguard-config.js');
       await writeGlobalConfig(structuredClone(DEFAULT_CONFIG));
 
@@ -538,7 +538,7 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       // Write global config
-      const { writeGlobalConfig } = await import('../adapters/persistence.js');
+      const { writeGlobalConfig } = await import('../adapters/persistence-config.js');
       const { DEFAULT_CONFIG } = await import('../config/flowguard-config.js');
       await writeGlobalConfig(structuredClone(DEFAULT_CONFIG));
       // Remove repo config

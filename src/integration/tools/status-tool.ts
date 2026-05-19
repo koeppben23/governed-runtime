@@ -27,7 +27,7 @@ import type { ReviewFindings } from '../../state/evidence.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
-import { renderPhaseAwareMandates } from '../../templates/mandates.js';
+import { renderPhaseAwareMandates } from '../../templates/mandates-renderer.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';

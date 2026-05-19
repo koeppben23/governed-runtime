@@ -14,7 +14,7 @@
  * @version v2
  */
 
-import { readConfig } from '../adapters/persistence.js';
+import { readConfig } from '../adapters/persistence-config.js';
 import type { FlowGuardConfig } from '../config/flowguard-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { createFileSink, getLogDir } from '../logging/file-sink.js';

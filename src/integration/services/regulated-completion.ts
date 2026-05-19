@@ -10,7 +10,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import { readAuditTrail, appendAuditEvent } from '../../adapters/persistence.js';
+import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 import { createLifecycleEvent } from '../../audit/types.js';
 import { getLastChainHash } from '../../audit/integrity.js';

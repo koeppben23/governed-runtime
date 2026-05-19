@@ -99,6 +99,10 @@ const HIGH_RISK_PREFIXES = [
   'src/identity/',
   'src/security/',
   'src/adapters/persistence',
+  'src/adapters/persistence-lock',
+  'src/adapters/persistence-audit',
+  'src/adapters/persistence-config',
+  'src/adapters/persistence-discovery',
   'src/cli/uninstall',
   'src/integration/review/',
   'src/integration/plugin',
@@ -133,6 +137,7 @@ const HIGH_RISK_EXACT = new Set([
   'yarn.lock',
   'bun.lockb',
   'src/templates/mandates.ts',
+  'src/templates/mandates-renderer.ts',
 ]);
 
 const HIGH_RISK_RE = [

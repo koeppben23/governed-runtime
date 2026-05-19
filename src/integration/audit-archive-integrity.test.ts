@@ -24,7 +24,8 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, validate, implement, status } from './tools/index.js';
-import { readAuditTrail, readState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeChainHash } from '../audit/types.js';
 import {

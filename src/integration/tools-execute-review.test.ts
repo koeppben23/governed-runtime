@@ -44,7 +44,8 @@ import {
   abort_session,
   archive,
 } from './tools/index.js';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,
@@ -640,7 +641,7 @@ describe('decision', () => {
 
     it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const baseConfig = await readConfig();

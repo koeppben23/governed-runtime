@@ -40,8 +40,10 @@ import {
   abort_session,
   archive,
 } from './tools/index.js';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
+import * as persistenceAudit from '../adapters/persistence-audit.js';
 import {
   makeState,
   makeProgressedState,
@@ -482,7 +484,7 @@ describe('P26: regulated archive completion', () => {
 
       const callOrder: string[] = [];
       const appendSpy = vi
-        .spyOn(persistence, 'appendAuditEvent')
+        .spyOn(persistenceAudit, 'appendAuditEvent')
         .mockImplementation(async (_sessDir, event) => {
           // Track lifecycle completion events
           const detail = (event as Record<string, unknown>).detail as
@@ -555,7 +557,7 @@ describe('P26: regulated archive completion', () => {
       // without session_completed" can exist.
       const sessDir = await reachRegulatedEvidenceReview();
       const appendSpy = vi
-        .spyOn(persistence, 'appendAuditEvent')
+        .spyOn(persistenceAudit, 'appendAuditEvent')
         .mockRejectedValueOnce(new Error('Audit write I/O failure'));
       // archiveSession/verifyArchive are NOT mocked here — they must not be
       // reached when audit emission fails (fail-closed short-circuit).
@@ -577,7 +579,7 @@ describe('P26: regulated archive completion', () => {
       // fails. The single try/catch ensures audit → archive → verify is atomic.
       await reachRegulatedEvidenceReview();
       const appendSpy = vi
-        .spyOn(persistence, 'appendAuditEvent')
+        .spyOn(persistenceAudit, 'appendAuditEvent')
         .mockRejectedValueOnce(new Error('Disk full'));
       const archiveSpy = vi.mocked(wsMock.archiveSession);
 

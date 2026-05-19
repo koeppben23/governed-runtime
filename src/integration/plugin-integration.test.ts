@@ -27,7 +27,8 @@ import {
   type TestWorkspace,
 } from './test-helpers.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { writeState, readAuditTrail } from '../adapters/persistence.js';
+import { writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   initWorkspace,
   computeFingerprint,

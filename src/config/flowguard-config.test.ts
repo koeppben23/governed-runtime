@@ -35,12 +35,8 @@ function restoreReadFile(): void {
   );
 }
 import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
-import {
-  readConfig,
-  globalConfigPath,
-  repoConfigPath,
-  PersistenceError,
-} from '../adapters/persistence.js';
+import { globalConfigPath, repoConfigPath, PersistenceError } from '../adapters/persistence.js';
+import { readConfig } from '../adapters/persistence-config.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

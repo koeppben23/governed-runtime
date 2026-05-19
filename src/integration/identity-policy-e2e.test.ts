@@ -223,7 +223,7 @@ describe('identity-policy-e2e', () => {
 
       // Write config with idpMode=required + identityProvider
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);
@@ -287,7 +287,7 @@ describe('identity-policy-e2e', () => {
       await hydrateSession({ policyMode: 'solo' });
 
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);

@@ -76,8 +76,6 @@ These apply across all task classes:
 - Keep runtime, docs, tests, schemas, and config aligned.
 - Preserve integrity across state, policy, identity, audit, archive, release, installer, migration, and trust boundaries.
 - Approve only behavior that is tested, proven, and evidence-backed.
-- Preserve clean code and clean architecture on every change — no god-files, no
-  duplicate authority, no mixed concerns, one reason to change per module.
 
 ## 5. Evidence Rules
 

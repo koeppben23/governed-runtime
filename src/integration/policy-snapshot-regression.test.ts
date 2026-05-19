@@ -9,7 +9,8 @@ import {
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
 } from '../config/policy-snapshot.js';
-import { readState, readConfig, writeRepoConfig } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
+import { readConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { computeFingerprint, sessionDir, workspaceDir } from '../adapters/workspace/index.js';
 import {
   createToolContext,

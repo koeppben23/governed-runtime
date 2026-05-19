@@ -27,7 +27,7 @@ import {
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
-vi.mock('../../adapters/persistence.js', () => ({
+vi.mock('../../adapters/persistence-audit.js', () => ({
   readAuditTrail: vi.fn().mockResolvedValue({ events: [], skipped: 0 }),
   appendAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -85,7 +85,7 @@ vi.mock('../tools/helpers.js', () => ({
   createPolicyContext: helperMocks.createPolicyContext,
 }));
 
-import { readAuditTrail, appendAuditEvent } from '../../adapters/persistence.js';
+import { readAuditTrail, appendAuditEvent } from '../../adapters/persistence-audit.js';
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 import { writeStateWithArtifacts } from '../tools/helpers.js';
 
