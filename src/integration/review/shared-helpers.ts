@@ -11,7 +11,7 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewInvocationPolicy, ReviewOutputPolicy } from '../../config/policy-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import type { OrchestratorClient, ReviewerSuccessResult } from './orchestrator.js';
+import type { ReviewerSuccessResult } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
 import { parseToolResult } from '../plugin-helpers.js';
 import {
@@ -40,10 +40,7 @@ import type {
   PipelineContext,
   ReviewSessionContext,
 } from './pipeline-types.js';
-import {
-  INVOCATION_MODE_SDK_SESSION,
-  EVIDENCE_SOURCE_HOST,
-} from './pipeline-types.js';
+import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
 
 // ─── Reason Constants ────────────────────────────────────────────────────────
 

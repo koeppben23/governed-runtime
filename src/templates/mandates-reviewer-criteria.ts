@@ -4,7 +4,8 @@ export type { ReviewerPromptType };
 import { REVIEWER_CRITERIA } from './mandates.js';
 
 function renderReviewerCriteria(reviewType: ReviewerPromptType): string {
-  if (reviewType !== 'all') return REVIEWER_CRITERIA[reviewType as Exclude<ReviewerPromptType, 'all'>]!;
+  if (reviewType !== 'all')
+    return REVIEWER_CRITERIA[reviewType as Exclude<ReviewerPromptType, 'all'>]!;
   return [
     REVIEWER_CRITERIA.plan,
     REVIEWER_CRITERIA.implementation,

@@ -22,11 +22,7 @@ import { handleHostTaskPolicy } from './review/host-task-policy.js';
 import { runReviewContentPipeline } from './review/content-review-pipeline.js';
 import { runStandardReviewPipeline } from './review/standard-review-pipeline.js';
 import type { SessionState } from '../state/schema.js';
-import type {
-  OrchestratorDeps,
-  ToolCallEvent,
-  PipelineContext,
-} from './review/pipeline-types.js';
+import type { OrchestratorDeps, ToolCallEvent, PipelineContext } from './review/pipeline-types.js';
 
 // ─── Re-exports (preserving pre-refactor public API surface) ─────────────────
 

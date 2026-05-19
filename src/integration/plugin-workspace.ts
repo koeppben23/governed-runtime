@@ -30,10 +30,7 @@ import { strictBlockedOutput } from './plugin-helpers.js';
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
 import type { ReviewSessionContext } from './review/pipeline-types.js';
-import {
-  recordAssuranceWithAudit,
-  type AssuranceAuditDeps,
-} from './review/shared-helpers.js';
+import { recordAssuranceWithAudit } from './review/shared-helpers.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -280,5 +277,3 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     },
   };
 }
-
-

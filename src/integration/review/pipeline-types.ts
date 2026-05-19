@@ -9,10 +9,9 @@
  */
 
 import type { SessionEnforcementState } from './enforcement/types.js';
-import type { OrchestratorClient, ReviewerSuccessResult } from './orchestrator.js';
+import type { OrchestratorClient } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewObligationType } from '../../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

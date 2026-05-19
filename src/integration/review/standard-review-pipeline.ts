@@ -18,36 +18,17 @@ import {
   hashText,
 } from './assurance.js';
 import { buildMutatedOutput, invokeReviewer, type ReviewerSuccessResult } from './orchestrator.js';
-import {
-  buildPlanReviewPrompt,
-  buildImplReviewPrompt,
-  buildArchitectureReviewPrompt,
-  selectReviewerProfileRules,
-} from './prompt-builders.js';
-import {
-  getToolOutput,
-  getToolArgs,
-  parseToolResult,
-  strictBlockedOutput,
-} from '../plugin-helpers.js';
-import {
-  TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
-  TOOL_FLOWGUARD_ARCHITECTURE,
-} from '../tool-names.js';
+import { selectReviewerProfileRules } from './prompt-builders.js';
+import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
+import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { updateObligation } from './obligation-state.js';
 import { appendReviewAuditEvent } from './audit-events.js';
 import { recordAssuranceWithAudit } from './shared-helpers.js';
-import type { ReviewSessionContext } from './pipeline-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-identifiers.js';
-import type { OrchestratorDeps, PipelineContext } from './pipeline-types.js';
+import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
-import {
-  INVOCATION_MODE_SDK_SESSION,
-  EVIDENCE_SOURCE_HOST,
-} from './pipeline-types.js';
 import {
   validateStrictAttestation,
   recordEvidenceOrBlockReuse,
@@ -55,7 +36,6 @@ import {
   isStrictEnforcementEnabled,
   getReviewerPolicies,
   isOutputAlreadyBlocked,
-  buildSessionContext,
   buildToolPrompt,
   buildAttemptFailedLogger,
 } from './shared-helpers.js';

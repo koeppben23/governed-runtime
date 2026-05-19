@@ -26,11 +26,8 @@ import {
   appendInvocationEvidence,
 } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
-import type { OrchestratorDeps, PipelineContext } from './pipeline-types.js';
-import {
-  INVOCATION_MODE_SDK_SESSION,
-  EVIDENCE_SOURCE_HOST,
-} from './pipeline-types.js';
+import type { PipelineContext } from './pipeline-types.js';
+import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
 import {
   validateStrictAttestation,
   blockReviewOutcomeHelper,
