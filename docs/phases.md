@@ -218,6 +218,8 @@ Use `/validate` to run the checks.
 **Exit:** Automatic (auto-advances to IMPL_REVIEW)
 
 AI implements the plan using OpenCode tools. Changed files are automatically tracked via git.
+
+When `policy.allowReducedCeremony` is enabled, FlowGuard may reduce only the implementation-review ceremony after implementation evidence is recorded. The machine still uses explicit transitions (`IMPLEMENTATION → EVIDENCE_REVIEW` via `REDUCED_CEREMONY`, then the normal evidence gate). Reduction is evidenced in `state.reducedCeremony`; FlowGuard does not synthesize `implReview` evidence. Reduction is allowed only for a `TRIVIAL` claim, runtime-computed `TRIVIAL` changed files, clear `riskGate`, complete passing validation evidence, no sensitive surfaces, no policy-required host review, and no outstanding review obligation. Otherwise the full IMPL_REVIEW path remains unchanged.
 Use `/implement` to record evidence and auto-advance.
 
 ### IMPL_REVIEW

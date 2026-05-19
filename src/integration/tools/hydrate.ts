@@ -198,6 +198,7 @@ async function resolveNewPolicyResolution(config: HydrateConfig, args: { policyM
     configIdentityProviderMode: config.policy.identityProviderMode,
     configEnforceRiskClassification: config.policy.enforceRiskClassification,
     configAllowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
+    configAllowReducedCeremony: config.policy.allowReducedCeremony,
   });
 }
 
@@ -525,6 +526,7 @@ function buildNewPolicyInput(
     minimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
     enforceRiskClassification: config.policy.enforceRiskClassification,
     allowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
+    allowReducedCeremony: config.policy.allowReducedCeremony,
     policyResolution,
   };
 }

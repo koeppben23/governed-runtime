@@ -117,6 +117,7 @@ describe('config/policy', () => {
       expect(SOLO_POLICY.identityProviderMode).toBe('optional');
       expect(SOLO_POLICY.enforceRiskClassification).toBe(false);
       expect(SOLO_POLICY.allowRiskDowngradeOverride).toBe(false);
+      expect(SOLO_POLICY.allowReducedCeremony).toBe(false);
     });
 
     it('TEAM has human gates and 3 iterations', () => {
@@ -132,6 +133,7 @@ describe('config/policy', () => {
       expect(TEAM_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_POLICY.enforceRiskClassification).toBe(false);
       expect(TEAM_POLICY.allowRiskDowngradeOverride).toBe(false);
+      expect(TEAM_POLICY.allowReducedCeremony).toBe(false);
     });
 
     it('REGULATED has four-eyes enforcement', () => {
@@ -143,6 +145,7 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.identityProviderMode).toBe('optional');
       expect(REGULATED_POLICY.enforceRiskClassification).toBe(true);
       expect(REGULATED_POLICY.allowRiskDowngradeOverride).toBe(false);
+      expect(REGULATED_POLICY.allowReducedCeremony).toBe(false);
     });
 
     it('TEAM-CI enables auto-approval with full audit', () => {
@@ -158,6 +161,7 @@ describe('config/policy', () => {
       expect(TEAM_CI_POLICY.identityProviderMode).toBe('optional');
       expect(TEAM_CI_POLICY.enforceRiskClassification).toBe(true);
       expect(TEAM_CI_POLICY.allowRiskDowngradeOverride).toBe(false);
+      expect(TEAM_CI_POLICY.allowReducedCeremony).toBe(false);
     });
 
     it('createPolicySnapshot produces deterministic hash', () => {

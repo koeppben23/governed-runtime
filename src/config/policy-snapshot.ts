@@ -140,6 +140,7 @@ export function createPolicySnapshot(
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
+    allowReducedCeremony: policy.allowReducedCeremony,
   };
 }
 
@@ -220,6 +221,34 @@ function isValidReviewOutputPolicy(v: unknown): v is ReviewOutputPolicy {
 
 function isValidReviewInvocationPolicy(v: unknown): v is ReviewInvocationPolicy {
   return v === 'host_task_required' || v === 'host_task_preferred' || v === 'sdk_allowed';
+}
+
+function normalizeBooleanField(
+  raw: unknown,
+  fallback: boolean,
+): { value: boolean; normalized: boolean } {
+  return typeof raw === 'boolean'
+    ? { value: raw, normalized: false }
+    : { value: fallback, normalized: true };
+}
+
+function normalizeReviewPolicies(
+  s: Record<string, unknown>,
+  defaults: ReturnType<typeof modeConsistentDefaults>,
+): {
+  reviewOutputPolicy: ReviewOutputPolicy;
+  reviewInvocationPolicy: ReviewInvocationPolicy;
+  normalized: boolean;
+} {
+  const rawReviewOut = s.reviewOutputPolicy;
+  const rawReviewInv = s.reviewInvocationPolicy;
+  const validReviewOut = isValidReviewOutputPolicy(rawReviewOut);
+  const validReviewInv = isValidReviewInvocationPolicy(rawReviewInv);
+  return {
+    reviewOutputPolicy: validReviewOut ? rawReviewOut : defaults.reviewOutputPolicy,
+    reviewInvocationPolicy: validReviewInv ? rawReviewInv : defaults.reviewInvocationPolicy,
+    normalized: !validReviewOut || !validReviewInv,
+  };
 }
 
 /**
@@ -307,6 +336,7 @@ function normalizePolicyFields(
   reviewInvocationPolicy: ReviewInvocationPolicy;
   enforceRiskClassification: boolean;
   allowRiskDowngradeOverride: boolean;
+  allowReducedCeremony: boolean;
   normalized: boolean;
 } {
   let norm = false;
@@ -322,17 +352,8 @@ function normalizePolicyFields(
     typeof rawReqVerified === 'boolean' ? rawReqVerified : false;
   if (typeof rawReqVerified !== 'boolean') norm = true;
 
-  const rawReviewOut = s.reviewOutputPolicy;
-  const reviewOutputPolicy = isValidReviewOutputPolicy(rawReviewOut)
-    ? rawReviewOut
-    : defaults.reviewOutputPolicy;
-  if (!isValidReviewOutputPolicy(rawReviewOut)) norm = true;
-
-  const rawReviewInv = s.reviewInvocationPolicy;
-  const reviewInvocationPolicy = isValidReviewInvocationPolicy(rawReviewInv)
-    ? rawReviewInv
-    : defaults.reviewInvocationPolicy;
-  if (!isValidReviewInvocationPolicy(rawReviewInv)) norm = true;
+  const reviewPolicies = normalizeReviewPolicies(s, defaults);
+  if (reviewPolicies.normalized) norm = true;
 
   const rawRiskEnforcement = s.enforceRiskClassification;
   const enforceRiskClassification =
@@ -341,18 +362,24 @@ function normalizePolicyFields(
       : defaults.enforceRiskClassification;
   if (typeof rawRiskEnforcement !== 'boolean') norm = true;
 
-  const rawRiskOverride = s.allowRiskDowngradeOverride;
-  const allowRiskDowngradeOverride =
-    typeof rawRiskOverride === 'boolean' ? rawRiskOverride : defaults.allowRiskDowngradeOverride;
-  if (typeof rawRiskOverride !== 'boolean') norm = true;
+  const riskOverride = normalizeBooleanField(
+    s.allowRiskDowngradeOverride,
+    defaults.allowRiskDowngradeOverride,
+  );
+  const reducedCeremony = normalizeBooleanField(
+    s.allowReducedCeremony,
+    defaults.allowReducedCeremony,
+  );
+  norm = norm || riskOverride.normalized || reducedCeremony.normalized;
 
   return {
     effectiveGateBehavior,
     requireVerifiedActorsForApproval,
-    reviewOutputPolicy,
-    reviewInvocationPolicy,
+    reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,
+    reviewInvocationPolicy: reviewPolicies.reviewInvocationPolicy,
     enforceRiskClassification,
-    allowRiskDowngradeOverride,
+    allowRiskDowngradeOverride: riskOverride.value,
+    allowReducedCeremony: reducedCeremony.value,
     normalized: norm,
   };
 }
@@ -512,6 +539,7 @@ export function normalizePolicySnapshotWithMeta(
       reviewInvocationPolicy: policy.reviewInvocationPolicy,
       enforceRiskClassification: policy.enforceRiskClassification,
       allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
+      allowReducedCeremony: policy.allowReducedCeremony,
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -530,6 +558,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly reviewInvocationPolicy: ReviewInvocationPolicy;
   readonly enforceRiskClassification: boolean;
   readonly allowRiskDowngradeOverride: boolean;
+  readonly allowReducedCeremony: boolean;
 } {
   switch (mode) {
     case 'solo':
@@ -544,6 +573,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         reviewInvocationPolicy: 'host_task_preferred',
         enforceRiskClassification: false,
         allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
       };
     case 'regulated':
       return {
@@ -557,6 +587,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         reviewInvocationPolicy: 'host_task_required',
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
       };
     case 'team':
       return {
@@ -570,6 +601,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         reviewInvocationPolicy: 'host_task_required',
         enforceRiskClassification: false,
         allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
       };
     case 'team-ci':
       return {
@@ -583,6 +615,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         reviewInvocationPolicy: 'host_task_required',
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
+        allowReducedCeremony: false,
       };
   }
 }
@@ -634,5 +667,8 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     allowRiskDowngradeOverride:
       snapshot.allowRiskDowngradeOverride ??
       modeConsistentDefaults(snapshot.mode as PolicyMode).allowRiskDowngradeOverride,
+    allowReducedCeremony:
+      snapshot.allowReducedCeremony ??
+      modeConsistentDefaults(snapshot.mode as PolicyMode).allowReducedCeremony,
   };
 }

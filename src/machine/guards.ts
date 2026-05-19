@@ -115,6 +115,10 @@ export const checkFailed: GuardFn = (s) => s.validation.length > 0 && !allValida
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
+/** Implementation evidence has an explicit reduced-ceremony decision. */
+export const reducedCeremonyReady: GuardFn = (s) =>
+  s.implementation !== null && s.reducedCeremony !== null;
+
 /**
  * Implementation review loop converged.
  * Same convergence logic as self-review (digest-stop).
@@ -183,6 +187,7 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     'IMPLEMENTATION',
     [
       { event: 'ERROR', guard: hasError },
+      { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'IMPL_COMPLETE', guard: implComplete },
     ],
   ],

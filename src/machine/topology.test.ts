@@ -37,6 +37,10 @@ describe('topology', () => {
       expect(resolveTransition('IMPLEMENTATION', 'IMPL_COMPLETE')).toBe('IMPL_REVIEW');
     });
 
+    it('resolves IMPLEMENTATION + REDUCED_CEREMONY → EVIDENCE_REVIEW', () => {
+      expect(resolveTransition('IMPLEMENTATION', 'REDUCED_CEREMONY')).toBe('EVIDENCE_REVIEW');
+    });
+
     it('resolves IMPL_REVIEW + REVIEW_MET → EVIDENCE_REVIEW', () => {
       expect(resolveTransition('IMPL_REVIEW', 'REVIEW_MET')).toBe('EVIDENCE_REVIEW');
     });
@@ -110,6 +114,7 @@ describe('topology', () => {
         'ALL_PASSED',
         'CHECK_FAILED',
         'IMPL_COMPLETE',
+        'REDUCED_CEREMONY',
         'REVIEW_MET',
         'REVIEW_PENDING',
         'REVIEW_DONE',

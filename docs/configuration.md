@@ -269,6 +269,27 @@ Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
+### policy.allowReducedCeremony
+
+**Type:** `boolean`
+**Default:** `false`
+
+Permits reduced implementation-review ceremony only after FlowGuard has runtime evidence that the changed files are low risk. This setting is fail-closed and does not let `claimedTaskClass` choose pipeline depth.
+
+Reduced ceremony can apply only when all of these are true:
+
+- `policy.allowReducedCeremony` is `true` in the frozen policy snapshot.
+- `claimedTaskClass` is present and exactly `TRIVIAL`.
+- Runtime-computed minimum task class is `TRIVIAL`.
+- `riskGate` is clear or absent.
+- Changed-file evidence is available and touches no governance, security, policy, state, audit, archive, release, installer, CI, persistence, migration, or trust-boundary surface.
+- Validation evidence for all active checks is complete and passing.
+- Implementation evidence, `state.reducedCeremony`, and transition audit are recorded.
+- `reviewInvocationPolicy` does not require host-task review.
+- No outstanding review obligation exists.
+
+If any condition fails, FlowGuard keeps the full existing ceremony. Sensitive surfaces escalate to the computed minimum, often `HIGH-RISK`; they do not downgrade to `STANDARD` by default. Reduced ceremony never writes synthetic `implReview` approval evidence.
+
 ### Runtime Policy Resolution
 
 Different runtime contexts resolve policy defaults independently:
@@ -295,6 +316,7 @@ Config values are resolved once at session creation (first `/hydrate`). The reso
 
 - `policySnapshot.maxSelfReviewIterations`
 - `policySnapshot.maxImplReviewIterations`
+- `policySnapshot.allowReducedCeremony`
 - `profileResolution.activeChecks`
 
 Re-running `/hydrate` on an existing session reads from the snapshot, not from updated config. This ensures:

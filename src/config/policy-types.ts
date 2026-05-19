@@ -163,6 +163,12 @@ export interface FlowGuardPolicy {
    * must not bypass the gate.
    */
   readonly allowRiskDowngradeOverride: boolean;
+
+  /**
+   * Permit reduced delivery ceremony only after runtime evidence proves a task is
+   * low risk. This never lets claimedTaskClass decide flow depth by itself.
+   */
+  readonly allowReducedCeremony: boolean;
 }
 
 /** Supported policy modes. */

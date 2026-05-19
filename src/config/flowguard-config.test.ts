@@ -92,6 +92,7 @@ describe('FlowGuardConfigSchema', () => {
         maxImplReviewIterations: 7,
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
+        allowReducedCeremony: true,
       },
       profile: {
         defaultId: 'typescript',
@@ -113,6 +114,7 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy.maxImplReviewIterations).toBe(7);
       expect(result.data.policy.enforceRiskClassification).toBe(true);
       expect(result.data.policy.allowRiskDowngradeOverride).toBe(false);
+      expect(result.data.policy.allowReducedCeremony).toBe(true);
       expect(result.data.profile.defaultId).toBe('typescript');
       expect(result.data.profile.activeChecks).toEqual([
         'test_quality',

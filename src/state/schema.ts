@@ -49,6 +49,7 @@ import {
  *
  * Ticket flow (full development lifecycle):
  *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only with explicit reducedCeremony evidence.
  *
  * Architecture flow (ADR creation):
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
@@ -90,6 +91,19 @@ export type Phase = z.infer<typeof Phase>;
  */
 export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
 export type TaskClass = z.infer<typeof TaskClass>;
+
+/** Runtime decision that implementation review ceremony was explicitly reduced. */
+export const ReducedCeremonyDecision = z
+  .object({
+    profile: z.literal('reduced'),
+    reason: z.string().min(1),
+    claimedTaskClass: TaskClass,
+    computedMinimumTaskClass: TaskClass,
+    touchedSurfaces: z.array(z.string()),
+    decidedAt: z.string().datetime(),
+  })
+  .readonly();
+export type ReducedCeremonyDecision = z.infer<typeof ReducedCeremonyDecision>;
 
 /** Persistent risk gate state. A blocked gate must stop the next mutating tool. */
 export const RiskGate = z.discriminatedUnion('status', [
@@ -139,6 +153,9 @@ export const Event = z.enum([
 
   // IMPLEMENTATION → IMPL_REVIEW
   'IMPL_COMPLETE',
+
+  // IMPLEMENTATION → EVIDENCE_REVIEW when policy-gated reduced ceremony is proven
+  'REDUCED_CEREMONY',
 
   // IMPL_REVIEW loop
   'REVIEW_MET',
@@ -220,6 +237,9 @@ export const SessionState = z.object({
 
   /** Implementation evidence from /implement. */
   implementation: ImplEvidence.nullable(),
+
+  /** Explicit runtime evidence for reducing implementation-review ceremony. */
+  reducedCeremony: ReducedCeremonyDecision.nullable().default(null),
 
   /** Implementation review iteration result (IMPL_REVIEW phase, digest-stop). */
   implReview: ImplReviewResult.nullable(),
