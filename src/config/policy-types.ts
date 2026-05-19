@@ -9,6 +9,30 @@
 
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 
+// ─── Timestamp Assurance Policy ──────────────────────────────────────────────
+
+/** Timestamp assurance evidence configuration for audit events. */
+export interface TimestampAssurancePolicy {
+  /** Enable timestamp assurance evidence (default: false). */
+  readonly enabled: boolean;
+  /** Assurance mode: local_only, ntp_check, or tsa_critical. */
+  readonly mode: 'local_only' | 'ntp_check' | 'tsa_critical';
+  /** Strict mode — TSA failure on critical events → session ERROR. Slice 1: always false. */
+  readonly strict: boolean;
+  /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
+  readonly criticalEvents: ReadonlyArray<string>;
+  /** TSA endpoint URL (required in tsa_critical mode). */
+  readonly tsaUrl?: string;
+  /** PEM-encodierte TSA trust anchor certificates (for Slice 2 verification). */
+  readonly trustAnchors?: ReadonlyArray<string>;
+  /** NTP server hostnames (default: pool.ntp.org). */
+  readonly ntpServers?: ReadonlyArray<string>;
+  /** Max clock drift before warning (ms, default: 30000). */
+  readonly ntpDriftThresholdMs: number;
+  /** TSA request timeout (ms, default: 10000). */
+  readonly tsaTimeoutMs: number;
+}
+
 // ─── Audit Policy ─────────────────────────────────────────────────────────────
 
 /** Controls which audit events are emitted and how. */
@@ -19,6 +43,8 @@ export interface AuditPolicy {
   readonly emitToolCalls: boolean;
   /** Enable SHA-256 hash chain for tamper detection. */
   readonly enableChainHash: boolean;
+  /** Timestamp assurance evidence configuration. */
+  readonly timestampAssurance: TimestampAssurancePolicy;
 }
 
 /**

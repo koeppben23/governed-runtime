@@ -24,7 +24,7 @@
 
 import * as crypto from 'node:crypto';
 import type { Phase, Event } from '../state/schema.js';
-import type { ReviewVerdict } from '../state/evidence.js';
+import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 
 // P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
 // Re-exported here for backward compatibility — all existing consumers continue to work.
@@ -146,6 +146,10 @@ export interface ChainedAuditEvent {
   readonly detail: Readonly<Record<string, unknown>>;
   readonly prevHash: string;
   readonly chainHash: string;
+  /** SHA-256 of event without timestampEvidence and chainHash. TSA anchoring. */
+  readonly canonicalEventDigest?: string;
+  /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
+  readonly timestampEvidence?: TimestampEvidence;
 }
 
 // ─── Genesis Constant ─────────────────────────────────────────────────────────
@@ -203,6 +207,7 @@ export function createTransitionEvent(
   detail: Omit<TransitionDetail, 'kind'>,
   timestamp: string,
   prevHash: string,
+  timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
   const eventName = `transition:${detail.event}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -214,6 +219,7 @@ export function createTransitionEvent(
     actor: 'machine',
     detail: toDetailRecord({ ...detail, kind: 'transition' }),
     prevHash,
+    ...(timestampEvidence ? { timestampEvidence } : {}),
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
 }
@@ -229,6 +235,7 @@ export interface ToolCallEventInput {
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
+  readonly timestampEvidence?: TimestampEvidence;
 }
 
 /**
@@ -236,7 +243,7 @@ export interface ToolCallEventInput {
  * One event per FlowGuard tool invocation.
  */
 export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEvent {
-  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
   const eventName = `tool_call:${detail.tool}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
@@ -248,6 +255,7 @@ export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEven
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
     prevHash,
+    ...(timestampEvidence ? { timestampEvidence } : {}),
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
 }
@@ -261,6 +269,7 @@ export function createErrorEvent(
   detail: Omit<ErrorDetail, 'kind'>,
   timestamp: string,
   prevHash: string,
+  timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
   const eventName = `error:${detail.code}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
@@ -272,6 +281,7 @@ export function createErrorEvent(
     actor: 'machine',
     detail: toDetailRecord({ ...detail, kind: 'error' }),
     prevHash,
+    ...(timestampEvidence ? { timestampEvidence } : {}),
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
 }
@@ -286,6 +296,7 @@ export interface LifecycleEventInput {
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
+  readonly timestampEvidence?: TimestampEvidence;
 }
 
 /**
@@ -293,7 +304,7 @@ export interface LifecycleEventInput {
  * Emitted on session creation, completion, or abortion.
  */
 export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEvent {
-  const { sessionId, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
   const eventName = `lifecycle:${detail.action}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
@@ -305,6 +316,7 @@ export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEv
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
+    ...(timestampEvidence ? { timestampEvidence } : {}),
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
 }
@@ -320,6 +332,7 @@ export interface DecisionEventInput {
   readonly actor: string;
   readonly prevHash: string;
   readonly actorInfo?: ActorInfo;
+  readonly timestampEvidence?: TimestampEvidence;
 }
 
 /**
@@ -327,7 +340,7 @@ export interface DecisionEventInput {
  * One event per successful /review-decision execution.
  */
 export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEvent {
-  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
   const eventName = `decision:${detail.decisionId}`;
   const base: Omit<ChainedAuditEvent, 'chainHash'> = {
     id: crypto.randomUUID(),
@@ -339,6 +352,7 @@ export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEven
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
     prevHash,
+    ...(timestampEvidence ? { timestampEvidence } : {}),
   };
   return { ...base, chainHash: computeChainHash(prevHash, base) };
 }

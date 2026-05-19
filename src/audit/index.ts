@@ -84,3 +84,43 @@ export {
   type CompletenessReport,
   evaluateCompleteness,
 } from './completeness.js';
+
+// Timestamp assurance evidence
+export {
+  type TimestampAssuranceStatus,
+  type TimestampSource,
+  type NtpEvidence,
+  type TsaEvidence,
+  type TsaVerificationStatus,
+  type TimestampEvidence,
+  type TimestampAssuranceMode,
+  DEFAULT_TIMESTAMP_ASSURANCE,
+} from './timestamp-types.js';
+
+export { computeCanonicalEventDigest } from './canonical-digest.js';
+
+export {
+  type TimestampAuthorityProvider,
+  type TimestampVerifier,
+  MockTimestampAuthorityProvider,
+  MockTimestampVerifier,
+  FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER,
+} from './tsa-provider.js';
+
+export { checkNtpClock } from './ntp-check.js';
+export type { NtpCheckResult } from './ntp-check.js';
+
+export { resolveTimestampEvidence } from './timestamp-resolution.js';
+export type { TimestampResolutionInput, TimestampResolutionResult } from './timestamp-resolution.js';
+
+export {
+  verifyTimestampMonotonicity,
+  verifyTsaMessageImprint,
+  verifyTimestampEvidencePresence,
+  canonicalDigestToUint8Array,
+} from './timestamp-verification.js';
+export type {
+  TimestampMonotonicityResult,
+  TimestampEvidenceCheck,
+  EvidencePresenceCheck,
+} from './timestamp-verification.js';

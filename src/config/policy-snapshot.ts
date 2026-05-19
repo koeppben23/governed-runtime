@@ -21,6 +21,8 @@ import type { PolicySnapshot } from '../state/evidence.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import type {
   FlowGuardPolicy,
+  AuditPolicy,
+  TimestampAssurancePolicy,
   PolicyMode,
   EffectiveGateBehavior,
   PolicyDegradedReason,
@@ -130,6 +132,17 @@ export function createPolicySnapshot(
       emitTransitions: policy.audit.emitTransitions,
       emitToolCalls: policy.audit.emitToolCalls,
       enableChainHash: policy.audit.enableChainHash,
+      timestampAssurance: {
+        enabled: policy.audit.timestampAssurance.enabled,
+        mode: policy.audit.timestampAssurance.mode,
+        strict: policy.audit.timestampAssurance.strict,
+        criticalEvents: [...policy.audit.timestampAssurance.criticalEvents],
+        ...(policy.audit.timestampAssurance.tsaUrl ? { tsaUrl: policy.audit.timestampAssurance.tsaUrl } : {}),
+        ...(policy.audit.timestampAssurance.trustAnchors ? { trustAnchors: [...policy.audit.timestampAssurance.trustAnchors] } : {}),
+        ...(policy.audit.timestampAssurance.ntpServers ? { ntpServers: [...policy.audit.timestampAssurance.ntpServers] } : {}),
+        ntpDriftThresholdMs: policy.audit.timestampAssurance.ntpDriftThresholdMs,
+        tsaTimeoutMs: policy.audit.timestampAssurance.tsaTimeoutMs,
+      },
     },
     actorClassification: { ...policy.actorClassification },
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
@@ -415,18 +428,77 @@ function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   emitTransitions: boolean;
   emitToolCalls: boolean;
   enableChainHash: boolean;
+  timestampAssurance: {
+    enabled: boolean;
+    mode: 'local_only' | 'ntp_check' | 'tsa_critical';
+    strict: boolean;
+    criticalEvents: string[];
+    tsaUrl?: string;
+    trustAnchors?: string[];
+    ntpServers?: string[];
+    ntpDriftThresholdMs: number;
+    tsaTimeoutMs: number;
+  };
 }> {
   const raw = s.audit as Record<string, unknown> | null | undefined;
   if (!raw || typeof raw !== 'object') {
     return {
-      value: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      value: {
+        emitTransitions: true,
+        emitToolCalls: true,
+        enableChainHash: true,
+        timestampAssurance: {
+          enabled: false,
+          mode: 'local_only',
+          strict: false,
+          criticalEvents: ['decision', 'lifecycle'],
+          ntpServers: ['pool.ntp.org'],
+          ntpDriftThresholdMs: 30000,
+          tsaTimeoutMs: 10000,
+        },
+      },
       normalized: true,
     };
   }
   const emitTransitions = typeof raw.emitTransitions === 'boolean' ? raw.emitTransitions : true;
   const emitToolCalls = typeof raw.emitToolCalls === 'boolean' ? raw.emitToolCalls : true;
   const enableChainHash = typeof raw.enableChainHash === 'boolean' ? raw.enableChainHash : true;
-  return { value: { emitTransitions, emitToolCalls, enableChainHash }, normalized: false };
+  const rawTsa = raw.timestampAssurance as Record<string, unknown> | null | undefined;
+  const timestampAssurance = rawTsa && typeof rawTsa === 'object'
+    ? {
+        enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
+        mode: isValidTsAMode(rawTsa.mode) ? rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical' : 'local_only',
+        strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
+        criticalEvents: Array.isArray(rawTsa.criticalEvents)
+          ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
+          : ['decision', 'lifecycle'],
+        tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
+        trustAnchors: Array.isArray(rawTsa.trustAnchors)
+          ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
+          : undefined,
+        ntpServers: Array.isArray(rawTsa.ntpServers)
+          ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
+          : ['pool.ntp.org'],
+        ntpDriftThresholdMs: typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
+        tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
+      }
+    : {
+        enabled: false,
+        mode: 'local_only' as const,
+        strict: false,
+        criticalEvents: ['decision', 'lifecycle'],
+        ntpServers: ['pool.ntp.org'],
+        ntpDriftThresholdMs: 30000,
+        tsaTimeoutMs: 10000,
+      };
+  return {
+    value: { emitTransitions, emitToolCalls, enableChainHash, timestampAssurance },
+    normalized: false,
+  };
+}
+
+function isValidTsAMode(mode: unknown): boolean {
+  return mode === 'local_only' || mode === 'ntp_check' || mode === 'tsa_critical';
 }
 
 function normalizeSelfReviewCheck(s: Record<string, unknown>): boolean {
@@ -657,7 +729,17 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
-    },
+      timestampAssurance: ((snapshot.audit as Record<string, unknown>).timestampAssurance as
+        TimestampAssurancePolicy) ?? {
+        enabled: false,
+        mode: 'local_only' as const,
+        strict: false,
+        criticalEvents: ['decision', 'lifecycle'],
+        ntpServers: ['pool.ntp.org'],
+        ntpDriftThresholdMs: 30000,
+        tsaTimeoutMs: 10000,
+      },
+    } satisfies AuditPolicy,
     actorClassification: { ...snapshot.actorClassification },
     identityProvider: snapshot.identityProvider,
     identityProviderMode: snapshot.identityProviderMode ?? 'optional',

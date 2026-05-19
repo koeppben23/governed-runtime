@@ -63,6 +63,15 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
     emitTransitions: true,
     emitToolCalls: true,
     enableChainHash: true,
+    timestampAssurance: {
+      enabled: false,
+      mode: 'local_only',
+      strict: false,
+      criticalEvents: ['decision', 'lifecycle'],
+      ntpServers: ['pool.ntp.org'],
+      ntpDriftThresholdMs: 30000,
+      tsaTimeoutMs: 10000,
+    },
   },
   actorClassification: {
     flowguard_decision: 'human',

@@ -21,6 +21,8 @@ import {
   summarizeArgs,
   GENESIS_HASH,
 } from '../audit/types.js';
+import type { TimestampEvidence } from '../audit/timestamp-types.js';
+import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import { parseToolResult } from './plugin-helpers.js';
 
 /** Closure dependencies injected from plugin.ts. */
@@ -29,7 +31,12 @@ export interface AuditDeps {
   getSessionDir(sessionId: string): string | null;
   resolveSessionPolicy(sessDir: string): Promise<{
     policy: {
-      audit: { emitToolCalls: boolean; emitTransitions: boolean; enableChainHash: boolean };
+      audit: {
+        emitToolCalls: boolean;
+        emitTransitions: boolean;
+        enableChainHash: boolean;
+        timestampAssurance?: TimestampAssurancePolicy;
+      };
       actorClassification: Record<string, string>;
       mode: string;
       requireHumanGates: boolean;
@@ -75,6 +82,8 @@ interface AuditContext {
   success: boolean;
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
+  timestampAssurance: TimestampAssurancePolicy;
+  timestampEvidence?: TimestampEvidence;
 }
 
 // ─── Extracted helpers ────────────────────────────────────────────────────────
@@ -168,6 +177,14 @@ async function resolveAuditContext(
       success,
       errorMessage,
       parsed,
+      timestampAssurance: policy.audit.timestampAssurance ?? {
+        enabled: false,
+        mode: 'local_only',
+        strict: false,
+        criticalEvents: [],
+        ntpDriftThresholdMs: 30000,
+        tsaTimeoutMs: 10000,
+      },
     },
     policy,
     state,
@@ -240,6 +257,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       },
       ctx.now,
       prevHash,
+      ctx.timestampEvidence,
     );
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -263,6 +281,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       actor: ctx.actor,
       prevHash,
       actorInfo: state?.actorInfo,
+      ...(ctx.timestampEvidence ? { timestampEvidence: ctx.timestampEvidence } : {}),
     });
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -292,6 +311,7 @@ async function maybeCompleteAndArchive(
       actor: 'machine',
       prevHash,
       actorInfo: state?.actorInfo,
+      ...(ctx.timestampEvidence ? { timestampEvidence: ctx.timestampEvidence } : {}),
     });
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -336,6 +356,16 @@ export async function runAudit(
     effectiveMode = resolved.effectiveMode;
     const { ctx, policy, state } = resolved;
 
+    const timestampEvidence = ctx.timestampAssurance.enabled
+      ? {
+          status: 'local' as const,
+          source: 'local_clock' as const,
+          resolvedAt: ctx.now,
+        }
+      : undefined;
+
+    ctx.timestampEvidence = timestampEvidence;
+
     // ── 1. Emit tool_call event ──────────────────────────────────────────
     if (ctx.emitToolCalls) {
       const argsSummary = summarizeArgs((input as Record<string, unknown>) ?? {});
@@ -353,6 +383,7 @@ export async function runAudit(
         actor: ctx.actor,
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
+        ...(timestampEvidence ? { timestampEvidence } : {}),
       });
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
@@ -370,6 +401,7 @@ export async function runAudit(
           { from: t.from, to: t.to, event: t.event, autoAdvanced: i > 0, chainIndex: i },
           t.at,
           ctx.prevHash,
+          timestampEvidence,
         );
         await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
         if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
@@ -416,6 +448,7 @@ export async function runAudit(
         actor: ctx.actor,
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
+        ...(timestampEvidence ? { timestampEvidence } : {}),
       });
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
@@ -440,6 +473,7 @@ export async function runAudit(
         },
         ctx.now,
         ctx.prevHash,
+        timestampEvidence,
       );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     }

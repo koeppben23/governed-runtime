@@ -235,6 +235,40 @@ export {
   evaluateCompleteness,
 } from './audit/completeness.js';
 
+// ─── Timestamp Assurance ────────────────────────────────────────────────────
+
+export {
+  type TimestampAssuranceStatus,
+  type TimestampSource,
+  type NtpEvidence,
+  type TsaEvidence,
+  type TsaVerificationStatus,
+  type TimestampEvidence,
+  type TimestampAssuranceMode,
+  DEFAULT_TIMESTAMP_ASSURANCE,
+} from './audit/timestamp-types.js';
+
+export { computeCanonicalEventDigest } from './audit/canonical-digest.js';
+
+export {
+  type TimestampAuthorityProvider,
+  type TimestampVerifier,
+  MockTimestampAuthorityProvider,
+  MockTimestampVerifier,
+  FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER,
+} from './audit/tsa-provider.js';
+
+export { checkNtpClock } from './audit/ntp-check.js';
+export type { NtpCheckResult } from './audit/ntp-check.js';
+
+export { resolveTimestampEvidence } from './audit/timestamp-resolution.js';
+
+export {
+  verifyTimestampMonotonicity,
+  verifyTsaMessageImprint,
+  verifyTimestampEvidencePresence,
+} from './audit/timestamp-verification.js';
+
 // ─── Archive ─────────────────────────────────────────────────────────────────
 
 export {

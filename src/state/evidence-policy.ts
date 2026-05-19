@@ -107,6 +107,28 @@ export const PolicySnapshotSchema = z
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
       enableChainHash: z.boolean(),
+      timestampAssurance: z
+        .object({
+          enabled: z.boolean().default(false),
+          mode: z.enum(['local_only', 'ntp_check', 'tsa_critical']).default('local_only'),
+          strict: z.boolean().default(false),
+          criticalEvents: z.array(z.string()).default(['decision', 'lifecycle']),
+          tsaUrl: z.string().optional(),
+          trustAnchors: z.array(z.string()).optional(),
+          ntpServers: z.array(z.string()).optional(),
+          ntpDriftThresholdMs: z.number().default(30000),
+          tsaTimeoutMs: z.number().default(10000),
+        })
+        .optional()
+        .default({
+          enabled: false,
+          mode: 'local_only' as const,
+          strict: false,
+          criticalEvents: ['decision', 'lifecycle'],
+          ntpServers: ['pool.ntp.org'],
+          ntpDriftThresholdMs: 30000,
+          tsaTimeoutMs: 10000,
+        }),
     }),
     /**
      * Actor classification map — frozen copy from policy preset.

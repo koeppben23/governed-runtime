@@ -54,6 +54,8 @@ export const ArchiveFindingCodeSchema = z.enum([
   'audit_chain_invalid',
   'snapshot_missing',
   'state_missing',
+  'timestamp_unanchored',
+  'tsa_verification_failed',
 ]);
 export type ArchiveFindingCode = z.infer<typeof ArchiveFindingCodeSchema>;
 
