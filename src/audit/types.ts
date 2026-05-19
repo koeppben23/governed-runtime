@@ -245,7 +245,10 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 // ─── Factory Functions ────────────────────────────────────────────────────────
 
 /** Body type used by build helpers — no hash, no timestamp evidence. */
-export type EventBody = Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'>;
+export type EventBody = Omit<
+  ChainedAuditEvent,
+  'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'
+>;
 
 /**
  * Build a transition event body (no chainHash, no canonical digest, no evidence).
@@ -449,9 +452,7 @@ export interface DecisionEventInput {
 /**
  * Build a decision event body (no chainHash, no canonical digest, no evidence).
  */
-export function buildDecisionBody(
-  input: Omit<DecisionEventInput, 'timestampEvidence'>,
-): EventBody {
+export function buildDecisionBody(input: Omit<DecisionEventInput, 'timestampEvidence'>): EventBody {
   const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
   return {
     id: crypto.randomUUID(),

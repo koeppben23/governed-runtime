@@ -235,13 +235,11 @@ export function verifyChain(
 
   // Timestamp verification (if enabled)
   let timestampMonotonicity: ChainVerification['timestampMonotonicity'] = null;
-    let missingTimestampEvidence: number[] = [];
-    const tsaImprintMismatches: number[] = [];
+  let missingTimestampEvidence: number[] = [];
+  const tsaImprintMismatches: number[] = [];
 
   if (strictTimestamps) {
-    const chainedEvents = events
-      .filter(isChainedEvent)
-      .map((e) => e as unknown as AuditEvent);
+    const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
 
     const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
     timestampMonotonicity = {
@@ -250,10 +248,7 @@ export function verifyChain(
       message: monotonicityResult.message,
     };
 
-    const presenceCheck = verifyTimestampEvidencePresence(chainedEvents, [
-      'decision',
-      'lifecycle',
-    ]);
+    const presenceCheck = verifyTimestampEvidencePresence(chainedEvents, ['decision', 'lifecycle']);
     missingTimestampEvidence = presenceCheck.missingCriticalEvents;
 
     for (let i = 0; i < chainedEvents.length; i++) {

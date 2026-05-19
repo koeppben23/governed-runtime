@@ -137,9 +137,7 @@ export function verifyTimestampEvidencePresence(
 
     if (criticalKinds.includes(eventKind)) {
       const isMissing =
-        !evidence ||
-        evidence.status === 'local' ||
-        evidence.status === 'tsa_failed';
+        !evidence || evidence.status === 'local' || evidence.status === 'tsa_failed';
       if (isMissing) {
         missingCriticalEvents.push(i);
       }

@@ -123,7 +123,10 @@ export { checkNtpClock } from './ntp-check.js';
 export type { NtpCheckResult } from './ntp-check.js';
 
 export { resolveTimestampEvidence } from './timestamp-resolution.js';
-export type { TimestampResolutionInput, TimestampResolutionResult } from './timestamp-resolution.js';
+export type {
+  TimestampResolutionInput,
+  TimestampResolutionResult,
+} from './timestamp-resolution.js';
 
 export {
   verifyTimestampMonotonicity,

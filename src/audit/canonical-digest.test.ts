@@ -26,7 +26,11 @@ describe('canonicalEventDigest', () => {
         status: 'tsa_stamped' as const,
         source: 'tsa' as const,
         resolvedAt: '2026-01-01T00:00:00.000Z',
-        tsa: { tokenDerBase64: 'abc', receivedAt: '2026-01-01T00:00:01.000Z', verificationStatus: 'unchecked' as const },
+        tsa: {
+          tokenDerBase64: 'abc',
+          receivedAt: '2026-01-01T00:00:01.000Z',
+          verificationStatus: 'unchecked' as const,
+        },
       },
     };
     expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withEvidence));
@@ -35,7 +39,9 @@ describe('canonicalEventDigest', () => {
   it('chainHash does not affect canonical digest', () => {
     const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
     const withChainHash = { ...base, chainHash: 'abc123' };
-    expect(computeCanonicalEventDigest(base)).toBe(computeCanonicalEventDigest(withChainHash as Omit<ChainedAuditEvent, 'chainHash'>));
+    expect(computeCanonicalEventDigest(base)).toBe(
+      computeCanonicalEventDigest(withChainHash as Omit<ChainedAuditEvent, 'chainHash'>),
+    );
   });
 
   it('canonicalEventDigest field itself is excluded from computation', () => {
@@ -51,11 +57,21 @@ describe('canonicalEventDigest', () => {
   });
 });
 
-function buildEvent(from: string, to: string, eventName: string): Omit<ChainedAuditEvent, 'chainHash'> {
+function buildEvent(
+  from: string,
+  to: string,
+  eventName: string,
+): Omit<ChainedAuditEvent, 'chainHash'> {
   const evt = createTransitionEvent(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     to as Parameters<typeof createTransitionEvent>[1],
-    { from: from as Parameters<typeof createTransitionEvent>[2]['from'], to: to as Parameters<typeof createTransitionEvent>[2]['to'], event: eventName as Parameters<typeof createTransitionEvent>[2]['event'], autoAdvanced: false, chainIndex: -1 },
+    {
+      from: from as Parameters<typeof createTransitionEvent>[2]['from'],
+      to: to as Parameters<typeof createTransitionEvent>[2]['to'],
+      event: eventName as Parameters<typeof createTransitionEvent>[2]['event'],
+      autoAdvanced: false,
+      chainIndex: -1,
+    },
     '2026-01-01T00:00:00.000Z',
     GENESIS_HASH,
   );

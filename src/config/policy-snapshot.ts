@@ -137,9 +137,15 @@ export function createPolicySnapshot(
         mode: policy.audit.timestampAssurance.mode,
         strict: policy.audit.timestampAssurance.strict,
         criticalEvents: [...policy.audit.timestampAssurance.criticalEvents],
-        ...(policy.audit.timestampAssurance.tsaUrl ? { tsaUrl: policy.audit.timestampAssurance.tsaUrl } : {}),
-        ...(policy.audit.timestampAssurance.trustAnchors ? { trustAnchors: [...policy.audit.timestampAssurance.trustAnchors] } : {}),
-        ...(policy.audit.timestampAssurance.ntpServers ? { ntpServers: [...policy.audit.timestampAssurance.ntpServers] } : {}),
+        ...(policy.audit.timestampAssurance.tsaUrl
+          ? { tsaUrl: policy.audit.timestampAssurance.tsaUrl }
+          : {}),
+        ...(policy.audit.timestampAssurance.trustAnchors
+          ? { trustAnchors: [...policy.audit.timestampAssurance.trustAnchors] }
+          : {}),
+        ...(policy.audit.timestampAssurance.ntpServers
+          ? { ntpServers: [...policy.audit.timestampAssurance.ntpServers] }
+          : {}),
         ntpDriftThresholdMs: policy.audit.timestampAssurance.ntpDriftThresholdMs,
         tsaTimeoutMs: policy.audit.timestampAssurance.tsaTimeoutMs,
       },
@@ -464,33 +470,37 @@ function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   const emitToolCalls = typeof raw.emitToolCalls === 'boolean' ? raw.emitToolCalls : true;
   const enableChainHash = typeof raw.enableChainHash === 'boolean' ? raw.enableChainHash : true;
   const rawTsa = raw.timestampAssurance as Record<string, unknown> | null | undefined;
-  const timestampAssurance = rawTsa && typeof rawTsa === 'object'
-    ? {
-        enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
-        mode: isValidTsAMode(rawTsa.mode) ? rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical' : 'local_only',
-        strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
-        criticalEvents: Array.isArray(rawTsa.criticalEvents)
-          ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
-          : ['decision', 'lifecycle'],
-        tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
-        trustAnchors: Array.isArray(rawTsa.trustAnchors)
-          ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
-          : undefined,
-        ntpServers: Array.isArray(rawTsa.ntpServers)
-          ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
-          : ['pool.ntp.org'],
-        ntpDriftThresholdMs: typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
-        tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
-      }
-    : {
-        enabled: false,
-        mode: 'local_only' as const,
-        strict: false,
-        criticalEvents: ['decision', 'lifecycle'],
-        ntpServers: ['pool.ntp.org'],
-        ntpDriftThresholdMs: 30000,
-        tsaTimeoutMs: 10000,
-      };
+  const timestampAssurance =
+    rawTsa && typeof rawTsa === 'object'
+      ? {
+          enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
+          mode: isValidTsAMode(rawTsa.mode)
+            ? (rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical')
+            : 'local_only',
+          strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
+          criticalEvents: Array.isArray(rawTsa.criticalEvents)
+            ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
+            : ['decision', 'lifecycle'],
+          tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
+          trustAnchors: Array.isArray(rawTsa.trustAnchors)
+            ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
+            : undefined,
+          ntpServers: Array.isArray(rawTsa.ntpServers)
+            ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
+            : ['pool.ntp.org'],
+          ntpDriftThresholdMs:
+            typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
+          tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
+        }
+      : {
+          enabled: false,
+          mode: 'local_only' as const,
+          strict: false,
+          criticalEvents: ['decision', 'lifecycle'],
+          ntpServers: ['pool.ntp.org'],
+          ntpDriftThresholdMs: 30000,
+          tsaTimeoutMs: 10000,
+        };
   return {
     value: { emitTransitions, emitToolCalls, enableChainHash, timestampAssurance },
     normalized: false,
@@ -729,8 +739,8 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
       emitTransitions: snapshot.audit.emitTransitions,
       emitToolCalls: snapshot.audit.emitToolCalls,
       enableChainHash: snapshot.audit.enableChainHash,
-      timestampAssurance: ((snapshot.audit as Record<string, unknown>).timestampAssurance as
-        TimestampAssurancePolicy) ?? {
+      timestampAssurance: ((snapshot.audit as Record<string, unknown>)
+        .timestampAssurance as TimestampAssurancePolicy) ?? {
         enabled: false,
         mode: 'local_only' as const,
         strict: false,

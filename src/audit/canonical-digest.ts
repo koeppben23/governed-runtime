@@ -31,9 +31,7 @@ const EXCLUDED_FIELDS = new Set(['chainHash', 'timestampEvidence', 'canonicalEve
  * @param event - Full chained audit event (including timestampEvidence if attached).
  * @returns SHA-256 hex digest.
  */
-export function computeCanonicalEventDigest(
-  event: Omit<ChainedAuditEvent, 'chainHash'>,
-): string {
+export function computeCanonicalEventDigest(event: Omit<ChainedAuditEvent, 'chainHash'>): string {
   const stripped: Record<string, unknown> = {};
   for (const key of Object.keys(event).sort()) {
     if (EXCLUDED_FIELDS.has(key)) continue;

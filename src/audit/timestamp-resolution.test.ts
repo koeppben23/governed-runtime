@@ -97,7 +97,13 @@ describe('resolveTimestampEvidence', () => {
         canonicalEventDigest: DIGEST,
         eventKind: 'tool_call',
         localTimestamp: NOW,
-        ntpResult: { offsetMs: 0, server: 'pool.ntp.org', driftWarned: false, roundTripMs: 0, error: 'NTP unreachable' },
+        ntpResult: {
+          offsetMs: 0,
+          server: 'pool.ntp.org',
+          driftWarned: false,
+          roundTripMs: 0,
+          error: 'NTP unreachable',
+        },
       });
       expect(result.evidence.warning).toContain('NTP unreachable');
     });

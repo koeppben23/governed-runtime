@@ -61,7 +61,11 @@ describe('verifyTsaMessageImprint', () => {
     const event = {
       ...makeAuditEvent(),
       canonicalEventDigest: 'abcd1234',
-      timestampEvidence: { status: 'local', source: 'local_clock', resolvedAt: '2026-01-01T00:00:00.000Z' },
+      timestampEvidence: {
+        status: 'local',
+        source: 'local_clock',
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+      },
     } as unknown as AuditEvent;
     const result = verifyTsaMessageImprint(event);
     expect(result.valid).toBe(true);
@@ -75,7 +79,11 @@ describe('verifyTsaMessageImprint', () => {
         status: 'tsa_failed',
         source: 'local_clock',
         resolvedAt: '2026-01-01T00:00:00.000Z',
-        tsa: { tokenDerBase64: 'x', receivedAt: '2026-01-01T00:00:01.000Z', verificationStatus: 'unchecked' },
+        tsa: {
+          tokenDerBase64: 'x',
+          receivedAt: '2026-01-01T00:00:01.000Z',
+          verificationStatus: 'unchecked',
+        },
       },
     } as unknown as AuditEvent;
     const result = verifyTsaMessageImprint(event);
@@ -109,11 +117,19 @@ describe('verifyTimestampEvidencePresence', () => {
     const events = [
       {
         ...makeAuditEvent({ event: 'decision:DEC-001' }),
-        timestampEvidence: { status: 'tsa_stamped', source: 'tsa', resolvedAt: '2026-01-01T00:00:00.000Z' },
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+        },
       } as unknown as AuditEvent,
       {
         ...makeAuditEvent({ event: 'lifecycle:session_created' }),
-        timestampEvidence: { status: 'ntp_checked', source: 'ntp', resolvedAt: '2026-01-01T00:00:00.000Z' },
+        timestampEvidence: {
+          status: 'ntp_checked',
+          source: 'ntp',
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+        },
       } as unknown as AuditEvent,
     ];
     const result = verifyTimestampEvidencePresence(events, ['decision', 'lifecycle']);
@@ -135,7 +151,11 @@ describe('verifyTimestampEvidencePresence', () => {
     const events = [
       {
         ...makeAuditEvent({ event: 'decision:DEC-001' }),
-        timestampEvidence: { status: 'local', source: 'local_clock', resolvedAt: '2026-01-01T00:00:00.000Z' },
+        timestampEvidence: {
+          status: 'local',
+          source: 'local_clock',
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+        },
       } as unknown as AuditEvent,
     ];
     const result = verifyTimestampEvidencePresence(events, ['decision', 'lifecycle']);

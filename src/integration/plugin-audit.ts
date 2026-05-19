@@ -277,13 +277,15 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     );
     const digest = computeCanonicalEventDigest(body);
     const evidence = ctx.timestampAssurance.enabled
-      ?         (await resolveTimestampEvidence({
-          policy: ctx.timestampAssurance,
-          canonicalEventDigest: digest,
-          eventKind: 'error',
-          localTimestamp: ctx.now,
-          ntpResult: ctx.ntpResult,
-        })).evidence
+      ? (
+          await resolveTimestampEvidence({
+            policy: ctx.timestampAssurance,
+            canonicalEventDigest: digest,
+            eventKind: 'error',
+            localTimestamp: ctx.now,
+            ntpResult: ctx.ntpResult,
+          })
+        ).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
@@ -311,13 +313,15 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     });
     const digest = computeCanonicalEventDigest(body);
     const evidence = ctx.timestampAssurance.enabled
-      ? (await resolveTimestampEvidence({
-          policy: ctx.timestampAssurance,
-          canonicalEventDigest: digest,
-          eventKind: 'decision',
-          localTimestamp: ctx.now,
-          ntpResult: ctx.ntpResult,
-        })).evidence
+      ? (
+          await resolveTimestampEvidence({
+            policy: ctx.timestampAssurance,
+            canonicalEventDigest: digest,
+            eventKind: 'decision',
+            localTimestamp: ctx.now,
+            ntpResult: ctx.ntpResult,
+          })
+        ).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
@@ -351,13 +355,15 @@ async function maybeCompleteAndArchive(
     });
     const digest = computeCanonicalEventDigest(body);
     const evidence = ctx.timestampAssurance.enabled
-      ? (await resolveTimestampEvidence({
-          policy: ctx.timestampAssurance,
-          canonicalEventDigest: digest,
-          eventKind: 'lifecycle',
-          localTimestamp: ctx.now,
-          ntpResult: ctx.ntpResult,
-        })).evidence
+      ? (
+          await resolveTimestampEvidence({
+            policy: ctx.timestampAssurance,
+            canonicalEventDigest: digest,
+            eventKind: 'lifecycle',
+            localTimestamp: ctx.now,
+            ntpResult: ctx.ntpResult,
+          })
+        ).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
@@ -414,13 +420,15 @@ export async function runAudit(
     ): Promise<{ event: ReturnType<typeof finalizeWithTimestampEvidence>; prevHash: string }> {
       const digest = computeCanonicalEventDigest(body);
       const evidence = taPolicy.enabled
-        ? (await resolveTimestampEvidence({
-            policy: taPolicy,
-            canonicalEventDigest: digest,
-            eventKind,
-            localTimestamp,
-            ntpResult,
-          })).evidence
+        ? (
+            await resolveTimestampEvidence({
+              policy: taPolicy,
+              canonicalEventDigest: digest,
+              eventKind,
+              localTimestamp,
+              ntpResult,
+            })
+          ).evidence
         : undefined;
       const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
       return { event: evt, prevHash: evt.chainHash };
@@ -444,7 +452,12 @@ export async function runAudit(
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
       });
-      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'tool_call', ctx.now);
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(
+        body,
+        ctx.prevHash,
+        'tool_call',
+        ctx.now,
+      );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = nextHash;
       deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
@@ -462,7 +475,12 @@ export async function runAudit(
           t.at,
           ctx.prevHash,
         );
-        const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'transition', t.at);
+        const { event: evt, prevHash: nextHash } = await emitWithEvidence(
+          body,
+          ctx.prevHash,
+          'transition',
+          t.at,
+        );
         await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
         if (ctx.enableChainHash) ctx.prevHash = nextHash;
       }
@@ -509,7 +527,12 @@ export async function runAudit(
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
       });
-      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'lifecycle', ctx.now);
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(
+        body,
+        ctx.prevHash,
+        'lifecycle',
+        ctx.now,
+      );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = nextHash;
     }
@@ -534,7 +557,12 @@ export async function runAudit(
         ctx.now,
         ctx.prevHash,
       );
-      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'error', ctx.now);
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(
+        body,
+        ctx.prevHash,
+        'error',
+        ctx.now,
+      );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = nextHash;
     }

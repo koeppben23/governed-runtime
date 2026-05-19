@@ -37,10 +37,7 @@ export interface TimestampResolutionResult {
   readonly error?: string;
 }
 
-function isCriticalEvent(
-  eventKind: string,
-  policy: TimestampAssurancePolicy,
-): boolean {
+function isCriticalEvent(eventKind: string, policy: TimestampAssurancePolicy): boolean {
   return policy.criticalEvents.includes(eventKind);
 }
 
@@ -79,9 +76,10 @@ export async function resolveTimestampEvidence(
       evidence: {
         status: 'ntp_checked',
         source: ntp && !ntp.error ? 'ntp' : 'local_clock',
-        ntp: ntp && !ntp.error
-          ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
-          : undefined,
+        ntp:
+          ntp && !ntp.error
+            ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
+            : undefined,
         warning: ntp?.error,
         resolvedAt: now,
       },
@@ -89,9 +87,10 @@ export async function resolveTimestampEvidence(
   }
 
   if (policy.mode === 'tsa_critical') {
-    const ntpEvidence = ntp && !ntp.error
-      ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
-      : undefined;
+    const ntpEvidence =
+      ntp && !ntp.error
+        ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
+        : undefined;
 
     if (!isCriticalEvent(eventKind, policy)) {
       return {
