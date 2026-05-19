@@ -28,29 +28,9 @@ import type {
   PipelineContext,
 } from './review/pipeline-types.js';
 
-// ─── Re-exports for backward compatibility ───────────────────────────────────
+// ─── Re-exports (preserving pre-refactor public API surface) ─────────────────
 
-export type {
-  OrchestratorDeps,
-  ToolCallEvent,
-  PipelineContext,
-} from './review/pipeline-types.js';
-
-export { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './review/pipeline-types.js';
-
-export {
-  validateStrictAttestation,
-  recordEvidenceOrBlockReuse,
-  buildAttemptFailedLogger,
-  isStrictEnforcementEnabled,
-  getReviewerPolicies,
-  isOutputAlreadyBlocked,
-  buildSessionContext,
-  blockReviewOutcomeHelper,
-  buildToolPrompt,
-} from './review/shared-helpers.js';
-
-export type { EvidenceRecordResult } from './review/pipeline-types.js';
+export type { OrchestratorDeps, ToolCallEvent } from './review/pipeline-types.js';
 
 // ─── Internal types ──────────────────────────────────────────────────────────
 
