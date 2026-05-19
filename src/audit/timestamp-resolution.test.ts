@@ -141,14 +141,16 @@ describe('resolveTimestampEvidence', () => {
       expect(result.evidence.status).toBe('tsa_stamped');
     });
 
-    it('critical events without provider fall back to local', async () => {
+    it('critical events without provider fall back to tsa_failed', async () => {
       const result = await resolveTimestampEvidence({
         policy: TSA_CRITICAL_POLICY,
         canonicalEventDigest: DIGEST,
         eventKind: 'decision',
         localTimestamp: NOW,
       });
-      expect(result.evidence.status).toBe('local');
+      expect(result.evidence.status).toBe('tsa_failed');
+      expect(result.evidence.source).toBe('local_clock');
+      expect(result.evidence.warning).toContain('provider unavailable');
     });
 
     it('TSA failure returns tsa_failed evidence', async () => {

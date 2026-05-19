@@ -23,6 +23,7 @@ export {
   type ChainedAuditEvent,
   GENESIS_HASH,
   computeChainHash,
+  finalizeWithTimestampEvidence,
   createTransitionEvent,
   createToolCallEvent,
   createErrorEvent,
@@ -104,7 +105,7 @@ export {
   type TimestampVerifier,
   MockTimestampAuthorityProvider,
   MockTimestampVerifier,
-  FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER,
+  MOCK_TSA_FIXTURE_TOKEN,
 } from './tsa-provider.js';
 
 export { checkNtpClock } from './ntp-check.js';

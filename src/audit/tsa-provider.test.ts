@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   MockTimestampAuthorityProvider,
   MockTimestampVerifier,
-  FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER,
+  MOCK_TSA_FIXTURE_TOKEN,
 } from './tsa-provider.js';
 
 describe('MockTimestampAuthorityProvider', () => {
@@ -14,7 +14,7 @@ describe('MockTimestampAuthorityProvider', () => {
       tsaUrl: 'https://tsa.example.com',
       timeoutMs: 5000,
     });
-    expect(result.tokenDerBase64).toBe(FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER);
+    expect(result.tokenDerBase64).toBe(MOCK_TSA_FIXTURE_TOKEN);
     expect(result.receivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -46,7 +46,7 @@ describe('MockTimestampVerifier', () => {
   it('returns valid status for matching token', async () => {
     const verifier = new MockTimestampVerifier();
     const result = await verifier.verifyToken({
-      tokenDerBase64: FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER,
+      tokenDerBase64: MOCK_TSA_FIXTURE_TOKEN,
       expectedDigest: new Uint8Array(32),
       digestAlgorithm: 'sha256',
       trustAnchors: [],

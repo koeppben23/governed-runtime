@@ -106,14 +106,16 @@ export async function resolveTimestampEvidence(
     }
 
     if (!input.tsaProvider) {
+      const warnMsg = 'TSA provider unavailable for tsa_critical mode';
       return {
         evidence: {
-          status: 'local',
+          status: 'tsa_failed',
           source: 'local_clock',
           ntp: ntpEvidence,
-          warning: ntp?.error,
+          warning: [warnMsg, ntp?.error].filter(Boolean).join('; ') || warnMsg,
           resolvedAt: now,
         },
+        error: warnMsg,
       };
     }
 
@@ -133,6 +135,8 @@ export async function resolveTimestampEvidence(
           tsa: {
             tokenDerBase64: tsaResponse.tokenDerBase64,
             receivedAt: tsaResponse.receivedAt,
+            messageImprint: input.canonicalEventDigest,
+            digestAlgorithm: 'sha256',
             verificationStatus: 'unchecked',
           },
           warning: ntp?.error,

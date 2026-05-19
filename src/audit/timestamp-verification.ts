@@ -16,8 +16,15 @@ import type { AuditEvent } from '../state/evidence.js';
 
 /**
  * Convert a hex string to Uint8Array.
+ * Fail-closed: throws on non-hex input or odd-length strings.
  */
 export function canonicalDigestToUint8Array(hex: string): Uint8Array {
+  if (hex.length % 2 !== 0) {
+    throw new Error(`canonicalDigestToUint8Array: odd hex length ${hex.length}`);
+  }
+  if (!/^[0-9a-fA-F]+$/.test(hex)) {
+    throw new Error(`canonicalDigestToUint8Array: invalid hex input`);
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);

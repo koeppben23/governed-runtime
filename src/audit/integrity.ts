@@ -202,7 +202,7 @@ export function verifyEvent(
  * @returns ChainVerification with full results.
  */
 export function verifyChain(
-  events: Array<Record<string, unknown>>,
+  events: Record<string, unknown>[],
   options?: ChainVerifyOptions,
 ): ChainVerification {
   const strict = options?.strict === true;
@@ -310,7 +310,7 @@ export function verifyChain(
  * @param events - The audit trail events in chronological order.
  * @returns The chainHash of the last chained event, or GENESIS_HASH if none.
  */
-export function getLastChainHash(events: Array<Record<string, unknown>>): string {
+export function getLastChainHash(events: Record<string, unknown>[]): string {
   for (let i = events.length - 1; i >= 0; i--) {
     const raw = events[i]!;
     if (isChainedEvent(raw)) {

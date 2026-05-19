@@ -21,6 +21,8 @@ import {
   summarizeArgs,
   GENESIS_HASH,
 } from '../audit/types.js';
+import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
+import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import type { TimestampEvidence } from '../audit/timestamp-types.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import { parseToolResult } from './plugin-helpers.js';
@@ -356,12 +358,20 @@ export async function runAudit(
     effectiveMode = resolved.effectiveMode;
     const { ctx, policy, state } = resolved;
 
-    const timestampEvidence = ctx.timestampAssurance.enabled
-      ? {
-          status: 'local' as const,
-          source: 'local_clock' as const,
-          resolvedAt: ctx.now,
-        }
+    const tsa = ctx.timestampAssurance.enabled
+      ? resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: '0'.repeat(64),
+          eventKind: 'tool_call',
+          localTimestamp: ctx.now,
+          tsaProvider: ctx.timestampAssurance.mode === 'tsa_critical'
+            ? new MockTimestampAuthorityProvider()
+            : undefined,
+        })
+      : null;
+
+    const timestampEvidence: TimestampEvidence | undefined = tsa
+      ? (await tsa).evidence
       : undefined;
 
     ctx.timestampEvidence = timestampEvidence;

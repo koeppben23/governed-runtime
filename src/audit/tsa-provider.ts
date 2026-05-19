@@ -11,7 +11,7 @@
  * Slice 1 (#269): Interface + Mock implementations only.
  *   - MockTimestampAuthorityProvider: returns a pre-computed DER fixture token.
  *   - MockTimestampVerifier: checks fixture token against expected data.
- *   - FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER: structural DER fixture for tests.
+ *   - MOCK_TSA_FIXTURE_TOKEN: mock token string for tests.
  *     Does NOT represent a verified RFC-3161 chain. Real verification requires
  *     a proper library (pkijs) in Slice 2.
  *
@@ -51,14 +51,14 @@ export interface TimestampVerifier {
   }>;
 }
 
-export const FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER = 'MOCK_DER_TOKEN_NOT_REAL_RFC3161';
+export const MOCK_TSA_FIXTURE_TOKEN = 'MOCK_TSA_TOKEN_NOT_REAL_RFC3161';
 
 export class MockTimestampAuthorityProvider implements TimestampAuthorityProvider {
   private readonly tokenDerBase64: string;
   private readonly simulateFailure: boolean;
 
   constructor(opts?: { tokenDerBase64?: string; simulateFailure?: boolean }) {
-    this.tokenDerBase64 = opts?.tokenDerBase64 ?? FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER;
+    this.tokenDerBase64 = opts?.tokenDerBase64 ?? MOCK_TSA_FIXTURE_TOKEN;
     this.simulateFailure = opts?.simulateFailure ?? false;
   }
 
@@ -88,7 +88,7 @@ export class MockTimestampVerifier implements TimestampVerifier {
     defaultStatus?: 'valid' | 'invalid';
     failOnMismatch?: boolean;
   }) {
-    this.expectedToken = opts?.expectedToken ?? FIXTURE_DER_TOKEN_FOR_MOCK_VERIFIER;
+    this.expectedToken = opts?.expectedToken ?? MOCK_TSA_FIXTURE_TOKEN;
     this.defaultStatus = opts?.defaultStatus ?? 'valid';
     this.failOnMismatch = opts?.failOnMismatch ?? true;
   }

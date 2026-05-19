@@ -35,6 +35,8 @@ export type TsaVerificationStatus = z.infer<typeof TsaVerificationStatus>;
 export const TsaEvidenceSchema = z.object({
   tokenDerBase64: z.string(),
   receivedAt: z.string().datetime(),
+  messageImprint: z.string().optional(),
+  digestAlgorithm: z.string().optional(),
   policyOid: z.string().optional(),
   serialNumber: z.string().optional(),
   tsaTimestamp: z.string().optional(),
