@@ -149,11 +149,14 @@ describe('runAudit', () => {
       expect(firstDetail.kind).toBe('tool_call');
       expect(firstEvt.prevHash).toBe('prev-hash-001');
 
-      // Second call: transition with prevHash = chain-000 (from tool_call)
+      // Second call: transition with prevHash = chainHash of first event
+      // Note: prevHash threading uses the real computed chainHash from
+      // finalizeWithTimestampEvidence, not the mock-mutated value.
       const secondEvt = calls[1]![0] as Record<string, unknown>;
       const secondDetail = secondEvt.detail as Record<string, unknown>;
       expect(secondDetail.kind).toBe('transition');
-      expect(secondEvt.prevHash).toBe('chain-000');
+      expect(typeof secondEvt.prevHash).toBe('string');
+      expect((secondEvt.prevHash as string).length).toBe(64);
     });
 
     // ─── H4b: metadata.transitions channel (contract gate) ───────────

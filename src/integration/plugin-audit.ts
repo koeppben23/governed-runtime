@@ -13,17 +13,18 @@ import { readState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import {
-  createToolCallEvent,
-  createTransitionEvent,
-  createLifecycleEvent,
-  createErrorEvent,
-  createDecisionEvent,
+  buildToolCallBody,
+  buildTransitionBody,
+  buildErrorBody,
+  buildLifecycleBody,
+  buildDecisionBody,
+  finalizeWithTimestampEvidence,
   summarizeArgs,
   GENESIS_HASH,
+  type EventBody,
 } from '../audit/types.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
-import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
-import type { TimestampEvidence } from '../audit/timestamp-types.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import { parseToolResult } from './plugin-helpers.js';
 
@@ -85,7 +86,6 @@ interface AuditContext {
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
   timestampAssurance: TimestampAssurancePolicy;
-  timestampEvidence?: TimestampEvidence;
 }
 
 // ─── Extracted helpers ────────────────────────────────────────────────────────
@@ -249,7 +249,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       tool: toolName,
       sessionId,
     });
-    const evt = createErrorEvent(
+    const body = buildErrorBody(
       sessionId,
       {
         code: 'DECISION_RECEIPT_ACTOR_MISSING',
@@ -259,12 +259,21 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       },
       ctx.now,
       prevHash,
-      ctx.timestampEvidence,
     );
+    const digest = computeCanonicalEventDigest(body);
+    const evidence = ctx.timestampAssurance.enabled
+      ? (await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'error',
+          localTimestamp: ctx.now,
+        })).evidence
+      : undefined;
+    const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
   } else {
-    const evt = createDecisionEvent({
+    const body = buildDecisionBody({
       sessionId,
       gatePhase: firstTransition.from,
       detail: {
@@ -283,8 +292,17 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       actor: ctx.actor,
       prevHash,
       actorInfo: state?.actorInfo,
-      ...(ctx.timestampEvidence ? { timestampEvidence: ctx.timestampEvidence } : {}),
     });
+    const digest = computeCanonicalEventDigest(body);
+    const evidence = ctx.timestampAssurance.enabled
+      ? (await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'decision',
+          localTimestamp: ctx.now,
+        })).evidence
+      : undefined;
+    const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
   }
@@ -306,15 +324,24 @@ async function maybeCompleteAndArchive(
   const toolLayerHandled = !!freshState?.archiveStatus;
 
   if (!toolLayerHandled) {
-    const evt = createLifecycleEvent({
+    const body = buildLifecycleBody({
       sessionId,
       detail: { action: 'session_completed', finalPhase: 'COMPLETE' },
       timestamp: ctx.now,
       actor: 'machine',
       prevHash,
       actorInfo: state?.actorInfo,
-      ...(ctx.timestampEvidence ? { timestampEvidence: ctx.timestampEvidence } : {}),
     });
+    const digest = computeCanonicalEventDigest(body);
+    const evidence = ctx.timestampAssurance.enabled
+      ? (await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'lifecycle',
+          localTimestamp: ctx.now,
+        })).evidence
+      : undefined;
+    const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
   } else {
@@ -358,28 +385,31 @@ export async function runAudit(
     effectiveMode = resolved.effectiveMode;
     const { ctx, policy, state } = resolved;
 
-    const tsa = ctx.timestampAssurance.enabled
-      ? resolveTimestampEvidence({
-          policy: ctx.timestampAssurance,
-          canonicalEventDigest: '0'.repeat(64),
-          eventKind: 'tool_call',
-          localTimestamp: ctx.now,
-          tsaProvider: ctx.timestampAssurance.mode === 'tsa_critical'
-            ? new MockTimestampAuthorityProvider()
-            : undefined,
-        })
-      : null;
+    const taPolicy = ctx.timestampAssurance;
 
-    const timestampEvidence: TimestampEvidence | undefined = tsa
-      ? (await tsa).evidence
-      : undefined;
-
-    ctx.timestampEvidence = timestampEvidence;
+    async function emitWithEvidence(
+      body: EventBody,
+      prevHash: string,
+      eventKind: string,
+      localTimestamp: string,
+    ): Promise<{ event: ReturnType<typeof finalizeWithTimestampEvidence>; prevHash: string }> {
+      const digest = computeCanonicalEventDigest(body);
+      const evidence = taPolicy.enabled
+        ? (await resolveTimestampEvidence({
+            policy: taPolicy,
+            canonicalEventDigest: digest,
+            eventKind,
+            localTimestamp,
+          })).evidence
+        : undefined;
+      const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
+      return { event: evt, prevHash: evt.chainHash };
+    }
 
     // ── 1. Emit tool_call event ──────────────────────────────────────────
     if (ctx.emitToolCalls) {
       const argsSummary = summarizeArgs((input as Record<string, unknown>) ?? {});
-      const evt = createToolCallEvent({
+      const body = buildToolCallBody({
         sessionId,
         phase: ctx.phase,
         detail: {
@@ -393,10 +423,10 @@ export async function runAudit(
         actor: ctx.actor,
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
-        ...(timestampEvidence ? { timestampEvidence } : {}),
       });
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'tool_call', ctx.now);
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-      if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
+      if (ctx.enableChainHash) ctx.prevHash = nextHash;
       deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
     }
 
@@ -405,16 +435,16 @@ export async function runAudit(
       deps.log.debug('audit', 'emitting transition events', { count: ctx.transitions.length });
       for (let i = 0; i < ctx.transitions.length; i++) {
         const t = ctx.transitions[i]!;
-        const evt = createTransitionEvent(
+        const body = buildTransitionBody(
           sessionId,
           t.to,
           { from: t.from, to: t.to, event: t.event, autoAdvanced: i > 0, chainIndex: i },
           t.at,
           ctx.prevHash,
-          timestampEvidence,
         );
+        const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'transition', t.at);
         await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-        if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
+        if (ctx.enableChainHash) ctx.prevHash = nextHash;
       }
     }
 
@@ -447,7 +477,7 @@ export async function runAudit(
             }`
           : undefined;
 
-      const evt = createLifecycleEvent({
+      const body = buildLifecycleBody({
         sessionId,
         detail: {
           action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
@@ -458,10 +488,10 @@ export async function runAudit(
         actor: ctx.actor,
         prevHash: ctx.prevHash,
         actorInfo: state?.actorInfo,
-        ...(timestampEvidence ? { timestampEvidence } : {}),
       });
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'lifecycle', ctx.now);
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-      if (ctx.enableChainHash) ctx.prevHash = evt.chainHash!;
+      if (ctx.enableChainHash) ctx.prevHash = nextHash;
     }
 
     // ── 5. Detect session completion + auto-archive ──────────────────────
@@ -473,7 +503,7 @@ export async function runAudit(
         tool: toolName,
         errorMessage: ctx.errorMessage,
       });
-      const evt = createErrorEvent(
+      const body = buildErrorBody(
         sessionId,
         {
           code: 'TOOL_ERROR',
@@ -483,9 +513,10 @@ export async function runAudit(
         },
         ctx.now,
         ctx.prevHash,
-        timestampEvidence,
       );
+      const { event: evt, prevHash: nextHash } = await emitWithEvidence(body, ctx.prevHash, 'error', ctx.now);
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
+      if (ctx.enableChainHash) ctx.prevHash = nextHash;
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);

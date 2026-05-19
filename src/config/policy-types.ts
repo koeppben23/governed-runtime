@@ -17,7 +17,9 @@ export interface TimestampAssurancePolicy {
   readonly enabled: boolean;
   /** Assurance mode: local_only, ntp_check, or tsa_critical. */
   readonly mode: 'local_only' | 'ntp_check' | 'tsa_critical';
-  /** Strict mode — TSA failure on critical events → session ERROR. Slice 1: always false. */
+  /** Strict mode — TSA failure on critical events → session ERROR.
+   *  Slice 1 (#269): always false. Inert. Will activate only in follow-up
+   *  ticket when real TSA verifier (pkijs) is available. */
   readonly strict: boolean;
   /** Event kinds that require TSA evidence (e.g., decision, lifecycle). */
   readonly criticalEvents: ReadonlyArray<string>;

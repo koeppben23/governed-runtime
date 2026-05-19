@@ -182,28 +182,30 @@ export function computeChainHash(
  *
  * Two-digest architecture:
  * 1. canonicalEventDigest = SHA-256(event body WITHOUT evidence, chainHash, digest)
- * 2. If evidence provided: attaches canonicalEventDigest + timestampEvidence
- * 3. chainHash = SHA-256(prevHash + full event WITHOUT chainHash)
- *
- * If timestampEvidence has TSA data without messageImprint, sets it to
- * canonicalEventDigest for consistency. Does NOT overwrite existing
- * messageImprint from a real TSA provider.
+ *    Uses preComputedDigest if provided (from external TSA resolution path),
+ *    otherwise computes it internally.
+ * 2. If evidence provided: attaches canonicalEventDigest + timestampEvidence.
+ *    Ensures tsa.messageImprint matches canonicalEventDigest when TSA data exists.
+ * 3. chainHash = SHA-256(prevHash + full event WITHOUT chainHash).
  *
  * @param body - Event body without chainHash, canonicalEventDigest, or timestampEvidence.
  * @param prevHash - Hash of the previous event (or GENESIS_HASH).
  * @param timestampEvidence - Optional timestamp assurance evidence.
+ * @param preComputedDigest - Optional pre-computed canonical digest. Must match
+ *   computeCanonicalEventDigest(body). Required when evidence was resolved externally.
  */
 export function finalizeWithTimestampEvidence(
   body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'>,
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
+  preComputedDigest?: string,
 ): ChainedAuditEvent {
   if (!timestampEvidence) {
     const base: Omit<ChainedAuditEvent, 'chainHash'> = body;
     return { ...base, chainHash: computeChainHash(prevHash, base) };
   }
-  const canonicalDigest = computeCanonicalEventDigest(body);
-  const evidence: TimestampEvidence = timestampEvidence.tsa && !timestampEvidence.tsa.messageImprint
+  const canonicalDigest = preComputedDigest ?? computeCanonicalEventDigest(body);
+  const evidence: TimestampEvidence = timestampEvidence.tsa
     ? {
         ...timestampEvidence,
         tsa: {
@@ -242,6 +244,31 @@ function toDetailRecord(detail: TypedDetail): Record<string, unknown> {
 
 // ─── Factory Functions ────────────────────────────────────────────────────────
 
+/** Body type used by build helpers — no hash, no timestamp evidence. */
+export type EventBody = Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'>;
+
+/**
+ * Build a transition event body (no chainHash, no canonical digest, no evidence).
+ */
+export function buildTransitionBody(
+  sessionId: string,
+  phase: Phase,
+  detail: Omit<TransitionDetail, 'kind'>,
+  timestamp: string,
+  prevHash: string,
+): EventBody {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase,
+    event: `transition:${detail.event}`,
+    timestamp,
+    actor: 'machine',
+    detail: toDetailRecord({ ...detail, kind: 'transition' }),
+    prevHash,
+  };
+}
+
 /**
  * Create a transition audit event.
  * One event per state machine transition. autoAdvance may produce multiple.
@@ -254,18 +281,11 @@ export function createTransitionEvent(
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
-  const eventName = `transition:${detail.event}`;
-  const body = {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase,
-    event: eventName,
-    timestamp,
-    actor: 'machine' as const,
-    detail: toDetailRecord({ ...detail, kind: 'transition' }),
+  return finalizeWithTimestampEvidence(
+    buildTransitionBody(sessionId, phase, detail, timestamp, prevHash),
     prevHash,
-  };
-  return finalizeWithTimestampEvidence(body, prevHash, timestampEvidence);
+    timestampEvidence,
+  );
 }
 
 /**
@@ -286,21 +306,59 @@ export interface ToolCallEventInput {
  * Create a tool call audit event.
  * One event per FlowGuard tool invocation.
  */
-export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEvent {
-  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
-  const eventName = `tool_call:${detail.tool}`;
-  const body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'> = {
+/**
+ * Build a tool call event body (no chainHash, no canonical digest, no evidence).
+ */
+export function buildToolCallBody(input: Omit<ToolCallEventInput, 'timestampEvidence'>): EventBody {
+  const { sessionId, phase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  return {
     id: crypto.randomUUID(),
     sessionId,
     phase,
-    event: eventName,
+    event: `tool_call:${detail.tool}`,
     timestamp,
     actor,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
     prevHash,
   };
-  return finalizeWithTimestampEvidence(body, prevHash, timestampEvidence);
+}
+
+/**
+ * Create a tool call audit event.
+ * One event per FlowGuard tool invocation.
+ */
+export function createToolCallEvent(input: ToolCallEventInput): ChainedAuditEvent {
+  return finalizeWithTimestampEvidence(
+    buildToolCallBody(input),
+    input.prevHash,
+    input.timestampEvidence,
+  );
+}
+
+/**
+ * Create an error audit event.
+ * Emitted when the state machine enters an error state.
+ */
+/**
+ * Build an error event body (no chainHash, no canonical digest, no evidence).
+ */
+export function buildErrorBody(
+  sessionId: string,
+  detail: Omit<ErrorDetail, 'kind'>,
+  timestamp: string,
+  prevHash: string,
+): EventBody {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: detail.errorPhase,
+    event: `error:${detail.code}`,
+    timestamp,
+    actor: 'machine',
+    detail: toDetailRecord({ ...detail, kind: 'error' }),
+    prevHash,
+  };
 }
 
 /**
@@ -314,18 +372,11 @@ export function createErrorEvent(
   prevHash: string,
   timestampEvidence?: TimestampEvidence,
 ): ChainedAuditEvent {
-  const eventName = `error:${detail.code}`;
-  const body = {
-    id: crypto.randomUUID(),
-    sessionId,
-    phase: detail.errorPhase,
-    event: eventName,
-    timestamp,
-    actor: 'machine' as const,
-    detail: toDetailRecord({ ...detail, kind: 'error' }),
+  return finalizeWithTimestampEvidence(
+    buildErrorBody(sessionId, detail, timestamp, prevHash),
     prevHash,
-  };
-  return finalizeWithTimestampEvidence(body, prevHash, timestampEvidence);
+    timestampEvidence,
+  );
 }
 
 /**
@@ -345,21 +396,36 @@ export interface LifecycleEventInput {
  * Create a lifecycle audit event.
  * Emitted on session creation, completion, or abortion.
  */
-export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEvent {
-  const { sessionId, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
-  const eventName = `lifecycle:${detail.action}`;
-  const body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'> = {
+/**
+ * Build a lifecycle event body (no chainHash, no canonical digest, no evidence).
+ */
+export function buildLifecycleBody(
+  input: Omit<LifecycleEventInput, 'timestampEvidence'>,
+): EventBody {
+  const { sessionId, detail, timestamp, actor, prevHash, actorInfo } = input;
+  return {
     id: crypto.randomUUID(),
     sessionId,
     phase: detail.finalPhase,
-    event: eventName,
+    event: `lifecycle:${detail.action}`,
     timestamp,
     actor,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
   };
-  return finalizeWithTimestampEvidence(body, prevHash, timestampEvidence);
+}
+
+/**
+ * Create a lifecycle audit event.
+ * Emitted on session creation, completion, or abortion.
+ */
+export function createLifecycleEvent(input: LifecycleEventInput): ChainedAuditEvent {
+  return finalizeWithTimestampEvidence(
+    buildLifecycleBody(input),
+    input.prevHash,
+    input.timestampEvidence,
+  );
 }
 
 /**
@@ -380,21 +446,36 @@ export interface DecisionEventInput {
  * Create a decision receipt audit event.
  * One event per successful /review-decision execution.
  */
-export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEvent {
-  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo, timestampEvidence } = input;
-  const eventName = `decision:${detail.decisionId}`;
-  const body: Omit<ChainedAuditEvent, 'chainHash' | 'canonicalEventDigest' | 'timestampEvidence'> = {
+/**
+ * Build a decision event body (no chainHash, no canonical digest, no evidence).
+ */
+export function buildDecisionBody(
+  input: Omit<DecisionEventInput, 'timestampEvidence'>,
+): EventBody {
+  const { sessionId, gatePhase, detail, timestamp, actor, prevHash, actorInfo } = input;
+  return {
     id: crypto.randomUUID(),
     sessionId,
     phase: gatePhase,
-    event: eventName,
+    event: `decision:${detail.decisionId}`,
     timestamp,
     actor,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
     prevHash,
   };
-  return finalizeWithTimestampEvidence(body, prevHash, timestampEvidence);
+}
+
+/**
+ * Create a decision receipt audit event.
+ * One event per successful /review-decision execution.
+ */
+export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEvent {
+  return finalizeWithTimestampEvidence(
+    buildDecisionBody(input),
+    input.prevHash,
+    input.timestampEvidence,
+  );
 }
 
 // ─── Arg Summarizer ───────────────────────────────────────────────────────────

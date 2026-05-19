@@ -135,8 +135,14 @@ export function verifyTimestampEvidencePresence(
 
     const eventKind = extractEventKind(event.event);
 
-    if (criticalKinds.includes(eventKind) && (!evidence || evidence.status === 'local')) {
-      missingCriticalEvents.push(i);
+    if (criticalKinds.includes(eventKind)) {
+      const isMissing =
+        !evidence ||
+        evidence.status === 'local' ||
+        evidence.status === 'tsa_failed';
+      if (isMissing) {
+        missingCriticalEvents.push(i);
+      }
     }
   }
 
