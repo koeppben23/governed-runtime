@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserved pre-session path: `getSessionDir()` returning `null` (no fingerprint) still allows host tools
   - Added negative-path tests: missing directory, race-condition directory deletion, non-git worktree pre-session, read-only tool immunity, and `resolveEnforcement` null-safety
 
+- **Issue #269:** Add timestamp assurance evidence layer for audit trails. Introduces structured `timestampEvidence` on audit events with configurable assurance modes (`local_only`, `ntp_check`, `tsa_critical`) via `audit.timestampAssurance` policy. Includes NTP clock drift validation (`checkNtpClock`) wired into the audit emission path, a TSA provider/verifier interface with mock implementations, canonical event digest computation for TSA anchoring, and extended `verifyChain()` with strict timestamp checks (monotonicity, imprint matching, evidence presence). Archive verification emits `timestamp_unanchored` and `tsa_verification_failed` findings. All presets start with `timestampAssurance.enabled: false` (fully backward-compatible). Slice 1: strict mode is inert, mock TSA only; real pkijs-based TSA verification deferred to follow-up ticket. No BAIT/GoBD compliance claims are made — this provides timestamp assurance evidence suitable for regulated audit evaluation when configured with trusted TSA and strict policy.
+
 ## [1.2.0-rc.3] - 2026-05-14
 
 ### Changed
