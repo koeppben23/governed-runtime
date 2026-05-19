@@ -178,5 +178,22 @@ describe('resolveTimestampEvidence', () => {
       });
       expect(result.evidence.warning).toContain('TSA unreachable');
     });
+
+    it('strict: true does not throw — inert in Slice 1', async () => {
+      const strictPolicy: TimestampAssurancePolicy = {
+        ...TSA_CRITICAL_POLICY,
+        strict: true,
+      };
+      const provider = new MockTimestampAuthorityProvider({ simulateFailure: true });
+      const result = await resolveTimestampEvidence({
+        policy: strictPolicy,
+        canonicalEventDigest: DIGEST,
+        eventKind: 'decision',
+        localTimestamp: NOW,
+        tsaProvider: provider,
+      });
+      expect(result.evidence.status).toBe('tsa_failed');
+      expect(result.error).toBe('TSA request failed');
+    });
   });
 });

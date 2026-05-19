@@ -25,6 +25,8 @@ import {
 } from '../audit/types.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
+import { checkNtpClock } from '../audit/ntp-check.js';
+import type { NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import { parseToolResult } from './plugin-helpers.js';
 
@@ -86,6 +88,7 @@ interface AuditContext {
   errorMessage: string | undefined;
   parsed: ReturnType<typeof parseToolResult>;
   timestampAssurance: TimestampAssurancePolicy;
+  ntpResult?: NtpCheckResult;
 }
 
 // ─── Extracted helpers ────────────────────────────────────────────────────────
@@ -165,6 +168,24 @@ async function resolveAuditContext(
     }
   }
 
+  const resolvedTsa: TimestampAssurancePolicy = policy.audit.timestampAssurance ?? {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: [],
+    ntpDriftThresholdMs: 30000,
+    tsaTimeoutMs: 10000,
+  };
+
+  let ntpResult: NtpCheckResult | undefined;
+  if (resolvedTsa.enabled && resolvedTsa.mode !== 'local_only') {
+    ntpResult = await checkNtpClock(
+      resolvedTsa.ntpServers,
+      resolvedTsa.tsaTimeoutMs,
+      resolvedTsa.ntpDriftThresholdMs,
+    );
+  }
+
   return {
     ctx: {
       sessDir,
@@ -179,14 +200,8 @@ async function resolveAuditContext(
       success,
       errorMessage,
       parsed,
-      timestampAssurance: policy.audit.timestampAssurance ?? {
-        enabled: false,
-        mode: 'local_only',
-        strict: false,
-        criticalEvents: [],
-        ntpDriftThresholdMs: 30000,
-        tsaTimeoutMs: 10000,
-      },
+      timestampAssurance: resolvedTsa,
+      ntpResult,
     },
     policy,
     state,
@@ -262,11 +277,12 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     );
     const digest = computeCanonicalEventDigest(body);
     const evidence = ctx.timestampAssurance.enabled
-      ? (await resolveTimestampEvidence({
+      ?         (await resolveTimestampEvidence({
           policy: ctx.timestampAssurance,
           canonicalEventDigest: digest,
           eventKind: 'error',
           localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
         })).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
@@ -300,6 +316,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
           canonicalEventDigest: digest,
           eventKind: 'decision',
           localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
         })).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
@@ -339,6 +356,7 @@ async function maybeCompleteAndArchive(
           canonicalEventDigest: digest,
           eventKind: 'lifecycle',
           localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
         })).evidence
       : undefined;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
@@ -386,6 +404,7 @@ export async function runAudit(
     const { ctx, policy, state } = resolved;
 
     const taPolicy = ctx.timestampAssurance;
+    const ntpResult = ctx.ntpResult;
 
     async function emitWithEvidence(
       body: EventBody,
@@ -400,6 +419,7 @@ export async function runAudit(
             canonicalEventDigest: digest,
             eventKind,
             localTimestamp,
+            ntpResult,
           })).evidence
         : undefined;
       const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
