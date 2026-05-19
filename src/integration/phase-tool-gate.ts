@@ -83,6 +83,21 @@ export interface RiskClassificationInput {
   readonly now: string;
 }
 
+export type CeremonyProfile = 'full' | 'reduced';
+
+export interface CeremonyProfileDecision {
+  readonly profile: CeremonyProfile;
+  readonly reason: string;
+  readonly claimedTaskClass?: TaskClass;
+  readonly computedMinimumTaskClass: TaskClass;
+  readonly touchedSurfaces: readonly string[];
+}
+
+export interface CeremonyProfileInput {
+  readonly state: SessionState;
+  readonly changedFiles: readonly string[];
+}
+
 const TASK_CLASS_ORDER: Readonly<Record<TaskClass, number>> = {
   TRIVIAL: 0,
   STANDARD: 1,
@@ -265,6 +280,59 @@ export function isRiskClassificationAllowed(
     touchedSurfaces: assessment.touchedSurfaces,
     changedFiles: uniquePaths,
   };
+}
+
+function validationEvidenceComplete(state: SessionState): boolean {
+  if (state.activeChecks.length === 0) return false;
+  const passed = new Set(state.validation.filter((result) => result.passed).map((r) => r.checkId));
+  return state.activeChecks.every((checkId) => passed.has(checkId));
+}
+
+function hasOutstandingReviewObligation(state: SessionState): boolean {
+  return (
+    state.reviewAssurance?.obligations.some(
+      (obligation) => obligation.status !== 'consumed' && obligation.consumedAt == null,
+    ) ?? false
+  );
+}
+
+export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyProfileDecision {
+  const assessment = assessMinimumTaskClass(input.changedFiles);
+  const base = {
+    claimedTaskClass: input.state.claimedTaskClass,
+    computedMinimumTaskClass: assessment.minimumTaskClass,
+    touchedSurfaces: assessment.touchedSurfaces,
+  };
+
+  if (input.state.policySnapshot.allowReducedCeremony !== true) {
+    return { ...base, profile: 'full', reason: 'POLICY_REDUCED_CEREMONY_DISABLED' };
+  }
+  if (input.state.claimedTaskClass == null) {
+    return { ...base, profile: 'full', reason: 'TASK_CLASS_CLAIM_MISSING' };
+  }
+  if (input.state.claimedTaskClass !== 'TRIVIAL') {
+    return { ...base, profile: 'full', reason: 'CLAIMED_CLASS_NOT_TRIVIAL' };
+  }
+  if (input.state.policySnapshot.reviewInvocationPolicy === 'host_task_required') {
+    return { ...base, profile: 'full', reason: 'POLICY_REVIEW_REQUIRED' };
+  }
+  if (input.state.riskGate?.status === 'blocked') {
+    return { ...base, profile: 'full', reason: 'RISK_GATE_BLOCKED' };
+  }
+  if (input.changedFiles.length === 0) {
+    return { ...base, profile: 'full', reason: 'RISK_EVIDENCE_MISSING' };
+  }
+  if (assessment.minimumTaskClass !== 'TRIVIAL') {
+    return { ...base, profile: 'full', reason: 'COMPUTED_MINIMUM_NOT_TRIVIAL' };
+  }
+  if (!validationEvidenceComplete(input.state)) {
+    return { ...base, profile: 'full', reason: 'VERIFICATION_EVIDENCE_INCOMPLETE' };
+  }
+  if (hasOutstandingReviewObligation(input.state)) {
+    return { ...base, profile: 'full', reason: 'REVIEW_OBLIGATION_REQUIRED' };
+  }
+
+  return { ...base, profile: 'reduced', reason: 'RUNTIME_VERIFIED_TRIVIAL' };
 }
 
 // ─── Gate Functions ───────────────────────────────────────────────────────────

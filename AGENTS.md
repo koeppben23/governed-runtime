@@ -60,10 +60,10 @@ Classify the task before acting:
 
 Use the smallest process that is safe for the class. If uncertain, classify one level higher.
 
-With runtime risk enforcement, `claimedTaskClass` is only a claim. FlowGuard computes the minimum
-from changed surfaces and blocks mutating tools when the claim is missing or too low. Text downgrade
-justifications are not accepted. Hydrate may only update `claimedTaskClass` and clear blocked
-`riskGate`; no rebinding or policy rewrite.
+With runtime risk enforcement, `claimedTaskClass` is only a claim; FlowGuard computes changed-surface
+minimums and blocks missing/too-low claims. Hydrate updates only `claimedTaskClass` and blocked
+`riskGate`. Reduced ceremony requires policy opt-in, `TRIVIAL` claim, computed
+`TRIVIAL`, verification, explicit reduced-ceremony evidence, no required review.
 
 ## 4. Hard Invariants
 

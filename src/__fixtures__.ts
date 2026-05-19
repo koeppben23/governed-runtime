@@ -58,6 +58,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   reviewInvocationPolicy: 'sdk_allowed',
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
+  allowReducedCeremony: false,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -219,6 +220,7 @@ export function makeState(
     selfReview: null,
     validation: [],
     implementation: null,
+    reducedCeremony: null,
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,

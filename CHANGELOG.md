@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue #265:** Add policy-gated reduced implementation-review ceremony for runtime-verified `TRIVIAL` tasks. The new `policy.allowReducedCeremony` flag defaults to `false`; when enabled, reduction is permitted only with a `TRIVIAL` claim, changed-file evidence computes a `TRIVIAL` minimum, `riskGate` is clear, validation evidence is complete, explicit reduced-ceremony evidence/audit are written, no host-task review is policy-required, and no review obligation is outstanding. `claimedTaskClass` remains only a claim and never chooses flow depth; reduced ceremony does not synthesize implementation-review approval evidence.
+
 - **Issue #271:** Add runtime-enforced risk classification gate for mutating host tools. `claimedTaskClass` is stored only as an agent/operator claim while FlowGuard computes the minimum class per gate check, persists blocking `riskGate` state on mismatches, defaults enforcement on for `team-ci` and `regulated`, and rejects downgrade-by-text overrides.
 
 - **FG-268 (Issue #268):** Add an additive `reviewLoop` projection to tool responses and `flowguard_status` output during review phases (PLAN_REVIEW, IMPL_REVIEW, ARCH_REVIEW), including iteration count, max iterations, previous verdict, convergence status, and outstanding blocking issues (max 3).

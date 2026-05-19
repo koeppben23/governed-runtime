@@ -31,6 +31,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   identityProviderMode: 'optional',
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
+  allowReducedCeremony: false,
 };
 
 /** TEAM mode -- collaborative workflow. */
@@ -57,6 +58,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   identityProviderMode: 'optional',
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
+  allowReducedCeremony: false,
 };
 
 /** TEAM-CI mode -- CI pipeline workflow. */
@@ -83,6 +85,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   identityProviderMode: 'optional',
   enforceRiskClassification: true,
   allowRiskDowngradeOverride: false,
+  allowReducedCeremony: false,
 };
 
 /** REGULATED mode -- full FlowGuard with four-eyes and complete audit trail. */
@@ -110,6 +113,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   identityProviderMode: 'optional',
   enforceRiskClassification: true,
   allowRiskDowngradeOverride: false,
+  allowReducedCeremony: false,
 };
 
 /** All known policy presets, indexed by mode. */

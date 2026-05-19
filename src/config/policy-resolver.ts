@@ -45,6 +45,7 @@ export interface HydratePolicyOptions {
   configIdentityProviderMode?: IdentityProviderMode;
   configEnforceRiskClassification?: boolean;
   configAllowRiskDowngradeOverride?: boolean;
+  configAllowReducedCeremony?: boolean;
 }
 
 interface RequestedPolicyContext {
@@ -66,6 +67,7 @@ function applyConfigOverrides(
     configIdentityProviderMode?: IdentityProviderMode;
     configEnforceRiskClassification?: boolean;
     configAllowRiskDowngradeOverride?: boolean;
+    configAllowReducedCeremony?: boolean;
   },
 ): FlowGuardPolicy {
   return {
@@ -86,6 +88,7 @@ function applyConfigOverrides(
       opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
     allowRiskDowngradeOverride:
       opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
+    allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
   };
 }
 

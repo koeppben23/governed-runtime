@@ -12,6 +12,7 @@ import {
   isHostToolAllowedInPhase,
   assessMinimumTaskClass,
   isRiskClassificationAllowed,
+  resolveCeremonyProfile,
   MUTATING_HOST_TOOLS,
   INVESTIGATION_ONLY_PHASES,
 } from './phase-tool-gate.js';
@@ -422,6 +423,222 @@ describe('phase-tool-gate', () => {
       expect(result.allowed).toBe(false);
       expect(result.code).toBe('RISK_GATE_BLOCKED');
       expect(result.decisionId).toBe('RISK-1');
+    });
+  });
+
+  describe('reduced ceremony profile', () => {
+    it('HAPPY — permits reduced ceremony only for verified TRIVIAL runtime evidence', () => {
+      const base = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+      };
+
+      const result = resolveCeremonyProfile({
+        state,
+        changedFiles: ['docs/usage-notes.md'],
+      });
+
+      expect(result.profile).toBe('reduced');
+      expect(result.reason).toBe('RUNTIME_VERIFIED_TRIVIAL');
+      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
+    });
+
+    it('BAD — missing task class claim keeps full ceremony', () => {
+      const base = makeState('IMPLEMENTATION', {
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('TASK_CLASS_CLAIM_MISSING');
+    });
+
+    it('BAD — non-TRIVIAL task class claim keeps full ceremony', () => {
+      const base = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'STANDARD',
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('CLAIMED_CLASS_NOT_TRIVIAL');
+    });
+
+    it('BAD — host-task-required review policy keeps full ceremony', () => {
+      const base = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: {
+          ...base.policySnapshot,
+          allowReducedCeremony: true,
+          reviewInvocationPolicy: 'host_task_required' as const,
+        },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('POLICY_REVIEW_REQUIRED');
+    });
+
+    it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {
+      const state = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('POLICY_REDUCED_CEREMONY_DISABLED');
+    });
+
+    it('BAD — governance surface escalates to computed HIGH-RISK and blocks reduction', () => {
+      const base = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['src/security/policy.ts'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
+      expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
+    });
+
+    it('BAD — blocked riskGate prevents reduced ceremony', () => {
+      const base = makeState('IMPLEMENTATION', {
+        claimedTaskClass: 'TRIVIAL',
+        riskGate: {
+          status: 'blocked',
+          code: 'RISK_CLASSIFICATION_MISMATCH',
+          message: 'blocked',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+          lastDecisionId: 'RISK-1',
+        },
+        validation: [
+          {
+            checkId: 'test_quality',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            checkId: 'rollback_safety',
+            passed: true,
+            detail: 'OK',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      });
+      const state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, allowReducedCeremony: true },
+      };
+
+      const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
+
+      expect(result.profile).toBe('full');
+      expect(result.reason).toBe('RISK_GATE_BLOCKED');
     });
   });
 });

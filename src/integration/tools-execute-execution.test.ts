@@ -285,6 +285,70 @@ describe('implement', () => {
           result.phase === 'COMPLETE',
       ).toBe(true);
     });
+
+    it('reduced ceremony records evidence and skips implementation review obligation only for runtime-verified TRIVIAL changes', async () => {
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        claimedTaskClass: 'TRIVIAL',
+        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+      });
+
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      const finalState = await readState(sessDir);
+
+      expect(result.error).toBeUndefined();
+      expect(result.ceremonyProfile).toBe('reduced');
+      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
+      expect(result.reviewMode).toBe('reduced_ceremony');
+      expect(finalState?.implementation).not.toBeNull();
+      expect(finalState?.implReview).toBeNull();
+      expect(finalState?.reducedCeremony).toMatchObject({
+        profile: 'reduced',
+        reason: 'RUNTIME_VERIFIED_TRIVIAL',
+        claimedTaskClass: 'TRIVIAL',
+        computedMinimumTaskClass: 'TRIVIAL',
+      });
+      expect(finalState?.transition?.event).toBe('APPROVE');
+      expect(finalState?.phase).toBe('COMPLETE');
+      expect(
+        finalState?.reviewAssurance?.obligations.some(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? false,
+      ).toBe(false);
+    });
+
+    it('keeps full implementation review for computed HIGH-RISK surfaces even when reduced ceremony is enabled', async () => {
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        claimedTaskClass: 'TRIVIAL',
+        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+      });
+
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      const finalState = await readState(sessDir);
+
+      expect(result.error).toBeUndefined();
+      expect(result.ceremonyProfile).toBe('full');
+      expect(result.ceremonyReason).toBe('COMPUTED_MINIMUM_NOT_TRIVIAL');
+      expect(result.computedMinimumTaskClass).toBe('HIGH-RISK');
+      expect(finalState?.reducedCeremony).toBeNull();
+      expect(finalState?.phase).toBe('IMPL_REVIEW');
+      expect(
+        finalState?.reviewAssurance?.obligations.some(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? false,
+      ).toBe(true);
+    });
   });
 
   describe('BAD', () => {

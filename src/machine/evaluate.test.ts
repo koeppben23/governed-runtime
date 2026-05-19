@@ -132,6 +132,26 @@ describe('evaluate', () => {
       }
     });
 
+    it('IMPLEMENTATION with reduced ceremony evidence → transition REDUCED_CEREMONY', () => {
+      const state = makeState('IMPLEMENTATION', {
+        implementation: IMPL_EVIDENCE,
+        reducedCeremony: {
+          profile: 'reduced',
+          reason: 'RUNTIME_VERIFIED_TRIVIAL',
+          claimedTaskClass: 'TRIVIAL',
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          decidedAt: '2026-01-01T00:00:00.000Z',
+        },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('transition');
+      if (result.kind === 'transition') {
+        expect(result.event).toBe('REDUCED_CEREMONY');
+        expect(result.target).toBe('EVIDENCE_REVIEW');
+      }
+    });
+
     it('REVIEW → transition REVIEW_DONE → REVIEW_COMPLETE', () => {
       const state = makeState('REVIEW', { reviewReportPath: '/tmp/report.json' });
       const result = evaluate(state);

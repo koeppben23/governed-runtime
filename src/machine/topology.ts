@@ -7,6 +7,7 @@
  *
  * Ticket flow:
  *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only via explicit REDUCED_CEREMONY transition.
  *
  * Architecture flow:
  *   READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
@@ -102,6 +103,7 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   [
     'IMPLEMENTATION',
     new Map<Event, Phase>([
+      ['REDUCED_CEREMONY', 'EVIDENCE_REVIEW'],
       ['IMPL_COMPLETE', 'IMPL_REVIEW'],
       ['ERROR', 'IMPLEMENTATION'],
     ]),

@@ -101,6 +101,8 @@ export const PolicySnapshotSchema = z
     enforceRiskClassification: z.boolean().optional(),
     /** Structured downgrade override permission. Defaults closed for legacy snapshots. */
     allowRiskDowngradeOverride: z.boolean().optional(),
+    /** Reduced ceremony permission. Defaults closed for legacy snapshots. */
+    allowReducedCeremony: z.boolean().optional(),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
@@ -119,6 +121,7 @@ export const PolicySnapshotSchema = z
       snapshot.enforceRiskClassification ??
       (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'),
     allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
+    allowReducedCeremony: snapshot.allowReducedCeremony ?? false,
   }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

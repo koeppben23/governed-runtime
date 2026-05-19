@@ -98,6 +98,7 @@ export interface HydratePolicyInput {
   readonly minimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly enforceRiskClassification?: boolean;
   readonly allowRiskDowngradeOverride?: boolean;
+  readonly allowReducedCeremony?: boolean;
   readonly policyResolution?: HydratePolicyResolution;
 }
 
@@ -164,6 +165,9 @@ function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): Fl
       : {}),
     ...(p.allowRiskDowngradeOverride !== undefined
       ? { allowRiskDowngradeOverride: p.allowRiskDowngradeOverride }
+      : {}),
+    ...(p.allowReducedCeremony !== undefined
+      ? { allowReducedCeremony: p.allowReducedCeremony }
       : {}),
   };
 }
@@ -288,6 +292,7 @@ export function executeHydrate(
     selfReview: null,
     validation: [],
     implementation: null,
+    reducedCeremony: null,
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,

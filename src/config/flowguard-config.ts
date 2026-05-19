@@ -66,6 +66,8 @@ export const FlowGuardConfigSchema = z.object({
       enforceRiskClassification: z.boolean().optional(),
       /** Permit structured risk-downgrade overrides. Initial presets keep this false. */
       allowRiskDowngradeOverride: z.boolean().optional(),
+      /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
+      allowReducedCeremony: z.boolean().optional(),
     })
     .default({}),
 

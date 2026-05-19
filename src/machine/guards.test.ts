@@ -457,8 +457,12 @@ describe('guards', () => {
       ]);
     });
 
-    it('IMPLEMENTATION guards contain exactly ERROR and IMPL_COMPLETE', () => {
-      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual(['ERROR', 'IMPL_COMPLETE']);
+    it('IMPLEMENTATION guards contain exactly ERROR, REDUCED_CEREMONY, and IMPL_COMPLETE', () => {
+      expect(GUARDS.get('IMPLEMENTATION')!.map((g) => g.event)).toEqual([
+        'ERROR',
+        'REDUCED_CEREMONY',
+        'IMPL_COMPLETE',
+      ]);
     });
 
     it('IMPL_REVIEW guards contain exactly ERROR, REVIEW_MET, REVIEW_PENDING', () => {

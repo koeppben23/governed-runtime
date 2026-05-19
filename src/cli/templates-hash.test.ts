@@ -38,10 +38,9 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
-    // Refreshed for #262: mandates now include the Governance rules section
-    // used as the command-template governance projection.
+    // Refreshed for #265: mandates mirror policy-gated reduced ceremony rules.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'b50b3258488ebcd43594cdf688bf06fcd3681a5871872377dd14540c8da402d0',
+      '4e7e33309242f1c0e0267dcc247d8f700a4c15cf9bfba15fe07a99734cf60c5b',
     );
   });
 
