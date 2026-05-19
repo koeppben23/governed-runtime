@@ -55,7 +55,7 @@ export declare function tool<Args extends z.ZodRawShape>(input: {
     execute(args: z.infer<z.ZodObject<Args>>, context: ToolContext): Promise<ToolResult>;
 };
 export declare namespace tool {
-    var schema: typeof z;
+    let schema: typeof z;
 }
 export type ToolDefinition = ReturnType<typeof tool>;
 export {};

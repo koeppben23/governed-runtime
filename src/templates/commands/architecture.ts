@@ -1,4 +1,4 @@
-/* eslint-disable no-useless-escape */
+ 
 
 import { GOVERNANCE_RULES } from './shared-rules.js';
 import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
