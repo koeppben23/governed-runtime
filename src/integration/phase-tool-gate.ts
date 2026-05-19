@@ -138,6 +138,7 @@ const HIGH_RISK_EXACT = new Set([
   'bun.lockb',
   'src/templates/mandates.ts',
   'src/templates/mandates-renderer.ts',
+  'src/templates/mandates-reviewer-criteria.ts',
 ]);
 
 const HIGH_RISK_RE = [
