@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FLOWGUARD_MANDATES_BODY } from './mandates.js';
+import { REVIEWER_AGENT } from './mandates.js';
 import {
   CANONICAL_FLOWGUARD_PHASES,
-  FLOWGUARD_MANDATES_BODY,
   MANDATES_ANCHOR_CATALOG,
   MANDATES_VERBOSITY_VALUES,
   renderCommandGovernanceRules,
@@ -13,8 +14,7 @@ import {
   renderPhaseAwareMandates,
   renderReviewerPrompt,
   resolveMandatesVerbosity,
-  REVIEWER_AGENT,
-} from './mandates.js';
+} from './mandates-renderer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, 'commands');

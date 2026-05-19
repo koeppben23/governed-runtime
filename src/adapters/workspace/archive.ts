@@ -20,8 +20,9 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { atomicWrite } from '../persistence.js';
-import { readAuditTrail, readConfig, readState } from '../persistence.js';
+import { atomicWrite, readState } from '../persistence.js';
+import { readAuditTrail } from '../persistence-audit.js';
+import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain } from '../../audit/integrity.js';
 import {
@@ -145,6 +146,38 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     JSON.stringify(receiptsPayload, null, 2) + '\n',
   );
 
+  const redaction = await applyArchiveRedaction(sessDir, redactionMode, includeRaw);
+
+  const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId, {
+    redactionMode,
+    rawIncluded: includeRaw || redactionMode === 'none',
+    redactedArtifacts: redaction.redactedArtifacts,
+    excludedFiles: redaction.excludedFiles,
+    riskFlags: redaction.riskFlags,
+  });
+  const manifestJson = JSON.stringify(manifest, null, 2) + '\n';
+  await atomicWrite(path.join(sessDir, 'archive-manifest.json'), manifestJson);
+
+  await createArchiveBundle(fingerprint, validSessionId, archiveDir, archivePath, {
+    excludedFiles: redaction.excludedFiles,
+  });
+
+  await writeArchiveChecksum(archivePath, checksumPath, state);
+
+  return archivePath;
+}
+
+interface ArchiveRedactionResult {
+  redactedArtifacts: string[];
+  excludedFiles: string[];
+  riskFlags: string[];
+}
+
+async function applyArchiveRedaction(
+  sessDir: string,
+  redactionMode: string,
+  includeRaw: boolean,
+): Promise<ArchiveRedactionResult> {
   const redactedArtifacts: string[] = [];
   const excludedFiles: string[] = [];
   const riskFlags: string[] = [];
@@ -154,7 +187,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       sessDir,
       'decision-receipts.v1.json',
       'decision-receipts.redacted.v1.json',
-      redactionMode,
+      redactionMode as RedactionMode,
       redactDecisionReceipts,
     );
     redactedArtifacts.push('decision-receipts.redacted.v1.json');
@@ -166,7 +199,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
         sessDir,
         'review-report.json',
         'review-report.redacted.json',
-        redactionMode,
+        redactionMode as RedactionMode,
         redactReviewReport,
       );
       redactedArtifacts.push('review-report.redacted.json');
@@ -178,17 +211,18 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     riskFlags.push('raw_export_enabled');
   }
 
-  const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId, {
-    redactionMode,
-    rawIncluded: includeRaw || redactionMode === 'none',
-    redactedArtifacts,
-    excludedFiles,
-    riskFlags,
-  });
-  const manifestJson = JSON.stringify(manifest, null, 2) + '\n';
-  await atomicWrite(path.join(sessDir, 'archive-manifest.json'), manifestJson);
+  return { redactedArtifacts, excludedFiles, riskFlags };
+}
 
-  // Create archive directory
+async function createArchiveBundle(
+  fingerprint: string,
+  validSessionId: string,
+  archiveDir: string,
+  archivePath: string,
+  opts: { excludedFiles: string[] },
+): Promise<void> {
+  const execFileAsync = promisify(execFile);
+
   try {
     await fs.mkdir(archiveDir, { recursive: true });
   } catch (err) {
@@ -203,18 +237,16 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     );
   }
 
-  // Create tar.gz using system tar (available on Windows 10+, macOS, Linux)
-  const execFileAsync = promisify(execFile);
-
   try {
-    // Use -C to change to parent directory, archive the session subdirectory
     const sessionsParent = path.join(workspacesHome(), fingerprint, 'sessions');
     const tarArgs = [
       'czf',
       archivePath,
       '-C',
       sessionsParent,
-      ...excludedFiles.map((relPath) => `--exclude=${path.posix.join(validSessionId, relPath)}`),
+      ...opts.excludedFiles.map(
+        (relPath) => `--exclude=${path.posix.join(validSessionId, relPath)}`,
+      ),
       validSessionId,
     ];
     await execFileAsync('tar', tarArgs, {
@@ -232,8 +264,14 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       `tar command failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
 
-  // ── Write .sha256 sidecar ─────────────────────────────────────
+async function writeArchiveChecksum(
+  archivePath: string,
+  checksumPath: string,
+  state: import('../../state/schema.js').SessionState | null,
+): Promise<void> {
+  const validSessionId = path.basename(path.dirname(archivePath));
   try {
     const archiveBuffer = await fs.readFile(archivePath);
     const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
@@ -245,18 +283,13 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       policyMode: state?.policySnapshot?.mode,
       error: err instanceof Error ? err.message : String(err),
     });
-    // Regulated: sidecar failure is fatal — archive is not externally verifiable.
-    // Policy derived from state already in scope (line 89), not a call parameter.
     if (state?.policySnapshot?.mode === 'regulated') {
       throw new WorkspaceError(
         'ARCHIVE_FAILED',
         `Checksum sidecar write failed in regulated mode: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    // Non-regulated: non-fatal. Archive is usable, just not externally verifiable.
   }
-
-  return archivePath;
 }
 
 /**
@@ -292,18 +325,10 @@ export async function verifyArchive(
   );
 }
 
-async function verifyArchiveImpl(
-  fingerprint: string,
-  sessionId: string,
-): Promise<ArchiveVerification> {
-  validateFingerprint(fingerprint);
-  const validSessionId = validateSessionId(sessionId);
-
-  const sessDir = sessionDir(fingerprint, validSessionId);
-  const findings: ArchiveFinding[] = [];
-  let manifest: ArchiveManifest | null = null;
-
-  // 1. Read and parse manifest
+async function loadArchiveManifest(
+  sessDir: string,
+  findings: ArchiveFinding[],
+): Promise<ArchiveManifest | null> {
   const manifestPath = path.join(sessDir, 'archive-manifest.json');
   let manifestRaw: string;
   try {
@@ -315,7 +340,7 @@ async function verifyArchiveImpl(
       message: 'Archive manifest not found in session directory',
       file: 'archive-manifest.json',
     });
-    return buildVerificationResult(findings, null);
+    return null;
   }
 
   try {
@@ -328,9 +353,9 @@ async function verifyArchiveImpl(
         message: `Manifest schema validation failed: ${result.error.message}`,
         file: 'archive-manifest.json',
       });
-      return buildVerificationResult(findings, null);
+      return null;
     }
-    manifest = result.data;
+    return result.data;
   } catch {
     findings.push({
       code: 'manifest_parse_error',
@@ -338,36 +363,15 @@ async function verifyArchiveImpl(
       message: 'Manifest is not valid JSON',
       file: 'archive-manifest.json',
     });
-    return buildVerificationResult(findings, null);
+    return null;
   }
+}
 
-  // 2. Check state file
-  const stateExists = await fileExists(path.join(sessDir, 'session-state.json'));
-  if (!stateExists) {
-    findings.push({
-      code: 'state_missing',
-      severity: 'error',
-      message: 'Session state file not found',
-      file: 'session-state.json',
-    });
-  }
-
-  // 3. Check discovery snapshots (if discoveryDigest is set)
-  if (manifest.discoveryDigest) {
-    for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
-      const exists = await fileExists(path.join(sessDir, snapshotFile));
-      if (!exists) {
-        findings.push({
-          code: 'snapshot_missing',
-          severity: 'warning',
-          message: `Discovery snapshot not found: ${snapshotFile}`,
-          file: snapshotFile,
-        });
-      }
-    }
-  }
-
-  // 4. Check each file in manifest
+async function verifyManifestFiles(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+): Promise<void> {
   for (const relPath of manifest.includedFiles) {
     const fullPath = path.join(sessDir, relPath);
     const exists = await fileExists(fullPath);
@@ -381,7 +385,6 @@ async function verifyArchiveImpl(
       continue;
     }
 
-    // Check file digest
     const expectedDigest = manifest.fileDigests[relPath];
     if (expectedDigest) {
       const content = await fs.readFile(fullPath);
@@ -396,8 +399,13 @@ async function verifyArchiveImpl(
       }
     }
   }
+}
 
-  // 5. Check for unexpected files
+async function checkUnexpectedFiles(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+): Promise<void> {
   const manifestFileSet = new Set(manifest.includedFiles);
   const excludedSet = new Set(manifest.excludedFiles ?? []);
   try {
@@ -416,68 +424,17 @@ async function verifyArchiveImpl(
   } catch {
     // Can't list files — skip unexpected file check
   }
+}
 
-  // 6. Verify content digest
-  if (manifest.includedFiles.length > 0) {
-    const digestValues = manifest.includedFiles
-      .map((f) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    const computedContentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
-    if (computedContentDigest !== manifest.contentDigest) {
-      findings.push({
-        code: 'content_digest_mismatch',
-        severity: 'error',
-        message: 'Content digest does not match computed value from file digests',
-      });
-    }
-  }
-
-  // 7. Verify archive checksum sidecar
-  const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
-  const checksumSidecarPath = `${archiveTarPath}.sha256`;
-
-  const checksumExists = await fileExists(checksumSidecarPath);
-  if (!checksumExists) {
-    findings.push({
-      code: 'archive_checksum_missing',
-      // P2e: regulated mode treats missing sidecar as error (consistent with creation)
-      severity: manifest?.policyMode === 'regulated' ? 'error' : 'warning',
-      message: 'Archive checksum sidecar (.sha256) not found',
-    });
-  } else {
-    try {
-      const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
-      const expectedHash = sidecarContent.trim().split(/\s+/)[0];
-      const archiveBuffer = await fs.readFile(archiveTarPath);
-      const actualHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
-      if (expectedHash !== actualHash) {
-        findings.push({
-          code: 'archive_checksum_mismatch',
-          severity: 'error',
-          message: `Archive checksum mismatch: sidecar says ${expectedHash?.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
-        });
-      }
-    } catch {
-      // Can't read archive or sidecar — skip
-    }
-  }
-
-  // 8. Verify audit chain integrity
-  //    Regulated mode → strict (rejects unchained legacy events).
-  //    Non-regulated modes remain legacy-tolerant for backward compatibility.
-  //    Regulated strictness is selected only by explicit policyMode === 'regulated'.
+async function verifyAuditChainIntegrity(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+): Promise<void> {
   try {
     const { events, skipped } = await readAuditTrail(sessDir);
     const strict = manifest.policyMode === 'regulated';
 
-    // In regulated mode, ANY unparseable lines are an integrity failure.
-    // A partially malformed audit trail must not pass silently — even if
-    // the parseable subset has a valid chain.
     if (strict && skipped > 0) {
       findings.push({
         code: 'audit_chain_invalid',
@@ -502,8 +459,6 @@ async function verifyArchiveImpl(
       }
     }
   } catch (error) {
-    // In regulated mode, audit trail read failure (e.g. permission denied) must
-    // surface as an error. File digest consistency does not prove semantic validity.
     if (manifest.policyMode === 'regulated') {
       findings.push({
         code: 'audit_chain_invalid',
@@ -514,9 +469,108 @@ async function verifyArchiveImpl(
         file: 'audit.jsonl',
       });
     }
-    // Non-regulated: read failure is non-fatal. File digest check (step 4)
-    // already covers audit.jsonl content integrity at the byte level.
   }
+}
+
+async function verifyArchiveIntegrity(
+  sessDir: string,
+  fingerprint: string,
+  validSessionId: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+): Promise<void> {
+  if (manifest.includedFiles.length > 0) {
+    const digestValues = manifest.includedFiles
+      .map((f) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    const computedContentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    if (computedContentDigest !== manifest.contentDigest) {
+      findings.push({
+        code: 'content_digest_mismatch',
+        severity: 'error',
+        message: 'Content digest does not match computed value from file digests',
+      });
+    }
+  }
+
+  const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
+  const checksumSidecarPath = `${archiveTarPath}.sha256`;
+
+  const checksumExists = await fileExists(checksumSidecarPath);
+  if (!checksumExists) {
+    findings.push({
+      code: 'archive_checksum_missing',
+      severity: manifest.policyMode === 'regulated' ? 'error' : 'warning',
+      message: 'Archive checksum sidecar (.sha256) not found',
+    });
+  } else {
+    try {
+      const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
+      const expectedHash = sidecarContent.trim().split(/\s+/)[0];
+      const archiveBuffer = await fs.readFile(archiveTarPath);
+      const actualHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
+      if (expectedHash !== actualHash) {
+        findings.push({
+          code: 'archive_checksum_mismatch',
+          severity: 'error',
+          message: `Archive checksum mismatch: sidecar says ${expectedHash?.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
+        });
+      }
+    } catch {
+      // Can't read archive or sidecar — skip
+    }
+  }
+
+  await verifyAuditChainIntegrity(sessDir, manifest, findings);
+}
+
+async function verifyArchiveImpl(
+  fingerprint: string,
+  sessionId: string,
+): Promise<ArchiveVerification> {
+  validateFingerprint(fingerprint);
+  const validSessionId = validateSessionId(sessionId);
+
+  const sessDir = sessionDir(fingerprint, validSessionId);
+  const findings: ArchiveFinding[] = [];
+
+  const manifest = await loadArchiveManifest(sessDir, findings);
+  if (!manifest) {
+    return buildVerificationResult(findings, null);
+  }
+
+  const stateExists = await fileExists(path.join(sessDir, 'session-state.json'));
+  if (!stateExists) {
+    findings.push({
+      code: 'state_missing',
+      severity: 'error',
+      message: 'Session state file not found',
+      file: 'session-state.json',
+    });
+  }
+
+  if (manifest.discoveryDigest) {
+    for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
+      const exists = await fileExists(path.join(sessDir, snapshotFile));
+      if (!exists) {
+        findings.push({
+          code: 'snapshot_missing',
+          severity: 'warning',
+          message: `Discovery snapshot not found: ${snapshotFile}`,
+          file: snapshotFile,
+        });
+      }
+    }
+  }
+
+  await verifyManifestFiles(sessDir, manifest, findings);
+  await checkUnexpectedFiles(sessDir, manifest, findings);
+  await verifyArchiveIntegrity(sessDir, fingerprint, validSessionId, manifest, findings);
 
   return buildVerificationResult(findings, manifest);
 }

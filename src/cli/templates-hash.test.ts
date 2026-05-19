@@ -51,7 +51,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Existing sessions with obligations bound to the previous digest must be
     // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '521f2f19847d232f54c29507af61c013154e8d986564a7ab3a37dfcc85b202ff',
+      'd30de30986a088760ee0178db067ae4b05edba7d238d21c632a09b23345ea142',
     );
   });
 

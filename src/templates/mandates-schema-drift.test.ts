@@ -9,7 +9,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { REVIEWER_AGENT, OPENCODE_JSON_TEMPLATE } from './mandates.js';
+import { OPENCODE_JSON_TEMPLATE } from './mandates.js';
+import { REVIEWER_AGENT } from './mandates.js';
 
 const REQUIRED_ATTESTATION_FIELDS = [
   'mandateDigest',

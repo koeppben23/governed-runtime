@@ -33,13 +33,13 @@ import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../.
 // Adapters
 import { readState } from '../../adapters/persistence.js';
 import { listRepoSignals } from '../../adapters/git.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import {
-  readConfig,
   writeDiscovery,
   writeProfileResolution,
   writeDiscoverySnapshot,
   writeProfileResolutionSnapshot,
-} from '../../adapters/persistence.js';
+} from '../../adapters/persistence-discovery.js';
 
 // Workspace
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';

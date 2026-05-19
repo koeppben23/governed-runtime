@@ -25,11 +25,8 @@ import { resolveNextAction } from '../../machine/next-action.js';
 import type { RailResult, RailContext } from '../../rails/types.js';
 
 // Adapters
-import {
-  readState,
-  withSessionWriteLock,
-  writeStateAlreadyLocked,
-} from '../../adapters/persistence.js';
+import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
+import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
 
 // Workspace
 import {

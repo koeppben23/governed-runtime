@@ -25,7 +25,8 @@ import {
   withTestEnv,
 } from './test-helpers.js';
 import { status, hydrate, ticket, plan, decision, validate } from './tools/index.js';
-import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,

@@ -32,8 +32,10 @@ import {
   abort_session,
   archive,
 } from './tools/index.js';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
+import * as persistenceDiscovery from '../adapters/persistence-discovery.js';
 import {
   makeState,
   makeProgressedState,
@@ -634,7 +636,7 @@ describe('hydrate', () => {
         workspaceDir,
         sessionDir: resolveSessionDir,
       } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);
@@ -700,7 +702,7 @@ describe('hydrate', () => {
 
       // 2. Write config with regulated as defaultMode
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);
@@ -736,7 +738,7 @@ describe('hydrate', () => {
 
       // 2. Set config default to regulated
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);
@@ -788,7 +790,7 @@ describe('hydrate', () => {
 
       // 2. Set config default to team
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
       const config = await readConfig(ws.tmpDir);
@@ -860,7 +862,7 @@ describe('hydrate', () => {
     it('fails closed when discovery persistence fails', async () => {
       // Force writeDiscovery to throw — simulates disk full, permissions, etc.
       const spy = vi
-        .spyOn(persistence, 'writeDiscovery')
+        .spyOn(persistenceDiscovery, 'writeDiscovery')
         .mockRejectedValueOnce(new Error('Simulated disk write failure'));
 
       const result = await hydrateSession();
@@ -875,7 +877,7 @@ describe('hydrate', () => {
 
     it('fails closed when profile resolution persistence fails', async () => {
       const spy = vi
-        .spyOn(persistence, 'writeProfileResolution')
+        .spyOn(persistenceDiscovery, 'writeProfileResolution')
         .mockRejectedValueOnce(new Error('Simulated profile write failure'));
 
       const result = await hydrateSession();
@@ -897,7 +899,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
         const baseConfig = await readConfig(tmpDir);
@@ -931,7 +933,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -969,7 +971,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
 
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1008,7 +1010,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const { readState } = await import('../adapters/persistence.js');
 
         const fp = await computeFingerprint(tmpDir);
@@ -1060,7 +1062,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1099,7 +1101,7 @@ describe('hydrate', () => {
           workspaceDir,
           sessionDir: resolveSessionDir,
         } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const { readState } = await import('../adapters/persistence.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
@@ -1136,7 +1138,7 @@ describe('hydrate', () => {
         const wsDir = workspaceDir(fp.fingerprint);
 
         // Set up any config (not needed for explicit override)
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const config = await readConfig(tmpDir);
         await writeRepoConfig(tmpDir, { ...config });
 
@@ -1162,7 +1164,7 @@ describe('hydrate', () => {
       const tmpDir = await fs.mkdtemp('/tmp/p31-c-');
       try {
         const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-        const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+        const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
         const fp = await computeFingerprint(tmpDir);
         const wsDir = workspaceDir(fp.fingerprint);
         const baseConfig = await readConfig(tmpDir);
@@ -1189,7 +1191,7 @@ describe('hydrate', () => {
 
     it('config.profile.activeChecks overrides selected profile defaults', async () => {
       const { computeFingerprint, workspaceDir } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const fp = await computeFingerprint(ws.tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);
 
@@ -1231,7 +1233,7 @@ describe('hydrate', () => {
         workspaceDir,
         sessionDir: resolveSessionDir,
       } = await import('../adapters/workspace/index.js');
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
 
       const fp = await computeFingerprint(tmpDir);
       const wsDir = workspaceDir(fp.fingerprint);

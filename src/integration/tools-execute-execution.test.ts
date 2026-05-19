@@ -41,7 +41,8 @@ import {
   abort_session,
   archive,
 } from './tools/index.js';
-import { readState, writeState, readAuditTrail } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
   makeState,

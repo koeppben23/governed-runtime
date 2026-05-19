@@ -37,7 +37,7 @@ vi.mock('../adapters/persistence.js', async (importOriginal) => {
 
 import { PluginWorkspaceImpl, type WorkspaceDeps } from './plugin-workspace.js';
 import type { MutableChainState } from './plugin-workspace.js';
-import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './plugin-workspace.js';
+import { recordAssuranceWithAudit, type AssuranceAuditDeps } from './review/shared-helpers.js';
 
 function fakeDeps(overrides?: Partial<WorkspaceDeps>): WorkspaceDeps {
   return { auditWorktree: undefined, ...overrides };

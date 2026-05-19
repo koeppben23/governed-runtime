@@ -15,7 +15,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import { appendAuditEvent } from '../../adapters/persistence.js';
+import { appendAuditEvent } from '../../adapters/persistence-audit.js';
 
 /**
  * Append a review-related audit event to the session trail.

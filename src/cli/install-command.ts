@@ -7,12 +7,8 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import {
-  globalConfigPath,
-  readConfig,
-  writeGlobalConfig,
-  writeRepoConfig,
-} from '../adapters/persistence.js';
+import { globalConfigPath } from '../adapters/persistence.js';
+import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import {

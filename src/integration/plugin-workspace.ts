@@ -11,13 +11,9 @@
  * @version v1
  */
 
-import {
-  readState,
-  writeStateAlreadyLocked,
-  withSessionWriteLock,
-  appendAuditEvent,
-  readAuditTrail,
-} from '../adapters/persistence.js';
+import { readState, writeStateAlreadyLocked } from '../adapters/persistence.js';
+import { withSessionWriteLock } from '../adapters/persistence-lock.js';
+import { appendAuditEvent, readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -33,6 +29,8 @@ import type { SessionState } from '../state/schema.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { createSessionState as createEnforcementState } from './review/enforcement/enforcement.js';
 import type { SessionEnforcementState } from './review/enforcement/types.js';
+import type { ReviewSessionContext } from './review/pipeline-types.js';
+import { recordAssuranceWithAudit } from './review/shared-helpers.js';
 
 /** Mutable per-session chain state. */
 export type MutableChainState = {
@@ -43,13 +41,6 @@ export type MutableChainState = {
 /** Dependencies for the workspace factory. */
 export interface WorkspaceDeps {
   auditWorktree: string | undefined;
-}
-
-/** Session identity context bundled for audit operations. */
-export interface ReviewSessionContext {
-  readonly sessDir: string;
-  readonly sessionId: string;
-  readonly phase: string;
 }
 
 /** All helpers returned by the workspace factory. */
@@ -285,71 +276,4 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
       return impl.cachedWsDir;
     },
   };
-}
-
-// ─── State + Audit Persistence Helper ────────────────────────────────────────
-
-/**
- * Dependencies needed by {@link recordAssuranceWithAudit}.
- *
- * Uses {@link SessionState} for state mutation typing.
- */
-export interface AssuranceAuditDeps {
-  updateReviewAssurance(
-    sessDir: string,
-    update: (state: SessionState, now: string) => SessionState,
-  ): Promise<void>;
-  appendReviewAuditEvent(
-    sessDir: string,
-    sessionId: string,
-    phase: string,
-    event: string,
-    detail: Record<string, unknown>,
-  ): Promise<void>;
-  logError(message: string, err: unknown): void;
-}
-
-/**
- * Record a review assurance state mutation together with its audit event.
- *
- * State is committed first (under the session-state write lock). If the
- * audit event fails to persist, the failure is surfaced based on
- * {@code auditFailureBehavior}:
- *
- * - {@code 'block'} — returns a blocked result with code
- *   {@code AUDIT_PERSISTENCE_FAILED}. The state was committed; the
- *   corresponding audit event is missing from the trail.
- * - {@code 'warn'} — logs the error and returns {@code auditOk: false}
- *   without blocking. State was committed; audit event is missing.
- *
- * This helper does NOT make policy decisions. The {@code auditFailureBehavior}
- * parameter must be derived from the active policy by the caller.
- */
-export async function recordAssuranceWithAudit(
-  deps: AssuranceAuditDeps,
-  sessDir: string,
-  sessionId: string,
-  phase: string,
-  stateMutation: (state: SessionState, now: string) => SessionState,
-  auditEventName: string,
-  auditDetail: Record<string, unknown>,
-  auditFailureBehavior: 'block' | 'warn',
-): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string }> {
-  await deps.updateReviewAssurance(sessDir, stateMutation);
-
-  try {
-    await deps.appendReviewAuditEvent(sessDir, sessionId, phase, auditEventName, auditDetail);
-    return { auditOk: true };
-  } catch (err) {
-    deps.logError('Proof persistence failure: audit write failed', err);
-    if (auditFailureBehavior === 'block') {
-      return {
-        auditOk: false,
-        block: true,
-        code: 'AUDIT_PERSISTENCE_FAILED', // centrally registered in reasons-infra.ts
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
-    return { auditOk: false };
-  }
 }

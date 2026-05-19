@@ -7,8 +7,8 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { globalConfigPath, readConfig } from '../adapters/persistence.js';
-import { PersistenceError } from '../adapters/persistence.js';
+import { globalConfigPath, PersistenceError } from '../adapters/persistence.js';
+import { readConfig } from '../adapters/persistence-config.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import {
   COMMANDS,

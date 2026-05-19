@@ -26,7 +26,8 @@ import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createTestWorkspace, withTestEnv } from './test-helpers.js';
-import { readAuditTrail, readState, writeState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,

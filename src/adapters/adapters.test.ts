@@ -65,18 +65,19 @@ import {
   stateExists,
   writeReport,
   readReport,
-  appendAuditEvent,
-  readAuditTrail,
   statePath,
   reportPath,
   auditPath,
   PersistenceError,
   isEnoent,
   atomicWrite,
+} from './persistence.js';
+import { appendAuditEvent, readAuditTrail } from './persistence-audit.js';
+import {
   withSessionWriteLock,
   acquireSessionWriteLock,
   sessionLockPath,
-} from './persistence.js';
+} from './persistence-lock.js';
 import { validateBinding, fromOpenCodeContext, BindingError } from './binding.js';
 import { createRailContext } from './context.js';
 import type { SessionState } from '../state/schema.js';

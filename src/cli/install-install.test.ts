@@ -112,7 +112,7 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
       expect(result.errors).toEqual([]);
 
-      const { readConfig } = await import('../adapters/persistence.js');
+      const { readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('regulated');
     });
@@ -122,7 +122,7 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
       expect(result.errors).toEqual([]);
 
-      const { readConfig } = await import('../adapters/persistence.js');
+      const { readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('solo');
     });
@@ -132,7 +132,7 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball, policyMode: 'team' }));
       expect(result.errors).toEqual([]);
 
-      const { readConfig } = await import('../adapters/persistence.js');
+      const { readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('team');
     });
@@ -1000,7 +1000,7 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated' }));
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
-      const { readConfig } = await import('../adapters/persistence.js');
+      const { readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('regulated');
     });
@@ -1009,7 +1009,7 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
       await install(repoArgs({ coreTarball: tarball, policyMode: 'regulated', force: true }));
-      const { readConfig } = await import('../adapters/persistence.js');
+      const { readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       expect(config.policy.defaultMode).toBe('regulated');
     });
@@ -1017,7 +1017,7 @@ describe('cli/install', () => {
     it('re-install with --force preserves non-policy config fields', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball, policyMode: 'solo' }));
-      const { writeRepoConfig, readConfig } = await import('../adapters/persistence.js');
+      const { writeRepoConfig, readConfig } = await import('../adapters/persistence-config.js');
       const config = await readConfig(tmpDir);
       config.logging.level = 'debug';
       await writeRepoConfig(tmpDir, config);
