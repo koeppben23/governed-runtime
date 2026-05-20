@@ -9,7 +9,7 @@
  * as unhealthy.
  *
  * Solution: Intercept process.stdout.write and redirect non-JSON-RPC writes to stderr.
- * This is a "redirect" strategy (not "throw") ÔÇö safer with third-party deps that
+ * This is a "redirect" strategy (not "throw") - safer with third-party deps that
  * might write diagnostics.
  *
  * This guard should be installed FIRST in the entry point, before any other imports
@@ -25,7 +25,7 @@ let installed = false;
  * After this call, any write to process.stdout that is not a valid JSON-RPC message
  * will be silently redirected to process.stderr.
  *
- * Idempotent ÔÇö calling multiple times is safe.
+ * Idempotent - calling multiple times is safe.
  */
 export function installStdoutGuard(): void {
   if (installed) return;
@@ -62,7 +62,7 @@ export function installStdoutGuard(): void {
 
 /**
  * Check if a string looks like a valid JSON-RPC message.
- * We use a lightweight heuristic ÔÇö not full JSON parsing ÔÇö for performance.
+ * We use a lightweight heuristic - not full JSON parsing - for performance.
  */
 function isJsonRpcMessage(text: string): boolean {
   const trimmed = text.trimStart();

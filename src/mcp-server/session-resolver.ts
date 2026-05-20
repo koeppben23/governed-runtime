@@ -3,7 +3,7 @@
  * @description Resolves the FlowGuard session context (working directory, worktree,
  * fingerprint, session directory) for MCP tool calls.
  *
- * Resolution order (fail-closed ÔÇö explicit error if none resolves):
+ * Resolution order (fail-closed - explicit error if none resolves):
  * 1. FLOWGUARD_SESSION_DIR env var (explicit override)
  * 2. MCP roots (host-advertised working directories via roots/list)
  * 3. process.cwd() fallback

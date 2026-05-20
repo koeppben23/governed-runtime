@@ -1,6 +1,6 @@
 /**
  * @module mcp-server/server
- * @description FlowGuard MCP Server ÔÇö universal tool surface for any MCP-compatible
+ * @description FlowGuard MCP Server - universal tool surface for any MCP-compatible
  * AI coding agent (Claude Code, Codex, or future platforms).
  *
  * Architecture:
@@ -20,7 +20,7 @@ import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js'
 import { resolveSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 
-// ÔöÇÔöÇÔöÇ Tool Imports ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tool Imports ---
 
 import { status } from '../integration/tools/index.js';
 import { hydrate } from '../integration/tools/index.js';
@@ -33,10 +33,10 @@ import { ticket } from '../integration/tools/index.js';
 import { review } from '../integration/tools/index.js';
 import { abort_session } from '../integration/tools/index.js';
 import { archive } from '../integration/tools/index.js';
-// 'continue' is a reserved word ÔÇö imported via namespace
+// 'continue' is a reserved word - imported via namespace
 import { continue as continue_cmd } from '../integration/tools/index.js';
 
-// ÔöÇÔöÇÔöÇ Tool Registry ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tool Registry ---
 
 const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   status,
@@ -53,7 +53,7 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   continue: continue_cmd,
 };
 
-// ÔöÇÔöÇÔöÇ Server Factory ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Server Factory ---
 
 /** FlowGuard package version (injected at build time or read from package.json). */
 const SERVER_VERSION = '1.2.0-rc.3';
@@ -61,7 +61,7 @@ const SERVER_VERSION = '1.2.0-rc.3';
 /**
  * Create and configure the FlowGuard MCP server.
  *
- * Does NOT start the transport ÔÇö call `start()` on the returned object.
+ * Does NOT start the transport - call `start()` on the returned object.
  */
 export function createMcpServer(): McpServer {
   const server = new McpServer(
@@ -92,7 +92,7 @@ export function createMcpServer(): McpServer {
  * Start the FlowGuard MCP server on stdio transport.
  *
  * This function:
- * 1. Installs the stdout guard (redirect non-MCP writes ÔåÆ stderr)
+ * 1. Installs the stdout guard (redirect non-MCP writes -> stderr)
  * 2. Creates the MCP server with all tools registered
  * 3. Connects via stdio transport
  * 4. Blocks until the transport closes
@@ -107,5 +107,5 @@ export async function startMcpServer(): Promise<void> {
   await server.connect(transport);
 
   // The server runs until the transport is closed by the host.
-  // No explicit keep-alive needed ÔÇö the transport handles stdin reading.
+  // No explicit keep-alive needed - the transport handles stdin reading.
 }

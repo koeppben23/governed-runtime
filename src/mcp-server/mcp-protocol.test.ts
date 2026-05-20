@@ -12,7 +12,7 @@
  *
  * These tests require a prior `npm run build` (they spawn `dist/mcp-server/index.js`).
  *
- * @test-policy HAPPY, BAD, CORNER ÔÇö three categories present.
+ * @test-policy HAPPY, BAD, CORNER - three categories present.
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
 
@@ -24,7 +24,7 @@ import { existsSync } from 'node:fs';
 const PROJECT_ROOT = path.resolve(__dirname, '../../');
 const SERVER_ENTRY = path.join(PROJECT_ROOT, 'dist', 'mcp-server', 'index.js');
 
-// ÔöÇÔöÇÔöÇ JSON-RPC Helpers ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- JSON-RPC Helpers ---
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -45,7 +45,7 @@ function makeRequest(method: string, params?: Record<string, unknown>): JsonRpcR
   return { jsonrpc: '2.0', id: nextId++, method, params };
 }
 
-// ÔöÇÔöÇÔöÇ Server Process Manager ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Server Process Manager ---
 
 class McpTestClient {
   private proc: ChildProcess | null = null;
@@ -101,7 +101,7 @@ class McpTestClient {
           }
         }
       } catch {
-        // Non-JSON output on stdout ÔÇö this would be a guard failure
+        // Non-JSON output on stdout - this would be a guard failure
       }
     }
   }
@@ -146,7 +146,7 @@ class McpTestClient {
   }
 }
 
-// ÔöÇÔöÇÔöÇ Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tests ---
 
 describe('MCP Protocol Compliance', () => {
   let client: McpTestClient;
@@ -214,7 +214,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_validate',
     ];
 
-    // We expect 12 tools ÔÇö check at least these core ones are present
+    // We expect 12 tools - check at least these core ones are present
     for (const name of expectedNames) {
       expect(toolNames, `Missing tool: ${name}`).toContain(name);
     }
@@ -250,7 +250,7 @@ describe('MCP Protocol Compliance', () => {
     expect(result.content).toBeDefined();
     expect(result.content.length).toBeGreaterThan(0);
     expect(result.content[0]!.type).toBe('text');
-    // Status may return error (no session) or success ÔÇö both are valid MCP responses
+    // Status may return error (no session) or success - both are valid MCP responses
     expect(typeof result.content[0]!.text).toBe('string');
   });
 
@@ -305,7 +305,7 @@ describe('MCP Protocol Compliance', () => {
       );
 
       // Each tool must return a valid MCP response (not a protocol error).
-      // Tool execution errors (isError: true) are acceptable ÔÇö they indicate
+      // Tool execution errors (isError: true) are acceptable - they indicate
       // the tool ran but encountered a business logic issue (e.g. no session).
       expect(
         resp.error,

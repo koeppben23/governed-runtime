@@ -12,7 +12,7 @@
  * Uses child_process to spawn the server as a subprocess, communicating
  * via JSON-RPC over stdin/stdout (the standard MCP stdio transport).
  *
- * @test-policy HAPPY, BAD, CORNER ÔÇö three categories present.
+ * @test-policy HAPPY, BAD, CORNER - three categories present.
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
 
@@ -22,7 +22,7 @@ import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { z } from 'zod';
 
-// ÔöÇÔöÇÔöÇ Schema Converter Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Schema Converter Tests ---
 
 describe('Schema Converter', () => {
   it('HAPPY: returns args unchanged for valid record', () => {
@@ -52,7 +52,7 @@ describe('Schema Converter', () => {
   });
 });
 
-// ÔöÇÔöÇÔöÇ Session Resolver Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Session Resolver Tests ---
 
 describe('Session Resolver', () => {
   const originalEnv = process.env['FLOWGUARD_SESSION_DIR'];
@@ -96,11 +96,11 @@ describe('Session Resolver', () => {
   });
 });
 
-// ÔöÇÔöÇÔöÇ Stdout Guard Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Stdout Guard Tests ---
 
 describe('Stdout Guard', () => {
   it('HAPPY: installStdoutGuard is idempotent', () => {
-    // The guard may already be installed ÔÇö calling again should not throw
+    // The guard may already be installed - calling again should not throw
     expect(() => installStdoutGuard()).not.toThrow();
     expect(() => installStdoutGuard()).not.toThrow();
   });
@@ -112,7 +112,7 @@ describe('Stdout Guard', () => {
   });
 });
 
-// ÔöÇÔöÇÔöÇ Tool Registry Completeness ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tool Registry Completeness ---
 
 describe('Tool Registry', () => {
   it('HAPPY: all 12 FlowGuard tools are importable', async () => {

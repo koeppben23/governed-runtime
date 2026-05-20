@@ -7,8 +7,8 @@
  * This module simply re-wraps `Record<string, z.ZodType>` into the `z.object()` form
  * that the SDK expects.
  *
- * Design: The MCP SDK handles Zod ÔåÆ JSON Schema conversion internally.
- * No custom converter needed ÔÇö Zod v4's built-in toJSONSchema is used by the SDK.
+ * Design: The MCP SDK handles Zod -> JSON Schema conversion internally.
+ * No custom converter needed - Zod v4's built-in toJSONSchema is used by the SDK.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
@@ -21,7 +21,7 @@ import { z } from 'zod';
  *
  * FlowGuard tools define args as `Record<string, z.ZodType>`.
  * The MCP SDK expects a `ZodRawShapeCompat` (object with Zod type values).
- * These are structurally identical ÔÇö this function validates the shape.
+ * These are structurally identical - this function validates the shape.
  */
 export function convertArgsToInputSchema(
   args: Record<string, z.ZodType>,

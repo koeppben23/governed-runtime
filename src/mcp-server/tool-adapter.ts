@@ -5,7 +5,7 @@
  * Responsibilities:
  * - Registers all 12 FlowGuard tools with the MCP server
  * - Builds ToolContext for each tool call from MCP request context
- * - Maps ToolResult (string | {output, metadata}) ÔåÆ MCP CallToolResult
+ * - Maps ToolResult (string | {output, metadata}) -> MCP CallToolResult
  * - Validates args via Zod before delegation (fail-closed on invalid input)
  * - Maps errors to MCP isError responses with diagnostic codes
  *
@@ -20,14 +20,14 @@ import type { ToolDefinition, ToolContext, ToolResult } from '../integration/too
 import { convertArgsToInputSchema } from './schema-converter.js';
 import type { McpSessionContext } from './session-resolver.js';
 
-// ÔöÇÔöÇÔöÇ Tool Registry ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tool Registry ---
 
 /** All FlowGuard tool definitions keyed by their MCP tool name. */
 export interface FlowGuardToolRegistry {
   readonly [name: string]: ToolDefinition;
 }
 
-// ÔöÇÔöÇÔöÇ Result Conversion ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Result Conversion ---
 
 /**
  * Convert a FlowGuard ToolResult to an MCP CallToolResult.
@@ -56,7 +56,7 @@ function toMcpError(code: string, message: string): CallToolResult {
   };
 }
 
-// ÔöÇÔöÇÔöÇ Tool Registration ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Tool Registration ---
 
 /**
  * Register all FlowGuard tools with the MCP server.
@@ -68,7 +68,7 @@ function toMcpError(code: string, message: string): CallToolResult {
  * - Handler that builds ToolContext and delegates to execute()
  *
  * @param server - MCP server instance
- * @param tools - FlowGuard tool registry (name ÔåÆ ToolDefinition)
+ * @param tools - FlowGuard tool registry (name -> ToolDefinition)
  * @param resolveContext - Resolves session context for the current call
  */
 export function registerAllTools(
@@ -117,7 +117,7 @@ export function registerAllTools(
   }
 }
 
-// ÔöÇÔöÇÔöÇ Error Code Extraction ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- Error Code Extraction ---
 
 /**
  * Extract a FlowGuard diagnostic code from an error.
