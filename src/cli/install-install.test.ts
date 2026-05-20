@@ -385,6 +385,32 @@ describe('cli/install', () => {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }
     });
+
+    it('EDGE: npm install disables network audit/fund work and uses bounded CI timeout', async () => {
+      const { execSync: mockExec } = await import('node:child_process');
+      const installCalls: Array<{ cmd: string; timeout?: number }> = [];
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+        if (cmd === 'bun --version') throw new Error('bun unavailable');
+        if (cmd === 'npm --version') return Buffer.from('10.0.0\n');
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          installCalls.push({ cmd, timeout: opts?.timeout as number | undefined });
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(repoArgs({ coreTarball: tarball }));
+
+        expect(result.errors).toEqual([]);
+        expect(installCalls).toEqual([
+          { cmd: 'npm install --no-audit --no-fund', timeout: 300_000 },
+        ]);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────

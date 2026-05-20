@@ -40,6 +40,8 @@ import {
   writeIfAbsent,
 } from './install-helpers.js';
 
+const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
+
 /** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
 export function detectPackageManager(): 'bun' | 'npm' | null {
   // Uses execSync (shell) for reliable PATH resolution across all platforms.
@@ -57,6 +59,11 @@ export function detectPackageManager(): 'bun' | 'npm' | null {
     // npm not available
   }
   return null;
+}
+
+function dependencyInstallCommand(pm: 'bun' | 'npm'): string {
+  if (pm === 'npm') return 'npm install --no-audit --no-fund';
+  return 'bun install';
 }
 
 /** Pre-install snapshot for transactional rollback. */
@@ -360,10 +367,10 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     try {
-      execSync(`${pm} install`, {
+      execSync(dependencyInstallCommand(pm), {
         cwd: configTargetDir,
         stdio: 'pipe',
-        timeout: 60_000,
+        timeout: DEPENDENCY_INSTALL_TIMEOUT_MS,
       });
       ops.push({ path: join(configTargetDir, 'node_modules'), action: 'written' });
 
