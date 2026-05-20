@@ -203,6 +203,7 @@ const FF_MODULES = new Set([
   'telemetry',
   'presentation',
   'diagnostics',
+  'mcp-server',
 ]);
 
 function isFFModuleImport(module: string): boolean {
@@ -277,6 +278,7 @@ function getLayerFromPath(filePath: string): string | null {
   if (filePath.includes('/cli/')) return 'cli';
   if (filePath.includes('/presentation/')) return 'presentation';
   if (filePath.includes('/diagnostics/')) return 'diagnostics';
+  if (filePath.includes('/mcp-server/')) return 'mcp-server';
   return null;
 }
 
@@ -391,6 +393,19 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
             file: analysis.relativePath,
             rule: 'adapters-no-integration',
             message: `adapters/ must not import integration/ (HAI boundary): ${imp.module}`,
+          });
+        }
+      }
+    }
+
+    if (layer === 'mcp-server' && analysis.filePath.includes('/mcp-server/')) {
+      const forbidden = new Set(['cli']);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'mcp-server-no-cli',
+            message: `mcp-server/ must not import cli/ (separate entry points): ${imp.module}`,
           });
         }
       }
@@ -874,6 +889,45 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nadapters/ -> integration/ violations (HAI boundary):\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5d: mcp-server/ must NOT import from cli/ (separate entry points)', () => {
+    const violations: ImportViolation[] = [];
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/mcp-server/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const cliImports = analysis.imports.filter((i) => i.isFFModule && i.targetModule === 'cli');
+
+        for (const imp of cliImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'mcp-server-no-cli',
+            message: `mcp-server/ imports from cli/ (separate entry points): ${imp.module}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have mcp-server files', () => {
+      const mcpFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/mcp-server/') && !a.filePath.includes('.test.'),
+      );
+      expect(mcpFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no mcp-server -> cli imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nmcp-server/ -> cli/ violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
