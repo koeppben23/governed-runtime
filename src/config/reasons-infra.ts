@@ -327,4 +327,50 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Inspect the session log for per-attempt failure details',
     ],
   },
+
+  // ─── Hook Session Resolution (Phase 3: #244) ────────────────────────────────
+
+  {
+    code: 'FINGERPRINT_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Cannot compute workspace fingerprint: {message}',
+    recoverySteps: [
+      'Ensure the working directory is a valid git repository or filesystem path',
+      'Check that git is installed and accessible',
+      'Verify the hook is invoked with a valid cwd field in the stdin JSON payload',
+    ],
+  },
+
+  {
+    code: 'SESSION_DIR_INVALID',
+    category: 'adapter',
+    messageTemplate: 'Cannot derive session directory: {message}',
+    recoverySteps: [
+      'Verify that session_id in the hook payload is a valid identifier',
+      'Run /hydrate to initialize the FlowGuard session',
+      'Check FlowGuard workspace integrity with flowguard doctor',
+    ],
+  },
+
+  {
+    code: 'STATE_MISSING',
+    category: 'adapter',
+    messageTemplate:
+      'Session directory exists but contains no state file. Run /hydrate to initialize.',
+    recoverySteps: [
+      'Run /hydrate to initialize the session state',
+      'Verify that the session was properly bootstrapped before tool execution',
+    ],
+  },
+
+  {
+    code: 'STATE_UNREADABLE',
+    category: 'adapter',
+    messageTemplate: 'Session state exists but is unreadable: {message}',
+    recoverySteps: [
+      'Check filesystem permissions on the session state file',
+      'Run flowguard doctor to diagnose state file corruption',
+      'Re-hydrate the session if the state is irrecoverable',
+    ],
+  },
 ];

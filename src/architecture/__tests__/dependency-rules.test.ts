@@ -203,6 +203,7 @@ const FF_MODULES = new Set([
   'telemetry',
   'presentation',
   'diagnostics',
+  'hooks',
   'mcp-server',
 ]);
 
@@ -279,6 +280,7 @@ function getLayerFromPath(filePath: string): string | null {
   if (filePath.includes('/presentation/')) return 'presentation';
   if (filePath.includes('/diagnostics/')) return 'diagnostics';
   if (filePath.includes('/mcp-server/')) return 'mcp-server';
+  if (filePath.includes('/hooks/')) return 'hooks';
   return null;
 }
 
@@ -393,6 +395,19 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
             file: analysis.relativePath,
             rule: 'adapters-no-integration',
             message: `adapters/ must not import integration/ (HAI boundary): ${imp.module}`,
+          });
+        }
+      }
+    }
+
+    if (layer === 'hooks' && analysis.filePath.includes('/hooks/')) {
+      const forbidden = new Set(['cli', 'mcp-server']);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'hooks-no-cli-mcp',
+            message: `hooks/ must not import ${imp.targetModule}/ (separate entry points): ${imp.module}`,
           });
         }
       }
@@ -928,6 +943,63 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nmcp-server/ -> cli/ violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 7: hooks/ must NOT import from cli/ or mcp-server/ (separate entry points)', () => {
+    it('should have hooks files', () => {
+      const hooksFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/hooks/') && !a.filePath.includes('.test.'),
+      );
+      expect(hooksFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no hooks -> cli imports', () => {
+      const violations: ImportViolation[] = [];
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/hooks/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+        for (const imp of analysis.imports.filter((i) => i.isFFModule)) {
+          if (imp.targetModule === 'cli') {
+            violations.push({
+              file: analysis.relativePath,
+              rule: 'hooks-no-cli',
+              message: `hooks/ imports from cli/ (separate entry points): ${imp.module}`,
+            });
+          }
+        }
+      }
+      if (violations.length > 0) {
+        console.error(
+          '\nhooks/ -> cli/ violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+
+    it('should have no hooks -> mcp-server imports', () => {
+      const violations: ImportViolation[] = [];
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/hooks/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+        for (const imp of analysis.imports.filter((i) => i.isFFModule)) {
+          if (imp.targetModule === 'mcp-server') {
+            violations.push({
+              file: analysis.relativePath,
+              rule: 'hooks-no-mcp-server',
+              message: `hooks/ imports from mcp-server/ (separate entry points): ${imp.module}`,
+            });
+          }
+        }
+      }
+      if (violations.length > 0) {
+        console.error(
+          '\nhooks/ -> mcp-server/ violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
