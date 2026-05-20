@@ -296,7 +296,7 @@ describe('cli/resolveTarget', () => {
 
     it('repo resolves platform-specific roots for Claude and Codex', () => {
       expect(resolveTarget('repo', 'claude-code')).toBe(path.resolve('.claude'));
-      expect(resolveTarget('repo', 'codex')).toBe(path.resolve('.codex'));
+      expect(resolveTarget('repo', 'codex')).toBe(path.resolve('plugins', 'flowguard'));
     });
   });
 
