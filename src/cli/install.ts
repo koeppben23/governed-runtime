@@ -104,7 +104,8 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
-      case '--platform': {
+      case '--platform':
+      case '--host': {
         const next = argv[i + 1];
         if (next && VALID_PLATFORMS.includes(next as InstallPlatform)) {
           installPlatform = next as InstallPlatform;

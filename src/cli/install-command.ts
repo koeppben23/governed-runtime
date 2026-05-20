@@ -19,6 +19,11 @@ import {
   buildMandatesContent,
 } from './templates.js';
 import {
+  claudeCodePluginSnapshotPaths,
+  installClaudeCodePlugin,
+  writeClaudeCodePluginInstallHint,
+} from './claude-code-plugin-install.js';
+import {
   type CliArgs,
   type CliResult,
   type FileOp,
@@ -34,6 +39,8 @@ import {
   verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
+
+const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
 
 /** Detect available package manager. Prefers bun (OpenCode runtime), falls back to npm. */
 export function detectPackageManager(): 'bun' | 'npm' | null {
@@ -52,6 +59,11 @@ export function detectPackageManager(): 'bun' | 'npm' | null {
     // npm not available
   }
   return null;
+}
+
+function dependencyInstallCommand(pm: 'bun' | 'npm'): string {
+  if (pm === 'npm') return 'npm install --no-audit --no-fund';
+  return 'bun install';
 }
 
 /** Pre-install snapshot for transactional rollback. */
@@ -188,11 +200,13 @@ export async function install(args: CliArgs): Promise<CliResult> {
       );
     }
 
-    // Ensure base directories
-    await ensureDir(join(target, 'tools'));
-    await ensureDir(join(target, 'plugins'));
-    await ensureDir(join(target, 'commands'));
-    await ensureDir(join(target, installPlatform === 'codex' ? 'subagents' : 'agents'));
+    // Claude Code receives a plugin tree instead of duplicate standalone host files.
+    if (installPlatform !== 'claude-code') {
+      await ensureDir(join(target, 'tools'));
+      await ensureDir(join(target, 'plugins'));
+      await ensureDir(join(target, 'commands'));
+      await ensureDir(join(target, installPlatform === 'codex' ? 'subagents' : 'agents'));
+    }
 
     // -- Transactional rollback: resolve paths + snapshot BEFORE any file write --
     const vendorPath = join(target, 'vendor');
@@ -219,12 +233,18 @@ export async function install(args: CliArgs): Promise<CliResult> {
       await snapshotForRollback(cfgPath),
       await snapshotForRollback(mandatesPath),
       await snapshotForRollback(vendorTarballPath),
-      await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
-      await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
-      await snapshotForRollback(reviewerPath),
-      ...(await Promise.all(
-        Object.keys(COMMANDS).map((name) => snapshotForRollback(join(target, 'commands', name))),
-      )),
+      ...(installPlatform === 'claude-code'
+        ? await Promise.all(claudeCodePluginSnapshotPaths(target).map(snapshotForRollback))
+        : [
+            await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
+            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
+            await snapshotForRollback(reviewerPath),
+            ...(await Promise.all(
+              Object.keys(COMMANDS).map((name) =>
+                snapshotForRollback(join(target, 'commands', name)),
+              ),
+            )),
+          ]),
       // node_modules: only remove if it was created by this install
       {
         path: join(configTargetDir, 'node_modules'),
@@ -244,25 +264,28 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await writeFile(mandatesPath, mandatesContent, 'utf-8');
     ops.push({ path: mandatesPath, action: 'written' });
 
-    // 3. Tool wrapper (write if absent, --force to replace)
-    ops.push(await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force));
+    if (installPlatform === 'claude-code') {
+      ops.push(...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force)));
+      ops.push(await writeClaudeCodePluginInstallHint(target));
+    } else {
+      ops.push(
+        await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force),
+      );
 
-    // 4. Plugin wrapper (write if absent, --force to replace)
-    ops.push(
-      await writeIfAbsent(
-        join(target, 'plugins', 'flowguard-audit.ts'),
-        PLUGIN_WRAPPER,
-        args.force,
-      ),
-    );
+      ops.push(
+        await writeIfAbsent(
+          join(target, 'plugins', 'flowguard-audit.ts'),
+          PLUGIN_WRAPPER,
+          args.force,
+        ),
+      );
 
-    // 5. Command files (write if absent, --force to replace)
-    for (const [name, content] of Object.entries(COMMANDS)) {
-      ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
+      for (const [name, content] of Object.entries(COMMANDS)) {
+        ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
+      }
+
+      ops.push(await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force));
     }
-
-    // 6. Review agent/subagent definition (platform-native transport only).
-    ops.push(await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force));
 
     // 7. package.json (merge) -- now uses @flowguard/opencode-runtime with file:-dependency
     ops.push(await mergePackageJson(pkgPath, PACKAGE_VERSION()));
@@ -344,10 +367,10 @@ export async function install(args: CliArgs): Promise<CliResult> {
     }
 
     try {
-      execSync(`${pm} install`, {
+      execSync(dependencyInstallCommand(pm), {
         cwd: configTargetDir,
         stdio: 'pipe',
-        timeout: 60_000,
+        timeout: DEPENDENCY_INSTALL_TIMEOUT_MS,
       });
       ops.push({ path: join(configTargetDir, 'node_modules'), action: 'written' });
 
@@ -368,8 +391,13 @@ export async function install(args: CliArgs): Promise<CliResult> {
       );
     }
 
-    // Emit restart reminder as a warning (always shown, even on success)
-    warnings.push('Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).');
+    if (installPlatform === 'claude-code') {
+      warnings.push(
+        `Load FlowGuard in Claude Code with: claude --plugin-dir ${join(target, 'flowguard-plugin')}`,
+      );
+    } else {
+      warnings.push('Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).');
+    }
   } catch (err) {
     getAdapterLogger().error('cli', 'install command failed', {
       error: err instanceof Error ? err.message : String(err),

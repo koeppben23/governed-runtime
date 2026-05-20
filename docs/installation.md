@@ -41,19 +41,43 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
-### 2b. Initialize Claude Code Or Codex Reviewer Transport
+### 2b. Initialize Claude Code Plugin Or Codex Reviewer Transport
 
-Claude Code and Codex use native reviewer agent files as transport/isolation artifacts only. They do not become review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
+Claude Code uses a native FlowGuard plugin package. Codex uses a native reviewer subagent file as a transport/isolation artifact only. Neither host artifact becomes review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
 
 For Claude Code:
 
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
-  --platform claude-code \
+  --host claude-code \
   --core-tarball ./flowguard-core-{version}.tgz
 ```
 
-This installs `agents/flowguard-reviewer.md` under the Claude target directory.
+This installs a complete Claude Code plugin under:
+
+```text
+# repo scope
+.claude/flowguard-plugin/
+
+# global scope
+~/.claude/flowguard-plugin/
+```
+
+Load it in Claude Code with the command printed by the installer, for example:
+
+```bash
+claude --plugin-dir .claude/flowguard-plugin
+```
+
+The plugin contains `.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, workflow skills, hook wrappers, the FlowGuard MCP server wrapper, and `agents/flowguard-reviewer.md`. MCP tools, hooks, state, policy, and validated review evidence remain the runtime authorities.
+
+If the Claude Code CLI is available, optional plugin validation is:
+
+```bash
+claude plugin validate .claude/flowguard-plugin --strict
+```
+
+If the Claude Code CLI is not installed in the verification environment, record this check as `NOT_VERIFIED` in the PR.
 
 For Codex:
 
@@ -160,6 +184,8 @@ npm run flowguard:doctor
 | ---------------------------------------------- | ------------------------------------------------------- |
 | `--install-scope global`                       | Install to `~/.config/opencode/` (default)              |
 | `--install-scope repo`                         | Install to `.opencode/` (committed to repo)             |
+| `--host opencode\|claude-code\|codex`          | Host alias for `--platform`                             |
+| `--platform opencode\|claude-code\|codex`      | Select host integration target                          |
 | `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`) |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`    |
 
