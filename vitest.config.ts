@@ -38,6 +38,7 @@ export default defineConfig({
           include: ['src/**/*.test.ts'],
           exclude: [
             'src/integration/**/*.test.ts',
+            'src/mcp-server/mcp-protocol.test.ts',
             'src/cli/install-verify.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
@@ -100,6 +101,7 @@ export default defineConfig({
             'src/cli/install-verify.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
+            'src/mcp-server/mcp-protocol.test.ts',
           ],
           globals: false,
           restoreMocks: true,
