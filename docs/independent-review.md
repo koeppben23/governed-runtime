@@ -1,6 +1,6 @@
 # Independent Review Architecture
 
-FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. The FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
+FlowGuard's independent review system enables structured, policy-governed review of plans, architecture decisions (ADRs), and implementations by a separate agent. On OpenCode, the FlowGuard plugin deterministically invokes the reviewer subagent via the OpenCode SDK — no LLM decision is involved in the invocation itself. On Claude Code and Codex, native reviewer agents/subagents are transport and isolation artifacts only. Review completion still requires validated, obligation-bound `ReviewFindings` through FlowGuard's existing `ReviewObligation` and `ReviewInvocationEvidence` pipeline. In strict mode (`selfReview.strictEnforcement=true`), review approval is fail-closed unless mandate-bound, single-use subagent evidence is present.
 
 ---
 
@@ -43,7 +43,20 @@ Separation of concerns:
                       implReviewFindings
 ```
 
-**Key invariant:** The plugin deterministically invokes the reviewer subagent via the SDK client. The LLM does not decide whether to call the reviewer in the primary path — the plugin does it programmatically in `tool.execute.after`. Only structured, parseable ReviewFindings trigger `INDEPENDENT_REVIEW_COMPLETED`. In strict mode, unparseable responses and orchestration failures are BLOCKED. If a tool response preserves `INDEPENDENT_REVIEW_REQUIRED`, the LLM must invoke `flowguard-reviewer` via the Task tool; self-review is never valid review evidence.
+**Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. OpenCode may invoke the reviewer via SDK/Task evidence; Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
+
+### Multi-Platform Reviewer Transport
+
+FlowGuard projects one of four reviewer transport modes in tool output:
+
+| Mode                           | Meaning                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `host_task_sync`               | OpenCode high-assurance path using existing SDK/host-task evidence.                                           |
+| `external_instruction_pending` | Claude/Codex instruction transport. The runtime remains pending until ReviewFindings validate and bind.       |
+| `manual_attested_required`     | Policy-gated fallback requiring bindable ReviewFindings with exact Obligation/Attestation values.             |
+| `unsupported_blocked`          | No safe reviewer transport is available; the session fails closed instead of accepting unverifiable evidence. |
+
+External transport files under `.flowguard/sessions/<session-id>/review-evidence/*.json` are not approval evidence by existence. `flowguard_continue` reads them only as transport, then parses, schema-validates, binds to the active obligation/attestation, records invocation evidence, and leaves review completion to the existing verdict submission path. Invalid or mismatched files remain pending/blocked.
 
 The four reviewable flows — `/plan`, `/architecture`, `/implement`, and standalone `/review` — share the same ReviewFindings schema and fail-closed attestation model. `/plan`, `/architecture`, and `/implement` share the plugin-orchestration pipeline; standalone `/review` supports both host-orchestrated invocation (when the plugin is active) and manual subagent invocation as fallback.
 

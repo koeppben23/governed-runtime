@@ -7,6 +7,10 @@ export {
   FLOWGUARD_MANDATES_BODY,
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
+  CLAUDE_REVIEWER_AGENT,
+  CLAUDE_REVIEWER_AGENT_PATH,
+  CODEX_REVIEWER_SUBAGENT,
+  CODEX_REVIEWER_SUBAGENT_PATH,
   REVIEWER_AGENT,
   REVIEWER_AGENT_FILENAME,
 } from './mandates.js';
@@ -24,5 +28,7 @@ export {
   renderCompactionMandatesSummary,
   renderCommandGovernanceRules,
   renderReviewerPrompt,
+  renderClaudeReviewerAgent,
+  renderCodexReviewerSubagent,
   resolveMandatesVerbosity,
 } from './mandates-renderer.js';

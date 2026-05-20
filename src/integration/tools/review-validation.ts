@@ -367,29 +367,12 @@ export function resolveHostTaskEffectiveFindings(
         evidenceInvocationId: resolved.invocationId,
       };
     } else if (ctx.input.reviewerUnavailable === true) {
-      if (ctx.policy.strictEnforcement) {
-        return {
-          blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
-            reason:
-              'reviewer subagent unavailable and strict enforcement requires host-visible review',
-            recovery: `Install the ${REVIEWER_SUBAGENT_TYPE} agent or disable strict enforcement`,
-          }),
-        };
-      }
       return {
-        effectiveFindings: {
-          iteration: ctx.expected.iteration,
-          planVersion: ctx.expected.planVersion,
-          reviewMode: 'self' as const,
-          overallVerdict: ctx.input.verdict as 'approve' | 'changes_requested',
-          blockingIssues: [],
-          majorRisks: [],
-          missingVerification: [],
-          scopeCreep: [],
-          unknowns: [],
-          reviewedBy: { sessionId: ctx.state.sessionId },
-          reviewedAt: new Date().toISOString(),
-        },
+        blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+          reason: 'reviewer unavailable; independent ReviewFindings remain required',
+          recovery:
+            'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+        }),
       };
     }
     return {};

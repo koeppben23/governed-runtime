@@ -15,8 +15,6 @@ import {
   COMMANDS,
   MANDATES_FILENAME,
   PLUGIN_WRAPPER,
-  REVIEWER_AGENT,
-  REVIEWER_AGENT_FILENAME,
   TOOL_WRAPPER,
   buildMandatesContent,
 } from './templates.js';
@@ -26,11 +24,11 @@ import {
   type FileOp,
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
-  buildReviewerAgentContent,
   computeMandatesDigest,
   ensureDir,
   mergeOpencodeJson,
   mergePackageJson,
+  reviewerDefinitionForPlatform,
   resolveOpencodeConfigPath,
   resolveTarget,
   verifyTarballChecksum,
@@ -124,7 +122,8 @@ async function rollbackArtifacts(
  * @returns Result with file operations, warnings, and any errors.
  */
 export async function install(args: CliArgs): Promise<CliResult> {
-  const target = resolveTarget(args.installScope);
+  const installPlatform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, installPlatform);
   const ops: FileOp[] = [];
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -193,7 +192,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
     await ensureDir(join(target, 'tools'));
     await ensureDir(join(target, 'plugins'));
     await ensureDir(join(target, 'commands'));
-    await ensureDir(join(target, 'agents'));
+    await ensureDir(join(target, installPlatform === 'codex' ? 'subagents' : 'agents'));
 
     // -- Transactional rollback: resolve paths + snapshot BEFORE any file write --
     const vendorPath = join(target, 'vendor');
@@ -201,23 +200,28 @@ export async function install(args: CliArgs): Promise<CliResult> {
     const mandatesPath = join(target, MANDATES_FILENAME);
 
     const configTargetDir =
-      args.installScope === 'global'
-        ? dirname(globalConfigPath())
-        : join(resolve('.'), '.opencode');
+      installPlatform === 'opencode'
+        ? args.installScope === 'global'
+          ? dirname(globalConfigPath())
+          : join(resolve('.'), '.opencode')
+        : target;
     const pkgPath = join(target, 'package.json');
-    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
+    const opencodeJsonPath =
+      installPlatform === 'opencode' ? resolveOpencodeConfigPath(args.installScope, target) : null;
     const cfgPath = join(configTargetDir, 'flowguard.json');
+    const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
+    const reviewerPath = join(target, reviewerDefinition.relativePath);
 
     // Snapshot ALL paths that will be touched -- before any file is modified
     const rollbackEntries: RollbackEntry[] = [
       await snapshotForRollback(pkgPath),
-      await snapshotForRollback(opencodeJsonPath),
+      ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath)] : []),
       await snapshotForRollback(cfgPath),
       await snapshotForRollback(mandatesPath),
       await snapshotForRollback(vendorTarballPath),
       await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
       await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
-      await snapshotForRollback(join(target, 'agents', REVIEWER_AGENT_FILENAME)),
+      await snapshotForRollback(reviewerPath),
       ...(await Promise.all(
         Object.keys(COMMANDS).map((name) => snapshotForRollback(join(target, 'commands', name))),
       )),
@@ -257,26 +261,50 @@ export async function install(args: CliArgs): Promise<CliResult> {
       ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
     }
 
-    // 6. Review subagent definition (write if absent, --force to replace)
-    //    FLOWGUARD_REVIEWER_MODEL env var injects model: into frontmatter
-    //    when set -- allows configurable reviewer model override without
-    //    hardcoding a default in the template constant.
-    ops.push(
-      await writeIfAbsent(
-        join(target, 'agents', REVIEWER_AGENT_FILENAME),
-        buildReviewerAgentContent(REVIEWER_AGENT),
-        args.force,
-      ),
-    );
+    // 6. Review agent/subagent definition (platform-native transport only).
+    ops.push(await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force));
 
     // 7. package.json (merge) -- now uses @flowguard/opencode-runtime with file:-dependency
     ops.push(await mergePackageJson(pkgPath, PACKAGE_VERSION()));
 
-    // 8. opencode.json (merge with migration)
-    ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
+    // 8. opencode.json (OpenCode only; Claude/Codex use native agents/subagents)
+    if (opencodeJsonPath) {
+      ops.push(await mergeOpencodeJson(opencodeJsonPath, args.installScope));
+    }
 
     // 9. flowguard.json (required artifact -- flat path, no fingerprint)
-    if (!existsSync(cfgPath)) {
+    // Non-opencode: write-first with flag 'wx' (exclusive create) to avoid
+    // TOCTOU between existsSync and writeFile. EEXIST triggers the force-merge
+    // path; otherwise the write succeeds atomically.
+    // OpenCode paths use readConfig/writeRepoConfig/writeGlobalConfig which
+    // internally handle existence.
+    if (installPlatform !== 'opencode') {
+      const config = {
+        ...DEFAULT_CONFIG,
+        policy: { ...DEFAULT_CONFIG.policy, defaultMode: args.policyMode },
+      };
+      await ensureDir(dirname(cfgPath));
+      try {
+        await writeFile(cfgPath, JSON.stringify(config, null, 2) + '\n', {
+          encoding: 'utf-8',
+          flag: 'wx',
+        });
+        ops.push({ path: cfgPath, action: 'written' });
+      } catch (err) {
+        if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST') || !args.force) {
+          if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
+            // File exists, not forced — skip silently
+          } else {
+            throw err;
+          }
+        } else {
+          const existing = JSON.parse(await readFile(cfgPath, 'utf-8'));
+          existing.policy.defaultMode = args.policyMode;
+          await writeFile(cfgPath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+          ops.push({ path: cfgPath, action: 'merged', reason: 'policy mode updated via --force' });
+        }
+      }
+    } else if (!existsSync(cfgPath)) {
       const config = {
         ...DEFAULT_CONFIG,
         policy: { ...DEFAULT_CONFIG.policy, defaultMode: args.policyMode },

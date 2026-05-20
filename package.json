@@ -65,6 +65,8 @@
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",
     "release:prepare": "node scripts/prepare-release.js",
+    "setup-hooks": "node scripts/setup-git-hooks.js",
+    "prepare": "npm run setup-hooks",
     "release:verify": "npm run check && npm run lint && npm test && npm run build && npm run check:esm && npm run test:install-verify",
     "release:assert-main-tag": "node scripts/assert-main-release-tag.js"
   },

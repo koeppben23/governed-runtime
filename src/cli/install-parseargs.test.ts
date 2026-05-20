@@ -24,10 +24,10 @@ describe('cli/parseArgs', () => {
       expect(result!.args).toEqual({
         action: 'install',
         installScope: 'global',
+        installPlatform: 'opencode',
         policyMode: 'solo',
         force: false,
         coreTarball: undefined,
-        vendorDir: undefined,
       });
       expect(result!.deprecations).toEqual([]);
     });
@@ -43,6 +43,12 @@ describe('cli/parseArgs', () => {
       const result = parseArgs(['install', '--policy-mode', 'team']);
       expect(result).not.toBeNull();
       expect(result!.args.policyMode).toBe('team');
+    });
+
+    it("parses 'install --platform claude-code'", () => {
+      const result = parseArgs(['install', '--platform', 'claude-code']);
+      expect(result).not.toBeNull();
+      expect(result!.args.installPlatform).toBe('claude-code');
     });
 
     it("parses 'install --policy-mode regulated --force'", () => {
@@ -137,6 +143,10 @@ describe('cli/parseArgs', () => {
 
     it('returns null for --install-scope with invalid value', () => {
       expect(parseArgs(['install', '--install-scope', 'cloud'])).toBeNull();
+    });
+
+    it('returns null for --platform with invalid value', () => {
+      expect(parseArgs(['install', '--platform', 'unknown-host'])).toBeNull();
     });
 
     it('returns null for unknown flag', () => {
@@ -271,6 +281,11 @@ describe('cli/resolveTarget', () => {
       const target = resolveTarget('repo');
       expect(target).toContain('.opencode');
       expect(path.isAbsolute(target)).toBe(true);
+    });
+
+    it('repo resolves platform-specific roots for Claude and Codex', () => {
+      expect(resolveTarget('repo', 'claude-code')).toBe(path.resolve('.claude'));
+      expect(resolveTarget('repo', 'codex')).toBe(path.resolve('.codex'));
     });
   });
 

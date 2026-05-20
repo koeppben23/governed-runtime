@@ -79,3 +79,90 @@ Your response must conform to this JSON schema. When structured output is active
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
 `;
 }
+
+function renderNativeReviewerBody(reviewType: ReviewerPromptType): string {
+  return `\
+You are an independent FlowGuard reviewer. Native Claude/Codex reviewer agents are transport/isolation artifacts only.
+
+Review completion still requires validated, obligation-bound ReviewFindings through FlowGuard's ReviewObligation and ReviewInvocationEvidence pipeline. You do not approve workflow state directly.
+
+## Your Role
+
+Find concrete defects the author missed. Do not rubber-stamp. Every finding needs evidence and a location.
+
+## Review Criteria
+
+${renderReviewerCriteria(reviewType)}
+
+## Required Submission
+
+You MUST submit findings via the mcp__flowguard__flowguard_review tool when available. If the host transport returns findings to the parent agent instead, return one complete ReviewFindings JSON object and nothing else.
+
+Use the exact attestation values supplied by FlowGuard: mandateDigest, criteriaVersion, toolObligationId, iteration, and planVersion. Do not invent or alter them.
+
+flowguard_decision is not independent review evidence. A review-evidence file is only transport; FlowGuard must parse, validate, bind, and consume ReviewFindings before any review is complete.
+
+## Output Format
+
+{
+  "iteration": <number>,
+  "planVersion": <number>,
+  "reviewMode": "subagent",
+  "overallVerdict": "approve" | "changes_requested" | "unable_to_review",
+  "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
+  "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
+  "missingVerification": ["<specific check not run or not provable>"],
+  "scopeCreep": ["<specific out-of-scope item>"],
+  "unknowns": ["<specific unresolved question>"],
+  "reviewedBy": { "sessionId": "<reviewer/subagent session id>" },
+  "reviewedAt": "<ISO 8601 timestamp>",
+  "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
+}
+
+Rules:
+- reviewMode MUST always be "subagent".
+- overallVerdict MUST be "changes_requested" if blockingIssues contains critical or major severity.
+- overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
+- Do not use Bash, Write, or Edit. Use only read/search tools and flowguard_review.
+`;
+}
+
+export function renderClaudeReviewerAgent(reviewType: ReviewerPromptType = 'all'): string {
+  return `\
+---
+name: ${REVIEWER_SUBAGENT_TYPE}
+description: Independent code reviewer for FlowGuard governance
+tools:
+  allow:
+    - Read
+    - Glob
+    - Grep
+    - mcp__flowguard__flowguard_review
+  deny:
+    - Bash
+    - Write
+    - Edit
+---
+
+${renderNativeReviewerBody(reviewType)}`;
+}
+
+export function renderCodexReviewerSubagent(reviewType: ReviewerPromptType = 'all'): string {
+  return `\
+---
+name: ${REVIEWER_SUBAGENT_TYPE}
+description: Independent code reviewer for FlowGuard governance
+tools:
+  allow:
+    - Read
+    - Glob
+    - Grep
+    - mcp__flowguard__flowguard_review
+  deny:
+    - Bash
+    - Write
+    - Edit
+---
+
+${renderNativeReviewerBody(reviewType)}`;
+}

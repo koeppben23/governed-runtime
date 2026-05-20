@@ -497,4 +497,9 @@ export function extractManagedBody(content: string): string | null {
   return match?.[1] ?? null;
 }
 
-export { renderReviewerPrompt, type ReviewerPromptType } from './mandates-reviewer-criteria.js';
+export {
+  renderClaudeReviewerAgent,
+  renderCodexReviewerSubagent,
+  renderReviewerPrompt,
+  type ReviewerPromptType,
+} from './mandates-reviewer-criteria.js';

@@ -541,10 +541,10 @@ describe('BUG-17: implement evidence-first resolution', () => {
 });
 
 // =============================================================================
-// BUG-19: reviewerUnavailable fallback in host_task_required mode
+// BUG-19: reviewerUnavailable remains fail-closed in host_task_required mode
 // =============================================================================
 
-describe('BUG-19: reviewerUnavailable self-review fallback', () => {
+describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
   /**
    * State with a pending obligation but NO invocation evidence (reviewer
    * was never successfully invoked). resolveHostTaskFindings returns null.
@@ -647,7 +647,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
     vi.clearAllMocks();
   });
 
-  it('HAPPY: plan accepts reviewerUnavailable=true in non-strict host_task_required mode', async () => {
+  it('BAD: plan blocks reviewerUnavailable=true in host_task_required mode', async () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -655,22 +655,17 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
-    mocks.autoAdvance.mockReturnValue({
-      state: { ...state, phase: 'PLAN_REVIEW' },
-      evalResult: { kind: 'pending' },
-      transitions: [],
-    });
-
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
       { reviewVerdict: 'approve', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
   });
 
-  it('HAPPY: implement accepts reviewerUnavailable=true in non-strict host_task_required mode', async () => {
+  it('BAD: implement blocks reviewerUnavailable=true in host_task_required mode', async () => {
     const state = implStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -678,19 +673,14 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
-    mocks.autoAdvance.mockReturnValue({
-      state: { ...state, phase: 'EVIDENCE_REVIEW' },
-      evalResult: { kind: 'pending' },
-      transitions: [],
-    });
-
     const { implement } = await import('./implement.js');
     const res = await implement.execute(
       { reviewVerdict: 'approve', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    expect(parsed.error).toBeUndefined();
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
   });
 
   it('BAD: plan blocks reviewerUnavailable=true when strictEnforcement is true', async () => {
@@ -712,7 +702,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
     expect(parsed.code).toBe('REVIEWER_UNAVAILABLE_STRICT');
   });
 
-  it('EDGE: reviewerUnavailable fallback creates findings with reviewMode "self"', async () => {
+  it('EDGE: reviewerUnavailable fallback does not create self-review findings', async () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
@@ -735,8 +725,7 @@ describe('BUG-19: reviewerUnavailable self-review fallback', () => {
     await plan.execute({ reviewVerdict: 'approve', reviewerUnavailable: true }, {} as never);
 
     const ps = persistedState as { plan?: { reviewFindings?: Array<{ reviewMode: string }> } };
-    expect(ps?.plan?.reviewFindings).toHaveLength(1);
-    expect(ps!.plan!.reviewFindings![0].reviewMode).toBe('self');
+    expect(ps).toBeNull();
   });
 
   it('EDGE: reviewerUnavailable without evidence still blocks when strictEnforcement (implement)', async () => {

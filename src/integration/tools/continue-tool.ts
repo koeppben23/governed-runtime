@@ -11,9 +11,17 @@
  * @version v1
  */
 
-import { withReadOnlySession, formatBlocked, formatError, appendNextAction } from './helpers.js';
+import {
+  withMutableSession,
+  withReadOnlySession,
+  formatBlocked,
+  formatError,
+  appendNextAction,
+  writeStateWithArtifacts,
+} from './helpers.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import type { ToolDefinition } from './helpers.js';
+import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
   TICKET: {
@@ -61,7 +69,9 @@ export const continue_cmd: ToolDefinition = {
   args: {},
   async execute(_args, context) {
     try {
-      const session = await withReadOnlySession(context);
+      const mutableSession = await tryBindTransportEvidence(context);
+      if (typeof mutableSession === 'string') return mutableSession;
+      const session = mutableSession ?? (await withReadOnlySession(context));
       if (!session || !session.state) return formatBlocked('NO_SESSION');
       const { state } = session;
       const { phase } = state;
@@ -127,3 +137,23 @@ export const continue_cmd: ToolDefinition = {
     }
   },
 };
+
+async function tryBindTransportEvidence(context: {
+  sessionID: string;
+  worktree: string;
+  directory: string;
+}): Promise<Awaited<ReturnType<typeof withMutableSession>> | string> {
+  const session = await withMutableSession(context);
+  const result = await bindExternalReviewEvidence(
+    session.sessDir,
+    session.state,
+    context.sessionID,
+    session.ctx.now(),
+  );
+  if (result.status === 'none' || result.status === 'already_bound') return session;
+  if (result.status === 'invalid') {
+    return formatBlocked(result.code, { reason: result.reason });
+  }
+  await writeStateWithArtifacts(session.sessDir, result.state);
+  return { ...session, state: result.state };
+}

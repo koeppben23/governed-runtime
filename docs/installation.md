@@ -41,6 +41,32 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
+### 2b. Initialize Claude Code Or Codex Reviewer Transport
+
+Claude Code and Codex use native reviewer agent files as transport/isolation artifacts only. They do not become review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
+
+For Claude Code:
+
+```bash
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --platform claude-code \
+  --core-tarball ./flowguard-core-{version}.tgz
+```
+
+This installs `agents/flowguard-reviewer.md` under the Claude target directory.
+
+For Codex:
+
+```bash
+npx --package ./flowguard-core-{version}.tgz flowguard install \
+  --platform codex \
+  --core-tarball ./flowguard-core-{version}.tgz
+```
+
+This installs `subagents/flowguard-reviewer.md` under the Codex target directory.
+
+Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for MCP/tool execution so FlowGuard emits the correct `external_instruction_pending` guidance. If the platform is ambiguous, FlowGuard fails closed or requires policy-gated `manual_attested` ReviewFindings.
+
 ### 3. Verify Installation
 
 ```bash
