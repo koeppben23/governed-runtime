@@ -84,6 +84,36 @@ async function findBackupFor(filePath: string): Promise<string | null> {
 describe('cli/install', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
+    it('installs Claude reviewer agent without touching opencode.json', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const reviewerPath = path.join(tmpDir, '.claude', 'agents', 'flowguard-reviewer.md');
+      expect(existsSync(reviewerPath)).toBe(true);
+      expect(await fs.readFile(reviewerPath, 'utf-8')).toContain(
+        'transport/isolation artifacts only',
+      );
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+    });
+
+    it('installs Codex reviewer subagent without touching opencode.json', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const reviewerPath = path.join(tmpDir, '.codex', 'subagents', 'flowguard-reviewer.md');
+      expect(existsSync(reviewerPath)).toBe(true);
+      expect(await fs.readFile(reviewerPath, 'utf-8')).toContain(
+        'validated, obligation-bound ReviewFindings',
+      );
+      expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+    });
+
     it('creates all FlowGuard files in repo scope with --core-tarball', async () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));

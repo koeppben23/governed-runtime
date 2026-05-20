@@ -57,6 +57,27 @@ ls ~/.config/opencode/workspaces/*/sessions/
 `/review` is **not** a status command — it is the entry point of the standalone
 compliance-report flow (READY only). Use `/status` or `/why` instead.
 
+### External Reviewer Evidence Not Accepted
+
+**Symptom:** Claude Code or Codex produced a reviewer response, but FlowGuard remains pending or blocked.
+
+**Important invariant:** Native Claude/Codex reviewer agents are transport/isolation artifacts only. Review completion still requires validated, obligation-bound `ReviewFindings`.
+
+**Common causes:**
+
+1. The reviewer output is not a complete `ReviewFindings` object.
+2. `attestation.toolObligationId`, `iteration`, or `planVersion` does not match the active obligation.
+3. A file exists under `.flowguard/sessions/<session-id>/review-evidence/`, but its JSON is invalid or not bindable.
+4. The platform is ambiguous and FlowGuard selected `unsupported_blocked`.
+5. A `flowguard_decision` was submitted instead of independent ReviewFindings.
+
+**Solution:**
+
+1. Re-run the `flowguard-reviewer` native agent/subagent with the exact Binding Envelope from the FlowGuard tool response.
+2. Ensure the reviewer submits via `flowguard_review` or returns a complete `ReviewFindings` object.
+3. Run `/continue` to let FlowGuard parse, validate, and bind transport evidence.
+4. If the host cannot provide reliable reviewer context, use only a policy-gated `manual_attested` ReviewFindings path; do not use `flowguard_decision` as review evidence.
+
 ### Archive Verification Failed
 
 **Symptom:** `verifyArchive()` returns findings.
@@ -151,6 +172,7 @@ real, registered reason.
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                            |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                             |
 | `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                              |
+| `REVIEW_TRANSPORT_EVIDENCE_INVALID`  | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                          |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                           |
 
 ### Identity & Approvals
@@ -273,6 +295,7 @@ REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
+REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_UNAVAILABLE_STRICT
 REVISED_PLAN_REQUIRED

@@ -45,8 +45,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('REVIEWER_AGENT matches compiled output hash', () => {
-    // Refreshed for #262: REVIEWER_AGENT is compact and renderer-backed by
-    // review type. This changes the runtime REVIEW_MANDATE_DIGEST.
+    // Refreshed for #245: multi-platform review orchestration added native
+    // Claude/Codex reviewer renderers without changing the OpenCode reviewer
+    // prompt structure. The JSON Output Format schema block remains closed.
+    // This changes the runtime REVIEW_MANDATE_DIGEST.
     // Existing sessions with obligations bound to the previous digest must be
     // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(

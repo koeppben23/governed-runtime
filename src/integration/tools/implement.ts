@@ -99,6 +99,11 @@ import {
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveCeremonyProfile } from '../phase-tool-gate.js';
+import {
+  resolveRuntimeReviewPlatform,
+  resolveReviewOrchestrationMode,
+} from '../review/orchestration-mode.js';
+import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_implement — Record Implementation OR Impl Review Verdict
@@ -238,8 +243,25 @@ function buildImplRecordedResponse(input: {
   transitions: ReadonlyArray<unknown>;
   reviewFindings: ReviewFindings[];
   ceremony: ImplementationCeremony;
+  policy: FlowGuardPolicy;
 }): Record<string, unknown> {
   const reduced = input.ceremony.profile === 'reduced';
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
+    nativeReviewerAvailable: platform === 'unknown' ? false : true,
+    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
+  });
+  const instruction = buildPendingReviewInstruction({
+    mode,
+    platform,
+    reviewKind: 'implementation',
+    obligation: input.nextObligation,
+    iteration: input.reviewIteration,
+    planVersion: input.planVersion,
+    subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+  });
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
@@ -252,19 +274,8 @@ function buildImplRecordedResponse(input: {
     ...reviewObligationResponseFields(input.nextObligation),
     next: reduced
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
-        `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
-        `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
-        '(1) the implementation summary and changed files, ' +
-        '(2) the approved plan text, (3) the ticket text, (4) iteration=' +
-        input.reviewIteration +
-        ', ' +
-        '(5) planVersion=' +
-        input.planVersion +
-        '. Instruct the subagent to read and review the changed files. ' +
-        'Parse the JSON ReviewFindings from the subagent response. ' +
-        'Then call flowguard_implement with reviewVerdict based on the findings ' +
-        'overallVerdict, and include the reviewFindings object.',
+      : instruction.next,
+    ...(reduced ? {} : { reviewInvocation: instruction.reviewInvocation }),
     _audit: { transitions: input.transitions },
   };
 
@@ -350,6 +361,7 @@ async function handleImplRecord(input: ImplementRuntime): Promise<string> {
         transitions,
         reviewFindings: newReviewFindings,
         ceremony,
+        policy: input.policy,
       }),
     ),
     finalState,

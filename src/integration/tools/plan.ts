@@ -74,7 +74,6 @@ import type {
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with implement.ts)
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
@@ -89,6 +88,11 @@ import {
   findLatestObligation,
   reviewObligationResponseFields,
 } from '../review/assurance.js';
+import {
+  resolveRuntimeReviewPlatform,
+  resolveReviewOrchestrationMode,
+} from '../review/orchestration-mode.js';
+import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 
 type PlanArgs = {
   planText?: string;
@@ -316,6 +320,13 @@ function buildPlanSubmissionResponse(input: PlanSubmissionResponseInput): Record
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
+  const reviewInstruction = buildPlanReviewInstruction({
+    scope,
+    obligation: nextObligation,
+    iteration: 0,
+    planVersion,
+    subjectLabel: 'full plan text and ticket text',
+  });
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     status: 'Plan submitted (v' + planVersion + ').',
@@ -324,27 +335,37 @@ function buildPlanSubmissionResponse(input: PlanSubmissionResponseInput): Record
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
     reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation),
-    next: initialPlanReviewNext(planVersion),
+    next: reviewInstruction.next,
+    reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
   if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
   return response;
 }
 
-function initialPlanReviewNext(planVersion: number): string {
-  return (
-    `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
-    `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
-    `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
-    '(1) the full plan text, (2) the ticket text, (3) iteration=0, ' +
-    '(4) planVersion=' +
-    planVersion +
-    '. ' +
-    'Parse the JSON ReviewFindings from the subagent response. ' +
-    'Then call flowguard_plan with reviewVerdict based on the findings ' +
-    'overallVerdict, and include the reviewFindings object. ' +
-    'If the subagent returns changes_requested, revise the plan and resubmit.'
-  );
+function buildPlanReviewInstruction(input: {
+  scope: PlanExecutionScope;
+  obligation: ReturnType<typeof findLatestObligation>;
+  iteration: number;
+  planVersion: number;
+  subjectLabel: string;
+}) {
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    reviewInvocationPolicy: input.scope.policy.reviewInvocationPolicy,
+    nativeReviewerAvailable: platform === 'unknown' ? false : true,
+    manualAttestedAllowed: input.scope.policy.reviewInvocationPolicy !== 'host_task_required',
+  });
+  return buildPendingReviewInstruction({
+    mode,
+    platform,
+    reviewKind: 'plan',
+    obligation: input.obligation,
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    subjectLabel: input.subjectLabel,
+  });
 }
 
 function latestPlanReviewSummary(
@@ -604,6 +625,13 @@ function nonConvergedPlanResponse(
   nextObligation: Parameters<typeof reviewObligationResponseFields>[0],
 ): Record<string, unknown> {
   const nextPlanVersion = revision.history.length + 1;
+  const reviewInstruction = buildPlanReviewInstruction({
+    scope,
+    obligation: nextObligation,
+    iteration: scope.state.selfReview!.iteration + 1,
+    planVersion: nextPlanVersion,
+    subjectLabel: 'revised plan text and ticket text',
+  });
   return {
     phase: finalState.phase,
     status: `Independent review iteration ${scope.state.selfReview!.iteration + 1}/${scope.maxSelfReviewIterations}. Verdict: ${revision.verdict}.`,
@@ -612,22 +640,10 @@ function nonConvergedPlanResponse(
     revisionDelta: revision.revisionDelta,
     reviewMode: 'subagent',
     ...reviewObligationResponseFields(nextObligation),
-    next: revisedPlanReviewNext(scope.state.selfReview!.iteration + 1, nextPlanVersion),
+    next: reviewInstruction.next,
+    reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
-}
-
-function revisedPlanReviewNext(nextIteration: number, nextPlanVersion: number): string {
-  return (
-    `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool ` +
-    `to review the revised plan. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
-    'that includes: (1) the revised plan text, (2) the ticket text, (3) iteration=' +
-    nextIteration +
-    ', (4) planVersion=' +
-    nextPlanVersion +
-    '. ' +
-    'Parse the JSON ReviewFindings and submit with your next reviewVerdict.'
-  );
 }
 
 async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> {

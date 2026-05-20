@@ -47,7 +47,8 @@ function isFlowGuardVendorArtifact(entry: string): boolean {
  * @returns Result with file operations, warnings, and any errors.
  */
 export async function uninstall(args: CliArgs): Promise<CliResult> {
-  const target = resolveTarget(args.installScope);
+  const installPlatform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, installPlatform);
   const ops: FileOp[] = [];
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -160,22 +161,26 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     }
 
     // Remove FlowGuard instruction entries from the active OpenCode config.
-    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
-    ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
+    if (installPlatform === 'opencode') {
+      const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
+      ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
 
-    // Also clean any parallel legacy config file (e.g. opencode.json if
-    // opencode.jsonc was preferred, or vice versa). This ensures no
-    // FlowGuard remnants are left in stale parallel files.
-    const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
-    if (parallelConfig) {
-      ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
+      // Also clean any parallel legacy config file (e.g. opencode.json if
+      // opencode.jsonc was preferred, or vice versa). This ensures no
+      // FlowGuard remnants are left in stale parallel files.
+      const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
+      if (parallelConfig) {
+        ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
+      }
     }
 
     // Remove flowguard.json config file
     const cfgPath =
-      args.installScope === 'global'
-        ? globalConfigPath()
-        : join(resolve('.'), '.opencode', 'flowguard.json');
+      installPlatform !== 'opencode'
+        ? join(target, 'flowguard.json')
+        : args.installScope === 'global'
+          ? globalConfigPath()
+          : join(resolve('.'), '.opencode', 'flowguard.json');
     const removedCfg = await safeUnlink(cfgPath);
     ops.push({ path: cfgPath, action: removedCfg ? 'removed' : 'not_found' });
   } catch (err) {

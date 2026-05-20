@@ -17,7 +17,10 @@ import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   COMMANDS,
+  CLAUDE_REVIEWER_AGENT,
+  CODEX_REVIEWER_SUBAGENT,
   REVIEWER_AGENT_FILENAME,
+  REVIEWER_AGENT,
   FLOWGUARD_MANDATES_BODY,
   MANDATES_FILENAME,
   OPENCODE_JSON_TEMPLATE,
@@ -34,6 +37,7 @@ export { hashText as sha256 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InstallScope = 'global' | 'repo';
+export type InstallPlatform = 'opencode' | 'claude-code' | 'codex';
 
 /** Re-export canonical PolicyMode from config/policy-types. */
 export type { PolicyMode };
@@ -45,6 +49,7 @@ export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve';
 export interface CliArgs {
   action: CliAction;
   installScope: InstallScope;
+  installPlatform?: InstallPlatform;
   policyMode: PolicyMode;
   force: boolean;
   coreTarball?: string;
@@ -118,6 +123,7 @@ export const FLOWGUARD_OWNED_FILES = [
   'tools/flowguard.ts',
   'plugins/flowguard-audit.ts',
   `agents/${REVIEWER_AGENT_FILENAME}`,
+  `subagents/${REVIEWER_AGENT_FILENAME}`,
   ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
   'vendor',
 ] as const;
@@ -153,11 +159,35 @@ export function hasNonFlowGuardInstructions(instructions: string[]): boolean {
  *                "repo" resolves to ./.opencode/.
  * @returns Absolute path to the target directory.
  */
-export function resolveTarget(scope: InstallScope): string {
+export function resolveTarget(scope: InstallScope, platform: InstallPlatform = 'opencode'): string {
   if (scope === 'global') {
+    if (platform === 'claude-code')
+      return process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+    if (platform === 'codex') return process.env.CODEX_CONFIG_DIR || join(homedir(), '.codex');
     return process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode');
   }
+  if (platform === 'claude-code') return resolve('.claude');
+  if (platform === 'codex') return resolve('.codex');
   return resolve('.opencode');
+}
+
+export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
+  readonly relativePath: string;
+  readonly content: string;
+} {
+  if (platform === 'claude-code') {
+    return { relativePath: `agents/${REVIEWER_AGENT_FILENAME}`, content: CLAUDE_REVIEWER_AGENT };
+  }
+  if (platform === 'codex') {
+    return {
+      relativePath: `subagents/${REVIEWER_AGENT_FILENAME}`,
+      content: CODEX_REVIEWER_SUBAGENT,
+    };
+  }
+  return {
+    relativePath: `agents/${REVIEWER_AGENT_FILENAME}`,
+    content: buildReviewerAgentContent(REVIEWER_AGENT),
+  };
 }
 
 /**

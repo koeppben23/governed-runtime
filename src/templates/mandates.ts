@@ -487,8 +487,20 @@ export const PACKAGE_JSON_TEMPLATE = (version: string): string => `\
 }
 `;
 
-import { renderReviewerPrompt } from './mandates-reviewer-criteria.js';
+import {
+  renderClaudeReviewerAgent,
+  renderCodexReviewerSubagent,
+  renderReviewerPrompt,
+} from './mandates-reviewer-criteria.js';
 
 export const REVIEWER_AGENT = renderReviewerPrompt('all');
 
+export const CLAUDE_REVIEWER_AGENT = renderClaudeReviewerAgent('all');
+
+export const CODEX_REVIEWER_SUBAGENT = renderCodexReviewerSubagent('all');
+
 export const REVIEWER_AGENT_FILENAME = `${REVIEWER_SUBAGENT_TYPE}.md`;
+
+export const CLAUDE_REVIEWER_AGENT_PATH = `agents/${REVIEWER_AGENT_FILENAME}`;
+
+export const CODEX_REVIEWER_SUBAGENT_PATH = `subagents/${REVIEWER_AGENT_FILENAME}`;

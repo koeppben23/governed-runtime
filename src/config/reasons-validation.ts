@@ -321,6 +321,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
+    category: 'state',
+    messageTemplate: 'External review evidence transport is invalid: {reason}',
+    recoverySteps: [
+      'Regenerate ReviewFindings from the flowguard-reviewer agent or subagent',
+      'Ensure the transport JSON contains a complete ReviewFindings object with obligation attestation',
+      'Do not treat review-evidence file presence as review approval',
+    ],
+  },
+
+  {
     code: 'REVIEW_FINDINGS_HASH_MISMATCH',
     category: 'state',
     messageTemplate:

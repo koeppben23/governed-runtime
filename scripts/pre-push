@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-push validation: checks that code is formatted before pushing.
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "[pre-push] Running prettier --check..."
+
+if npx prettier --check "src/**/*.ts" "docs/**/*.md" "scripts/**/*.js" "*.json" ".github/**/*.yml" 2>&1; then
+  echo -e "${GREEN}[pre-push] Formatting OK${NC}"
+else
+  echo -e "${RED}[pre-push] Formatting errors found. Run 'npm run format' to fix, then commit and push again.${NC}"
+  exit 1
+fi

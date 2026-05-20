@@ -63,6 +63,11 @@ import {
 import { resolveHostTaskEffectiveFindings, requireReviewFindings } from './review-validation.js';
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import {
+  resolveRuntimeReviewPlatform,
+  resolveReviewOrchestrationMode,
+} from '../review/orchestration-mode.js';
+import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 
 // Presentation
 import {
@@ -200,6 +205,14 @@ async function handleAdrSubmission(
 
   await writeStateWithArtifacts(sessDir, augmentedState);
 
+  const instruction = buildArchitectureReviewInstruction({
+    policy: session.policy,
+    subagentEnabled,
+    obligation: nextObligation,
+    iteration: 0,
+    planVersion: archPlanVersion,
+    subjectLabel: 'full ADR text, ADR title, and ticket text',
+  });
   const modeAResponse: Record<string, unknown> = {
     phase: augmentedState.phase,
     status: `ADR ${augmentedState.architecture!.id} submitted: ${args.title}`,
@@ -209,32 +222,51 @@ async function handleAdrSubmission(
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation),
-    next: buildSubmissionNextAction(subagentEnabled, archPlanVersion),
+    next: instruction.next,
+    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: result.transitions },
   };
 
   return appendNextAction(JSON.stringify(modeAResponse), augmentedState);
 }
 
-function buildSubmissionNextAction(subagentEnabled: boolean, archPlanVersion: number): string {
+function buildArchitectureReviewInstruction(input: {
+  policy: ArchitectureSession['policy'];
+  subagentEnabled: boolean;
+  obligation: ReturnType<typeof createReviewObligation> | null;
+  iteration: number;
+  planVersion: number;
+  subjectLabel: string;
+}): {
+  next: string;
+  reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
+} {
+  const { subagentEnabled } = input;
   if (!subagentEnabled) {
-    return (
-      'Self-review needed. Review the ADR critically against MADR standards. ' +
-      'Check for completeness, clarity, and consequences coverage. ' +
-      'Then call flowguard_architecture with reviewVerdict.'
-    );
+    return {
+      next:
+        'Self-review needed. Review the ADR critically against MADR standards. ' +
+        'Check for completeness, clarity, and consequences coverage. ' +
+        'Then call flowguard_architecture with reviewVerdict.',
+    };
   }
-  return (
-    `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, ` +
-    `you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
-    `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes: ` +
-    '(1) the full ADR text, (2) the ADR title, (3) the ticket text, ' +
-    `(4) iteration=0, (5) planVersion=${archPlanVersion}. ` +
-    'Parse the JSON ReviewFindings from the subagent response. ' +
-    'Then call flowguard_architecture with reviewVerdict based on ' +
-    'the findings overallVerdict, and include the reviewFindings object. ' +
-    'If the subagent returns changes_requested, revise the ADR and resubmit.'
-  );
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
+    nativeReviewerAvailable: platform === 'unknown' ? false : true,
+    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
+  });
+  const instruction = buildPendingReviewInstruction({
+    mode,
+    platform,
+    reviewKind: 'architecture',
+    obligation: input.obligation,
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    subjectLabel: input.subjectLabel,
+  });
+  return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }
 
 function validateReviewEntryState(state: SessionState): string | null {
@@ -571,6 +603,14 @@ async function persistAndFormatNonConvergedReview(
       }
     : advanced.state;
   await writeStateWithArtifacts(session.sessDir, stateToPersist);
+  const instruction = buildArchitectureReviewInstruction({
+    policy: session.policy,
+    subagentEnabled: review.subagentEnabled,
+    obligation: nextObligation,
+    iteration,
+    planVersion: review.expectedPlanVersion,
+    subjectLabel: 'revised ADR text, ADR title, and ticket text',
+  });
 
   const resp: Record<string, unknown> = {
     phase: advanced.state.phase,
@@ -581,34 +621,11 @@ async function persistAndFormatNonConvergedReview(
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
     ...reviewObligationResponseFields(nextObligation),
-    next: buildNonConvergedNextAction(
-      review.subagentEnabled,
-      iteration,
-      review.expectedPlanVersion,
-    ),
+    next: instruction.next,
+    ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
   };
   return appendNextAction(JSON.stringify(resp), stateToPersist);
-}
-
-function buildNonConvergedNextAction(
-  subagentEnabled: boolean,
-  nextIteration: number,
-  expectedPlanVersion: number,
-): string {
-  if (!subagentEnabled) {
-    return (
-      'Review the ADR again. Check if the revisions address all issues. ' +
-      'Call flowguard_architecture with reviewVerdict.'
-    );
-  }
-  return (
-    `INDEPENDENT_REVIEW_REQUIRED: Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool ` +
-    `to review the revised ADR. Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt ` +
-    'that includes: (1) the revised ADR text, (2) the ADR title, (3) the ticket text, ' +
-    `(4) iteration=${nextIteration}, (5) planVersion=${expectedPlanVersion}. ` +
-    'Parse the JSON ReviewFindings and submit with your next reviewVerdict.'
-  );
 }
 
 export const architecture: ToolDefinition = {

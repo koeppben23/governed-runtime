@@ -15,6 +15,7 @@ import { uninstall } from './uninstall-command.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import {
   type InstallScope,
+  type InstallPlatform,
   type PolicyMode,
   type CliAction,
   type CliArgs,
@@ -28,6 +29,7 @@ import {
 // ─── Re-exports for backward compatibility ─────────────────────────────────
 export {
   type InstallScope,
+  type InstallPlatform,
   type PolicyMode,
   type CliAction,
   type CliArgs,
@@ -53,6 +55,7 @@ export { uninstall } from './uninstall-command.js';
 
 const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
 const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
+const VALID_PLATFORMS: readonly InstallPlatform[] = ['opencode', 'claude-code', 'codex'] as const;
 const VALID_ACTIONS: readonly CliAction[] = [
   'install',
   'uninstall',
@@ -77,6 +80,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   let installScope: InstallScope = 'global';
+  let installPlatform: InstallPlatform = 'opencode';
   let policyMode: PolicyMode = 'solo';
   let force = false;
   let coreTarball: string | undefined;
@@ -94,6 +98,16 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         const next = argv[i + 1];
         if (next && VALID_SCOPES.includes(next as InstallScope)) {
           installScope = next as InstallScope;
+          i++;
+        } else {
+          return null;
+        }
+        break;
+      }
+      case '--platform': {
+        const next = argv[i + 1];
+        if (next && VALID_PLATFORMS.includes(next as InstallPlatform)) {
+          installPlatform = next as InstallPlatform;
           i++;
         } else {
           return null;
@@ -172,7 +186,16 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   }
 
   return {
-    args: { action, installScope, policyMode, force, coreTarball, checksumsFile, logMode },
+    args: {
+      action,
+      installScope,
+      installPlatform,
+      policyMode,
+      force,
+      coreTarball,
+      checksumsFile,
+      logMode,
+    },
     deprecations,
   };
 }
@@ -263,6 +286,7 @@ Commands:
 
 Options:
   --install-scope  Where to install: global (default) or repo
+  --platform       Host platform: opencode (default), claude-code, or codex
   --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
@@ -297,7 +321,10 @@ export async function main(argv: string[]): Promise<number> {
 
   const { args, deprecations } = parsed;
 
-  const cliLog = initCliLogger(resolveTarget(args.installScope), args.logMode ?? 'console');
+  const cliLog = initCliLogger(
+    resolveTarget(args.installScope, args.installPlatform ?? 'opencode'),
+    args.logMode ?? 'console',
+  );
 
   for (const d of deprecations) {
     console.error(`  [deprecated] ${d}`);
@@ -318,6 +345,7 @@ export async function main(argv: string[]): Promise<number> {
         const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
         console.log(`Installing FlowGuard to ${targetLabel}...`);
         console.log(`  Install scope: ${args.installScope}`);
+        console.log(`  Platform: ${args.installPlatform ?? 'opencode'}`);
         console.log(`  Policy mode: ${args.policyMode}`);
         console.log('');
         console.log(formatResult(result));
