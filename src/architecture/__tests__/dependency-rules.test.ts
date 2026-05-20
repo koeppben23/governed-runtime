@@ -29,6 +29,8 @@
  * 5. INWARD IMPORTS: Outer layers MAY import from inner layers (entry-point pattern)
  *    - integration/ may import rails/, adapters/, machine/, state/, etc.
  *    - adapters/ may import config/, discovery/, archive/, state/, machine/, rails/
+ *    - adapters/ must NOT import integration/ (HAI boundary: adapters/ defines the
+ *      host-agnostic interface, integration/ implements it)
  *
  * The key inversion rule is:
  * - Inner layers (state, machine) are PROHIBITED from importing outer layers
@@ -378,6 +380,19 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
           rule: 'rails-no-builtins',
           message: `rails/ must not import Node builtin: ${imp.module}`,
         });
+      }
+    }
+
+    if (layer === 'adapters' && analysis.filePath.includes('/adapters/')) {
+      const forbidden = new Set(['integration']);
+      for (const imp of ffImports) {
+        if (imp.targetModule && forbidden.has(imp.targetModule)) {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'adapters-no-integration',
+            message: `adapters/ must not import integration/ (HAI boundary): ${imp.module}`,
+          });
+        }
       }
     }
 
@@ -818,6 +833,47 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nrails/ -> Node builtin violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5c: adapters/ must NOT import from integration/ (HAI boundary)', () => {
+    const violations: ImportViolation[] = [];
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/adapters/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const integrationImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule === 'integration',
+        );
+
+        for (const imp of integrationImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'adapters-no-integration',
+            message: `adapters/ imports from integration/ (HAI boundary violation): ${imp.module}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have adapters files', () => {
+      const adapterFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/adapters/') && !a.filePath.includes('.test.'),
+      );
+      expect(adapterFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no adapters -> integration imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nadapters/ -> integration/ violations (HAI boundary):\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }

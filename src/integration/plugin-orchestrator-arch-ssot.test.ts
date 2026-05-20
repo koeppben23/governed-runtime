@@ -25,6 +25,7 @@ import { readState } from '../adapters/persistence.js';
 import { makeState, POLICY_SNAPSHOT, TICKET, ARCHITECTURE_DECISION } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
+import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_ARCHITECTURE } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
@@ -168,6 +169,7 @@ function buildDeps(
         .mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
       log: { info: logInfo, warn: vi.fn() },
       client,
+      adapter: createTestAdapter(client),
     },
     logInfo,
   };

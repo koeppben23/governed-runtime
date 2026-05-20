@@ -30,6 +30,7 @@ import { loadExternalContent } from '../rails/review.js';
 import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
+import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
@@ -196,6 +197,7 @@ function buildDeps(
       }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,
+      adapter: createTestAdapter(client),
     },
     blockReviewOutcome,
     updateReviewAssurance,

@@ -5,13 +5,14 @@
  * Extracted from plugin-orchestrator.ts and plugin-workspace.ts so review/ modules
  * do not depend on plugin-* files (FG-QUAL-002).
  *
- * @version v1
+ * @version v2 — added HostAdapter to OrchestratorDeps (HAI #242)
  */
 
 import type { SessionEnforcementState } from './enforcement/types.js';
 import type { OrchestratorClient } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
 import type { SessionState } from '../../state/schema.js';
+import type { HostAdapter } from '../../adapters/host-adapter.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -56,6 +57,11 @@ export interface OrchestratorDeps {
     warn(service: string, message: string, extra?: Record<string, unknown>): void;
   };
   client: OrchestratorClient;
+  /**
+   * Host-agnostic adapter (HAI #242).
+   * Pipelines use adapter.spawnReviewer() instead of direct client SDK calls.
+   */
+  adapter: HostAdapter;
 }
 
 /**

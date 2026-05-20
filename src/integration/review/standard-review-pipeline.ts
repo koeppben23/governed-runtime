@@ -17,7 +17,7 @@ import {
   hashFindings,
   hashText,
 } from './assurance.js';
-import { buildMutatedOutput, invokeReviewer, type ReviewerSuccessResult } from './orchestrator.js';
+import { buildMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { selectReviewerProfileRules } from './prompt-builders.js';
 import { getToolArgs, strictBlockedOutput } from '../plugin-helpers.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_ARCHITECTURE } from '../tool-names.js';
@@ -98,9 +98,12 @@ export async function runStandardReviewPipeline(
   if (!prompt) return;
 
   const policies = getReviewerPolicies(sessionState);
-  const reviewerResult = await invokeReviewer(deps.client, prompt, sessionId, {
-    ...policies,
-    _onAttemptFailed: buildAttemptFailedLogger(deps, toolName, sessionId),
+  const reviewerResult = await deps.adapter.spawnReviewer({
+    prompt,
+    parentSessionId: sessionId,
+    reviewOutputPolicy: policies.reviewOutputPolicy,
+    reviewInvocationPolicy: policies.reviewInvocationPolicy,
+    onAttemptFailed: buildAttemptFailedLogger(deps, toolName, sessionId),
   });
 
   if (reviewerResult?.blocked) {
@@ -108,7 +111,7 @@ export async function runStandardReviewPipeline(
     const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
     output.output = strictBlockedOutput(code, {
       reason,
-      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation),
+      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
     });
     return;
   }
