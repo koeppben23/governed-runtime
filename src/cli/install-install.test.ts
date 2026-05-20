@@ -84,19 +84,28 @@ async function findBackupFor(filePath: string): Promise<string | null> {
 describe('cli/install', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('installs Claude reviewer agent without touching opencode.json', async () => {
+    it('installs Claude Code plugin tree without touching opencode.json', async () => {
       const tarball = await createMockTarball();
       const result = await install(
         repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
       );
 
       expect(result.errors).toEqual([]);
-      const reviewerPath = path.join(tmpDir, '.claude', 'agents', 'flowguard-reviewer.md');
+      const pluginPath = path.join(tmpDir, '.claude', 'flowguard-plugin');
+      const reviewerPath = path.join(pluginPath, 'agents', 'flowguard-reviewer.md');
       expect(existsSync(reviewerPath)).toBe(true);
       expect(await fs.readFile(reviewerPath, 'utf-8')).toContain(
         'transport/isolation artifacts only',
       );
+      expect(existsSync(path.join(pluginPath, '.claude-plugin', 'plugin.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, '.mcp.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, 'hooks', 'hooks.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, 'skills', 'start', 'SKILL.md'))).toBe(true);
+      expect(existsSync(path.join(tmpDir, '.claude', 'agents', 'flowguard-reviewer.md'))).toBe(
+        false,
+      );
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      expect(result.warnings).toContainEqual(expect.stringContaining('claude --plugin-dir'));
     });
 
     it('installs Codex reviewer subagent without touching opencode.json', async () => {
@@ -460,6 +469,31 @@ describe('cli/install', () => {
         const restoredPkg = await fs.readFile(pkgPath, 'utf-8');
         expect(restoredPkg).toContain('lodash');
         expect(restoredPkg).not.toContain('@flowguard/core');
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('rollback removes newly created Claude Code plugin artifacts', async () => {
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated Claude plugin install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+        );
+
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain('Dependency install failed');
+        expect(existsSync(path.join(tmpDir, '.claude', 'flowguard-plugin'))).toBe(false);
+        expect(existsSync(path.join(tmpDir, '.claude', 'agents'))).toBe(false);
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }

@@ -51,6 +51,13 @@ describe('cli/parseArgs', () => {
       expect(result!.args.installPlatform).toBe('claude-code');
     });
 
+    it("parses 'install --host claude-code' as platform alias", () => {
+      const result = parseArgs(['install', '--host', 'claude-code']);
+      expect(result).not.toBeNull();
+      expect(result!.args.installPlatform).toBe('claude-code');
+      expect(result!.deprecations).toEqual([]);
+    });
+
     it("parses 'install --policy-mode regulated --force'", () => {
       const result = parseArgs(['install', '--policy-mode', 'regulated', '--force']);
       expect(result).not.toBeNull();
@@ -147,6 +154,10 @@ describe('cli/parseArgs', () => {
 
     it('returns null for --platform with invalid value', () => {
       expect(parseArgs(['install', '--platform', 'unknown-host'])).toBeNull();
+    });
+
+    it('returns null for --host with invalid value', () => {
+      expect(parseArgs(['install', '--host', 'unknown-host'])).toBeNull();
     });
 
     it('returns null for unknown flag', () => {

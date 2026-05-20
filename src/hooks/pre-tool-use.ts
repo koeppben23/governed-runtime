@@ -10,7 +10,7 @@
  *
  * Fail-closed behavior:
  * - State unreadable → DENY (explicit error, never silent pass)
- * - Malformed stdin → exit 1 (platform treats as non-blocking error — RISK)
+ * - Malformed stdin → DENY (explicit error, never silent pass)
  * - Any internal error → DENY (defensive)
  *
  * Decision logic delegates to the same `isHostToolAllowedInPhase()` function
@@ -37,8 +37,9 @@ async function main(): Promise<void> {
   try {
     payload = await readStdin();
   } catch (err) {
-    writeLog(`stdin read failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
+    const reason = err instanceof Error ? err.message : String(err);
+    writeLog(`DENY (fail-closed stdin): ${reason}`);
+    writeDeny('PreToolUse', 'HOOK_STDIN_INVALID', reason);
     return;
   }
 
@@ -49,8 +50,9 @@ async function main(): Promise<void> {
   try {
     validated = validateToolHookPayload(payload);
   } catch (err) {
-    writeLog(`validation failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
+    const reason = err instanceof Error ? err.message : String(err);
+    writeLog(`DENY (fail-closed validation): ${reason}`);
+    writeDeny('PreToolUse', 'HOOK_PAYLOAD_INVALID', reason);
     return;
   }
 
@@ -106,8 +108,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  writeLog(`Fatal error: ${err instanceof Error ? err.message : String(err)}`);
-  // On fatal error, deny defensively via exit code.
-  // Exit 2 = explicit deny on both platforms (Codex documents exit 2 as block).
-  process.exitCode = 2;
+  const reason = err instanceof Error ? err.message : String(err);
+  writeLog(`DENY (fatal): ${reason}`);
+  writeDeny('PreToolUse', 'HOOK_FATAL_ERROR', reason);
 });
