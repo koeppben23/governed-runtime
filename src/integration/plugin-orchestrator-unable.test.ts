@@ -40,6 +40,7 @@ vi.mock('./review/audit-events.js', () => ({
 import { readState } from '../adapters/persistence.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
+import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
@@ -144,6 +145,7 @@ function buildDeps(client: unknown): {
     }),
     log: { info: vi.fn(), warn: vi.fn() },
     client,
+    adapter: createTestAdapter(client),
   };
   return { deps, blockReviewOutcome, updateReviewAssurance };
 }

@@ -8,11 +8,7 @@
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { buildReviewContentPrompt, selectReviewerProfileRules } from './prompt-builders.js';
-import {
-  buildReviewContentMutatedOutput,
-  invokeReviewer,
-  type ReviewerSuccessResult,
-} from './orchestrator.js';
+import { buildReviewContentMutatedOutput, type ReviewerSuccessResult } from './orchestrator.js';
 import { strictBlockedOutput } from '../plugin-helpers.js';
 import { loadExternalContent } from '../../rails/review.js';
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
@@ -129,9 +125,12 @@ export async function runReviewContentPipeline(
   });
 
   const policies = getReviewerPolicies(sessionState);
-  const reviewerResult = await invokeReviewer(deps.client, prompt, sessionId, {
-    ...policies,
-    _onAttemptFailed: buildAttemptFailedLogger(deps, TOOL_FLOWGUARD_REVIEW, sessionId),
+  const reviewerResult = await deps.adapter.spawnReviewer({
+    prompt,
+    parentSessionId: sessionId,
+    reviewOutputPolicy: policies.reviewOutputPolicy,
+    reviewInvocationPolicy: policies.reviewInvocationPolicy,
+    onAttemptFailed: buildAttemptFailedLogger(deps, TOOL_FLOWGUARD_REVIEW, sessionId),
   });
 
   if (reviewerResult?.blocked) {
@@ -139,7 +138,7 @@ export async function runReviewContentPipeline(
     const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
     output.output = strictBlockedOutput(code, {
       reason,
-      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation),
+      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
     });
     return;
   }

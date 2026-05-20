@@ -50,6 +50,17 @@ export const AuditEvent = z
     canonicalEventDigest: z.string().optional(),
     /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
     timestampEvidence: TimestampEvidence.optional(),
+    /**
+     * Enforcement level active when this event was recorded.
+     * Indicates the strength of governance enforcement at the time of the decision.
+     * - synchronous: guaranteed block (in-process throw or exit-code-2)
+     * - hook_gated: hook can block but model may have theoretical workaround paths
+     * - advisory: best-effort, no hard block mechanism
+     *
+     * Optional for backward compatibility: pre-HAI events omit this field.
+     * @since v1.3.0 (HAI #242)
+     */
+    enforcementLevel: z.enum(['synchronous', 'hook_gated', 'advisory']).optional(),
   })
   .readonly();
 export type AuditEvent = z.infer<typeof AuditEvent>;

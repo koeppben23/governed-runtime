@@ -19,6 +19,7 @@ import { appendReviewAuditEvent } from './review/audit-events.js';
 import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET, IMPL_EVIDENCE } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
+import { createTestAdapter } from './test-adapter-helper.js';
 import {
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -190,6 +191,7 @@ function buildDeps(client: unknown, stateRef: { current: SessionState }): Orches
     getEnforcementState: vi.fn().mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
     log: { info: vi.fn(), warn: vi.fn() },
     client,
+    adapter: createTestAdapter(client),
   };
 }
 

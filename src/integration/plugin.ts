@@ -69,6 +69,7 @@ import {
   isFlowGuardVerdictTool,
 } from './tool-names.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
+import { createOpenCodeHostAdapter } from './opencode-host-adapter.js';
 
 const FG_PREFIX = 'flowguard_';
 
@@ -160,6 +161,19 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   }
 
   // ── Service dependencies ────────────────────────────────────────────────
+  const typedClient = client as OrchestratorClient;
+
+  // HAI #242: Create host adapter for platform-agnostic reviewer invocation.
+  // The adapter wraps the OpenCode SDK client and provides the HostAdapter contract.
+  // Session ID is resolved dynamically per-invocation (not fixed at init time).
+  let currentSessionId = 'unknown';
+  const adapter = createOpenCodeHostAdapter({
+    client: typedClient,
+    getSessionId: () => currentSessionId,
+    directory: candidateWorktree ?? '',
+    worktree: candidateWorktree ?? '',
+  });
+
   const orchestratorDeps: OrchestratorDeps = {
     resolveFingerprint: ws.resolveFingerprint,
     getSessionDir: ws.getSessionDir,
@@ -167,7 +181,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     blockReviewOutcome: ws.blockReviewOutcome,
     getEnforcementState: ws.getEnforcementState,
     log,
-    client: client as OrchestratorClient,
+    client: typedClient,
+    adapter,
   };
 
   const auditDeps: AuditDeps = {
@@ -475,6 +490,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const hookOutput = output as ToolHookBeforeOutput;
         const toolName: string = hookInput?.tool ?? '';
         const sessionId: string = hookInput?.sessionID ?? 'unknown';
+        currentSessionId = sessionId;
         // OpenCode docs: tool arguments live on the output parameter in before hooks
         // (mutable by design). input carries tool name and session metadata only.
         const args = hookOutput?.args ?? {};
@@ -638,6 +654,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
         const hookOutput = output as ToolHookAfterOutput;
         const toolName: string = hookInput?.tool ?? '';
         const sessionId: string = hookInput?.sessionID ?? 'unknown';
+        currentSessionId = sessionId;
         const now = new Date().toISOString();
 
         log.info('hook', 'tool.execute.after', { tool: toolName, sessionId });

@@ -28,6 +28,7 @@ import { appendReviewAuditEvent } from './review/audit-events.js';
 import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../__fixtures__.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
+import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -206,6 +207,7 @@ function buildDeps(
         .mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
       log: { info: vi.fn(), warn: vi.fn() },
       client,
+      adapter: createTestAdapter(client),
     },
     blockReviewOutcome,
     updateReviewAssurance,

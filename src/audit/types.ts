@@ -151,6 +151,12 @@ export interface ChainedAuditEvent {
   readonly canonicalEventDigest?: string;
   /** Timestamp assurance evidence (NTP offset, TSA token, verification status). */
   readonly timestampEvidence?: TimestampEvidence;
+  /**
+   * Enforcement level active when this event was recorded.
+   * Optional for backward compatibility: pre-HAI events omit this field.
+   * @since v1.3.0 (HAI #242)
+   */
+  readonly enforcementLevel?: 'synchronous' | 'hook_gated' | 'advisory';
 }
 
 // ─── Genesis Constant ─────────────────────────────────────────────────────────
