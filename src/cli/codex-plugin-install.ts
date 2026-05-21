@@ -94,10 +94,15 @@ async function registerCodexMarketplaceEntry(scope: InstallScope): Promise<FileO
   let marketplace: CodexMarketplace = { plugins: [] };
   let action: FileOp['action'] = 'written';
 
-  if (existsSync(marketplacePath)) {
+  try {
     const content = await readFile(marketplacePath, 'utf-8');
-    marketplace = content.trim().length > 0 ? (JSON.parse(content) as CodexMarketplace) : {};
+    marketplace =
+      content.trim().length > 0 ? (JSON.parse(content) as CodexMarketplace) : { plugins: [] };
     action = 'merged';
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+      throw err;
+    }
   }
 
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
