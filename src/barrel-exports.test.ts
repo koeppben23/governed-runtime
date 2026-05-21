@@ -200,7 +200,7 @@ describe('integration tools use barrel imports', () => {
     'integration/tools/helpers.ts',
     'integration/tools/plan.ts',
     'integration/tools/architecture.ts',
-    'integration/tools/simple-tools.ts',
+    'integration/tools/review-tool/completion.ts',
   ] as const;
 
   describe('SMOKE — no deep imports to presentation', () => {

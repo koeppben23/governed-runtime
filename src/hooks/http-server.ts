@@ -134,8 +134,10 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
 
   try {
     await appendAuditEvent(resolution.sessionDir, auditEvent);
-  } catch {
-    // Non-blocking — audit failure does not affect response.
+  } catch (err) {
+    log(
+      `WARN: audit-append-failed (post-tool-use): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // Gap 4 mitigation: escalating warnings for pending review obligations.
@@ -158,29 +160,42 @@ async function handleSessionStart(payload: Record<string, unknown>): Promise<Htt
 
   try {
     await ensureWorkspace(cwd);
-  } catch {
+  } catch (err) {
+    log(`WARN: workspace-bootstrap-failed: ${err instanceof Error ? err.message : String(err)}`);
     return { decision: 'allow', reason: 'workspace bootstrap failed (non-blocking)' };
   }
 
-  // Attempt audit event persistence.
+  // Attempt audit event persistence — split into focused error boundaries.
+  let sessDir: string | null = null;
   try {
     const { computeFingerprint } = await import('../adapters/workspace/index.js');
     const fpResult = await computeFingerprint(cwd);
-    const sessDir = sessionDir(fpResult.fingerprint, session_id);
-    const now = new Date().toISOString();
-    const auditEvent: AuditEvent = {
-      id: randomUUID(),
-      sessionId: session_id,
-      phase: 'READY',
-      event: 'lifecycle',
-      timestamp: now,
-      actor: 'system',
-      detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
-      enforcementLevel: 'hook_gated',
-    };
-    await appendAuditEvent(sessDir, auditEvent);
-  } catch {
-    // Acceptable — session may not be initialized yet.
+    sessDir = sessionDir(fpResult.fingerprint, session_id);
+  } catch (err) {
+    log(
+      `WARN: session-resolution-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (sessDir) {
+    try {
+      const now = new Date().toISOString();
+      const auditEvent: AuditEvent = {
+        id: randomUUID(),
+        sessionId: session_id,
+        phase: 'READY',
+        event: 'lifecycle',
+        timestamp: now,
+        actor: 'system',
+        detail: { action: 'session_start', hookSource: 'http_hook', platform, cwd },
+        enforcementLevel: 'hook_gated',
+      };
+      await appendAuditEvent(sessDir, auditEvent);
+    } catch (err) {
+      log(
+        `WARN: audit-append-failed (session-start): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   return { decision: 'allow' };
@@ -228,8 +243,10 @@ async function handleStop(payload: Record<string, unknown>): Promise<HttpHookRes
 
   try {
     await appendAuditEvent(sessDir, auditEvent);
-  } catch {
-    // Non-blocking.
+  } catch (err) {
+    log(
+      `WARN: audit-append-failed (session-stop): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return { decision: 'allow' };
