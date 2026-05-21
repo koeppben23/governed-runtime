@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **FG-QUAL-007 (Issue #307):** Split `simple-tools.ts` (1021 LOC) into focused modules: `ticket-tool.ts`, `abort-tool.ts`, and `review-tool/` subdirectory (obligation, invocation, completion, types, index). Decompose `install()` God Function (285 LOC) into named steps via `install-steps.ts` with `InstallContext` pattern. Fix 4 silent catch blocks in `http-server.ts` to log errors via `log()` and split overly broad try/catch (line 166-182) into focused error boundaries. Zero behavior change; all existing exports preserved via barrel re-exports.
 
-### Changed
-
 - **Issue #263:** Add operator-selected mandates verbosity rendering. `explicit` remains the default productive safe path, `concise` is explicit opt-in and preserves all normative anchors, and `diagnosticSummary` is restricted to recovery/status/compaction projections. Model IDs are metadata only and do not select mandate compression or create a frontier-model registry.
 
 - **Issue #262:** Add context-aware mandates rendering from the `src/templates/mandates.ts` SSOT. Phase-aware prompt rendering now supports safe full-mandates fallback for unknown phases while preserving fail-closed mutating runtime validation. Command governance rules, compaction context, `flowguard_status` governance projections, and reviewer prompt criteria now avoid duplicated governance text and keep static reviewer coverage for plan, implementation, ADR, and content review. Tool footers remain diagnostic wrappers, not mandate projections or next-action authorities.
