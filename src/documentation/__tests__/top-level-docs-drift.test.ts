@@ -25,6 +25,14 @@ const REPO_ROOT = join(__dirname, '..', '..', '..');
 
 const TOP_LEVEL_DOCS = ['README.md', 'PRODUCT_IDENTITY.md', 'PRODUCT_ONE_PAGER.md'] as const;
 const PRODUCT_DOCS = ['PRODUCT_IDENTITY.md', 'PRODUCT_ONE_PAGER.md'] as const;
+const PUBLIC_POSITIONING_FILES = [
+  'README.md',
+  'PRODUCT_IDENTITY.md',
+  'PRODUCT_ONE_PAGER.md',
+  'docs/deployment-model.md',
+  'package.json',
+  'src/index.ts',
+] as const;
 
 function readDoc(relativePath: string): string {
   return readFileSync(join(REPO_ROOT, relativePath), 'utf-8').replace(/\r\n/g, '\n');
@@ -123,6 +131,42 @@ describe('documentation/top-level-docs-drift', () => {
         for (const label of ['Solo', 'Team', 'Team-CI', 'Regulated']) {
           expect(content).toContain(label);
         }
+      }
+    });
+
+    it('public positioning is host-aware without stale OpenCode-only primary claims', () => {
+      const stalePrimaryClaims = [
+        'FlowGuard for OpenCode',
+        'OpenCode-native governance runtime',
+        'FlowGuard runtime for OpenCode',
+        'within OpenCode. FlowGuard enforces',
+        '**Installation Target** | `~/.config/opencode/` (global) or `.opencode/` (project)',
+      ];
+
+      for (const file of PUBLIC_POSITIONING_FILES) {
+        const content = readDoc(file);
+        for (const stale of stalePrimaryClaims) {
+          expect(content, `${file} must not use stale primary claim: ${stale}`).not.toContain(
+            stale,
+          );
+        }
+      }
+
+      const readme = readDoc('README.md');
+      const identity = readDoc('PRODUCT_IDENTITY.md');
+      const onePager = readDoc('PRODUCT_ONE_PAGER.md');
+      const packageJson = readDoc('package.json');
+      const apiDocs = readDoc('src/index.ts');
+
+      for (const content of [readme, identity, onePager, packageJson, apiDocs]) {
+        expect(content.toLowerCase()).toContain('host-aware');
+      }
+
+      for (const content of [readme, identity, onePager, apiDocs]) {
+        expect(content).toContain('OpenCode');
+        expect(content).toContain('synchronous');
+        expect(content).toContain('hook-gated');
+        expect(content).toContain('platform-limited');
       }
     });
   });

@@ -1,7 +1,7 @@
 /**
  * @module mcp-server/server
  * @description FlowGuard MCP Server - universal tool surface for any MCP-compatible
- * AI coding agent (Claude Code, Codex, or future platforms).
+ * AI-assisted engineering host (Claude Code, Codex, or future platforms).
  *
  * Architecture:
  * - stdio transport (JSON-RPC over stdin/stdout)

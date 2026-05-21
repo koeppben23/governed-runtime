@@ -4,7 +4,7 @@
  * @description Entry point for the FlowGuard MCP server binary (`flowguard-mcp`).
  *
  * Starts the MCP server on stdio transport, exposing all 12 FlowGuard governance
- * tools to any MCP-compatible AI coding agent.
+ * tools to supported MCP-capable hosts.
  *
  * Usage:
  *   npx flowguard-mcp              # direct invocation

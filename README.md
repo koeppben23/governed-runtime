@@ -1,8 +1,14 @@
-# FlowGuard for OpenCode
+# FlowGuard
 
-Deterministic, fail-closed workflow engine for AI-assisted software delivery.
+Host-aware governance runtime for AI-assisted software delivery.
 
-> **Version:** 1.2.0-rc.3 | TypeScript | OpenCode-native
+> **Version:** 1.2.0-rc.3 | TypeScript | Host-aware | OpenCode synchronous enforcement path
+
+FlowGuard provides deterministic workflow control, evidence gates, audit trails,
+and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode
+currently provides the strongest enforcement path through its synchronous plugin;
+Claude Code and Codex are supported through MCP, hooks, and native packaging with
+hook-gated, platform-limited guarantees.
 
 ---
 
@@ -132,8 +138,9 @@ subagent attestation, and the `/review` evidence model.
 | **Derived Evidence Artifacts**    | Append-only `artifacts/ticket.v*.{md,json}` and `artifacts/plan.v*.{md,json}` with content-digest versioning and `sourceStateHash` provenance                                                                                                                    |
 | **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                                                                                                              |
 | **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
-| **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing                                                                                   |
+| **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, host automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing                                                                                       |
 | **Network Posture**               | Filesystem-first and offline-capable by default. Network-dependent surfaces are explicit: `/review url=...` HTTPS content loading, remote JWKS via `jwksUri`, and Claude Code HTTP hook mode's localhost listener.                                               |
+| **Host Enforcement**              | OpenCode is the strongest synchronous enforcement path. Claude Code and Codex are supported through MCP/hooks/native packaging with hook-gated, platform-limited guarantees.                                                                                     |
 
 ---
 
@@ -235,7 +242,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 | Entry Point                         | Purpose                                                                |
 | ----------------------------------- | ---------------------------------------------------------------------- |
 | `@flowguard/core`                   | Core schemas, machine/policy APIs, audit/archive verification, logging |
-| `@flowguard/core/integration`       | OpenCode tool definitions + audit plugin                               |
+| `@flowguard/core/integration`       | Host integration surfaces, including OpenCode tool/plugin bindings     |
 | `@flowguard/core/integration/tools` | Individual tool definitions                                            |
 | `@flowguard/core/testing`           | Test utilities (`createTestContext`)                                   |
 

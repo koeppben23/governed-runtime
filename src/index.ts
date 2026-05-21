@@ -3,17 +3,20 @@
  *
  * # FlowGuard API
  *
- * Deterministic, fail-closed workflow engine for AI-assisted software delivery
- * within OpenCode. FlowGuard enforces governed development workflows with
- * hash-chained audit trails, policy-bound decision enforcement, and
- * evidence-first compliance.
+ * Host-aware governance runtime for AI-assisted software delivery. FlowGuard
+ * enforces governed development workflows with hash-chained audit trails,
+ * policy-bound decision enforcement, and evidence-first compliance.
+ *
+ * OpenCode currently provides the strongest synchronous enforcement path through
+ * its plugin integration. Claude Code and Codex are supported through MCP,
+ * hooks, and native packaging with hook-gated, platform-limited guarantees.
  *
  * ## Package Structure
  *
  * | Entry Point | Purpose |
  * |-------------|---------|
  * | `@flowguard/core` | Core schemas, machine/policy APIs, audit/archive verification, logging |
- * | `@flowguard/core/integration` | OpenCode tool definitions + audit plugin |
+ * | `@flowguard/core/integration` | Host integration surfaces, including OpenCode tool/plugin bindings |
  * | `@flowguard/core/integration/tools` | Individual tool definitions |
  * | `@flowguard/core/testing` | Test utilities (`createTestContext`) |
  *
@@ -46,7 +49,7 @@
  *
  * Consumer entry points:
  * - `@flowguard/core`                — this file (schemas, machine, policy, audit, archive, logging)
- * - `@flowguard/core/integration`    — OpenCode tool definitions + audit plugin
+ * - `@flowguard/core/integration`    — Host integration surfaces, including OpenCode tool/plugin bindings
  * - `@flowguard/core/testing`         — Test utilities only
  *
  * Several exports, such as `SessionState`, are runtime Zod schemas.

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #311:** Align public product positioning after OpenCode decoupling.
+  FlowGuard is now described as a host-aware governance runtime while preserving
+  the enforcement distinction that OpenCode is the strongest synchronous path
+  and Claude Code/Codex remain hook-gated with platform-limited guarantees.
+
 - **Issue #309:** Align security and trust-boundary documentation with runtime
   network behavior. FlowGuard is now described consistently as filesystem-first
   and offline-capable by default, with explicit network-dependent exceptions for
@@ -53,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Issue #244 (Phase 3: Hook Scripts):** Convert FlowGuard's enforcement hook logic into standalone command-line and HTTP hook scripts that speak the stdin-JSON/stdout-JSON protocol used by both Claude Code and Codex. Adds `flowguard-hook-pre` (PreToolUse phase gate), `flowguard-hook-post` (PostToolUse audit persistence), `flowguard-hook-session` (SessionStart workspace bootstrap), `flowguard-hook-stop` (Stop cleanup and pending review check), and `flowguard-hook-server` (persistent HTTP hook endpoint for sub-20ms latency). Hook scripts delegate to existing `isHostToolAllowedInPhase()` logic — no duplicate authority. Fail-closed: unreadable state produces explicit deny. Architecture boundary rule added for `hooks/` layer (entry-point, must not import `cli/` or `mcp-server/`).
 
-- **Issue #243 (Phase 2: MCP Server):** Build standalone MCP server (`flowguard-mcp` binary) that exposes all 12 FlowGuard governance tools via the Model Context Protocol (stdio transport). Any MCP-compatible AI coding agent (Claude Code, Codex, or future platforms) can connect and gain access to governed workflow tools. Includes stdout guard (non-JSON-RPC writes redirected to stderr), session resolution from `FLOWGUARD_SESSION_DIR` env / MCP roots / cwd, Zod schema passthrough to MCP SDK for input validation, architecture boundary rule (`mcp-server/` must not import `cli/`), and protocol compliance tests.
+- **Issue #243 (Phase 2: MCP Server):** Build standalone MCP server (`flowguard-mcp` binary) that exposes all 12 FlowGuard governance tools via the Model Context Protocol (stdio transport). Supported MCP-capable hosts can connect and gain access to governed workflow tools. Includes stdout guard (non-JSON-RPC writes redirected to stderr), session resolution from `FLOWGUARD_SESSION_DIR` env / MCP roots / cwd, Zod schema passthrough to MCP SDK for input validation, architecture boundary rule (`mcp-server/` must not import `cli/`), and protocol compliance tests.
 
 - **Issue #242 (Phase 1: HAI):** Extract Host-Agnostic Adapter Interface — the single contract between FlowGuard's governance engine and any host AI coding platform. Introduces `HostAdapter` interface in `src/adapters/host-adapter.ts` with enforcement decisions, reviewer spawning, capability validation, and governance state projection types. First concrete implementation (`OpenCodeHostAdapter`) delegates to existing modules with zero behavior change. Review pipelines now call `deps.adapter.spawnReviewer()` instead of direct `invokeReviewer()`, enabling future adapters (Claude Code, Codex) via the same interface. Adds architecture boundary rule preventing `adapters/` from importing `integration/`.
 

@@ -6,25 +6,25 @@ This document describes how FlowGuard is deployed, where it runs, and how it int
 
 ## Deployment Overview
 
-| Aspect                  | Value                                                                                        |
-| ----------------------- | -------------------------------------------------------------------------------------------- |
-| **Deployment Type**     | Self-hosted, locally installed                                                               |
-| **Runtime Environment** | OpenCode-hosted runtime environment (same host integration model, no external Python bridge) |
-| **Installation Target** | `~/.config/opencode/` (global) or `.opencode/` (project)                                     |
-| **Network Behavior**    | Offline-capable by default; optional features may use HTTPS or localhost hooks               |
-| **Multi-Instance**      | Not supported (single-machine, no built-in multi-user coordination)                          |
+| Aspect                  | Value                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Deployment Type**     | Self-hosted, locally installed                                                                                                                                     |
+| **Runtime Environment** | Supported host runtime; OpenCode is the strongest synchronous enforcement path                                                                                     |
+| **Installation Target** | Host-specific install roots; see installation docs for OpenCode `.opencode` / `~/.config/opencode`, Claude plugin/config paths, and Codex marketplace/plugin paths |
+| **Network Behavior**    | Offline-capable by default; optional features may use HTTPS or localhost hooks                                                                                     |
+| **Multi-Instance**      | Not supported (single-machine, no built-in multi-user coordination)                                                                                                |
 
 ---
 
 ## Delivery Scope
 
-| Category                    | Description                  | Example                                           |
-| --------------------------- | ---------------------------- | ------------------------------------------------- |
-| **Technically Enforced**    | Guarantees by implementation | Fail-closed, phase gates, hash chain              |
-| **Currently Delivered**     | Available in current release | CLI installer, OpenCode tools, archive            |
-| **Optional**                | Can be enabled               | `--policy-mode regulated`, project-scoped install |
-| **Not Covered**             | Intentionally not provided   | Multi-user, distributed, hosted                   |
-| **Customer Responsibility** | Operational decisions        | Network isolation, access control                 |
+| Category                    | Description                  | Example                                                |
+| --------------------------- | ---------------------------- | ------------------------------------------------------ |
+| **Technically Enforced**    | Guarantees by implementation | Fail-closed, phase gates, hash chain                   |
+| **Currently Delivered**     | Available in current release | CLI installer, host packaging, OpenCode tools, archive |
+| **Optional**                | Can be enabled               | `--policy-mode regulated`, project-scoped install      |
+| **Not Covered**             | Intentionally not provided   | Multi-user, distributed, hosted                        |
+| **Customer Responsibility** | Operational decisions        | Network isolation, access control                      |
 
 ---
 
@@ -83,7 +83,7 @@ repository/
 
 | Component         | Requirement                                 | Status                  |
 | ----------------- | ------------------------------------------- | ----------------------- |
-| **Runtime**       | OpenCode                                    | Customer Responsibility |
+| **Runtime**       | Supported host runtime                      | Customer Responsibility |
 | **Node.js / Bun** | Node.js 20+ or Bun                          | Customer Responsibility |
 | **Filesystem**    | Read/write access to installation directory | Customer Responsibility |
 
@@ -99,6 +99,10 @@ repository/
 ---
 
 ## Integration Architecture
+
+FlowGuard is host-aware. OpenCode uses the strongest synchronous plugin path;
+Claude Code and Codex use MCP, hooks, and native packaging with hook-gated,
+platform-limited guarantees.
 
 ### OpenCode Integration
 
@@ -119,7 +123,7 @@ FlowGuard integrates with OpenCode via:
 | **Workspace**   | Discover repository files, manage workspace registry |
 | **Git**         | Repository fingerprint, metadata                     |
 | **Binding**     | Workspace-to-session binding                         |
-| **Context**     | OpenCode context (session ID, user info)             |
+| **Context**     | Host context (session ID, user info)                 |
 
 ---
 
