@@ -64,7 +64,9 @@ vi.mock('node:net', () => ({
   }),
 }));
 
-async function createExecutable(name: string): Promise<{ binDir: string; cleanup: () => Promise<void> }> {
+async function createExecutable(
+  name: string,
+): Promise<{ binDir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'fg-host-bin-'));
   const file = join(dir, name);
   await writeFile(file, '#!/bin/sh\nexit 0\n', 'utf-8');
@@ -250,7 +252,11 @@ describe('run', () => {
     cleanups.push(executable.cleanup);
     vi.mocked(resolveHost).mockResolvedValue({ host: 'codex', source: 'cli' });
 
-    const result = await run({ prompt: 'do something', host: 'codex', env: { PATH: executable.binDir } });
+    const result = await run({
+      prompt: 'do something',
+      host: 'codex',
+      env: { PATH: executable.binDir },
+    });
 
     expect(result).toEqual({ success: true, output: 'host output' });
     expect(spawn).toHaveBeenCalledWith(

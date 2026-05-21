@@ -55,6 +55,8 @@ describe('resolveHost', () => {
       new PersistenceError('SCHEMA_VALIDATION_FAILED', 'Repo config failed schema validation'),
     );
 
-    await expect(resolveHost({ cwd: '/repo' })).rejects.toThrow('Repo config failed schema validation');
+    await expect(resolveHost({ cwd: '/repo' })).rejects.toThrow(
+      'Repo config failed schema validation',
+    );
   });
 });

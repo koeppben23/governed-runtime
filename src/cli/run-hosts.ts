@@ -23,7 +23,13 @@ export const HOST_COMMANDS: Record<HostId, HostCommandSpec> = {
     binary: 'opencode',
     buildRunArgs: (prompt) => ['run', prompt],
     supportsServe: true,
-    buildServeArgs: ({ port, hostname }) => ['serve', '--port', String(port), '--hostname', hostname],
+    buildServeArgs: ({ port, hostname }) => [
+      'serve',
+      '--port',
+      String(port),
+      '--hostname',
+      hostname,
+    ],
   },
   'claude-code': {
     binary: 'claude',

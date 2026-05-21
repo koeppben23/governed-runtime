@@ -180,14 +180,14 @@ npm run flowguard:doctor
 
 ## Installation Options
 
-| Option                                         | Description                                             |
-| ---------------------------------------------- | ------------------------------------------------------- |
-| `--install-scope global`                       | Install to `~/.config/opencode/` (default)              |
-| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)             |
+| Option                                         | Description                                                                        |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `--install-scope global`                       | Install to `~/.config/opencode/` (default)                                         |
+| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)                                        |
 | `--host opencode\|claude-code\|codex`          | Host alias for `--platform` during install; runtime host for `flowguard run/serve` |
-| `--platform opencode\|claude-code\|codex`      | Select host integration target                          |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`) |
-| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`    |
+| `--platform opencode\|claude-code\|codex`      | Select host integration target                                                     |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`)                            |
+| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 
 ## Malformed JSON Recovery
 

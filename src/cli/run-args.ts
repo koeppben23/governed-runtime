@@ -10,14 +10,23 @@ function isUnknownFlag(arg: string, knownFlags: string[]): boolean {
   return arg.startsWith('-') && !knownFlags.includes(arg);
 }
 
-function readFlagValue(argv: string[], index: number, flag: string, errors: string[]): string | null {
+function readFlagValue(
+  argv: string[],
+  index: number,
+  flag: string,
+  errors: string[],
+): string | null {
   const next = argv[index + 1];
   if (next) return next;
   errors.push(`${flag} requires a value`);
   return null;
 }
 
-function applyHost(config: { host?: HeadlessConfig['host'] }, value: string, errors: string[]): boolean {
+function applyHost(
+  config: { host?: HeadlessConfig['host'] },
+  value: string,
+  errors: string[],
+): boolean {
   if (isHostId(value)) {
     config.host = value;
     return true;
