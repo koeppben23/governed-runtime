@@ -34,7 +34,12 @@ import { randomUUID } from 'node:crypto';
  * - `task`: governed separately by subagent enforcement (BUG-08)
  * - `flowguard_*`: governed by FlowGuard's own command admissibility
  */
-export const MUTATING_HOST_TOOLS: ReadonlySet<string> = new Set(['bash', 'write', 'edit']);
+export const MUTATING_HOST_TOOLS: ReadonlySet<string> = new Set([
+  'bash',
+  'write',
+  'edit',
+  'apply_patch',
+]);
 
 /**
  * Phases where only investigation (read-only) tools are allowed.

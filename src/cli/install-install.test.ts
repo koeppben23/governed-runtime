@@ -22,6 +22,8 @@ import {
 } from './templates.js';
 import { computeMandatesDigest } from './install.js';
 import { measureAsync } from '../test-policy.js';
+import { withTestEnv } from '../integration/test-helpers.js';
+import { resolveCodexMarketplaceRoot } from './codex-plugin-install.js';
 import {
   VERSION,
   tmpDir,
@@ -72,6 +74,20 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 setupCliTestEnvironment();
 
+const CODEX_MARKETPLACE_ENTRY_REPO = {
+  name: 'flowguard',
+  source: { source: 'local', path: './plugins/flowguard' },
+  policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+  category: 'Productivity',
+};
+
+const CODEX_MARKETPLACE_ENTRY_GLOBAL = {
+  name: 'flowguard',
+  source: { source: 'local', path: './.codex/plugins/flowguard' },
+  policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+  category: 'Productivity',
+};
+
 async function findBackupFor(filePath: string): Promise<string | null> {
   const entries = await fs.readdir(path.dirname(filePath));
   const prefix = `${path.basename(filePath)}.flowguard-backup-`;
@@ -108,19 +124,132 @@ describe('cli/install', () => {
       expect(result.warnings).toContainEqual(expect.stringContaining('claude --plugin-dir'));
     });
 
-    it('installs Codex reviewer subagent without touching opencode.json', async () => {
+    it('installs Codex plugin tree and marketplace registration without touching opencode.json', async () => {
       const tarball = await createMockTarball();
       const result = await install(
         repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
       );
 
       expect(result.errors).toEqual([]);
-      const reviewerPath = path.join(tmpDir, '.codex', 'subagents', 'flowguard-reviewer.md');
+      const pluginPath = path.join(tmpDir, 'plugins', 'flowguard');
+      const reviewerPath = path.join(pluginPath, 'subagents', 'flowguard-reviewer.md');
       expect(existsSync(reviewerPath)).toBe(true);
       expect(await fs.readFile(reviewerPath, 'utf-8')).toContain(
         'validated, obligation-bound ReviewFindings',
       );
+      expect(existsSync(path.join(pluginPath, '.codex-plugin', 'plugin.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, '.mcp.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, 'hooks', 'hooks.json'))).toBe(true);
+      expect(existsSync(path.join(pluginPath, 'skills', 'start', 'SKILL.md'))).toBe(true);
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      const marketplace = JSON.parse(await fs.readFile(marketplacePath, 'utf-8'));
+      expect(marketplace.name).toBe('flowguard');
+      expect(marketplace.plugins).toEqual([CODEX_MARKETPLACE_ENTRY_REPO]);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
+      expect(result.warnings).toContainEqual(expect.stringContaining('INSTALLED_AND_REGISTERED'));
+      expect(result.warnings).toContain('Codex native plugin load: NOT_VERIFIED_NATIVE_LOAD');
+
+      const entry = CODEX_MARKETPLACE_ENTRY_REPO;
+      const marketplaceRoot = resolveCodexMarketplaceRoot('repo');
+      const resolvedPluginRoot = path.resolve(marketplaceRoot, entry.source.path);
+      expect(resolvedPluginRoot).toBe(path.resolve(marketplaceRoot, 'plugins', 'flowguard'));
+      expect(existsSync(path.join(resolvedPluginRoot, '.codex-plugin', 'plugin.json'))).toBe(true);
+    });
+
+    it('preserves foreign Codex marketplace plugins while updating FlowGuard entry', async () => {
+      await fs.mkdir(path.join(tmpDir, '.agents', 'plugins'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'),
+        JSON.stringify(
+          {
+            plugins: [
+              {
+                name: 'foreign',
+                source: { source: 'local', path: './foreign' },
+                policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+                category: 'Productivity',
+              },
+              {
+                name: 'flowguard',
+                source: { source: 'local', path: './old' },
+                policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+                category: 'Productivity',
+              },
+            ],
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+      const tarball = await createMockTarball();
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const marketplace = JSON.parse(
+        await fs.readFile(path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'), 'utf-8'),
+      );
+      expect(marketplace.name).toBe('flowguard');
+      expect(marketplace.plugins).toEqual([
+        {
+          name: 'foreign',
+          source: { source: 'local', path: './foreign' },
+          policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+          category: 'Productivity',
+        },
+        CODEX_MARKETPLACE_ENTRY_REPO,
+      ]);
+    });
+
+    it('preserves existing marketplace-level name when registering FlowGuard entry', async () => {
+      await fs.mkdir(path.join(tmpDir, '.agents', 'plugins'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'),
+        JSON.stringify({ name: 'local-dev', plugins: [] }, null, 2) + '\n',
+      );
+      const tarball = await createMockTarball();
+
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const marketplace = JSON.parse(
+        await fs.readFile(path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'), 'utf-8'),
+      );
+      expect(marketplace.name).toBe('local-dev');
+      expect(marketplace.plugins).toEqual([CODEX_MARKETPLACE_ENTRY_REPO]);
+    });
+
+    it('installs global Codex plugin at ~/.codex/plugins/flowguard and registers ./.codex/plugins/flowguard', async () => {
+      const restoreHome = withTestEnv({ HOME: tmpDir, USERPROFILE: tmpDir });
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          globalArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+        );
+
+        expect(result.errors).toEqual([]);
+        const pluginPath = path.join(tmpDir, '.codex', 'plugins', 'flowguard');
+        expect(existsSync(path.join(pluginPath, '.codex-plugin', 'plugin.json'))).toBe(true);
+        const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+        const marketplace = JSON.parse(await fs.readFile(marketplacePath, 'utf-8'));
+        expect(marketplace.name).toBe('flowguard');
+        expect(marketplace.plugins).toEqual([CODEX_MARKETPLACE_ENTRY_GLOBAL]);
+        expect(result.target).toBe(pluginPath);
+
+        const entry = CODEX_MARKETPLACE_ENTRY_GLOBAL;
+        const marketplaceRoot = resolveCodexMarketplaceRoot('global');
+        const resolvedPluginRoot = path.resolve(marketplaceRoot, entry.source.path);
+        expect(resolvedPluginRoot).toBe(pluginPath);
+        expect(existsSync(path.join(resolvedPluginRoot, '.codex-plugin', 'plugin.json'))).toBe(
+          true,
+        );
+      } finally {
+        restoreHome();
+      }
     });
 
     it('creates all FlowGuard files in repo scope with --core-tarball', async () => {
@@ -523,6 +652,69 @@ describe('cli/install', () => {
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
       }
+    });
+
+    it('rollback restores existing Codex marketplace entries after install failure', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      const originalMarketplace =
+        JSON.stringify(
+          {
+            plugins: [
+              {
+                name: 'foreign',
+                source: { source: 'local', path: './foreign' },
+                policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+                category: 'Productivity',
+              },
+              {
+                name: 'flowguard',
+                source: { source: 'local', path: './old-flowguard' },
+                policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+                category: 'Productivity',
+              },
+            ],
+          },
+          null,
+          2,
+        ) + '\n';
+      await fs.writeFile(marketplacePath, originalMarketplace, 'utf-8');
+
+      const { execSync: mockExec } = await import('node:child_process');
+      const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          throw new Error('Simulated Codex plugin install failure');
+        }
+        return originalImpl(cmd, opts);
+      });
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+        );
+
+        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.errors[0]).toContain('Dependency install failed');
+        expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(originalMarketplace);
+        expect(existsSync(path.join(tmpDir, 'plugins', 'flowguard'))).toBe(false);
+      } finally {
+        vi.mocked(mockExec).mockImplementation(originalImpl);
+      }
+    });
+
+    it('fails without silent registration when marketplace.json is malformed', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      const malformed = 'this is not json\n';
+      await fs.writeFile(marketplacePath, malformed, 'utf-8');
+
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex' }));
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(malformed);
     });
 
     it('restores pre-existing tarball byte-for-byte on rollback', async () => {

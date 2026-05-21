@@ -24,6 +24,12 @@ import {
   writeClaudeCodePluginInstallHint,
 } from './claude-code-plugin-install.js';
 import {
+  codexInstallStatus,
+  codexPluginSnapshotPaths,
+  installCodexPlugin,
+  resolveCodexMarketplacePath,
+} from './codex-plugin-install.js';
+import {
   type CliArgs,
   type CliResult,
   type FileOp,
@@ -200,12 +206,12 @@ export async function install(args: CliArgs): Promise<CliResult> {
       );
     }
 
-    // Claude Code receives a plugin tree instead of duplicate standalone host files.
-    if (installPlatform !== 'claude-code') {
+    // Claude Code and Codex receive plugin trees instead of duplicate standalone host files.
+    if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
       await ensureDir(join(target, 'tools'));
       await ensureDir(join(target, 'plugins'));
       await ensureDir(join(target, 'commands'));
-      await ensureDir(join(target, installPlatform === 'codex' ? 'subagents' : 'agents'));
+      await ensureDir(join(target, 'agents'));
     }
 
     // -- Transactional rollback: resolve paths + snapshot BEFORE any file write --
@@ -235,16 +241,18 @@ export async function install(args: CliArgs): Promise<CliResult> {
       await snapshotForRollback(vendorTarballPath),
       ...(installPlatform === 'claude-code'
         ? await Promise.all(claudeCodePluginSnapshotPaths(target).map(snapshotForRollback))
-        : [
-            await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
-            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
-            await snapshotForRollback(reviewerPath),
-            ...(await Promise.all(
-              Object.keys(COMMANDS).map((name) =>
-                snapshotForRollback(join(target, 'commands', name)),
-              ),
-            )),
-          ]),
+        : installPlatform === 'codex'
+          ? await Promise.all(codexPluginSnapshotPaths(args.installScope).map(snapshotForRollback))
+          : [
+              await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
+              await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
+              await snapshotForRollback(reviewerPath),
+              ...(await Promise.all(
+                Object.keys(COMMANDS).map((name) =>
+                  snapshotForRollback(join(target, 'commands', name)),
+                ),
+              )),
+            ]),
       // node_modules: only remove if it was created by this install
       {
         path: join(configTargetDir, 'node_modules'),
@@ -267,6 +275,8 @@ export async function install(args: CliArgs): Promise<CliResult> {
     if (installPlatform === 'claude-code') {
       ops.push(...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force)));
       ops.push(await writeClaudeCodePluginInstallHint(target));
+    } else if (installPlatform === 'codex') {
+      ops.push(...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force)));
     } else {
       ops.push(
         await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force),
@@ -394,6 +404,14 @@ export async function install(args: CliArgs): Promise<CliResult> {
     if (installPlatform === 'claude-code') {
       warnings.push(
         `Load FlowGuard in Claude Code with: claude --plugin-dir ${join(target, 'flowguard-plugin')}`,
+      );
+    } else if (installPlatform === 'codex') {
+      warnings.push(
+        `Codex marketplace registration: ${codexInstallStatus(args.installScope)} at ${resolveCodexMarketplacePath(args.installScope)}`,
+      );
+      warnings.push('Codex native plugin load: NOT_VERIFIED_NATIVE_LOAD');
+      warnings.push(
+        'Codex plugin hooks require [features].plugin_hooks = true and /hooks trust review before enforcement is verified.',
       );
     } else {
       warnings.push('Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).');

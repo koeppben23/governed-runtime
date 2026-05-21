@@ -29,4 +29,7 @@ export {
   CLAUDE_CODE_PLUGIN_DIR,
   CLAUDE_CODE_PLUGIN_RELATIVE_FILES,
   claudeCodePluginFiles,
+  CODEX_PLUGIN_NAME,
+  CODEX_PLUGIN_RELATIVE_FILES,
+  codexPluginFiles,
 } from '../templates/index.js';
