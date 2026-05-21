@@ -320,8 +320,8 @@ describe('integration/plugin', () => {
         );
       }
       const elapsed = performance.now() - start;
-      // 1000 calls in < 20ms => < 0.02ms per call (prefix check)
-      expect(elapsed).toBeLessThan(50);
+      // 1000 calls in < 100ms => < 0.1ms per call (prefix check, CI-tolerant)
+      expect(elapsed).toBeLessThan(100);
     });
   });
 

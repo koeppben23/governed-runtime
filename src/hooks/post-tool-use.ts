@@ -21,6 +21,8 @@ import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
 import { writeLog } from './shared/stdout-writer.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
+import { isMutatingHostTool } from './shared/phase-gate.js';
+import { assessObligationEscalation } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import type { AuditEvent } from '../state/evidence-audit.js';
 
@@ -84,6 +86,12 @@ async function main(): Promise<void> {
   } catch (err) {
     // Audit failure is non-blocking in post hooks (tool already executed).
     writeLog(`WARN: audit write failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Gap 4 mitigation: escalating warnings for pending review obligations.
+  const escalation = assessObligationEscalation(state, isMutatingHostTool(tool_name.toLowerCase()));
+  if (escalation.message) {
+    writeLog(escalation.message);
   }
 }
 
