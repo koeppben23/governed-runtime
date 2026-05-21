@@ -1,0 +1,13 @@
+{
+  "platform": "governance",
+  "updated": "2026-05-21T00:00:00.000Z",
+  "version": "1.2.0-rc.3",
+  "description": "HAI governance surface schemas. Pins the adapter contract, enforcement decisions, state projection, and deny codes.",
+  "source": "src/adapters/host-adapter.ts",
+  "schemas": [
+    "host-adapter-interface.json",
+    "enforcement-decision.json",
+    "governance-state-projection.json",
+    "deny-codes.json"
+  ]
+}

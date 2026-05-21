@@ -14,7 +14,7 @@
  *   node scripts/docs-drift.mjs --update     # Update baseline hashes
  *   node scripts/docs-drift.mjs --verbose    # Show which pages changed + diffs
  *
- * Baseline: .opencode-sdk-baseline/docs-hashes.json
+ * Baseline: .sdk-baselines/opencode/docs-hashes.json
  */
 
 import fs from 'node:fs';
@@ -24,7 +24,7 @@ import { createHash } from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
-const BASELINE_PATH = path.join(root, '.opencode-sdk-baseline', 'docs-hashes.json');
+const BASELINE_PATH = path.join(root, '.sdk-baselines', 'opencode', 'docs-hashes.json');
 
 const BASE_URL =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs';
@@ -177,7 +177,7 @@ async function run() {
 
   // ÔöÇÔöÇ Check mode ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   if (!fs.existsSync(BASELINE_PATH)) {
-    console.error('ERROR: Baseline file missing: .opencode-sdk-baseline/docs-hashes.json');
+    console.error('ERROR: Baseline file missing: .sdk-baselines/opencode/docs-hashes.json');
     console.error('Run "node scripts/docs-drift.mjs --update" to create it.');
     process.exit(1);
   }

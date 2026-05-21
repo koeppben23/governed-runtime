@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claude-code/session-start-input",
+  "title": "Claude Code SessionStart Hook Input",
+  "description": "Stdin JSON payload for SessionStart hooks. No tool context — session lifecycle event.",
+  "type": "object",
+  "required": ["session_id"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "transcript_path": {
+      "type": "string",
+      "description": "Path to the session transcript file."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Claude Code agent."
+    }
+  },
+  "additionalProperties": true
+}

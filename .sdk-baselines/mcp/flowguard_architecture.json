@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_architecture",
+  "title": "flowguard_architecture",
+  "description": "Submit an Architecture Decision Record (ADR) OR record a review verdict. Mode A: provide title and adrText. Mode B: provide reviewVerdict.",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short title of the architecture decision. Required for Mode A."
+    },
+    "adrText": {
+      "type": "string",
+      "description": "Full ADR body in MADR Markdown format. Required for Mode A and when reviewVerdict is 'changes_requested'."
+    },
+    "reviewVerdict": {
+      "type": "string",
+      "enum": ["approve", "changes_requested"],
+      "description": "Review verdict. Omit for initial ADR submission."
+    },
+    "reviewFindings": {
+      "$ref": "#/$defs/ReviewFindings",
+      "description": "Structured findings from the flowguard-reviewer subagent."
+    },
+    "reviewerUnavailable": {
+      "type": "boolean",
+      "description": "Set to true when the reviewer subagent cannot be invoked."
+    }
+  },
+  "$defs": {
+    "ReviewFindings": {
+      "type": "object",
+      "description": "Structured findings from the flowguard-reviewer subagent.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

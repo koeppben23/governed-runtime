@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex/post-tool-use-input",
+  "title": "Codex PostToolUse Hook Input",
+  "description": "Stdin JSON payload delivered to PostToolUse hooks by Codex.",
+  "type": "object",
+  "required": ["session_id", "hook_event_name", "tool_name", "tool_input"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "hook_event_name": {
+      "type": "string",
+      "const": "PostToolUse",
+      "description": "Always present in Codex."
+    },
+    "model": {
+      "type": "string",
+      "description": "The model being used."
+    },
+    "permission_mode": {
+      "type": "string",
+      "enum": ["default", "full-auto"],
+      "description": "The permission mode Codex is running in."
+    },
+    "transcript_path": {
+      "type": ["string", "null"],
+      "description": "Path to the session transcript (may be null)."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Codex agent."
+    },
+    "turn_id": {
+      "type": "string",
+      "description": "Identifier for the current conversation turn."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Name of the tool that was invoked."
+    },
+    "tool_use_id": {
+      "type": "string",
+      "description": "Unique identifier for this tool use instance."
+    },
+    "tool_input": {
+      "description": "The tool's input arguments.",
+      "additionalProperties": true
+    },
+    "tool_response": {
+      "description": "The tool's execution result (any JSON value)."
+    }
+  },
+  "additionalProperties": true
+}

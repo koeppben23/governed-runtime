@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_validate",
+  "title": "flowguard_validate",
+  "description": "Record validation check results. Provide an array of check results matching the session's activeChecks.",
+  "type": "object",
+  "required": ["results"],
+  "properties": {
+    "results": {
+      "type": "array",
+      "description": "Array of validation check results. Must cover all activeChecks for the session.",
+      "items": {
+        "type": "object",
+        "required": ["checkId", "passed", "detail"],
+        "properties": {
+          "checkId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Which validation check this result is for (must match activeChecks)."
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "Whether the check passed."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Detailed explanation of the check result."
+          },
+          "evidenceType": {
+            "type": "string",
+            "enum": ["command_output", "ci_run", "manual_review", "external_reference"],
+            "description": "How this check was executed."
+          },
+          "command": {
+            "type": "string",
+            "description": "The command that was run (if evidenceType is command_output)."
+          },
+          "evidenceSummary": {
+            "type": "string",
+            "description": "Summary of the evidence."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

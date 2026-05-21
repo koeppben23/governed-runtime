@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_ticket",
+  "title": "flowguard_ticket",
+  "description": "Record the task/ticket description for the FlowGuard session. Clears all downstream evidence.",
+  "type": "object",
+  "required": ["text"],
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "The task or ticket description. Must be non-empty."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["user", "external"],
+      "default": "user",
+      "description": "Source of the ticket: 'user' (typed in chat) or 'external' (from issue tracker)."
+    },
+    "inputOrigin": {
+      "type": "string",
+      "enum": ["manual_text", "external_reference", "mixed"],
+      "description": "Where the text content originated."
+    },
+    "references": {
+      "type": "array",
+      "description": "External references for this ticket.",
+      "items": {
+        "$ref": "#/$defs/ExternalReference"
+      }
+    }
+  },
+  "$defs": {
+    "ExternalReference": {
+      "type": "object",
+      "required": ["ref", "type"],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "URL or identifier of the reference."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["ticket", "issue", "pr", "branch", "commit", "url", "doc", "other"],
+          "description": "Type of the reference."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional title of the reference."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source platform (e.g. 'github', 'jira')."
+        },
+        "extractedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the reference was extracted."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -5,7 +5,7 @@
  * These interfaces mirror the exact shapes defined by the OpenCode SDK
  * (`@opencode-ai/plugin` type definitions) for tool execution hooks.
  *
- * SDK source of truth: .opencode-sdk-baseline/plugin-index.d.ts
+ * SDK source of truth: .sdk-baselines/opencode/plugin-index.d.ts
  *
  * tool.execute.before:
  *   - input: { tool, sessionID, callID } (read-only identity + session metadata)

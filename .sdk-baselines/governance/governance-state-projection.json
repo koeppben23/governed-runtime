@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "governance/governance-state-projection",
+  "title": "GovernanceStateProjection Contract",
+  "description": "Pinned shape of the read-only governance state projection exposed to adapters. SSOT remains SessionState in FlowGuard core; this is a derived view.",
+  "type": "object",
+  "required": ["sessionId", "phase", "haltReason", "enforcementActive", "resumable", "riskGate"],
+  "properties": {
+    "sessionId": {
+      "type": "string",
+      "description": "Active session identifier."
+    },
+    "phase": {
+      "type": "string",
+      "description": "Current workflow phase."
+    },
+    "haltReason": {
+      "type": ["string", "null"],
+      "description": "Reason the session is halted (null if not halted)."
+    },
+    "enforcementActive": {
+      "type": "boolean",
+      "description": "Whether governance enforcement is currently active."
+    },
+    "resumable": {
+      "type": "boolean",
+      "description": "Whether the session can be resumed."
+    },
+    "riskGate": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["clear", "blocked"]
+            },
+            "code": {
+              "type": "string",
+              "description": "Blocking reason code (present when status is 'blocked')."
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "description": "Risk gate state (null when no gate is active)."
+    }
+  },
+  "additionalProperties": false
+}

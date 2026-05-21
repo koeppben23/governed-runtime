@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "governance/deny-codes",
+  "title": "FlowGuard Deny Codes Contract",
+  "description": "Pinned set of deny codes emitted by FlowGuard enforcement. Tests verify the runtime reasons registry contains at least these codes. Additions are non-breaking; removals are breaking.",
+  "type": "object",
+  "required": ["codes"],
+  "properties": {
+    "codes": {
+      "type": "array",
+      "description": "Canonical deny codes that adapters must be prepared to handle.",
+      "items": {
+        "type": "object",
+        "required": ["code", "category"],
+        "properties": {
+          "code": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": ["adapter", "identity", "phase", "policy", "evidence", "completeness", "review"]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "properties_pinned": {
+    "adapter_codes": [
+      "DISCOVERY_RESULT_MISSING",
+      "DISCOVERY_PERSIST_FAILED",
+      "PROFILE_RESOLUTION_PERSIST_FAILED",
+      "CONFIG_WRITE_FAILED",
+      "CENTRAL_POLICY_UNREADABLE",
+      "GIT_NOT_FOUND",
+      "GIT_COMMAND_FAILED",
+      "READ_FAILED",
+      "PARSE_FAILED",
+      "SCHEMA_VALIDATION_FAILED",
+      "WRITE_FAILED",
+      "NOT_GIT_REPO",
+      "WORKTREE_MISMATCH",
+      "AUDIT_PERSISTENCE_FAILED",
+      "SESSION_ERROR",
+      "REVIEWER_INVOCATION_EXHAUSTED",
+      "FINGERPRINT_FAILED",
+      "SESSION_DIR_INVALID",
+      "STATE_MISSING",
+      "STATE_UNREADABLE"
+    ],
+    "identity_codes": [
+      "DECISION_IDENTITY_REQUIRED",
+      "REGULATED_ACTOR_UNKNOWN",
+      "FOUR_EYES_ACTOR_MATCH",
+      "ACTOR_CLAIM_MISSING",
+      "ACTOR_CLAIM_UNREADABLE",
+      "ACTOR_CLAIM_INVALID",
+      "ACTOR_CLAIM_EXPIRED",
+      "ACTOR_CLAIM_PATH_EMPTY",
+      "ACTOR_IDP_MODE_REQUIRED",
+      "ACTOR_IDP_CONFIG_REQUIRED",
+      "ACTOR_ASSURANCE_INSUFFICIENT",
+      "VERIFIED_ACTOR_REQUIRED",
+      "DECISION_RECEIPT_ACTOR_MISSING"
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex/pre-tool-use-input",
+  "title": "Codex PreToolUse Hook Input",
+  "description": "Stdin JSON payload delivered to PreToolUse hooks by Codex. Based on official Codex hooks documentation.",
+  "type": "object",
+  "required": ["session_id", "hook_event_name", "tool_name", "tool_input"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "hook_event_name": {
+      "type": "string",
+      "const": "PreToolUse",
+      "description": "Always present in Codex — identifies the hook event type."
+    },
+    "model": {
+      "type": "string",
+      "description": "The model being used (always present in Codex)."
+    },
+    "permission_mode": {
+      "type": "string",
+      "enum": ["default", "full-auto"],
+      "description": "The permission mode Codex is running in."
+    },
+    "transcript_path": {
+      "type": ["string", "null"],
+      "description": "Path to the session transcript (may be null in Codex)."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Codex agent."
+    },
+    "turn_id": {
+      "type": "string",
+      "description": "Identifier for the current conversation turn."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Name of the tool being invoked (e.g. 'Bash', 'apply_patch')."
+    },
+    "tool_use_id": {
+      "type": "string",
+      "description": "Unique identifier for this specific tool use instance."
+    },
+    "tool_input": {
+      "description": "The tool's input arguments. May be object or any JSON value.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

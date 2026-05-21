@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claude-code/pre-tool-use-output",
+  "title": "Claude Code PreToolUse Hook Deny Output",
+  "description": "Stdout JSON payload to deny a tool call in Claude Code PreToolUse hooks. Exit 0 with no output means allow.",
+  "type": "object",
+  "required": ["hookSpecificOutput"],
+  "properties": {
+    "hookSpecificOutput": {
+      "type": "object",
+      "required": ["hookEventName", "permissionDecision", "permissionDecisionReason"],
+      "properties": {
+        "hookEventName": {
+          "type": "string",
+          "const": "PreToolUse",
+          "description": "Must be 'PreToolUse' for this hook event."
+        },
+        "permissionDecision": {
+          "type": "string",
+          "const": "deny",
+          "description": "Must be 'deny' to block the tool call."
+        },
+        "permissionDecisionReason": {
+          "type": "string",
+          "description": "Human-readable reason for the denial."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

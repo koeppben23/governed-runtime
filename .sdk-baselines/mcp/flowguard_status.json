@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_status",
+  "title": "flowguard_status",
+  "description": "Read the current FlowGuard session state. Returns phase, evidence summary, policy info, completeness matrix, and next action. Does NOT mutate state.",
+  "type": "object",
+  "properties": {
+    "whyBlocked": {
+      "type": "boolean",
+      "description": "Return focused blocker surface from the state machine evaluator."
+    },
+    "evidence": {
+      "type": "boolean",
+      "description": "Return per-slot evidence detail from the session completeness check."
+    },
+    "context": {
+      "type": "boolean",
+      "description": "Return actor/policy/archive context projection."
+    },
+    "readiness": {
+      "type": "boolean",
+      "description": "Return compact operational readiness projection."
+    }
+  },
+  "additionalProperties": false
+}

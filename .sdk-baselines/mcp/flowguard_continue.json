@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_continue",
+  "title": "flowguard_continue",
+  "description": "Deterministic phase dispatcher. Returns guidance on which command to execute next based on the current workflow phase.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

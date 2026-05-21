@@ -1,0 +1,15 @@
+{
+  "platform": "codex",
+  "updated": "2026-05-21T00:00:00.000Z",
+  "version": "1.0.0",
+  "description": "Codex hook protocol schemas pinned from official documentation.",
+  "source": "https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated",
+  "schemas": [
+    "pre-tool-use-input.json",
+    "pre-tool-use-output.json",
+    "post-tool-use-input.json",
+    "post-tool-use-output.json",
+    "session-start-input.json",
+    "stop-input.json"
+  ]
+}
