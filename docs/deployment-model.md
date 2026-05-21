@@ -11,7 +11,7 @@ This document describes how FlowGuard is deployed, where it runs, and how it int
 | **Deployment Type**     | Self-hosted, locally installed                                                               |
 | **Runtime Environment** | OpenCode-hosted runtime environment (same host integration model, no external Python bridge) |
 | **Installation Target** | `~/.config/opencode/` (global) or `.opencode/` (project)                                     |
-| **Network Behavior**    | No outbound connections required                                                             |
+| **Network Behavior**    | Offline-capable by default; optional features may use HTTPS or localhost hooks               |
 | **Multi-Instance**      | Not supported (single-machine, no built-in multi-user coordination)                          |
 
 ---
@@ -89,12 +89,12 @@ repository/
 
 ### Runtime Characteristics
 
-| Characteristic | Description                                           |
-| -------------- | ----------------------------------------------------- |
-| **Memory**     | Minimal (state machine is pure, no heavy computation) |
-| **CPU**        | Negligible (evaluation is sub-millisecond)            |
-| **Disk I/O**   | On state read/write only                              |
-| **Network**    | None at runtime                                       |
+| Characteristic | Description                                                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Memory**     | Minimal (state machine is pure, no heavy computation)                                                                                  |
+| **CPU**        | Negligible (evaluation is sub-millisecond)                                                                                             |
+| **Disk I/O**   | On state read/write only                                                                                                               |
+| **Network**    | None required for default workflows; `/review url=...`, remote JWKS, and Claude HTTP hook mode are explicit network-dependent surfaces |
 
 ---
 
@@ -142,7 +142,8 @@ FlowGuard integrates with OpenCode via:
 
 - Global installation in `~/.config/opencode/`
 - Per-project activation via `.opencode/` if needed
-- Local filesystem storage for all data
+- Local filesystem storage for session state, audit trails, and archives unless
+  an operator exports or copies them
 
 **Customer Responsibility:**
 
@@ -156,7 +157,7 @@ FlowGuard integrates with OpenCode via:
 
 - Artifact-based installation (no network during install)
 - `file:`-based dependency resolution
-- Full offline operation
+- Offline operation when network-dependent features are not configured or invoked
 
 **Customer Responsibility:**
 

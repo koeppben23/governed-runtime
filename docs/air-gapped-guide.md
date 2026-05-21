@@ -122,16 +122,21 @@ This writes FlowGuard artifacts to `.opencode/` within the repository.
 
 ---
 
-## Step 6: Verify No Network Dependencies
+## Step 6: Verify Offline-Capable Configuration
 
-FlowGuard itself makes no outbound network calls. All data stays on the local filesystem. The installer uses only locally provided artifacts.
+FlowGuard's default workflows are offline-capable when the installer uses only
+locally provided artifacts and network-dependent features are not configured or
+invoked. Do not use `/review url=...`, remote JWKS via `jwksUri`, or Claude Code
+HTTP hook mode in environments where outbound access or local listeners are
+prohibited.
 
 ```bash
-# Verify no network dependencies
+# Verify local installation and configuration
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
-All checks should pass without network access.
+All checks should pass without network access when local artifacts are present and
+network-dependent features are disabled.
 
 ---
 
@@ -184,7 +189,9 @@ chmod 755 ~/.config/opencode/
 
 - **Always verify checksums** before and after transfer. The checksums file uses SHA-256.
 - **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library) that is automatically installed by the FlowGuard installer.
-- **Offline-first**: FlowGuard makes no outbound network calls after installation.
+- **Offline-first**: FlowGuard requires no outbound network calls for default
+  workflows after installation when network-dependent features are not configured
+  or invoked.
 
 ---
 

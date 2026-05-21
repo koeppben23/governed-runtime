@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #309:** Align security and trust-boundary documentation with runtime
+  network behavior. FlowGuard is now described consistently as filesystem-first
+  and offline-capable by default, with explicit network-dependent exceptions for
+  `/review url=...` HTTPS content loading, remote JWKS via `jwksUri`, and Claude
+  Code HTTP hook mode's localhost listener.
+
 - **FG-QUAL-007 (Issue #307):** Split `simple-tools.ts` (1021 LOC) into focused modules: `ticket-tool.ts`, `abort-tool.ts`, and `review-tool/` subdirectory (obligation, invocation, completion, types, index). Decompose `install()` God Function (285 LOC) into named steps via `install-steps.ts` with `InstallContext` pattern. Fix 4 silent catch blocks in `http-server.ts` to log errors via `log()` and split overly broad try/catch (line 166-182) into focused error boundaries. Zero behavior change; all existing exports preserved via barrel re-exports.
 
 - **Issue #263:** Add operator-selected mandates verbosity rendering. `explicit` remains the default productive safe path, `concise` is explicit opt-in and preserves all normative anchors, and `diagnosticSummary` is restricted to recovery/status/compaction projections. Model IDs are metadata only and do not select mandate compression or create a frontier-model registry.

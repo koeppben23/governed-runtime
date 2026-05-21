@@ -164,9 +164,13 @@ FlowGuard uses `file:`-based npm dependencies for offline resolution:
 
 **Installer-managed:** The installer writes a `file:` dependency. For A1 distribution, the operator downloads the artifact and provides it to the installer. Registry-based resolution is not supported in A1 mode.
 
-### No Network Fetches at Runtime
+### Offline-Capable Runtime
 
-After installation, FlowGuard requires **no outbound network connections**. All dependencies are resolved from the local `vendor/` directory.
+After installation, FlowGuard's package dependencies resolve from the local
+`vendor/` directory and the default workflow is offline-capable. Outbound runtime
+network access occurs only when an operator explicitly invokes or configures a
+network-dependent feature, such as `/review url=...` HTTPS content loading or
+remote JWKS refresh via `identityProvider.mode=jwks` with `jwksUri`.
 
 ---
 
@@ -216,7 +220,9 @@ FlowGuard is designed for air-gapped deployment:
 2. Transfer to air-gapped environment (USB, internal artifact store)
 3. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
 
-No network access required during installation or runtime.
+No network access is required during installation or default runtime workflows
+when local artifacts are used and network-dependent features are not configured
+or invoked.
 
 ---
 
@@ -234,14 +240,14 @@ No network access required during installation or runtime.
 
 ## Customer Responsibilities
 
-| Area                      | Responsibility                                        |
-| ------------------------- | ----------------------------------------------------- |
-| **Artifact procurement**  | Download from GitHub Releases                         |
-| **Checksum verification** | Verify SHA-256 before installation                    |
-| **Artifact archival**     | Maintain rollback copies                              |
-| **Network isolation**     | Ensure no outbound connections from FlowGuard runtime |
-| **Backup**                | Archive `.opencode/` directory for disaster recovery  |
-| **Compliance mapping**    | Map FlowGuard controls to regulatory requirements     |
+| Area                      | Responsibility                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| **Artifact procurement**  | Download from GitHub Releases                                                   |
+| **Checksum verification** | Verify SHA-256 before installation                                              |
+| **Artifact archival**     | Maintain rollback copies                                                        |
+| **Network isolation**     | Disable or avoid network-dependent features where outbound access is prohibited |
+| **Backup**                | Archive `.opencode/` directory for disaster recovery                            |
+| **Compliance mapping**    | Map FlowGuard controls to regulatory requirements                               |
 
 ---
 

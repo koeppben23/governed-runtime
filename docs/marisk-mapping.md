@@ -105,7 +105,8 @@ MaRisk AT 7.4 requires access control for IT systems.
 #### FlowGuard Provides
 
 - Sessions bound to filesystem workspace and OpenCode session
-- Self-hosted execution — no network access to external services
+- Self-hosted, filesystem-first execution; no external network access is required
+  for default workflows when network-dependent features are not configured or invoked
 - Local filesystem permissions applied
 
 #### Organization Must Provide

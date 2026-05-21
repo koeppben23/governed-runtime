@@ -127,13 +127,13 @@ The following operational concerns are outside FlowGuard's scope.
 
 ### Security & Access Control
 
-| Area                       | Customer Responsibility                       |
-| -------------------------- | --------------------------------------------- |
-| **Host access**            | Control who can run FlowGuard                 |
-| **Filesystem permissions** | Protect `.opencode/` from unauthorized access |
-| **Network isolation**      | Ensure no outbound connections (air-gapped)   |
-| **Artifact integrity**     | Verify checksums before installation          |
-| **Secret management**      | Protect API keys, credentials                 |
+| Area                       | Customer Responsibility                                               |
+| -------------------------- | --------------------------------------------------------------------- |
+| **Host access**            | Control who can run FlowGuard                                         |
+| **Filesystem permissions** | Protect `.opencode/` from unauthorized access                         |
+| **Network isolation**      | Disable or avoid network-dependent features in air-gapped deployments |
+| **Artifact integrity**     | Verify checksums before installation                                  |
+| **Secret management**      | Protect API keys, credentials                                         |
 
 ### Data Management
 

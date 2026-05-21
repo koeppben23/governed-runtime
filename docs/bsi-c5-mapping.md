@@ -271,14 +271,14 @@ FlowGuard applies defensive design principles to its own operation.
 
 The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGuard neither provides nor claims to provide capabilities in these areas.
 
-| Domain                                   | Reason                                                                                        |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                              |
-| PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern. |
-| KOS — Communications Security            | FlowGuard makes no outbound network calls. All data stays on the local filesystem.            |
-| SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                       |
-| BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                            |
-| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                           |
+| Domain                                   | Reason                                                                                                                                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                                                                                                                        |
+| PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern.                                                                                           |
+| KOS — Communications Security            | FlowGuard is filesystem-first and offline-capable by default, but optional `/review` URL fetching, remote JWKS, and Claude HTTP hook mode require deployment-specific network controls. |
+| SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                                                                                                                 |
+| BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                                                                                                                      |
+| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                                                                                                                     |
 
 ---
 

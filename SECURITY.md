@@ -47,7 +47,9 @@ The following are in scope for security reports:
 - Issues requiring physical access to the host machine
 - Social engineering or phishing attacks
 - LLM prompt injection, model hallucinations, or AI safety concerns
-- Network-layer attacks (FlowGuard has no open ports)
+- Network-layer attacks against operator-enabled network surfaces. FlowGuard opens no
+  listener in the default OpenCode/plugin path, but Claude Code HTTP hook mode starts
+  an explicit localhost hook server when configured.
 - Encryption at rest for state files or audit artifacts (plaintext JSON/JSONL by design,
   with SHA-256 hash chains for tamper evidence, not confidentiality)
 
@@ -59,7 +61,11 @@ The following are in scope for security reports:
 
 ## Enterprise Security Considerations
 
-- FlowGuard operates locally with no outbound network calls
-- All data remains on the local filesystem
+- FlowGuard is filesystem-first and offline-capable by default.
+- Outbound runtime network access occurs only when explicitly configured or invoked,
+  such as `/review url=...` HTTPS content loading or remote JWKS refresh via
+  `identityProvider.mode=jwks` with `jwksUri`.
+- Session state, audit trails, and archives remain on the local filesystem unless an
+  operator exports, copies, or configures host tooling to transmit them.
 - Audit trails use SHA-256 hash chains for tamper evidence
 - Policy snapshots are immutable and SHA-256 hashed per session
