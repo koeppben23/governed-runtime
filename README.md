@@ -133,6 +133,7 @@ subagent attestation, and the `/review` evidence model.
 | **Archive**                       | Session archival with integrity verification + redacted export artifacts by default                                                                                                                                                                              |
 | **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
 | **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, OpenCode automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing                                                                                   |
+| **Network Posture**               | Filesystem-first and offline-capable by default. Network-dependent surfaces are explicit: `/review url=...` HTTPS content loading, remote JWKS via `jwksUri`, and Claude Code HTTP hook mode's localhost listener.                                               |
 
 ---
 

@@ -11,7 +11,11 @@ or full policy-control-plane platform.
 
 ## 1) System Boundary
 
-FlowGuard governs OpenCode workflow behavior inside a local workspace/session.
+FlowGuard governs host-assisted workflow behavior inside a local workspace/session.
+It is filesystem-first and offline-capable by default; optional network-dependent
+surfaces are limited to documented operator-selected features such as `/review
+url=...` HTTPS content loading, remote JWKS refresh, and Claude Code HTTP hook
+mode's localhost listener.
 
 FlowGuard does:
 
@@ -26,6 +30,8 @@ FlowGuard does not:
 - Own source control permissions, branch protections, or deployment policy.
 - Replace CI/CD systems, code review processes, or release approvals.
 - Provide a hosted control plane for centralized policy administration.
+- Provide network isolation or guarantee that optional network-dependent features
+  are disabled in a given deployment.
 
 For implementation-level boundary details, see `docs/trust-boundaries.md` and
 `docs/security-hardening.md`.
@@ -40,6 +46,7 @@ For implementation-level boundary details, see `docs/trust-boundaries.md` and
 - FlowGuard runtime code and state machine evaluation.
 - Active policy snapshot persisted at hydrate time.
 - Local filesystem availability and integrity assumptions.
+- Operator configuration for optional network-dependent features.
 
 ### Not Inherently Trusted (advisory or untrusted inputs)
 
@@ -110,6 +117,8 @@ admin/root compromise can still alter files.
 - Central policy is local-bundle based (`FLOWGUARD_POLICY_PATH`) only; no remote admin control plane.
 - Local filesystem or host compromise can alter state, audit, or archive artifacts.
 - Claim-validated actor identities are local trusted-claim files, not enterprise IAM authentication.
+- Network-dependent features (`/review url=...`, remote JWKS, Claude Code HTTP hook mode)
+  require deployment-specific network controls and risk acceptance.
 - Archive and audit controls are evidence-oriented, not immutable external storage.
 - FlowGuard does not replace CI controls, human review, change-management, or deployment
   approvals.

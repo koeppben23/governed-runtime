@@ -2,6 +2,12 @@
 
 This document defines FlowGuard's security model, trust boundaries, and fail-closed guarantees across all supported host platforms.
 
+FlowGuard is filesystem-first and offline-capable by default. Network-dependent
+surfaces are explicit: `/review url=...` performs HTTPS content loading when
+invoked, remote JWKS uses HTTPS when `identityProvider.mode=jwks` with `jwksUri`
+is configured, and Claude Code HTTP hook mode starts a localhost listener when
+operators choose that hook transport.
+
 ## Trust Boundary Architecture
 
 ```
@@ -63,7 +69,8 @@ This document defines FlowGuard's security model, trust boundaries, and fail-clo
 **Fail-closed implementation**:
 
 - Hook script: catches all exceptions, emits deny on error
-- HTTP server: catches handler errors, returns deny on internal failure
+- HTTP server: explicit localhost listener for Claude Code HTTP hooks; catches
+  handler errors and returns deny on internal failure
 - Platform override: if hook process is killed (OOM/SIGKILL), platform proceeds without governance
 
 ### Codex (Hook-Gated)

@@ -283,7 +283,7 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 1. **`flowguard-core-{version}.tgz`** — Pre-built npm pack output containing all business logic. Downloaded by operator from GitHub Releases (tag-driven publication; Releases page can be empty before first published tag).
 2. **Local vendor materialization** — Installer materializes the release artifact into the local `vendor/` path and writes a `file:`-based dependency for offline resolution.
-3. **No network fetches at runtime** — All dependencies resolved locally. Air-gapped compatible.
+3. **Offline-capable by default** — All dependencies resolve locally. Air-gapped operation is supported when network-dependent features such as `/review url=...`, remote `jwksUri`, and Claude Code HTTP hook mode are not configured or invoked.
 4. **Upgrade path** — Download new release, reinstall via `flowguard install --core-tarball ./flowguard-core-{new-version}.tgz`.
 5. **Headless operation** — `flowguard run` and `flowguard serve` are experimental wrappers. In non-interactive execution, missing safety-critical input returns explicit `BLOCKED` outcomes (no follow-up question loop). For production, use OpenCode directly (`opencode run`, `opencode serve`).
 

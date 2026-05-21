@@ -749,8 +749,12 @@ describe('docs/trust-boundaries.md', () => {
   describe('CORNER', () => {
     it('should clarify network boundary', async () => {
       const content = await fs.readFile(TRUST_BOUNDARIES_PATH, 'utf-8');
-      expect(content.toLowerCase()).toContain('not supported');
-      expect(content.toLowerCase()).toContain('no network');
+      const lower = content.toLowerCase();
+      expect(lower).toContain('offline-capable by default');
+      expect(lower).toContain('network-dependent features');
+      expect(lower).toContain('/review url=...');
+      expect(lower).toContain('remote jwks');
+      expect(lower).toContain('localhost listener');
     });
   });
 });

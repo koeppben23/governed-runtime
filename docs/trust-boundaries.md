@@ -71,18 +71,20 @@ A trust boundary is a line across which data passes between trusted and untruste
 
 ### Adapters
 
-| Property        | Trust Level | Reason                      |
-| --------------- | ----------- | --------------------------- |
-| **Persistence** | Medium      | Reads/writes filesystem     |
-| **Workspace**   | Medium      | Enumerates repository files |
-| **Git**         | Medium      | Calls external git binary   |
-| **Context**     | Medium      | Integrates with OpenCode    |
+| Property        | Trust Level | Reason                                      |
+| --------------- | ----------- | ------------------------------------------- |
+| **Persistence** | Medium      | Reads/writes filesystem                     |
+| **Workspace**   | Medium      | Enumerates repository files                 |
+| **Git**         | Medium      | Calls external git binary                   |
+| **Context**     | Medium      | Integrates with configured host runtime     |
+| **Network**     | Medium      | Optional HTTPS fetches and local hook ports |
 
 **Customer Responsibility:**
 
 - Filesystem permissions
 - Git binary availability
-- OpenCode installation integrity
+- Host runtime installation integrity
+- Network policy for optional URL review, remote JWKS, and localhost hook use
 
 ### CLI
 
@@ -117,13 +119,14 @@ A trust boundary is a line across which data passes between trusted and untruste
 - Directory protection
 - Concurrent access control
 
-### OpenCode Boundary
+### Host Runtime Boundary
 
-| Direction        | Mechanism                        | Validation               |
-| ---------------- | -------------------------------- | ------------------------ |
-| **Tool calls**   | OpenCode invokes FlowGuard tools | Tool interface contracts |
-| **State access** | Tools read/write session state   | Via adapters only        |
-| **Audit events** | Plugin records via hook          | Structured event schema  |
+| Direction        | Mechanism                                            | Validation               |
+| ---------------- | ---------------------------------------------------- | ------------------------ |
+| **Tool calls**   | Host invokes FlowGuard tools, hooks, or MCP server   | Tool interface contracts |
+| **State access** | Tools read/write session state                       | Via adapters only        |
+| **Audit events** | Plugin or hook records host tool activity            | Structured event schema  |
+| **Local hooks**  | Claude Code HTTP hook mode uses a localhost listener | Hook payload validation  |
 
 **FlowGuard Adapters Only:**
 
@@ -133,15 +136,23 @@ A trust boundary is a line across which data passes between trusted and untruste
 
 ### Network Boundary
 
-| Direction    | Status             | Implementation                |
-| ------------ | ------------------ | ----------------------------- |
-| **Outbound** | **Not Supported**  | No network calls in FlowGuard |
-| **Inbound**  | **Not Applicable** | Local process only            |
+FlowGuard is filesystem-first and offline-capable by default. Network activity is
+limited to documented, operator-selected surfaces.
+
+| Direction    | Status                     | Implementation                                                                                  |
+| ------------ | -------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Outbound** | Default: none required     | Installed dependencies resolve from local artifacts; core state-machine execution is offline    |
+| **Outbound** | Explicit `/review` input   | `/review url=...` performs HTTPS content loading after URL validation                           |
+| **Outbound** | Explicit IdP configuration | Remote JWKS refresh uses HTTPS when `identityProvider.mode=jwks` and `jwksUri` are configured   |
+| **Inbound**  | Default: none              | Standard OpenCode/plugin operation does not start a FlowGuard listener                          |
+| **Inbound**  | Explicit Claude hook mode  | Claude Code HTTP hook mode starts a localhost listener, default `127.0.0.1:18462`, when enabled |
 
 **Customer Responsibility:**
 
 - Network isolation verification
 - Firewall rules for air-gapped environments
+- Disabling or avoiding network-dependent features (`/review url=...`, remote JWKS,
+  Claude HTTP hook listener) where outbound access or local listeners are prohibited
 
 ---
 
@@ -158,12 +169,12 @@ A trust boundary is a line across which data passes between trusted and untruste
 
 ### Threats Outside Trust Boundary
 
-| Threat                  | Mitigation                     |
-| ----------------------- | ------------------------------ |
-| **Unauthorized access** | OS file permissions (customer) |
-| **Disk corruption**     | Backup and restore (customer)  |
-| **Malicious OpenCode**  | OpenCode sandbox (OpenCode)    |
-| **OS compromise**       | Host hardening (customer)      |
+| Threat                     | Mitigation                     |
+| -------------------------- | ------------------------------ |
+| **Unauthorized access**    | OS file permissions (customer) |
+| **Disk corruption**        | Backup and restore (customer)  |
+| **Malicious host runtime** | Host sandbox and OS controls   |
+| **OS compromise**          | Host hardening (customer)      |
 
 ---
 
@@ -193,11 +204,11 @@ A trust boundary is a line across which data passes between trusted and untruste
 
 ### Single-User Machine
 
-| Boundary       | Assessment              |
-| -------------- | ----------------------- |
-| **Filesystem** | Trust local user        |
-| **Network**    | Customer responsibility |
-| **OpenCode**   | Trust OpenCode runtime  |
+| Boundary       | Assessment                    |
+| -------------- | ----------------------------- |
+| **Filesystem** | Trust local user              |
+| **Network**    | Customer responsibility       |
+| **Host**       | Trust configured host runtime |
 
 ### Shared Development Machine
 
@@ -205,15 +216,15 @@ A trust boundary is a line across which data passes between trusted and untruste
 | -------------- | ----------------------- |
 | **Filesystem** | Minimize shared access  |
 | **Network**    | Customer responsibility |
-| **OpenCode**   | Per-user isolation      |
+| **Host**       | Per-user isolation      |
 
 ### Air-Gapped Environment
 
-| Boundary       | Assessment               |
-| -------------- | ------------------------ |
-| **Network**    | Physically isolated      |
-| **Filesystem** | Physical access control  |
-| **Updates**    | Manual artifact transfer |
+| Boundary       | Assessment                                                                           |
+| -------------- | ------------------------------------------------------------------------------------ |
+| **Network**    | Physically isolated; do not configure or invoke network-dependent FlowGuard features |
+| **Filesystem** | Physical access control                                                              |
+| **Updates**    | Manual artifact transfer                                                             |
 
 ---
 

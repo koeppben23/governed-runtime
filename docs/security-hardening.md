@@ -6,7 +6,9 @@ This document provides recommendations for securing FlowGuard deployments.
 
 ## Overview
 
-FlowGuard is designed to run locally with no network access. Security hardening focuses on host-level controls and operational practices.
+FlowGuard is designed to run locally and is offline-capable by default. Security
+hardening focuses on host-level controls, operational practices, and explicit
+controls for optional network-dependent features.
 
 ---
 
@@ -113,15 +115,20 @@ be updated through reviewed dependency PRs instead of mutable workflow execution
 - Configure firewall rules
 - Monitor for unauthorized connections
 
-### No Outbound Connections
+### Offline-Capable Default
 
-FlowGuard runs offline by default. If remote JWKS is configured (`identityProvider.mode = jwks` + `jwksUri`), FlowGuard performs bounded HTTPS fetches for JWKS refresh; fetch failures are fail-closed in `identityProviderMode: required`.
+FlowGuard runs offline by default. Network-dependent surfaces are explicit:
+`/review url=...` performs HTTPS content loading when invoked, remote JWKS uses
+HTTPS when `identityProvider.mode = jwks` with `jwksUri` is configured, and
+Claude Code HTTP hook mode starts a localhost listener when selected. Remote JWKS
+fetch failures are fail-closed in `identityProviderMode: required`.
 
 **Verification:**
 
 ```bash
-# Monitor for network activity during FlowGuard execution
-# (flowguard should make no network calls after install)
+# Monitor for network activity during default FlowGuard execution.
+# No outbound calls are expected unless /review URL loading, remote JWKS,
+# or other host/operator network-dependent features are configured or invoked.
 ```
 
 ---

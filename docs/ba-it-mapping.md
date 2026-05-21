@@ -156,8 +156,10 @@ BAIT § 13 requires IT operations management.
 
 #### FlowGuard Provides
 
-- Self-hosted execution — no outbound network calls
-- Local filesystem storage of all data
+- Self-hosted, filesystem-first execution with no outbound network required for
+  default workflows
+- Local filesystem storage of session state, audit trails, and archives unless an
+  operator exports or copies them
 - Offline-capable operation
 
 #### Organization Must Provide
