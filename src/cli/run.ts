@@ -1,16 +1,27 @@
 /**
  * @module cli/run
- * @description Headless wrapper for FlowGuard via OpenCode.
+ * @description Headless wrapper for FlowGuard via supported host CLIs.
  *
  * EXPERIMENTAL: This is a thin convenience wrapper.
- * For production, use OpenCode directly:
+ * For production, use host CLIs directly:
  *   opencode run "prompt"
  *   opencode serve --port 4096
+ *   claude -p "prompt" --output-format stream-json
+ *   codex --non-interactive --prompt "prompt"
  */
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { resolveHost } from './host-resolver.js';
+import { parseRunArgs, parseServeArgs } from './run-args.js';
+import {
+  HOST_COMMANDS,
+  HOST_SERVE_UNSUPPORTED,
+  resolveHostBinary,
+  type HostCommandSpec,
+} from './run-hosts.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { DEFAULT_HOST, HOST_IDS, type HostId } from '../shared/hosts.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,11 +33,13 @@ export interface RunResult {
 
 export interface HeadlessConfig {
   prompt: string;
+  host?: HostId;
   cwd?: string;
   env?: Record<string, string>;
 }
 
 export interface ServeConfig {
+  host?: HostId;
   port?: number;
   hostname?: string;
   cwd?: string;
@@ -70,13 +83,21 @@ async function waitForServer(port: number, timeoutMs: number): Promise<boolean> 
   return false;
 }
 
-function executeOpenCode(
+function executeHost(
+  binary: string,
   args: string[],
   options?: { cwd?: string; env?: Record<string, string> },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const mergedEnv = { ...process.env, ...options?.env };
-    const proc = spawn('opencode', args, {
+    let settled = false;
+    const finish = (result: { exitCode: number; stdout: string; stderr: string }) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const proc = spawn(binary, args, {
       cwd: options?.cwd ?? process.cwd(),
       env: mergedEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -93,13 +114,13 @@ function executeOpenCode(
     });
 
     proc.on('close', (code) => {
-      resolve({ exitCode: code ?? 0, stdout, stderr });
+      finish({ exitCode: code ?? 0, stdout, stderr });
     });
 
     proc.on('error', (err) => {
       stderr += err.message;
-      getAdapterLogger().error('cli', 'opencode process failed', { error: err.message });
-      resolve({ exitCode: 1, stdout, stderr });
+      getAdapterLogger().error('cli', 'host process failed', { binary, error: err.message });
+      finish({ exitCode: 1, stdout, stderr });
     });
   });
 }
@@ -113,7 +134,21 @@ export async function run(config: HeadlessConfig): Promise<RunResult> {
     return { success: false, error: 'Prompt is required' };
   }
 
-  const result = await executeOpenCode(['run', prompt], { cwd, env });
+  let host: HostId;
+  try {
+    host = (await resolveHost({ cliHost: config.host, cwd })).host;
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const spec = HOST_COMMANDS[host];
+  const mergedEnv = { ...env, FLOWGUARD_HOST_PLATFORM: host };
+  const binaryPath = await resolveHostBinary(spec.binary, mergedEnv);
+  if (!binaryPath) {
+    return { success: false, error: `Host binary not found on PATH: ${spec.binary}` };
+  }
+
+  const result = await executeHost(binaryPath, spec.buildRunArgs(prompt), { cwd, env: mergedEnv });
 
   if (result.exitCode !== 0) {
     getAdapterLogger().warn('cli', 'run command failed', {
@@ -136,6 +171,40 @@ export async function checkServer(port: number): Promise<boolean> {
   return !available;
 }
 
+function unsupportedServeResult(host: HostId, port: number): ServeResult {
+  return {
+    success: false,
+    port,
+    error: `${HOST_SERVE_UNSUPPORTED}: flowguard serve is only supported for opencode; ${host} has no verified native long-running serve mode`,
+  };
+}
+
+type ServeHostSpec = HostCommandSpec & {
+  supportsServe: true;
+  buildServeArgs(config: { port: number; hostname: string }): string[];
+};
+
+type ServeHostResolution =
+  | { ok: true; selectedHost: HostId; spec: ServeHostSpec }
+  | { ok: false; error: ServeResult };
+
+function supportsServe(spec: HostCommandSpec): spec is ServeHostSpec {
+  return spec.supportsServe === true && spec.buildServeArgs !== undefined;
+}
+
+async function resolveServeHost(
+  config: ServeConfig,
+  cwd: string,
+  port: number,
+): Promise<ServeHostResolution> {
+  const selectedHost = (await resolveHost({ cliHost: config.host, cwd })).host;
+  const spec = HOST_COMMANDS[selectedHost];
+  if (!supportsServe(spec)) {
+    return { ok: false, error: unsupportedServeResult(selectedHost, port) };
+  }
+  return { ok: true, selectedHost, spec };
+}
+
 /**
  * Start an OpenCode server in detached mode.
  *
@@ -150,18 +219,38 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
     env,
   } = config;
 
+  const resolved: ServeHostResolution = await (async () => {
+    try {
+      return await resolveServeHost(config, cwd, port);
+    } catch (err) {
+      return {
+        ok: false,
+        error: { success: false, port, error: err instanceof Error ? err.message : String(err) },
+      };
+    }
+  })();
+
+  if (!resolved.ok) return resolved.error;
+
+  const { selectedHost, spec } = resolved;
+  const mergedEnv = { ...env, FLOWGUARD_HOST_PLATFORM: selectedHost };
+  const binaryPath = await resolveHostBinary(spec.binary, mergedEnv);
+  if (!binaryPath) {
+    return { success: false, port, error: `Host binary not found on PATH: ${spec.binary}` };
+  }
+
   const inUse = await checkServer(port);
   if (inUse) {
     return { success: false, port, error: `Port ${port} is already in use` };
   }
 
-  const args = ['serve', '--port', String(port), '--hostname', host];
-  const mergedEnv = { ...process.env, ...env };
+  const args = spec.buildServeArgs({ port, hostname: host });
+  const processEnv = { ...process.env, ...mergedEnv };
 
   // Detached mode only - server runs in background
-  const serverProcess = spawn('opencode', args, {
+  const serverProcess = spawn(binaryPath, args, {
     cwd,
-    env: mergedEnv,
+    env: processEnv,
     stdio: 'ignore',
     detached: true,
   });
@@ -188,104 +277,9 @@ export async function serve(config: ServeConfig): Promise<ServeResult> {
   return { success: true, port, pid: serverProcess.pid };
 }
 
-// ─── Argument Parsing ─────────────────────────────────────────────────
-
-export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: string[] } | null {
-  const config: HeadlessConfig = { prompt: '' };
-  const errors: string[] = [];
-  const knownFlags = ['--', '--prompt', '--cwd'];
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg) continue;
-
-    if (arg.startsWith('-') && !knownFlags.includes(arg)) {
-      errors.push(`Unknown flag: ${arg}`);
-      continue;
-    }
-
-    if (arg === '--') {
-      continue;
-    }
-
-    if (arg === '--prompt') {
-      const next = argv[i + 1];
-      if (next) {
-        config.prompt = next;
-        i++;
-      } else {
-        errors.push('--prompt requires a value');
-      }
-    } else if (arg === '--cwd') {
-      const next = argv[i + 1];
-      if (next) {
-        config.cwd = next;
-        i++;
-      } else {
-        errors.push('--cwd requires a value');
-      }
-    } else if (arg && !arg.startsWith('-')) {
-      config.prompt = arg;
-    }
-  }
-
-  if (!config.prompt) {
-    errors.push('Prompt is required');
-  }
-
-  return errors.length > 0 ? null : { config, errors };
-}
-
-export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
-  const config: ServeConfig = {};
-  const errors: string[] = [];
-  const knownFlags = ['--port', '--hostname', '--cwd'];
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg) continue;
-
-    if (arg.startsWith('-') && !knownFlags.includes(arg)) {
-      errors.push(`Unknown flag: ${arg}`);
-      continue;
-    }
-
-    if (arg === '--port') {
-      const next = argv[i + 1];
-      if (next) {
-        const port = parseInt(next, 10);
-        if (Number.isNaN(port) || port < 1 || port > 65535) {
-          errors.push('--port must be 1-65535');
-        } else {
-          config.port = port;
-          i++;
-        }
-      } else {
-        errors.push('--port requires a value');
-      }
-    } else if (arg === '--hostname') {
-      const next = argv[i + 1];
-      if (next) {
-        config.hostname = next;
-        i++;
-      } else {
-        errors.push('--hostname requires a value');
-      }
-    } else if (arg === '--cwd') {
-      const next = argv[i + 1];
-      if (next) {
-        config.cwd = next;
-        i++;
-      } else {
-        errors.push('--cwd requires a value');
-      }
-    }
-  }
-
-  return errors.length > 0 ? null : { config, errors };
-}
-
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
+
+export { parseRunArgs, parseServeArgs } from './run-args.js';
 
 export function formatRunResult(result: RunResult): string {
   if (result.success) {
@@ -299,12 +293,15 @@ export function getRunUsage(): string {
 
 Headless execution wrapper (EXPERIMENTAL).
 
-For production, use OpenCode directly:
+For production, use host CLIs directly:
   opencode run "prompt"
+  claude -p "prompt" --output-format stream-json
+  codex --non-interactive --prompt "prompt"
 
 Options:
-  -- <prompt>    Command to execute
-  --cwd <dir>   Working directory`;
+  -- <prompt>       Command to execute
+  --host <host>     Host: ${HOST_IDS.join(', ')} (default: ${DEFAULT_HOST})
+  --cwd <dir>      Working directory`;
 }
 
 export function getServeUsage(): string {
@@ -312,13 +309,14 @@ export function getServeUsage(): string {
 
 Server wrapper (EXPERIMENTAL, detached mode only).
 
-For production, use OpenCode directly:
+Only OpenCode currently has verified native serve support:
   opencode serve --port 4096
 
 Options:
-  --port <num>    Port (default: ${DEFAULT_PORT})
+  --host <host>      Host: ${HOST_IDS.join(', ')} (serve supported: opencode)
+  --port <num>       Port (default: ${DEFAULT_PORT})
   --hostname <host>  Hostname (default: ${DEFAULT_HOSTNAME})
-  --cwd <dir>    Working directory`;
+  --cwd <dir>       Working directory`;
 }
 
 export async function runMain(argv: string[]): Promise<number> {

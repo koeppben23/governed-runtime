@@ -25,7 +25,9 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 ### Interactive vs Non-Interactive Execution
 
 - Interactive chat sessions may ask one precise follow-up question when required inputs are missing.
-- Non-interactive/headless execution (`flowguard run`, `flowguard serve`, OpenCode API automation) does not rely on follow-up questions.
+- Non-interactive/headless execution (`flowguard run`, `flowguard serve`, host CLI/API automation) does not rely on follow-up questions.
+- `flowguard run --host opencode|claude-code|codex` selects only the host execution process. Governance authority remains in FlowGuard MCP tools, hooks, state, policy, audit, and validated review evidence.
+- `flowguard serve` currently has verified native support only for OpenCode. Claude Code and Codex serve attempts fail closed with `HOST_SERVE_UNSUPPORTED`.
 - In headless mode, missing safety-critical input returns `BLOCKED` with required values and recovery guidance.
 
 ## Flows

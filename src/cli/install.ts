@@ -13,6 +13,7 @@ import { doctor } from './doctor-command.js';
 import { install } from './install-command.js';
 import { uninstall } from './uninstall-command.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
+import { HOST_IDS } from '../shared/hosts.js';
 import {
   type InstallScope,
   type InstallPlatform,
@@ -55,7 +56,7 @@ export { uninstall } from './uninstall-command.js';
 
 const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
 const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
-const VALID_PLATFORMS: readonly InstallPlatform[] = ['opencode', 'claude-code', 'codex'] as const;
+const VALID_PLATFORMS: readonly InstallPlatform[] = HOST_IDS;
 const VALID_ACTIONS: readonly CliAction[] = [
   'install',
   'uninstall',
@@ -87,6 +88,19 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let checksumsFile: string | undefined;
   let logMode: 'file' | 'console' | 'file+console' | undefined;
   const deprecations: string[] = [];
+
+  if (action === 'run' || action === 'serve') {
+    return {
+      args: {
+        action,
+        installScope,
+        installPlatform,
+        policyMode,
+        force,
+      },
+      deprecations,
+    };
+  }
 
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
@@ -283,11 +297,12 @@ Commands:
   uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
   run         Execute FlowGuard commands in headless mode
-  serve       Start an OpenCode server for headless operation
+  serve       Start a supported host server for headless operation
 
 Options:
   --install-scope  Where to install: global (default) or repo
-  --platform       Host platform: opencode (default), claude-code, or codex
+  --platform       Install host platform: opencode (default), claude-code, or codex
+  --host           Alias for --platform during install; runtime host for run/serve
   --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
@@ -303,8 +318,10 @@ Examples:
   npx --package ./flowguard-core-${v}.tgz flowguard install --core-tarball ./flowguard-core-${v}.tgz --install-scope repo --policy-mode regulated
   npx --package ./flowguard-core-${v}.tgz flowguard doctor
   npx --package ./flowguard-core-${v}.tgz flowguard uninstall
-  flowguard run -- "Run /hydrate policyMode=team-ci"
-  flowguard serve --port 4096 --detach
+  flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
+  flowguard run --host claude-code -- "Run /validate"
+  flowguard run --host codex -- "Run /status"
+  flowguard serve --host opencode --port 4096
 `;
 }
 

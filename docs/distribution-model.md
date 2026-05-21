@@ -47,15 +47,15 @@ The `flowguard-core-{version}.tgz` contains:
 
 ## Headless Operation
 
-FlowGuard operates within the OpenCode host runtime. Headless modes are achieved via OpenCode's native CLI interfaces:
+FlowGuard operates within a supported host runtime. Headless modes are achieved via the selected host's native CLI interface:
 
-### OpenCode Headless Modes
+### Host Headless Modes
 
-| Mode                   | Command                 | Description                         |
-| ---------------------- | ----------------------- | ----------------------------------- |
-| **Non-interactive**    | `opencode run "prompt"` | Execute single commands without TUI |
-| **HTTP API**           | `opencode serve`        | REST API server on port 4096        |
-| **ACP (Experimental)** | `opencode acp`          | STDIN/STDOUT nd-JSON protocol       |
+| Host            | Non-interactive command                          | Serve support                          |
+| --------------- | ------------------------------------------------ | -------------------------------------- |
+| **OpenCode**    | `opencode run "prompt"`                          | `opencode serve --port 4096`           |
+| **Claude Code** | `claude -p "prompt" --output-format stream-json` | Not verified; `flowguard serve` blocks |
+| **Codex**       | `codex --non-interactive --prompt "prompt"`      | Not verified; `flowguard serve` blocks |
 
 ### FlowGuard Headless Wrapper (EXPERIMENTAL)
 
@@ -63,21 +63,29 @@ FlowGuard provides a CLI wrapper for headless operation:
 
 ```bash
 # Execute FlowGuard commands non-interactively (EXPERIMENTAL)
-flowguard run -- "Run /hydrate policyMode=team-ci"
+flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
+flowguard run --host claude-code -- "Run /validate"
+flowguard run --host codex -- "Run /status"
 
-# Start an OpenCode server (EXPERIMENTAL)
-flowguard serve --port 4096
+# Start a verified native server (OpenCode only)
+flowguard serve --host opencode --port 4096
 ```
 
-**Status:** This feature is being refined. For production CI, use the official OpenCode commands directly:
+Host resolution is strict: CLI `--host` overrides `host.defaultHost` in `.opencode/flowguard.json`, which overrides the built-in default `opencode`. Invalid config and missing host binaries fail explicitly; FlowGuard never falls back to another host.
+
+`flowguard serve --host claude-code` and `flowguard serve --host codex` fail closed with `HOST_SERVE_UNSUPPORTED` until a verified native long-running serve/session mode exists for those hosts.
+
+**Status:** This feature is being refined. For production CI, use the official host commands directly:
 
 ```bash
-# Direct OpenCode usage (recommended)
+# Direct host usage (recommended)
 opencode run "Run /hydrate"
 opencode serve --port 4096
+claude -p "Run /validate" --output-format stream-json
+codex --non-interactive --prompt "Run /status"
 ```
 
-**Note:** FlowGuard requires OpenCode as its host runtime. See the [OpenCode CLI Documentation](https://opencode.ai/docs/cli/) for official commands.
+**Note:** Selecting `codex` or `claude-code` for `flowguard run` selects the host process and argument shape only. It does not prove native plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
 
 **Headless ambiguity handling:** In non-interactive automation (`flowguard run`, `flowguard serve`, `opencode run`, API-driven execution), operators must provide all required inputs up front. Missing safety-critical input returns `BLOCKED`; there is no follow-up question loop in headless mode.
 
@@ -91,9 +99,11 @@ opencode acp
 
 **Status:** Experimental — ACP is treated as a compatibility surface for editor/IDE integration.
 
-For CI/headless automation, use OpenCode directly:
+For CI/headless automation, use the host CLI directly:
 opencode run "prompt"
 opencode serve --port 4096
+claude -p "prompt" --output-format stream-json
+codex --non-interactive --prompt "prompt"
 
 FlowGuard wrappers are experimental convenience commands.
 
