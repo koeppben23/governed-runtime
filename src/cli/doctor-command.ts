@@ -9,7 +9,9 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { globalConfigPath, PersistenceError } from '../adapters/persistence.js';
 import { readConfig } from '../adapters/persistence-config.js';
+import { FlowGuardConfigSchema } from '../config/flowguard-config.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import type { HostId } from '../shared/hosts.js';
 import {
   COMMANDS,
   LEGACY_INSTRUCTION_ENTRY,
@@ -37,6 +39,9 @@ import {
   sha256,
   vendorDependency,
 } from './install-helpers.js';
+import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
+import { resolveCodexPluginRoot } from './codex-plugin-install.js';
+import { buildPlatformTrustReport } from './platform-trust-report.js';
 
 /**
  * Read a file for doctor inspection. Returns content or null.
@@ -292,11 +297,19 @@ async function checkOpencodeInstructions(
 }
 
 /** Check FlowGuard config (flat path). Scope-aware: checks only the relevant config for the scope. */
-async function checkWorkspaceConfig(scope: InstallScope): Promise<DoctorCheck[]> {
+async function checkWorkspaceConfig(
+  scope: InstallScope,
+  platform: HostId = 'opencode',
+  target?: string,
+): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const cwd = resolve('.');
 
   try {
+    if (platform !== 'opencode') {
+      return await checkPlatformWorkspaceConfig(scope, platform, target, checks);
+    }
+
     if (scope === 'global') {
       const cfgPath = globalConfigPath();
       if (!existsSync(cfgPath)) {
@@ -353,6 +366,35 @@ async function checkWorkspaceConfig(scope: InstallScope): Promise<DoctorCheck[]>
   return checks;
 }
 
+async function checkPlatformWorkspaceConfig(
+  scope: InstallScope,
+  platform: HostId,
+  target: string | undefined,
+  checks: DoctorCheck[],
+): Promise<DoctorCheck[]> {
+  const cfgPath = join(target ?? resolveTarget(scope, platform), 'flowguard.json');
+  const content = await checkedRead(cfgPath, checks);
+  if (!content) return checks;
+
+  try {
+    const parsed = FlowGuardConfigSchema.parse(JSON.parse(content));
+    const hasCustom = detectCustomConfig(parsed);
+    checks.push({
+      file: cfgPath,
+      status: 'ok',
+      detail: hasCustom ? 'config valid (customized)' : 'config valid (defaults only)',
+    });
+  } catch (err) {
+    checks.push({
+      file: cfgPath,
+      status: 'error',
+      detail: err instanceof Error ? err.message : 'malformed JSON',
+    });
+  }
+
+  return checks;
+}
+
 /** Detect if config has been customized beyond installer defaults. */
 function detectCustomConfig(config: {
   logging: { level: string };
@@ -390,15 +432,64 @@ function pushConfigError(checks: DoctorCheck[], cfgPath: string, err: unknown): 
 }
 
 export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
-  const target = resolveTarget(args.installScope);
+  const installPlatform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, installPlatform);
   const checks: DoctorCheck[] = [];
-  checks.push(...(await checkManagedArtifacts(target)));
+  if (installPlatform === 'opencode') {
+    checks.push(...(await checkManagedArtifacts(target)));
+  } else {
+    checks.push(
+      ...(await checkPlatformPluginArtifacts(installPlatform, args.installScope, target)),
+    );
+  }
   checks.push(...(await checkDependencies(target)));
-  checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
-  checks.push(...(await checkWorkspaceConfig(args.installScope)));
-  checks.push(...(await checkPluginActivation(target)));
-  checks.push(...(await checkLastSessionHandshake(args.installScope)));
+  if (installPlatform === 'opencode') {
+    checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
+  }
+  checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
+  if (installPlatform === 'opencode') {
+    checks.push(...(await checkPluginActivation(target)));
+    checks.push(...(await checkLastSessionHandshake(args.installScope)));
+  }
   checks.push(...(await checkBrokenInstall(target)));
+  checks.push(...buildPlatformTrustReport(installPlatform, args.installScope, target));
+  return checks;
+}
+
+async function checkPlatformPluginArtifacts(
+  platform: HostId,
+  scope: InstallScope,
+  target: string,
+): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const pluginRoot =
+    platform === 'claude-code'
+      ? resolveClaudeCodePluginRoot(target)
+      : resolveCodexPluginRoot(scope);
+  const requiredFiles =
+    platform === 'claude-code'
+      ? [
+          '.claude-plugin/plugin.json',
+          '.mcp.json',
+          'hooks/hooks.json',
+          'agents/flowguard-reviewer.md',
+        ]
+      : [
+          '.codex-plugin/plugin.json',
+          '.mcp.json',
+          'hooks/hooks.json',
+          'subagents/flowguard-reviewer.md',
+        ];
+
+  for (const relativePath of requiredFiles) {
+    const filePath = join(pluginRoot, relativePath);
+    checks.push({
+      file: filePath,
+      status: existsSync(filePath) ? 'ok' : 'missing',
+      detail: existsSync(filePath) ? 'configured; runtime load NOT_VERIFIED_RUNTIME' : undefined,
+    });
+  }
+
   return checks;
 }
 

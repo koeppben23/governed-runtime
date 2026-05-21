@@ -124,7 +124,21 @@ Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for
 
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
+npx --package ./flowguard-core-{version}.tgz flowguard doctor --host claude-code
+npx --package ./flowguard-core-{version}.tgz flowguard doctor --host codex
 ```
+
+`doctor --host opencode|claude-code|codex` reports host-specific installation files plus a projection-only trust/capability report. This report is diagnostic evidence only; it does not create a new runtime, approval, review, policy, or risk authority. File presence can mean `configured`, but it never proves native plugin load, active governance, trust approval, or review approval.
+
+The trust report surfaces:
+
+- Expected host capability shape and enforcement level from FlowGuard's Host Adapter contract.
+- Runtime activation as `NOT_VERIFIED_RUNTIME` unless a runtime probe has actually executed.
+- Claude/Codex reviewer agents/subagents as transport/isolation only.
+- Approval primitive as FlowGuard `/review-decision` / `flowguard_decision` with validated obligation-bound `ReviewFindings`.
+- Receipt-preservation fields, explicitly marking values not preserved by host transport instead of fabricating them.
+
+For Codex, `doctor --host codex` also reports `NOT_VERIFIED_NATIVE_LOAD`, requires `[features].plugin_hooks = true`, reminds operators to review `/hooks` trust prompts, and calls out that `PreToolUse` is a guardrail for `Bash` and `apply_patch`, not a complete security boundary.
 
 Expected output:
 
@@ -186,6 +200,15 @@ npx --yes --package "./$TARBALL" flowguard doctor --install-scope global
 ```
 
 and restart OpenCode again.
+
+For Claude Code or Codex plugin installs, uninstall uses the selected host and removes only FlowGuard-owned plugin/registration surfaces:
+
+```bash
+npx --yes --package "./$TARBALL" flowguard uninstall --host claude-code --install-scope repo
+npx --yes --package "./$TARBALL" flowguard uninstall --host codex --install-scope repo
+```
+
+Codex uninstall removes the FlowGuard plugin tree and only the FlowGuard-owned marketplace entry, preserving foreign marketplace plugins.
 
 ## Project-Bound Installation (Recommended for Teams)
 
