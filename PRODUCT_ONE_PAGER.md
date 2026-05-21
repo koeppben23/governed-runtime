@@ -2,6 +2,10 @@
 
 **AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.**
 
+FlowGuard is a host-aware governance runtime. OpenCode currently provides the
+strongest synchronous enforcement path; Claude Code and Codex are supported via
+MCP, hooks, and native packaging with hook-gated, platform-limited guarantees.
+
 ---
 
 ## The Problem
@@ -91,7 +95,7 @@ FlowGuard fills this gap without replacing existing tools.
 
 ## Getting Started
 
-FlowGuard is an OpenCode-native governance runtime. It runs locally within the AI coding assistant's session workspace with filesystem-first operation and is offline-capable by default. Network-dependent surfaces are explicit: `/review url=...` performs HTTPS content loading when invoked, remote JWKS fetches apply only when configured via `identityProvider.mode = jwks` + `jwksUri`, and Claude Code HTTP hook mode starts a localhost listener when selected.
+FlowGuard is a host-aware governance runtime. It runs locally within the selected host workspace with filesystem-first operation and is offline-capable by default. Network-dependent surfaces are explicit: `/review url=...` performs HTTPS content loading when invoked, remote JWKS fetches apply only when configured via `identityProvider.mode = jwks` + `jwksUri`, and Claude Code HTTP hook mode starts a localhost listener when selected.
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 

@@ -1,6 +1,10 @@
 # FlowGuard Documentation
 
-Welcome to the FlowGuard documentation. FlowGuard is a deterministic, fail-closed workflow engine for AI-assisted software delivery within OpenCode.
+Welcome to the FlowGuard documentation. FlowGuard is a host-aware, deterministic,
+fail-closed workflow engine for AI-assisted software delivery. OpenCode currently
+provides the strongest synchronous enforcement path; Claude Code and Codex are
+supported through MCP, hooks, and native packaging with hook-gated,
+platform-limited guarantees.
 
 ## Getting Started
 

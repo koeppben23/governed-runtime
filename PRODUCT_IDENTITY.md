@@ -2,6 +2,11 @@
 
 AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.
 
+FlowGuard is a host-aware governance runtime. It originated with OpenCode as the
+strongest synchronous enforcement path and now supports Claude Code and Codex
+through MCP, hooks, and native packaging with hook-gated, platform-limited
+guarantees.
+
 ---
 
 ## Executive Summary
@@ -61,8 +66,9 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 
 ### Enterprise Integration
 
-- **OpenCode-native** — TypeScript architecture, runs within the OpenCode host runtime
-- **Pipeline-ready** — headless mode via OpenCode SDK (`POST /session/:id/command`)
+- **Host-aware** — TypeScript governance runtime for supported host environments; OpenCode currently provides the strongest synchronous enforcement path
+- **Multi-host packaging** — Claude Code and Codex are supported through MCP, hooks, and native plugin packaging with hook-gated, platform-limited guarantees
+- **Pipeline-ready** — headless mode via supported host CLIs and OpenCode SDK (`POST /session/:id/command`)
 - **Profile auto-detection** — repository signals (pom.xml, angular.json, tsconfig.json) resolve the right profile
 - **Extensible** — register custom profiles, reason codes, and check executors without modifying core code
 - **Self-hosted** — runs locally with filesystem-first operation. Optional remote JWKS fetches occur only when `identityProvider.mode = jwks` with `jwksUri`; otherwise runtime behavior is offline.
@@ -265,13 +271,13 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 | **1. State Model**         | Zod schemas for all evidence types, phases, events                                                                                                       | `state/evidence.ts`, `state/schema.ts`                                          |
 | **2. Machine**             | Pure transition table, guards, evaluator                                                                                                                 | `machine/topology.ts`, `guards.ts`, `commands.ts`, `evaluate.ts`                |
 | **3. Rails**               | Thin orchestrators for each command                                                                                                                      | `rails/hydrate.ts`, `ticket.ts`, `plan.ts`, etc. (10 files)                     |
-| **4. Adapters**            | I/O boundary (filesystem, git, workspace registry, OpenCode context)                                                                                     | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
+| **4. Adapters**            | I/O boundary (filesystem, git, workspace registry, host context)                                                                                         | `adapters/persistence.ts`, `workspace.ts`, `git.ts`, `binding.ts`, `context.ts` |
 | **5. Config**              | Extension points, per-worktree config schema                                                                                                             | `config/policy.ts`, `profile.ts`, `reasons.ts`, `flowguard-config.ts`           |
 | **6. Logging**             | Structured logging (logger interface + factories)                                                                                                        | `logging/logger.ts`                                                             |
 | **7. Audit**               | Hash chain, query, summary, completeness matrix                                                                                                          | `audit/types.ts`, `integrity.ts`, `query.ts`, `summary.ts`, `completeness.ts`   |
 | **8. Discovery**           | Repo discovery (6 collectors + orchestrator + Zod types)                                                                                                 | `discovery/collectors/*.ts`, `discovery/orchestrator.ts`, `discovery/types.ts`  |
 | **9. Archive**             | Archive manifest types, verification                                                                                                                     | `archive/types.ts`                                                              |
-| **10. Integration**        | OpenCode custom tools + plugin (thin wrappers)                                                                                                           | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
+| **10. Integration**        | Host integration surfaces, including OpenCode custom tools + plugin (thin wrappers)                                                                      | `integration/tools.ts`, `plugin.ts`, `index.ts`                                 |
 | **11. CLI**                | Installer (install/uninstall/doctor)                                                                                                                     | `cli/install.ts`, `cli/templates.ts`                                            |
 | **12. CLI (experimental)** | Headless wrappers: `flowguard run`, `flowguard serve` — for non-interactive CI/CD use. Not for production; use `opencode run`/`opencode serve` directly. | `cli/run.ts`                                                                    |
 
@@ -409,6 +415,6 @@ The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable
 ---
 
 **Version:** 1.2.0-rc.3
-_Architecture: TypeScript, OpenCode-native, Zero-Bridge_
+_Architecture: TypeScript, host-aware, OpenCode synchronous path, Zero-Bridge_
 _Distribution: Pre-built proprietary artifact (GitHub Releases)_
 _Last Updated: 2026-04-27_

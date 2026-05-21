@@ -4,7 +4,7 @@ Thank you for your interest in contributing to FlowGuard!
 
 ## Project Overview
 
-FlowGuard is a deterministic, fail-closed workflow engine for AI-assisted software delivery built with TypeScript. It enforces explicit phases, evidence gates, audit trails, and policy enforcement within OpenCode.
+FlowGuard is a host-aware, deterministic, fail-closed workflow engine for AI-assisted software delivery built with TypeScript. It enforces explicit phases, evidence gates, audit trails, and policy decisions across supported host surfaces. OpenCode currently provides the strongest synchronous enforcement path; Claude Code and Codex are hook-gated and platform-limited.
 
 ## Architecture
 
@@ -17,13 +17,13 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Key Layers
 
-| Layer          | Purpose                                      | Rules                                                              |
-| -------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `state/`       | Core domain model (Zod schemas, types)       | Leaf module - may import discovery/types only                      |
-| `machine/`     | State machine (topology, guards, evaluation) | Only imports state/                                                |
-| `rails/`       | Workflow orchestrators (stateless)           | No integration/ imports, prefer adapter I/O                        |
-| `adapters/`    | File I/O, git, workspace management          | May import config/, discovery/, archive/, state/, machine/, rails/ |
-| `integration/` | OpenCode tool bindings                       | Entry point - may import any layer                                 |
+| Layer          | Purpose                                         | Rules                                                              |
+| -------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| `state/`       | Core domain model (Zod schemas, types)          | Leaf module - may import discovery/types only                      |
+| `machine/`     | State machine (topology, guards, evaluation)    | Only imports state/                                                |
+| `rails/`       | Workflow orchestrators (stateless)              | No integration/ imports, prefer adapter I/O                        |
+| `adapters/`    | File I/O, git, workspace management             | May import config/, discovery/, archive/, state/, machine/, rails/ |
+| `integration/` | Host integration surfaces and OpenCode bindings | Entry point - may import any layer                                 |
 
 ## Development Setup
 
