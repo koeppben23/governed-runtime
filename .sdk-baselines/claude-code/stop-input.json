@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claude-code/stop-input",
+  "title": "Claude Code Stop Hook Input",
+  "description": "Stdin JSON payload for Stop hooks. Session lifecycle event fired when the agent stops.",
+  "type": "object",
+  "required": ["session_id"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "transcript_path": {
+      "type": "string",
+      "description": "Path to the session transcript file."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Claude Code agent."
+    },
+    "stop_hook_active": {
+      "type": "boolean",
+      "description": "Whether the stop hook is actively processing."
+    }
+  },
+  "additionalProperties": true
+}

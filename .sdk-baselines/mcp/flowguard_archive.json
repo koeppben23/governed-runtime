@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_archive",
+  "title": "flowguard_archive",
+  "description": "Archive a completed FlowGuard session as a tar.gz file. Only works on terminal sessions.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

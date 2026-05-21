@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_review",
+  "title": "flowguard_review",
+  "description": "Start the standalone review flow. Transitions READY -> REVIEW -> REVIEW_COMPLETE. Only allowed in READY phase.",
+  "type": "object",
+  "properties": {
+    "inputOrigin": {
+      "type": "string",
+      "enum": ["manual_text", "external_reference", "mixed", "pr", "branch"],
+      "description": "Where the review content originated."
+    },
+    "references": {
+      "type": "array",
+      "description": "External references for this review.",
+      "items": {
+        "$ref": "#/$defs/ExternalReference"
+      }
+    },
+    "text": {
+      "type": "string",
+      "description": "Direct text blob to analyze during review."
+    },
+    "prNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "GitHub PR number to load and analyze."
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch name to load and analyze."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL to fetch and analyze during review."
+    },
+    "reviewFindings": {
+      "$ref": "#/$defs/ReviewFindings",
+      "description": "Complete findings from flowguard-reviewer subagent analysis."
+    }
+  },
+  "$defs": {
+    "ExternalReference": {
+      "type": "object",
+      "required": ["ref", "type"],
+      "properties": {
+        "ref": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["ticket", "issue", "pr", "branch", "commit", "url", "doc", "other"]
+        },
+        "title": { "type": "string" },
+        "source": { "type": "string" },
+        "extractedAt": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "ReviewFindings": {
+      "type": "object",
+      "description": "Structured findings from the flowguard-reviewer subagent.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

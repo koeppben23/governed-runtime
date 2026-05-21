@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_plan",
+  "title": "flowguard_plan",
+  "description": "Submit a plan OR record an independent review verdict. Mode A: provide planText. Mode B: provide reviewVerdict with reviewFindings.",
+  "type": "object",
+  "properties": {
+    "planText": {
+      "type": "string",
+      "description": "Plan body text (markdown). Required for Mode A and when reviewVerdict is 'changes_requested'."
+    },
+    "reviewVerdict": {
+      "type": "string",
+      "enum": ["approve", "changes_requested"],
+      "description": "Independent review verdict. Omit for initial plan submission."
+    },
+    "reviewFindings": {
+      "$ref": "#/$defs/ReviewFindings",
+      "description": "Structured review findings from independent review."
+    },
+    "reviewerUnavailable": {
+      "type": "boolean",
+      "description": "Set to true when the reviewer subagent cannot be invoked."
+    }
+  },
+  "$defs": {
+    "ReviewFindings": {
+      "type": "object",
+      "description": "Structured findings from the flowguard-reviewer subagent.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

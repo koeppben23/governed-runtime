@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "governance/enforcement-decision",
+  "title": "EnforcementDecision Contract",
+  "description": "Pinned shape of the discriminated union for pre-tool enforcement decisions. BlockDecision | AllowDecision.",
+  "oneOf": [
+    {
+      "type": "object",
+      "title": "BlockDecision",
+      "required": ["blocked", "reason", "code"],
+      "properties": {
+        "blocked": { "type": "boolean", "const": true },
+        "reason": { "type": "string", "description": "Human-readable block reason." },
+        "code": { "type": "string", "description": "Machine-readable deny code." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "AllowDecision",
+      "required": ["blocked"],
+      "properties": {
+        "blocked": { "type": "boolean", "const": false },
+        "modifiedArgs": {
+          "type": "object",
+          "description": "Optional modified arguments for arg mutation.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

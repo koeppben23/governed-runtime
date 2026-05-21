@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claude-code/post-tool-use-input",
+  "title": "Claude Code PostToolUse Hook Input",
+  "description": "Stdin JSON payload delivered to PostToolUse hooks by Claude Code.",
+  "type": "object",
+  "required": ["session_id", "tool_name", "tool_input"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "transcript_path": {
+      "type": "string",
+      "description": "Path to the session transcript file."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Claude Code agent."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Name of the tool that was invoked."
+    },
+    "tool_input": {
+      "type": "object",
+      "description": "The tool's input arguments.",
+      "additionalProperties": true
+    },
+    "tool_result": {
+      "description": "The tool's execution result (string or structured)."
+    }
+  },
+  "additionalProperties": true
+}

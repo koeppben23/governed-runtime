@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_decision",
+  "title": "flowguard_decision",
+  "description": "Record a human review decision at a User Gate (PLAN_REVIEW, EVIDENCE_REVIEW, or ARCH_REVIEW).",
+  "type": "object",
+  "required": ["verdict"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "changes_requested", "reject"],
+      "description": "Review verdict. 'approve' advances, 'changes_requested' returns to revision, 'reject' restarts."
+    },
+    "rationale": {
+      "type": "string",
+      "default": "",
+      "description": "Reason for the decision. Recorded in audit trail."
+    }
+  },
+  "additionalProperties": false
+}

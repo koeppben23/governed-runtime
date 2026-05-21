@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_hydrate",
+  "title": "flowguard_hydrate",
+  "description": "Bootstrap or reload the FlowGuard session. Creates a new session if none exists, or returns the existing session unchanged except explicit claimedTaskClass risk recovery.",
+  "type": "object",
+  "properties": {
+    "policyMode": {
+      "type": "string",
+      "enum": ["solo", "team", "team-ci", "regulated"],
+      "description": "FlowGuard policy mode. When omitted, reads from repo config, then falls back to 'solo'."
+    },
+    "profileId": {
+      "type": "string",
+      "default": "baseline",
+      "description": "Governance profile ID. Defaults to 'baseline'."
+    },
+    "claimedTaskClass": {
+      "type": "string",
+      "enum": ["TRIVIAL", "STANDARD", "HIGH-RISK"],
+      "description": "Agent/operator risk-classification claim. Runtime still computes the minimum class."
+    }
+  },
+  "additionalProperties": false
+}

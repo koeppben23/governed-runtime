@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex/stop-input",
+  "title": "Codex Stop Hook Input",
+  "description": "Stdin JSON payload for Stop hooks in Codex. Includes stop_hook_active and last_assistant_message.",
+  "type": "object",
+  "required": ["session_id", "hook_event_name"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "hook_event_name": {
+      "type": "string",
+      "const": "Stop",
+      "description": "Always present in Codex."
+    },
+    "model": {
+      "type": "string",
+      "description": "The model being used."
+    },
+    "permission_mode": {
+      "type": "string",
+      "enum": ["default", "full-auto"]
+    },
+    "transcript_path": {
+      "type": ["string", "null"],
+      "description": "Path to the session transcript (may be null)."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Codex agent."
+    },
+    "turn_id": {
+      "type": "string",
+      "description": "Identifier for the current conversation turn."
+    },
+    "stop_hook_active": {
+      "type": "boolean",
+      "description": "Whether the stop hook is actively processing."
+    },
+    "last_assistant_message": {
+      "type": ["string", "null"],
+      "description": "The last message from the assistant before stop."
+    }
+  },
+  "additionalProperties": true
+}

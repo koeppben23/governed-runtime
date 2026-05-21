@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_abort_session",
+  "title": "flowguard_abort_session",
+  "description": "Emergency termination of the FlowGuard session. Irreversible.",
+  "type": "object",
+  "properties": {
+    "reason": {
+      "type": "string",
+      "default": "Session aborted by user",
+      "description": "Reason for aborting. Recorded in audit trail."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "governance/host-adapter-interface",
+  "title": "HostAdapter Interface Contract",
+  "description": "Pinned shape of the HostAdapter interface (HAI). The single contract between FlowGuard governance and any host platform. Changes here indicate breaking adapter contract drift.",
+  "type": "object",
+  "required": [
+    "platform",
+    "capabilities",
+    "enforcementLevel",
+    "getSessionId",
+    "getWorkingDirectory",
+    "getWorktree",
+    "initialize",
+    "validateCapabilities",
+    "shutdown",
+    "deliverBlockDecision",
+    "deliverArgMutation",
+    "mutateToolResult",
+    "spawnReviewer",
+    "isReviewerSupported",
+    "log"
+  ],
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": ["opencode", "claude-code", "codex"],
+      "description": "Platform identifier for audit and diagnostics."
+    },
+    "capabilities": {
+      "$ref": "#/$defs/HostCapabilities"
+    },
+    "enforcementLevel": {
+      "type": "string",
+      "enum": ["synchronous", "hook_gated", "advisory"],
+      "description": "Derived enforcement level based on host capabilities."
+    },
+    "getSessionId": { "type": "string", "const": "() => string" },
+    "getWorkingDirectory": { "type": "string", "const": "() => string" },
+    "getWorktree": { "type": "string", "const": "() => string" },
+    "initialize": { "type": "string", "const": "() => Promise<void>" },
+    "validateCapabilities": {
+      "type": "string",
+      "const": "() => Promise<CapabilityValidationResult>"
+    },
+    "shutdown": { "type": "string", "const": "() => Promise<void>" },
+    "deliverBlockDecision": { "type": "string", "const": "(event, decision) => void" },
+    "deliverArgMutation": { "type": "string", "const": "(event, args) => void" },
+    "mutateToolResult": { "type": "string", "const": "(event, mutation) => void" },
+    "spawnReviewer": {
+      "type": "string",
+      "const": "(config) => Promise<HostReviewerResult | null>"
+    },
+    "isReviewerSupported": { "type": "string", "const": "() => boolean" },
+    "log": { "type": "string", "const": "(level, message, data?) => void" },
+    "injectCompactionContext": {
+      "type": "string",
+      "const": "(context) => void",
+      "description": "Optional."
+    }
+  },
+  "$defs": {
+    "HostCapabilities": {
+      "type": "object",
+      "required": [
+        "preToolBlock",
+        "argMutation",
+        "outputReplacement",
+        "contextInjection",
+        "reviewerSpawn",
+        "compactionInjection"
+      ],
+      "properties": {
+        "preToolBlock": { "type": "boolean" },
+        "argMutation": { "type": "boolean" },
+        "outputReplacement": { "type": "boolean" },
+        "contextInjection": { "type": "boolean" },
+        "reviewerSpawn": { "type": "boolean" },
+        "compactionInjection": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

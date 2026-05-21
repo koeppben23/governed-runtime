@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_implement",
+  "title": "flowguard_implement",
+  "description": "Record implementation evidence OR submit implementation review verdict. Mode A: no reviewVerdict. Mode B: provide reviewVerdict.",
+  "type": "object",
+  "properties": {
+    "reviewVerdict": {
+      "type": "string",
+      "enum": ["approve", "changes_requested"],
+      "description": "Implementation review verdict. Omit to record implementation evidence."
+    },
+    "reviewFindings": {
+      "$ref": "#/$defs/ReviewFindings",
+      "description": "Structured review findings from independent review."
+    },
+    "reviewerUnavailable": {
+      "type": "boolean",
+      "description": "Set to true when the reviewer subagent cannot be invoked."
+    }
+  },
+  "$defs": {
+    "ReviewFindings": {
+      "type": "object",
+      "description": "Structured findings from the flowguard-reviewer subagent.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

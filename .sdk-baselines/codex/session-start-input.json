@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex/session-start-input",
+  "title": "Codex SessionStart Hook Input",
+  "description": "Stdin JSON payload for SessionStart hooks in Codex. Contains source field indicating startup type.",
+  "type": "object",
+  "required": ["session_id", "hook_event_name"],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier."
+    },
+    "hook_event_name": {
+      "type": "string",
+      "const": "SessionStart",
+      "description": "Always present in Codex."
+    },
+    "model": {
+      "type": "string",
+      "description": "The model being used."
+    },
+    "permission_mode": {
+      "type": "string",
+      "enum": ["default", "full-auto"]
+    },
+    "transcript_path": {
+      "type": ["string", "null"],
+      "description": "Path to the session transcript (may be null)."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Working directory of the Codex agent."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["startup", "resume", "clear"],
+      "description": "The type of session start event."
+    }
+  },
+  "additionalProperties": true
+}
