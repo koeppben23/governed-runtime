@@ -37,6 +37,7 @@ import {
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
 } from './shared/phase-gate.js';
+import { assessObligationEscalation } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { ensureWorkspace, sessionDir } from '../adapters/workspace/index.js';
 import type { AuditEvent } from '../state/evidence-audit.js';
@@ -135,6 +136,16 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
     await appendAuditEvent(resolution.sessionDir, auditEvent);
   } catch {
     // Non-blocking — audit failure does not affect response.
+  }
+
+  // Gap 4 mitigation: escalating warnings for pending review obligations.
+  const escalation = assessObligationEscalation(
+    resolution.state,
+    isMutatingHostTool(tool_name.toLowerCase()),
+    now,
+  );
+  if (escalation.message) {
+    log(escalation.message);
   }
 
   return { decision: 'allow' };

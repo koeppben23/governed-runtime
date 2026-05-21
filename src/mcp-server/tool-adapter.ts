@@ -56,6 +56,28 @@ function toMcpError(code: string, message: string): CallToolResult {
   };
 }
 
+// --- Arg Sanitization (Gap 1 Mitigation) ---
+
+/**
+ * Sanitize tool arguments before execution.
+ *
+ * Removes null-valued keys that some models (notably DeepSeek R1) inject
+ * into tool call arguments. On out-of-process platforms (Claude Code, Codex)
+ * we cannot mutate args via PreToolUse hooks, so sanitization happens here
+ * in the MCP server layer instead.
+ *
+ * @see https://github.com/koeppben23/governed-runtime/issues/251 (Gap 1)
+ */
+export function sanitizeNullArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value !== null) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 // --- Tool Registration ---
 
 /**
@@ -89,6 +111,9 @@ export function registerAllTools(
       async (args: Record<string, unknown>, extra) => {
         const sessionCtx = resolveContext();
 
+        // Sanitize args: strip null values injected by some models (Gap 1 mitigation).
+        const cleanArgs = sanitizeNullArgs(args);
+
         // Build ToolContext compatible with FlowGuard tool execute() signature
         const toolContext: ToolContext = {
           sessionID: `mcp-${Date.now()}`,
@@ -103,7 +128,7 @@ export function registerAllTools(
         };
 
         try {
-          const result = await toolDef.execute(args, toolContext);
+          const result = await toolDef.execute(cleanArgs, toolContext);
           return toMcpResult(result);
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
