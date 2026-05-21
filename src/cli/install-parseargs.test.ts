@@ -128,6 +128,18 @@ describe('cli/parseArgs', () => {
       expect(result).not.toBeNull();
       expect(result!.args.action).toBe('doctor');
     });
+
+    it("delegates 'run' arguments without install-parser rejection", () => {
+      const result = parseArgs(['run', '--host', 'claude-code', '--', 'Run /validate']);
+      expect(result).not.toBeNull();
+      expect(result!.args.action).toBe('run');
+    });
+
+    it("delegates 'serve' arguments without install-parser rejection", () => {
+      const result = parseArgs(['serve', '--host', 'opencode', '--port', '4096']);
+      expect(result).not.toBeNull();
+      expect(result!.args.action).toBe('serve');
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────

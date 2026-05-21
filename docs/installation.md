@@ -209,20 +209,40 @@ npm run flowguard:doctor
 
 ## Installation Options
 
-| Option                                         | Description                                             |
-| ---------------------------------------------- | ------------------------------------------------------- |
-| `--install-scope global`                       | Install to `~/.config/opencode/` (default)              |
-| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)             |
-| `--host opencode\|claude-code\|codex`          | Host alias for `--platform`                             |
-| `--platform opencode\|claude-code\|codex`      | Select host integration target                          |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`) |
-| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`    |
+| Option                                         | Description                                                                        |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `--install-scope global`                       | Install to `~/.config/opencode/` (default)                                         |
+| `--install-scope repo`                         | Install to `.opencode/` (committed to repo)                                        |
+| `--host opencode\|claude-code\|codex`          | Host alias for `--platform` during install; runtime host for `flowguard run/serve` |
+| `--platform opencode\|claude-code\|codex`      | Select host integration target                                                     |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`)                            |
+| `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 
 ## Malformed JSON Recovery
 
 When FlowGuard recovers from malformed JSON by rewriting an installer-managed config file, it first writes a timestamped `.flowguard-backup-*` file next to the original. If the backup cannot be written, install stops and does not overwrite the malformed file.
 
 Inspect the backup, repair the malformed JSON if needed, then rerun `flowguard install --force`.
+
+## Headless Runtime Host Selection
+
+`flowguard run` supports all configured hosts:
+
+```bash
+flowguard run --host opencode -- "Run /hydrate policyMode=team-ci"
+flowguard run --host claude-code -- "Run /validate"
+flowguard run --host codex -- "Run /status"
+```
+
+Host resolution is strict: CLI `--host` > `.opencode/flowguard.json` `host.defaultHost` > built-in `opencode`. Invalid config and missing host binaries fail explicitly without fallback.
+
+`flowguard serve` currently supports only OpenCode's verified native server mode:
+
+```bash
+flowguard serve --host opencode --port 4096
+```
+
+`flowguard serve --host claude-code` and `flowguard serve --host codex` fail closed with `HOST_SERVE_UNSUPPORTED` until a verified native long-running serve/session mode exists. Selecting Codex or Claude Code for `flowguard run` does not prove plugin load, hook trust, MCP activation, or governance enforcement unless those checks are verified separately.
 
 ## How It Works
 

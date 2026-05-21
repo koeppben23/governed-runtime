@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
+import { HOST_IDS } from '../shared/hosts.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,14 @@ export const FlowGuardConfigSchema = z.object({
       defaultId: z.string().optional(),
       /** Override the set of active validation checks. */
       activeChecks: z.array(z.string()).optional(),
+    })
+    .default({}),
+
+  /** Host execution configuration. Does not affect governance authority. */
+  host: z
+    .object({
+      /** Default host for flowguard run/serve when no CLI --host is provided. */
+      defaultHost: z.enum(HOST_IDS).optional(),
     })
     .default({}),
 

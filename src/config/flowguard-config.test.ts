@@ -77,6 +77,7 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.logging.level).toBe('info');
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
+      expect(result.data.host).toEqual({});
       expect(result.data.archive.redaction.mode).toBe('basic');
       expect(result.data.archive.redaction.includeRaw).toBe(false);
     }
@@ -97,6 +98,9 @@ describe('FlowGuardConfigSchema', () => {
       profile: {
         defaultId: 'typescript',
         activeChecks: ['test_quality', 'rollback_safety', 'type_coverage'],
+      },
+      host: {
+        defaultHost: 'claude-code',
       },
       archive: {
         redaction: {
@@ -121,6 +125,7 @@ describe('FlowGuardConfigSchema', () => {
         'rollback_safety',
         'type_coverage',
       ]);
+      expect(result.data.host.defaultHost).toBe('claude-code');
       expect(result.data.archive.redaction.mode).toBe('strict');
       expect(result.data.archive.redaction.includeRaw).toBe(true);
     }
@@ -138,6 +143,21 @@ describe('FlowGuardConfigSchema', () => {
       // profile defaults to empty object
       expect(result.data.profile.defaultId).toBeUndefined();
       expect(result.data.profile.activeChecks).toBeUndefined();
+      // host defaults to empty object; runtime defaults are resolved by CLI host-resolver
+      expect(result.data.host.defaultHost).toBeUndefined();
+    }
+  });
+
+  it('accepts supported host defaults', () => {
+    for (const host of ['opencode', 'claude-code', 'codex'] as const) {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        host: { defaultHost: host },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.host.defaultHost).toBe(host);
+      }
     }
   });
 
@@ -157,6 +177,14 @@ describe('FlowGuardConfigSchema', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
       logging: { level: 'trace' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid host default', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      host: { defaultHost: 'unknown-host' },
     });
     expect(result.success).toBe(false);
   });

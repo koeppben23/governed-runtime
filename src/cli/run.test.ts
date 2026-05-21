@@ -3,33 +3,76 @@
  * @description Tests for headless run/serve wrapper.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { resolveHost } from './host-resolver.js';
 import {
   parseRunArgs,
   parseServeArgs,
   formatRunResult,
   getRunUsage,
   getServeUsage,
+  run,
+  serve,
 } from './run.js';
 
+const netState = vi.hoisted(() => ({ serverRunning: false }));
+
+vi.mock('./host-resolver.js', () => ({
+  resolveHost: vi.fn(),
+}));
+
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(() => ({
-    pid: 12345,
-    kill: vi.fn(),
-    stdin: { write: vi.fn(), end: vi.fn() },
-    stdout: { on: vi.fn() },
-    stderr: { on: vi.fn() },
-    on: vi.fn(),
-  })),
+  spawn: vi.fn(() => {
+    netState.serverRunning = true;
+    return {
+      pid: 12345,
+      kill: vi.fn(),
+      unref: vi.fn(),
+      stdin: { write: vi.fn(), end: vi.fn() },
+      stdout: {
+        on: vi.fn((event: string, callback: (data: Buffer) => void) => {
+          if (event === 'data') callback(Buffer.from('host output'));
+        }),
+      },
+      stderr: { on: vi.fn() },
+      on: vi.fn((event: string, callback: (code?: number) => void) => {
+        if (event === 'close') queueMicrotask(() => callback(0));
+      }),
+    };
+  }),
 }));
 
 vi.mock('node:net', () => ({
-  createServer: vi.fn(() => ({
-    once: vi.fn(),
-    listen: vi.fn(),
-    close: vi.fn(),
-  })),
+  createServer: vi.fn(() => {
+    const handlers: Record<string, () => void> = {};
+    return {
+      once: vi.fn((event: string, callback: () => void) => {
+        handlers[event] = callback;
+      }),
+      listen: vi.fn(() => {
+        queueMicrotask(() => {
+          if (netState.serverRunning) handlers.error?.();
+          else handlers.listening?.();
+        });
+      }),
+      close: vi.fn(),
+    };
+  }),
 }));
+
+async function createExecutable(
+  name: string,
+): Promise<{ binDir: string; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'fg-host-bin-'));
+  const file = join(dir, name);
+  await writeFile(file, '#!/bin/sh\nexit 0\n', 'utf-8');
+  await chmod(file, 0o755);
+  return { binDir: dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
 
 describe('parseRunArgs', () => {
   describe('happy path', () => {
@@ -56,22 +99,34 @@ describe('parseRunArgs', () => {
       expect(result).not.toBeNull();
       expect(result?.config.cwd).toBe('/some/path');
     });
+
+    it('parses --host', () => {
+      const result = parseRunArgs(['--host', 'claude-code', '--', 'Run /validate']);
+      expect(result).not.toBeNull();
+      expect(result?.config.host).toBe('claude-code');
+      expect(result?.config.prompt).toBe('Run /validate');
+    });
   });
 
   describe('bad path', () => {
     it('returns null when prompt missing', () => {
-      const result = parseRunArgs([]);
-      expect(result).toBeNull();
+      expect(parseRunArgs([])).toBeNull();
     });
 
     it('returns null when --prompt missing value', () => {
-      const result = parseRunArgs(['--prompt']);
-      expect(result).toBeNull();
+      expect(parseRunArgs(['--prompt'])).toBeNull();
     });
 
-    it('returns error for unknown flag', () => {
-      const result = parseRunArgs(['--unknown', 'value']);
-      expect(result).toBeNull();
+    it('returns null for unknown flag', () => {
+      expect(parseRunArgs(['--unknown', 'value'])).toBeNull();
+    });
+
+    it('returns null for invalid host value', () => {
+      expect(parseRunArgs(['--host', 'unknown-host', '--', 'Run /hydrate'])).toBeNull();
+    });
+
+    it('returns null when --host is missing a value', () => {
+      expect(parseRunArgs(['--host'])).toBeNull();
     });
   });
 
@@ -87,8 +142,7 @@ describe('parseRunArgs', () => {
 describe('parseServeArgs', () => {
   describe('happy path', () => {
     it('parses defaults', () => {
-      const result = parseServeArgs([]);
-      expect(result).not.toBeNull();
+      expect(parseServeArgs([])).not.toBeNull();
     });
 
     it('parses --port', () => {
@@ -104,8 +158,18 @@ describe('parseServeArgs', () => {
     });
 
     it('parses all flags', () => {
-      const result = parseServeArgs(['--port', '8080', '--hostname', '0.0.0.0', '--cwd', '/ws']);
+      const result = parseServeArgs([
+        '--host',
+        'opencode',
+        '--port',
+        '8080',
+        '--hostname',
+        '0.0.0.0',
+        '--cwd',
+        '/ws',
+      ]);
       expect(result).not.toBeNull();
+      expect(result?.config.host).toBe('opencode');
       expect(result?.config.port).toBe(8080);
       expect(result?.config.hostname).toBe('0.0.0.0');
       expect(result?.config.cwd).toBe('/ws');
@@ -114,24 +178,169 @@ describe('parseServeArgs', () => {
 
   describe('bad path', () => {
     it('returns null when --port missing', () => {
-      const result = parseServeArgs(['--port']);
-      expect(result).toBeNull();
+      expect(parseServeArgs(['--port'])).toBeNull();
     });
 
     it('returns null when --port invalid', () => {
-      const result = parseServeArgs(['--port', 'not-a-number']);
-      expect(result).toBeNull();
+      expect(parseServeArgs(['--port', 'not-a-number'])).toBeNull();
     });
 
     it('returns null when --port out of range', () => {
-      const result = parseServeArgs(['--port', '0']);
-      expect(result).toBeNull();
+      expect(parseServeArgs(['--port', '0'])).toBeNull();
     });
 
     it('rejects unsupported --detach flag', () => {
-      const result = parseServeArgs(['--detach']);
-      expect(result).toBeNull();
+      expect(parseServeArgs(['--detach'])).toBeNull();
     });
+
+    it('returns null for invalid host value', () => {
+      expect(parseServeArgs(['--host', 'unknown-host'])).toBeNull();
+    });
+
+    it('returns null when --host is missing a value', () => {
+      expect(parseServeArgs(['--host'])).toBeNull();
+    });
+  });
+});
+
+describe('run', () => {
+  let cleanups: Array<() => Promise<void>> = [];
+
+  beforeEach(() => {
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'opencode', source: 'default' });
+    vi.mocked(spawn).mockClear();
+    netState.serverRunning = false;
+  });
+
+  afterEach(async () => {
+    for (const cleanup of cleanups) await cleanup();
+    cleanups = [];
+  });
+
+  it('uses opencode run args by default', async () => {
+    const executable = await createExecutable('opencode');
+    cleanups.push(executable.cleanup);
+
+    const result = await run({ prompt: 'do something', env: { PATH: executable.binDir } });
+
+    expect(result.success).toBe(true);
+    expect(spawn).toHaveBeenCalledWith(
+      expect.stringContaining('opencode'),
+      ['run', 'do something'],
+      expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] }),
+    );
+  });
+
+  it('spawns Claude Code with headless stream-json args', async () => {
+    const executable = await createExecutable('claude');
+    cleanups.push(executable.cleanup);
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'claude-code', source: 'cli' });
+
+    await expect(
+      run({ prompt: 'do something', host: 'claude-code', env: { PATH: executable.binDir } }),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(spawn).toHaveBeenCalledWith(
+      expect.stringContaining('claude'),
+      ['-p', 'do something', '--output-format', 'stream-json'],
+      expect.any(Object),
+    );
+  });
+
+  it('spawns Codex in non-interactive prompt mode without claiming governance activation', async () => {
+    const executable = await createExecutable('codex');
+    cleanups.push(executable.cleanup);
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'codex', source: 'cli' });
+
+    const result = await run({
+      prompt: 'do something',
+      host: 'codex',
+      env: { PATH: executable.binDir },
+    });
+
+    expect(result).toEqual({ success: true, output: 'host output' });
+    expect(spawn).toHaveBeenCalledWith(
+      expect.stringContaining('codex'),
+      ['--non-interactive', '--prompt', 'do something'],
+      expect.any(Object),
+    );
+  });
+
+  it('fails explicitly when the selected host binary is missing', async () => {
+    const result = await run({ prompt: 'do something', env: { PATH: '' } });
+
+    expect(result).toEqual({ success: false, error: 'Host binary not found on PATH: opencode' });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('fails explicitly when config resolution fails', async () => {
+    vi.mocked(resolveHost).mockRejectedValue(new Error('Repo config failed schema validation'));
+
+    await expect(run({ prompt: 'do something' })).resolves.toEqual({
+      success: false,
+      error: 'Repo config failed schema validation',
+    });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('serve', () => {
+  let cleanups: Array<() => Promise<void>> = [];
+
+  beforeEach(() => {
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'opencode', source: 'default' });
+    vi.mocked(spawn).mockClear();
+    netState.serverRunning = false;
+  });
+
+  afterEach(async () => {
+    for (const cleanup of cleanups) await cleanup();
+    cleanups = [];
+  });
+
+  it('starts opencode serve in detached mode', async () => {
+    const executable = await createExecutable('opencode');
+    cleanups.push(executable.cleanup);
+
+    const result = await serve({ port: 4096, env: { PATH: executable.binDir } });
+
+    expect(result).toEqual({ success: true, port: 4096, pid: 12345 });
+    expect(spawn).toHaveBeenCalledWith(
+      expect.stringContaining('opencode'),
+      ['serve', '--port', '4096', '--hostname', '127.0.0.1'],
+      expect.objectContaining({ detached: true, stdio: 'ignore' }),
+    );
+  });
+
+  it('blocks Claude Code serve fail-closed', async () => {
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'claude-code', source: 'cli' });
+
+    const result = await serve({ host: 'claude-code' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('HOST_SERVE_UNSUPPORTED');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('blocks Codex serve fail-closed', async () => {
+    vi.mocked(resolveHost).mockResolvedValue({ host: 'codex', source: 'cli' });
+
+    const result = await serve({ host: 'codex' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('HOST_SERVE_UNSUPPORTED');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('fails explicitly when the serve host binary is missing', async () => {
+    const result = await serve({ env: { PATH: '' } });
+
+    expect(result).toEqual({
+      success: false,
+      port: 4096,
+      error: 'Host binary not found on PATH: opencode',
+    });
+    expect(spawn).not.toHaveBeenCalled();
   });
 });
 
@@ -153,8 +362,10 @@ describe('getRunUsage', () => {
     expect(getRunUsage()).toContain('Usage:');
   });
 
-  it('mentions OpenCode directly', () => {
+  it('mentions all run host commands', () => {
     expect(getRunUsage()).toContain('opencode run');
+    expect(getRunUsage()).toContain('claude -p');
+    expect(getRunUsage()).toContain('codex --non-interactive');
   });
 });
 
@@ -163,7 +374,8 @@ describe('getServeUsage', () => {
     expect(getServeUsage()).toContain('Usage:');
   });
 
-  it('mentions detached mode only', () => {
+  it('mentions detached mode and OpenCode-only serve support', () => {
     expect(getServeUsage()).toContain('detached mode only');
+    expect(getServeUsage()).toContain('serve supported: opencode');
   });
 });

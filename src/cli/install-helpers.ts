@@ -31,13 +31,14 @@ import {
 
 import type { PolicyMode } from '../config/policy-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import type { HostId } from '../shared/hosts.js';
 import { timingSafeEqual } from 'node:crypto';
 import { hashText, hashFile } from '../shared/hashing.js';
 export { hashText as sha256 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InstallScope = 'global' | 'repo';
-export type InstallPlatform = 'opencode' | 'claude-code' | 'codex';
+export type InstallPlatform = HostId;
 
 /** Re-export canonical PolicyMode from config/policy-types. */
 export type { PolicyMode };
