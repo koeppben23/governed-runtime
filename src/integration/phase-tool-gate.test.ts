@@ -35,6 +35,10 @@ describe('phase-tool-gate', () => {
       it('T3: edit → true', () => {
         expect(isMutatingHostTool('edit')).toBe(true);
       });
+
+      it('T3b: apply_patch → true', () => {
+        expect(isMutatingHostTool('apply_patch')).toBe(true);
+      });
     });
 
     describe('HAPPY — read-only tools return false', () => {
@@ -230,11 +234,12 @@ describe('phase-tool-gate', () => {
     // ── SMOKE — constant set integrity ──────────────────────────────────
 
     describe('SMOKE — constant set integrity', () => {
-      it('T36: MUTATING_HOST_TOOLS contains exactly bash, write, edit', () => {
-        expect(MUTATING_HOST_TOOLS.size).toBe(3);
+      it('T36: MUTATING_HOST_TOOLS contains exactly bash, write, edit, apply_patch', () => {
+        expect(MUTATING_HOST_TOOLS.size).toBe(4);
         expect(MUTATING_HOST_TOOLS.has('bash')).toBe(true);
         expect(MUTATING_HOST_TOOLS.has('write')).toBe(true);
         expect(MUTATING_HOST_TOOLS.has('edit')).toBe(true);
+        expect(MUTATING_HOST_TOOLS.has('apply_patch')).toBe(true);
       });
 
       it('T37: INVESTIGATION_ONLY_PHASES contains exactly TICKET, PLAN, ARCHITECTURE', () => {
@@ -255,7 +260,7 @@ describe('phase-tool-gate', () => {
     // ── E2E — full matrix coverage ──────────────────────────────────────
 
     describe('E2E — every mutating tool × every investigation phase → blocked', () => {
-      const mutatingTools = ['bash', 'write', 'edit'] as const;
+      const mutatingTools = ['bash', 'write', 'edit', 'apply_patch'] as const;
       const investigationPhases: Phase[] = ['TICKET', 'PLAN', 'ARCHITECTURE'];
 
       for (const tool of mutatingTools) {

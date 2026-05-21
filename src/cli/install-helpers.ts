@@ -163,11 +163,11 @@ export function resolveTarget(scope: InstallScope, platform: InstallPlatform = '
   if (scope === 'global') {
     if (platform === 'claude-code')
       return process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-    if (platform === 'codex') return process.env.CODEX_CONFIG_DIR || join(homedir(), '.codex');
+    if (platform === 'codex') return join(homedir(), '.codex', 'plugins', 'flowguard');
     return process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode');
   }
   if (platform === 'claude-code') return resolve('.claude');
-  if (platform === 'codex') return resolve('.codex');
+  if (platform === 'codex') return resolve('plugins', 'flowguard');
   return resolve('.opencode');
 }
 

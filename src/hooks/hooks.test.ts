@@ -371,6 +371,10 @@ describe('pre-tool-use decision logic', () => {
       expect(isMutatingHostTool('edit')).toBe(true);
     });
 
+    it('should identify apply_patch as mutating for Codex', () => {
+      expect(isMutatingHostTool('apply_patch')).toBe(true);
+    });
+
     it('should allow bash in IMPLEMENTATION phase', () => {
       const result = isHostToolAllowedInPhase('bash', 'IMPLEMENTATION');
       expect(result.allowed).toBe(true);
@@ -390,6 +394,17 @@ describe('pre-tool-use decision logic', () => {
     it('should deny bash in PLAN phase', () => {
       const result = isHostToolAllowedInPhase('bash', 'PLAN');
       expect(result.allowed).toBe(false);
+    });
+
+    it('should deny apply_patch in PLAN phase', () => {
+      const result = isHostToolAllowedInPhase('apply_patch', 'PLAN');
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('HOST_TOOL_PHASE_DENIED');
+    });
+
+    it('should allow apply_patch in IMPLEMENTATION phase', () => {
+      const result = isHostToolAllowedInPhase('apply_patch', 'IMPLEMENTATION');
+      expect(result.allowed).toBe(true);
     });
 
     it('should deny write in ARCHITECTURE phase', () => {

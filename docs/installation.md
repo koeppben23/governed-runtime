@@ -41,9 +41,9 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
 npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
-### 2b. Initialize Claude Code Plugin Or Codex Reviewer Transport
+### 2b. Initialize Claude Code Or Codex Plugin
 
-Claude Code uses a native FlowGuard plugin package. Codex uses a native reviewer subagent file as a transport/isolation artifact only. Neither host artifact becomes review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
+Claude Code and Codex use native FlowGuard plugin packages. Host plugin artifacts are packaging, instruction, MCP, hook, and transport surfaces only; neither host artifact becomes review-governance authority. Review completion still requires validated, obligation-bound `ReviewFindings`.
 
 For Claude Code:
 
@@ -87,7 +87,36 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz
 ```
 
-This installs `subagents/flowguard-reviewer.md` under the Codex target directory.
+This installs and registers a Codex plugin through the Codex marketplace resolver contract:
+
+```text
+# repo scope
+.agents/plugins/marketplace.json      # source.source: local, source.path: ./plugins/flowguard (repo-root-relative)
+plugins/flowguard/
+
+# global scope
+~/.agents/plugins/marketplace.json    # source.source: local, source.path: ./.codex/plugins/flowguard (home-root-relative)
+~/.codex/plugins/flowguard/
+```
+
+The marketplace entry contains only `name`, `source`, `policy`, and `category`. The plugin contains `.codex-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, workflow skills, hook wrappers, the FlowGuard MCP server wrapper, `AGENTS.md`, and `subagents/flowguard-reviewer.md`. FlowGuard MCP tools, hooks, state, policy, audit, and validated review evidence remain the runtime authorities.
+
+Codex hook enforcement requires explicit native trust configuration outside the installer:
+
+```text
+[features]
+plugin_hooks = true
+```
+
+After enabling plugin hooks, review Codex `/hooks` trust prompts for the FlowGuard plugin. `PreToolUse` is a guardrail for `Bash` and `apply_patch`, not a complete security boundary. `PostToolUse` audits and contextualizes after execution; it does not prevent mutations or roll them back.
+
+Installer status meanings:
+
+- `INSTALLED_AND_REGISTERED`: the plugin tree exists and the FlowGuard-owned marketplace entry was written.
+- `INSTALLED_NOT_ACTIVATED`: the plugin tree or marketplace registration is missing.
+- `NOT_VERIFIED_NATIVE_LOAD`: Codex native plugin load was not verified by the installer.
+
+Codex cloud-only operation is out of scope for this installer because local plugin files, local MCP execution, and local hook trust are required.
 
 Set `FLOWGUARD_HOST_PLATFORM=claude-code` or `FLOWGUARD_HOST_PLATFORM=codex` for MCP/tool execution so FlowGuard emits the correct `external_instruction_pending` guidance. If the platform is ambiguous, FlowGuard fails closed or requires policy-gated `manual_attested` ReviewFindings.
 
