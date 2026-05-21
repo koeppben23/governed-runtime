@@ -29,6 +29,7 @@ import {
   safeUnlink,
   sha256,
 } from './install-helpers.js';
+import { uninstallClaudeCodePlugin, uninstallCodexPlugin } from './platform-uninstall.js';
 
 /** True if a vendor entry is a FlowGuard-owned tarball with a valid semver/pre-release version. */
 function isFlowGuardVendorArtifact(entry: string): boolean {
@@ -172,6 +173,10 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
       if (parallelConfig) {
         ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
       }
+    } else if (installPlatform === 'claude-code') {
+      ops.push(...(await uninstallClaudeCodePlugin(target)));
+    } else if (installPlatform === 'codex') {
+      ops.push(...(await uninstallCodexPlugin(args.installScope)));
     }
 
     // Remove flowguard.json config file

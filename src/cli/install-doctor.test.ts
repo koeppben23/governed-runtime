@@ -83,8 +83,42 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const allOk = checks.every((c) => c.status === 'ok');
+      const fileChecks = checks.filter((c) => !c.file.startsWith('trust://'));
+      const allOk = fileChecks.every((c) => c.status === 'ok');
       expect(allOk).toBe(true);
+    });
+
+    it('reports Claude Code trust and capability projection without claiming runtime activation', async () => {
+      const tarball = await createMockTarball();
+      await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+
+      const checks = await doctor(repoArgs({ action: 'doctor', installPlatform: 'claude-code' }));
+
+      expect(checks.some((c) => c.file.includes('.claude/flowguard-plugin'))).toBe(true);
+      const runtime = checks.find((c) => c.file === 'trust://claude-code/runtime');
+      expect(runtime?.status).toBe('warn');
+      expect(runtime?.detail).toContain('NOT_VERIFIED_RUNTIME');
+      const approval = checks.find((c) => c.file === 'trust://claude-code/approval-primitive');
+      expect(approval?.detail).toContain('FlowGuard /review-decision');
+    });
+
+    it('reports Codex trust caveats, marketplace status, and native load as not verified', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }));
+
+      const checks = await doctor(repoArgs({ action: 'doctor', installPlatform: 'codex' }));
+
+      const runtime = checks.find((c) => c.file === 'trust://codex/runtime');
+      expect(runtime?.detail).toContain('NOT_VERIFIED_NATIVE_LOAD');
+      const hooks = checks.find((c) => c.file === 'trust://codex/hook-semantics');
+      expect(hooks?.detail).toContain('[features].plugin_hooks = true');
+      expect(hooks?.detail).toContain('/hooks trust review');
+      const receipt = checks.filter((c) => c.file === 'trust://codex/receipt-preservation');
+      expect(receipt.some((c) => c.detail?.includes('not preserved by host transport'))).toBe(true);
+      const marketplace = checks.find((c) => c.file.endsWith('marketplace.json'));
+      expect(marketplace?.detail).toContain('INSTALLED_AND_REGISTERED');
     });
 
     it('HAPPY: validates instructions from opencode.jsonc with comments', async () => {
@@ -108,7 +142,7 @@ describe('cli/doctor', () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1 + 1 + 1;
+      const expectedChecks = 1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1 + 1 + 1 + 11;
       expect(checks.length).toBe(expectedChecks);
     });
   });
@@ -729,7 +763,9 @@ describe('cli/doctor', () => {
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
 
-      expect(checks.every((c) => c.status === 'ok')).toBe(true);
+      expect(
+        checks.filter((c) => !c.file.startsWith('trust://')).every((c) => c.status === 'ok'),
+      ).toBe(true);
     });
   });
 
@@ -740,7 +776,11 @@ describe('cli/doctor', () => {
 
       await install(repoArgs({ coreTarball: tarball }));
       const installedChecks = await doctor(repoArgs({ action: 'doctor' }));
-      expect(installedChecks.every((c) => c.status === 'ok')).toBe(true);
+      expect(
+        installedChecks
+          .filter((c) => !c.file.startsWith('trust://'))
+          .every((c) => c.status === 'ok'),
+      ).toBe(true);
 
       await uninstall(repoArgs({ action: 'uninstall' }));
       const uninstalledChecks = await doctor(repoArgs({ action: 'doctor' }));

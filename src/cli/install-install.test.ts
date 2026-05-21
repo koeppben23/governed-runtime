@@ -1403,6 +1403,64 @@ describe('cli/uninstall', () => {
       expect(parsed.instructions).not.toContain(entry);
     });
 
+    it('removes Claude Code plugin tree without touching foreign .claude content', async () => {
+      const tarball = await createMockTarball();
+      await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'claude-code', force: true }),
+      );
+      const foreignPath = path.join(tmpDir, '.claude', 'user-settings.json');
+      await fs.writeFile(foreignPath, '{"theme":"dark"}\n', 'utf-8');
+
+      const result = await uninstall(
+        repoArgs({ action: 'uninstall', installPlatform: 'claude-code' }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, '.claude', 'flowguard-plugin'))).toBe(false);
+      expect(await fs.readFile(foreignPath, 'utf-8')).toBe('{"theme":"dark"}\n');
+    });
+
+    it('removes Codex plugin tree and only the FlowGuard marketplace entry', async () => {
+      await fs.mkdir(path.join(tmpDir, '.agents', 'plugins'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'),
+        JSON.stringify(
+          {
+            name: 'local-dev',
+            plugins: [
+              {
+                name: 'foreign',
+                source: { source: 'local', path: './foreign' },
+                policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+                category: 'Productivity',
+              },
+            ],
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }));
+
+      const result = await uninstall(repoArgs({ action: 'uninstall', installPlatform: 'codex' }));
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, 'plugins', 'flowguard'))).toBe(false);
+      const marketplace = JSON.parse(
+        await fs.readFile(path.join(tmpDir, '.agents', 'plugins', 'marketplace.json'), 'utf-8'),
+      );
+      expect(marketplace.name).toBe('local-dev');
+      expect(marketplace.plugins).toEqual([
+        {
+          name: 'foreign',
+          source: { source: 'local', path: './foreign' },
+          policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+          category: 'Productivity',
+        },
+      ]);
+    });
+
     it('HAPPY: uninstall removes FlowGuard instruction from opencode.jsonc', async () => {
       const tarball = await createMockTarball();
       const jsoncPath = path.join(tmpDir, 'opencode.jsonc');
