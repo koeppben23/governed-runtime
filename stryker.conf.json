@@ -29,7 +29,10 @@
     "src/rails/hydrate.ts",
     "src/rails/review-decision.ts",
     "src/rails/review.ts",
-    "src/rails/ticket.ts"
+    "src/rails/ticket.ts",
+    "src/integration/plugin-risk.ts",
+    "src/integration/plugin-task-evidence.ts",
+    "src/integration/plugin-host-task-diagnostics-helpers.ts"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]

@@ -115,7 +115,7 @@ export async function acquireSessionWriteLock(
 
   while (true) {
     try {
-      await fs.writeFile(lockPath, content, { flag: 'wx' });
+      await fs.writeFile(lockPath, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
       return { release: () => releaseLock(lockPath, token) };
     } catch (err) {
       if (!isEexist(err)) throw err;
