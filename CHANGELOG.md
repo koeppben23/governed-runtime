@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `plugin-host-task-diagnostics-helpers.test.ts` (15 tests): test factory builders and constants
   - `stryker.conf.json`: mutated array extended with the 3 covered source files.
 
+- **Issue #320:** Expanded Stryker mutation scope for selected multi-platform
+  infrastructure files. Added 19 source files to mutate array across hooks/shared,
+  mcp-server, adapters, templates, and plugin-\* modules. Expanded
+  `vitest.stryker.config.ts` test includes accordingly.
+
 ### Added
 
 - **Issue #296:** Add real RFC 3161 timestamp authority support using

@@ -30,9 +30,34 @@
     "src/rails/review-decision.ts",
     "src/rails/review.ts",
     "src/rails/ticket.ts",
+
     "src/integration/plugin-risk.ts",
     "src/integration/plugin-task-evidence.ts",
-    "src/integration/plugin-host-task-diagnostics-helpers.ts"
+    "src/integration/plugin-host-task-diagnostics-helpers.ts",
+
+    "src/integration/plugin-audit.ts",
+    "src/integration/plugin-compaction.ts",
+    "src/integration/plugin-enforcement-tracking.ts",
+    "src/integration/plugin-events.ts",
+    "src/integration/plugin-helpers.ts",
+    "src/integration/plugin-logging.ts",
+    "src/integration/plugin-orchestrator.ts",
+    "src/integration/plugin-policy.ts",
+    "src/integration/plugin-workspace.ts",
+
+    "src/hooks/shared/obligation-tracker.ts",
+    "src/hooks/shared/phase-gate.ts",
+    "src/hooks/shared/platform-detect.ts",
+    "src/hooks/shared/stdin-reader.ts",
+    "src/hooks/shared/stdout-writer.ts",
+
+    "src/mcp-server/schema-converter.ts",
+    "src/mcp-server/session-resolver.ts",
+
+    "src/adapters/host-adapter.ts",
+    "src/adapters/persistence-lock.ts",
+
+    "src/templates/codex-plugin.ts"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
