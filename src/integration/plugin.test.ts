@@ -1921,5 +1921,41 @@ describe('plugin bootstrap fail-closed', () => {
         await ws.cleanup();
       }
     });
+
+    it('BAD — persisted strict TSA failure blocks next mutating tool', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await initGitRepo(ws.tmpDir);
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(
+          sessDir,
+          makeState('IMPLEMENTATION', {
+            error: {
+              code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+              message: 'Strict timestamp assurance failed for lifecycle: TSA request failed',
+              recoveryHint: 'Fix TSA connectivity or trust anchors.',
+              occurredAt: new Date().toISOString(),
+            },
+          }),
+        );
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const beforeHook = hooks['tool.execute.before']!;
+
+        await expect(
+          beforeHook(
+            { tool: 'write', sessionID, callID: 'c1' },
+            { args: { filePath: path.join(ws.tmpDir, 'README.md'), content: 'x' } },
+          ),
+        ).rejects.toThrow('TSA_TIMESTAMP_ASSURANCE_FAILED');
+      } finally {
+        await ws.cleanup();
+      }
+    });
   });
 });

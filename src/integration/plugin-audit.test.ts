@@ -11,7 +11,32 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { readState, writeState } from '../adapters/persistence.js';
+import { makeState } from '../__fixtures__.js';
 import { runAudit, type AuditDeps } from './plugin-audit.js';
+import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
+import type { TimestampAuthorityProvider } from '../audit/tsa-provider.js';
+import { PkijsTimestampVerifier } from '../audit/rfc3161-pkijs-verifier.js';
+import { makeRfc3161Fixture, makeRfc3161FixtureAuthority } from '../audit/__fixtures__/rfc3161.js';
+
+class FixtureTimestampAuthorityProvider implements TimestampAuthorityProvider {
+  constructor(
+    private readonly authority: Awaited<ReturnType<typeof makeRfc3161FixtureAuthority>>,
+  ) {}
+
+  async requestTimestamp(input: {
+    digest: Uint8Array;
+    digestAlgorithm: 'sha256';
+    tsaUrl: string;
+    timeoutMs: number;
+  }): Promise<{ tokenDerBase64: string; receivedAt: string }> {
+    const issued = await this.authority.issue({ digest: input.digest });
+    return { tokenDerBase64: issued.tokenDerBase64, receivedAt: FIXED_DECISION_AT };
+  }
+}
 
 // ─── Deps Factory ──────────────────────────────────────────────────────────
 
@@ -351,6 +376,188 @@ describe('runAudit', () => {
         block: true,
         code: 'AUDIT_PERSISTENCE_FAILED',
       });
+    });
+
+    it('strict TSA failure on critical event records evidence and enters session ERROR', async () => {
+      const sessDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-strict-tsa-'));
+      try {
+        const state = makeState('TICKET', {
+          policySnapshot: {
+            ...makeState('TICKET').policySnapshot,
+            mode: 'regulated',
+            audit: {
+              ...makeState('TICKET').policySnapshot.audit,
+              timestampAssurance: {
+                enabled: true,
+                mode: 'tsa_critical',
+                strict: true,
+                criticalEvents: ['lifecycle'],
+                tsaUrl: 'https://tsa.example.test',
+                trustAnchors: ['pem'],
+                ntpServers: ['pool.ntp.org'],
+                ntpDriftThresholdMs: 30000,
+                tsaTimeoutMs: 10000,
+              },
+            },
+          },
+        });
+        await writeState(sessDir, state);
+        const deps = makeDeps({
+          getSessionDir: vi.fn().mockReturnValue(sessDir),
+          resolveSessionPolicy: vi.fn().mockResolvedValue({
+            policy: {
+              audit: {
+                emitToolCalls: false,
+                emitTransitions: false,
+                enableChainHash: true,
+                timestampAssurance: state.policySnapshot.audit.timestampAssurance,
+              },
+              actorClassification: {},
+              mode: 'regulated',
+              requireHumanGates: true,
+            },
+            state,
+          }),
+          tsaProvider: new MockTimestampAuthorityProvider({ simulateFailure: true }),
+        });
+
+        const result = await runAudit(
+          deps,
+          'flowguard_hydrate',
+          {},
+          { phase: 'TICKET', error: false },
+          SESSION_ID,
+        );
+
+        expect(result).toMatchObject({
+          block: true,
+          code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+        });
+        expect(deps.appendAndTrack).toHaveBeenCalledWith(
+          expect.objectContaining({
+            timestampEvidence: expect.objectContaining({ status: 'tsa_failed' }),
+          }),
+          sessDir,
+          true,
+          SESSION_ID,
+        );
+        const persisted = await readState(sessDir);
+        expect(persisted?.error?.code).toBe('TSA_TIMESTAMP_ASSURANCE_FAILED');
+      } finally {
+        await fs.rm(sessDir, { recursive: true, force: true });
+      }
+    });
+
+    it('strict TSA success records real verified timestamp evidence on lifecycle event', async () => {
+      const authority = await makeRfc3161FixtureAuthority();
+      const state = makeState('TICKET', {
+        policySnapshot: {
+          ...makeState('TICKET').policySnapshot,
+          mode: 'regulated',
+          audit: {
+            ...makeState('TICKET').policySnapshot.audit,
+            timestampAssurance: {
+              enabled: true,
+              mode: 'tsa_critical',
+              strict: true,
+              criticalEvents: ['lifecycle'],
+              tsaUrl: 'https://tsa.example.test',
+              trustAnchors: [authority.trustAnchorPem],
+              ntpServers: ['pool.ntp.org'],
+              ntpDriftThresholdMs: 30000,
+              tsaTimeoutMs: 10000,
+            },
+          },
+        },
+      });
+      const deps = makeDeps({
+        resolveSessionPolicy: vi.fn().mockResolvedValue({
+          policy: {
+            audit: {
+              emitToolCalls: false,
+              emitTransitions: false,
+              enableChainHash: true,
+              timestampAssurance: state.policySnapshot.audit.timestampAssurance,
+            },
+            actorClassification: {},
+            mode: 'regulated',
+            requireHumanGates: true,
+          },
+          state,
+        }),
+        tsaProvider: new FixtureTimestampAuthorityProvider(authority),
+        timestampVerifier: new PkijsTimestampVerifier(),
+      });
+
+      const result = await runAudit(
+        deps,
+        'flowguard_hydrate',
+        {},
+        { phase: 'TICKET', error: false },
+        SESSION_ID,
+      );
+
+      expect(result).toBeUndefined();
+      expect(deps.appendAndTrack).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timestampEvidence: expect.objectContaining({
+            status: 'tsa_stamped',
+            tsa: expect.objectContaining({ verificationStatus: 'valid' }),
+          }),
+        }),
+        expect.any(String),
+        true,
+        SESSION_ID,
+      );
+    });
+
+    it('non-strict TSA failure preserves Slice 1 behavior without session ERROR', async () => {
+      const state = makeState('TICKET');
+      const deps = makeDeps({
+        resolveSessionPolicy: vi.fn().mockResolvedValue({
+          policy: {
+            audit: {
+              emitToolCalls: false,
+              emitTransitions: false,
+              enableChainHash: true,
+              timestampAssurance: {
+                enabled: true,
+                mode: 'tsa_critical',
+                strict: false,
+                criticalEvents: ['lifecycle'],
+                tsaUrl: 'https://tsa.example.test',
+                trustAnchors: ['pem'],
+                ntpServers: ['pool.ntp.org'],
+                ntpDriftThresholdMs: 30000,
+                tsaTimeoutMs: 10000,
+              },
+            },
+            actorClassification: {},
+            mode: 'regulated',
+            requireHumanGates: true,
+          },
+          state,
+        }),
+        tsaProvider: new MockTimestampAuthorityProvider({ simulateFailure: true }),
+      });
+
+      const result = await runAudit(
+        deps,
+        'flowguard_hydrate',
+        {},
+        { phase: 'TICKET', error: false },
+        SESSION_ID,
+      );
+
+      expect(result).toBeUndefined();
+      expect(deps.appendAndTrack).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timestampEvidence: expect.objectContaining({ status: 'tsa_failed' }),
+        }),
+        expect.any(String),
+        true,
+        SESSION_ID,
+      );
     });
 
     // ─── B4: missing decidedBy → error event ──────────────────────
