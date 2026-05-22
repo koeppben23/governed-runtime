@@ -35,6 +35,8 @@ import {
   type OrchestratorDeps,
 } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
+import { HttpTimestampAuthorityProvider } from '../audit/rfc3161-http-provider.js';
+import { PkijsTimestampVerifier } from '../audit/rfc3161-pkijs-verifier.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
@@ -197,6 +199,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     logError,
     cachedFingerprint: ws.cachedFingerprint,
     mode: config.policy.defaultMode ?? 'solo',
+    tsaProvider: new HttpTimestampAuthorityProvider(),
+    timestampVerifier: new PkijsTimestampVerifier(),
   };
 
   async function resolveEnforcement(
@@ -597,6 +601,15 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 stateReadable: 'false',
               },
             );
+          }
+
+          if (state.error) {
+            throw buildEnforcementError(state.error.code, state.error.message, {
+              sessionId,
+              tool: toolName,
+              recoveryHint: state.error.recoveryHint,
+              occurredAt: state.error.occurredAt,
+            });
           }
 
           const gateResult = isHostToolAllowedInPhase(toolName, state.phase);

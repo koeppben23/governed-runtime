@@ -294,6 +294,17 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+    category: 'adapter',
+    messageTemplate: 'Timestamp authority assurance failed: {message}',
+    recoverySteps: [
+      'Check TSA endpoint availability, trust anchors, and timestamp policy configuration',
+      'Inspect the audit event for the explicit timestamp verification failure reason',
+      'Retry after restoring a trusted RFC3161 timestamp authority path',
+    ],
+  },
+
+  {
     code: 'DECISION_RECEIPT_ACTOR_MISSING',
     category: 'identity',
     messageTemplate:

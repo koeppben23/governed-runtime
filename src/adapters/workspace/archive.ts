@@ -43,6 +43,7 @@ import { WorkspaceError, validateFingerprint, validateSessionId } from './types.
 import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
+import { verifyArchiveTimestampTokens } from './archive-timestamp-verification.js';
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -430,6 +431,7 @@ async function verifyAuditChainIntegrity(
   sessDir: string,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
+  state: import('../../state/schema.js').SessionState | null,
 ): Promise<void> {
   try {
     const { events, skipped } = await readAuditTrail(sessDir);
@@ -484,6 +486,13 @@ async function verifyAuditChainIntegrity(
           file: 'audit.jsonl',
         });
       }
+
+      await verifyArchiveTimestampTokens({
+        events,
+        state,
+        manifest,
+        findings,
+      });
     }
   } catch (error) {
     if (manifest.policyMode === 'regulated') {
@@ -505,6 +514,7 @@ async function verifyArchiveIntegrity(
   validSessionId: string,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
+  state: import('../../state/schema.js').SessionState | null,
 ): Promise<void> {
   if (manifest.includedFiles.length > 0) {
     const digestValues = manifest.includedFiles
@@ -553,7 +563,7 @@ async function verifyArchiveIntegrity(
     }
   }
 
-  await verifyAuditChainIntegrity(sessDir, manifest, findings);
+  await verifyAuditChainIntegrity(sessDir, manifest, findings, state);
 }
 
 async function verifyArchiveImpl(
@@ -572,6 +582,21 @@ async function verifyArchiveImpl(
   }
 
   const stateExists = await fileExists(path.join(sessDir, 'session-state.json'));
+  let state: import('../../state/schema.js').SessionState | null = null;
+  if (stateExists) {
+    try {
+      state = await readState(sessDir);
+    } catch (error) {
+      findings.push({
+        code: 'state_invalid',
+        severity: 'error',
+        message: `Session state file could not be parsed or validated: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        file: 'session-state.json',
+      });
+    }
+  }
   if (!stateExists) {
     findings.push({
       code: 'state_missing',
@@ -597,7 +622,7 @@ async function verifyArchiveImpl(
 
   await verifyManifestFiles(sessDir, manifest, findings);
   await checkUnexpectedFiles(sessDir, manifest, findings);
-  await verifyArchiveIntegrity(sessDir, fingerprint, validSessionId, manifest, findings);
+  await verifyArchiveIntegrity(sessDir, fingerprint, validSessionId, manifest, findings, state);
 
   return buildVerificationResult(findings, manifest);
 }

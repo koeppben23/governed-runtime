@@ -18,7 +18,7 @@
 
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import { DEFAULT_TIMESTAMP_ASSURANCE } from './timestamp-types.js';
-import type { TimestampAuthorityProvider } from './tsa-provider.js';
+import type { TimestampAuthorityProvider, TimestampVerifier } from './tsa-provider.js';
 import type { NtpCheckResult } from './ntp-check.js';
 import type { TimestampEvidence } from './timestamp-types.js';
 import { canonicalDigestToUint8Array } from './timestamp-verification.js';
@@ -29,6 +29,7 @@ export interface TimestampResolutionInput {
   readonly eventKind: string;
   readonly localTimestamp: string;
   readonly tsaProvider?: TimestampAuthorityProvider;
+  readonly tsaVerifier?: TimestampVerifier;
   readonly ntpResult?: NtpCheckResult;
 }
 
@@ -126,6 +127,37 @@ export async function resolveTimestampEvidence(
         timeoutMs: policy.tsaTimeoutMs ?? DEFAULT_TIMESTAMP_ASSURANCE.tsaTimeoutMs,
       });
 
+      const verification = input.tsaVerifier
+        ? await input.tsaVerifier.verifyToken({
+            tokenDerBase64: tsaResponse.tokenDerBase64,
+            expectedDigest: canonicalDigestToUint8Array(input.canonicalEventDigest),
+            digestAlgorithm: 'sha256',
+            trustAnchors: [...(policy.trustAnchors ?? [])],
+          })
+        : undefined;
+
+      if (verification?.status === 'invalid') {
+        const reason = verification.reason ?? 'invalid_timestamp_token';
+        return {
+          evidence: {
+            status: 'tsa_stamped',
+            source: 'tsa',
+            ntp: ntpEvidence,
+            tsa: {
+              tokenDerBase64: tsaResponse.tokenDerBase64,
+              receivedAt: tsaResponse.receivedAt,
+              messageImprint: input.canonicalEventDigest,
+              digestAlgorithm: 'sha256',
+              verificationStatus: 'invalid',
+              verificationReason: reason,
+            },
+            warning: [reason, ntp?.error].filter(Boolean).join('; '),
+            resolvedAt: now,
+          },
+          error: reason,
+        };
+      }
+
       return {
         evidence: {
           status: 'tsa_stamped',
@@ -136,7 +168,11 @@ export async function resolveTimestampEvidence(
             receivedAt: tsaResponse.receivedAt,
             messageImprint: input.canonicalEventDigest,
             digestAlgorithm: 'sha256',
-            verificationStatus: 'unchecked',
+            verificationStatus: verification?.status ?? 'unchecked',
+            policyOid: verification?.policyOid,
+            serialNumber: verification?.serialNumber,
+            tsaTimestamp: verification?.tsaTimestamp,
+            signerSubject: verification?.signerSubject,
           },
           warning: ntp?.error,
           resolvedAt: now,

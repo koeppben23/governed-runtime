@@ -261,6 +261,13 @@ export {
   MockTimestampVerifier,
   MOCK_TSA_FIXTURE_TOKEN,
 } from './audit/tsa-provider.js';
+export { HttpTimestampAuthorityProvider } from './audit/rfc3161-http-provider.js';
+export { PkijsTimestampVerifier } from './audit/rfc3161-pkijs-verifier.js';
+export { verifyTimestampTokensForEvents } from './audit/timestamp-token-verification.js';
+export type {
+  TimestampTokenFinding,
+  TimestampTokenVerificationResult,
+} from './audit/timestamp-token-verification.js';
 
 export { checkNtpClock } from './audit/ntp-check.js';
 export type { NtpCheckResult } from './audit/ntp-check.js';

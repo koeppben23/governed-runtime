@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue #296:** Add real RFC 3161 timestamp authority support using
+  `pkijs`/`asn1js`, including an HTTP TSA provider, cryptographic
+  TimeStampToken verification, strict timestamp-assurance session blocking,
+  and archive TSA verification findings.
+
 - **Issue #319:** Add dedicated unit coverage for `persistence-lock.ts`, including
   atomic lock acquisition, token-protected release, stale-lock recovery,
   timeout reporting, concurrent acquisition, malformed lockfiles, and
