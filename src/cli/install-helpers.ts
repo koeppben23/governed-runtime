@@ -1,165 +1,71 @@
 /**
  * @module cli/install-helpers
- * @description Types, constants, and utility functions for the FlowGuard CLI installer.
+ * @description Path resolution, tarball integrity, and file helpers for the FlowGuard CLI installer.
  *
- * Extracted from install.ts to reduce file size. Pure types and utility functions
- * with no CLI entry-point logic.
+ * Types and JSON merge logic extracted to install-types.ts and install-json.ts
+ * following FG-REL-042. This module re-exports everything for backward compatibility.
  *
- * @version v1
+ * @version v2
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
-import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { timingSafeEqual } from 'node:crypto';
+import { hashText, hashFile } from '../shared/hashing.js';
 import {
-  COMMANDS,
   CLAUDE_REVIEWER_AGENT,
   CODEX_REVIEWER_SUBAGENT,
   REVIEWER_AGENT_FILENAME,
   REVIEWER_AGENT,
   FLOWGUARD_MANDATES_BODY,
-  MANDATES_FILENAME,
-  OPENCODE_JSON_TEMPLATE,
-  PACKAGE_JSON_TEMPLATE,
-  mandatesInstructionEntry,
-  LEGACY_INSTRUCTION_ENTRY,
 } from './templates.js';
 
-import type { PolicyMode } from '../config/policy-types.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
-import type { HostId } from '../shared/hosts.js';
-import { timingSafeEqual } from 'node:crypto';
-import { hashText, hashFile } from '../shared/hashing.js';
+// ---- re-export everything from split modules for backward compatibility ----
+export type {
+  InstallScope,
+  InstallPlatform,
+  CliAction,
+  CliArgs,
+  FileOp,
+  CliResult,
+  DoctorStatus,
+  DoctorCheck,
+  PolicyMode,
+} from './install-types.js';
+export {
+  PACKAGE_VERSION,
+  FLOWGUARD_OWNED_FILES,
+  FLOWGUARD_TARBALL_PATTERN,
+  FLOWGUARD_INSTRUCTION_ENTRIES,
+  hasNonFlowGuardInstructions,
+} from './install-types.js';
+import {
+  FLOWGUARD_REVIEWER_MODEL_ENV,
+  VALID_MODEL_ID_PATTERN,
+  OPENCODE_CONFIG_FILENAMES,
+} from './install-types.js';
+export {
+  FLOWGUARD_REVIEWER_MODEL_ENV,
+  VALID_MODEL_ID_PATTERN,
+  OPENCODE_CONFIG_FILENAMES,
+} from './install-types.js';
+export {
+  parseJsonc,
+  createMalformedJsonBackup,
+  vendorDependency,
+  mergePackageJson,
+  mergeReviewerTaskPermission,
+  mergeOpencodeJson,
+  removeFromOpencodeJson,
+} from './install-json.js';
 export { hashText as sha256 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export type InstallScope = 'global' | 'repo';
-export type InstallPlatform = HostId;
+import type { InstallScope, InstallPlatform, FileOp } from './install-types.js';
 
-/** Re-export canonical PolicyMode from config/policy-types. */
-export type { PolicyMode };
+// ---- Path Resolution ----
 
-/** CLI action. */
-export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve';
-
-/** Parsed CLI arguments. */
-export interface CliArgs {
-  action: CliAction;
-  installScope: InstallScope;
-  installPlatform?: InstallPlatform;
-  policyMode: PolicyMode;
-  force: boolean;
-  coreTarball?: string;
-  checksumsFile?: string;
-  logMode?: 'file' | 'console' | 'file+console';
-}
-
-/** Result of a single file operation. */
-export interface FileOp {
-  path: string;
-  action: 'written' | 'skipped' | 'merged' | 'removed' | 'not_found';
-  reason?: string;
-}
-
-/** Result of an install/uninstall/doctor run. */
-export interface CliResult {
-  target: string;
-  ops: FileOp[];
-  errors: string[];
-  warnings: string[];
-}
-
-/** Extended doctor check status for managed artifacts. */
-export type DoctorStatus =
-  | 'ok'
-  | 'missing'
-  | 'modified'
-  | 'unmanaged'
-  | 'version_mismatch'
-  | 'instruction_missing'
-  | 'instruction_stale'
-  | 'error'
-  | 'warn';
-
-/** Status of a single doctor check. */
-export interface DoctorCheck {
-  file: string;
-  status: DoctorStatus;
-  detail?: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/**
- * Get the current package version from the VERSION file.
- * SSOT: This is the single source of truth for the version.
- * Both package.json and the release workflow validate against this value.
- */
-function getPackageVersion(): string {
-  const versionFile = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'VERSION');
-  try {
-    return readFileSync(versionFile, 'utf-8').trim();
-  } catch {
-    getAdapterLogger().error('cli', 'VERSION file not found', { versionFile });
-    throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
-  }
-}
-
-/** Cache the version so we don't re-read the file on every call. */
-let _cachedVersion: string | undefined;
-export function PACKAGE_VERSION(): string {
-  if (!_cachedVersion) {
-    _cachedVersion = getPackageVersion();
-  }
-  return _cachedVersion;
-}
-
-/** Files owned by FlowGuard that uninstall may remove. */
-export const FLOWGUARD_OWNED_FILES = [
-  MANDATES_FILENAME,
-  'tools/flowguard.ts',
-  'plugins/flowguard-audit.ts',
-  `agents/${REVIEWER_AGENT_FILENAME}`,
-  `subagents/${REVIEWER_AGENT_FILENAME}`,
-  ...Object.keys(COMMANDS).map((name) => `commands/${name}`),
-  'vendor',
-] as const;
-
-/** Canonical regex for FlowGuard tarball filenames shared by install and uninstall. */
-export const FLOWGUARD_TARBALL_PATTERN =
-  /^flowguard-core-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/;
-
-/**
- * Instruction entries that are FlowGuard-owned (not desktop-owned indicators).
- * Used by desktop-owned heuristic: any instruction NOT in this list signals desktop ownership.
- */
-export const FLOWGUARD_INSTRUCTION_ENTRIES: readonly string[] = [
-  MANDATES_FILENAME,
-  `.opencode/${MANDATES_FILENAME}`,
-  LEGACY_INSTRUCTION_ENTRY,
-];
-
-/**
- * True if the instructions array contains entries not owned by FlowGuard.
- * This signals the config is desktop-owned (e.g. Cursor, Windsurf).
- */
-export function hasNonFlowGuardInstructions(instructions: string[]): boolean {
-  return instructions.some((i) => !FLOWGUARD_INSTRUCTION_ENTRIES.includes(i));
-}
-
-// ─── Path Resolution ──────────────────────────────────────────────────────────
-
-/**
- * Resolve the target directory for install/uninstall.
- *
- * @param scope - "global" resolves to $OPENCODE_CONFIG_DIR or ~/.config/opencode/.
- *                "repo" resolves to ./.opencode/.
- * @returns Absolute path to the target directory.
- */
 export function resolveTarget(scope: InstallScope, platform: InstallPlatform = 'opencode'): string {
   if (scope === 'global') {
     if (platform === 'claude-code')
@@ -191,15 +97,11 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
   };
 }
 
-/**
- * Compute the canonical digest for flowguard-mandates.md body.
- * This is the digest stored in the managed-artifact header.
- */
 export function computeMandatesDigest(): string {
   return hashText(FLOWGUARD_MANDATES_BODY);
 }
 
-// ─── Tarball Integrity Verification ──────────────────────────────────────────
+// ---- Tarball Integrity Verification ----
 
 const SHA256_HEX_RE = /^[0-9a-fA-F]{64}$/;
 const CHECKSUM_LINE_RE = /^([0-9a-fA-F]{64})\s+[*]?\s*(.+)$/;
@@ -211,22 +113,6 @@ function safeHashHexEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-/**
- * Verify tarball cryptographic integrity against a sha256sum-format checksums file.
- *
- * Parsing rules (strict):
- * - Each line matches `<hex hash>  <filename>` or `<hex hash> *<filename>`.
- * - Hash must be 64 uppercase/lowercase hex characters.
- * - Filename entries are matched by basename against the tarball basename.
- * - Duplicate filename entries are fail-closed (ambiguous verification).
- * - Malformed lines (non-64-hex hash, unparseable format) are silently skipped.
- * - Missing entry for the target tarball is fail-closed.
- *
- * @param tarballPath - Absolute or relative path to the tarball.
- * @param checksumsFilePath - Path to the sha256sum-format checksums file.
- * @throws If the checksums file cannot be read, the tarball is not listed,
- *         duplicate entries exist, or the computed hash does not match.
- */
 export async function verifyTarballChecksum(
   tarballPath: string,
   checksumsFilePath: string,
@@ -285,38 +171,8 @@ export async function verifyTarballChecksum(
   }
 }
 
-// ─── Reviewer Agent Model Override ───────────────────────────────────────────
+// ---- Reviewer Agent Model Override ----
 
-/**
- * Conservative pattern for valid model identifiers.
- * Allows alphanumeric, dots, slashes, @, colons, and hyphens.
- * Rejects everything else to prevent YAML injection.
- */
-const VALID_MODEL_ID_PATTERN = /^[A-Za-z0-9._/@:-]+$/;
-
-/**
- * Environment variable name for reviewer model override.
- * Follows the established FLOWGUARD_* naming convention
- * (see FLOWGUARD_POLICY_PATH, FLOWGUARD_ACTOR_ID, etc.).
- */
-export const FLOWGUARD_REVIEWER_MODEL_ENV = 'FLOWGUARD_REVIEWER_MODEL';
-
-/**
- * Build the reviewer agent file content, optionally injecting a model override
- * from the FLOWGUARD_REVIEWER_MODEL environment variable.
- *
- * The REVIEWER_AGENT constant in mandates.ts is the canonical template and
- * does NOT hardcode a model — the reviewer inherits the session model by default.
- * When FLOWGUARD_REVIEWER_MODEL is set, the installer injects `model: <value>`
- * into the YAML frontmatter before writing the agent file.
- *
- * The REVIEW_MANDATE_DIGEST (sha256 of the constant) remains stable because
- * it is computed from the template constant, not the installed file.
- *
- * @param template - The REVIEWER_AGENT template constant
- * @returns The template with model injected, or unchanged if env var is absent
- * @throws If FLOWGUARD_REVIEWER_MODEL contains newlines or invalid characters
- */
 export function buildReviewerAgentContent(template: string): string {
   const raw = process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
   if (!raw) return template;
@@ -324,7 +180,6 @@ export function buildReviewerAgentContent(template: string): string {
   const model = raw.trim();
   if (!model) return template;
 
-  // Reject newline characters — prevents YAML injection across lines
   if (/[\r\n]/.test(model)) {
     throw new Error(
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains newline characters — ` +
@@ -332,7 +187,6 @@ export function buildReviewerAgentContent(template: string): string {
     );
   }
 
-  // Reject invalid characters — conservative allowlist only
   if (!VALID_MODEL_ID_PATTERN.test(model)) {
     throw new Error(
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains invalid characters: "${model}" — ` +
@@ -340,19 +194,16 @@ export function buildReviewerAgentContent(template: string): string {
     );
   }
 
-  // Inject model: after the opening --- line in YAML frontmatter.
-  // The template starts with "---\ndescription: ...".
   const firstNewline = template.indexOf('\n');
-  if (firstNewline < 0) return template; // defensive: malformed template
+  if (firstNewline < 0) return template;
 
   return (
     template.slice(0, firstNewline + 1) + `model: ${model}\n` + template.slice(firstNewline + 1)
   );
 }
 
-const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
+// ---- OpenCode Config Path ----
 
-/** Resolve the OpenCode config file FlowGuard should update for the given scope. */
 export function resolveOpencodeConfigPath(
   scope: InstallScope,
   target = resolveTarget(scope),
@@ -366,10 +217,6 @@ export function resolveOpencodeConfigPath(
   return join(dir, 'opencode.json');
 }
 
-/**
- * Find a parallel OpenCode config file that co-exists with the preferred one.
- * Returns null if no parallel file exists.
- */
 export function findParallelOpencodeConfig(preferredPath: string): string | null {
   const dir = dirname(preferredPath);
   const preferredName = basename(preferredPath);
@@ -382,48 +229,16 @@ export function findParallelOpencodeConfig(preferredPath: string): string | null
   return null;
 }
 
-/**
- * Parse JSONC content. Uses jsonc-parser which handles
- * single-line comments, block comments, and trailing commas —
- * matching OpenCode's config parser semantics.
- *
- * Parse errors (e.g. truly malformed input) are surfaced as thrown errors
- * to preserve fail-closed behavior.
- */
-export function parseJsonc<T = Record<string, unknown>>(content: string): T {
-  const errors: ParseError[] = [];
-  const result = jsoncParse(content, errors, { allowTrailingComma: true });
-  if (errors.length > 0) {
-    const first = errors[0]!;
-    throw new SyntaxError(`JSONC parse error at offset ${first.offset}: error code ${first.error}`);
-  }
-  return result as T;
-}
+// ---- File Helpers ----
 
-// ─── File Helpers ─────────────────────────────────────────────────────────────
-
-/**
- * Ensure a directory exists (recursive mkdir).
- * No-op if already present.
- */
-export async function ensureDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
-}
-
-/**
- * Safely read a file. Returns null if the file doesn't exist.
- */
-// ─── Error Discrimination ────────────────────────────────────────────────────
-
-/** Type-safe ENOENT check. Only file-not-found is safe to ignore. */
 function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
 }
 
-/**
- * Safely read a file. Returns content or null if file does not exist.
- * Throws on permission errors (EACCES/EPERM) and other unexpected errors.
- */
+export async function ensureDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+}
+
 export async function safeRead(filePath: string): Promise<string | null> {
   try {
     return await readFile(filePath, 'utf-8');
@@ -433,10 +248,6 @@ export async function safeRead(filePath: string): Promise<string | null> {
   }
 }
 
-/**
- * Safely delete a file. Returns true if deleted, false if not found.
- * Throws on permission errors (EACCES/EPERM) and other unexpected errors.
- */
 export async function safeUnlink(filePath: string): Promise<boolean> {
   try {
     await unlink(filePath);
@@ -447,35 +258,6 @@ export async function safeUnlink(filePath: string): Promise<boolean> {
   }
 }
 
-/**
- * Create a timestamped backup before malformed JSON recovery overwrites a file.
- * Uses exclusive creation so backup path collisions block the destructive write.
- */
-export async function createMalformedJsonBackup(
-  filePath: string,
-  originalContent: string,
-  now = new Date(),
-): Promise<string> {
-  const timestamp = now.toISOString().replace(/[-:.]/g, '');
-  const backupPath = `${filePath}.flowguard-backup-${timestamp}`;
-  await writeFile(backupPath, originalContent, { encoding: 'utf-8', flag: 'wx' });
-  return backupPath;
-}
-
-/**
- * Generate the file:-dependency string for @flowguard/core.
- * Used by both PACKAGE_JSON_TEMPLATE and mergePackageJson() to ensure
- * consistent A1 model: local vendor directory with offline-resolvable file:-dependency.
- */
-export function vendorDependency(version: string): string {
-  return `file:./vendor/flowguard-core-${version}.tgz`;
-}
-
-/**
- * Write a file only if it doesn't exist or --force is set.
- * Used for hard-managed artifacts OTHER than flowguard-mandates.md
- * (which is always replaced).
- */
 export async function writeIfAbsent(
   filePath: string,
   content: string,
@@ -488,304 +270,4 @@ export async function writeIfAbsent(
   if (dir) await ensureDir(dir);
   await writeFile(filePath, content, 'utf-8');
   return { path: filePath, action: 'written' };
-}
-
-// ─── JSON Merge Helpers ───────────────────────────────────────────────────────
-
-/**
- * Merge FlowGuard dependencies into an existing or new package.json.
- *
- * Strategy:
- * - If file exists, parse it and add/update the @flowguard/core dependency.
- * - If file doesn't exist, write the template.
- * - Never removes existing dependencies.
- * - Removes legacy @opencode-ai/plugin dependency if present (no longer needed).
- */
-export async function mergePackageJson(filePath: string, version: string): Promise<FileOp> {
-  const existing = await safeRead(filePath);
-
-  if (!existing) {
-    await ensureDir(dirname(filePath));
-    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
-    return { path: filePath, action: 'written' };
-  }
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(existing) as Record<string, unknown>;
-  } catch {
-    // Malformed JSON — overwrite with template
-    const backupPath = await createMalformedJsonBackup(filePath, existing);
-    getAdapterLogger().warn('cli', 'Package.json malformed, creating backup and overwriting', {
-      filePath,
-      backupPath,
-    });
-    await writeFile(filePath, PACKAGE_JSON_TEMPLATE(version), 'utf-8');
-    return {
-      path: filePath,
-      action: 'written',
-      reason: `existing file was malformed JSON (backup: ${backupPath})`,
-    };
-  }
-
-  const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
-  deps['@flowguard/core'] = vendorDependency(version);
-  if (!deps['zod']) deps['zod'] = '^4.0.0';
-  // Remove legacy dependency that is no longer needed
-  delete deps['@opencode-ai/plugin'];
-  parsed['dependencies'] = deps;
-  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-  return { path: filePath, action: 'merged' };
-}
-
-/**
- * Enforce strict P35 Task permission for the build agent.
- *
- * Replaces parsed.agent.build.permission.task with a wildcard deny baseline
- * plus an explicit flowguard-reviewer allow. Existing task allow entries are
- * intentionally removed so the build agent can only invoke the reviewer
- * subagent via the Task tool.
- */
-export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
-  type AnyObj = Record<string, unknown>;
-
-  if (!parsed['agent'] || typeof parsed['agent'] !== 'object' || parsed['agent'] === null) {
-    parsed['agent'] = {};
-  }
-  const agent = parsed['agent'] as AnyObj;
-
-  if (!agent['build'] || typeof agent['build'] !== 'object' || agent['build'] === null) {
-    agent['build'] = {};
-  }
-  const build = agent['build'] as AnyObj;
-
-  if (
-    !build['permission'] ||
-    typeof build['permission'] !== 'object' ||
-    build['permission'] === null
-  ) {
-    build['permission'] = {};
-  }
-  const permission = build['permission'] as AnyObj;
-
-  if (
-    !permission['task'] ||
-    typeof permission['task'] !== 'object' ||
-    permission['task'] === null
-  ) {
-    permission['task'] = {};
-  }
-
-  // P35: Strict assurance — the build agent may only invoke flowguard-reviewer
-  // via the Task tool. Any pre-existing allow entries are removed and replaced
-  // with a wildcard deny baseline plus the explicit reviewer allow.
-  // flowguard-reviewer must appear after * because OpenCode uses last-matching-rule.
-  permission['task'] = {
-    '*': 'deny',
-    [REVIEWER_SUBAGENT_TYPE]: 'allow',
-  };
-}
-
-/**
- * Merge FlowGuard config into an existing or new opencode.json.
- *
- * Invariants (idempotent, enforced after every call):
- * 1. instructions array contains exactly 1x the scope-appropriate mandate entry
- * 2. instructions array does NOT contain the legacy "AGENTS.md" entry
- * 3. Order of existing user entries is preserved
- * 4. All other fields in opencode.json are preserved
- * 5. $schema is set if missing
- * 6. build agent has task permission for flowguard-reviewer subagent (all paths,
- *    including desktop-owned configs — P35 governance is non-negotiable)
- *
- * @param filePath - Path to opencode.json
- * @param scope    - Install scope (determines the instruction entry path)
- */
-export async function mergeOpencodeJson(filePath: string, scope: InstallScope): Promise<FileOp> {
-  const entry = mandatesInstructionEntry(scope);
-  const existing = await safeRead(filePath);
-
-  if (!existing) {
-    const dir = dirname(filePath);
-    if (dir) await ensureDir(dir);
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
-    return { path: filePath, action: 'written' };
-  }
-
-  let parsed: Record<string, unknown>;
-  try {
-    // OpenCode officially supports JSONC (JSON with Comments) — strip before parse.
-    // See: https://opencode.ai/docs/config/#format
-    parsed = parseJsonc(existing);
-  } catch {
-    // Backup before destructive overwrite — preserves user data for recovery
-    const backupPath = await createMalformedJsonBackup(filePath, existing);
-    getAdapterLogger().warn('cli', 'Opencode.json malformed, creating backup and overwriting', {
-      filePath,
-      backupPath,
-    });
-    await writeFile(filePath, OPENCODE_JSON_TEMPLATE(entry), 'utf-8');
-    return {
-      path: filePath,
-      action: 'written',
-      reason: `existing file was malformed JSON/JSONC (backup: ${backupPath})`,
-    };
-  }
-
-  // Detect desktop app config: has plugin field or has non-FlowGuard instructions.
-  // Desktop app owns its own plugin/instruction config — do NOT touch it.
-  // FlowGuard only manages its own mandates entry.
-  const hasPluginField = 'plugin' in parsed;
-  const existingInstructions = Array.isArray(parsed['instructions'])
-    ? (parsed['instructions'] as string[])
-    : [];
-  const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
-
-  if (hasPluginField || hasDesktopInstructions) {
-    // Desktop app owns this config — only add our entries.
-    // The plugin array is NOT modified: OpenCode's plugin field is for npm
-    // packages only. Local discovery via .opencode/plugins/ handles loading.
-    const instructions = existingInstructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
-    if (!instructions.includes(entry)) {
-      instructions.push(entry);
-    }
-    parsed['instructions'] = instructions;
-
-    // P35-fix: Task permission MUST be enforced regardless of config ownership.
-    // Without this, the build agent can spawn arbitrary subagents when running
-    // under a desktop-owned config, bypassing FlowGuard's governance model.
-    mergeReviewerTaskPermission(parsed);
-
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return {
-      path: filePath,
-      action: 'merged',
-      reason: 'desktop-owned config: merged with task permission',
-    };
-  }
-
-  // Standard merge for FlowGuard-only configs
-  let instructions = Array.isArray(parsed['instructions'])
-    ? (parsed['instructions'] as string[])
-    : [];
-
-  // Migration: remove legacy "AGENTS.md" entry (only the exact FlowGuard-owned one)
-  instructions = instructions.filter((i) => i !== LEGACY_INSTRUCTION_ENTRY);
-
-  // Deduplicate: remove our entry if already present, then add exactly once
-  instructions = instructions.filter((i) => i !== entry);
-  instructions.push(entry);
-
-  parsed['instructions'] = instructions;
-
-  // Ensure build agent has task permission for flowguard-reviewer subagent
-  mergeReviewerTaskPermission(parsed);
-
-  // Plugin loading: OpenCode auto-loads local plugin files from
-  // .opencode/plugins/. The "plugin" field in opencode.json is documented
-  // for npm packages only — FlowGuard relies on auto-discovery exclusively.
-
-  if (!parsed['$schema']) {
-    parsed['$schema'] = 'https://opencode.ai/config.json';
-  }
-  await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-  return { path: filePath, action: 'merged' };
-}
-
-/**
- * Remove FlowGuard instruction entries from opencode.json during uninstall.
- * Removes both current and legacy entries. Preserves everything else.
- */
-export async function removeFromOpencodeJson(
-  filePath: string,
-  scope: InstallScope,
-): Promise<FileOp> {
-  const existing = await safeRead(filePath);
-  if (!existing) {
-    return { path: filePath, action: 'not_found' };
-  }
-
-  try {
-    const parsed = parseJsonc(existing);
-
-    // Detect desktop app config — do NOT modify it (flowguard uninstall should not
-    // touch desktop app's instruction configuration beyond removing our own entries)
-    const existingInstructions = Array.isArray(parsed['instructions'])
-      ? (parsed['instructions'] as string[])
-      : [];
-    const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
-    // Desktop-owned = has a plugin field (npm packages) or non-FlowGuard instructions.
-    const hasPluginField = 'plugin' in parsed;
-
-    if (hasDesktopInstructions || hasPluginField) {
-      // Desktop app owns this config — only remove FlowGuard entries
-      const entry = mandatesInstructionEntry(scope);
-      const hadInstructions = Array.isArray(parsed['instructions']);
-      const before = existingInstructions;
-      const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
-      const removedInstruction = after.length !== before.length;
-
-      if (!removedInstruction) {
-        return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
-      }
-
-      if (hadInstructions || after.length > 0) {
-        parsed['instructions'] = after;
-      }
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-      return { path: filePath, action: 'merged', reason: 'removed FlowGuard entries' };
-    }
-
-    // Standard removal for FlowGuard-only configs
-    const entry = mandatesInstructionEntry(scope);
-    const hasInstructions = Array.isArray(parsed['instructions']);
-    const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
-    const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
-    const removedInstruction = after.length !== before.length;
-
-    // Remove FlowGuard-owned task-hardening entries only, preserve foreign task permissions
-    let removedTaskHardening = false;
-    if (parsed['agent'] && typeof parsed['agent'] === 'object') {
-      const agent = parsed['agent'] as Record<string, unknown>;
-      if (agent['build'] && typeof agent['build'] === 'object') {
-        const build = agent['build'] as Record<string, unknown>;
-        if (build['permission'] && typeof build['permission'] === 'object') {
-          const permission = build['permission'] as Record<string, unknown>;
-          if (permission['task'] && typeof permission['task'] === 'object') {
-            const task = permission['task'] as Record<string, unknown>;
-            // Remove only FlowGuard-owned entries
-            if (task[REVIEWER_SUBAGENT_TYPE] === 'allow') {
-              delete task[REVIEWER_SUBAGENT_TYPE];
-              removedTaskHardening = true;
-            }
-            // Remove wildcard deny only if no foreign task entries remain
-            if (task['*'] === 'deny' && Object.keys(task).filter((k) => k !== '*').length === 0) {
-              delete task['*'];
-              removedTaskHardening = true;
-            }
-            // Clean up empty task object
-            if (Object.keys(task).length === 0) delete permission['task'];
-          }
-          if (Object.keys(permission).length === 0) delete build['permission'];
-        }
-        if (Object.keys(build).length === 0) delete agent['build'];
-      }
-      if (Object.keys(agent).length === 0) delete parsed['agent'];
-    }
-
-    if (!removedInstruction && !removedTaskHardening) {
-      return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
-    }
-
-    if (hasInstructions) {
-      parsed['instructions'] = after;
-    }
-    await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-    return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
-  } catch {
-    getAdapterLogger().warn('cli', 'Opencode.json malformed during uninstall, skipping removal', {
-      filePath,
-    });
-    return { path: filePath, action: 'skipped', reason: 'malformed JSON' };
-  }
 }

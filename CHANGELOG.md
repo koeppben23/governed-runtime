@@ -40,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FG-QUAL-007 (Issue #219):** [BREAKING] OpenCode tools (`plan`, `implement`, `validate`, `review`, `status`, `hydrate`, `ticket`, `decision`, `abort_session`, `archive`, `architecture`) and `FlowGuardAuditPlugin` are no longer re-exported from `@flowguard/core`. Import them from `@flowguard/core/integration`.
 - **FG-QUAL-007 (Issue #219):** [BREAKING] `createTestContext` is no longer exported from `@flowguard/core`. Import it from `@flowguard/core/testing`.
 
+- **FG-REL-045 (Issue #322):** Preemptively split 3 source files approaching 800 LOC:
+  - `src/integration/tools/plan.ts` (792 → 509 LOC): types → `plan-types.ts`, response/persistence → `plan-response.ts`
+  - `src/cli/install-helpers.ts` (791 → 273 LOC): types → `install-types.ts`, JSON merge → `install-json.ts`
+  - `src/integration/plugin.ts` (797 → 469 LOC): risk enforcement → `plugin-risk.ts`
+  - All re-exports preserved; intended as zero-behavior structural refactor.
+
 ### Added
 
 - **Issue #296:** Add real RFC 3161 timestamp authority support using
