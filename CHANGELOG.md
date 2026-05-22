@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue #319:** Add dedicated unit coverage for `persistence-lock.ts`, including
+  atomic lock acquisition, token-protected release, stale-lock recovery,
+  timeout reporting, concurrent acquisition, malformed lockfiles, and
+  fail-closed filesystem/PID error paths.
+
 - **Issue #251 (Phase 10: Architectural Gap Mitigation):** Document, mitigate, and test the fundamental architectural gaps between FlowGuard's in-process enforcement model and the out-of-process hook model used by Claude Code and Codex. Adds Gap 1 null-arg sanitization in the MCP server layer (`sanitizeNullArgs`), Gap 4 escalating review-obligation warnings in PostToolUse hooks (`obligation-tracker.ts`), Gap 6 Codex cloud setup script (`scripts/codex-cloud-setup.sh`), negative-path failure mode tests (33 tests covering malformed stdin, missing state, concurrent access, HTTP server denials), and three documentation deliverables: `docs/platform-limitations.md`, `docs/multi-platform-deployment.md`, `docs/security-model-multi-platform.md`.
 
 - **Issue #249 (Phase 8: multi-platform installer):** Extend `flowguard doctor --host opencode|claude-code|codex` with projection-only trust and capability diagnostics, including host capability shape, runtime/native-load `NOT_VERIFIED` markers, approval primitive reporting, hook semantics, reviewer transport boundaries, and receipt-preservation fields that explicitly mark host-transport losses. Add host-specific uninstall cleanup for Claude Code and Codex plugin trees while preserving foreign Codex marketplace entries.
