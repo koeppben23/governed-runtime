@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/integration/plugin.ts` (797 → 469 LOC): risk enforcement → `plugin-risk.ts`
   - All re-exports preserved; intended as zero-behavior structural refactor.
 
+- **Issue #326:** Added dedicated unit test coverage for 3 plugin modules without prior unit tests:
+  - `plugin-risk.test.ts` (24 tests): risk classification enforcement, pure functions and async orchestrators
+  - `plugin-task-evidence.test.ts` (8 tests): host-task evidence handler across required/preferred policy modes
+  - `plugin-host-task-diagnostics-helpers.test.ts` (15 tests): test factory builders and constants
+  - `stryker.conf.json`: mutated array extended with the 3 covered source files.
+
 ### Added
 
 - **Issue #296:** Add real RFC 3161 timestamp authority support using

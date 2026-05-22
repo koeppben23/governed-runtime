@@ -176,7 +176,7 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
   const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
 
   try {
-    await fs.writeFile(tempPath, content, 'utf-8');
+    await fs.writeFile(tempPath, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
     await renameWithRetry(tempPath, filePath);
   } catch (err) {
     // Best-effort cleanup of temp file

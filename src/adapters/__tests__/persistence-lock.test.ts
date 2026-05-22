@@ -76,7 +76,11 @@ describe('persistence-lock', () => {
 
     expect(raw).toContain(`pid=${process.pid}\n`);
     expect(raw).toMatch(/^token=.+$/m);
-    expect(fs.writeFile).toHaveBeenCalledWith(lockPath, expect.any(String), { flag: 'wx' });
+    expect(fs.writeFile).toHaveBeenCalledWith(lockPath, expect.any(String), {
+      encoding: 'utf-8',
+      flag: 'wx',
+      mode: 0o600,
+    });
 
     await lock.release();
 
