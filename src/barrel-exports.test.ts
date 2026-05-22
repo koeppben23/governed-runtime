@@ -199,6 +199,7 @@ describe('integration tools use barrel imports', () => {
   const INTEGRATION_FILES = [
     'integration/tools/helpers.ts',
     'integration/tools/plan.ts',
+    'integration/tools/plan-response.ts',
     'integration/tools/architecture.ts',
     'integration/tools/review-tool/completion.ts',
   ] as const;
@@ -250,15 +251,22 @@ describe('integration tools use barrel imports', () => {
   });
 
   describe('HAPPY — integration files use barrel imports', () => {
-    it('all 4 files import from presentation/index.js', () => {
-      for (const file of INTEGRATION_FILES) {
+    const FILES_USING_PRESENTATION = INTEGRATION_FILES.filter(
+      (f) => f !== 'integration/tools/plan.ts',
+    );
+    const FILES_USING_WORKSPACE = INTEGRATION_FILES.filter(
+      (f) => f !== 'integration/tools/plan.ts',
+    );
+
+    it('tool sub-modules import from presentation/index.js', () => {
+      for (const file of FILES_USING_PRESENTATION) {
         const source = readSource(file);
         expect(source).toContain('../../presentation/index.js');
       }
     });
 
-    it('helpers, plan, architecture, simple-tools import from workspace/index.js', () => {
-      for (const file of INTEGRATION_FILES) {
+    it('tool sub-modules import from workspace/index.js', () => {
+      for (const file of FILES_USING_WORKSPACE) {
         const source = readSource(file);
         expect(source).toContain('../../adapters/workspace/index.js');
       }
