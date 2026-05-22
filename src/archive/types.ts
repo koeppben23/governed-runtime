@@ -41,6 +41,7 @@ export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1' as const;
  *   or unchained legacy events in strict/regulated mode)
  * - snapshot_missing: discovery or profile-resolution snapshot not found
  * - state_missing: session-state.json not found in archive
+ * - state_invalid: session-state.json exists but cannot be parsed or validated
  */
 export const ArchiveFindingCodeSchema = z.enum([
   'missing_manifest',
@@ -54,6 +55,7 @@ export const ArchiveFindingCodeSchema = z.enum([
   'audit_chain_invalid',
   'snapshot_missing',
   'state_missing',
+  'state_invalid',
   'timestamp_unanchored',
   'tsa_verification_failed',
 ]);

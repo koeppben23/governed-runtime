@@ -211,6 +211,25 @@ On failure, the verifier emits an `audit_chain_invalid` finding with error sever
 finding message includes the chain verification reason (`CHAIN_BREAK` or
 `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and event counts for diagnosis.
 
+### RFC 3161 Timestamp Assurance
+
+When `audit.timestampAssurance.mode: 'tsa_critical'` is configured, critical audit events
+(`decision` and `lifecycle` by default) request an RFC 3161 timestamp from `tsaUrl`.
+The HTTP provider sends `application/timestamp-query` requests with SHA-256
+`messageImprint` and `certReq: true`; the returned `TimeStampToken` is verified with
+`pkijs`/`asn1js` against `trustAnchors`.
+
+Strict mode is fail-closed: if `audit.timestampAssurance.strict: true` and a critical
+event cannot obtain or verify a TSA token, FlowGuard still writes explicit timestamp
+failure evidence to the audit trail and then persists `TSA_TIMESTAMP_ASSURANCE_FAILED`
+on the session error state. With `strict: false`, Slice 1 behavior is preserved: the
+event is recorded with `tsa_failed` or invalid TSA evidence, but the session is not
+forced into ERROR.
+
+Rollback is configuration-only: set `audit.timestampAssurance.strict: false` or remove
+`tsaUrl` to return to non-strict timestamp assurance. Existing audit trails remain
+readable because timestamp fields are additive.
+
 | Manifest policyMode | Strict? | Legacy events tolerated? |
 | ------------------- | ------- | ------------------------ |
 | `regulated`         | Yes     | No — error finding       |

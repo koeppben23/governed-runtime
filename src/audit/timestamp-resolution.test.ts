@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveTimestampEvidence } from './timestamp-resolution.js';
 import { MockTimestampAuthorityProvider } from './tsa-provider.js';
+import type { TimestampVerifier } from './tsa-provider.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 
 const LOCAL_POLICY: TimestampAssurancePolicy = {
@@ -185,7 +186,7 @@ describe('resolveTimestampEvidence', () => {
       expect(result.evidence.warning).toContain('TSA unreachable');
     });
 
-    it('strict: true does not throw — inert in Slice 1', async () => {
+    it('strict: true returns explicit error for caller enforcement on TSA failure', async () => {
       const strictPolicy: TimestampAssurancePolicy = {
         ...TSA_CRITICAL_POLICY,
         strict: true,
@@ -200,6 +201,49 @@ describe('resolveTimestampEvidence', () => {
       });
       expect(result.evidence.status).toBe('tsa_failed');
       expect(result.error).toBe('TSA request failed');
+    });
+
+    it('verified TSA token keeps stamped status with valid verification detail', async () => {
+      const verifier: TimestampVerifier = {
+        verifyToken: async () => ({
+          status: 'valid',
+          tsaTimestamp: NOW,
+          policyOid: '1.2.3.4',
+          serialNumber: '01',
+          signerSubject: 'CN=Test TSA',
+        }),
+      };
+      const result = await resolveTimestampEvidence({
+        policy: { ...TSA_CRITICAL_POLICY, trustAnchors: ['pem'] },
+        canonicalEventDigest: DIGEST,
+        eventKind: 'decision',
+        localTimestamp: NOW,
+        tsaProvider: new MockTimestampAuthorityProvider(),
+        tsaVerifier: verifier,
+      });
+
+      expect(result.evidence.status).toBe('tsa_stamped');
+      expect(result.evidence.tsa?.verificationStatus).toBe('valid');
+      expect(result.evidence.tsa?.policyOid).toBe('1.2.3.4');
+    });
+
+    it('invalid TSA token records invalid verification reason fail-closed', async () => {
+      const verifier: TimestampVerifier = {
+        verifyToken: async () => ({ status: 'invalid', reason: 'digest_mismatch' }),
+      };
+      const result = await resolveTimestampEvidence({
+        policy: { ...TSA_CRITICAL_POLICY, trustAnchors: ['pem'] },
+        canonicalEventDigest: DIGEST,
+        eventKind: 'decision',
+        localTimestamp: NOW,
+        tsaProvider: new MockTimestampAuthorityProvider(),
+        tsaVerifier: verifier,
+      });
+
+      expect(result.evidence.status).toBe('tsa_stamped');
+      expect(result.evidence.tsa?.verificationStatus).toBe('invalid');
+      expect(result.evidence.tsa?.verificationReason).toBe('digest_mismatch');
+      expect(result.error).toBe('digest_mismatch');
     });
   });
 });

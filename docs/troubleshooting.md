@@ -119,17 +119,18 @@ real, registered reason.
 
 ### Session & State
 
-| Code                            | Description                                 | Solution                                                                                                       |
-| ------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `NO_SESSION`                    | No session exists for the current workspace | Run `/hydrate` first                                                                                           |
-| `MISSING_SESSION_ID`            | Tool call missing session id                | Re-invoke via OpenCode (the runtime injects sessionId)                                                         |
-| `MISSING_WORKTREE`              | Workspace fingerprint cannot be resolved    | Run from inside a git worktree                                                                                 |
-| `INVALID_FINGERPRINT`           | Workspace fingerprint mismatch              | Run `flowguard doctor`                                                                                         |
-| `CONFIG_MISSING`                | Config file is absent                       | Re-run `flowguard install` for this workspace                                                                  |
-| `CONFIG_INVALID`                | Config file failed schema validation        | Restore from a trusted backup or re-install                                                                    |
-| `SCHEMA_VALIDATION_FAILED`      | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported                                                      |
-| `SESSION_ERROR`                 | Session error received from host runtime    | Check OpenCode logs for root cause; start a new session                                                        |
-| `REVIEWER_INVOCATION_EXHAUSTED` | All reviewer subagent retry attempts failed | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output |
+| Code                             | Description                                 | Solution                                                                                                       |
+| -------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                     | No session exists for the current workspace | Run `/hydrate` first                                                                                           |
+| `MISSING_SESSION_ID`             | Tool call missing session id                | Re-invoke via OpenCode (the runtime injects sessionId)                                                         |
+| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved    | Run from inside a git worktree                                                                                 |
+| `INVALID_FINGERPRINT`            | Workspace fingerprint mismatch              | Run `flowguard doctor`                                                                                         |
+| `CONFIG_MISSING`                 | Config file is absent                       | Re-run `flowguard install` for this workspace                                                                  |
+| `CONFIG_INVALID`                 | Config file failed schema validation        | Restore from a trusted backup or re-install                                                                    |
+| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed schema check | Restore from archive — pre-1.0 sessions are not supported                                                      |
+| `SESSION_ERROR`                  | Session error received from host runtime    | Check OpenCode logs for root cause; start a new session                                                        |
+| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output |
+| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed        | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                             |
 
 ### Command & Phase
 
@@ -319,6 +320,7 @@ SUBAGENT_PROMPT_EMPTY
 SUBAGENT_PROMPT_MISSING_CONTEXT
 SUBAGENT_REVIEW_NOT_INVOKED
 SUBAGENT_REVIEW_REQUIRED
+TSA_TIMESTAMP_ASSURANCE_FAILED
 SUBAGENT_SESSION_MISMATCH
 SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW

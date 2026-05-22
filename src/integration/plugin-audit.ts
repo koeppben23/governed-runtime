@@ -9,7 +9,7 @@
  * @version v2 (extracted resolveAuditContext, emitDecisionReceipt, maybeCompleteAndArchive)
  */
 
-import { readState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import {
@@ -28,6 +28,7 @@ import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
 import { checkNtpClock } from '../audit/ntp-check.js';
 import type { NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
+import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
 import { parseToolResult } from './plugin-helpers.js';
 
 /** Closure dependencies injected from plugin.ts. */
@@ -65,6 +66,8 @@ export interface AuditDeps {
   logError(message: string, err: unknown): void;
   cachedFingerprint: string | null;
   mode: string;
+  tsaProvider?: TimestampAuthorityProvider;
+  timestampVerifier?: TimestampVerifier;
 }
 
 const LIFECYCLE_TOOLS: Record<string, string> = {
@@ -218,10 +221,12 @@ interface DecisionReceiptParams {
   sessionId: string;
   policyMode: string;
   state: SessionState | null;
+  recordTimestampFailure(eventKind: string, error: string | undefined): void;
 }
 
 async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<string> {
-  const { deps, ctx, toolName, input, sessionId, policyMode, state } = params;
+  const { deps, ctx, toolName, input, sessionId, policyMode, state, recordTimestampFailure } =
+    params;
   let prevHash = ctx.prevHash;
   if (toolName !== 'flowguard_decision' || !ctx.success || ctx.transitions.length === 0)
     return prevHash;
@@ -276,17 +281,19 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       prevHash,
     );
     const digest = computeCanonicalEventDigest(body);
-    const evidence = ctx.timestampAssurance.enabled
-      ? (
-          await resolveTimestampEvidence({
-            policy: ctx.timestampAssurance,
-            canonicalEventDigest: digest,
-            eventKind: 'error',
-            localTimestamp: ctx.now,
-            ntpResult: ctx.ntpResult,
-          })
-        ).evidence
+    const resolution = ctx.timestampAssurance.enabled
+      ? await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'error',
+          localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
+          tsaProvider: deps.tsaProvider,
+          tsaVerifier: deps.timestampVerifier,
+        })
       : undefined;
+    recordTimestampFailure('error', resolution?.error);
+    const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -312,17 +319,19 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
       actorInfo: state?.actorInfo,
     });
     const digest = computeCanonicalEventDigest(body);
-    const evidence = ctx.timestampAssurance.enabled
-      ? (
-          await resolveTimestampEvidence({
-            policy: ctx.timestampAssurance,
-            canonicalEventDigest: digest,
-            eventKind: 'decision',
-            localTimestamp: ctx.now,
-            ntpResult: ctx.ntpResult,
-          })
-        ).evidence
+    const resolution = ctx.timestampAssurance.enabled
+      ? await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'decision',
+          localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
+          tsaProvider: deps.tsaProvider,
+          tsaVerifier: deps.timestampVerifier,
+        })
       : undefined;
+    recordTimestampFailure('decision', resolution?.error);
+    const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -336,6 +345,7 @@ async function maybeCompleteAndArchive(
   toolName: string,
   sessionId: string,
   state: SessionState | null,
+  recordTimestampFailure: (eventKind: string, error: string | undefined) => void,
 ): Promise<string> {
   let prevHash = ctx.prevHash;
   if (!ctx.transitions.some((t) => t.to === 'COMPLETE') || LIFECYCLE_TOOLS[toolName])
@@ -354,17 +364,19 @@ async function maybeCompleteAndArchive(
       actorInfo: state?.actorInfo,
     });
     const digest = computeCanonicalEventDigest(body);
-    const evidence = ctx.timestampAssurance.enabled
-      ? (
-          await resolveTimestampEvidence({
-            policy: ctx.timestampAssurance,
-            canonicalEventDigest: digest,
-            eventKind: 'lifecycle',
-            localTimestamp: ctx.now,
-            ntpResult: ctx.ntpResult,
-          })
-        ).evidence
+    const resolution = ctx.timestampAssurance.enabled
+      ? await resolveTimestampEvidence({
+          policy: ctx.timestampAssurance,
+          canonicalEventDigest: digest,
+          eventKind: 'lifecycle',
+          localTimestamp: ctx.now,
+          ntpResult: ctx.ntpResult,
+          tsaProvider: deps.tsaProvider,
+          tsaVerifier: deps.timestampVerifier,
+        })
       : undefined;
+    recordTimestampFailure('lifecycle', resolution?.error);
+    const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     if (ctx.enableChainHash) prevHash = evt.chainHash!;
@@ -411,6 +423,18 @@ export async function runAudit(
 
     const taPolicy = ctx.timestampAssurance;
     const ntpResult = ctx.ntpResult;
+    let strictTimestampFailure: { eventKind: string; reason: string } | undefined;
+
+    function recordTimestampFailure(eventKind: string, error: string | undefined): void {
+      if (
+        !strictTimestampFailure &&
+        taPolicy.strict &&
+        error &&
+        taPolicy.criticalEvents.includes(eventKind)
+      ) {
+        strictTimestampFailure = { eventKind, reason: error };
+      }
+    }
 
     async function emitWithEvidence(
       body: EventBody,
@@ -419,17 +443,19 @@ export async function runAudit(
       localTimestamp: string,
     ): Promise<{ event: ReturnType<typeof finalizeWithTimestampEvidence>; prevHash: string }> {
       const digest = computeCanonicalEventDigest(body);
-      const evidence = taPolicy.enabled
-        ? (
-            await resolveTimestampEvidence({
-              policy: taPolicy,
-              canonicalEventDigest: digest,
-              eventKind,
-              localTimestamp,
-              ntpResult,
-            })
-          ).evidence
+      const resolution = taPolicy.enabled
+        ? await resolveTimestampEvidence({
+            policy: taPolicy,
+            canonicalEventDigest: digest,
+            eventKind,
+            localTimestamp,
+            ntpResult,
+            tsaProvider: deps.tsaProvider,
+            tsaVerifier: deps.timestampVerifier,
+          })
         : undefined;
+      recordTimestampFailure(eventKind, resolution?.error);
+      const evidence = resolution?.evidence;
       const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
       return { event: evt, prevHash: evt.chainHash };
     }
@@ -495,6 +521,7 @@ export async function runAudit(
       sessionId,
       policyMode: state?.policySnapshot.mode ?? effectiveMode,
       state,
+      recordTimestampFailure,
     });
 
     // ── 4. Emit lifecycle events ────────────────────────────────────────
@@ -538,7 +565,14 @@ export async function runAudit(
     }
 
     // ── 5. Detect session completion + auto-archive ──────────────────────
-    ctx.prevHash = await maybeCompleteAndArchive(deps, ctx, toolName, sessionId, state);
+    ctx.prevHash = await maybeCompleteAndArchive(
+      deps,
+      ctx,
+      toolName,
+      sessionId,
+      state,
+      recordTimestampFailure,
+    );
 
     // ── 6. Emit error event ─────────────────────────────────────────────
     if (!ctx.success && ctx.errorMessage) {
@@ -565,6 +599,28 @@ export async function runAudit(
       );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
       if (ctx.enableChainHash) ctx.prevHash = nextHash;
+    }
+
+    if (strictTimestampFailure) {
+      const currentState = await readState(ctx.sessDir);
+      if (currentState) {
+        await writeState(ctx.sessDir, {
+          ...currentState,
+          error: {
+            code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+            message: `Strict timestamp assurance failed for ${strictTimestampFailure.eventKind}: ${strictTimestampFailure.reason}`,
+            recoveryHint:
+              'Fix TSA connectivity, trust anchors, or timestamp token validity; or disable audit.timestampAssurance.strict to recover to Slice 1 behavior.',
+            occurredAt: ctx.now,
+          },
+        });
+      }
+      return {
+        auditOk: false,
+        block: true,
+        code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+        reason: strictTimestampFailure.reason,
+      };
     }
   } catch (err) {
     deps.logError(`Failed to write audit events for ${toolName}`, err);
