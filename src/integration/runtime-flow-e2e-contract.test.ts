@@ -7,7 +7,9 @@
  * synthetic evidence into tool-created obligation → Mode B (review verdict
  * validates and consumes).
  *
- * Flows: architecture, plan, implement.
+ * Flows: architecture, plan, implement (Mode A → Mode B), main chain
+ * (plan → approve → implement → approve), and standalone review
+ * (content → obligation → evidence → complete).
  * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
  * No LLM inference, no network, no secrets.
  */
@@ -28,6 +30,7 @@ import type { HostId } from '../shared/hosts.js';
 import { plan } from './tools/plan.js';
 import { implement } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
+import { review } from './tools/review-tool/index.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import {
@@ -288,6 +291,108 @@ describe('FlowGuard tool-level E2E', () => {
         expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!.status).toBe(
           'consumed',
         );
+      });
+
+      it('main chain: plan → evidence → approve → implement → evidence → approve', async () => {
+        s = await boot(host, 'main');
+
+        // Step 1: plan Mode A
+        await writeStateWithArtifacts(s.sDir, makeState('TICKET', { ticket: TICKET }));
+        const r1 = await plan.execute({ planText: '## Plan\n1. Fix auth' }, s.tc);
+        expect(typeof r1).toBe('string');
+        expect(r1).not.toContain('INTERNAL_ERROR');
+        let st = await readState(s.sDir);
+        expect(st!.plan).toBeTruthy();
+
+        // Step 2: inject evidence + approve
+        const { oblId: pid } = await inject(s.sDir, st!, host, 'plan', s.tc.sessionID);
+        st = await readState(s.sDir);
+        const po = st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!;
+        const r2 = await plan.execute(
+          {
+            reviewVerdict: 'approve',
+            reviewFindings: f(po.obligationId, po.iteration, po.planVersion),
+          },
+          s.tc,
+        );
+        expect(typeof r2).toBe('string');
+        expect(r2).not.toContain('INTERNAL_ERROR');
+        st = await readState(s.sDir);
+        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!.status).toBe(
+          'consumed',
+        );
+
+        // Step 3: bootstrap IMPLEMENTATION with plan + reviewDecision from plan Mode B
+        await writeStateWithArtifacts(
+          s.sDir,
+          makeState('IMPLEMENTATION', {
+            ticket: TICKET,
+            plan: st!.plan!,
+            reviewDecision: st!.reviewDecision,
+          }),
+        );
+        mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
+        writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
+        execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
+
+        // Step 4: implement Mode A
+        const r3 = await implement.execute({}, s.tc);
+        expect(typeof r3).toBe('string');
+        expect(r3).not.toContain('INTERNAL_ERROR');
+        st = await readState(s.sDir);
+        expect(st!.implementation).toBeTruthy();
+
+        // Step 5: inject impl evidence + approve
+        const { oblId: iid } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);
+        st = await readState(s.sDir);
+        const io = st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!;
+        const r4 = await implement.execute(
+          {
+            reviewVerdict: 'approve',
+            reviewFindings: f(io.obligationId, io.iteration, io.planVersion),
+          },
+          s.tc,
+        );
+        expect(typeof r4).toBe('string');
+        expect(r4).not.toContain('INTERNAL_ERROR');
+        st = await readState(s.sDir);
+        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!.status).toBe(
+          'consumed',
+        );
+      });
+
+      it('review: content → obligation → evidence → complete', async () => {
+        s = await boot(host, 'review');
+        await writeStateWithArtifacts(s.sDir, makeState('READY'));
+
+        // Step 1: content-aware call creates review obligation
+        const r1 = await review.execute(
+          { inputOrigin: 'manual_text', text: 'E2E review content' },
+          s.tc,
+        );
+        expect(typeof r1).toBe('string');
+        expect(r1).toContain('CONTENT_ANALYSIS_REQUIRED');
+
+        // Extract the obligation ID from the response
+        const p1 = JSON.parse(r1 as string);
+        const oblId = p1.requiredReviewAttestation?.toolObligationId as string;
+        expect(oblId).toBeTruthy();
+
+        // Step 2: complete with findings — review tool records its own evidence
+        let st = await readState(s.sDir);
+        const obl = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
+        const r2 = await review.execute(
+          {
+            inputOrigin: 'manual_text',
+            text: 'E2E review content',
+            reviewFindings: f(oblId, obl.iteration, obl.planVersion),
+          },
+          s.tc,
+        );
+        expect(typeof r2).toBe('string');
+        expect(r2).not.toContain('INTERNAL_ERROR');
+        st = await readState(s.sDir);
+        expect(st!.phase).toBe('REVIEW_COMPLETE');
       });
     });
   }
