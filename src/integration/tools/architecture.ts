@@ -330,7 +330,11 @@ function resolveArchitectureReview(
       reviewerUnavailable: args.reviewerUnavailable,
       verdict: args.reviewVerdict,
     },
-    state: { assurance: state.reviewAssurance, sessionId: context.sessionID },
+    state: {
+      assurance: state.reviewAssurance,
+      sessionId: context.sessionID,
+      reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    },
   });
 
   if (resolved.blocked) return resolved.blocked;

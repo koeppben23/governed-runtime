@@ -8,11 +8,11 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 
 | #   | Gap                                   | Impact | Residual Risk                      | Affected Platforms |
 | --- | ------------------------------------- | ------ | ---------------------------------- | ------------------ |
-| 1   | No Tool Argument Mutation             | LOW    | LOW                                | Claude Code, Codex |
+| 1   | Tool Argument Mutation Is Host-Limited | LOW    | LOW                                | Claude Code, Codex |
 | 2   | Hook Latency (Process Spawn)          | MEDIUM | LOW (Claude Code) / MEDIUM (Codex) | Codex              |
 | 3   | Hook Timeout = Tool Proceeds          | HIGH   | HIGH                               | Claude Code, Codex |
-| 4   | Subagent Orchestration is LLM-Driven  | MEDIUM | MEDIUM                             | Claude Code, Codex |
-| 5   | No Session Compaction Context (Codex) | LOW    | LOW                                | Codex              |
+| 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM | Claude Code, Codex |
+| 5   | Compaction Context Is Hook-Gated      | LOW    | LOW                                | Codex              |
 | 6   | Codex Cloud Sandbox Deployment        | LOW    | LOW                                | Codex Cloud        |
 
 ## Enforcement Levels
@@ -27,16 +27,16 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 ---
 
-## Gap 1: No Tool Argument Mutation
+## Gap 1: Tool Argument Mutation Is Host-Limited
 
 **Impact**: LOW
 
-**Description**: FlowGuard's OpenCode plugin strips null-valued args from tool inputs (DeepSeek R1 compatibility fix). On out-of-process platforms, PreToolUse hooks cannot modify tool arguments before execution.
+**Description**: FlowGuard's OpenCode plugin strips null-valued args from tool inputs (DeepSeek R1 compatibility fix) in-process. Out-of-process platforms expose host-specific mutation surfaces, but these remain hook-mediated rather than equivalent to OpenCode's synchronous plugin path.
 
 **Platform behavior**:
 
-- Claude Code `PreToolUse`: `updatedInput` field documented as "not yet supported"
-- Codex `PreToolUse`: No input mutation capability
+- Claude Code `PreToolUse`: supports `updatedInput` through hook decision output, subject to hook execution semantics.
+- Codex `PreToolUse`: supports `updatedInput` for supported tool calls, but unsupported output shapes are reported as hook errors and tool execution may continue.
 
 **Mitigation implemented**:
 
@@ -46,7 +46,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 **Code reference**: `src/mcp-server/tool-adapter.ts:sanitizeNullArgs()`
 
-**Residual Risk**: LOW — The null arg issue is model-specific (DeepSeek R1) and does not manifest on Claude or Codex-supported models.
+**Residual Risk**: LOW — The null arg issue is mitigated at the MCP adapter layer for FlowGuard tool calls. Host-tool mutation is still not treated as a FlowGuard SSOT because hook failures remain platform-mediated.
 
 ---
 
@@ -110,23 +110,24 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 ---
 
-## Gap 4: Subagent Orchestration is LLM-Driven
+## Gap 4: Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake
 
 **Impact**: MEDIUM
 
-**Description**: Hooks cannot synchronously spawn subagents. The review flow depends on the LLM correctly following instructions to invoke the reviewer.
+**Description**: Claude Code and Codex both support subagents and subagent lifecycle hooks, but they do not provide FlowGuard's OpenCode in-process plugin handshake (`pluginHandshakeAt`) for review-loop Mode B acceptance. The review flow depends on the host/agent following instructions to invoke the reviewer and on FlowGuard validating the resulting review evidence through the canonical review-evidence gate.
 
 **Platform behavior**:
 
-- Claude Code: Hooks cannot spawn tasks; LLM must invoke reviewer via tool call
-- Codex: Hooks cannot spawn subagents; LLM must follow AGENTS.md instructions
+- OpenCode: FlowGuard plugin hooks set `pluginHandshakeAt` and record host-orchestrated invocation evidence in-process.
+- Claude Code: Native subagents exist, and hooks expose `SubagentStart`/`SubagentStop`, but these are transport/isolation signals only and do not set OpenCode plugin handshake evidence.
+- Codex: Native subagents/custom agents exist, and hooks expose `SubagentStart`/`SubagentStop`, but command-hook evidence is not an OpenCode-equivalent in-process plugin handshake.
 
 **Mitigation implemented**:
 
-1. **Explicit instructions**: FlowGuard tools return unambiguous instructions for LLM to invoke the reviewer.
-2. **Gate enforcement**: PreToolUse hook blocks ALL mutating tools until review evidence exists on disk.
-3. **Escalating warnings**: PostToolUse hook surfaces time-based escalating warnings when review obligations remain pending (info → warn → critical).
-4. **Manual fallback**: `flowguard_decision` tool allows human to approve directly, bypassing automated review.
+1. **Explicit instructions**: FlowGuard tools return unambiguous instructions for invoking the native reviewer transport.
+2. **Evidence binding**: Claude/Codex review completion requires validated, obligation-bound `manual_attested` / transport ReviewInvocationEvidence. File presence, copied JSON, and `flowguard_decision` are not review evidence.
+3. **Gate enforcement**: PreToolUse hook blocks mutating tools until review evidence exists on disk where the host can enforce hooks.
+4. **Escalating warnings**: PostToolUse hook surfaces time-based escalating warnings when review obligations remain pending (info → warn → critical).
 5. **Defense-in-depth**: `isSubagentAuthorized()` blocks unauthorized subagent types.
 
 **Code references**:
@@ -135,20 +136,20 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 - `src/hooks/post-tool-use.ts:80-87` (escalation integration)
 - `src/hooks/shared/phase-gate.ts:isSubagentAuthorized()` (defense-in-depth)
 
-**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions. Gate enforcement prevents bypass (mutating tools blocked) but may cause session stall if LLM does not comply.
+**Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: `host_task_required` still requires OpenCode host-visible plugin evidence, and Claude/Codex Mode B convergence is accepted only through validated `manual_attested` evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
 
 ---
 
-## Gap 5: No Session Compaction Context in Codex
+## Gap 5: Compaction Context Is Hook-Gated
 
 **Impact**: LOW
 
-**Description**: When the context window is compacted, FlowGuard cannot inject governance state summary on Codex. LLM may lose awareness of current phase/constraints.
+**Description**: Codex supports `PreCompact` and `PostCompact` hooks, but compaction context remains hook-gated and therefore does not provide OpenCode-style in-process enforcement. If hook execution is skipped, disabled, or fails open, the model may lose awareness of current phase/constraints.
 
 **Platform behavior**:
 
-- Claude Code: Has `PreCompact`/`PostCompact` hooks — can inject context
-- Codex: No compaction hooks
+- Claude Code: Has `PreCompact`/`PostCompact` hooks — can inject context.
+- Codex: Has `PreCompact`/`PostCompact` hooks — can inject context when hooks are enabled and trusted.
 
 **Mitigation implemented**:
 
@@ -161,7 +162,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 - All tool implementations in `src/integration/tools/` include `phase` in output
 - `src/integration/tools/status-tool.ts` (full governance projection)
 
-**Residual Risk**: LOW — Self-documenting output ensures governance context is available in every tool response. Post-compaction re-orientation may require one extra `flowguard_status` call.
+**Residual Risk**: LOW — Self-documenting output ensures governance context is available in every FlowGuard tool response. Post-compaction re-orientation may require one extra `flowguard_status` call if hook-gated context injection did not run.
 
 ---
 
