@@ -839,7 +839,9 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
     }
 
-    function strictArchitectureFindings(overallVerdict: 'approve' | 'changes_requested' = 'approve') {
+    function strictArchitectureFindings(
+      overallVerdict: 'approve' | 'changes_requested' = 'approve',
+    ) {
       return {
         ...validRawFindings,
         overallVerdict,

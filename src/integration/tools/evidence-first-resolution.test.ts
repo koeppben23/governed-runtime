@@ -523,10 +523,17 @@ describe('BUG-17: plan evidence-first resolution', () => {
       reviewInvocationPolicy: 'sdk_allowed',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
-    mocks.autoAdvance.mockReturnValue({ state: mocks.state, evalResult: { kind: 'pending' }, transitions: [] });
+    mocks.autoAdvance.mockReturnValue({
+      state: mocks.state,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ reviewVerdict: 'approve', reviewFindings: findings }, {} as never);
+    const res = await plan.execute(
+      { reviewVerdict: 'approve', reviewFindings: findings },
+      {} as never,
+    );
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBeUndefined();
   });
@@ -704,7 +711,11 @@ describe('BUG-17: implement evidence-first resolution', () => {
       reviewInvocationPolicy: 'host_task_preferred',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
-    mocks.autoAdvance.mockReturnValue({ state: mocks.state, evalResult: { kind: 'pending' }, transitions: [] });
+    mocks.autoAdvance.mockReturnValue({
+      state: mocks.state,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
 
     const { implement } = await import('./implement.js');
     const res = await implement.execute(

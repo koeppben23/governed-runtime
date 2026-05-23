@@ -6,14 +6,14 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 
 ## Gap Summary
 
-| #   | Gap                                   | Impact | Residual Risk                      | Affected Platforms |
-| --- | ------------------------------------- | ------ | ---------------------------------- | ------------------ |
-| 1   | Tool Argument Mutation Is Host-Limited | LOW    | LOW                                | Claude Code, Codex |
-| 2   | Hook Latency (Process Spawn)          | MEDIUM | LOW (Claude Code) / MEDIUM (Codex) | Codex              |
-| 3   | Hook Timeout = Tool Proceeds          | HIGH   | HIGH                               | Claude Code, Codex |
-| 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM | Claude Code, Codex |
-| 5   | Compaction Context Is Hook-Gated      | LOW    | LOW                                | Codex              |
-| 6   | Codex Cloud Sandbox Deployment        | LOW    | LOW                                | Codex Cloud        |
+| #   | Gap                                                                | Impact | Residual Risk                      | Affected Platforms |
+| --- | ------------------------------------------------------------------ | ------ | ---------------------------------- | ------------------ |
+| 1   | Tool Argument Mutation Is Host-Limited                             | LOW    | LOW                                | Claude Code, Codex |
+| 2   | Hook Latency (Process Spawn)                                       | MEDIUM | LOW (Claude Code) / MEDIUM (Codex) | Codex              |
+| 3   | Hook Timeout = Tool Proceeds                                       | HIGH   | HIGH                               | Claude Code, Codex |
+| 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM                             | Claude Code, Codex |
+| 5   | Compaction Context Is Hook-Gated                                   | LOW    | LOW                                | Codex              |
+| 6   | Codex Cloud Sandbox Deployment                                     | LOW    | LOW                                | Codex Cloud        |
 
 ## Enforcement Levels
 
