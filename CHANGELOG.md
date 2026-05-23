@@ -123,10 +123,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session-bound, mandate/criteria-bound, unconsumed, and covered by strict
   attestation. OpenCode host-orchestrated evidence and `host_task_required`
   policies still require the plugin handshake. Adds host-specific
-  validateReviewFindings contract tests for OpenCode, Claude Code, and
-  Codex (plugin_handshake vs manual_attested evidence per plan,
-  implement, architecture obligation) plus negative trust-boundary
-  tests via `npm run test:review-validation-host-contract`.
+  review validation gate contract tests (3 hosts × 3 obligation types,
+  4 negative trust boundary, assurance pipeline run-throughs) and
+  deterministic tool-level E2E contract tests for architecture flow
+  and plan evidence binding across OpenCode, Claude Code, and Codex
+  via `npm run test:review-validation-host-contract` and
+  `npm run test:e2e-contract`.
 
 - **FG-REL-010 (Issue #119):** Installer malformed-JSON recovery now writes timestamped `.flowguard-backup-*` files before rewriting malformed `opencode.json`/`opencode.jsonc` or installer-managed `package.json`; backup failures stop install before overwrite.
 

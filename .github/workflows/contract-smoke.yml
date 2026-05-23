@@ -33,3 +33,7 @@ jobs:
         run: npm run test:review-validation-host-contract
         env:
           FORCE_COLOR: '0'
+      - name: Run tool-level E2E contract tests
+        run: npm run test:e2e-contract
+        env:
+          FORCE_COLOR: '0'
