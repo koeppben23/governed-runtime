@@ -122,9 +122,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ReviewInvocationEvidence that is validated, obligation-bound, hash-bound,
   session-bound, mandate/criteria-bound, unconsumed, and covered by strict
   attestation. OpenCode host-orchestrated evidence and `host_task_required`
-  policies still require the plugin handshake. Adds opt-in real host runtime
-  smoke coverage for OpenCode, Claude Code, and Codex main, architecture, and
-  review flows via `RUN_FLOWGUARD_RUNTIME_SMOKE=1 npm run test:runtime-smoke`.
+  policies still require the plugin handshake. Adds deterministic runtime
+  contract smoke coverage for OpenCode, Claude Code, and Codex main,
+  architecture, and review flows via `npm run test:contract-smoke`.
 
 - **FG-REL-010 (Issue #119):** Installer malformed-JSON recovery now writes timestamped `.flowguard-backup-*` files before rewriting malformed `opencode.json`/`opencode.jsonc` or installer-managed `package.json`; backup failures stop install before overwrite.
 
