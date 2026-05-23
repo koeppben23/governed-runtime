@@ -1,7 +1,7 @@
 /**
  * @module integration/review-validation-host-contract.test
  * @description Host-specific contract tests for FlowGuard's canonical
- * review-evidence gate (validateReviewFindings) and assurance pipeline
+ * review-evidence gate (validateReviewFindings) and assurance lifecycle
  * (createReviewObligation, appendReviewObligation,
  * consumeReviewObligation, appendInvocationEvidence).
  *
@@ -9,17 +9,18 @@
  * invocation evidence per host platform (opencode, claude-code, codex)
  * and per obligation type (plan, implement, architecture).
  *
- * Additionally simulates complete flow run-throughs (main, architecture,
- * review) using real FlowGuard assurance functions and real writeState /
- * readState persistence to prove the end-to-end evidence lifecycle
- * works correctly on each host.
+ * Additionally exercises the assurance lifecycle with real writeState /
+ * readState persistence on temporary directories to prove that
+ * obligations, invocations, consumption, and state evidence slots
+ * interact correctly across all three obligation types and host
+ * enforcement profiles.
  *
  * Host enforcement matrix:
  *   opencode   — requires pluginHandshakeAt + host_subagent_task
  *   claude-code — accepts manual_attested without pluginHandshakeAt
  *   codex       — accepts manual_attested without pluginHandshakeAt
  *
- * No LLM inference, no network, no secrets.
+ * No LLM inference, no network, no secrets. No tool.execute() calls.
  */
 
 import { afterEach, describe, it, expect } from 'vitest';
@@ -335,11 +336,9 @@ describe('validateReviewFindings host contract', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Flow contract: real assurance pipeline + persistence run-throughs
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Assurance lifecycle persistence matrix ─────────────────────
 
-describe('FlowGuard assurance pipeline run-through', () => {
+describe('assurance lifecycle persistence across hosts', () => {
   const hostContracts = ALL_HOSTS.map((host) => ({
     host,
     style: computeHostEnforcementStyle(host),
@@ -359,9 +358,9 @@ describe('FlowGuard assurance pipeline run-through', () => {
         if (rootDir) rmSync(rootDir, { recursive: true, force: true });
       });
 
-      // ── Main flow ────────────────────────────────────────────────────
+      // ── Plan + implement obligation lifecycle ──────────────────
 
-      it('main flow: obligation creation, binding, consumption, state persistence', async () => {
+      it('obligation lifecycle: plan creation → fulfilment → consumption, then implement repeat', async () => {
         const sessDir = bootstrapSessDir('main');
 
         // Phase 1: PLAN — create obligation
@@ -472,9 +471,9 @@ describe('FlowGuard assurance pipeline run-through', () => {
         expect(loaded!.reviewAssurance?.obligations.length).toBe(2);
       });
 
-      // ── Architecture flow ────────────────────────────────────────────
+      // ── Architecture obligation lifecycle ────────────────────────
 
-      it('architecture flow: obligation binding + ADR persistence', async () => {
+      it('obligation lifecycle: architecture creation → fulfilment → consumption + ADR persistence', async () => {
         const sessDir = bootstrapSessDir('arch');
 
         const archState = makeState('ARCHITECTURE', {
@@ -539,9 +538,9 @@ describe('FlowGuard assurance pipeline run-through', () => {
         expect(loaded!.reviewAssurance?.obligations[0]!.status).toBe('consumed');
       });
 
-      // ── Review flow ──────────────────────────────────────────────────
+      // ── Review report persistence ─────────────────────────────────
 
-      it('review flow: REVIEW → REVIEW_COMPLETE with report path', async () => {
+      it('review report persistence: REVIEW → REVIEW_COMPLETE with report path', async () => {
         const sessDir = bootstrapSessDir('review');
 
         const reviewState = makeState('REVIEW');
