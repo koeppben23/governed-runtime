@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #312:** Clarified host-dependent multi-platform enforcement guarantees
+  in product and security documentation. Removed legacy "OpenCode-dependent" and
+  "zero network calls" claims. Added platform qualifiers to pitch,
+  deployment-model, and security-model docs.
+
 - **Issue #311:** Align public product positioning after OpenCode decoupling.
   FlowGuard is now described as a host-aware governance runtime while preserving
   the enforcement distinction that OpenCode is the strongest synchronous path

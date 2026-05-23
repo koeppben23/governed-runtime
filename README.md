@@ -140,7 +140,7 @@ subagent attestation, and the `/review` evidence model.
 | **Code Surface Analysis**         | Bounded heuristic detection of endpoints/auth/data/integration surfaces                                                                                                                                                                                          |
 | **Headless Fail-Closed Behavior** | Non-interactive execution (`flowguard run`, `flowguard serve`, host automation) returns explicit `BLOCKED` outcomes for missing safety-critical input rather than guessing                                                                                       |
 | **Network Posture**               | Filesystem-first and offline-capable by default. Network-dependent surfaces are explicit: `/review url=...` HTTPS content loading, remote JWKS via `jwksUri`, and Claude Code HTTP hook mode's localhost listener.                                               |
-| **Host Enforcement**              | OpenCode is the strongest synchronous enforcement path. Claude Code and Codex are supported through MCP/hooks/native packaging with hook-gated, platform-limited guarantees.                                                                                     |
+| **Host Enforcement**              | OpenCode is the strongest synchronous enforcement path. Claude Code and Codex are supported through MCP/hooks/native packaging with hook-gated, platform-limited guarantees. See [Platform Limitations](./docs/platform-limitations.md).                         |
 
 ---
 

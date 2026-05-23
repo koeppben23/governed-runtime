@@ -255,14 +255,14 @@ For organizations requiring controlled approvals, auditable decisions, retained 
 
 ### Architecture
 
-| Property             | Value                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| **Language**         | TypeScript (100%, zero-bridge)                                                        |
-| **Runtime**          | OpenCode host runtime (process-injected)                                              |
-| **State Validation** | Zod schemas, validated on every write                                                 |
-| **Audit Integrity**  | SHA-256 hash chain, JSONL append-only                                                 |
-| **Module System**    | ES2022 modules, NodeNext resolution (`module` + `moduleResolution`)                   |
-| **Package**          | `@flowguard/core` (distributed via GitHub Releases as pre-built proprietary artifact) |
+| Property             | Value                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Language**         | TypeScript (100%, zero-bridge)                                                                           |
+| **Runtime**          | Host-aware runtime — OpenCode synchronous plugin; Claude Code/Codex via MCP, hooks, and native packaging |
+| **State Validation** | Zod schemas, validated on every write                                                                    |
+| **Audit Integrity**  | SHA-256 hash chain, JSONL append-only                                                                    |
+| **Module System**    | ES2022 modules, NodeNext resolution (`module` + `moduleResolution`)                                      |
+| **Package**          | `@flowguard/core` (distributed via GitHub Releases as pre-built proprietary artifact)                    |
 
 ### Layer Architecture
 
@@ -370,7 +370,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Not a compliance certification.** FlowGuard provides building blocks for auditable workflows (hash chains, evidence gates, four-eyes enforcement). It does not certify compliance with any specific standard (MaRisk, BAIT, DORA, GoBD, BSI C5, SOC 2, ISO 27001, etc.). Organizations must assess whether FlowGuard's controls satisfy their specific requirements. FlowGuard supports compliance programs — it does not replace them.
 - **LLM output quality is outside FlowGuard's scope.** FlowGuard governs the workflow around AI-assisted development. It does not validate, verify, or guarantee the correctness of LLM-generated code.
 - **Workspace-local by design.** Sessions are bound to a filesystem workspace and individual OpenCode session. Enterprise multi-user coordination happens through customer-managed repositories, shared policy files, CI pipelines, and audit export. No built-in multi-user server deployment.
-- **OpenCode-dependent.** FlowGuard requires OpenCode as its host runtime. It does not run standalone or integrate with other AI coding tools.
+- **Host-aware.** FlowGuard runs within supported AI coding tools. OpenCode provides the strongest synchronous enforcement path. Claude Code and Codex are supported through MCP, hooks, and native packaging with hook-gated, platform-limited guarantees. FlowGuard does not run standalone.
 - **No pipeline orchestration.** FlowGuard provides CI-aware policy behavior (`team-ci`) but does not include pipeline orchestration, job management, or hosted control-plane services. Integration with external CI systems is via headless mode.
 - **Archive verification is local.** Archive integrity checks (`verifyArchive()`) run locally. Release package provenance is separately attested via GitHub Release signatures, but session verification remains local.
 - **Central policy distribution is baseline-only.** FlowGuard supports explicit central policy minimum enforcement via `FLOWGUARD_POLICY_PATH`, but it is not a full enterprise policy control plane (no admin UI, remote server, RBAC, or fleet management). See `docs/enterprise-readiness.md` and `docs/admin-model.md`.
@@ -404,7 +404,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
 - **Mutation Testing:** StrykerJS (v9.6.1) on 12 security-critical files across machine, rails, audit, config, and identity paths; CI enforces an 85% break threshold
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
-- **Self-Hosted:** Runs locally — zero network calls from FlowGuard itself
+- **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 
 ---
 
