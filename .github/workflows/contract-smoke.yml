@@ -1,4 +1,4 @@
-name: FlowGuard Runtime Contract Smoke
+name: Review Validation Host Contract
 
 on:
   pull_request:
@@ -9,8 +9,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  contract-smoke:
-    name: contract-smoke
+  host-contract:
+    name: host-contract
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,7 +22,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run FlowGuard contract smoke
-        run: npm run test:contract-smoke
+      - name: Run review validation host contract tests
+        run: npm run test:review-validation-host-contract
         env:
           FORCE_COLOR: '0'
