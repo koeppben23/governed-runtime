@@ -19,7 +19,7 @@ This document maps FlowGuard's technical capabilities to C5:2020 control domains
 Each section below covers one C5:2020 control domain. For each domain:
 
 - **Relevance** indicates how directly FlowGuard's capabilities relate to the domain.
-- **FlowGuard Provides** lists specific, evidence-backed capabilities.
+- **What FlowGuard Contributes** lists specific, evidence-backed capabilities.
 - **Organization Must Provide** lists responsibilities that FlowGuard cannot address.
 
 Relevance levels:
@@ -62,7 +62,7 @@ Relevance levels:
 
 The RB domain covers change management, operational documentation, logging, and monitoring. This is FlowGuard's primary contribution area.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Change Management:**
 
@@ -103,7 +103,7 @@ The RB domain covers change management, operational documentation, logging, and 
 
 The IDM domain covers identity management, access control, and separation of duties.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Separation of Duties:**
 
@@ -135,7 +135,7 @@ The IDM domain covers identity management, access control, and separation of dut
 
 The DEV domain covers secure development practices, development guidelines, and testing requirements.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Structured Development Workflow:**
 
@@ -173,7 +173,7 @@ The DEV domain covers secure development practices, development guidelines, and 
 
 The COM domain covers compliance documentation, evidence retention, and audit support.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Evidence Management:**
 

@@ -48,6 +48,12 @@ describe('documentation/compliance-mapping-sanity', () => {
         expect(content, `${mapping} must state FlowGuard alone is insufficient`).toContain(
           'FlowGuard alone does not satisfy',
         );
+        expect(content, `${mapping} must avoid audit-ready positioning`).not.toMatch(
+          /\baudit-ready\b/i,
+        );
+        expect(content, `${mapping} must avoid absolute compliance guarantee language`).not.toMatch(
+          /\bguarantees\s+compliance\b/i,
+        );
         expect(content, `${mapping} must assign residual controls to the organization`).toContain(
           'Organization Must Provide',
         );

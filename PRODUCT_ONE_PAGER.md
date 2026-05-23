@@ -1,6 +1,6 @@
 # FlowGuard — AI Engineering Governance Platform
 
-**AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.**
+**AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit evidence.**
 
 FlowGuard is a host-aware governance runtime. OpenCode currently provides the
 strongest synchronous enforcement path; Claude Code and Codex are supported via
@@ -20,7 +20,7 @@ AI coding tools generate code. They do not provide a deterministic control plane
 
 ## The Solution
 
-FlowGuard governs the engineering process _around_ AI-assisted development — it does not replace the coding assistant. It adds deterministic workflow control, explicit approval gates, evidence tracking, and audit-ready proof to every AI-supported change.
+FlowGuard governs the engineering process _around_ AI-assisted development — it does not replace the coding assistant. It adds deterministic workflow control, explicit approval gates, evidence tracking, and tamper-evident records to every AI-supported change.
 
 ## Key Capabilities
 
@@ -76,7 +76,7 @@ FlowGuard provides building blocks for controlled software delivery. It maps to 
 - **MaRisk AT 7.2-7.4** — Four-eyes principle, documentation, approval workflows
 - **BAIT § 8-14** — IT operations, change management, incident response
 - **DORA Art. 5-8** — ICT risk management, deployment control
-- **GoBD § 2-8, § 145/146** — Documentation, auditability, data retention
+- **GoBD § 2-8, § 145/146** — Documentation, traceability, data retention
 
 ## Why Not Just GitHub Copilot + Jira + CI?
 
@@ -86,8 +86,8 @@ Existing tool combinations generate output but do not provide:
 - Policy-bound workflow enforcement
 - Immutable decision receipts linked to audit trail
 - Evidence completeness verification before phase transitions
-- Session-level archive export for compliance review
-- Explicit governance evidence for risk assessments
+- Session-level archive export that supports audit and evidence review
+- Explicit governance evidence that supports risk assessments
 
 FlowGuard fills this gap without replacing existing tools.
 

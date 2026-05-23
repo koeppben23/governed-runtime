@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #313:** Tightened compliance language in product docs for pilot
+  positioning. Replaced "audit-ready," "compliance assessment," and absolute
+  outcome claims with building-block/support language aligned with
+  enterprise-readiness.md scoping.
+
 - **Issue #312:** Clarified host-dependent multi-platform enforcement guarantees
   in product and security documentation. Removed legacy "OpenCode-dependent" and
   "zero network calls" claims. Added platform qualifiers to pitch,

@@ -39,7 +39,7 @@ GoBD primarily applies to **accounting-relevant systems**. FlowGuard contributes
 
 GoBD § 2 requires that all business transactions are completely recorded.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Evidence-based workflow forces documentation of each change
 - Ticket evidence: Every task is documented
@@ -76,7 +76,7 @@ Accuracy of accounting data is outside FlowGuard's scope.
 
 GoBD § 4 requires that every transaction can be traced back to its origin.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Audit Trail:**
 
@@ -111,7 +111,7 @@ GoBD § 4 requires that every transaction can be traced back to its origin.
 
 GoBD § 5 requires that data be stored in its original form.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Audit trail in JSONL format (machine-readable, original)
 - Session state in canonical JSON format
@@ -132,7 +132,7 @@ GoBD § 5 requires that data be stored in its original form.
 
 GoBD § 6 requires that recorded data cannot be altered unnoticed.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Hash Chain:**
 
@@ -167,7 +167,7 @@ GoBD § 6 requires that recorded data cannot be altered unnoticed.
 
 GoBD § 7 requires that records be clear and understandable.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Structured phase workflow
 - Evidence artifacts with clear purpose
@@ -188,7 +188,7 @@ GoBD § 7 requires that records be clear and understandable.
 
 GoBD § 8 requires that data be available within reasonable time.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Session archives with complete evidence
 - Structured archive format
@@ -209,7 +209,7 @@ GoBD § 8 requires that data be available within reasonable time.
 
 GoBD § 145 (AO) and § 146 (HGB) define retention periods.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Archive includes complete session state
 - Retention can be based on session metadata

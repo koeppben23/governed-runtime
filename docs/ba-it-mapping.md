@@ -39,7 +39,7 @@ How FlowGuard capabilities map to BAIT (Bankenaufsichtliche Anforderungen an die
 
 BAIT § 8 requires establishing IT governance frameworks.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Policy modes: Solo, Team, Team-CI, Regulated
 - Configurable workflow enforcement per policy
@@ -60,7 +60,7 @@ BAIT § 8 requires establishing IT governance frameworks.
 
 BAIT § 9 requires strategic IT planning including architecture and capacity.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Architecture flow for ADR creation
 - Discovery pipeline for repository analysis
@@ -80,7 +80,7 @@ BAIT § 9 requires strategic IT planning including architecture and capacity.
 
 BAIT § 10 requires systematic IT risk management.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Risk Identification:**
 
@@ -113,7 +113,7 @@ BAIT § 10 requires systematic IT risk management.
 
 BAIT § 11 requires information security management.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Access Control:**
 
@@ -154,7 +154,7 @@ BAIT § 11 requires information security management.
 
 BAIT § 13 requires IT operations management.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Self-hosted, filesystem-first execution with no outbound network required for
   default workflows
@@ -176,7 +176,7 @@ BAIT § 13 requires IT operations management.
 
 BAIT § 14 requires structured system development processes.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Development Workflow:**
 
