@@ -109,7 +109,7 @@ FlowGuard implements multiple defense layers. If one fails, subsequent layers pr
 
 ### Layer 1: PreToolUse Gate (Primary)
 
-- Blocks mutating tools during investigation phases
+- Blocks mutating tools during investigation phases (synchronous only on OpenCode; best-effort on hook-gated hosts)
 - Blocks unauthorized subagent types
 - Fail-closed on any internal error
 

@@ -129,12 +129,12 @@ FlowGuard integrates with OpenCode via:
 
 ## Security Boundaries
 
-| Boundary              | Enforced By        | Customer Responsibility        |
-| --------------------- | ------------------ | ------------------------------ |
-| **FlowGuard runtime** | Code               | Protect installation directory |
-| **Session state**     | Zod schemas        | Protect `.opencode/` directory |
-| **Audit trail**       | Hash chain         | Protect JSONL file             |
-| **Archives**          | Manifest + digests | Secure archive storage         |
+| Boundary              | Enforced By                                                                | Customer Responsibility        |
+| --------------------- | -------------------------------------------------------------------------- | ------------------------------ |
+| **FlowGuard runtime** | Code (host-dependent: synchronous on OpenCode, hook-gated on Claude/Codex) | Protect installation directory |
+| **Session state**     | Zod schemas (platform-independent)                                         | Protect `.opencode/` directory |
+| **Audit trail**       | Hash chain (platform-independent)                                          | Protect JSONL file             |
+| **Archives**          | Manifest + digests (platform-independent)                                  | Secure archive storage         |
 
 ---
 
