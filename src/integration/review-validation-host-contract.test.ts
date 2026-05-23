@@ -65,6 +65,9 @@ const DECIDED_BY = 'reviewer-1';
 
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+const INVOCATION_ID_PLAN = '33333333-3333-4333-8333-333333333333';
+const INVOCATION_ID_IMPL = '44444444-4444-4444-8444-444444444444';
+const INVOCATION_ID_ARCH = '55555555-5555-4555-8555-555555555555';
 const SESS_ID_REVIEWER = 'ses_reviewer';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -110,10 +113,11 @@ function buildHostInvocation(
   host: HostId,
   obligation: ReviewObligation,
   findingsHash: string,
+  invocationId = INVOCATION_ID,
 ): ReviewInvocationEvidence {
   const style = computeHostEnforcementStyle(host);
   return {
-    invocationId: INVOCATION_ID,
+    invocationId,
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
     parentSessionId: 'ses_parent',
@@ -370,7 +374,7 @@ describe('FlowGuard assurance pipeline run-through', () => {
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
-        const invocationP = buildHostInvocation(host, obligationP, fhP);
+        const invocationP = buildHostInvocation(host, obligationP, fhP, INVOCATION_ID_PLAN);
 
         let assurance = appendReviewObligation(undefined, obligationP);
         // Mark obligation fulfilled (as if plugin/agent completed review)
@@ -388,7 +392,7 @@ describe('FlowGuard assurance pipeline run-through', () => {
           invocations: assurance.invocations,
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
-        assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID);
+        assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID_PLAN);
 
         planState.reviewAssurance = assurance;
         planState.reviewDecision = {
@@ -418,7 +422,7 @@ describe('FlowGuard assurance pipeline run-through', () => {
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
-        const invocationI = buildHostInvocation(host, obligationI, fhI);
+        const invocationI = buildHostInvocation(host, obligationI, fhI, INVOCATION_ID_IMPL);
 
         let implAssurance = appendReviewObligation(assurance, obligationI);
         implAssurance = {
@@ -435,7 +439,12 @@ describe('FlowGuard assurance pipeline run-through', () => {
           invocations: implAssurance.invocations,
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
-        implAssurance = consumeReviewObligation(implAssurance, obligationI, NOW, INVOCATION_ID);
+        implAssurance = consumeReviewObligation(
+          implAssurance,
+          obligationI,
+          NOW,
+          INVOCATION_ID_IMPL,
+        );
 
         implState.reviewAssurance = implAssurance;
         await writeState(sessDir, implState);
@@ -479,7 +488,7 @@ describe('FlowGuard assurance pipeline run-through', () => {
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);
-        const invocationA = buildHostInvocation(host, obligationA, fhA);
+        const invocationA = buildHostInvocation(host, obligationA, fhA, INVOCATION_ID_ARCH);
 
         let archAssurance = appendReviewObligation(undefined, obligationA);
         archAssurance = {
@@ -496,7 +505,12 @@ describe('FlowGuard assurance pipeline run-through', () => {
           invocations: archAssurance.invocations,
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);
-        archAssurance = consumeReviewObligation(archAssurance, obligationA, NOW, INVOCATION_ID);
+        archAssurance = consumeReviewObligation(
+          archAssurance,
+          obligationA,
+          NOW,
+          INVOCATION_ID_ARCH,
+        );
 
         archState.reviewAssurance = archAssurance;
         archState.reviewDecision = {
