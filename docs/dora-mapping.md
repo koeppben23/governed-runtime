@@ -36,7 +36,7 @@ How FlowGuard capabilities map to DORA (Digital Operational Resilience Act) by t
 
 DORA requires governance frameworks for ICT risk management.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Policy modes: Solo, Team, Team-CI, Regulated
 - Policy snapshot frozen at session creation
@@ -56,7 +56,7 @@ DORA requires governance frameworks for ICT risk management.
 
 DORA Article 5-8 requires comprehensive ICT risk management frameworks.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Risk Identification (Art. 5):**
 
@@ -131,7 +131,7 @@ FlowGuard is not a testing framework.
 
 DORA requires managing third-party ICT risk (Art. 25-27).
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Evidence of change intent and approval (useful for third-party verification)
 - Audit trail of decisions

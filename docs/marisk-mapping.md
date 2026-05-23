@@ -38,7 +38,7 @@ How FlowGuard capabilities map to MaRisk (Mindestanforderungen an das Risikomana
 
 MaRisk AT 7.2 requires documented change management processes for IT systems. This includes authorization, testing, and approval of changes.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 **Change Enablement:**
 
@@ -82,7 +82,7 @@ MaRisk AT 7.2 requires documented change management processes for IT systems. Th
 
 MaRisk AT 7.3 requires role-based authorization management.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Four-eyes principle enforcement in regulated mode (initiator ≠ reviewer)
 - Actor classification: `human` vs. `system` in policy
@@ -102,7 +102,7 @@ MaRisk AT 7.3 requires role-based authorization management.
 
 MaRisk AT 7.4 requires access control for IT systems.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Sessions bound to filesystem workspace and OpenCode session
 - Self-hosted, filesystem-first execution; no external network access is required
@@ -123,7 +123,7 @@ MaRisk AT 7.4 requires access control for IT systems.
 
 MaRisk BT 1 requires identification of risks associated with changes.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Ticket phase forces documentation of change intent (risk identification)
 - Plan phase requires risk Considerations
@@ -144,7 +144,7 @@ MaRisk BT 1 requires identification of risks associated with changes.
 
 MaRisk BT 3-4 require controlling and monitoring of identified risks.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Hash-chained audit trail provides traceable decision history
 - Phase gates enforce evidence requirements
@@ -165,7 +165,7 @@ MaRisk BT 3-4 require controlling and monitoring of identified risks.
 
 MaRisk BT 5 requires reporting of risk status.
 
-#### FlowGuard Provides
+#### What FlowGuard Contributes
 
 - Compliance summary generation: 7-check assessment
 - Session archives with complete evidence

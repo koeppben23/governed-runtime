@@ -1,6 +1,6 @@
 # AI Engineering FlowGuard Platform
 
-AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit-ready evidence.
+AI-assisted engineering with deterministic workflow control, fail-closed enforcement, and audit evidence.
 
 FlowGuard is a host-aware governance runtime. It originated with OpenCode as the
 strongest synchronous enforcement path and now supports Claude Code and Codex
@@ -13,9 +13,9 @@ guarantees.
 
 The **AI Engineering FlowGuard Platform** transforms AI-assisted software delivery from unstructured chat interactions into **deterministic, policy-bound workflows** with explicit phases, gates, canonical state, audit artifacts, and fail-closed enforcement.
 
-Built for **regulated industries, enterprise engineering teams, and organizations with audit or compliance requirements**, the platform provides the operating discipline that AI-driven development needs to meet controlled software delivery standards.
+Designed for engineering teams that need governed AI-assisted workflows, including pilot use in controlled environments. FlowGuard provides the operating discipline to support controlled software delivery standards.
 
-**Key Value Proposition:** Organizations can now use AI for software delivery while maintaining proof, control, and auditability — not just generated code.
+**Key Value Proposition:** Organizations can now use AI for software delivery while maintaining proof, control, and evidence trails — not just generated code.
 
 ---
 
@@ -46,21 +46,21 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 - **Fail-closed enforcement** — execution blocks when evidence or state is invalid
 - **Policy-aware evaluation** — every transition is checked against the active FlowGuard policy
 
-### FlowGuard & Compliance
+### Governance & Evidence
 
 - **Four policy modes:** Solo (no human gates, fast feedback), Team (human gates), Team-CI (CI-aware auto-approve with safe degradation), Regulated (four-eyes principle enforced)
 - **Central policy minimum enforcement:** optional explicit central source (`FLOWGUARD_POLICY_PATH`) constrains hydrate policy resolution; explicit weaker-than-central requests fail closed, repo/default weaker modes are elevated with visible resolution evidence
 - **Tech-stack-aware profiles:** Java/Spring Boot, Angular/Nx, TypeScript/Node.js, with auto-detection
 - **Evidence completeness matrix** — deterministic per-slot evaluation of all evidence requirements
 - **Reason-coded blocking** — every blocker has a specific error code, recovery guidance, and optional quick-fix
-- **Compliance mappings:** BSI C5, MaRisk (AT 7.2-7.4, BT 1-5), BAIT (§ 8-14), DORA (Art. 5-8), GoBD (§ 2-8, § 145/146)
+- **Regulatory framework mappings:** BSI C5, MaRisk (AT 7.2-7.4, BT 1-5), BAIT (§ 8-14), DORA (Art. 5-8), GoBD (§ 2-8, § 145/146)
 
 ### Audit & Evidence
 
 - **Hash-chained audit trail** — SHA-256 linked events, tamper-evident, JSONL append-only
 - **Structured event kinds** — transition, tool_call, error, lifecycle, and decision events with typed details
 - **Decision receipts** — every successful `/review-decision` emits immutable `decision:DEC-xxx` receipt events
-- **Compliance summary generation** — automated 7-check compliance assessment from audit trail
+- **Evidence summary generation** — automated 7-check evidence summary from audit trail
 - **Four-eyes principle verification** — initiator vs. reviewer identity tracked and enforced in Regulated mode. FlowGuard supports three-tier minimum actor assurance (`best_effort`, `claim_validated`, `idp_verified`) with `minimumActorAssuranceForApproval` policy threshold. Solo, Team, and Team-CI default to `best_effort`; Regulated defaults to `claim_validated`, requiring a valid `FLOWGUARD_ACTOR_CLAIMS_PATH` claim file or stronger IdP-verified identity for approval. IdP verification supports static keys (`mode: static`) and JWKS mode (`mode: jwks`) with exactly one authority (`jwksPath` or HTTPS `jwksUri`), TTL cache, and strict fail-closed behavior (`identityProviderMode: required` blocks mutating decisions; `optional` degrades only on typed IdP errors). JWT verification is implemented with `jose` `jwtVerify` while key authority stays FlowGuard-owned. `/hydrate` resolves actor identity diagnostically, while `/review-decision` enforces the policy snapshot threshold fail-closed. OIDC discovery and stale/last-known-good fallback are not implemented.
 - **Policy snapshot** — immutable, hashed copy of active policy frozen at session creation (includes all governance fields: mode, gate behavior, review iterations, self-approval, audit settings, and actor classification)
 
@@ -400,7 +400,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Archive Verification Checks:** 11 finding codes (including audit chain integrity)
 - **Reason Codes:** 30+ with recovery guidance
 - **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
-- **Compliance Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
+- **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
 - **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
 - **Mutation Testing:** StrykerJS (v9.6.1) on 12 security-critical files across machine, rails, audit, config, and identity paths; CI enforces an 85% break threshold
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
@@ -410,7 +410,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 
 ## In One Sentence
 
-The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable in regulated and control-heavy environments by adding deterministic workflow control, explicit approvals, and audit-ready proof.
+The AI Engineering FlowGuard Platform makes AI-assisted software delivery usable in regulated and control-heavy environments by adding deterministic workflow control, explicit approvals, and tamper-evident evidence trails.
 
 ---
 
