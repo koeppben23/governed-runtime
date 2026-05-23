@@ -53,6 +53,7 @@
     "test:watch": "vitest --project unit --project integration",
     "test:install-verify": "vitest run --project smoke src/cli/install-verify.test.ts",
     "test:acp": "vitest run --project smoke src/cli/run-acp-smoke.test.ts",
+    "test:runtime-smoke": "vitest run --project smoke src/cli/runtime-flow-smoke.test.ts",
     "test:unit": "vitest run --project unit",
     "test:architecture": "vitest run --project unit src/architecture/**/*.test.ts",
     "test:integration": "vitest run --project integration",
