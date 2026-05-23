@@ -1,6 +1,6 @@
 /**
- * @module integration/runtime-flow-e2e-contract.test
- * @description FlowGuard tool-level E2E contract smoke.
+ * @module integration/review-modeb-contract.test
+ * @description Plan and architecture Mode-B review validation contract.
  *
  * Calls actual plan.execute() and architecture.execute() in review-verdict
  * mode (Mode B) with real git worktrees and persistence. Bootstraps state
@@ -8,6 +8,7 @@
  * review assurance, then invokes the tool to validate and consume.
  *
  * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
+ * Does NOT test full E2E flows — only the review-verdict gate for plan and architecture.
  * No LLM inference, no network, no secrets.
  */
 
@@ -170,7 +171,7 @@ async function bootstrap(host: HostId, label: string): Promise<E2ESession> {
   };
 }
 
-describe('FlowGuard tool-level E2E contract', () => {
+describe('plan / architecture Mode-B review contract', () => {
   for (const host of ALL_HOSTS) {
     describe(`${host} (${style(host)})`, () => {
       let session: E2ESession;
