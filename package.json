@@ -55,6 +55,7 @@
     "test:acp": "vitest run --project smoke src/cli/run-acp-smoke.test.ts",
     "test:review-validation-host-contract": "vitest run --project integration src/integration/review-validation-host-contract.test.ts",
     "test:review-modeb-contract": "vitest run --project integration src/integration/review-modeb-contract.test.ts",
+    "test:e2e-contract": "vitest run --project integration src/integration/runtime-flow-e2e-contract.test.ts",
     "test:unit": "vitest run --project unit",
     "test:architecture": "vitest run --project unit src/architecture/**/*.test.ts",
     "test:integration": "vitest run --project integration",
