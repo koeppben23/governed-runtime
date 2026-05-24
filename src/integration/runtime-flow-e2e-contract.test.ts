@@ -301,7 +301,7 @@ describe('FlowGuard tool-level E2E', () => {
         );
       });
 
-      it('main chain: plan → evidence → approve → implement → evidence → approve', async () => {
+      it('plan-to-implement segment: plan → evidence → approve → implement → evidence → approve', async () => {
         s = await boot(host, 'main');
 
         // Step 1: plan Mode A
