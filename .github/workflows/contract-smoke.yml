@@ -1,4 +1,4 @@
-name: Review Validation Host Contract
+name: FlowGuard Contract Smoke
 
 on:
   pull_request:

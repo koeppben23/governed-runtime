@@ -1,16 +1,16 @@
 /**
  * @module integration/runtime-flow-e2e-contract.test
- * @description FlowGuard tool-level E2E contract — complete flow run-throughs.
+ * @description FlowGuard tool-level contract coverage for review-gated
+ * flow segments.
  *
  * Calls actual tool.execute() in-process with real git worktrees and persistence.
- * Each flow: Mode A (evidence + obligation creation) → inject host-specific
+ * Each test: Mode A (evidence + obligation creation) → inject host-specific
  * synthetic evidence into tool-created obligation → Mode B (review verdict
- * validates and consumes).
+ * validates and consumes). The main chain test links plan and implement
+ * segments. The standalone review flow completes via content + findings.
  *
- * Flows: architecture, plan, implement (Mode A → Mode B), main chain
- * (plan → approve → implement → approve), and standalone review
- * (content → obligation → evidence → complete).
  * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
+ * Does NOT test /check, /validate, /export, /review-decision as standalone tools.
  * No LLM inference, no network, no secrets.
  */
 
@@ -178,10 +178,15 @@ async function inject(
   return { state: aug, oblId: obl.obligationId };
 }
 
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
 describe('FlowGuard tool-level E2E', () => {
   for (const host of HOSTS) {
     describe(`${host} (${isOpen(host) ? 'plugin_handshake' : 'manual_attested'})`, () => {
-      let s: SE;
+      let s: SE | undefined;
       let pc: string | undefined, pr: string | undefined, pp: string | undefined;
       beforeEach(() => {
         pc = process.env.OPENCODE_CONFIG_DIR;
@@ -189,10 +194,13 @@ describe('FlowGuard tool-level E2E', () => {
         pp = process.env.FLOWGUARD_HOST_PLATFORM;
       });
       afterEach(() => {
-        process.env.OPENCODE_CONFIG_DIR = pc;
-        process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR = pr;
-        process.env.FLOWGUARD_HOST_PLATFORM = pp;
-        if (s) rmSync(s.rootDir, { recursive: true, force: true });
+        restoreEnv('OPENCODE_CONFIG_DIR', pc);
+        restoreEnv('FLOWGUARD_REQUIRE_TEST_CONFIG_DIR', pr);
+        restoreEnv('FLOWGUARD_HOST_PLATFORM', pp);
+        if (s) {
+          rmSync(s.rootDir, { recursive: true, force: true });
+          s = undefined;
+        }
       });
 
       it('architecture: Mode A → evidence → Mode B', async () => {
