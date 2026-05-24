@@ -10,7 +10,8 @@
  *
  * Fail-closed invariants:
  * - TSA unreachable → status:'tsa_failed', event still recorded (audit gap is worse)
- * - In Slice 1, strict is always false. Strict ERROR transition is Slice 2.
+ * - strict is a policy-configurable field (TimestampAssurancePolicy.strict)
+ *   but is not read by resolveTimestampEvidence in this module.
  * - No silent fallback hides TSA failure.
  *
  * @version v1
