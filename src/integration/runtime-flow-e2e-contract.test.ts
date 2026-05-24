@@ -11,6 +11,7 @@
  *
  * Host profiles: opencode (plugin_handshake), claude-code and codex (manual_attested).
  * Does NOT test /check, /validate, /export, /review-decision as standalone tools.
+ * (validate and archive are tested within the plan-to-implement segment.)
  * No LLM inference, no network, no secrets.
  */
 
@@ -31,6 +32,8 @@ import { plan } from './tools/plan.js';
 import { implement } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
 import { review } from './tools/review-tool/index.js';
+import { validate } from './tools/validate-tool.js';
+import { archive } from './tools/archive-tool.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
 import {
@@ -301,7 +304,7 @@ describe('FlowGuard tool-level E2E', () => {
         );
       });
 
-      it('plan-to-implement segment: plan → evidence → approve → implement → evidence → approve', async () => {
+      it('plan-to-implement segment: plan → validate → implement → archive', async () => {
         s = await boot(host, 'main');
 
         // Step 1: plan Mode A
@@ -312,7 +315,7 @@ describe('FlowGuard tool-level E2E', () => {
         let st = await readState(s.sDir);
         expect(st!.plan).toBeTruthy();
 
-        // Step 2: inject evidence + approve
+        // Step 2: inject evidence + approve plan
         const { oblId: pid } = await inject(s.sDir, st!, host, 'plan', s.tc.sessionID);
         st = await readState(s.sDir);
         const po = st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!;
@@ -325,25 +328,47 @@ describe('FlowGuard tool-level E2E', () => {
         );
         expect(typeof r2).toBe('string');
         expect(r2).not.toContain('INTERNAL_ERROR');
-        st = await readState(s.sDir);
-        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!.status).toBe(
-          'consumed',
-        );
 
-        // Step 3: bootstrap IMPLEMENTATION with plan + reviewDecision from plan Mode B
+        // Step 3: validate — bootstrap at VALIDATION
+        st = await readState(s.sDir);
+        const currentPlan = st!.plan!;
+        await writeStateWithArtifacts(
+          s.sDir,
+          makeState('VALIDATION', {
+            ticket: TICKET,
+            plan: currentPlan,
+            reviewDecision: st!.reviewDecision,
+            activeChecks: ['test_quality', 'rollback_safety'],
+          }),
+        );
+        const rV = await validate.execute(
+          {
+            results: [
+              { checkId: 'test_quality', passed: true, detail: 'All tests pass' },
+              { checkId: 'rollback_safety', passed: true, detail: 'Safe to rollback' },
+            ],
+          },
+          s.tc,
+        );
+        expect(typeof rV).toBe('string');
+        expect(rV).not.toContain('INTERNAL_ERROR');
+
+        // Step 4: implement Mode A
+        st = await readState(s.sDir);
+        // Bootstrap IMPLEMENTATION with evidence from validate
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
             ticket: TICKET,
-            plan: st!.plan!,
+            plan: currentPlan,
             reviewDecision: st!.reviewDecision,
+            validation: st!.validation,
+            activeChecks: ['test_quality', 'rollback_safety'],
           }),
         );
         mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
         writeFileSync(path.join(s.worktree, 'src', 'auth.ts'), 'export const auth = () => true;');
         execSync('git add src', { cwd: s.worktree, stdio: 'pipe' });
-
-        // Step 4: implement Mode A
         const r3 = await implement.execute({}, s.tc);
         expect(typeof r3).toBe('string');
         expect(r3).not.toContain('INTERNAL_ERROR');
@@ -363,10 +388,26 @@ describe('FlowGuard tool-level E2E', () => {
         );
         expect(typeof r4).toBe('string');
         expect(r4).not.toContain('INTERNAL_ERROR');
+
+        // Step 6: archive at terminal phase
         st = await readState(s.sDir);
-        expect(st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!.status).toBe(
-          'consumed',
+        await writeStateWithArtifacts(
+          s.sDir,
+          makeState('COMPLETE', {
+            ticket: TICKET,
+            plan: currentPlan,
+            implementation: st!.implementation,
+            reviewAssurance: st!.reviewAssurance,
+            reviewDecision: st!.reviewDecision,
+            validation: st!.validation,
+            activeChecks: ['test_quality', 'rollback_safety'],
+          }),
         );
+        const rA = await archive.execute({}, s.tc);
+        expect(typeof rA).toBe('string');
+        expect(rA).not.toContain('INTERNAL_ERROR');
+        st = await readState(s.sDir);
+        expect(st!.archiveStatus).toBeTruthy();
       });
 
       it('review: content → obligation → evidence → complete', async () => {
