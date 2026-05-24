@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -94,27 +94,18 @@ const describeSmoke = HAS_BUILT_CLI ? describe : describe.skip;
 
 describeSmoke('flowguard inspect CLI', () => {
   function runCli(args: string[], cwd?: string): { code: number; stdout: string; stderr: string } {
-    const result = execSync(`node ${CLI_ENTRY} ${args.join(' ')}`, {
+    const result = spawnSync(process.execPath, [CLI_ENTRY, ...args], {
       cwd: cwd ?? REPO_ROOT,
       encoding: 'utf-8',
       stdio: 'pipe',
       env: { ...process.env, FORCE_COLOR: '0' },
       timeout: 15000,
     });
-    return { code: 0, stdout: result, stderr: '' };
+    return { code: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
   }
 
   function safeRun(args: string[], cwd?: string): { code: number; stdout: string; stderr: string } {
-    try {
-      return runCli(args, cwd);
-    } catch (err: unknown) {
-      const exit = err as { code?: number; stdout?: string; stderr?: string };
-      return {
-        code: exit.code ?? 1,
-        stdout: exit.stdout ?? '',
-        stderr: exit.stderr ?? String(err),
-      };
-    }
+    return runCli(args, cwd);
   }
 
   it('HAPPY: no sessions prints clean message', () => {
@@ -144,8 +135,6 @@ describeSmoke('flowguard inspect CLI', () => {
   });
 
   it('CORNER: --json without --session exits with error', () => {
-    const result = safeRun(['inspect', '--json']);
-    // Uses a temp dir with no workspace — should not crash
     const tmpDir = mkdtempSync(path.join(tmpdir(), 'fg-inspect-corner-'));
     try {
       const r = safeRun(['inspect', '--json'], tmpDir);
