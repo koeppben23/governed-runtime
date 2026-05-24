@@ -8,15 +8,14 @@
  * - TimestampVerifier: cryptographically verifies a TimeStampToken against
  *   trusted certificates.
  *
- * Slice 1 (#269): Interface + Mock implementations only.
- *   - MockTimestampAuthorityProvider: returns a pre-computed DER fixture token.
- *   - MockTimestampVerifier: checks fixture token against expected data.
- *   - MOCK_TSA_FIXTURE_TOKEN: mock token string for tests.
- *     Does NOT represent a verified RFC-3161 chain. Real verification requires
- *     a proper library (pkijs) in Slice 2.
+ * The file also provides mock implementations (MockTimestampAuthorityProvider,
+ * MockTimestampVerifier, MOCK_TSA_FIXTURE_TOKEN) for testing.
  *
- * Slice 2 (follow-up ticket): PkijsTimestampVerifier with pkijs + asn1js,
- *   HttpTimestampAuthorityProvider, strict mode activation.
+ * Production implementations live in sibling files:
+ *   - PkijsTimestampVerifier (rfc3161-pkijs-verifier.ts) — cryptographic
+ *     TimeStampToken verification using pkijs + asn1js.
+ *   - HttpTimestampAuthorityProvider (rfc3161-http-provider.ts) — HTTP
+ *     client that sends digests to a remote TSA.
  *
  * @version v1
  */
