@@ -101,6 +101,7 @@ export default defineConfig({
             'src/cli/install-verify.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
+            'src/cli/inspect-command.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
           ],
           globals: false,

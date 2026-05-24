@@ -26,7 +26,7 @@ import type { HostId } from '../shared/hosts.js';
 export type InstallScope = 'global' | 'repo';
 export type InstallPlatform = HostId;
 
-export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve';
+export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect';
 
 export interface CliArgs {
   action: CliAction;
