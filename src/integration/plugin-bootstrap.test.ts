@@ -130,7 +130,6 @@ function strictPlanReviewRequiredOutput(
   });
 }
 
-
 // ─── Plugin bootstrap fail-closed: no rogue workspace folder ────────────────
 
 describe('plugin bootstrap fail-closed', () => {

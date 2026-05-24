@@ -925,4 +925,3 @@ describe('buildMutatedOutput', () => {
     expect(parsed.pluginReviewFindings).toBeDefined();
   });
 });
-

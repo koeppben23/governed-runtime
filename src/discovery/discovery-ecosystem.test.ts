@@ -719,4 +719,3 @@ components = ["clippy", "rustfmt"]
 
   // ─── CORNER: dedup and version enrichment ─────────────────
 });
-

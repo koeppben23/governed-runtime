@@ -8,7 +8,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { readState, writeState, writeStateAlreadyLocked } from './persistence.js';
-import { withSessionWriteLock, acquireSessionWriteLock, sessionLockPath } from './persistence-lock.js';
+import {
+  withSessionWriteLock,
+  acquireSessionWriteLock,
+  sessionLockPath,
+} from './persistence-lock.js';
 import { createRailContext } from './context.js';
 import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';

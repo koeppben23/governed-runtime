@@ -147,7 +147,6 @@ function noReviewRequiredOutput(): string {
   });
 }
 
-
 describe('MUTATION_KILL: buildStackProfileSection via buildPlanReviewPrompt', () => {
   const baseOpts: PlanReviewPromptOpts = {
     planText: 'plan',

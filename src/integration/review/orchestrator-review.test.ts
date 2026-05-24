@@ -147,7 +147,6 @@ function noReviewRequiredOutput(): string {
   });
 }
 
-
 describe('isReviewRequired', () => {
   // HAPPY: detects review required
   it('returns true for INDEPENDENT_REVIEW_REQUIRED next field', () => {
