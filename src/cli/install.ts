@@ -63,6 +63,7 @@ const VALID_ACTIONS: readonly CliAction[] = [
   'doctor',
   'run',
   'serve',
+  'inspect',
 ] as const;
 
 /**
@@ -89,7 +90,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let logMode: 'file' | 'console' | 'file+console' | undefined;
   const deprecations: string[] = [];
 
-  if (action === 'run' || action === 'serve') {
+  if (action === 'run' || action === 'serve' || action === 'inspect') {
     return {
       args: {
         action,
@@ -296,6 +297,7 @@ Commands:
   install     Install FlowGuard tools, plugins, and commands
   uninstall   Remove FlowGuard files
   doctor      Verify installation is correct and complete
+  inspect     Show session compliance status (read-only)
   run         Execute FlowGuard commands in headless mode
   serve       Start a supported host server for headless operation
 
@@ -407,6 +409,11 @@ export async function main(argv: string[]): Promise<number> {
       case 'serve': {
         const { serveMain } = await import('./run.js');
         return serveMain(argv.slice(1));
+      }
+
+      case 'inspect': {
+        const { inspectMain } = await import('./inspect-command.js');
+        return inspectMain(argv.slice(1));
       }
     }
   } finally {

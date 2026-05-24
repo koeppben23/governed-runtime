@@ -311,3 +311,41 @@ synchronous archive creation + verification. The `archiveStatus` field on sessio
 (`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode.
 
 **Note:** This is an operational export action. The original session is preserved.
+
+### `flowguard inspect` — Session Compliance Reporting
+
+Read-only CLI command that surfaces existing audit and compliance data without mutation.
+
+**Usage:**
+
+```bash
+flowguard inspect                      # List all sessions in the workspace
+flowguard inspect --session <id>       # Full compliance report for one session
+flowguard inspect --session <id> --json # ComplianceSummary as JSON
+```
+
+**Modes:**
+
+| Mode           | Output                                                        |
+| -------------- | ------------------------------------------------------------- |
+| List (no args) | Session ID, event count, phase progression, last event age    |
+| Single session | Check-by-check pass/fail with statistics and chain integrity  |
+| `--json`       | Direct `ComplianceSummary` object from `src/audit/summary.ts` |
+
+**Data sources (delegated, no duplicate logic):**
+
+- `src/audit/summary.ts:generateComplianceSummary()` — 6 compliance checks
+- `src/audit/query.ts` — session discovery, event filtering, statistics
+- `src/audit/integrity.ts:verifyChain()` — hash chain verification
+- `src/adapters/persistence-audit.ts:readAuditTrail()` — JSONL audit trail loading
+
+**Fail-closed behavior:**
+
+| Scenario           | Output                                                |
+| ------------------ | ----------------------------------------------------- |
+| No workspace found | `No FlowGuard sessions found.` (exit 0)               |
+| Session not found  | `Session <id> not found in this workspace.` (exit 1)  |
+| Empty audit trail  | `No audit events recorded for this session.` (exit 1) |
+| Unreadable trail   | `Cannot read audit trail: <error>` (exit 1)           |
+
+**Non-Goals:** No state mutation, no schema changes, no new audit capabilities, no OpenCode slash command — CLI-only projection of existing audit data.

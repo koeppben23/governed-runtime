@@ -140,6 +140,12 @@ describe('cli/parseArgs', () => {
       expect(result).not.toBeNull();
       expect(result!.args.action).toBe('serve');
     });
+
+    it("delegates 'inspect' arguments without install-parser rejection", () => {
+      const result = parseArgs(['inspect', '--session', 'some-id', '--json']);
+      expect(result).not.toBeNull();
+      expect(result!.args.action).toBe('inspect');
+    });
   });
 
   // ─── BAD ───────────────────────────────────────────────────

@@ -116,6 +116,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Feat #321:** Add `flowguard inspect` CLI command for read-only session
+  compliance reporting. Lists all sessions in the workspace with event count,
+  phase progression, and age; generates per-session compliance reports
+  with check-by-check pass/fail, chain integrity verification, and event
+  statistics via `generateComplianceSummary()`. JSON output available with
+  `--json`. Delegates to existing `src/audit/summary.ts`, `src/audit/query.ts`,
+  and `src/audit/integrity.ts` — no new audit logic.
+
 - **Issue #332:** Fix MCP-platform review loop convergence for `/plan`,
   `/implement`, and `/architecture` Mode B by allowing strict
   `pluginHandshakeAt: null` only for Claude Code/Codex `manual_attested`
