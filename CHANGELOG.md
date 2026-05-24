@@ -67,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mcp-server, adapters, templates, and plugin-\* modules. Expanded
   `vitest.stryker.config.ts` test includes accordingly.
 
+- **FG-QUAL-007:** Split large test files into focused per-concern suites;
+  intended behavior-preserving test-structure refactor.
+
 ### Added
 
 - **Issue #296:** Add real RFC 3161 timestamp authority support using

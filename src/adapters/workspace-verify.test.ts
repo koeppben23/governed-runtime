@@ -1,0 +1,809 @@
+/**
+ * @module workspace.test
+ * @description Tests for the workspace registry module.
+ *
+ * Covers:
+ * - Fingerprint computation (remote canonical + local path fallback)
+ * - URL canonicalization (HTTPS, SSH, SCP-style, edge cases)
+ * - Path normalization for fingerprint
+ * - Path segment validation (fingerprint, sessionId)
+ * - Workspace/session directory resolution
+ * - initWorkspace idempotency and mismatch detection
+ * - Session pointer read/write (non-authoritative)
+ * - archiveSession (requires tar)
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import {
+  canonicalizeOriginUrl,
+  normalizeForFingerprint,
+  computeFingerprintFromRemote,
+  computeFingerprintFromPath,
+  validateFingerprint,
+  validateSessionId,
+  workspacesHome,
+  workspaceDir,
+  sessionDir,
+  ensureWorkspace,
+  initWorkspace,
+  readWorkspaceInfo,
+  writeSessionPointer,
+  readSessionPointer,
+  archiveSession,
+  verifyArchive,
+  WorkspaceError,
+  type WorkspaceInfo,
+} from './workspace/index.js';
+import * as crypto from 'node:crypto';
+import { withTestEnv } from '../integration/test-helpers.js';
+import { benchmarkSync, measureAsync } from '../test-policy.js';
+import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
+import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
+import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+
+// ─── Test Helpers ─────────────────────────────────────────────────────────────
+
+let tmpDir: string;
+
+async function createTmpDir(): Promise<string> {
+  return await fs.mkdtemp(path.join(os.tmpdir(), 'ws-test-'));
+}
+
+async function cleanTmpDir(dir: string): Promise<void> {
+  try {
+    await fs.rm(dir, { recursive: true, force: true });
+  } catch {
+    // Best effort on Windows (file locks)
+  }
+}
+
+describe('verifyArchive', () => {
+  let cleanupEnv: () => void;
+
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+  });
+
+  afterEach(async () => {
+    cleanupEnv();
+    await cleanTmpDir(tmpDir);
+  });
+
+  /**
+   * Helper: create a real archived session and return paths.
+   * Uses archiveSession to produce manifest, tar, and sidecar.
+   */
+  async function createArchivedSession(sessionId = '550e8400-e29b-41d4-a716-446655440000') {
+    const worktree = path.resolve('.');
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    // Write valid session state so the archive has content
+    await writeState(sessDir, makeState('COMPLETE'));
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+    return { fingerprint, sessionId, sessDir, archivePath };
+  }
+
+  // ── HAPPY ──────────────────────────────────────────────────────
+
+  it('passes on a clean archive', async () => {
+    const { fingerprint, sessionId } = await createArchivedSession();
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.filter((f) => f.severity === 'error')).toHaveLength(0);
+    expect(result.manifest).not.toBeNull();
+    expect(result.manifest!.sessionId).toBe(sessionId);
+    expect(result.verifiedAt).toBeTruthy();
+  });
+
+  // ── BAD ────────────────────────────────────────────────────────
+
+  it('reports missing_manifest when archive-manifest.json is absent', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Remove the manifest
+    await fs.unlink(path.join(sessDir, 'archive-manifest.json'));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'missing_manifest', severity: 'error' }),
+    );
+    expect(result.manifest).toBeNull();
+  });
+
+  it('reports manifest_parse_error when manifest is invalid JSON', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Corrupt the manifest
+    await fs.writeFile(path.join(sessDir, 'archive-manifest.json'), 'NOT JSON{{{', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'manifest_parse_error', severity: 'error' }),
+    );
+    expect(result.manifest).toBeNull();
+  });
+
+  it('reports manifest_parse_error when manifest fails schema validation', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Write valid JSON but invalid schema (missing required fields)
+    await fs.writeFile(
+      path.join(sessDir, 'archive-manifest.json'),
+      JSON.stringify({ schemaVersion: 'wrong', random: true }),
+      'utf-8',
+    );
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'manifest_parse_error', severity: 'error' }),
+    );
+  });
+
+  // ── CORNER ─────────────────────────────────────────────────────
+
+  it('reports missing_file when a listed file is deleted', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Read manifest to find what files are listed
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+
+    // Delete session-state.json (which is in includedFiles)
+    await fs.unlink(path.join(sessDir, 'session-state.json'));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Should report both missing_file and state_missing
+    expect(result.passed).toBe(false);
+    const codes = result.findings.map((f) => f.code);
+    expect(codes).toContain('missing_file');
+    expect(codes).toContain('state_missing');
+  });
+
+  it('reports unexpected_file when an unlisted file is present', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Add a rogue file after archiving
+    await fs.writeFile(path.join(sessDir, 'rogue-file.txt'), 'intruder', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'unexpected_file',
+        severity: 'warning',
+        file: 'rogue-file.txt',
+      }),
+    );
+  });
+
+  it('reports file_digest_mismatch when file content is tampered', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Tamper with session-state.json content (manifest still has old digest)
+    await fs.writeFile(
+      path.join(sessDir, 'session-state.json'),
+      JSON.stringify({ phase: 'TAMPERED', evil: true }),
+      'utf-8',
+    );
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'file_digest_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('reports content_digest_mismatch when manifest contentDigest is wrong', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Read and tamper with contentDigest in manifest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    manifest.contentDigest = '0000000000000000000000000000000000000000000000000000000000000000';
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'content_digest_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('reports snapshot_missing when discoveryDigest is set but snapshots are absent', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Tamper manifest to claim a discoveryDigest exists
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    manifest.discoveryDigest = 'abc123fake';
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Should find snapshot_missing warnings for both discovery and profile-resolution snapshots
+    const snapshotFindings = result.findings.filter((f) => f.code === 'snapshot_missing');
+    expect(snapshotFindings).toHaveLength(2);
+    expect(snapshotFindings[0]!.severity).toBe('warning');
+    expect(snapshotFindings[1]!.severity).toBe('warning');
+  });
+
+  it('reports state_missing when session-state.json is absent', async () => {
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    // Remove session-state.json
+    await fs.unlink(path.join(sessDir, 'session-state.json'));
+
+    // Also fix manifest so it doesn't list session-state.json as missing_file
+    // (we want to isolate state_missing finding)
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    manifest.includedFiles = manifest.includedFiles.filter(
+      (f: string) => f !== 'session-state.json',
+    );
+    delete manifest.fileDigests['session-state.json'];
+    // Recompute contentDigest from remaining file digests
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'state_missing', severity: 'error' }),
+    );
+  });
+
+  it('reports archive_checksum_missing when sidecar is absent', async () => {
+    const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession();
+
+    // Remove the .sha256 sidecar
+    const sidecarPath = `${archivePath}.sha256`;
+    try {
+      await fs.unlink(sidecarPath);
+    } catch {
+      // May not exist if archiveSession sidecar write failed — still test the finding
+    }
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_missing', severity: 'warning' }),
+    );
+  });
+
+  it('reports archive_checksum_mismatch when sidecar hash is wrong', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    const wrongChecksum = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+    await fs.writeFile(`${archivePath}.sha256`, `${wrongChecksum}  archive.tar.gz\n`, 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_mismatch', severity: 'error' }),
+    );
+  });
+
+  it('reports archive_checksum_missing when sidecar file is absent', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    await fs.unlink(`${archivePath}.sha256`);
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_missing', severity: 'warning' }),
+    );
+  });
+
+  // ── AUDIT CHAIN ────────────────────────────────────────────────
+
+  /**
+   * Helper: create an archived session with custom audit trail and manifest policyMode.
+   *
+   * 1. Archives a minimal session (via createArchivedSession).
+   * 2. Writes audit.jsonl with the given events (if any).
+   * 3. Patches the manifest to include audit.jsonl in inventory and set policyMode.
+   * 4. Recomputes contentDigest for consistency.
+   */
+  async function createArchivedSessionWithAudit(opts: {
+    sessionId?: string;
+    policyMode?: string;
+    auditEvents?: Array<Record<string, unknown>>;
+  }) {
+    const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession(
+      opts.sessionId,
+    );
+
+    // Write audit.jsonl if events provided
+    if (opts.auditEvents && opts.auditEvents.length > 0) {
+      const auditContent = opts.auditEvents.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
+    }
+
+    // Patch manifest: add audit.jsonl to inventory, set policyMode, recompute contentDigest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+
+    if (opts.policyMode) {
+      manifest.policyMode = opts.policyMode;
+    }
+
+    if (opts.auditEvents && opts.auditEvents.length > 0) {
+      const auditFilePath = path.join(sessDir, 'audit.jsonl');
+      const auditBuffer = await fs.readFile(auditFilePath);
+      const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+
+      if (!manifest.includedFiles.includes('audit.jsonl')) {
+        manifest.includedFiles.push('audit.jsonl');
+        manifest.includedFiles.sort();
+      }
+      manifest.fileDigests['audit.jsonl'] = auditDigest;
+    }
+
+    // Recompute contentDigest from patched file digests
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    return { fingerprint, sessionId, sessDir, archivePath };
+  }
+
+  /** Build a legacy audit event (no chain fields). */
+  function buildLegacyEvent(sessionId: string): Record<string, unknown> {
+    return {
+      id: crypto.randomUUID(),
+      sessionId,
+      phase: 'READY',
+      event: 'lifecycle:session_created',
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
+      detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'READY' },
+    };
+  }
+
+  /** Build a properly chained lifecycle event. */
+  function buildChainedEvent(sessionId: string, prevHash: string) {
+    return createLifecycleEvent({
+      sessionId,
+      detail: { action: 'session_created', finalPhase: 'READY' },
+      timestamp: new Date().toISOString(),
+      actor: 'machine',
+      prevHash,
+    });
+  }
+
+  it('reports audit_chain_invalid when regulated state has legacy unchained events', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440101';
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [buildLegacyEvent(sid), buildLegacyEvent(sid)],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+    expect(chainFinding!.file).toBe('audit.jsonl');
+  });
+
+  it('passes audit chain check when regulated state has all chained events', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440102';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    const evt2 = buildChainedEvent(sid, evt1.chainHash);
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [evt1, evt2],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('tolerates legacy events in non-regulated mode (team)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440103';
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'team',
+      auditEvents: [buildLegacyEvent(sid), buildLegacyEvent(sid)],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // No audit_chain_invalid AND verification passes overall
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('reports audit_chain_invalid with CHAIN_BREAK when chain hash is tampered', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440104';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    // Create a second event with correct prevHash but tampered chainHash
+    const evt2Raw = buildChainedEvent(sid, evt1.chainHash);
+    const evt2Tampered = { ...evt2Raw, chainHash: 'deadbeef'.repeat(8) };
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'team', // non-regulated — proves CHAIN_BREAK wins regardless of mode
+      auditEvents: [evt1, evt2Tampered],
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('CHAIN_BREAK');
+  });
+
+  it('skips audit chain check when audit trail has no events', async () => {
+    const { fingerprint, sessionId } = await createArchivedSession();
+
+    // No audit.jsonl at all — readAuditTrail returns empty events
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(true);
+    expect(result.findings.find((f) => f.code === 'audit_chain_invalid')).toBeUndefined();
+  });
+
+  it('regulated mode rejects mixed trail (chained + legacy events)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440106';
+    const chainedEvt = buildChainedEvent(sid, GENESIS_HASH);
+    const legacyEvt = buildLegacyEvent(sid);
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [chainedEvt, legacyEvt], // mixed: one chained, one legacy
+    });
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE');
+  });
+
+  it('regulated + malformed audit.jsonl → audit_chain_invalid error (fail-closed)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440107';
+    // Write garbage that readAuditTrail will skip (not throw)
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [], // empty — we write raw garbage below
+    });
+    const sessDir = sessionDir(fingerprint, sessionId);
+    // Overwrite with raw malformed content (not valid JSONL)
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
+
+    // Patch manifest to include the malformed audit.jsonl with correct digest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
+    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+    if (!manifest.includedFiles.includes('audit.jsonl')) {
+      manifest.includedFiles.push('audit.jsonl');
+      manifest.includedFiles.sort();
+    }
+    manifest.fileDigests['audit.jsonl'] = auditDigest;
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    const chainFinding = result.findings.find((f) => f.code === 'audit_chain_invalid');
+    expect(chainFinding).toBeDefined();
+    expect(chainFinding!.severity).toBe('error');
+    expect(chainFinding!.message).toContain('unparseable');
+    expect(chainFinding!.file).toBe('audit.jsonl');
+  });
+
+  it('regulated + chained events + malformed line → audit_chain_invalid (partial corruption)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440108';
+    const evt1 = buildChainedEvent(sid, GENESIS_HASH);
+    const evt2 = buildChainedEvent(sid, evt1.chainHash);
+
+    // Write valid chained events interleaved with a malformed line
+    const auditContent =
+      JSON.stringify(evt1) + '\n' + 'CORRUPT LINE{{{' + '\n' + JSON.stringify(evt2) + '\n';
+
+    const { fingerprint, sessionId } = await createArchivedSessionWithAudit({
+      sessionId: sid,
+      policyMode: 'regulated',
+      auditEvents: [], // empty — we write raw content below
+    });
+    const sessDir = sessionDir(fingerprint, sessionId);
+    await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
+
+    // Patch manifest to include audit.jsonl with correct digest
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
+    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
+    if (!manifest.includedFiles.includes('audit.jsonl')) {
+      manifest.includedFiles.push('audit.jsonl');
+      manifest.includedFiles.sort();
+    }
+    manifest.fileDigests['audit.jsonl'] = auditDigest;
+    const digestValues = manifest.includedFiles
+      .map((f: string) => manifest.fileDigests[f])
+      .filter(Boolean)
+      .sort();
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(digestValues.join(''))
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    // Must fail: regulated mode rejects any unparseable lines
+    expect(result.passed).toBe(false);
+    const chainFindings = result.findings.filter((f) => f.code === 'audit_chain_invalid');
+    expect(chainFindings.length).toBeGreaterThanOrEqual(1);
+    // The unparseable-lines finding must be present
+    const unparseableFinding = chainFindings.find((f) => f.message.includes('unparseable'));
+    expect(unparseableFinding).toBeDefined();
+    expect(unparseableFinding!.severity).toBe('error');
+  });
+});
+
+// =============================================================================
+// PERF — bulk operations
+// =============================================================================
+
+describe('PERF', () => {
+  it('canonicalizeOriginUrl is fast (<1ms per call)', () => {
+    const { p99Ms } = benchmarkSync(
+      () => canonicalizeOriginUrl('https://github.com/org/repo.git'),
+      1000,
+    );
+    expect(p99Ms).toBeLessThan(1);
+  });
+
+  it('validateFingerprint is fast (<1ms per call)', () => {
+    const { p99Ms } = benchmarkSync(() => validateFingerprint('a1b2c3d4e5f6a1b2c3d4e5f6'), 1000);
+    expect(p99Ms).toBeLessThan(1);
+  });
+
+  it('validateSessionId is fast (<1ms per call)', () => {
+    const { p99Ms } = benchmarkSync(
+      () => validateSessionId('550e8400-e29b-41d4-a716-446655440000'),
+      1000,
+    );
+    expect(p99Ms).toBeLessThan(1);
+  });
+
+  it('initWorkspace is fast (<50ms)', async () => {
+    const td = await createTmpDir();
+    const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: td });
+    try {
+      const { elapsedMs } = await measureAsync(() =>
+        initWorkspace(path.resolve('.'), `perf-${Date.now()}`),
+      );
+      expect(elapsedMs).toBeLessThan(process.platform === 'win32' ? 500 : 50);
+    } finally {
+      cleanup();
+      await cleanTmpDir(td);
+    }
+  });
+});
+
+// =============================================================================
+// EDGE — git conflicts and permission errors
+// =============================================================================
+
+describe('EDGE', () => {
+  let cleanupEnv: () => void;
+
+  beforeEach(async () => {
+    tmpDir = await createTmpDir();
+    cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: tmpDir });
+  });
+
+  afterEach(async () => {
+    cleanupEnv();
+    await cleanTmpDir(tmpDir);
+  });
+
+  describe('HAPPY', () => {
+    it('initWorkspace succeeds with clean git state', async () => {
+      const result = await initWorkspace(path.resolve('.'), 'edge-clean');
+      expect(result.info).toBeDefined();
+      expect(result.fingerprint).toMatch(/^[0-9a-f]{24}$/);
+    });
+  });
+
+  describe('BAD', () => {
+    // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
+    it.skipIf(process.platform === 'win32')(
+      'throws on workspace directory without write permission',
+      async () => {
+        const worktree = path.resolve('.');
+        const sessionId = 'edge-no-perm';
+
+        // Create a read-only directory that we'll try to write to
+        const readonlyDir = path.join(tmpDir, 'readonly-ws');
+        await fs.mkdir(readonlyDir, { recursive: true });
+        await fs.chmod(readonlyDir, 0o444); // Read-only
+
+        process.env.OPENCODE_CONFIG_DIR = readonlyDir;
+
+        // This should throw when trying to write workspace.json
+        try {
+          await initWorkspace(worktree, sessionId);
+          // If we get here on platforms that allow root to bypass permissions, skip
+          const stats = await fs.stat(readonlyDir);
+          if (process.getuid?.() !== 0) {
+            throw new Error('Should have thrown');
+          }
+        } catch (e) {
+          // Should throw WorkspaceError or EACCES
+          expect(String(e)).toMatch(/EACCES|EPERM|WorkspaceError|permission/i);
+        } finally {
+          // Restore permissions for cleanup
+          await fs.chmod(readonlyDir, 0o755).catch(() => {});
+        }
+      },
+    );
+  });
+
+  describe('CORNER', () => {
+    it('handles concurrent initWorkspace calls gracefully', async () => {
+      const worktree = path.resolve('.');
+
+      // Simulate concurrent initialization
+      const results = await Promise.allSettled([
+        initWorkspace(worktree, 'concurrent-a'),
+        initWorkspace(worktree, 'concurrent-b'),
+        initWorkspace(worktree, 'concurrent-c'),
+      ]);
+
+      // All should succeed (idempotent behavior)
+      const successes = results.filter((r) => r.status === 'fulfilled');
+      const failures = results.filter((r) => r.status === 'rejected');
+
+      expect(successes.length).toBeGreaterThan(0);
+      // Failures are acceptable if they race — verify no crashes
+      for (const f of failures) {
+        if (f.status === 'rejected') {
+          // Should be WorkspaceError, not uncaught exception
+          expect(String(f.reason)).toMatch(/WorkspaceError|WORKSPACE_MISMATCH/i);
+        }
+      }
+    });
+
+    it('handles workspace with uncommitted changes (dirty git)', async () => {
+      // This test verifies that dirty git doesn't prevent workspace init
+      const result = await initWorkspace(path.resolve('.'), 'edge-dirty');
+      expect(result.info).toBeDefined();
+      // Dirty git state should be detected but not block initialization
+      // The info object should have the appropriate schema
+      expect(result.info.schemaVersion).toBe('v1');
+    });
+  });
+
+  describe('EDGE', () => {
+    it('fails with corrupted session-state.json (P4a fail-closed)', async () => {
+      const worktree = path.resolve('.');
+      const sessionId = 'edge-corrupt-state';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(path.join(sessDir, 'session-state.json'), '{invalid-json{{{', 'utf-8');
+
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
+    });
+
+    it('fails with schema-invalid session-state.json (P4a fail-closed)', async () => {
+      const worktree = path.resolve('.');
+      const sessionId = 'edge-invalid-schema';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await fs.writeFile(
+        path.join(sessDir, 'session-state.json'),
+        '{"phase": 999, "not": "a valid phase"}',
+        'utf-8',
+      );
+
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(PersistenceError);
+    });
+
+    it('succeeds with missing audit.jsonl (no decisions recorded)', async () => {
+      const worktree = path.resolve('.');
+      const sessionId = 'edge-no-audit';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await writeState(sessDir, makeState('COMPLETE'));
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain('.tar.gz');
+
+      const stats = await fs.stat(archivePath);
+      expect(stats.size).toBeGreaterThan(0);
+    });
+
+    it('succeeds with corrupt audit.jsonl (malformed lines skipped, no receipts)', async () => {
+      const worktree = path.resolve('.');
+      const sessionId = 'edge-corrupt-audit';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await writeState(sessDir, makeState('COMPLETE'));
+      await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
+
+      const archivePath = await archiveSession(fingerprint, sessionId);
+      expect(archivePath).toContain('.tar.gz');
+
+      const receipts = JSON.parse(
+        await fs.readFile(path.join(sessDir, 'decision-receipts.v1.json'), 'utf-8'),
+      );
+      expect(receipts.count).toBe(0);
+      expect(receipts.receipts).toHaveLength(0);
+    });
+
+    it('fails with corrupt flowguard.json in workspace (fail-closed)', async () => {
+      const worktree = path.resolve('.');
+      const sessionId = 'edge-corrupt-config';
+      const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+      await writeState(sessDir, makeState('COMPLETE'));
+      // P11: config is at global path, not workspace dir
+      const globalCfg = globalConfigPath();
+      await fs.mkdir(path.dirname(globalCfg), { recursive: true });
+      await fs.writeFile(globalCfg, '{invalid{{{', 'utf-8');
+
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow(
+        'Global config file is not valid JSON',
+      );
+    });
+  });
+});
