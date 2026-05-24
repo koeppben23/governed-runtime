@@ -25,6 +25,7 @@ import type {
   ReviewAssuranceState,
   ReviewObligationType,
   ReviewObligation,
+  ReviewInvocationEvidence,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
@@ -50,6 +51,41 @@ export interface ReviewFindingsValidationContext {
   readonly reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
   /** Parent OpenCode session expected in invocation evidence. */
   readonly reviewParentSessionId?: string;
+  /** Runtime host platform for transport-specific strict evidence validation. */
+  readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
+}
+
+function allowsManualAttestedReviewWithoutPluginHandshake(input: {
+  readonly findings: ReviewFindings;
+  readonly obligation: ReviewObligation;
+  readonly invocation: ReviewInvocationEvidence;
+  readonly findingsHash: string;
+  readonly ctx: ReviewFindingsValidationContext;
+}): boolean {
+  const { findings, obligation, invocation, findingsHash, ctx } = input;
+  const isExternalHost =
+    ctx.reviewHostPlatform === 'claude-code' || ctx.reviewHostPlatform === 'codex';
+  const policyAllowsManualAttested =
+    ctx.reviewInvocationPolicy === 'sdk_allowed' ||
+    ctx.reviewInvocationPolicy === 'host_task_preferred';
+  const obligationOpen = obligation.status !== 'blocked' && obligation.status !== 'consumed';
+  const evidenceChecks = [
+    isExternalHost,
+    policyAllowsManualAttested,
+    obligationOpen,
+    obligation.consumedAt === null,
+    invocation.invocationMode === 'manual_attested',
+    invocation.hostVisible === false,
+    invocation.source === 'agent-submitted-attested',
+    invocation.obligationId === obligation.obligationId,
+    invocation.obligationType === obligation.obligationType,
+    invocation.childSessionId === findings.reviewedBy.sessionId,
+    invocation.findingsHash === findingsHash,
+    invocation.criteriaVersion === obligation.criteriaVersion,
+    invocation.mandateDigest === obligation.mandateDigest,
+    invocation.consumedByObligationId === null,
+  ];
+  return evidenceChecks.every((check) => check === true);
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -123,7 +159,7 @@ export function validateReviewFindings(
       expectedIteration,
       expectedPlanVersion,
     );
-    if (!obligation || !obligation.pluginHandshakeAt) {
+    if (!obligation) {
       return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
         obligationType: ctx.obligationType,
         iteration: String(expectedIteration),
@@ -134,6 +170,12 @@ export function validateReviewFindings(
     if (obligation.status === 'blocked') {
       return formatBlocked('STRICT_REVIEW_ORCHESTRATION_FAILED', {
         code: obligation.blockedCode ?? 'UNKNOWN',
+      });
+    }
+
+    if (obligation.status === 'consumed' || obligation.consumedAt !== null) {
+      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
+        obligationId: obligation.obligationId,
       });
     }
 
@@ -156,6 +198,30 @@ export function validateReviewFindings(
     if (!invocation) {
       return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
+      });
+    }
+
+    if (invocation.consumedByObligationId) {
+      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
+        invocationId: invocation.invocationId,
+        consumedBy: invocation.consumedByObligationId,
+      });
+    }
+
+    if (
+      !obligation.pluginHandshakeAt &&
+      !allowsManualAttestedReviewWithoutPluginHandshake({
+        findings,
+        obligation,
+        invocation,
+        findingsHash: submittedFindingsHash,
+        ctx,
+      })
+    ) {
+      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+        obligationType: ctx.obligationType,
+        iteration: String(expectedIteration),
+        planVersion: String(expectedPlanVersion),
       });
     }
 
@@ -215,16 +281,6 @@ export function validateReviewFindings(
     } else if (submittedFindingsHash !== invocation.findingsHash) {
       return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
         obligationId: obligation.obligationId,
-      });
-    }
-
-    if (
-      invocation.consumedByObligationId &&
-      invocation.consumedByObligationId !== obligation.obligationId
-    ) {
-      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
-        invocationId: invocation.invocationId,
-        consumedBy: invocation.consumedByObligationId,
       });
     }
 
@@ -342,6 +398,7 @@ interface HostTaskResolutionContext {
   readonly state: {
     readonly assurance?: ReviewAssuranceState;
     readonly sessionId: string;
+    readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
   };
 }
 
@@ -387,6 +444,7 @@ export function resolveHostTaskEffectiveFindings(
       obligationType: ctx.expected.obligationType,
       reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
       reviewParentSessionId: ctx.state.sessionId,
+      reviewHostPlatform: ctx.state.reviewHostPlatform,
     });
     if (blocked) return { blocked };
     return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };

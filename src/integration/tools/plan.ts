@@ -71,6 +71,7 @@ import {
   findAcceptedInvocationForFindings,
   findLatestObligation,
 } from '../review/assurance.js';
+import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 // presentation imports moved to plan-response.ts
 
 // ---- re-exported from sub-modules for backward-compatible import paths ----
@@ -195,6 +196,7 @@ function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
     strictEnforcement: false,
     reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     reviewParentSessionId: scope.context.sessionID,
+    reviewHostPlatform: resolveRuntimeReviewPlatform(),
   });
 }
 
@@ -279,7 +281,11 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
       reviewerUnavailable: scope.args.reviewerUnavailable,
       verdict: scope.args.reviewVerdict,
     },
-    state: { assurance: scope.state.reviewAssurance, sessionId: scope.context.sessionID },
+    state: {
+      assurance: scope.state.reviewAssurance,
+      sessionId: scope.context.sessionID,
+      reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    },
   });
   return { assuranceBase, pendingObligation, expectedIteration, expectedPlanVersion, resolved };
 }

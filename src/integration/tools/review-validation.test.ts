@@ -117,6 +117,24 @@ function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
   };
 }
 
+function manualAttestedAssuranceFixture(findings: ReviewFindings = strictFindings()) {
+  const assurance = strictAssuranceFixture(findings);
+  assurance.obligations[0] = {
+    ...assurance.obligations[0]!,
+    pluginHandshakeAt: null,
+    status: 'fulfilled',
+    fulfilledAt: new Date().toISOString(),
+  };
+  assurance.invocations[0] = {
+    ...assurance.invocations[0]!,
+    invocationMode: 'manual_attested',
+    hostVisible: false,
+    source: 'agent-submitted-attested',
+    findingsHash: hashFindings(findings),
+  };
+  return assurance;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // validateReviewFindings
 // ═════════════════════════════════════════════════════════════════════════════
@@ -604,6 +622,262 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       }),
     );
     expect(result).toBeNull();
+  });
+
+  it('accepts Claude/Codex manual_attested evidence without plugin handshake when policy allows it', () => {
+    const findings = strictFindings();
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: manualAttestedAssuranceFixture(findings),
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('rejects OpenCode host-orchestrated evidence without plugin handshake', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = { ...assurance.obligations[0]!, pluginHandshakeAt: null };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'opencode',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects host_task_required evidence without plugin handshake', () => {
+    const findings = strictFindings();
+    const assurance = strictAssuranceFixture(findings);
+    assurance.obligations[0] = {
+      ...assurance.obligations[0]!,
+      status: 'pending',
+      pluginHandshakeAt: null,
+      invocationId: null,
+      fulfilledAt: null,
+    };
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      parentSessionId: 'ses_parent',
+      capturedVerdict: 'approve',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_required',
+        reviewParentSessionId: 'ses_parent',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects manual_attested evidence without explicit invocation policy', () => {
+    const findings = strictFindings();
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: manualAttestedAssuranceFixture(findings),
+        obligationType: 'plan',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects manual_attested evidence bound to the wrong obligation', () => {
+    const findings = strictFindings();
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      obligationId: '33333333-3333-4333-8333-333333333333',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'codex',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects stale manual_attested evidence without plugin handshake', () => {
+    const findings = strictFindings({ iteration: 0 });
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        expectedIteration: 1,
+        strictEnforcement: true,
+        assurance: manualAttestedAssuranceFixture(findings),
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_ITERATION_MISMATCH');
+  });
+
+  it('rejects wrong-planVersion manual_attested evidence without plugin handshake', () => {
+    const findings = strictFindings({ planVersion: 1 });
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        expectedPlanVersion: 2,
+        strictEnforcement: true,
+        assurance: manualAttestedAssuranceFixture(findings),
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'codex',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_PLAN_VERSION_MISMATCH');
+  });
+
+  it('rejects manual_attested evidence with mismatched childSessionId', () => {
+    const findings = strictFindings();
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      childSessionId: 'ses_other_child',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects manual_attested evidence with mismatched criteriaVersion', () => {
+    const findings = strictFindings();
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      criteriaVersion: 'wrong-criteria-version',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_preferred',
+        reviewHostPlatform: 'codex',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects manual_attested evidence with mismatched mandateDigest', () => {
+    const findings = strictFindings();
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      mandateDigest: 'wrong-mandate-digest',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_preferred',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+  });
+
+  it('rejects manual_attested evidence with missing attestation', () => {
+    const findings = strictFindings({ attestation: undefined });
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance: manualAttestedAssuranceFixture(findings),
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_MANDATE_MISSING');
+  });
+
+  it('rejects reused manual_attested evidence', () => {
+    const findings = strictFindings();
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      consumedByObligationId: '33333333-3333-4333-8333-333333333333',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'host_task_preferred',
+        reviewHostPlatform: 'codex',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_EVIDENCE_REUSED');
   });
 
   it('host_task_required accepts pending host-visible invocation only when findings match evidence', () => {

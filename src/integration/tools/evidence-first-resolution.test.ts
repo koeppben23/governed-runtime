@@ -10,7 +10,7 @@
  * @test-policy HAPPY, BAD, EDGE, REGRESSION — all categories present.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState, TICKET } from '../../__fixtures__.js';
 import {
   REVIEW_CRITERIA_VERSION,
@@ -119,6 +119,7 @@ vi.mock('../../machine/next-action.js', () => ({
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
 const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
 const now = '2026-01-01T00:00:00.000Z';
+const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
 function makeFindings(
   overrides: Partial<{
@@ -139,6 +140,51 @@ function makeFindings(
     unknowns: [],
     reviewedBy: { sessionId: 'ses_child' },
     reviewedAt: now,
+  };
+}
+
+function makeStrictFindings(
+  obligationId: string,
+  overrides: Partial<{
+    iteration: number;
+    planVersion: number;
+    overallVerdict: 'approve' | 'changes_requested';
+  }> = {},
+) {
+  return {
+    ...makeFindings(overrides),
+    attestation: {
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      toolObligationId: obligationId,
+      iteration: overrides.iteration ?? 0,
+      planVersion: overrides.planVersion ?? 1,
+      reviewedBy: 'flowguard-reviewer' as const,
+    },
+  };
+}
+
+function manualAttestedInvocation(input: {
+  obligationType: 'plan' | 'implement';
+  findings: Record<string, unknown>;
+}) {
+  return {
+    invocationId: INVOCATION_ID,
+    obligationId: OBLIGATION_ID,
+    obligationType: input.obligationType,
+    parentSessionId: 'ses_parent',
+    childSessionId: 'ses_child',
+    agentType: 'flowguard-reviewer',
+    invocationMode: 'manual_attested',
+    hostVisible: false,
+    promptHash: 'abc',
+    mandateDigest: REVIEW_MANDATE_DIGEST,
+    criteriaVersion: REVIEW_CRITERIA_VERSION,
+    findingsHash: hashFindings(input.findings),
+    invokedAt: now,
+    fulfilledAt: now,
+    consumedByObligationId: null,
+    source: 'agent-submitted-attested',
   };
 }
 
@@ -310,6 +356,14 @@ describe('BUG-17: plan evidence-first resolution', () => {
     vi.resetModules();
   });
 
+  afterEach(() => {
+    if (originalFlowguardHostPlatform === undefined) {
+      delete process.env.FLOWGUARD_HOST_PLATFORM;
+    } else {
+      process.env.FLOWGUARD_HOST_PLATFORM = originalFlowguardHostPlatform;
+    }
+  });
+
   it('HAPPY: host_task_required + evidence available → succeeds (no reviewFindings needed)', async () => {
     mocks.state = planStateWithEvidence('approve');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -418,6 +472,71 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
+
+  it('HAPPY: sdk_allowed + Claude manual_attested reviewFindings converge without pluginHandshakeAt', async () => {
+    process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
+    const findings = makeStrictFindings(OBLIGATION_ID);
+    mocks.state = makeState('PLAN', {
+      ticket: TICKET,
+      plan: {
+        current: {
+          body: '## Plan\n1. Fix',
+          digest: 'digest-plan',
+          sections: [],
+          createdAt: now,
+        },
+        history: [],
+        reviewFindings: [],
+      },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-plan',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'fulfilled',
+            invocationId: INVOCATION_ID,
+            blockedCode: null,
+            fulfilledAt: now,
+            consumedAt: null,
+          },
+        ],
+        invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'sdk_allowed',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+    });
+    mocks.autoAdvance.mockReturnValue({
+      state: mocks.state,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute(
+      { reviewVerdict: 'approve', reviewFindings: findings },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBeUndefined();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -428,6 +547,14 @@ describe('BUG-17: implement evidence-first resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+  });
+
+  afterEach(() => {
+    if (originalFlowguardHostPlatform === undefined) {
+      delete process.env.FLOWGUARD_HOST_PLATFORM;
+    } else {
+      process.env.FLOWGUARD_HOST_PLATFORM = originalFlowguardHostPlatform;
+    }
   });
 
   it('HAPPY: host_task_required + evidence available → succeeds', async () => {
@@ -537,6 +664,66 @@ describe('BUG-17: implement evidence-first resolution', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
+  });
+
+  it('HAPPY: host_task_preferred + Codex manual_attested reviewFindings converge without pluginHandshakeAt', async () => {
+    process.env.FLOWGUARD_HOST_PLATFORM = 'codex';
+    const findings = makeStrictFindings(OBLIGATION_ID, { iteration: 1 });
+    mocks.state = makeState('IMPL_REVIEW', {
+      plan: {
+        current: { body: '## Plan\n1. Fix', digest: 'digest-plan', sections: [], createdAt: now },
+        history: [],
+        reviewFindings: [],
+      },
+      implementation: { changedFiles: ['src/foo.ts'], digest: 'digest-impl', createdAt: now },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-impl',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId: OBLIGATION_ID,
+            obligationType: 'implement',
+            iteration: 1,
+            planVersion: 1,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            createdAt: now,
+            pluginHandshakeAt: null,
+            status: 'fulfilled',
+            invocationId: INVOCATION_ID,
+            blockedCode: null,
+            fulfilledAt: now,
+            consumedAt: null,
+          },
+        ],
+        invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_preferred',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+    });
+    mocks.autoAdvance.mockReturnValue({
+      state: mocks.state,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    });
+
+    const { implement } = await import('./implement.js');
+    const res = await implement.execute(
+      { reviewVerdict: 'approve', reviewFindings: findings },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBeUndefined();
   });
 });
 

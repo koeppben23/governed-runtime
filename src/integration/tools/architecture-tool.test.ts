@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../__fixtures__.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from '../review/assurance.js';
+
+const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
 const mocks = vi.hoisted(() => {
   return {
@@ -144,6 +146,14 @@ describe('integration/tools/architecture (wrapper)', () => {
       evalResult: { kind: 'pending' },
       transitions: [],
     });
+  });
+
+  afterEach(() => {
+    if (originalFlowguardHostPlatform === undefined) {
+      delete process.env.FLOWGUARD_HOST_PLATFORM;
+    } else {
+      process.env.FLOWGUARD_HOST_PLATFORM = originalFlowguardHostPlatform;
+    }
   });
 
   it('blocks Mode A without title', async () => {
@@ -829,6 +839,84 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
     }
 
+    function strictArchitectureFindings(
+      overallVerdict: 'approve' | 'changes_requested' = 'approve',
+    ) {
+      return {
+        ...validRawFindings,
+        overallVerdict,
+        attestation: {
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          toolObligationId: OBLIGATION_ID,
+          iteration: 0,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer' as const,
+        },
+      };
+    }
+
+    function stateWithManualAttestedEvidence() {
+      const findings = strictArchitectureFindings('approve');
+      return makeState('ARCHITECTURE', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: now,
+        },
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'digest-adr',
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              createdAt: now,
+              pluginHandshakeAt: null,
+              status: 'fulfilled',
+              invocationId: INVOCATION_ID,
+              blockedCode: null,
+              fulfilledAt: now,
+              consumedAt: null,
+            },
+          ],
+          invocations: [
+            {
+              invocationId: INVOCATION_ID,
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              parentSessionId: 'ses_parent',
+              childSessionId: 'ses_child',
+              agentType: 'flowguard-reviewer',
+              invocationMode: 'manual_attested',
+              hostVisible: false,
+              promptHash: 'abc',
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              findingsHash: hashFindings(findings),
+              invokedAt: now,
+              fulfilledAt: now,
+              consumedByObligationId: null,
+              source: 'agent-submitted-attested',
+            },
+          ],
+        },
+      });
+    }
+
     it('HAPPY: host_task_required + no reviewFindings + evidence available → succeeds', async () => {
       mocks.state = stateWithEvidence('approve');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
@@ -1008,6 +1096,30 @@ describe('integration/tools/architecture (wrapper)', () => {
       );
       const parsed = JSON.parse(String(res));
       // SDK path succeeds with valid findings
+      expect(parsed.error).toBeUndefined();
+    });
+
+    it('HAPPY: sdk_allowed + Claude manual_attested reviewFindings converge without pluginHandshakeAt', async () => {
+      process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
+      mocks.state = stateWithManualAttestedEvidence();
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'sdk_allowed',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      const res = await architecture.execute(
+        { reviewVerdict: 'approve', reviewFindings: strictArchitectureFindings('approve') },
+        {} as never,
+      );
+      const parsed = JSON.parse(String(res));
       expect(parsed.error).toBeUndefined();
     });
 

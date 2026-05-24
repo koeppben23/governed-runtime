@@ -116,6 +116,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Issue #332:** Fix MCP-platform review loop convergence for `/plan`,
+  `/implement`, and `/architecture` Mode B by allowing strict
+  `pluginHandshakeAt: null` only for Claude Code/Codex `manual_attested`
+  ReviewInvocationEvidence that is validated, obligation-bound, hash-bound,
+  session-bound, mandate/criteria-bound, unconsumed, and covered by strict
+  attestation. OpenCode host-orchestrated evidence and `host_task_required`
+  policies still require the plugin handshake. Adds host-specific
+  review validation gate contract tests (22 tests), plan/architecture
+  Mode-B contract tests (6 tests), and tool-level contract coverage
+  for review-gated flow segments — architecture, plan, implement,
+  main chain segment, and standalone review across 3 host profiles (15 tests)
+  via `npm run test:e2e-contract`.
+
 - **FG-REL-010 (Issue #119):** Installer malformed-JSON recovery now writes timestamped `.flowguard-backup-*` files before rewriting malformed `opencode.json`/`opencode.jsonc` or installer-managed `package.json`; backup failures stop install before overwrite.
 
 - **FG-QUAL-008 (Issue #220):** Hardened machine guard type safety by making `reviewDone` phase-agnostic, constraining loop convergence verdicts to `LoopVerdict`, and enforcing user-gate wait-reason exhaustiveness at compile time.

@@ -196,6 +196,7 @@ function validateInitialReviewFindings(input: ImplementRuntime): string | null {
     strictEnforcement: false,
     reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     reviewParentSessionId: input.context.sessionID,
+    reviewHostPlatform: resolveRuntimeReviewPlatform(),
   });
 }
 
@@ -402,7 +403,11 @@ function resolveImplementationFindings(
       reviewerUnavailable: input.args.reviewerUnavailable,
       verdict: input.args.reviewVerdict,
     },
-    state: { assurance: input.state.reviewAssurance, sessionId: input.context.sessionID },
+    state: {
+      assurance: input.state.reviewAssurance,
+      sessionId: input.context.sessionID,
+      reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    },
   });
   return { pendingObligation, resolved };
 }
