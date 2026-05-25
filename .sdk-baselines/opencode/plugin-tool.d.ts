@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { Effect } from "effect";
 export type ToolContext = {
     sessionID: string;
     messageID: string;
@@ -21,7 +20,7 @@ export type ToolContext = {
             [key: string]: any;
         };
     }): void;
-    ask(input: AskInput): Effect.Effect<void>;
+    ask(input: AskInput): Promise<void>;
 };
 type AskInput = {
     permission: string;

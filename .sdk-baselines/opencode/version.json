@@ -1,6 +1,7 @@
 {
-  "updated": "2026-05-19T08:08:33.834Z",
-  "version": "1.15.4",
+  "platform": "opencode",
+  "updated": "2026-05-25T12:38:43.356Z",
+  "version": "1.15.10",
   "files": [
     {
       "label": "plugin/dist/index.d.ts",
@@ -8,7 +9,7 @@
     },
     {
       "label": "plugin/dist/tool.d.ts",
-      "hash": "aff71774516eed860107b440d683ba2397cf10fe5fdfe34984b4326c80ff56a6"
+      "hash": "5237b30a9b5a9a814f93327ce446e73b726da139fe2eba8edf88c4a45b4b8b2d"
     }
   ]
 }
