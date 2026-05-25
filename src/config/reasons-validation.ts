@@ -19,6 +19,13 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'COMMAND_BLOCKED',
+    category: 'input',
+    messageTemplate: '{command} blocked: {reason}',
+    recoverySteps: ['Fix the blocked command input or dependency and retry the command'],
+  },
+
+  {
     code: 'WRONG_PHASE',
     category: 'admissibility',
     messageTemplate: 'Command is not valid in the current phase (current: {phase})',

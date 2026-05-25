@@ -123,6 +123,15 @@ HTTPS when `identityProvider.mode = jwks` with `jwksUri` is configured, and
 Claude Code HTTP hook mode starts a localhost listener when selected. Remote JWKS
 fetch failures are fail-closed in `identityProviderMode: required`.
 
+For `/review url=...`, FlowGuard validates the URL scheme and resolved DNS targets
+before calling native `fetch`. DNS failures, empty answers, malformed addresses,
+private/reserved A or AAAA records, and mixed public/private DNS answers are blocked
+fail-closed, and redirects are disabled. This is a DNS-preflight SSRF mitigation,
+not a complete network sandbox: DNS rebinding or time-of-check/time-of-use changes
+between validation and the HTTPS connection remain residual risks. Use firewall,
+proxy, or sandbox egress controls for deployments that require complete outbound
+network containment.
+
 **Verification:**
 
 ```bash

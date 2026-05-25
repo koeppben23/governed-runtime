@@ -8,12 +8,13 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   executeReview,
   executeReviewFlow,
   startReviewFlow,
   validateReviewUrl,
+  validateResolvedReviewUrlTarget,
   parseIPv4,
   loadExternalContent,
   buildReviewReport,
@@ -966,6 +967,117 @@ describe('review rail', () => {
         const result = validateReviewUrl('https://172.32.0.0/ok');
         expect(result.valid).toBe(true);
       });
+    });
+  });
+
+  describe('Issue #310: resolved URL targets are validated before fetch', () => {
+    it('accepts hostname DNS results when every resolved address is public', async () => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
+        { address: '93.184.216.34', family: 4 },
+        { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
+      ]);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('blocks mixed DNS results when any resolved address is private', async () => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
+        { address: '93.184.216.34', family: 4 },
+        { address: '10.0.0.7', family: 4 },
+      ]);
+
+      expect(result.valid).toBe(false);
+      expect((result as { reason: string }).reason).toContain('private/reserved IPv4');
+    });
+
+    it('blocks DNS lookup failures fail-closed', async () => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => {
+        throw new Error('resolver unavailable');
+      });
+
+      expect(result.valid).toBe(false);
+      expect((result as { reason: string }).reason).toContain('DNS lookup failed');
+    });
+
+    it('blocks DNS lookups that return no addresses', async () => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => []);
+
+      expect(result.valid).toBe(false);
+      expect((result as { reason: string }).reason).toContain('returned no addresses');
+    });
+
+    it('blocks malformed IPv6 DNS answers fail-closed', async () => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
+        { address: 'not:ipv6', family: 6 },
+      ]);
+
+      expect(result.valid).toBe(false);
+      expect((result as { reason: string }).reason).toContain('malformed IPv6');
+    });
+
+    it.each([
+      ['127.0.0.1', 4, 'private/reserved IPv4'],
+      ['10.0.0.1', 4, 'private/reserved IPv4'],
+      ['172.16.0.1', 4, 'private/reserved IPv4'],
+      ['192.168.1.1', 4, 'private/reserved IPv4'],
+      ['169.254.169.254', 4, 'private/reserved IPv4'],
+      ['100.64.0.1', 4, 'private/reserved IPv4'],
+      ['198.18.0.1', 4, 'private/reserved IPv4'],
+      ['::1', 6, 'private/reserved IPv6'],
+      ['fc00::1', 6, 'private/reserved IPv6'],
+      ['fe80::1', 6, 'private/reserved IPv6'],
+      ['::ffff:127.0.0.1', 6, 'private/reserved IPv6'],
+    ] as const)('blocks private/reserved DNS answer %s', async (address, family, reason) => {
+      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
+        { address, family },
+      ]);
+
+      expect(result.valid).toBe(false);
+      expect((result as { reason: string }).reason).toContain(reason);
+    });
+
+    it('blocks expanded IPv4 and IPv6 reserved ranges', async () => {
+      const blockedUrls = [
+        'https://100.64.0.1/',
+        'https://198.18.0.1/',
+        'https://192.0.2.1/',
+        'https://203.0.113.1/',
+        'https://224.0.0.1/',
+        'https://240.0.0.1/',
+        'https://255.255.255.255/',
+        'https://[::]/',
+        'https://[ff00::1]/',
+        'https://[::ffff:127.0.0.1]/',
+      ];
+
+      for (const url of blockedUrls) {
+        const result = validateReviewUrl(url);
+        expect(result.valid, url).toBe(false);
+      }
+    });
+
+    it('executeReview blocks a private resolved URL before fetch is called', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      try {
+        const state = makeProgressedState('COMPLETE');
+
+        const result = await executeReview(
+          state,
+          NOW,
+          { dnsLookup: async () => [{ address: '127.0.0.1', family: 4 }] },
+          { inputOrigin: 'url', url: 'https://metadata.example/spec.md' },
+        );
+
+        expect('kind' in result).toBe(true);
+        if ('kind' in result) {
+          expect(result.kind).toBe('blocked');
+          expect(result.code).toBe('COMMAND_BLOCKED');
+          expect(result.reason).toContain('private/reserved IPv4');
+        }
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 

@@ -12,11 +12,16 @@ const PRIVATE_IPV4_RANGES: Array<{ prefix: number; mask: number }> = [
   { prefix: 0xac100000, mask: 0xfff00000 }, // 172.16.0.0/12 (RFC 1918)
   { prefix: 0xc0a80000, mask: 0xffff0000 }, // 192.168.0.0/16 (RFC 1918)
   { prefix: 0xa9fe0000, mask: 0xffff0000 }, // 169.254.0.0/16 (link-local)
-  { prefix: 0x00000000, mask: 0xffffffff }, // 0.0.0.0/32    (unspecified)
+  { prefix: 0x00000000, mask: 0xff000000 }, // 0.0.0.0/8      (current network)
+  { prefix: 0x64400000, mask: 0xffc00000 }, // 100.64.0.0/10  (CGNAT)
+  { prefix: 0xc0000200, mask: 0xffffff00 }, // 192.0.2.0/24   (TEST-NET-1)
+  { prefix: 0xc6336400, mask: 0xffffff00 }, // 198.51.100.0/24 (TEST-NET-2)
+  { prefix: 0xcb007100, mask: 0xffffff00 }, // 203.0.113.0/24 (TEST-NET-3)
+  { prefix: 0xc6120000, mask: 0xfffe0000 }, // 198.18.0.0/15  (benchmarking)
+  { prefix: 0xe0000000, mask: 0xf0000000 }, // 224.0.0.0/4    (multicast)
+  { prefix: 0xf0000000, mask: 0xf0000000 }, // 240.0.0.0/4    (reserved/future)
+  { prefix: 0xffffffff, mask: 0xffffffff }, // 255.255.255.255 (broadcast)
 ];
-
-/** Reserved IPv6 addresses that must be blocked. */
-const PRIVATE_IPV6_PREFIXES = ['::1', 'fc00:', 'fd', 'fe80:'];
 
 /**
  * Parse a dotted-decimal IPv4 string into a 32-bit integer.
@@ -45,9 +50,35 @@ export function isPrivateIPv4(ip: number): boolean {
 
 /**
  * Check if an IPv6 address string is private/reserved.
- * Covers: ::1 (loopback), fc00::/7 (unique-local), fe80::/10 (link-local).
+ * Covers: ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8, and IPv4-mapped IPv6.
  */
 export function isPrivateIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
-  return PRIVATE_IPV6_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  const mappedIpv4 = parseIPv4MappedIPv6(normalized);
+  if (mappedIpv4 !== null) return isPrivateIPv4(mappedIpv4);
+  if (normalized === '::' || normalized === '::1') return true;
+  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (/^fe[89ab]/.test(normalized)) return true;
+  return normalized.startsWith('ff');
+}
+
+function parseIPv4MappedIPv6(ip: string): number | null {
+  const prefix = '::ffff:';
+  if (!ip.startsWith(prefix)) return null;
+  const suffix = ip.slice(prefix.length);
+  const dotted = parseIPv4(suffix);
+  if (dotted !== null) return dotted;
+
+  const hextets = suffix.split(':');
+  if (hextets.length !== 2) return null;
+  const high = parseHextet(hextets[0]!);
+  const low = parseHextet(hextets[1]!);
+  if (high === null || low === null) return null;
+  return (((high << 16) >>> 0) | low) >>> 0;
+}
+
+function parseHextet(value: string): number | null {
+  if (!/^[0-9a-f]{1,4}$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 16);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 0xffff ? parsed : null;
 }
