@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #310:** Hardened `/review url=...` HTTPS content loading with fail-closed
+  DNS target validation before native `fetch`. DNS lookup failures, empty answers,
+  malformed addresses, private/reserved A or AAAA records, and mixed DNS answers
+  containing any private/reserved target are blocked; docs now state the residual
+  DNS-rebinding/time-of-check risk and required host-level egress controls for full
+  containment.
+
 - **Issue #313:** Tightened compliance language in product docs for pilot
   positioning. Replaced "audit-ready," "compliance assessment," and absolute
   outcome claims with building-block/support language aligned with

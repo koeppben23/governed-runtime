@@ -17,6 +17,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import { isIP } from 'node:net';
 import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
@@ -26,6 +27,7 @@ import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 import { parseIPv4, isPrivateIPv4, isPrivateIPv6 } from '../adapters/ip-validation.js';
+import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
 export { parseIPv4 };
 
 // ─── Content Loading Helpers ──────────────────────────────────────
@@ -103,12 +105,92 @@ export function validateReviewUrl(url: string): { valid: true } | { valid: false
   return { valid: true };
 }
 
+export async function validateResolvedReviewUrlTarget(
+  url: string,
+  dnsLookup: ReviewDnsLookup = lookupReviewHostname,
+): Promise<{ valid: true } | { valid: false; reason: string }> {
+  const syntax = validateReviewUrl(url);
+  if (!syntax.valid) return syntax;
+
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.toLowerCase();
+  const bareHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+
+  if (isLiteralAddressAllowed(bareHostname)) return { valid: true };
+
+  let addresses: readonly { readonly address: string; readonly family: 4 | 6 }[];
+  try {
+    addresses = await dnsLookup(bareHostname);
+  } catch (err) {
+    return {
+      valid: false,
+      reason: `DNS lookup failed for "${hostname}": ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (addresses.length === 0) {
+    return { valid: false, reason: `DNS lookup for "${hostname}" returned no addresses` };
+  }
+
+  for (const resolved of addresses) {
+    const validation = validateResolvedAddress(hostname, resolved.address, resolved.family);
+    if (!validation.valid) return validation;
+  }
+
+  return { valid: true };
+}
+
+function isLiteralAddressAllowed(hostname: string): boolean {
+  const ipv4 = parseIPv4(hostname);
+  if (ipv4 !== null) return !isPrivateIPv4(ipv4);
+  if (hostname.includes(':')) return !isPrivateIPv6(hostname);
+  return false;
+}
+
+function validateResolvedAddress(
+  hostname: string,
+  address: string,
+  family: 4 | 6,
+): { valid: true } | { valid: false; reason: string } {
+  if (family === 4) {
+    if (isIP(address) !== 4) {
+      return {
+        valid: false,
+        reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
+      };
+    }
+    const ipv4 = parseIPv4(address)!;
+    if (isPrivateIPv4(ipv4)) {
+      return {
+        valid: false,
+        reason: `DNS lookup for "${hostname}" returned private/reserved IPv4 address "${address}"`,
+      };
+    }
+    return { valid: true };
+  }
+
+  if (isIP(address) !== 6) {
+    return {
+      valid: false,
+      reason: `DNS lookup for "${hostname}" returned malformed IPv6 address "${address}"`,
+    };
+  }
+  if (isPrivateIPv6(address)) {
+    return {
+      valid: false,
+      reason: `DNS lookup for "${hostname}" returned private/reserved IPv6 address "${address}"`,
+    };
+  }
+  return { valid: true };
+}
+
 /** Fetch content from URL using native fetch. Validates URL before fetching.
  *  Rejects private/reserved targets (SSRF mitigation).
  *  Disables redirect following to prevent SSRF via redirect.
  *  Throws on validation failure or HTTP errors. */
-async function fetchUrlContent(url: string): Promise<string> {
-  const validation = validateReviewUrl(url);
+async function fetchUrlContent(url: string, dnsLookup?: ReviewDnsLookup): Promise<string> {
+  const validation = await validateResolvedReviewUrlTarget(url, dnsLookup);
   if (!validation.valid) {
     throw new Error(`URL validation blocked: ${validation.reason}`);
   }
@@ -122,6 +204,9 @@ async function fetchUrlContent(url: string): Promise<string> {
 // ─── Executor Interface ───────────────────────────────────────────────
 
 export interface ReviewExecutors {
+  /** Optional DNS resolver injection for deterministic SSRF tests. */
+  dnsLookup?: ReviewDnsLookup;
+
   /**
    * Generate analysis findings via LLM. Optional.
    * If not provided, only mechanical checks are included in the report.
@@ -227,10 +312,11 @@ function buildMechanicalFindings(
 
 export async function loadExternalContent(
   refInput: ReviewReferenceInput,
+  dnsLookup?: ReviewDnsLookup,
 ): Promise<{ content: string } | RailBlocked> {
   if (refInput.prNumber !== undefined) return loadPrContent(refInput.prNumber);
   if (refInput.branch !== undefined) return loadBranchContent(refInput.branch);
-  if (refInput.url !== undefined) return loadUrlContent(refInput);
+  if (refInput.url !== undefined) return loadUrlContent(refInput, dnsLookup);
   if (refInput.text !== undefined) return { content: refInput.text };
   return { content: '' };
 }
@@ -265,6 +351,7 @@ function loadBranchContent(branch: string): { content: string } | RailBlocked {
 
 async function loadUrlContent(
   refInput: ReviewReferenceInput,
+  dnsLookup?: ReviewDnsLookup,
 ): Promise<{ content: string } | RailBlocked> {
   // BUG-13: Validate URL before fetch to block SSRF attempts with a clear reason.
   const validation = validateReviewUrl(refInput.url!);
@@ -275,7 +362,7 @@ async function loadUrlContent(
     });
   }
   try {
-    const content = await fetchUrlContent(refInput.url!);
+    const content = await fetchUrlContent(refInput.url!, dnsLookup);
     return { content };
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
@@ -347,7 +434,7 @@ export async function executeReview(
 
   let externalContent: string | undefined;
   if (refInput && !refInput.skipExternalContentLoad) {
-    const result = await loadExternalContent(refInput);
+    const result = await loadExternalContent(refInput, executors?.dnsLookup);
     if ('content' in result) {
       // Treat empty string as no content
       externalContent = result.content || undefined;
