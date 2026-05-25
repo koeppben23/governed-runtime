@@ -972,44 +972,57 @@ describe('review rail', () => {
 
   describe('Issue #310: resolved URL targets are validated before fetch', () => {
     it('accepts hostname DNS results when every resolved address is public', async () => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
-        { address: '93.184.216.34', family: 4 },
-        { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
-      ]);
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
+        ],
+      );
 
       expect(result.valid).toBe(true);
     });
 
     it('blocks mixed DNS results when any resolved address is private', async () => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
-        { address: '93.184.216.34', family: 4 },
-        { address: '10.0.0.7', family: 4 },
-      ]);
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '10.0.0.7', family: 4 },
+        ],
+      );
 
       expect(result.valid).toBe(false);
       expect((result as { reason: string }).reason).toContain('private/reserved IPv4');
     });
 
     it('blocks DNS lookup failures fail-closed', async () => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => {
-        throw new Error('resolver unavailable');
-      });
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => {
+          throw new Error('resolver unavailable');
+        },
+      );
 
       expect(result.valid).toBe(false);
       expect((result as { reason: string }).reason).toContain('DNS lookup failed');
     });
 
     it('blocks DNS lookups that return no addresses', async () => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => []);
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => [],
+      );
 
       expect(result.valid).toBe(false);
       expect((result as { reason: string }).reason).toContain('returned no addresses');
     });
 
     it('blocks malformed IPv6 DNS answers fail-closed', async () => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
-        { address: 'not:ipv6', family: 6 },
-      ]);
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => [{ address: 'not:ipv6', family: 6 }],
+      );
 
       expect(result.valid).toBe(false);
       expect((result as { reason: string }).reason).toContain('malformed IPv6');
@@ -1028,9 +1041,10 @@ describe('review rail', () => {
       ['fe80::1', 6, 'private/reserved IPv6'],
       ['::ffff:127.0.0.1', 6, 'private/reserved IPv6'],
     ] as const)('blocks private/reserved DNS answer %s', async (address, family, reason) => {
-      const result = await validateResolvedReviewUrlTarget('https://example.com/spec.md', async () => [
-        { address, family },
-      ]);
+      const result = await validateResolvedReviewUrlTarget(
+        'https://example.com/spec.md',
+        async () => [{ address, family }],
+      );
 
       expect(result.valid).toBe(false);
       expect((result as { reason: string }).reason).toContain(reason);

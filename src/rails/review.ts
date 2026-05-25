@@ -114,9 +114,8 @@ export async function validateResolvedReviewUrlTarget(
 
   const parsed = new URL(url);
   const hostname = parsed.hostname.toLowerCase();
-  const bareHostname = hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
+  const bareHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 
   if (isLiteralAddressAllowed(bareHostname)) return { valid: true };
 
@@ -156,20 +155,32 @@ function validateResolvedAddress(
 ): { valid: true } | { valid: false; reason: string } {
   if (family === 4) {
     if (isIP(address) !== 4) {
-      return { valid: false, reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"` };
+      return {
+        valid: false,
+        reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
+      };
     }
     const ipv4 = parseIPv4(address)!;
     if (isPrivateIPv4(ipv4)) {
-      return { valid: false, reason: `DNS lookup for "${hostname}" returned private/reserved IPv4 address "${address}"` };
+      return {
+        valid: false,
+        reason: `DNS lookup for "${hostname}" returned private/reserved IPv4 address "${address}"`,
+      };
     }
     return { valid: true };
   }
 
   if (isIP(address) !== 6) {
-    return { valid: false, reason: `DNS lookup for "${hostname}" returned malformed IPv6 address "${address}"` };
+    return {
+      valid: false,
+      reason: `DNS lookup for "${hostname}" returned malformed IPv6 address "${address}"`,
+    };
   }
   if (isPrivateIPv6(address)) {
-    return { valid: false, reason: `DNS lookup for "${hostname}" returned private/reserved IPv6 address "${address}"` };
+    return {
+      valid: false,
+      reason: `DNS lookup for "${hostname}" returned private/reserved IPv6 address "${address}"`,
+    };
   }
   return { valid: true };
 }

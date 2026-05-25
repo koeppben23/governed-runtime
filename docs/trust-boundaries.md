@@ -139,13 +139,13 @@ A trust boundary is a line across which data passes between trusted and untruste
 FlowGuard is filesystem-first and offline-capable by default. Network activity is
 limited to documented, operator-selected surfaces.
 
-| Direction    | Status                     | Implementation                                                                                  |
-| ------------ | -------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Outbound** | Default: none required     | Installed dependencies resolve from local artifacts; core state-machine execution is offline    |
+| Direction    | Status                     | Implementation                                                                                                    |
+| ------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Outbound** | Default: none required     | Installed dependencies resolve from local artifacts; core state-machine execution is offline                      |
 | **Outbound** | Explicit `/review` input   | `/review url=...` performs HTTPS content loading after HTTPS URL validation and fail-closed DNS target validation |
-| **Outbound** | Explicit IdP configuration | Remote JWKS refresh uses HTTPS when `identityProvider.mode=jwks` and `jwksUri` are configured   |
-| **Inbound**  | Default: none              | Standard OpenCode/plugin operation does not start a FlowGuard listener                          |
-| **Inbound**  | Explicit Claude hook mode  | Claude Code HTTP hook mode starts a localhost listener, default `127.0.0.1:18462`, when enabled |
+| **Outbound** | Explicit IdP configuration | Remote JWKS refresh uses HTTPS when `identityProvider.mode=jwks` and `jwksUri` are configured                     |
+| **Inbound**  | Default: none              | Standard OpenCode/plugin operation does not start a FlowGuard listener                                            |
+| **Inbound**  | Explicit Claude hook mode  | Claude Code HTTP hook mode starts a localhost listener, default `127.0.0.1:18462`, when enabled                   |
 
 **Customer Responsibility:**
 
