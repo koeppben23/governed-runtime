@@ -25,7 +25,8 @@
     "./testing": {
       "import": "./dist/testing.js",
       "types": "./dist/testing.d.ts"
-    }
+    },
+    "./tsa": "./dist/tsa.js"
   },
   "bin": {
     "flowguard": "./dist/cli/install.js",

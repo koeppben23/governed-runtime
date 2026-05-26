@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, chmod } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { resolveHost } from './host-resolver.js';
@@ -68,8 +68,9 @@ async function createExecutable(
   name: string,
 ): Promise<{ binDir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'fg-host-bin-'));
-  const file = join(dir, name);
-  await writeFile(file, '#!/bin/sh\nexit 0\n', 'utf-8');
+  const ext = platform() === 'win32' ? '.cmd' : '';
+  const file = join(dir, `${name}${ext}`);
+  await writeFile(file, platform() === 'win32' ? '@echo off\r\n' : '#!/bin/sh\nexit 0\n', 'utf-8');
   await chmod(file, 0o755);
   return { binDir: dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }

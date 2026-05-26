@@ -118,8 +118,8 @@ export {
   MockTimestampVerifier,
   MOCK_TSA_FIXTURE_TOKEN,
 } from './tsa-provider.js';
-export { HttpTimestampAuthorityProvider } from './rfc3161-http-provider.js';
-export { PkijsTimestampVerifier } from './rfc3161-pkijs-verifier.js';
+// HttpTimestampAuthorityProvider and PkijsTimestampVerifier moved to @flowguard/core/tsa
+// (requires optional asn1js/pkijs packages).
 export { verifyTimestampTokensForEvents } from './timestamp-token-verification.js';
 export type {
   TimestampTokenFinding,

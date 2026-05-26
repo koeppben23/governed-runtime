@@ -29,7 +29,8 @@ export function targetPathsForRisk(
     const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
     const filePath = path.resolve(args.filePath);
     if (worktreeRoot && filePath.startsWith(`${worktreeRoot}${path.sep}`)) {
-      return [path.relative(worktreeRoot, filePath)];
+      // Normalize to forward slashes for platform-independent audit output.
+      return [path.relative(worktreeRoot, filePath).replace(/\\/g, '/')];
     }
     return [args.filePath];
   }

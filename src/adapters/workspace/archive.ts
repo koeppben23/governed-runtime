@@ -43,7 +43,8 @@ import { WorkspaceError, validateFingerprint, validateSessionId } from './types.
 import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
-import { verifyArchiveTimestampTokens } from './archive-timestamp-verification.js';
+// Timestamp token verification is lazy-imported to avoid requiring optional
+// 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -487,6 +488,7 @@ async function verifyAuditChainIntegrity(
         });
       }
 
+      const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
       await verifyArchiveTimestampTokens({
         events,
         state,

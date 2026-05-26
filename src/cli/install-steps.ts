@@ -37,24 +37,22 @@ import {
   type CliArgs,
   type FileOp,
   type InstallPlatform,
+  type RollbackEntry,
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
   computeMandatesDigest,
+  detectPackageManager,
   ensureDir,
   mergeOpencodeJson,
   mergePackageJson,
   reviewerDefinitionForPlatform,
   resolveOpencodeConfigPath,
   resolveTarget,
+  rollbackArtifacts,
+  snapshotForRollback,
   verifyTarballChecksum,
   writeIfAbsent,
 } from './install-helpers.js';
-import {
-  detectPackageManager,
-  type RollbackEntry,
-  rollbackArtifacts,
-  snapshotForRollback,
-} from './install-command.js';
 
 const DEPENDENCY_INSTALL_TIMEOUT_MS = 300_000;
 

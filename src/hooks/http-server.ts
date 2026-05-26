@@ -153,7 +153,10 @@ async function handlePostToolUse(payload: Record<string, unknown>): Promise<Http
   return { decision: 'allow' };
 }
 
-async function handleSessionStart(payload: Record<string, unknown>): Promise<HttpHookResponse> {
+/** @internal Exported for unit testing only. */
+export async function handleSessionStart(
+  payload: Record<string, unknown>,
+): Promise<HttpHookResponse> {
   const validated = validateSessionPayload(payload);
   const { session_id, cwd } = validated;
   const platform = detectPlatform(payload);

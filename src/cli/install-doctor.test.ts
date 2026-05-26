@@ -96,7 +96,9 @@ describe('cli/doctor', () => {
 
       const checks = await doctor(repoArgs({ action: 'doctor', installPlatform: 'claude-code' }));
 
-      expect(checks.some((c) => c.file.includes('.claude/flowguard-plugin'))).toBe(true);
+      expect(checks.some((c) => c.file.includes(path.join('.claude', 'flowguard-plugin')))).toBe(
+        true,
+      );
       const runtime = checks.find((c) => c.file === 'trust://claude-code/runtime');
       expect(runtime?.status).toBe('warn');
       expect(runtime?.detail).toContain('NOT_VERIFIED_RUNTIME');
