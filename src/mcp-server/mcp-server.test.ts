@@ -20,6 +20,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { resolveSessionContext } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
+import { registerAllTools } from './tool-adapter.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
 import { z } from 'zod';
 
 // --- Schema Converter Tests ---
@@ -93,6 +96,51 @@ describe('Session Resolver', () => {
     process.env['FLOWGUARD_SESSION_DIR'] = '/env/path';
     const ctx = resolveSessionContext(['/roots/path']);
     expect(ctx.directory).toContain('env');
+  });
+
+  it('HAPPY: preserves provided stable MCP session id', () => {
+    delete process.env['FLOWGUARD_SESSION_DIR'];
+    const ctx = resolveSessionContext(['/project/root'], 'mcp-stable-session');
+
+    expect(ctx.sessionId).toBe('mcp-stable-session');
+  });
+});
+
+describe('Tool Adapter Session Identity', () => {
+  it('BAD: reuses stable sessionID across calls and creates unique messageIDs', async () => {
+    const contexts: ToolContext[] = [];
+    let handler:
+      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
+      | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute(_args, context) {
+        contexts.push(context);
+        return 'ok';
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-stable-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    expect(handler).not.toBeNull();
+    await handler!({}, {});
+    await handler!({}, {});
+
+    expect(contexts.map((ctx) => ctx.sessionID)).toEqual([
+      'mcp-stable-session',
+      'mcp-stable-session',
+    ]);
+    expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
   });
 });
 

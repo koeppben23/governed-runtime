@@ -10,7 +10,7 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSession, persistAndFormat } from './helpers.js';
+import { withMutableSessionTransaction, persistAndFormat } from './helpers.js';
 import { executeAbort } from '../../rails/abort.js';
 import { safeExecute } from './ticket-tool.js';
 
@@ -30,9 +30,14 @@ export const abort_session: ToolDefinition = {
   async execute(args, context) {
     return safeExecute(
       async () => {
-        const { sessDir, state, ctx } = await withMutableSession(context);
-        const result = executeAbort(state, { reason: args.reason, actor: context.sessionID }, ctx);
-        return persistAndFormat(sessDir, result);
+        return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
+          const result = executeAbort(
+            state,
+            { reason: args.reason, actor: context.sessionID },
+            ctx,
+          );
+          return persistAndFormat(sessDir, result);
+        });
       },
       { actorClaimErrorAsBlocked: false },
     );

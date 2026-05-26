@@ -16,6 +16,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { randomUUID } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from '../integration/tools/helpers.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import type { McpSessionContext } from './session-resolver.js';
@@ -116,8 +117,8 @@ export function registerAllTools(
 
         // Build ToolContext compatible with FlowGuard tool execute() signature
         const toolContext: ToolContext = {
-          sessionID: `mcp-${Date.now()}`,
-          messageID: `mcp-msg-${Date.now()}`,
+          sessionID: sessionCtx.sessionId,
+          messageID: `mcp-msg-${randomUUID()}`,
           agent: 'mcp-client',
           directory: sessionCtx.directory,
           worktree: sessionCtx.worktree,

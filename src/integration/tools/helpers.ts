@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import * as crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 // State & Machine
 import { SessionState } from '../../state/schema.js';
@@ -45,6 +46,8 @@ import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
 import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
+
+const lockedSessionDir = new AsyncLocalStorage<string>();
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -270,7 +273,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
  * - If artifact materialization fails: no state change persisted.
  * - If state write fails after artifacts: orphan artifacts only (benign).
  */
-export async function writeStateWithArtifacts(
+export async function writeStateWithArtifactsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
 ): Promise<void> {
@@ -289,10 +292,24 @@ export async function writeStateWithArtifacts(
     .update(serialized, 'utf-8')
     .digest('hex');
 
+  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
+  await writeStateAlreadyLocked(sessDir, nextState);
+}
+
+export async function writeStateWithArtifacts(
+  sessDir: string,
+  nextState: SessionState,
+): Promise<void> {
+  if (lockedSessionDir.getStore() === sessDir) {
+    await writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
+    return;
+  }
+
   // 3. Materialize artifacts and write state atomically under the session lock
   await withSessionWriteLock(sessDir, async () => {
-    await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
-    await writeStateAlreadyLocked(sessDir, nextState);
+    await lockedSessionDir.run(sessDir, () =>
+      writeStateWithArtifactsAlreadyLocked(sessDir, nextState),
+    );
   });
 }
 
@@ -390,6 +407,27 @@ export async function withMutableSession(context: {
   const policy = resolvePolicyFromState(state);
   const ctx = createPolicyContext(policy);
   return { worktree, fingerprint, sessDir, wsDir, state, policy, ctx };
+}
+
+export type MutableSession = Awaited<ReturnType<typeof withMutableSession>>;
+
+export async function withMutableSessionTransaction<T>(
+  context: {
+    sessionID: string;
+    worktree: string;
+    directory: string;
+  },
+  fn: (session: MutableSession) => Promise<T>,
+): Promise<T> {
+  const { worktree, fingerprint, sessDir, wsDir } = await resolveWorkspacePaths(context);
+  return withSessionWriteLock(sessDir, async () =>
+    lockedSessionDir.run(sessDir, async () => {
+      const state = await requireStateForMutation(sessDir);
+      const policy = resolvePolicyFromState(state);
+      const ctx = createPolicyContext(policy);
+      return fn({ worktree, fingerprint, sessDir, wsDir, state, policy, ctx });
+    }),
+  );
 }
 
 /**

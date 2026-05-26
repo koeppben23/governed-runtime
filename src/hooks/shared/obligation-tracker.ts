@@ -18,6 +18,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
+import type { ReviewObligation } from '../../state/evidence.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,12 @@ export interface ObligationEscalation {
   readonly pendingCount: number;
   readonly oldestPendingAge: number; // seconds since oldest pending obligation created
   readonly message: string | null;
+}
+
+export function unresolvedBlockingObligations(state: SessionState): ReviewObligation[] {
+  return (state.reviewAssurance?.obligations ?? []).filter(
+    (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+  );
 }
 
 // ─── Thresholds ──────────────────────────────────────────────────────────────
@@ -53,10 +60,7 @@ export function assessObligationEscalation(
   isMutatingTool: boolean,
   now: string = new Date().toISOString(),
 ): ObligationEscalation {
-  const obligations = state.reviewAssurance?.obligations ?? [];
-  const pending = obligations.filter(
-    (ob) => ob.status === 'pending' || (ob.status !== 'consumed' && ob.consumedAt == null),
-  );
+  const pending = unresolvedBlockingObligations(state);
 
   if (pending.length === 0) {
     return { level: 'none', pendingCount: 0, oldestPendingAge: 0, message: null };

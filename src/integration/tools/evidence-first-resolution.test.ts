@@ -73,6 +73,21 @@ vi.mock('./helpers.js', () => ({
       ctx: ctx2,
     };
   }),
+  withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
+    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const state = await mocks.requireStateForMutation();
+    const policy = mocks.resolvePolicyFromState();
+    const ctx2 = mocks.createPolicyContext();
+    return fn({
+      worktree: paths.worktree ?? '/tmp/test',
+      fingerprint: paths.fingerprint ?? 'test',
+      sessDir: paths.sessDir,
+      wsDir: paths.wsDir ?? '/tmp/ws',
+      state,
+      policy,
+      ctx: ctx2,
+    });
+  }),
 }));
 
 vi.mock('../../machine/commands.js', () => ({

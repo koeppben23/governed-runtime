@@ -15,12 +15,15 @@
  */
 
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Resolved session context for an MCP tool call.
  * Contains all paths needed by ToolContext.
  */
 export interface McpSessionContext {
+  /** Stable FlowGuard session identifier for this MCP server/transport session. */
+  readonly sessionId: string;
   /** The project working directory (worktree root). */
   readonly directory: string;
   /** The worktree path (same as directory for most setups). */
@@ -34,22 +37,25 @@ export interface McpSessionContext {
  * @returns Resolved session context
  * @throws Error if no working directory can be determined
  */
-export function resolveSessionContext(roots?: readonly string[]): McpSessionContext {
+export function resolveSessionContext(
+  roots?: readonly string[],
+  sessionId = `mcp-${randomUUID()}`,
+): McpSessionContext {
   // Priority 1: Explicit env override
   const envDir = process.env['FLOWGUARD_SESSION_DIR'];
   if (envDir && envDir.length > 0) {
     const resolved = path.resolve(envDir);
-    return { directory: resolved, worktree: resolved };
+    return { sessionId, directory: resolved, worktree: resolved };
   }
 
   // Priority 2: MCP roots (first root is the primary working directory)
   if (roots && roots.length > 0) {
     const rootDir = roots[0]!;
     const resolved = path.resolve(rootDir);
-    return { directory: resolved, worktree: resolved };
+    return { sessionId, directory: resolved, worktree: resolved };
   }
 
   // Priority 3: cwd fallback
   const cwd = process.cwd();
-  return { directory: cwd, worktree: cwd };
+  return { sessionId, directory: cwd, worktree: cwd };
 }
