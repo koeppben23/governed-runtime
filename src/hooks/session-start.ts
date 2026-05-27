@@ -17,6 +17,7 @@
 import { randomUUID } from 'node:crypto';
 import { readStdin, validateSessionPayload } from './shared/stdin-reader.js';
 import { writeLog } from './shared/stdout-writer.js';
+import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { ensureWorkspace } from '../adapters/workspace/index.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
@@ -26,6 +27,17 @@ import type { AuditEvent } from '../state/evidence-audit.js';
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Install stdout guard — informational hooks never write stdout,
+  // but transitive deps must not corrupt host communication.
+  const guard = installHookStdoutGuard();
+  try {
+    await sessionStartLogic();
+  } finally {
+    guard.restore();
+  }
+}
+
+async function sessionStartLogic(): Promise<void> {
   let payload: Record<string, unknown>;
   try {
     payload = await readStdin();

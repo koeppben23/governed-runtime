@@ -26,15 +26,154 @@ export function targetPathsForRisk(
   getWorktreeRoot: () => string | undefined,
 ): string[] {
   if ((toolName === 'write' || toolName === 'edit') && typeof args.filePath === 'string') {
-    const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
-    const filePath = path.resolve(args.filePath);
-    if (worktreeRoot && filePath.startsWith(`${worktreeRoot}${path.sep}`)) {
-      // Normalize to forward slashes for platform-independent audit output.
-      return [path.relative(worktreeRoot, filePath).replace(/\\/g, '/')];
-    }
-    return [args.filePath];
+    return [resolveRelativePath(args.filePath, getWorktreeRoot)];
+  }
+  if (toolName === 'apply_patch' && typeof args.diff === 'string') {
+    return extractPathsFromPatch(args.diff);
+  }
+  if (toolName === 'bash' && typeof args.command === 'string') {
+    return extractPathsFromBashCommand(args.command);
   }
   return [];
+}
+
+// ─── Path Resolution Helper ──────────────────────────────────────────────────
+
+function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | undefined): string {
+  const worktreeRoot = getWorktreeRoot() ? path.resolve(getWorktreeRoot()!) : null;
+  const resolved = path.resolve(filePath);
+  if (worktreeRoot && resolved.startsWith(`${worktreeRoot}${path.sep}`)) {
+    // Normalize to forward slashes for platform-independent audit output.
+    return path.relative(worktreeRoot, resolved).replace(/\\/g, '/');
+  }
+  return filePath;
+}
+
+// ─── apply_patch Path Extraction ─────────────────────────────────────────────
+
+/**
+ * Extract target file paths from a unified diff string.
+ * Parses `--- a/path` and `+++ b/path` headers, filters `/dev/null`.
+ *
+ * @internal
+ */
+export function extractPathsFromPatch(diff: string): string[] {
+  const paths = new Set<string>();
+
+  // Guard against excessive input that could cause ReDoS.
+  if (diff.length > 1024 * 1024) return [];
+
+  const headerPattern = /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm;
+  let match: RegExpExecArray | null;
+
+  while ((match = headerPattern.exec(diff)) !== null) {
+    const filePath = (match[1] ?? '').trim();
+    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
+      // Normalize slashes for platform-independent output.
+      paths.add(filePath.replace(/\\/g, '/'));
+    }
+  }
+
+  return [...paths];
+}
+
+// ─── bash Command Path Extraction ────────────────────────────────────────────
+
+/**
+ * Best-effort extraction of file paths from bash command strings.
+ * Handles common patterns: redirects, tee, rm, mv, cp, sed -i, chmod, git checkout --.
+ *
+ * Returns [] for unparseable commands (fail-safe: unknown ≠ "no risk").
+ *
+ * @internal
+ */
+export function extractPathsFromBashCommand(cmd: string): string[] {
+  // Guard against excessive input that could cause ReDoS.
+  if (cmd.length > 1024 * 1024) return [];
+
+  const paths = new Set<string>();
+
+  // 1. Redirect targets: >, >>, 2>, 2>>
+  const redirectPattern = /(?:^|[^<])(?:2?>?>|>)\s*["']?([^\s"'|;&><]+)["']?/g;
+  let match: RegExpExecArray | null;
+  while ((match = redirectPattern.exec(cmd)) !== null) {
+    const target = match[1] ?? '';
+    if (target && !target.startsWith('/dev/')) {
+      paths.add(target);
+    }
+  }
+
+  // 2. tee targets: | tee [-a] <file>
+  const teePattern = /\|\s*tee\s+(?:-a\s+)?["']?([^\s"'|;&><]+)["']?/g;
+  while ((match = teePattern.exec(cmd)) !== null) {
+    const target = match[1] ?? '';
+    if (target) paths.add(target);
+  }
+
+  // 3. rm targets: rm [-rf] <files...>
+  const rmPattern = /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g;
+  while ((match = rmPattern.exec(cmd)) !== null) {
+    const argStr = (match[1] ?? '').trim();
+    for (const arg of splitUnquotedArgs(argStr)) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
+
+  // 4. mv/cp targets: mv/cp <src...> <dest>
+  const mvCpPattern = /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g;
+  while ((match = mvCpPattern.exec(cmd)) !== null) {
+    const argStr = (match[1] ?? '').trim();
+    const args = splitUnquotedArgs(argStr);
+    // All paths are potentially affected (source and destination)
+    for (const arg of args) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
+
+  // 5. sed -i: sed -i[suffix] <expr> <file...>
+  const sedPattern = /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\s;&|]+)/g;
+  while ((match = sedPattern.exec(cmd)) !== null) {
+    const argStr = (match[1] ?? '').trim();
+    for (const arg of splitUnquotedArgs(argStr)) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
+
+  // 6. chmod: chmod <mode> <file...>
+  const chmodPattern =
+    /\bchmod\s+(?:-[a-zA-Z]+\s+)*(?:[0-7]{3,4}|[ugoa][+\-=/][rwxXst]+)\s+([^\s;&|]+)/g;
+  while ((match = chmodPattern.exec(cmd)) !== null) {
+    const argStr = (match[1] ?? '').trim();
+    for (const arg of splitUnquotedArgs(argStr)) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
+
+  // 7. git checkout -- <file...>
+  const gitCheckoutPattern = /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g;
+  while ((match = gitCheckoutPattern.exec(cmd)) !== null) {
+    const argStr = (match[1] ?? '').trim();
+    for (const arg of splitUnquotedArgs(argStr)) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
+
+  return [...paths].map((p) => p.replace(/\\/g, '/'));
+}
+
+/**
+ * Split a string into arguments, respecting single/double quotes.
+ * @internal
+ */
+function splitUnquotedArgs(input: string): string[] {
+  const args: string[] = [];
+  const pattern = /(?:"([^"]*)")|(?:'([^']*)')|([^\s]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(input)) !== null) {
+    const arg = m[1] ?? m[2] ?? m[3] ?? '';
+    if (arg) args.push(arg);
+  }
+  return args;
 }
 
 export async function currentChangedFilesForRisk(

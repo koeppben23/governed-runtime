@@ -112,7 +112,7 @@ describe('integration/plugin-policy', () => {
       expect(result.state).toBeNull();
     });
 
-    it('no state file + no config → solo (final fallback)', async () => {
+    it('no state file + no config → team (final fallback)', async () => {
       const sessDir = path.join(tmpDir, 'sess_no_config');
       await fs.mkdir(sessDir, { recursive: true });
       // No session-state.json
@@ -121,7 +121,7 @@ describe('integration/plugin-policy', () => {
         sessDir,
       });
 
-      expect(result.policy.mode).toBe('solo');
+      expect(result.policy.mode).toBe('team');
       expect(result.state).toBeNull();
     });
 
@@ -135,12 +135,12 @@ describe('integration/plugin-policy', () => {
       expect(result.state).toBeNull();
     });
 
-    it('sessDir=null + no config → solo', async () => {
+    it('sessDir=null + no config → team', async () => {
       const result = await resolvePluginSessionPolicy({
         sessDir: null,
       });
 
-      expect(result.policy.mode).toBe('solo');
+      expect(result.policy.mode).toBe('team');
       expect(result.state).toBeNull();
     });
 

@@ -13,15 +13,19 @@
  * - Malformed stdin → DENY (explicit error, never silent pass)
  * - Any internal error → DENY (defensive)
  *
+ * Stdout guard: installed before any logic to prevent transitive dependency
+ * output from corrupting the hook's JSON response to the host.
+ *
  * Decision logic delegates to the same `isHostToolAllowedInPhase()` function
  * used by the OpenCode plugin — no duplicate authority.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/244
- * @version v1
+ * @version v2
  */
 
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
-import { DenyOutputError, writeDeny, writeLog } from './shared/stdout-writer.js';
+import { DenyOutputError, formatDenyOutput, writeLog } from './shared/stdout-writer.js';
+import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import {
@@ -33,13 +37,36 @@ import {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Install stdout guard FIRST — captures any spurious output from transitive deps.
+  const guard = installHookStdoutGuard();
+
+  /** Deny helper: format + write via guard, then throw DenyOutputError on failure. */
+  async function deny(code: string, reason: string): Promise<void> {
+    const output = formatDenyOutput('PreToolUse', code, reason);
+    const payload = JSON.stringify(output) + '\n';
+    try {
+      await guard.writeResponse(payload);
+    } catch (err) {
+      process.exitCode = 2;
+      try {
+        process.stderr.write(
+          `[FlowGuard Hook] DENY_OUTPUT_FAILED: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.stderr.write(payload);
+      } catch {
+        /* nothing left */
+      }
+      throw new DenyOutputError('Failed to write deny decision to stdout', { cause: err });
+    }
+  }
+
   let payload: Record<string, unknown>;
   try {
     payload = await readStdin();
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     writeLog(`DENY (fail-closed stdin): ${reason}`);
-    await writeDeny('PreToolUse', 'HOOK_STDIN_INVALID', reason);
+    await deny('HOOK_STDIN_INVALID', reason);
     return;
   }
 
@@ -52,7 +79,7 @@ async function main(): Promise<void> {
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     writeLog(`DENY (fail-closed validation): ${reason}`);
-    await writeDeny('PreToolUse', 'HOOK_PAYLOAD_INVALID', reason);
+    await deny('HOOK_PAYLOAD_INVALID', reason);
     return;
   }
 
@@ -66,6 +93,7 @@ async function main(): Promise<void> {
   // Exception: `task` tool may require subagent authorization check.
   if (!isMutatingHostTool(toolNameLower) && toolNameLower !== 'task') {
     writeLog(`ALLOW: ${tool_name} (non-mutating)`);
+    guard.restore();
     return;
   }
 
@@ -74,13 +102,14 @@ async function main(): Promise<void> {
   const subagentGate = isSubagentAuthorized(toolNameLower, validated.tool_input);
   if (!subagentGate.allowed) {
     writeLog(`DENY (subagent): ${tool_name} — ${subagentGate.code}: ${subagentGate.reason}`);
-    await writeDeny('PreToolUse', subagentGate.code!, subagentGate.reason!);
+    await deny(subagentGate.code!, subagentGate.reason!);
     return;
   }
 
   // After subagent check: if non-mutating (task without subagent_type, etc.), allow.
   if (!isMutatingHostTool(toolNameLower)) {
     writeLog(`ALLOW: ${tool_name} (non-mutating)`);
+    guard.restore();
     return;
   }
 
@@ -90,7 +119,7 @@ async function main(): Promise<void> {
   if (!resolution.ok) {
     // Fail-closed: cannot read state → deny.
     writeLog(`DENY (fail-closed): ${resolution.code} — ${resolution.reason}`);
-    await writeDeny('PreToolUse', resolution.code, resolution.reason);
+    await deny(resolution.code, resolution.reason);
     return;
   }
 
@@ -99,11 +128,12 @@ async function main(): Promise<void> {
 
   if (!gateResult.allowed) {
     writeLog(`DENY: ${tool_name} blocked in phase ${state.phase} (${gateResult.code})`);
-    await writeDeny('PreToolUse', gateResult.code!, gateResult.reason!);
+    await deny(gateResult.code!, gateResult.reason!);
     return;
   }
 
   writeLog(`ALLOW: ${tool_name} in phase ${state.phase}`);
+  guard.restore();
   // Exit 0 with no stdout = ALLOW
 }
 
@@ -111,5 +141,13 @@ main().catch((err: unknown) => {
   if (err instanceof DenyOutputError) return;
   const reason = err instanceof Error ? err.message : String(err);
   writeLog(`DENY (fatal): ${reason}`);
-  void writeDeny('PreToolUse', 'HOOK_FATAL_ERROR', reason).catch(() => undefined);
+
+  // Fatal path: guard may already be restored or never installed.
+  // Write directly as last resort.
+  const output = formatDenyOutput('PreToolUse', 'HOOK_FATAL_ERROR', reason);
+  try {
+    process.stdout.write(JSON.stringify(output) + '\n');
+  } catch {
+    /* nothing left */
+  }
 });

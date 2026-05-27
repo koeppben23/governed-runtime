@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
 import { writeLog } from './shared/stdout-writer.js';
+import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { isMutatingHostTool } from './shared/phase-gate.js';
@@ -29,6 +30,17 @@ import type { AuditEvent } from '../state/evidence-audit.js';
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Install stdout guard — informational hooks never write stdout,
+  // but transitive deps must not corrupt the empty-stdout ALLOW signal.
+  const guard = installHookStdoutGuard();
+  try {
+    await postToolUseLogic();
+  } finally {
+    guard.restore();
+  }
+}
+
+async function postToolUseLogic(): Promise<void> {
   let payload: Record<string, unknown>;
   try {
     payload = await readStdin();

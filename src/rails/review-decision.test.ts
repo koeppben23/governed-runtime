@@ -390,6 +390,112 @@ describe('review-decision rail', () => {
     }
   });
 
+  it('changes_requested at EVIDENCE_REVIEW clears reducedCeremony alongside impl', () => {
+    const reducedCeremonyDecision = {
+      profile: 'reduced' as const,
+      reason: 'Trivial config change',
+      claimedTaskClass: 'TRIVIAL' as const,
+      computedMinimumTaskClass: 'TRIVIAL' as const,
+      touchedSurfaces: ['config/app.json'],
+      decidedAt: FIXED_TIME,
+    };
+    const state = makeState('EVIDENCE_REVIEW', {
+      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      plan: PLAN_RECORD,
+      implementation: IMPL_EVIDENCE,
+      reducedCeremony: reducedCeremonyDecision,
+      implReview: {
+        iteration: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: IMPL_EVIDENCE.digest,
+        revisionDelta: 'none',
+        verdict: 'approve',
+        executedAt: FIXED_TIME,
+      },
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'changes_requested', rationale: 'rework implementation', decidedBy: 'reviewer-1' },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.implementation).toBeNull();
+      expect(result.state.implReview).toBeNull();
+      expect(result.state.reducedCeremony).toBeNull();
+    }
+  });
+
+  it('approve does NOT clear reducedCeremony', () => {
+    const reducedCeremonyDecision = {
+      profile: 'reduced' as const,
+      reason: 'Trivial fix',
+      claimedTaskClass: 'TRIVIAL' as const,
+      computedMinimumTaskClass: 'TRIVIAL' as const,
+      touchedSurfaces: ['src/index.ts'],
+      decidedAt: FIXED_TIME,
+    };
+    const state = makeState('EVIDENCE_REVIEW', {
+      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      plan: PLAN_RECORD,
+      implementation: IMPL_EVIDENCE,
+      reducedCeremony: reducedCeremonyDecision,
+      implReview: {
+        iteration: 1,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: IMPL_EVIDENCE.digest,
+        revisionDelta: 'none',
+        verdict: 'approve',
+        executedAt: FIXED_TIME,
+      },
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'looks good', decidedBy: 'reviewer-1' },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.reducedCeremony).not.toBeNull();
+      expect(result.state.reducedCeremony?.profile).toBe('reduced');
+    }
+  });
+
+  it('reject clears reducedCeremony alongside all downstream', () => {
+    const reducedCeremonyDecision = {
+      profile: 'reduced' as const,
+      reason: 'Trivial fix',
+      claimedTaskClass: 'TRIVIAL' as const,
+      computedMinimumTaskClass: 'TRIVIAL' as const,
+      touchedSurfaces: ['src/index.ts'],
+      decidedAt: FIXED_TIME,
+    };
+    const state = makeState('EVIDENCE_REVIEW', {
+      ticket: { text: 't', digest: 'd', source: 'user', createdAt: FIXED_TIME },
+      plan: PLAN_RECORD,
+      implementation: IMPL_EVIDENCE,
+      reducedCeremony: reducedCeremonyDecision,
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'reject', rationale: 'start over', decidedBy: 'reviewer-1' },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.reducedCeremony).toBeNull();
+      expect(result.state.implementation).toBeNull();
+    }
+  });
+
   it('INVALID_VERDICT includes the invalid verdict string', () => {
     const state = makeState('PLAN_REVIEW');
     const result = executeReviewDecision(
