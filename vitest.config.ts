@@ -38,6 +38,7 @@ export default defineConfig({
           include: ['src/**/*.test.ts'],
           exclude: [
             'src/integration/**/*.test.ts',
+            'src/**/*.fuzz.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
             'src/cli/install-verify.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
@@ -104,6 +105,15 @@ export default defineConfig({
             'src/cli/inspect-command.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
           ],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 120_000,
+        },
+      },
+      {
+        test: {
+          name: 'fuzz',
+          include: ['src/**/*.fuzz.test.ts'],
           globals: false,
           restoreMocks: true,
           testTimeout: 120_000,
