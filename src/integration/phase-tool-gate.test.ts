@@ -70,12 +70,12 @@ describe('phase-tool-gate', () => {
     });
 
     describe('EDGE — empty and unknown tools', () => {
-      it('T10: empty string → false', () => {
-        expect(isMutatingHostTool('')).toBe(false);
+      it('T10: empty string → true (fail-closed)', () => {
+        expect(isMutatingHostTool('')).toBe(true);
       });
 
-      it('T11: unknown_tool → false (deny-list, not allow-list)', () => {
-        expect(isMutatingHostTool('unknown_tool')).toBe(false);
+      it('T11: unknown_tool → true (fail-closed until explicitly classified)', () => {
+        expect(isMutatingHostTool('unknown_tool')).toBe(true);
       });
     });
   });
@@ -220,14 +220,16 @@ describe('phase-tool-gate', () => {
         expect(result.allowed).toBe(true);
       });
 
-      it('T34: unknown_tool in PLAN → allowed (deny-list only blocks known mutating tools)', () => {
+      it('T34: unknown_tool in PLAN → denied by default', () => {
         const result = isHostToolAllowedInPhase('unknown_tool', 'PLAN');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_UNKNOWN_DENIED');
       });
 
-      it('T35: empty string tool in PLAN → allowed', () => {
+      it('T35: empty string tool in PLAN → denied by default', () => {
         const result = isHostToolAllowedInPhase('', 'PLAN');
-        expect(result.allowed).toBe(true);
+        expect(result.allowed).toBe(false);
+        expect(result.code).toBe('HOST_TOOL_UNKNOWN_DENIED');
       });
     });
 

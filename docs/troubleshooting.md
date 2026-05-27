@@ -134,14 +134,15 @@ real, registered reason.
 
 ### Command & Phase
 
-| Code                     | Description                                                              | Solution                                                                      |
-| ------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `COMMAND_BLOCKED`        | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                     |
-| `COMMAND_NOT_ALLOWED`    | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                         |
-| `WRONG_PHASE`            | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                      |
-| `HOST_TOOL_PHASE_DENIED` | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases |
-| `INVALID_VERDICT`        | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                  |
-| `INVALID_TRANSITION`     | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                           |
+| Code                       | Description                                                              | Solution                                                                       |
+| -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `COMMAND_BLOCKED`          | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                      |
+| `COMMAND_NOT_ALLOWED`      | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                          |
+| `WRONG_PHASE`              | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                       |
+| `HOST_TOOL_PHASE_DENIED`   | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases  |
+| `HOST_TOOL_UNKNOWN_DENIED` | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first |
+| `INVALID_VERDICT`          | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                   |
+| `INVALID_TRANSITION`       | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                            |
 
 ### Evidence Integrity
 
@@ -174,6 +175,7 @@ real, registered reason.
 | `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                            |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                             |
 | `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                              |
+| `REVIEW_SELF_APPROVAL_DENIED`        | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                         |
 | `REVIEW_TRANSPORT_EVIDENCE_INVALID`  | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                          |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                           |
 
@@ -254,6 +256,7 @@ GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 HOST_SUBAGENT_TASK_REQUIRED
 HOST_TOOL_PHASE_DENIED
+HOST_TOOL_UNKNOWN_DENIED
 HYDRATE_DISCOVERY_CONTRACT_FAILED
 IMPLEMENTATION_EVIDENCE_EMPTY
 IMPLEMENTATION_EVIDENCE_REQUIRED
@@ -299,6 +302,7 @@ REVIEW_FINDINGS_HASH_MISMATCH
 REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
 REVIEW_OBLIGATION_UNRESOLVED
+REVIEW_SELF_APPROVAL_DENIED
 REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
 REVIEWER_UNAVAILABLE_STRICT

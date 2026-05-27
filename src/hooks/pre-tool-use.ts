@@ -21,7 +21,7 @@
  */
 
 import { readStdin, validateToolHookPayload } from './shared/stdin-reader.js';
-import { writeDeny, writeLog } from './shared/stdout-writer.js';
+import { DenyOutputError, writeDeny, writeLog } from './shared/stdout-writer.js';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import {
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     writeLog(`DENY (fail-closed stdin): ${reason}`);
-    writeDeny('PreToolUse', 'HOOK_STDIN_INVALID', reason);
+    await writeDeny('PreToolUse', 'HOOK_STDIN_INVALID', reason);
     return;
   }
 
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     writeLog(`DENY (fail-closed validation): ${reason}`);
-    writeDeny('PreToolUse', 'HOOK_PAYLOAD_INVALID', reason);
+    await writeDeny('PreToolUse', 'HOOK_PAYLOAD_INVALID', reason);
     return;
   }
 
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const subagentGate = isSubagentAuthorized(toolNameLower, validated.tool_input);
   if (!subagentGate.allowed) {
     writeLog(`DENY (subagent): ${tool_name} — ${subagentGate.code}: ${subagentGate.reason}`);
-    writeDeny('PreToolUse', subagentGate.code!, subagentGate.reason!);
+    await writeDeny('PreToolUse', subagentGate.code!, subagentGate.reason!);
     return;
   }
 
@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   if (!resolution.ok) {
     // Fail-closed: cannot read state → deny.
     writeLog(`DENY (fail-closed): ${resolution.code} — ${resolution.reason}`);
-    writeDeny('PreToolUse', resolution.code, resolution.reason);
+    await writeDeny('PreToolUse', resolution.code, resolution.reason);
     return;
   }
 
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
 
   if (!gateResult.allowed) {
     writeLog(`DENY: ${tool_name} blocked in phase ${state.phase} (${gateResult.code})`);
-    writeDeny('PreToolUse', gateResult.code!, gateResult.reason!);
+    await writeDeny('PreToolUse', gateResult.code!, gateResult.reason!);
     return;
   }
 
@@ -108,7 +108,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
+  if (err instanceof DenyOutputError) return;
   const reason = err instanceof Error ? err.message : String(err);
   writeLog(`DENY (fatal): ${reason}`);
-  writeDeny('PreToolUse', 'HOOK_FATAL_ERROR', reason);
+  void writeDeny('PreToolUse', 'HOOK_FATAL_ERROR', reason).catch(() => undefined);
 });

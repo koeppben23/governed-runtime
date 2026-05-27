@@ -872,7 +872,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('C2 EDGE — before hook does not crash when output is undefined', async () => {
+    it('C2 EDGE — before hook fail-closes unknown tool when output is undefined', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -883,8 +883,8 @@ describe('integration/plugin', () => {
         );
         const beforeHook = hooks['tool.execute.before'];
         const input = { tool: 'some_tool', sessionID: crypto.randomUUID(), callID: 'c1' };
-        // OpenCode always provides output, but defensive code should handle undefined
-        await expect(beforeHook!(input, undefined)).resolves.toBeUndefined();
+        // OpenCode always provides output, but unknown tools must still fail closed.
+        await expect(beforeHook!(input, undefined)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await ws.cleanup();
       }
@@ -995,8 +995,8 @@ describe('integration/plugin', () => {
       }
     });
 
-    // BAD: hooks degrade gracefully when input/output are malformed
-    it('BAD — before hook handles null input gracefully', async () => {
+    // BAD: hooks fail closed when input/output are malformed
+    it('BAD — before hook denies null input rather than silently allowing', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -1004,8 +1004,8 @@ describe('integration/plugin', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // null input — defensive ?? fallbacks should prevent crash
-        await expect(beforeHook(null, { args: {} })).resolves.toBeUndefined();
+        // null input resolves to an unknown host tool and must fail closed.
+        await expect(beforeHook(null, { args: {} })).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await ws.cleanup();
       }

@@ -84,6 +84,8 @@ function allowsManualAttestedReviewWithoutPluginHandshake(input: {
     invocation.criteriaVersion === obligation.criteriaVersion,
     invocation.mandateDigest === obligation.mandateDigest,
     invocation.consumedByObligationId === null,
+    invocation.childSessionId !== ctx.reviewParentSessionId,
+    findings.reviewedBy.sessionId !== ctx.reviewParentSessionId,
   ];
   return evidenceChecks.every((check) => check === true);
 }
@@ -205,6 +207,16 @@ export function validateReviewFindings(
       return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
         invocationId: invocation.invocationId,
         consumedBy: invocation.consumedByObligationId,
+      });
+    }
+
+    if (
+      invocation.invocationMode === 'manual_attested' &&
+      (invocation.childSessionId === ctx.reviewParentSessionId ||
+        findings.reviewedBy.sessionId === ctx.reviewParentSessionId)
+    ) {
+      return formatBlocked('REVIEW_SELF_APPROVAL_DENIED', {
+        obligationId: obligation.obligationId,
       });
     }
 

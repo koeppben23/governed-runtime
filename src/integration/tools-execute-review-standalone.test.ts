@@ -409,6 +409,23 @@ describe('review (standalone flow)', () => {
       expect(result.phase).toBe('REVIEW_COMPLETE');
     });
 
+    it('BLOCKED: manual-attested reviewFindings from parent session are self-approval', async () => {
+      const uuid = await obtainObligationUuid({ prNumber: 457, inputOrigin: 'pr' });
+      const findings = {
+        ...buildAnalysisFindings('approve', uuid),
+        reviewedBy: { sessionId: ctx.sessionID },
+      };
+
+      const raw = await review.execute(
+        { prNumber: 457, inputOrigin: 'pr', reviewFindings: findings as never },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_SELF_APPROVAL_DENIED');
+    });
+
     it('BLOCKED: review in wrong phase (not READY)', async () => {
       await hydrateSession();
       await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);

@@ -42,7 +42,7 @@ import {
   unresolvedBlockingObligations,
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
-import { ensureWorkspace, sessionDir } from '../adapters/workspace/index.js';
+import { ensureWorkspace, sessionDir, computeFingerprint } from '../adapters/workspace/index.js';
 import type { AuditEvent } from '../state/evidence-audit.js';
 import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
@@ -50,16 +50,36 @@ import type { HookEventName, HttpHookResponse } from './shared/types.js';
 
 const DEFAULT_PORT = 18462;
 const DEFAULT_HOST = '127.0.0.1';
+export const MAX_HOOK_BODY_BYTES = 1_048_576;
 
 const PORT = parseInt(process.env['FLOWGUARD_HOOK_PORT'] ?? '', 10) || DEFAULT_PORT;
 const HOST = process.env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
 
 // ─── Request Handling ────────────────────────────────────────────────────────
 
-async function readBody(req: IncomingMessage): Promise<string> {
+class BodyTooLargeError extends Error {
+  constructor() {
+    super(`request body exceeds ${MAX_HOOK_BODY_BYTES} bytes`);
+    this.name = 'BodyTooLargeError';
+  }
+}
+
+function contentLengthExceedsLimit(req: IncomingMessage): boolean {
+  const raw = req.headers['content-length'];
+  if (typeof raw !== 'string') return false;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > MAX_HOOK_BODY_BYTES;
+}
+
+export async function readBody(req: IncomingMessage): Promise<string> {
+  if (contentLengthExceedsLimit(req)) throw new BodyTooLargeError();
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    total += buffer.byteLength;
+    if (total > MAX_HOOK_BODY_BYTES) throw new BodyTooLargeError();
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString('utf-8');
 }
@@ -188,7 +208,6 @@ export async function handleSessionStart(
   // Attempt audit event persistence — split into focused error boundaries.
   let sessDir: string | null = null;
   try {
-    const { computeFingerprint } = await import('../adapters/workspace/index.js');
     const fpResult = await computeFingerprint(cwd);
     sessDir = sessionDir(fpResult.fingerprint, session_id);
   } catch (err) {
@@ -306,7 +325,8 @@ const ROUTE_EVENTS: Record<string, HookEventName> = {
 
 // ─── Server ──────────────────────────────────────────────────────────────────
 
-const server = createServer(async (req, res) => {
+/** @internal Exported for unit testing only. */
+export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
@@ -331,7 +351,11 @@ const server = createServer(async (req, res) => {
   let body: string;
   try {
     body = await readBody(req);
-  } catch {
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      jsonResponse(res, 413, { error: 'Request body too large' });
+      return;
+    }
     jsonResponse(res, 400, { error: 'Failed to read request body' });
     return;
   }
@@ -376,7 +400,9 @@ const server = createServer(async (req, res) => {
       jsonResponse(res, 500, { error: 'Internal server error' });
     }
   }
-});
+}
+
+const server = createServer(handleHttpRequest);
 
 server.listen(PORT, HOST, () => {
   log(`listening on ${HOST}:${PORT}`);

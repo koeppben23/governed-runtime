@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Readable } from 'node:stream';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ vi.mock('./shared/obligation-tracker.js', () => ({
 // ─── Import handler after mocks ──────────────────────────────────────────────
 
 let handleSessionStart: (typeof import('./http-server.js'))['handleSessionStart'];
+let handleHttpRequest: (typeof import('./http-server.js'))['handleHttpRequest'];
 
 beforeEach(async () => {
   vi.resetModules();
@@ -101,9 +103,44 @@ beforeEach(async () => {
   const mod = await import('./http-server.js');
   handleSessionStart = mod.handleSessionStart;
   handlePreToolUse = mod.handlePreToolUse;
+  handleHttpRequest = mod.handleHttpRequest;
 });
 
 let handlePreToolUse: (typeof import('./http-server.js'))['handlePreToolUse'];
+
+function makeRequest(input: {
+  method?: string;
+  url?: string;
+  body: string;
+  contentLength?: string;
+}) {
+  const req = new Readable({
+    read() {
+      this.push(input.body);
+      this.push(null);
+    },
+  }) as Readable & { method?: string; url?: string; headers: Record<string, string> };
+  req.method = input.method ?? 'POST';
+  req.url = input.url ?? '/hooks/pre-tool-use';
+  req.headers = input.contentLength ? { 'content-length': input.contentLength } : {};
+  return req;
+}
+
+function makeResponse() {
+  const res = {
+    status: 0,
+    body: '',
+    headers: {} as Record<string, unknown>,
+    writeHead(status: number, headers: Record<string, unknown>) {
+      this.status = status;
+      this.headers = headers;
+    },
+    end(body: string) {
+      this.body = body;
+    },
+  };
+  return res;
+}
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -256,6 +293,43 @@ describe('handlePreToolUse', () => {
     });
 
     expect(result).toEqual({ decision: 'allow' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('BAD: denies unknown host tools after state resolution', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: { phase: 'IMPLEMENTATION' },
+    });
+
+    const result = await handlePreToolUse({ ...validPayload, tool_name: 'UnknownTool' });
+
+    expect(result.decision).toBe('deny');
+    expect(result.code).toBe('HOST_TOOL_UNKNOWN_DENIED');
+  });
+});
+
+describe('handleHttpRequest', () => {
+  it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
+    const req = makeRequest({ body: '{}', contentLength: '1048577' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(413);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('BAD: rejects streamed bodies over the hook body limit with 413', async () => {
+    const req = makeRequest({ body: 'x'.repeat(1_048_577) });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(413);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 });

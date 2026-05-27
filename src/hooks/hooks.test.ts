@@ -20,7 +20,7 @@ import {
   validateSessionPayload,
   StdinReadError,
 } from './shared/stdin-reader.js';
-import { formatDenyOutput, writeDeny, writeLog } from './shared/stdout-writer.js';
+import { DenyOutputError, formatDenyOutput, writeDeny, writeLog } from './shared/stdout-writer.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import {
   isMutatingHostTool,
@@ -254,14 +254,108 @@ describe('stdout-writer', () => {
       expect(output.hookSpecificOutput.hookEventName).toBe('PostToolUse');
     });
 
-    it('should write deny to stdout', () => {
-      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-      writeDeny('PreToolUse', 'TEST_CODE', 'test reason');
+    it('should write deny to stdout', async () => {
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((_chunk, callback) => {
+        if (typeof callback === 'function') callback();
+        return true;
+      }) as typeof process.stdout.write);
+      await writeDeny('PreToolUse', 'TEST_CODE', 'test reason');
       expect(writeSpy).toHaveBeenCalledTimes(1);
       const written = writeSpy.mock.calls[0]![0] as string;
       const parsed = JSON.parse(written.trim());
       expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
       writeSpy.mockRestore();
+    });
+
+    it('should fail closed when stdout deny write throws', async () => {
+      const originalExitCode = process.exitCode;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => {
+        throw new Error('EPIPE');
+      });
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
+        DenyOutputError,
+      );
+
+      expect(process.exitCode).toBe(2);
+      expect(
+        stderrSpy.mock.calls.some((call) => String(call[0]).includes('DENY_OUTPUT_FAILED')),
+      ).toBe(true);
+      expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('TEST_DENY'))).toBe(true);
+
+      process.exitCode = originalExitCode;
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
+
+    it('should fail closed when stdout deny write callback reports an error', async () => {
+      const originalExitCode = process.exitCode;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        _chunk,
+        callback,
+      ) => {
+        if (typeof callback === 'function') callback(new Error('callback EPIPE'));
+        return true;
+      }) as typeof process.stdout.write);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
+        DenyOutputError,
+      );
+
+      expect(process.exitCode).toBe(2);
+      expect(
+        stderrSpy.mock.calls.some((call) => String(call[0]).includes('DENY_OUTPUT_FAILED')),
+      ).toBe(true);
+      expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('TEST_DENY'))).toBe(true);
+
+      process.exitCode = originalExitCode;
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
+
+    it('should fail closed when stdout deny write returns false', async () => {
+      const originalExitCode = process.exitCode;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => false);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
+        DenyOutputError,
+      );
+
+      expect(process.exitCode).toBe(2);
+      expect(
+        stderrSpy.mock.calls.some((call) => String(call[0]).includes('DENY_OUTPUT_FAILED')),
+      ).toBe(true);
+      expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('TEST_DENY'))).toBe(true);
+
+      process.exitCode = originalExitCode;
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    });
+
+    it('should fail closed when stdout emits an error during deny write', async () => {
+      const originalExitCode = process.exitCode;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((() => {
+        process.stdout.emit('error', new Error('stream EPIPE'));
+        return true;
+      }) as typeof process.stdout.write);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+      await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
+        DenyOutputError,
+      );
+
+      expect(process.exitCode).toBe(2);
+      expect(
+        stderrSpy.mock.calls.some((call) => String(call[0]).includes('DENY_OUTPUT_FAILED')),
+      ).toBe(true);
+      expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('TEST_DENY'))).toBe(true);
+
+      process.exitCode = originalExitCode;
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
     });
 
     it('should write log to stderr', () => {
@@ -426,8 +520,8 @@ describe('pre-tool-use decision logic', () => {
       expect(isMutatingHostTool('webfetch')).toBe(false);
     });
 
-    it('should not identify unknown tools as mutating', () => {
-      expect(isMutatingHostTool('unknown_tool')).toBe(false);
+    it('should treat unknown tools as mutating until explicitly classified', () => {
+      expect(isMutatingHostTool('unknown_tool')).toBe(true);
     });
   });
 
@@ -440,16 +534,16 @@ describe('pre-tool-use decision logic', () => {
       }
     });
 
-    it('should handle empty tool name (non-mutating)', () => {
-      expect(isMutatingHostTool('')).toBe(false);
+    it('should handle empty tool name as fail-closed mutating', () => {
+      expect(isMutatingHostTool('')).toBe(true);
     });
   });
 
   describe('EDGE', () => {
     it('should handle case sensitivity (only lowercase matches)', () => {
       // The hook script normalizes to lowercase before calling
-      expect(isMutatingHostTool('Bash')).toBe(false);
-      expect(isMutatingHostTool('BASH')).toBe(false);
+      expect(isMutatingHostTool('Bash')).toBe(true);
+      expect(isMutatingHostTool('BASH')).toBe(true);
       expect(isMutatingHostTool('bash')).toBe(true);
     });
   });

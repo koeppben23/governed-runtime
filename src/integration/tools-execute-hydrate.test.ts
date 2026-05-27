@@ -515,7 +515,7 @@ describe('hydrate', () => {
       expect(second.phase).toBe('READY');
     });
 
-    it('persists claimedTaskClass recovery and clears blocked riskGate on existing session', async () => {
+    it('persists claimedTaskClass recovery but preserves blocked riskGate on existing session', async () => {
       await hydrateSession({ policyMode: 'regulated', claimedTaskClass: 'TRIVIAL' });
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -542,9 +542,11 @@ describe('hydrate', () => {
       expect(stateAfter).not.toBeNull();
       expect(stateAfter!.claimedTaskClass).toBe('HIGH-RISK');
       expect(stateAfter!.riskGate).toEqual({
-        status: 'clear',
+        status: 'blocked',
+        code: 'RISK_CLASSIFICATION_MISMATCH',
+        message: 'blocked',
+        blockedAt: '2026-01-01T00:00:00.000Z',
         lastDecisionId: 'RISK-1',
-        clearedAt: expect.any(String),
       });
       expect(stateAfter!.binding).toEqual(stateBefore!.binding);
       expect(stateAfter!.policySnapshot.mode).toBe(stateBefore!.policySnapshot.mode);

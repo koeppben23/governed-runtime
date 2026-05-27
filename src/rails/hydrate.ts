@@ -199,14 +199,6 @@ export function executeHydrate(
       ? {
           ...existingState,
           claimedTaskClass: s.claimedTaskClass,
-          riskGate:
-            existingState.riskGate?.status === 'blocked'
-              ? {
-                  status: 'clear' as const,
-                  lastDecisionId: existingState.riskGate.lastDecisionId,
-                  clearedAt: ctx.now(),
-                }
-              : existingState.riskGate,
         }
       : existingState;
     const result = evaluate(nextState, ctx.policy);

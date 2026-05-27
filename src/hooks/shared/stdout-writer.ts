@@ -13,6 +13,13 @@
 
 import type { HookDenyOutput, HookEventName } from './types.js';
 
+export class DenyOutputError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'DenyOutputError';
+  }
+}
+
 /**
  * Format a deny decision as the stdout JSON payload.
  *
@@ -37,15 +44,66 @@ export function formatDenyOutput(
 
 /**
  * Write a deny decision to stdout.
- * Writes the JSON payload followed by a newline, then exits.
+ * Writes the JSON payload followed by a newline.
  *
  * @param eventName - The hook event that triggered the denial.
  * @param code - Machine-readable denial code.
  * @param reason - Human-readable denial reason.
  */
-export function writeDeny(eventName: HookEventName, code: string, reason: string): void {
+export async function writeDeny(
+  eventName: HookEventName,
+  code: string,
+  reason: string,
+): Promise<void> {
   const output = formatDenyOutput(eventName, code, reason);
-  process.stdout.write(JSON.stringify(output) + '\n');
+  const payload = JSON.stringify(output) + '\n';
+  try {
+    await writeStdout(payload);
+  } catch (err) {
+    process.exitCode = 2;
+    writeStderrBestEffort(
+      `[FlowGuard Hook] DENY_OUTPUT_FAILED: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    writeStderrBestEffort(payload);
+    throw new DenyOutputError('Failed to write deny decision to stdout', { cause: err });
+  }
+}
+
+function writeStdout(payload: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = (err?: Error | null): void => {
+      if (settled) return;
+      settled = true;
+      process.stdout.off('error', onError);
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    };
+
+    const onError = (err: Error): void => finish(err);
+
+    try {
+      process.stdout.once('error', onError);
+      const accepted = process.stdout.write(payload, (err?: Error | null) => finish(err));
+      if (!accepted) {
+        finish(new Error('stdout write returned false'));
+      }
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
+function writeStderrBestEffort(message: string): void {
+  try {
+    process.stderr.write(message);
+  } catch {
+    // Nothing safer is available here; the caller receives DenyOutputError.
+  }
 }
 
 /**
