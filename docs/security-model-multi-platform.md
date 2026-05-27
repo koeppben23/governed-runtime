@@ -100,8 +100,13 @@ operators choose that hook transport.
 | State file missing    | Tool BLOCKED                | Tool BLOCKED (deny)          | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
 | State file corrupt    | Tool BLOCKED                | Tool BLOCKED (deny)          | Tool BLOCKED (deny)           | Tool BLOCKED (deny)           |
 | Audit write fails     | Tool ALLOWED (non-blocking) | Tool ALLOWED                 | Tool ALLOWED                  | Tool ALLOWED                  |
+| Deny stdout fails     | N/A                         | N/A                          | Hook exits non-zero\*\*       | Hook exits non-zero\*\*       |
 
 `*` = Platform limitation. FlowGuard cannot prevent this. See Gap 3 in `platform-limitations.md`.
+
+`**` = FlowGuard treats deny-output failure as fatal and exits non-zero after a
+best-effort stderr fallback. Host-level fail-closed behavior is NOT_VERIFIED for
+hosts that interpret non-zero exit or missing stdout as allow.
 
 ## Defense-in-Depth Layers
 

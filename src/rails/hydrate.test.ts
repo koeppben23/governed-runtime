@@ -132,7 +132,7 @@ describe('hydrate rail unit tests', () => {
       expect(state).toBe(existing);
     });
 
-    it('explicit reclassification updates claim and clears a blocked riskGate', () => {
+    it('explicit reclassification updates claim but preserves a blocked riskGate', () => {
       const existing = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
         riskGate: {
@@ -152,9 +152,11 @@ describe('hydrate rail unit tests', () => {
       expect(state).not.toBe(existing);
       expect(state.claimedTaskClass).toBe('HIGH-RISK');
       expect(state.riskGate).toEqual({
-        status: 'clear',
+        status: 'blocked',
+        code: 'RISK_CLASSIFICATION_MISMATCH',
+        message: 'blocked',
+        blockedAt: FIXED_TIME,
         lastDecisionId: 'RISK-1',
-        clearedAt: FIXED_TIME,
       });
     });
   });

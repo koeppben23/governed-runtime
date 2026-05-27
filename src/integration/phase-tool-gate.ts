@@ -41,6 +41,21 @@ export const MUTATING_HOST_TOOLS: ReadonlySet<string> = new Set([
   'apply_patch',
 ]);
 
+export const READ_ONLY_HOST_TOOLS: ReadonlySet<string> = new Set([
+  'read',
+  'glob',
+  'grep',
+  'webfetch',
+]);
+
+function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
+  return (
+    toolName === 'task' ||
+    toolName.startsWith('flowguard_') ||
+    toolName.startsWith('mcp__flowguard__')
+  );
+}
+
 /**
  * Phases where only investigation (read-only) tools are allowed.
  *
@@ -349,7 +364,10 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
  * check for non-mutating tools (avoids unnecessary async state reads).
  */
 export function isMutatingHostTool(toolName: string): boolean {
-  return MUTATING_HOST_TOOLS.has(toolName);
+  if (MUTATING_HOST_TOOLS.has(toolName)) return true;
+  if (READ_ONLY_HOST_TOOLS.has(toolName)) return false;
+  if (isGovernedOutsideHostPhaseGate(toolName)) return false;
+  return true;
 }
 
 /**
@@ -365,8 +383,16 @@ export function isMutatingHostTool(toolName: string): boolean {
  * @returns Gate result with allowed flag and optional reason code
  */
 export function isHostToolAllowedInPhase(toolName: string, phase: Phase): PhaseGateResult {
-  if (!MUTATING_HOST_TOOLS.has(toolName)) {
+  if (READ_ONLY_HOST_TOOLS.has(toolName) || isGovernedOutsideHostPhaseGate(toolName)) {
     return { allowed: true };
+  }
+
+  if (!MUTATING_HOST_TOOLS.has(toolName)) {
+    return {
+      allowed: false,
+      code: 'HOST_TOOL_UNKNOWN_DENIED',
+      reason: `'${toolName}' is not an explicitly allowed host tool. Unknown host tools are denied by default.`,
+    };
   }
 
   if (!INVESTIGATION_ONLY_PHASES.has(phase)) {

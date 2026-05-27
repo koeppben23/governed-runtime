@@ -148,6 +148,16 @@ function recordManualReviewInvocation(input: {
       ),
     };
   }
+  if (childSessionId === exec.context.sessionID) {
+    return {
+      result,
+      blocked: formatBlockedWithAttestation(
+        'REVIEW_SELF_APPROVAL_DENIED',
+        'Manual-attested review findings must come from a different reviewer session than the governed parent session.',
+        obligation.obligationId,
+      ),
+    };
+  }
   if (hasEvidenceReuse(assurance.invocations, childSessionId, findingsHash)) {
     return {
       result,

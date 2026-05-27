@@ -45,6 +45,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'HOST_TOOL_UNKNOWN_DENIED',
+    category: 'admissibility',
+    messageTemplate: 'Unknown host tool {tool} denied by default',
+    recoverySteps: [
+      'Use an explicitly supported host tool',
+      'Extend the canonical host-tool allow-list before relying on a new tool',
+    ],
+  },
+
+  {
     code: 'RISK_CLASSIFICATION_MISMATCH',
     category: 'admissibility',
     messageTemplate:
@@ -486,6 +496,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent for the current obligation`,
       'Do not reuse findings from a previously consumed invocation',
       'Each plan version and review iteration requires its own subagent invocation',
+    ],
+  },
+
+  {
+    code: 'REVIEW_SELF_APPROVAL_DENIED',
+    category: 'state',
+    messageTemplate:
+      'Manual-attested review findings must come from a different reviewer session than the governed parent session.',
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer in a distinct session`,
+      'Do not submit reviewFindings authored by the same session that performed the governed work',
     ],
   },
 

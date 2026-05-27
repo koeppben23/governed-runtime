@@ -710,6 +710,31 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
   });
 
+  it('rejects manual_attested self-approval from the governed parent session', () => {
+    const findings = strictFindings({ reviewedBy: { sessionId: 'ses_parent' } });
+    const assurance = manualAttestedAssuranceFixture(findings);
+    assurance.invocations[0] = {
+      ...assurance.invocations[0]!,
+      childSessionId: 'ses_parent',
+      parentSessionId: 'ses_parent',
+    };
+
+    const result = validateReviewFindings(
+      findings,
+      makeCtx({
+        strictEnforcement: true,
+        assurance,
+        obligationType: 'plan',
+        reviewInvocationPolicy: 'sdk_allowed',
+        reviewParentSessionId: 'ses_parent',
+        reviewHostPlatform: 'claude-code',
+      }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('REVIEW_SELF_APPROVAL_DENIED');
+  });
+
   it('rejects manual_attested evidence bound to the wrong obligation', () => {
     const findings = strictFindings();
     const assurance = manualAttestedAssuranceFixture(findings);
