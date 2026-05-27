@@ -118,8 +118,8 @@ function makeResponse() {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('HTTP hook fuzz', () => {
-  it('handleHttpRequest never throws on arbitrary bodies', () => {
-    fc.assert(
+  it('handleHttpRequest never throws on arbitrary bodies', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.oneof(
           fc.string(),
@@ -149,8 +149,8 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('oversized bodies always return 413', () => {
-    fc.assert(
+  it('oversized bodies always return 413', async () => {
+    await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1_048_577, max: 2_000_000 }), async (contentLength) => {
         const req = makeRequest('{}', { contentLength: String(contentLength) });
         const res = makeResponse();
@@ -166,8 +166,8 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('truncated and binary bodies return 400, never 500 and never crash', () => {
-    fc.assert(
+  it('truncated and binary bodies return 400, never 500 and never crash', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.oneof(
           fc.uint8Array({ minLength: 1, maxLength: 100 }).map((arr) => Buffer.from(arr)),
@@ -190,8 +190,8 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('/hooks/session-start and /hooks/stop never crash on arbitrary payloads', () => {
-    fc.assert(
+  it('/hooks/session-start and /hooks/stop never crash on arbitrary payloads', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.oneof(
           fc.constant('/hooks/session-start'),
@@ -230,8 +230,8 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('non-POST methods on hook routes return 405, never crash', () => {
-    fc.assert(
+  it('non-POST methods on hook routes return 405, never crash', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.constantFrom('GET', 'DELETE', 'PUT', 'PATCH', 'OPTIONS'),
         fc.constantFrom(
