@@ -36,3 +36,6 @@ docs/api/
 # Stryker mutation testing
 .stryker-tmp/
 reports/mutation/
+
+# fast-check fuzz testing counterexamples
+.fast-check-*
