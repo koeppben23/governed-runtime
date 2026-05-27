@@ -57,6 +57,7 @@ import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
 import {
   withMutableSession,
+  withMutableSessionTransaction,
   formatEval,
   formatBlocked,
   formatError,
@@ -288,11 +289,14 @@ function buildImplRecordedResponse(input: {
   return response;
 }
 
-async function handleImplRecord(input: ImplementRuntime): Promise<string> {
+async function handleImplRecord(
+  input: ImplementRuntime,
+  changedFilesOverride?: string[],
+): Promise<string> {
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
 
-  const files = await changedFiles(input.worktree);
+  const files = changedFilesOverride ?? (await changedFiles(input.worktree));
   if (files.length === 0) {
     return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
       reason: 'no changed files detected in worktree',
@@ -607,22 +611,76 @@ async function handleImplReview(input: ImplementRuntime): Promise<string> {
 }
 
 async function executeImplement(args: ImplementArgs, context: ToolContext): Promise<string> {
-  const { worktree, sessDir, state, policy, ctx } = await withMutableSession(context);
-  const runtime = buildImplementRuntime({ args, context, worktree, sessDir, state, policy, ctx });
   const flags = classifyImplementArgs(args);
 
-  const sequenceBlocked = validateImplementSequence(
-    args,
-    state,
-    flags.hasVerdict,
-    flags.hasFindings,
+  if (flags.isRecordImpl) {
+    const probe = await withMutableSession(context);
+    const probeRuntime = buildImplementRuntime({ args, context, ...probe });
+    const sequenceBlocked = validateImplementSequence(
+      args,
+      probe.state,
+      flags.hasVerdict,
+      flags.hasFindings,
+    );
+    if (sequenceBlocked) return sequenceBlocked;
+    const prereqBlocked = validateImplRecordPrerequisites(probeRuntime);
+    if (prereqBlocked) return prereqBlocked;
+    const findingsBlocked = validateInitialReviewFindings(probeRuntime);
+    if (findingsBlocked) return findingsBlocked;
+
+    // Git/worktree inspection can be slow and must not hold the session write lock.
+    const files = await changedFiles(probe.worktree);
+    return withMutableSessionTransaction(
+      context,
+      async ({ worktree, sessDir, state, policy, ctx }) => {
+        const runtime = buildImplementRuntime({
+          args,
+          context,
+          worktree,
+          sessDir,
+          state,
+          policy,
+          ctx,
+        });
+        const freshSequenceBlocked = validateImplementSequence(
+          args,
+          state,
+          flags.hasVerdict,
+          flags.hasFindings,
+        );
+        if (freshSequenceBlocked) return freshSequenceBlocked;
+        const freshPrereqBlocked = validateImplRecordPrerequisites(runtime);
+        if (freshPrereqBlocked) return freshPrereqBlocked;
+        const freshFindingsBlocked = validateInitialReviewFindings(runtime);
+        if (freshFindingsBlocked) return freshFindingsBlocked;
+        return handleImplRecord(runtime, files);
+      },
+    );
+  }
+
+  return withMutableSessionTransaction(
+    context,
+    async ({ worktree, sessDir, state, policy, ctx }) => {
+      const runtime = buildImplementRuntime({
+        args,
+        context,
+        worktree,
+        sessDir,
+        state,
+        policy,
+        ctx,
+      });
+      const sequenceBlocked = validateImplementSequence(
+        args,
+        state,
+        flags.hasVerdict,
+        flags.hasFindings,
+      );
+      if (sequenceBlocked) return sequenceBlocked;
+
+      return handleImplReview(runtime);
+    },
   );
-  if (sequenceBlocked) return sequenceBlocked;
-
-  const findingsBlocked = flags.isRecordImpl ? validateInitialReviewFindings(runtime) : null;
-  if (findingsBlocked) return findingsBlocked;
-
-  return flags.isRecordImpl ? handleImplRecord(runtime) : handleImplReview(runtime);
 }
 
 export const implement: ToolDefinition = {

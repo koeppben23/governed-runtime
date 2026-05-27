@@ -116,6 +116,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_OBLIGATION_UNRESOLVED',
+    category: 'precondition',
+    messageTemplate: 'Unresolved review obligations block mutating host tool use: {message}',
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent for each unresolved obligation`,
+      'Submit the resulting FlowGuard review findings before continuing mutating tool use',
+    ],
+  },
+
+  {
     code: 'REVIEWER_UNAVAILABLE_STRICT',
     category: 'precondition',
     messageTemplate:

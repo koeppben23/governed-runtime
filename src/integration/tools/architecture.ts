@@ -22,7 +22,8 @@ import { z } from 'zod';
 
 import type { ToolContext, ToolDefinition } from './helpers.js';
 import {
-  withMutableSession,
+  type MutableSession,
+  withMutableSessionTransaction,
   formatEval,
   formatBlocked,
   formatError,
@@ -90,7 +91,7 @@ type ArchitectureArgs = {
   reviewerUnavailable?: boolean;
 };
 
-type ArchitectureSession = Awaited<ReturnType<typeof withMutableSession>>;
+type ArchitectureSession = MutableSession;
 
 type ResolvedReview = {
   subagentEnabled: boolean;
@@ -681,19 +682,20 @@ export const architecture: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const session = await withMutableSession(context);
-      // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
-      // may send for absent optional fields). Defense-in-depth.
-      const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-      const isInitialSubmission = !hasVerdict;
+      return await withMutableSessionTransaction(context, async (session) => {
+        // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
+        // may send for absent optional fields). Defense-in-depth.
+        const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
+        const isInitialSubmission = !hasVerdict;
 
-      const gateBlocked = validateInitialSubmissionGate(args, session.state, isInitialSubmission);
-      if (gateBlocked) return gateBlocked;
+        const gateBlocked = validateInitialSubmissionGate(args, session.state, isInitialSubmission);
+        if (gateBlocked) return gateBlocked;
 
-      if (isInitialSubmission) {
-        return handleAdrSubmission(args, session);
-      }
-      return handleAdrReview(args, context, session);
+        if (isInitialSubmission) {
+          return handleAdrSubmission(args, session);
+        }
+        return handleAdrReview(args, context, session);
+      });
     } catch (err) {
       return formatError(err);
     }

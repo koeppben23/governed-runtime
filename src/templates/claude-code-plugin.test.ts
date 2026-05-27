@@ -31,11 +31,11 @@ describe('Claude Code plugin templates', () => {
     const preHook = hooks.hooks.PreToolUse[0].hooks[0];
     const postMatcher = hooks.hooks.PostToolUse[0].matcher;
 
-    expect(hooks.hooks.PreToolUse[0].matcher).toBe('Bash|Edit|Write');
+    expect(hooks.hooks.PreToolUse[0].matcher).toBe('Bash|Edit|Write|apply_patch');
     expect(preHook.command).toBe('node');
     expect(preHook.args).toEqual(['${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-tool-use.js']);
     expect(preHook.command).not.toContain('${CLAUDE_PLUGIN_ROOT}');
-    expect(postMatcher).toBe('Bash|Edit|Write|mcp__flowguard__.*');
+    expect(postMatcher).toBe('Bash|Edit|Write|apply_patch|mcp__flowguard__.*');
   });
 
   it('renders MCP config for the existing FlowGuard MCP server', () => {

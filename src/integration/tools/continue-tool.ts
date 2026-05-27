@@ -12,6 +12,7 @@
  */
 
 import {
+  withMutableSessionTransaction,
   withMutableSession,
   withReadOnlySession,
   formatBlocked,
@@ -20,7 +21,7 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
-import type { ToolDefinition } from './helpers.js';
+import type { MutableSession, ToolDefinition } from './helpers.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
@@ -142,18 +143,31 @@ async function tryBindTransportEvidence(context: {
   sessionID: string;
   worktree: string;
   directory: string;
-}): Promise<Awaited<ReturnType<typeof withMutableSession>> | string> {
-  const session = await withMutableSession(context);
-  const result = await bindExternalReviewEvidence(
-    session.sessDir,
-    session.state,
+}): Promise<MutableSession | string> {
+  const probe = await withMutableSession(context);
+  const probeResult = await bindExternalReviewEvidence(
+    probe.sessDir,
+    probe.state,
     context.sessionID,
-    session.ctx.now(),
+    probe.ctx.now(),
   );
-  if (result.status === 'none' || result.status === 'already_bound') return session;
-  if (result.status === 'invalid') {
-    return formatBlocked(result.code, { reason: result.reason });
+  if (probeResult.status === 'none' || probeResult.status === 'already_bound') return probe;
+  if (probeResult.status === 'invalid') {
+    return formatBlocked(probeResult.code, { reason: probeResult.reason });
   }
-  await writeStateWithArtifacts(session.sessDir, result.state);
-  return { ...session, state: result.state };
+
+  return withMutableSessionTransaction(context, async (session) => {
+    const result = await bindExternalReviewEvidence(
+      session.sessDir,
+      session.state,
+      context.sessionID,
+      session.ctx.now(),
+    );
+    if (result.status === 'none' || result.status === 'already_bound') return session;
+    if (result.status === 'invalid') {
+      return formatBlocked(result.code, { reason: result.reason });
+    }
+    await writeStateWithArtifacts(session.sessDir, result.state);
+    return { ...session, state: result.state };
+  });
 }

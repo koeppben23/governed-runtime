@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
-  withMutableSession,
+  withMutableSessionTransaction,
   formatBlocked,
   formatError,
   formatEval,
@@ -69,90 +69,90 @@ export const validate: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { sessDir, state, ctx } = await withMutableSession(context);
+      return await withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
+        // Admissibility
+        if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
+          return formatBlocked('COMMAND_NOT_ALLOWED', {
+            command: '/validate',
+            phase: state.phase,
+          });
+        }
 
-      // Admissibility
-      if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/validate',
-          phase: state.phase,
-        });
-      }
+        if (state.activeChecks.length === 0) {
+          return formatBlocked('NO_ACTIVE_CHECKS');
+        }
 
-      if (state.activeChecks.length === 0) {
-        return formatBlocked('NO_ACTIVE_CHECKS');
-      }
+        // Validate that all active checks are covered
+        const submittedIds = new Set(
+          args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId),
+        );
+        const missing = state.activeChecks.filter((id) => !submittedIds.has(id));
+        if (missing.length > 0) {
+          return formatBlocked('MISSING_CHECKS', {
+            checks: missing.join(', '),
+          });
+        }
 
-      // Validate that all active checks are covered
-      const submittedIds = new Set(
-        args.results.map((r: { checkId: string; passed: boolean; detail: string }) => r.checkId),
-      );
-      const missing = state.activeChecks.filter((id) => !submittedIds.has(id));
-      if (missing.length > 0) {
-        return formatBlocked('MISSING_CHECKS', {
-          checks: missing.join(', '),
-        });
-      }
-
-      // Record results with timestamps and evidence metadata (P10a)
-      const now = ctx.now();
-      const validationResults = args.results.map(
-        (r: {
-          checkId: string;
-          passed: boolean;
-          detail: string;
-          evidenceType?: string;
-          command?: string;
-          evidenceSummary?: string;
-        }) => ({
-          checkId: r.checkId,
-          passed: r.passed,
-          detail: r.detail,
-          executedAt: now,
-          ...(r.evidenceType
-            ? { evidenceType: r.evidenceType as ValidationResult['evidenceType'] }
-            : {}),
-          ...(r.command ? { command: r.command } : {}),
-          ...(r.evidenceSummary ? { evidenceSummary: r.evidenceSummary } : {}),
-        }),
-      );
-
-      const allPassed = validationResults.every((r: ValidationResult) => r.passed);
-      const nextState: SessionState = {
-        ...state,
-        validation: validationResults,
-        error: null,
-        ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
-      };
-
-      // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
-      const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-      const {
-        state: finalState,
-        evalResult: ev,
-        transitions,
-      } = autoAdvance(nextState, evalFn, ctx);
-      await writeStateWithArtifacts(sessDir, finalState);
-
-      const failedChecks = validationResults
-        .filter((r: ValidationResult) => !r.passed)
-        .map((r: ValidationResult) => r.checkId);
-
-      return appendNextAction(
-        JSON.stringify({
-          phase: finalState.phase,
-          status: allPassed
-            ? 'All validation checks passed.'
-            : `Validation failed: ${failedChecks.join(', ')}.`,
-          results: validationResults.map((r: ValidationResult) => ({
+        // Record results with timestamps and evidence metadata (P10a)
+        const now = ctx.now();
+        const validationResults = args.results.map(
+          (r: {
+            checkId: string;
+            passed: boolean;
+            detail: string;
+            evidenceType?: string;
+            command?: string;
+            evidenceSummary?: string;
+          }) => ({
             checkId: r.checkId,
             passed: r.passed,
-          })),
-          next: formatEval(ev),
-          _audit: { transitions },
-        }),
-        finalState,
-      );
+            detail: r.detail,
+            executedAt: now,
+            ...(r.evidenceType
+              ? { evidenceType: r.evidenceType as ValidationResult['evidenceType'] }
+              : {}),
+            ...(r.command ? { command: r.command } : {}),
+            ...(r.evidenceSummary ? { evidenceSummary: r.evidenceSummary } : {}),
+          }),
+        );
+
+        const allPassed = validationResults.every((r: ValidationResult) => r.passed);
+        const nextState: SessionState = {
+          ...state,
+          validation: validationResults,
+          error: null,
+          ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+        };
+
+        // Evaluate + autoAdvance (ALL_PASSED -> IMPLEMENTATION, CHECK_FAILED -> PLAN)
+        const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
+        const {
+          state: finalState,
+          evalResult: ev,
+          transitions,
+        } = autoAdvance(nextState, evalFn, ctx);
+        await writeStateWithArtifacts(sessDir, finalState);
+
+        const failedChecks = validationResults
+          .filter((r: ValidationResult) => !r.passed)
+          .map((r: ValidationResult) => r.checkId);
+
+        return appendNextAction(
+          JSON.stringify({
+            phase: finalState.phase,
+            status: allPassed
+              ? 'All validation checks passed.'
+              : `Validation failed: ${failedChecks.join(', ')}.`,
+            results: validationResults.map((r: ValidationResult) => ({
+              checkId: r.checkId,
+              passed: r.passed,
+            })),
+            next: formatEval(ev),
+            _audit: { transitions },
+          }),
+          finalState,
+        );
+      });
     } catch (err) {
       return formatError(err);
     }

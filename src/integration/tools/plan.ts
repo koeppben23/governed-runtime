@@ -40,7 +40,7 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
-  withMutableSession,
+  withMutableSessionTransaction,
   formatBlocked,
   formatError,
   extractSections,
@@ -493,21 +493,22 @@ export const plan: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const mutableSession = await withMutableSession(context);
-      const typedArgs = args as PlanArgs;
-      const scope: PlanExecutionScope = {
-        ...mutableSession,
-        args: typedArgs,
-        context,
-        input: planInputFlags(typedArgs),
-        reviewPolicy: planReviewPolicy(mutableSession),
-        maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
-      };
-      const blocked = validatePlanRequest(scope);
-      if (blocked) return blocked;
-      return scope.input.isInitialSubmission
-        ? handlePlanSubmission(scope)
-        : handlePlanReview(scope);
+      return await withMutableSessionTransaction(context, async (mutableSession) => {
+        const typedArgs = args as PlanArgs;
+        const scope: PlanExecutionScope = {
+          ...mutableSession,
+          args: typedArgs,
+          context,
+          input: planInputFlags(typedArgs),
+          reviewPolicy: planReviewPolicy(mutableSession),
+          maxSelfReviewIterations: mutableSession.policy.maxSelfReviewIterations,
+        };
+        const blocked = validatePlanRequest(scope);
+        if (blocked) return blocked;
+        return scope.input.isInitialSubmission
+          ? handlePlanSubmission(scope)
+          : handlePlanReview(scope);
+      });
     } catch (err) {
       return formatError(err);
     }

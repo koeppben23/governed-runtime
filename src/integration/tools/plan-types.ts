@@ -11,7 +11,7 @@ import type {
   RevisionDelta,
   ReviewFindings,
 } from '../../state/evidence.js';
-import type { ToolContext, withMutableSession } from './helpers.js';
+import type { MutableSession, ToolContext } from './helpers.js';
 
 export type PlanArgs = {
   planText?: string;
@@ -20,7 +20,7 @@ export type PlanArgs = {
   reviewerUnavailable?: boolean;
 };
 
-export type MutablePlanSession = Awaited<ReturnType<typeof withMutableSession>>;
+export type MutablePlanSession = MutableSession;
 
 export type PlanInputFlags = {
   hasPlanText: boolean;

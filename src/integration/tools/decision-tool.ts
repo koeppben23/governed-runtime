@@ -18,7 +18,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSession,
-  resolvePolicyFromState,
+  withMutableSessionTransaction,
   formatBlocked,
   formatError,
   persistAndFormat,
@@ -56,42 +56,49 @@ export const decision: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      const { fingerprint, sessDir, state, ctx } = await withMutableSession(context);
-      const policy = resolvePolicyFromState(state);
-      const actorInfo = await resolveActorForPolicy(context.worktree || context.directory, policy);
-
-      // P30/P34: Build structured decision identity directly from resolved actor info
-      // actorAssurance comes from the canonical ActorInfo — not re-derived from source
-      const decisionIdentity = {
-        actorId: actorInfo.id,
-        actorEmail: actorInfo.email,
-        actorDisplayName: actorInfo.displayName,
-        actorSource: actorInfo.source,
-        actorAssurance: actorInfo.assurance,
-      };
-
-      const result = executeReviewDecision(
-        state,
-        {
-          verdict: args.verdict,
-          rationale: args.rationale,
-          decidedBy: actorInfo.id,
-          decisionIdentity,
-        },
-        ctx,
+      const probe = await withMutableSession(context);
+      const actorInfo = await resolveActorForPolicy(
+        context.worktree || context.directory,
+        probe.policy,
       );
 
-      // Delegate post-rail finalization (MADR + P26 regulated completion)
-      const finalResult = await finalizeDecision({
-        sessDir,
-        fingerprint,
-        sessionID: context.sessionID,
-        priorPhase: state.phase,
-        verdict: args.verdict,
-        result,
-      });
+      return await withMutableSessionTransaction(
+        context,
+        async ({ fingerprint, sessDir, state, ctx }) => {
+          // P30/P34: Build structured decision identity directly from resolved actor info
+          // actorAssurance comes from the canonical ActorInfo — not re-derived from source
+          const decisionIdentity = {
+            actorId: actorInfo.id,
+            actorEmail: actorInfo.email,
+            actorDisplayName: actorInfo.displayName,
+            actorSource: actorInfo.source,
+            actorAssurance: actorInfo.assurance,
+          };
 
-      return await persistAndFormat(sessDir, finalResult);
+          const result = executeReviewDecision(
+            state,
+            {
+              verdict: args.verdict,
+              rationale: args.rationale,
+              decidedBy: actorInfo.id,
+              decisionIdentity,
+            },
+            ctx,
+          );
+
+          // Delegate post-rail finalization (MADR + P26 regulated completion)
+          const finalResult = await finalizeDecision({
+            sessDir,
+            fingerprint,
+            sessionID: context.sessionID,
+            priorPhase: state.phase,
+            verdict: args.verdict,
+            result,
+          });
+
+          return await persistAndFormat(sessDir, finalResult);
+        },
+      );
     } catch (err) {
       if (err instanceof ActorIdentityError) {
         return formatBlocked(err.code, { reason: err.message });

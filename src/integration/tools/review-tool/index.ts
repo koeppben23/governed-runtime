@@ -11,7 +11,7 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from '../helpers.js';
-import { withMutableSession, formatRailResult, formatError } from '../helpers.js';
+import { withMutableSessionTransaction, formatRailResult, formatError } from '../helpers.js';
 import { startReviewFlow, executeReview } from '../../../rails/review.js';
 import {
   InputOriginSchema,
@@ -71,6 +71,72 @@ async function prepareReviewExecution(
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
 
+type PreparedReviewExecution = ReviewPreparation & {
+  sessDir: string;
+  now: string;
+};
+
+async function prepareReviewWithoutExternalCalls(
+  args: ReviewToolArgs,
+  context: Parameters<ToolDefinition['execute']>[1],
+): Promise<PreparedReviewExecution | string> {
+  return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
+    const now = new Date().toISOString();
+    const result = startReviewFlow(state, ctx);
+
+    if (result.kind === 'blocked') return String(formatRailResult(result));
+
+    const prepared = await prepareReviewExecution(sessDir, state, result, {
+      args,
+      context,
+      now,
+      policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
+    });
+    if (typeof prepared === 'string') return prepared;
+    return { ...prepared, sessDir, now };
+  });
+}
+
+async function persistCompletedReview(
+  args: ReviewToolArgs,
+  context: Parameters<ToolDefinition['execute']>[1],
+  reviewResult: Awaited<ReturnType<typeof executeReview>>,
+  now: string,
+): Promise<string> {
+  return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
+    let result = startReviewFlow(state, ctx);
+    if (result.kind === 'blocked') return String(formatRailResult(result));
+
+    const prepared = await prepareReviewExecution(sessDir, state, result, {
+      args,
+      context,
+      now,
+      policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
+    });
+    if (typeof prepared === 'string') return prepared;
+
+    if (reviewResult.kind === 'blocked') {
+      return formatBlockedReviewReport(reviewResult);
+    }
+
+    result = consumeValidatedReviewObligation(
+      prepared.result,
+      prepared.validatedReviewObligation,
+      args,
+      now,
+    );
+    const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+    return buildReviewCompletionResponse({
+      sessDir,
+      args,
+      result,
+      report: reviewResult,
+      validatedReviewObligation: prepared.validatedReviewObligation,
+      ...completion,
+    });
+  });
+}
+
 export const review: ToolDefinition = {
   description:
     'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
@@ -109,45 +175,17 @@ export const review: ToolDefinition = {
   },
   async execute(args: ReviewToolArgs, context) {
     try {
-      const { sessDir, state, ctx } = await withMutableSession(context);
-      const now = new Date().toISOString();
-      let result = startReviewFlow(state, ctx);
-
-      if (result.kind === 'blocked') return formatRailResult(result);
-
-      const prepared = await prepareReviewExecution(sessDir, state, result, {
-        args,
-        context,
-        now,
-        policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
-      });
+      const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      result = prepared.result;
+      // External content loading and analyzer execution happen outside the session write lock.
       const reviewResult = await executeReview(
-        result.state,
-        now,
+        prepared.result.state,
+        prepared.now,
         buildReviewExecutors(args),
         prepared.refInput,
       );
-      if (reviewResult.kind === 'blocked') {
-        return formatBlockedReviewReport(reviewResult);
-      }
-      result = consumeValidatedReviewObligation(
-        result,
-        prepared.validatedReviewObligation,
-        args,
-        now,
-      );
-      const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
-      return buildReviewCompletionResponse({
-        sessDir,
-        args,
-        result,
-        report: reviewResult,
-        validatedReviewObligation: prepared.validatedReviewObligation,
-        ...completion,
-      });
+      return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {
       return formatError(err);
     }

@@ -10,7 +10,12 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSession, formatBlocked, formatError, persistAndFormat } from './helpers.js';
+import {
+  withMutableSessionTransaction,
+  formatBlocked,
+  formatError,
+  persistAndFormat,
+} from './helpers.js';
 import type { ToolResult } from './helpers.js';
 import { executeTicket } from '../../rails/ticket.js';
 import { InputOriginSchema, ExternalReferenceSchema } from '../../state/evidence.js';
@@ -65,18 +70,19 @@ export const ticket: ToolDefinition = {
   async execute(args, context) {
     return safeExecute(
       async () => {
-        const { sessDir, state, ctx } = await withMutableSession(context);
-        const result = executeTicket(
-          state,
-          {
-            text: args.text,
-            source: args.source,
-            inputOrigin: args.inputOrigin,
-            references: args.references,
-          },
-          ctx,
-        );
-        return persistAndFormat(sessDir, result);
+        return withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
+          const result = executeTicket(
+            state,
+            {
+              text: args.text,
+              source: args.source,
+              inputOrigin: args.inputOrigin,
+              references: args.references,
+            },
+            ctx,
+          );
+          return persistAndFormat(sessDir, result);
+        });
       },
       { actorClaimErrorAsBlocked: true },
     );

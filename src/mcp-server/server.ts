@@ -16,6 +16,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { randomUUID } from 'node:crypto';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
 import { resolveSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
@@ -64,6 +65,7 @@ const SERVER_VERSION = '1.2.0-rc.3';
  * Does NOT start the transport - call `start()` on the returned object.
  */
 export function createMcpServer(): McpServer {
+  const sessionId = `mcp-${randomUUID()}`;
   const server = new McpServer(
     {
       name: 'flowguard',
@@ -82,7 +84,7 @@ export function createMcpServer(): McpServer {
     // MCP roots are not available in the handler context,
     // so we rely on env + cwd. Roots support via server.server.roots
     // can be added when hosts advertise them.
-    return resolveSessionContext();
+    return resolveSessionContext(undefined, sessionId);
   });
 
   return server;

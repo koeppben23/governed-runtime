@@ -26,7 +26,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 
-import { writeStateWithArtifacts } from './helpers.js';
+import {
+  resolveWorkspacePaths,
+  withMutableSessionTransaction,
+  writeStateWithArtifacts,
+} from './helpers.js';
 import { readState, statePath, atomicWrite } from '../../adapters/persistence.js';
 import { makeState, makeProgressedState } from '../../__fixtures__.js';
 
@@ -112,6 +116,34 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       const parsed = JSON.parse(content);
       expect(parsed.phase).toBe('READY');
       expect(parsed.schemaVersion).toBe('v1');
+    });
+  });
+
+  describe('BAD — concurrent mutable sessions are serialized', () => {
+    it('does not lose updates from parallel read-modify-write transactions', async () => {
+      const sessionID = crypto.randomUUID();
+      const context = { sessionID, worktree: tmpDir, directory: tmpDir };
+      const { sessDir } = await resolveWorkspacePaths(context);
+      await writeStateWithArtifacts(sessDir, { ...makeState('VALIDATION'), activeChecks: [] });
+
+      await Promise.all([
+        withMutableSessionTransaction(context, async (session) => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          await writeStateWithArtifacts(session.sessDir, {
+            ...session.state,
+            activeChecks: [...session.state.activeChecks, 'first'],
+          });
+        }),
+        withMutableSessionTransaction(context, async (session) => {
+          await writeStateWithArtifacts(session.sessDir, {
+            ...session.state,
+            activeChecks: [...session.state.activeChecks, 'second'],
+          });
+        }),
+      ]);
+
+      const finalState = await readState(sessDir);
+      expect([...(finalState?.activeChecks ?? [])].sort()).toEqual(['first', 'second']);
     });
   });
 

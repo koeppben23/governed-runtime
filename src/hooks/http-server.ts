@@ -37,7 +37,10 @@ import {
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
 } from './shared/phase-gate.js';
-import { assessObligationEscalation } from './shared/obligation-tracker.js';
+import {
+  assessObligationEscalation,
+  unresolvedBlockingObligations,
+} from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import { ensureWorkspace, sessionDir } from '../adapters/workspace/index.js';
 import type { AuditEvent } from '../state/evidence-audit.js';
@@ -76,7 +79,10 @@ function log(message: string): void {
 
 // ─── Hook Handlers ───────────────────────────────────────────────────────────
 
-async function handlePreToolUse(payload: Record<string, unknown>): Promise<HttpHookResponse> {
+/** @internal Exported for unit testing only. */
+export async function handlePreToolUse(
+  payload: Record<string, unknown>,
+): Promise<HttpHookResponse> {
   const validated = validateToolHookPayload(payload);
   const { tool_name, tool_input, session_id, cwd } = validated;
   const toolNameLower = tool_name.toLowerCase();
@@ -95,6 +101,17 @@ async function handlePreToolUse(payload: Record<string, unknown>): Promise<HttpH
   const resolution = await resolveSession(cwd, session_id);
   if (!resolution.ok) {
     return { decision: 'deny', code: resolution.code, reason: resolution.reason };
+  }
+
+  const unresolved = unresolvedBlockingObligations(resolution.state);
+  if (unresolved.length > 0) {
+    return {
+      decision: 'deny',
+      code: 'REVIEW_OBLIGATION_UNRESOLVED',
+      reason:
+        `${unresolved.length} unresolved review obligation(s) block mutating host tool use: ` +
+        unresolved.map((ob) => ob.obligationId).join(', '),
+    };
   }
 
   const gateResult = isHostToolAllowedInPhase(toolNameLower, resolution.state.phase);

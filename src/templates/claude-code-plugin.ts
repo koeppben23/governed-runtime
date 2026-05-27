@@ -92,7 +92,7 @@ export function claudeCodeHooksJson(): string {
     hooks: {
       PreToolUse: [
         {
-          matcher: 'Bash|Edit|Write',
+          matcher: 'Bash|Edit|Write|apply_patch',
           hooks: [
             {
               type: 'command',
@@ -106,7 +106,7 @@ export function claudeCodeHooksJson(): string {
       ],
       PostToolUse: [
         {
-          matcher: 'Bash|Edit|Write|mcp__flowguard__.*',
+          matcher: 'Bash|Edit|Write|apply_patch|mcp__flowguard__.*',
           hooks: [
             {
               type: 'command',

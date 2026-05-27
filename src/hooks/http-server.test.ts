@@ -45,18 +45,25 @@ vi.mock('../adapters/persistence-audit.js', () => ({
 }));
 
 // Mock session-resolver (not used by handleSessionStart, but imported by module).
+const mockResolveSession = vi.fn();
+
 vi.mock('./shared/session-resolver.js', () => ({
-  resolveSession: vi.fn(),
+  resolveSession: (...args: unknown[]) => mockResolveSession(...args),
 }));
 
 // Mock obligation-tracker.
 vi.mock('./shared/obligation-tracker.js', () => ({
   assessObligationEscalation: vi.fn(() => ({ message: null })),
+  unresolvedBlockingObligations: (state: {
+    reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
+  }) =>
+    (state.reviewAssurance?.obligations ?? []).filter(
+      (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+    ),
 }));
 
 // ─── Import handler after mocks ──────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 let handleSessionStart: (typeof import('./http-server.js'))['handleSessionStart'];
 
 beforeEach(async () => {
@@ -79,15 +86,24 @@ beforeEach(async () => {
     appendAuditEvent: (...args: unknown[]) => mockAppendAuditEvent(...args),
   }));
   vi.doMock('./shared/session-resolver.js', () => ({
-    resolveSession: vi.fn(),
+    resolveSession: (...args: unknown[]) => mockResolveSession(...args),
   }));
   vi.doMock('./shared/obligation-tracker.js', () => ({
     assessObligationEscalation: vi.fn(() => ({ message: null })),
+    unresolvedBlockingObligations: (state: {
+      reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
+    }) =>
+      (state.reviewAssurance?.obligations ?? []).filter(
+        (ob) => ob.status !== 'consumed' && ob.consumedAt == null,
+      ),
   }));
 
   const mod = await import('./http-server.js');
   handleSessionStart = mod.handleSessionStart;
+  handlePreToolUse = mod.handlePreToolUse;
 });
+
+let handlePreToolUse: (typeof import('./http-server.js'))['handlePreToolUse'];
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -189,5 +205,57 @@ describe('handleSessionStart', () => {
         reason: 'workspace bootstrap failed (non-blocking)',
       });
     });
+  });
+});
+
+describe('handlePreToolUse', () => {
+  const validPayload = {
+    tool_name: 'Bash',
+    tool_input: { command: 'npm test' },
+    session_id: 'sess_test_123',
+    cwd: '/tmp/project',
+  };
+
+  it('BAD: denies mutating host tools while review obligations are unresolved', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPLEMENTATION',
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: '11111111-1111-4111-8111-111111111111',
+              status: 'pending',
+              consumedAt: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await handlePreToolUse(validPayload);
+
+    expect(result.decision).toBe('deny');
+    expect(result.code).toBe('REVIEW_OBLIGATION_UNRESOLVED');
+    expect(result.reason).toContain('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('HAPPY: allows non-mutating resolution tools without session resolution', async () => {
+    const result = await handlePreToolUse({ ...validPayload, tool_name: 'Read' });
+
+    expect(result).toEqual({ decision: 'allow' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('HAPPY: allows authorized reviewer Task calls without obligation gate resolution', async () => {
+    const result = await handlePreToolUse({
+      ...validPayload,
+      tool_name: 'Task',
+      tool_input: { subagent_type: 'flowguard-reviewer' },
+    });
+
+    expect(result).toEqual({ decision: 'allow' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
   });
 });
