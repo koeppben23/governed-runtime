@@ -20,7 +20,6 @@ import {
   buildDecisionBody,
   finalizeWithTimestampEvidence,
   summarizeArgs,
-  GENESIS_HASH,
   type EventBody,
 } from '../audit/types.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
@@ -131,13 +130,8 @@ async function resolveAuditContext(
   const actor = policy.actorClassification[toolName] ?? 'system';
   const now = new Date().toISOString();
 
-  let prevHash: string;
-  if (enableChainHash) {
-    if (state?.archiveStatus) deps.invalidateChainState(sessionId);
-    prevHash = await deps.initChain(sessDir, sessionId);
-  } else {
-    prevHash = GENESIS_HASH;
-  }
+  if (state?.archiveStatus) deps.invalidateChainState(sessionId);
+  const prevHash = await deps.initChain(sessDir, sessionId);
 
   let phase = 'unknown';
   let transitions: AuditContext['transitions'] = [];
@@ -296,7 +290,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-    if (ctx.enableChainHash) prevHash = evt.chainHash!;
+    prevHash = evt.chainHash!;
   } else {
     const body = buildDecisionBody({
       sessionId,
@@ -334,7 +328,7 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
     const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-    if (ctx.enableChainHash) prevHash = evt.chainHash!;
+    prevHash = evt.chainHash!;
   }
   return prevHash;
 }
@@ -379,7 +373,7 @@ async function maybeCompleteAndArchive(
     const evidence = resolution?.evidence;
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-    if (ctx.enableChainHash) prevHash = evt.chainHash!;
+    prevHash = evt.chainHash!;
   } else {
     deps.log.debug('audit', 'session_completed handled by tool layer', {
       archiveStatus: freshState.archiveStatus,
@@ -485,7 +479,7 @@ export async function runAudit(
         ctx.now,
       );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-      if (ctx.enableChainHash) ctx.prevHash = nextHash;
+      ctx.prevHash = nextHash;
       deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
     }
 
@@ -508,7 +502,7 @@ export async function runAudit(
           t.at,
         );
         await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-        if (ctx.enableChainHash) ctx.prevHash = nextHash;
+        ctx.prevHash = nextHash;
       }
     }
 
@@ -561,7 +555,7 @@ export async function runAudit(
         ctx.now,
       );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-      if (ctx.enableChainHash) ctx.prevHash = nextHash;
+      ctx.prevHash = nextHash;
     }
 
     // ── 5. Detect session completion + auto-archive ──────────────────────
@@ -598,7 +592,7 @@ export async function runAudit(
         ctx.now,
       );
       await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
-      if (ctx.enableChainHash) ctx.prevHash = nextHash;
+      ctx.prevHash = nextHash;
     }
 
     if (strictTimestampFailure) {

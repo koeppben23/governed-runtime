@@ -21,7 +21,7 @@ import * as crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { atomicWrite, readState } from '../persistence.js';
-import { readAuditTrail } from '../persistence-audit.js';
+import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { verifyChain } from '../../audit/integrity.js';
@@ -149,6 +149,7 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   );
 
   const redaction = await applyArchiveRedaction(sessDir, redactionMode, includeRaw);
+  await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
 
   const manifest = await buildArchiveManifest(sessDir, state, fingerprint, validSessionId, {
     redactionMode,
@@ -174,6 +175,15 @@ interface ArchiveRedactionResult {
   excludedFiles: string[];
   riskFlags: string[];
 }
+
+interface ArtifactBindingEntry {
+  readonly path: string;
+  readonly sha256: string;
+  readonly artifactType: string | null;
+}
+
+const ARTIFACT_BINDING_EVENT = 'archive:artifacts_bound';
+const ARTIFACT_BINDING_SCHEMA_VERSION = 'flowguard-archive-artifact-binding.v1';
 
 async function applyArchiveRedaction(
   sessDir: string,
@@ -214,6 +224,68 @@ async function applyArchiveRedaction(
   }
 
   return { redactedArtifacts, excludedFiles, riskFlags };
+}
+
+async function appendArtifactBindingAuditEvent(
+  sessDir: string,
+  sessionId: string,
+  state: import('../../state/schema.js').SessionState | null,
+): Promise<void> {
+  const artifacts = await collectArtifactBindings(sessDir);
+  if (artifacts.length === 0) return;
+
+  const body = {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: state?.phase ?? 'unknown',
+    event: ARTIFACT_BINDING_EVENT,
+    timestamp: new Date().toISOString(),
+    actor: 'system',
+    detail: {
+      kind: 'archive_artifact_binding',
+      schemaVersion: ARTIFACT_BINDING_SCHEMA_VERSION,
+      artifactCount: artifacts.length,
+      artifacts,
+    },
+  };
+  await appendAuditEvent(sessDir, body);
+}
+
+async function collectArtifactBindings(sessDir: string): Promise<ArtifactBindingEntry[]> {
+  const artifactsDir = path.join(sessDir, 'artifacts');
+  if (!(await fileExists(artifactsDir))) return [];
+  const files = await listFilesUnder(artifactsDir, 'artifacts');
+  const entries: ArtifactBindingEntry[] = [];
+  for (const relPath of files) {
+    const content = await fs.readFile(path.join(sessDir, relPath));
+    entries.push({
+      path: relPath,
+      sha256: crypto.createHash('sha256').update(content).digest('hex'),
+      artifactType: inferArtifactType(relPath),
+    });
+  }
+  return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function listFilesUnder(absDir: string, relPrefix: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await fs.readdir(absDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const relPath = `${relPrefix}/${entry.name}`;
+    const absPath = path.join(absDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesUnder(absPath, relPath)));
+    } else if (entry.isFile()) {
+      files.push(relPath);
+    }
+  }
+  return files.sort();
+}
+
+function inferArtifactType(relPath: string): string | null {
+  const filename = path.posix.basename(relPath);
+  const match = filename.match(/^([a-z-]+)\./);
+  return match?.[1] ?? null;
 }
 
 async function createArchiveBundle(
@@ -428,6 +500,96 @@ async function checkUnexpectedFiles(
   }
 }
 
+async function verifyArtifactBinding(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+  const binding = [...events].reverse().find((event) => event.event === ARTIFACT_BINDING_EVENT);
+  const detail = binding?.detail as Record<string, unknown> | undefined;
+  const artifacts = detail?.artifacts;
+  if (manifestArtifacts.length === 0 && !Array.isArray(artifacts)) return;
+  if (detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION || !Array.isArray(artifacts)) {
+    findings.push({
+      code: 'artifact_binding_missing',
+      severity: 'error',
+      message:
+        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+
+  const bound = new Map<string, ArtifactBindingEntry>();
+  for (const entry of artifacts) {
+    if (!isArtifactBindingEntry(entry)) continue;
+    bound.set(entry.path, entry);
+  }
+
+  const manifestArtifactSet = new Set(manifestArtifacts);
+  for (const entry of bound.values()) {
+    if (!manifestArtifactSet.has(entry.path) || manifest.fileDigests[entry.path] === undefined) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Audit-bound evidence artifact is missing from archive manifest: ${entry.path}`,
+        file: entry.path,
+      });
+    }
+  }
+
+  for (const relPath of manifestArtifacts) {
+    const entry = bound.get(relPath);
+    if (!entry) {
+      findings.push({
+        code: 'artifact_binding_missing',
+        severity: 'error',
+        message: `Evidence artifact is not bound into audit chain: ${relPath}`,
+        file: relPath,
+      });
+      continue;
+    }
+
+    const content = await fs.readFile(path.join(sessDir, relPath));
+    const actual = crypto.createHash('sha256').update(content).digest('hex');
+    if (actual !== entry.sha256) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Evidence artifact hash does not match audit binding: ${relPath}`,
+        file: relPath,
+      });
+    }
+    if (manifest.fileDigests[relPath] !== entry.sha256) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Archive manifest digest is not consistent with audit binding: ${relPath}`,
+        file: relPath,
+      });
+    }
+  }
+}
+
+function isArtifactBindingEntry(value: unknown): value is ArtifactBindingEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.path === 'string' &&
+    entry.path.startsWith('artifacts/') &&
+    typeof entry.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(entry.sha256) &&
+    (entry.artifactType === null || typeof entry.artifactType === 'string')
+  );
+}
+
+function hasTimestampEvidence(event: Record<string, unknown>): boolean {
+  const evidence = event.timestampEvidence;
+  return typeof evidence === 'object' && evidence !== null;
+}
+
 async function verifyAuditChainIntegrity(
   sessDir: string,
   manifest: ArchiveManifest,
@@ -447,9 +609,18 @@ async function verifyAuditChainIntegrity(
       });
     }
 
+    await verifyArtifactBinding(sessDir, manifest, events, findings);
+
     if (events.length > 0) {
-      const chainResult = verifyChain(events, { strict });
-      if (!chainResult.valid) {
+      const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
+      const hasTsaEvidence = events.some(hasTimestampEvidence);
+      const strictTimestamps = hasTsaEvidence || timestampPolicy?.enabled === true;
+      const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
+      const chainResult = verifyChain(events, { strict, strictTimestamps });
+      const chainIntegrityFailed =
+        chainResult.reason === 'CHAIN_BREAK' ||
+        chainResult.reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+      if (!chainResult.valid && chainIntegrityFailed) {
         findings.push({
           code: 'audit_chain_invalid',
           severity: 'error',
@@ -461,10 +632,24 @@ async function verifyAuditChainIntegrity(
         });
       }
 
+      if (!chainResult.valid && !chainIntegrityFailed) {
+        findings.push({
+          code:
+            chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH'
+              ? 'tsa_verification_failed'
+              : 'timestamp_unanchored',
+          severity: timestampFailuresAreFatal ? 'error' : 'warning',
+          message:
+            `Timestamp verification failed (${chainResult.reason}): ` +
+            `${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified`,
+          file: 'audit.jsonl',
+        });
+      }
+
       if (chainResult.missingTimestampEvidence.length > 0) {
         findings.push({
           code: 'timestamp_unanchored',
-          severity: 'warning',
+          severity: timestampFailuresAreFatal ? 'error' : 'warning',
           message: `${chainResult.missingTimestampEvidence.length} critical event(s) lack timestamp assurance evidence (indices: ${chainResult.missingTimestampEvidence.join(', ')})`,
           file: 'audit.jsonl',
         });
@@ -473,7 +658,7 @@ async function verifyAuditChainIntegrity(
       if (chainResult.tsaImprintMismatches.length > 0) {
         findings.push({
           code: 'tsa_verification_failed',
-          severity: 'warning',
+          severity: timestampFailuresAreFatal ? 'error' : 'warning',
           message: `${chainResult.tsaImprintMismatches.length} event(s) have TSA messageImprint mismatch (indices: ${chainResult.tsaImprintMismatches.join(', ')})`,
           file: 'audit.jsonl',
         });
@@ -482,7 +667,7 @@ async function verifyAuditChainIntegrity(
       if (chainResult.timestampMonotonicity && !chainResult.timestampMonotonicity.valid) {
         findings.push({
           code: 'timestamp_unanchored',
-          severity: 'warning',
+          severity: timestampFailuresAreFatal ? 'error' : 'warning',
           message: `Timestamp monotonicity violation: ${chainResult.timestampMonotonicity.message}`,
           file: 'audit.jsonl',
         });

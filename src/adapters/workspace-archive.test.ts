@@ -44,6 +44,7 @@ import { withTestEnv } from '../integration/test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
+import { readAuditTrail } from './persistence-audit.js';
 import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -129,6 +130,104 @@ describe('archiveSession', () => {
     expect(manifest.rawIncluded).toBe(true);
     expect(manifest.riskFlags).toContain('raw_export_enabled');
     expect(manifest.excludedFiles).not.toContain('decision-receipts.v1.json');
+  });
+
+  it('binds evidence artifact hashes into the audit chain before manifest finalization', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440013';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(
+      path.join(sessDir, 'artifacts', 'manual.v1.md'),
+      'bound artifact\n',
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const { events } = await readAuditTrail(sessDir);
+    const binding = events.find((event) => event.event === 'archive:artifacts_bound');
+    expect(binding).toBeDefined();
+    expect(binding!.prevHash).toBeTruthy();
+    expect(binding!.chainHash).toBeTruthy();
+    expect(binding!.detail).toMatchObject({
+      kind: 'archive_artifact_binding',
+      schemaVersion: 'flowguard-archive-artifact-binding.v1',
+      artifactCount: 1,
+    });
+    expect((binding!.detail.artifacts as Array<{ path: string }>)[0]!.path).toBe(
+      'artifacts/manual.v1.md',
+    );
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
+    );
+    expect(manifest.includedFiles).toContain('audit.jsonl');
+    expect(manifest.fileDigests['audit.jsonl']).toBeTruthy();
+  });
+
+  it('fails archive verification when a bound evidence artifact is tampered', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440014';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'original\n', 'utf-8');
+    await archiveSession(fingerprint, sessionId);
+
+    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'tampered\n', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+    expect(result.passed).toBe(false);
+    expect(result.findings.some((finding) => finding.code === 'artifact_binding_mismatch')).toBe(
+      true,
+    );
+  });
+
+  it('fails archive verification when an audit-bound artifact is removed from manifest', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440015';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.mkdir(path.join(sessDir, 'artifacts'), { recursive: true });
+    await fs.writeFile(path.join(sessDir, 'artifacts', 'manual.v1.md'), 'original\n', 'utf-8');
+    await archiveSession(fingerprint, sessionId);
+
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as {
+      includedFiles: string[];
+      fileDigests: Record<string, string>;
+      contentDigest: string;
+    };
+    manifest.includedFiles = manifest.includedFiles.filter(
+      (file) => file !== 'artifacts/manual.v1.md',
+    );
+    delete manifest.fileDigests['artifacts/manual.v1.md'];
+    manifest.contentDigest = crypto
+      .createHash('sha256')
+      .update(
+        manifest.includedFiles
+          .map((file) => manifest.fileDigests[file])
+          .filter(Boolean)
+          .sort()
+          .join(''),
+      )
+      .digest('hex');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+    expect(result.passed).toBe(false);
+    expect(
+      result.findings.some(
+        (finding) =>
+          finding.code === 'artifact_binding_mismatch' &&
+          finding.message.includes('missing from archive manifest'),
+      ),
+    ).toBe(true);
   });
 
   it('redacts review-report and excludes raw report by default', async () => {

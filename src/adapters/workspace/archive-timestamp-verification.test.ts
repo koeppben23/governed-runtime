@@ -23,6 +23,46 @@ function manifest(policyMode: string): ArchiveManifest {
 }
 
 describe('verifyArchiveTimestampTokens', () => {
+  it('warns when TSA evidence is present but trust anchors are missing in non-strict mode', async () => {
+    const event = {
+      id: 'evt-1',
+      sessionId: SESSION_ID,
+      phase: 'COMPLETE',
+      event: 'lifecycle:session_completed',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      actor: 'machine',
+      detail: {},
+      timestampEvidence: {
+        status: 'tsa_stamped',
+        source: 'tsa',
+        resolvedAt: '2026-01-01T00:00:00.000Z',
+        tsa: {
+          tokenDerBase64: Buffer.from('timestamp token').toString('base64'),
+          receivedAt: '2026-01-01T00:00:00.000Z',
+          messageImprint: 'a'.repeat(64),
+          digestAlgorithm: 'sha256',
+          verificationStatus: 'unchecked',
+        },
+      },
+    } as unknown as AuditEvent;
+    const findings: ArchiveFinding[] = [];
+
+    await verifyArchiveTimestampTokens({
+      events: [event],
+      state: makeState('COMPLETE'),
+      manifest: manifest('solo'),
+      findings,
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'tsa_verification_failed',
+        severity: 'warning',
+        file: 'audit.jsonl',
+      }),
+    ]);
+  });
+
   it('reports tsa_verification_failed when archived TSA token is invalid', async () => {
     const state = makeState('COMPLETE', {
       policySnapshot: {

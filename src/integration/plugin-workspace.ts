@@ -156,13 +156,11 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   async appendAndTrack(
     event: ChainedAuditEvent,
     sessDir: string,
-    trackChain: boolean,
+    _trackChain: boolean,
     sessionId: string,
   ): Promise<void> {
-    await appendAuditEvent(sessDir, event);
-    if (trackChain) {
-      this.getChainState(sessionId).lastHash = event.chainHash;
-    }
+    const persisted = await appendAuditEvent(sessDir, event);
+    this.getChainState(sessionId).lastHash = persisted.chainHash ?? event.chainHash;
   }
 
   // ── State persistence ───────────────────────────────────────────────────

@@ -117,6 +117,37 @@ describe('runAudit', () => {
       expect(call.phase).toBe('PLAN');
     });
 
+    it('emits chained audit events even when policy enableChainHash is false', async () => {
+      resetChainSeq();
+      const deps = makeDeps({
+        resolveSessionPolicy: vi.fn().mockResolvedValue({
+          policy: {
+            audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: false },
+            actorClassification: {},
+            mode: 'solo',
+            requireHumanGates: false,
+          },
+          state: null,
+        }),
+      });
+
+      await runAudit(
+        deps,
+        'flowguard_plan',
+        { args: { key: 'val' } },
+        { phase: 'PLAN' },
+        SESSION_ID,
+      );
+
+      expect(deps.initChain).toHaveBeenCalledWith('/tmp/sess-dir', SESSION_ID);
+      expect(deps.appendAndTrack).toHaveBeenCalledWith(
+        expect.objectContaining({ prevHash: 'prev-hash-001', chainHash: 'chain-000' }),
+        '/tmp/sess-dir',
+        false,
+        SESSION_ID,
+      );
+    });
+
     // ─── H3: tool_call NOT emitted when disabled ────────────────────
 
     it('does NOT emit tool_call when emitToolCalls is false', async () => {

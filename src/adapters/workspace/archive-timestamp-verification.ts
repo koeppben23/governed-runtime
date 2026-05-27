@@ -17,7 +17,24 @@ export async function verifyArchiveTimestampTokens(input: {
 }): Promise<void> {
   const timestampPolicy = input.state?.policySnapshot.audit.timestampAssurance;
   const trustAnchors = timestampPolicy?.trustAnchors ?? [];
-  if (trustAnchors.length === 0) return;
+  const hasTsaEvidence = input.events.some((event) => {
+    const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
+    return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
+  });
+  if (trustAnchors.length === 0) {
+    if (hasTsaEvidence) {
+      input.findings.push({
+        code: 'tsa_verification_failed',
+        severity:
+          timestampPolicy?.strict || input.manifest.policyMode === 'regulated'
+            ? 'error'
+            : 'warning',
+        message: 'TSA evidence is present but no timestamp trust anchors are configured',
+        file: 'audit.jsonl',
+      });
+    }
+    return;
+  }
 
   const result = await verifyTimestampTokensForEvents({
     events: input.events,

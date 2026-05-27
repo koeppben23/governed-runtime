@@ -23,9 +23,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return {
     ...actual,
     rename: vi.fn((...args: Parameters<typeof actual.rename>) => actual.rename(...args)),
-    appendFile: vi.fn((...args: Parameters<typeof actual.appendFile>) =>
-      actual.appendFile(...args),
-    ),
     writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
   };
 });
@@ -35,14 +32,6 @@ function restoreRename(): void {
   const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
   vi.mocked(fs.rename).mockImplementation((...args: Parameters<(typeof fs)['rename']>) =>
     actual.rename(...args),
-  );
-}
-
-/** Restore fs.appendFile to its original implementation after a failure simulation. */
-function restoreAppendFile(): void {
-  const actual = (globalThis as Record<string, unknown>).__fsActual as typeof fs;
-  vi.mocked(fs.appendFile).mockImplementation((...args: Parameters<(typeof fs)['appendFile']>) =>
-    actual.appendFile(...args),
   );
 }
 
@@ -82,6 +71,7 @@ import {
 import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js';
 import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
+import { verifyChain } from '../audit/integrity.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -925,28 +915,29 @@ describe('persistence', () => {
 
     // ── CORNER ──────────────────────────────────────────────
 
-    it('re-throws raw error (not PersistenceError) on filesystem failure', async () => {
-      vi.mocked(fs.appendFile).mockRejectedValueOnce(
+    it('re-throws raw error and preserves existing trail on atomic rename failure', async () => {
+      await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
+      vi.mocked(fs.rename).mockRejectedValueOnce(
         Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
       );
       try {
         try {
-          await appendAuditEvent(tmpDir, makeValidAuditEvent());
+          await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
         } catch (err) {
           expect(err).not.toBeInstanceOf(PersistenceError);
           expect(err).toBeInstanceOf(Error);
           expect((err as NodeJS.ErrnoException).code).toBe('ENOSPC');
         }
         const { events } = await readAuditTrail(tmpDir);
-        expect(events).toHaveLength(0);
+        expect(events).toHaveLength(1);
       } finally {
-        restoreAppendFile();
+        restoreRename();
       }
     });
 
     // ── HAPPY ───────────────────────────────────────────────
 
-    it('preserves chainHash and prevHash through append/read round-trip', async () => {
+    it('computes chainHash and prevHash under the append lock', async () => {
       const event = makeValidAuditEvent({
         prevHash: PREV_HASH_64,
         chainHash: CHAIN_HASH_64,
@@ -955,8 +946,134 @@ describe('persistence', () => {
       const { events, skipped } = await readAuditTrail(tmpDir);
       expect(skipped).toBe(0);
       expect(events).toHaveLength(1);
-      expect(events[0]!.prevHash).toBe(PREV_HASH_64);
-      expect(events[0]!.chainHash).toBe(CHAIN_HASH_64);
+      expect(events[0]!.prevHash).toBe('genesis');
+      expect(events[0]!.chainHash).not.toBe(CHAIN_HASH_64);
+      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+    });
+
+    it('serializes concurrent chained audit appends without lost updates or chain forks', async () => {
+      const inputs = Array.from({ length: 12 }, () =>
+        makeValidAuditEvent({ id: crypto.randomUUID() }),
+      );
+
+      await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
+
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(inputs.length);
+      expect(new Set(events.map((event) => event.id)).size).toBe(inputs.length);
+      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      for (let i = 1; i < events.length; i++) {
+        expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
+      }
+    });
+
+    it('concurrent chained events with TSA timestampEvidence remain strict-timestamp-verifiable', async () => {
+      const inputs = Array.from({ length: 8 }, (_, idx) => {
+        const event = makeValidAuditEvent({
+          id: crypto.randomUUID(),
+          event: `transition:STEP_${idx}`,
+        }) as AuditEvent & Record<string, unknown>;
+        const stripped = { ...event } as Record<string, unknown>;
+        delete stripped.chainHash;
+        delete stripped.prevHash;
+        delete stripped.timestampEvidence;
+        delete stripped.canonicalEventDigest;
+        const sorted: Record<string, unknown> = {};
+        for (const key of Object.keys(stripped).sort()) {
+          sorted[key] = stripped[key];
+        }
+        const canonicalDigest = crypto
+          .createHash('sha256')
+          .update(JSON.stringify(sorted), 'utf-8')
+          .digest('hex');
+        const withTSA = {
+          ...event,
+          canonicalEventDigest: canonicalDigest,
+          timestampEvidence: {
+            status: 'tsa_stamped' as const,
+            source: 'tsa' as const,
+            resolvedAt: new Date(Date.now() + idx * 1000).toISOString(),
+            tsa: {
+              tokenDerBase64: 'dummy',
+              receivedAt: new Date(Date.now() + idx * 1000).toISOString(),
+              messageImprint: canonicalDigest,
+              digestAlgorithm: 'sha256' as const,
+              verificationStatus: 'unchecked' as const,
+            },
+          },
+        };
+        return withTSA as unknown as AuditEvent;
+      });
+
+      await Promise.all(inputs.map((event) => appendAuditEvent(tmpDir, event)));
+
+      const { events, skipped } = await readAuditTrail(tmpDir);
+      expect(skipped).toBe(0);
+      expect(events).toHaveLength(inputs.length);
+      expect(verifyChain(events, { strict: true }).valid).toBe(true);
+      expect(verifyChain(events, { strict: true, strictTimestamps: true }).valid).toBe(true);
+      for (let i = 1; i < events.length; i++) {
+        expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
+      }
+    });
+
+    it('legacy v1 TSA events (canonical digest includes prevHash) still verify correctly after lock reappends', async () => {
+      // Simulate a v1 TSA event: canonicalEventDigest computed WITH prevHash.
+      // After appendAuditEvent recomputes prevHash under the lock, the stored
+      // canonicalEventDigest and timestampEvidence still match (both stored together,
+      // compare as-is without recomputation).
+      const event = makeValidAuditEvent() as AuditEvent & Record<string, unknown>;
+      const stripped = { ...event } as Record<string, unknown>;
+      delete stripped.chainHash;
+      delete stripped.prevHash;
+      delete stripped.timestampEvidence;
+      delete stripped.canonicalEventDigest;
+      const bodyWithOldPrev = {
+        ...stripped,
+        prevHash: 'old-prev-hash-64-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      };
+      const sortedKeys = Object.keys(bodyWithOldPrev).sort();
+      const canonical: Record<string, unknown> = {};
+      for (const key of sortedKeys) canonical[key] = bodyWithOldPrev[key];
+      const v1Digest = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(canonical), 'utf-8')
+        .digest('hex');
+
+      const withTsa = {
+        ...event,
+        canonicalEventDigest: v1Digest,
+        timestampEvidence: {
+          status: 'tsa_stamped' as const,
+          source: 'tsa' as const,
+          resolvedAt: '2026-01-01T00:00:00.000Z',
+          tsa: {
+            tokenDerBase64: 'v1-legacy',
+            receivedAt: '2026-01-01T00:00:01.000Z',
+            messageImprint: v1Digest,
+            digestAlgorithm: 'sha256' as const,
+            verificationStatus: 'unchecked' as const,
+          },
+        },
+      };
+      await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
+      const { events } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(verifyChain(events, { strict: true, strictTimestamps: true }).valid).toBe(true);
+    });
+
+    it('refuses to append when existing audit trail has unparseable lines', async () => {
+      const auditFilePath = auditPath(tmpDir);
+      await fs.mkdir(path.dirname(auditFilePath), { recursive: true });
+      await fs.writeFile(auditFilePath, '{invalid-json\n', 'utf-8');
+
+      const event = makeValidAuditEvent({ id: crypto.randomUUID() });
+      await expect(appendAuditEvent(tmpDir, event)).rejects.toThrow(/unparseable line/);
+
+      // Original corrupt trail is preserved, no partial append.
+      const raw = await fs.readFile(auditFilePath, 'utf-8');
+      expect(raw).toContain('{invalid-json');
     });
 
     it('accepts event with optional actorInfo', async () => {
