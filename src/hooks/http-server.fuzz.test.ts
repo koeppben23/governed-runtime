@@ -229,4 +229,37 @@ describe('HTTP hook fuzz', () => {
       },
     );
   });
+
+  it('non-POST methods on hook routes return 405, never crash', () => {
+    fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom('GET', 'DELETE', 'PUT', 'PATCH', 'OPTIONS'),
+        fc.constantFrom(
+          '/hooks/pre-tool-use',
+          '/hooks/session-start',
+          '/hooks/stop',
+          '/hooks/post-tool-use',
+        ),
+        async (method, url) => {
+          const req = new Readable({
+            read() {
+              this.push(null);
+            },
+          }) as Readable & { method?: string; url?: string; headers: Record<string, string> };
+          req.method = method;
+          req.url = url;
+          req.headers = {};
+          const res = makeResponse();
+
+          await handleHttpRequest(req as never, res as never);
+          expect(res.status).toBe(405);
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
 });

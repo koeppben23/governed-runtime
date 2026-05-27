@@ -193,6 +193,43 @@ describe('audit chain fuzz', () => {
     );
   });
 
+  it('compound tamper (mutate + reorder) is always detected', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 4, max: 30 }),
+        fc.integer({ min: 0, max: 1000 }),
+        fc.integer({ min: 0, max: 1000 }),
+        (chainLength, mutateIdx, reorderIdx) => {
+          const chain = buildChain(chainLength);
+
+          // Apply two tampers in sequence.
+          let tampered = applyTamper(chain, {
+            kind: 'mutate',
+            index: mutateIdx % chainLength,
+          });
+          tampered = applyTamper(tampered, {
+            kind: 'reorder',
+            index: reorderIdx % (tampered.length - 1 || 1),
+          });
+
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
+            strict: true,
+          });
+
+          expect(result.valid).toBe(false);
+          expect(['CHAIN_BREAK', 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE']).toContain(
+            result.reason,
+          );
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
   it('firstBreak positions at or after the tamper location', () => {
     fc.assert(
       fc.property(

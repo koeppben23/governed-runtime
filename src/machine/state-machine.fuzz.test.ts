@@ -257,4 +257,51 @@ describe('state machine fuzz', () => {
       },
     );
   });
+
+  it('ABORT is never reachable through topology — always fail-closed', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...ALL_PHASES), (phase) => {
+        const target = resolveTransition(phase, 'ABORT');
+        expect(target).toBeUndefined();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('flow-selection events (TICKET_SELECTED, ARCHITECTURE_SELECTED, REVIEW_SELECTED) resolve from READY', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('TICKET_SELECTED', 'ARCHITECTURE_SELECTED', 'REVIEW_SELECTED' as Event),
+        (event) => {
+          const target = resolveTransition('READY', event);
+          expect(target).toBeDefined();
+          expect(['TICKET', 'ARCHITECTURE', 'REVIEW']).toContain(target!);
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('REDUCED_CEREMONY and IMPL_COMPLETE resolve from IMPLEMENTATION', () => {
+    fc.assert(
+      fc.property(fc.constantFrom('REDUCED_CEREMONY', 'IMPL_COMPLETE' as Event), (event) => {
+        const target = resolveTransition('IMPLEMENTATION', event);
+        expect(target).toBeDefined();
+        expect(['EVIDENCE_REVIEW', 'IMPL_REVIEW']).toContain(target!);
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
 });
