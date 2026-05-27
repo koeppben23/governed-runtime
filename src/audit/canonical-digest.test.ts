@@ -44,6 +44,17 @@ describe('canonicalEventDigest', () => {
     );
   });
 
+  it('prevHash does not affect canonical digest', () => {
+    const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
+    const withDifferentPrevHash = {
+      ...base,
+      prevHash: 'other-hash-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    };
+    expect(computeCanonicalEventDigest(base)).toBe(
+      computeCanonicalEventDigest(withDifferentPrevHash),
+    );
+  });
+
   it('canonicalEventDigest field itself is excluded from computation', () => {
     const base = buildEvent('TICKET', 'PLAN', 'PLAN_READY');
     const withCanonical = { ...base, canonicalEventDigest: 'different_value' };
