@@ -205,4 +205,56 @@ describe('state machine fuzz', () => {
       },
     );
   });
+
+  it('REJECT and CHANGES_REQUESTED resolve to expected backward phases', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW' as Phase),
+        (gatePhase) => {
+          // REJECT always goes far backward.
+          const rejectTarget = resolveTransition(gatePhase, 'REJECT');
+          expect(rejectTarget).toBeDefined();
+          // CHANGES_REQUESTED goes one step backward.
+          const crTarget = resolveTransition(gatePhase, 'CHANGES_REQUESTED');
+          expect(crTarget).toBeDefined();
+
+          // Both targets must be valid phases.
+          expect(ALL_PHASES).toContain(rejectTarget!);
+          expect(ALL_PHASES).toContain(crTarget!);
+
+          // REJECT and CHANGES_REQUESTED should resolve to different targets
+          // (different reversal distance).
+          if (gatePhase !== 'ARCH_REVIEW') {
+            // PLAN_REVIEW and EVIDENCE_REVIEW: REJECT goes further than CHANGES_REQUESTED.
+            expect(rejectTarget).not.toBe(crTarget);
+          }
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('CHECK_FAILED and REVIEW_PENDING resolve to valid phases', () => {
+    fc.assert(
+      fc.property(fc.constantFrom('VALIDATION', 'IMPL_REVIEW' as Phase), (phase) => {
+        const events = TRANSITIONS.get(phase)!;
+        for (const eventName of ['CHECK_FAILED', 'REVIEW_PENDING'] as const) {
+          if (events.has(eventName)) {
+            const target = resolveTransition(phase, eventName);
+            expect(target).toBeDefined();
+            expect(ALL_PHASES).toContain(target!);
+          }
+        }
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
 });

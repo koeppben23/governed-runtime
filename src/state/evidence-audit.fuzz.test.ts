@@ -192,4 +192,34 @@ describe('audit chain fuzz', () => {
       },
     );
   });
+
+  it('firstBreak positions at or after the tamper location', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 5, max: 30 }),
+        fc.integer({ min: 0, max: 1000 }),
+        (chainLength, rawIdx) => {
+          const chain = buildChain(chainLength);
+          // Mutate a known position.
+          const mutateIdx = rawIdx % chainLength;
+          const tampered = applyTamper(chain, { kind: 'mutate', index: mutateIdx });
+
+          const result = verifyChain(tampered as unknown as Record<string, unknown>[], {
+            strict: true,
+          });
+
+          expect(result.valid).toBe(false);
+          expect(result.reason).toBe('CHAIN_BREAK');
+          expect(result.firstBreak).not.toBeNull();
+          // firstBreak must point to or after the tamper position.
+          expect(result.firstBreak!.index).toBeGreaterThanOrEqual(mutateIdx);
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
 });

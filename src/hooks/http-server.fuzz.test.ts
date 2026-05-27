@@ -189,4 +189,44 @@ describe('HTTP hook fuzz', () => {
       },
     );
   });
+
+  it('/hooks/session-start and /hooks/stop never crash on arbitrary payloads', () => {
+    fc.assert(
+      fc.asyncProperty(
+        fc.oneof(
+          fc.constant('/hooks/session-start'),
+          fc.constant('/hooks/stop'),
+          fc.constant('/hooks/post-tool-use'),
+        ),
+        fc.oneof(
+          fc.string(),
+          fc.uint8Array().map((arr) => Buffer.from(arr)),
+          fc.constant('{}'),
+          fc.record({
+            session_id: fc.string({ minLength: 1 }),
+            cwd: fc.string({ minLength: 1 }),
+          }),
+        ),
+        async (url, rawBody) => {
+          const body: string | Buffer =
+            typeof rawBody === 'object' && !Buffer.isBuffer(rawBody)
+              ? JSON.stringify(rawBody)
+              : (rawBody as string | Buffer);
+          const req = makeRequest(body, { url });
+          const res = makeResponse();
+
+          await handleHttpRequest(req as never, res as never);
+          // All valid HTTP status codes; 500 is acceptable for internal errors
+          // but the handler must never throw.
+          expect(res.status).toBeGreaterThanOrEqual(100);
+          expect(res.status).toBeLessThan(600);
+        },
+      ),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '12345'),
+        endOnFailure: true,
+      },
+    );
+  });
 });
