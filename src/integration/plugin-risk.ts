@@ -59,7 +59,11 @@ function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | u
  */
 export function extractPathsFromPatch(diff: string): string[] {
   const paths = new Set<string>();
-  const headerPattern = /^(?:---|\+\+\+)\s+(?:[ab]\/)?(.+)$/gm;
+
+  // Guard against excessive input that could cause ReDoS.
+  if (diff.length > 1024 * 1024) return [];
+
+  const headerPattern = /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm;
   let match: RegExpExecArray | null;
 
   while ((match = headerPattern.exec(diff)) !== null) {
@@ -84,6 +88,9 @@ export function extractPathsFromPatch(diff: string): string[] {
  * @internal
  */
 export function extractPathsFromBashCommand(cmd: string): string[] {
+  // Guard against excessive input that could cause ReDoS.
+  if (cmd.length > 1024 * 1024) return [];
+
   const paths = new Set<string>();
 
   // 1. Redirect targets: >, >>, 2>, 2>>
@@ -104,7 +111,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 3. rm targets: rm [-rf] <files...>
-  const rmPattern = /\brm\s+(?:-[rRfiv]+\s+)*(.+?)(?:\s*[;&|]|$)/g;
+  const rmPattern = /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g;
   while ((match = rmPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
@@ -113,7 +120,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 4. mv/cp targets: mv/cp <src...> <dest>
-  const mvCpPattern = /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*(.+?)(?:\s*[;&|]|$)/g;
+  const mvCpPattern = /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g;
   while ((match = mvCpPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     const args = splitUnquotedArgs(argStr);
@@ -124,8 +131,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 5. sed -i: sed -i[suffix] <expr> <file...>
-  const sedPattern =
-    /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+(.+?)(?:\s*[;&|]|$)/g;
+  const sedPattern = /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\s;&|]+)/g;
   while ((match = sedPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
@@ -135,7 +141,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
 
   // 6. chmod: chmod <mode> <file...>
   const chmodPattern =
-    /\bchmod\s+(?:-[a-zA-Z]+\s+)*(?:[0-7]{3,4}|[ugoa][+-=][rwxXst]+)\s+(.+?)(?:\s*[;&|]|$)/g;
+    /\bchmod\s+(?:-[a-zA-Z]+\s+)*(?:[0-7]{3,4}|[ugoa][+\-=/][rwxXst]+)\s+([^\s;&|]+)/g;
   while ((match = chmodPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
@@ -144,7 +150,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 7. git checkout -- <file...>
-  const gitCheckoutPattern = /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+(.+?)(?:\s*[;&|]|$)/g;
+  const gitCheckoutPattern = /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g;
   while ((match = gitCheckoutPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
