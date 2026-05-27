@@ -20,7 +20,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { resolveSessionContext } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
-import { registerAllTools } from './tool-adapter.js';
+import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
 import { z } from 'zod';
@@ -141,6 +141,85 @@ describe('Tool Adapter Session Identity', () => {
       'mcp-stable-session',
     ]);
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
+  });
+
+  it('governance denial returns isError:false with governance:true in content', async () => {
+    let handler:
+      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
+      | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        const err = new Error('[PHASE_GATE_BLOCKED] Tool not allowed in current phase');
+        (err as unknown as Record<string, unknown>).code = 'PHASE_GATE_BLOCKED';
+        throw err;
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.governance).toBe(true);
+    expect(parsed.denied).toBe(true);
+    expect(parsed.code).toBe('PHASE_GATE_BLOCKED');
+  });
+
+  it('execution error returns isError:true without governance field', async () => {
+    let handler:
+      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
+      | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        throw new Error('Network timeout');
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error).toBe(true);
+    expect(parsed.governance).toBeUndefined();
+    expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');
+  });
+});
+
+describe('isGovernanceDenialCode', () => {
+  it('recognizes known governance codes', () => {
+    expect(isGovernanceDenialCode('PHASE_GATE_BLOCKED')).toBe(true);
+    expect(isGovernanceDenialCode('OBLIGATION_UNRESOLVED')).toBe(true);
+    expect(isGovernanceDenialCode('COMMAND_NOT_ALLOWED')).toBe(true);
+    expect(isGovernanceDenialCode('FOUR_EYES_ACTOR_MATCH')).toBe(true);
+  });
+
+  it('rejects unknown codes as execution errors', () => {
+    expect(isGovernanceDenialCode('TOOL_EXECUTION_ERROR')).toBe(false);
+    expect(isGovernanceDenialCode('UNKNOWN_CODE')).toBe(false);
+    expect(isGovernanceDenialCode('')).toBe(false);
   });
 });
 

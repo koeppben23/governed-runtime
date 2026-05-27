@@ -417,7 +417,7 @@ describe('integration/plugin', () => {
         expect(result.state).toBeNull();
       });
 
-      it('no state file + no config → solo', async () => {
+      it('no state file + no config → team', async () => {
         const sessDir = path.join(tmpDir, 'sess_no_config');
         await fs.mkdir(sessDir, { recursive: true });
 
@@ -425,7 +425,7 @@ describe('integration/plugin', () => {
           sessDir,
         });
 
-        expect(result.policy.mode).toBe('solo');
+        expect(result.policy.mode).toBe('team');
         expect(result.state).toBeNull();
       });
 

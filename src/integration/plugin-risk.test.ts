@@ -66,6 +66,8 @@ vi.mock('node:fs', async () => {
 
 import {
   targetPathsForRisk,
+  extractPathsFromPatch,
+  extractPathsFromBashCommand,
   currentChangedFilesForRisk,
   evidenceUnavailableRiskDecision,
   persistRiskDecisionBlock,
@@ -168,6 +170,171 @@ describe('targetPathsForRisk', () => {
       const result = targetPathsForRisk('write', { filePath: '/foo/bar.ts' }, () => undefined);
       expect(result).toEqual(['/foo/bar.ts']);
     });
+  });
+
+  describe('apply_patch', () => {
+    it('extracts paths from unified diff headers', () => {
+      const diff = `--- a/src/old.ts
++++ b/src/old.ts
+@@ -1,3 +1,4 @@
++import { foo } from 'bar';
+--- a/src/new.ts
++++ b/src/new.ts
+@@ -10,2 +10,3 @@`;
+      const result = targetPathsForRisk('apply_patch', { diff }, () => '/repo');
+      expect(result).toContain('src/old.ts');
+      expect(result).toContain('src/new.ts');
+    });
+
+    it('filters out /dev/null (new file case)', () => {
+      const diff = `--- /dev/null
++++ b/src/brand-new.ts
+@@ -0,0 +1,5 @@`;
+      const result = targetPathsForRisk('apply_patch', { diff }, () => '/repo');
+      expect(result).toEqual(['src/brand-new.ts']);
+    });
+
+    it('deduplicates paths', () => {
+      const diff = `--- a/src/same.ts
++++ b/src/same.ts`;
+      const result = targetPathsForRisk('apply_patch', { diff }, () => '/repo');
+      expect(result).toEqual(['src/same.ts']);
+    });
+
+    it('returns empty for non-string diff arg', () => {
+      const result = targetPathsForRisk('apply_patch', { diff: 123 }, () => '/repo');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('bash command', () => {
+    it('extracts redirect targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'echo "hello" > output.txt' },
+        () => '/repo',
+      );
+      expect(result).toContain('output.txt');
+    });
+
+    it('extracts append redirect targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'echo "log" >> app.log' },
+        () => '/repo',
+      );
+      expect(result).toContain('app.log');
+    });
+
+    it('extracts tee targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'npm run build | tee build.log' },
+        () => '/repo',
+      );
+      expect(result).toContain('build.log');
+    });
+
+    it('extracts rm targets', () => {
+      const result = targetPathsForRisk('bash', { command: 'rm -rf src/old/' }, () => '/repo');
+      expect(result).toContain('src/old/');
+    });
+
+    it('extracts mv/cp targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'mv src/old.ts src/new.ts' },
+        () => '/repo',
+      );
+      expect(result).toContain('src/old.ts');
+      expect(result).toContain('src/new.ts');
+    });
+
+    it('extracts sed -i targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -i 's/foo/bar/g' config.json" },
+        () => '/repo',
+      );
+      expect(result).toContain('config.json');
+    });
+
+    it('extracts chmod targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'chmod 755 scripts/deploy.sh' },
+        () => '/repo',
+      );
+      expect(result).toContain('scripts/deploy.sh');
+    });
+
+    it('extracts git checkout -- targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'git checkout -- src/reverted.ts' },
+        () => '/repo',
+      );
+      expect(result).toContain('src/reverted.ts');
+    });
+
+    it('returns empty for non-string command arg', () => {
+      const result = targetPathsForRisk('bash', { command: null }, () => '/repo');
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty for unparseable command (safe fallback)', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'curl https://example.com' },
+        () => '/repo',
+      );
+      expect(result).toEqual([]);
+    });
+
+    it('filters /dev/null from redirects', () => {
+      const result = targetPathsForRisk('bash', { command: 'command 2>/dev/null' }, () => '/repo');
+      expect(result).toEqual([]);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// extractPathsFromPatch (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('extractPathsFromPatch', () => {
+  it('handles diff without a/ b/ prefix', () => {
+    const diff = `--- src/direct.ts
++++ src/direct.ts`;
+    expect(extractPathsFromPatch(diff)).toEqual(['src/direct.ts']);
+  });
+
+  it('handles windows-style backslashes', () => {
+    const diff = `--- a/src\\windows\\path.ts
++++ b/src\\windows\\path.ts`;
+    expect(extractPathsFromPatch(diff)).toEqual(['src/windows/path.ts']);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// extractPathsFromBashCommand (unit)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('extractPathsFromBashCommand', () => {
+  it('handles quoted file paths', () => {
+    const result = extractPathsFromBashCommand('rm "path with spaces/file.txt"');
+    expect(result).toContain('path with spaces/file.txt');
+  });
+
+  it('handles tee -a (append mode)', () => {
+    const result = extractPathsFromBashCommand('echo x | tee -a log.txt');
+    expect(result).toContain('log.txt');
+  });
+
+  it('handles multiple commands chained with &&', () => {
+    const result = extractPathsFromBashCommand('echo a > out1.txt && echo b > out2.txt');
+    expect(result).toContain('out1.txt');
+    expect(result).toContain('out2.txt');
   });
 });
 

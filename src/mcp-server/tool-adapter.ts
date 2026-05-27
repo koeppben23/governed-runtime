@@ -44,6 +44,7 @@ function toMcpResult(result: ToolResult): CallToolResult {
 
 /**
  * Create an MCP error result with diagnostic information.
+ * Used for genuine tool execution failures.
  */
 function toMcpError(code: string, message: string): CallToolResult {
   return {
@@ -55,6 +56,55 @@ function toMcpError(code: string, message: string): CallToolResult {
     ],
     isError: true,
   };
+}
+
+/**
+ * Create an MCP result for governance denials.
+ *
+ * Unlike execution errors (isError: true), governance denials use isError: false
+ * with structured content. This is semantically correct: the tool was never invoked,
+ * so there is no execution error — there is a policy decision.
+ *
+ * MCP clients can programmatically detect governance denials via the `governance: true`
+ * field in the JSON content.
+ */
+function toMcpDenial(code: string, message: string): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ governance: true, denied: true, code, message }),
+      },
+    ],
+    isError: false,
+  };
+}
+
+/**
+ * Known FlowGuard governance denial codes.
+ * These indicate that the tool was blocked by policy, not that execution failed.
+ */
+const GOVERNANCE_DENIAL_CODES = new Set([
+  'PHASE_GATE_BLOCKED',
+  'OBLIGATION_UNRESOLVED',
+  'RISK_BLOCKED',
+  'RISK_CLASSIFICATION_BLOCKED',
+  'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+  'SESSION_UNRESOLVABLE',
+  'COMMAND_NOT_ALLOWED',
+  'TOOL_BLOCKED_IN_PHASE',
+  'FOUR_EYES_ACTOR_MATCH',
+  'REGULATED_ACTOR_UNKNOWN',
+  'DECISION_IDENTITY_REQUIRED',
+  'ACTOR_ASSURANCE_INSUFFICIENT',
+  'SUBAGENT_UNAUTHORIZED',
+  'HOOK_STDIN_INVALID',
+  'HOOK_PAYLOAD_INVALID',
+]);
+
+/** @internal */
+export function isGovernanceDenialCode(code: string): boolean {
+  return GOVERNANCE_DENIAL_CODES.has(code);
 }
 
 // --- Arg Sanitization (Gap 1 Mitigation) ---
@@ -136,6 +186,11 @@ export function registerAllTools(
 
           // Extract FlowGuard error code if available
           const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
+
+          // Governance denials are policy decisions, not execution errors.
+          if (isGovernanceDenialCode(code)) {
+            return toMcpDenial(code, message);
+          }
           return toMcpError(code, message);
         }
       },

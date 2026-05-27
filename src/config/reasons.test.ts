@@ -332,9 +332,9 @@ describe('cli/templates/verification-output-contract', () => {
         expect(result).toBe('team');
       });
 
-      it('solo is fallback when no state and no config', () => {
+      it('team is fallback when no state and no config (fail-closed default)', () => {
         const result = resolveRuntimePolicyMode({});
-        expect(result).toBe('solo');
+        expect(result).toBe('team');
       });
 
       it('team config used correctly', () => {
@@ -380,11 +380,11 @@ describe('cli/templates/verification-output-contract', () => {
 
     // ─── CORNER ─────────────────────────────────────────────────
     describe('CORNER', () => {
-      it('null configDefaultMode falls back to solo', () => {
+      it('null configDefaultMode falls back to team (fail-closed)', () => {
         const result = resolveRuntimePolicyMode({
           configDefaultMode: undefined,
         });
-        expect(result).toBe('solo');
+        expect(result).toBe('team');
       });
 
       it('null state falls back to config', () => {

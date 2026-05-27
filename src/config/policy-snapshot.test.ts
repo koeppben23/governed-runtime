@@ -187,8 +187,14 @@ describe('normalizePolicySnapshot', () => {
       expect(normalized.effectiveGateBehavior).toBe('human_gated');
     });
 
-    it('invalid mode defaults to team (safe fallback)', () => {
-      const normalized = normalizePolicySnapshot({ mode: 'broken' });
+    it('invalid mode throws PolicyConfigurationError (fail-closed)', () => {
+      expect(() => normalizePolicySnapshot({ mode: 'broken' })).toThrow(
+        /Invalid policy mode "broken"/,
+      );
+    });
+
+    it('missing mode (undefined) defaults to team (safe fallback)', () => {
+      const normalized = normalizePolicySnapshot({});
       expect(normalized.mode).toBe('team');
       expect(normalized.requireHumanGates).toBe(true);
     });
@@ -285,14 +291,13 @@ describe('normalizePolicySnapshotWithMeta', () => {
     expect(result.normalized).toBe(true);
   });
 
-  it('returns normalized=true for snapshot with invalid fields', () => {
-    const result = normalizePolicySnapshotWithMeta({
-      mode: 'invalid_mode',
-      identityProviderMode: 'broken',
-    });
-    expect(result.normalized).toBe(true);
-    expect(result.snapshot.mode).toBe('team');
-    expect(result.snapshot.identityProviderMode).toBe('optional');
+  it('throws PolicyConfigurationError for snapshot with invalid mode (fail-closed)', () => {
+    expect(() =>
+      normalizePolicySnapshotWithMeta({
+        mode: 'invalid_mode',
+        identityProviderMode: 'broken',
+      }),
+    ).toThrow(/Invalid policy mode "invalid_mode"/);
   });
 
   describe('NEGATIVE — invalid audit config', () => {
@@ -435,9 +440,21 @@ describe('normalizePolicySnapshotWithMeta', () => {
   });
 
   describe('CORNER — composite invalidity', () => {
-    it('multiple invalid fields all normalize and single reason is set', () => {
+    it('invalid mode throws PolicyConfigurationError (fail-closed)', () => {
+      expect(() =>
+        normalizePolicySnapshotWithMeta({
+          mode: 'bogus',
+          audit: null,
+          selfReview: null,
+          minimumActorAssuranceForApproval: 'nonsense',
+          reviewInvocationPolicy: 'bad',
+        }),
+      ).toThrow(/Invalid policy mode "bogus"/);
+    });
+
+    it('missing mode (null) normalizes other fields and defaults mode to team', () => {
       const result = normalizePolicySnapshotWithMeta({
-        mode: 'bogus',
+        mode: null,
         audit: null,
         selfReview: null,
         minimumActorAssuranceForApproval: 'nonsense',

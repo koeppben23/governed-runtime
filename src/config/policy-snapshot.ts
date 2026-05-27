@@ -37,6 +37,7 @@ import type {
 import type { PolicyResolution } from './policy-resolver.js';
 import { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { PolicyConfigurationError } from './policy-errors.js';
 
 /**
  * Normalize a legacy or weakened selfReview config to the mandatory strict default.
@@ -296,7 +297,13 @@ interface NormalizedField<T> {
 function normalizeMode(s: Record<string, unknown>): NormalizedField<PolicyMode> {
   const raw = s.mode;
   if (isValidMode(raw)) return { value: raw, normalized: false };
-  return { value: 'team', normalized: true };
+  // null/undefined = "not configured" → safe default (team)
+  if (raw === undefined || raw === null) return { value: 'team', normalized: true };
+  // Any other value is an invalid mode — fail-closed, never silently degrade
+  throw new PolicyConfigurationError(
+    'INVALID_POLICY_MODE',
+    `Invalid policy mode "${String(raw)}". Valid modes: solo, team, team-ci, regulated.`,
+  );
 }
 
 function normalizeHash(s: Record<string, unknown>): NormalizedField<string> {

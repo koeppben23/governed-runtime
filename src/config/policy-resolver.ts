@@ -230,7 +230,10 @@ export function resolvePolicyWithContext(
 /**
  * P32: Resolve Runtime Policy Mode -- unified fallback for runtime surfaces.
  *
- * Priority: state snapshot > config > solo.
+ * Priority: state snapshot > config > team (fail-closed default).
+ *
+ * The default is `team` (meaningful review gates) rather than `solo`
+ * (weakest enforcement) to satisfy fail-closed principles.
  */
 export function resolveRuntimePolicyMode(opts: {
   state?: { policySnapshot?: { mode?: PolicyMode } };
@@ -239,5 +242,5 @@ export function resolveRuntimePolicyMode(opts: {
   if (opts.state?.policySnapshot?.mode) {
     return opts.state.policySnapshot.mode;
   }
-  return opts.configDefaultMode ?? 'solo';
+  return opts.configDefaultMode ?? 'team';
 }

@@ -111,10 +111,14 @@ const ARCH_REJECT_CLEAR = {
  * Clearing rules (FlowGuard-critical):
  * - approve: keep everything (state flows forward)
  * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
- * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview (re-implement)
+ * - changes_requested at IMPL_REVIEW: clear implReview + reducedCeremony (re-review)
+ * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview + reducedCeremony (re-implement)
  * - changes_requested at ARCH_REVIEW: clear selfReview (fresh review loop)
  * - reject at PLAN_REVIEW/EVIDENCE_REVIEW: clear everything downstream of TICKET
  * - reject at ARCH_REVIEW: clear architecture + selfReview (back to READY)
+ *
+ * reducedCeremony is revoked on any changes_requested that loops back to IMPLEMENTATION
+ * because the prior TRIVIAL determination is invalidated by the review finding issues.
  */
 function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict): SessionState {
   if (verdict === 'approve') {
@@ -132,15 +136,18 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     if (state.phase === 'PLAN_REVIEW') {
       return { ...state, ...REJECT_CLEAR_FROM_PLAN };
     }
-    return { ...state, ...REJECT_CLEAR };
+    return { ...state, ...REJECT_CLEAR, reducedCeremony: null };
   }
 
   // changes_requested
   if (state.phase === 'PLAN_REVIEW') {
     return { ...state, selfReview: null };
   }
+  if (state.phase === 'IMPL_REVIEW') {
+    return { ...state, implReview: null, reducedCeremony: null };
+  }
   if (state.phase === 'EVIDENCE_REVIEW') {
-    return { ...state, implementation: null, implReview: null };
+    return { ...state, implementation: null, implReview: null, reducedCeremony: null };
   }
   if (state.phase === 'ARCH_REVIEW') {
     return { ...state, selfReview: null };
