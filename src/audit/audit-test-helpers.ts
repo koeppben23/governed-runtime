@@ -109,11 +109,11 @@ export function buildSessionTrail(): AuditEvent[] {
       },
     }),
     makeAuditEvent({
-      event: 'tool_call:flowguard_validate',
+      event: 'tool_call:flowguard_run_check',
       phase: 'VALIDATION',
       timestamp: TS2,
       actor: 'machine',
-      detail: { kind: 'tool_call', tool: 'flowguard_validate', success: true, transitionCount: 1 },
+      detail: { kind: 'tool_call', tool: 'flowguard_run_check', success: true, transitionCount: 1 },
     }),
     makeAuditEvent({
       event: 'transition:ALL_PASSED',

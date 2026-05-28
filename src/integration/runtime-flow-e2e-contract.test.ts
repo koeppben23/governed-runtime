@@ -15,7 +15,7 @@
  * No LLM inference, no network, no secrets.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,7 +32,7 @@ import { plan } from './tools/plan.js';
 import { implement } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
 import { review } from './tools/review-tool/index.js';
-import { validate } from './tools/validate-tool.js';
+import { run_check } from './tools/run-check-tool.js';
 import { archive } from './tools/archive-tool.js';
 import type { ToolContext } from './tools/helpers.js';
 import type { ReviewFindings } from '../state/evidence.js';
@@ -43,6 +43,24 @@ import {
 } from './review/assurance.js';
 import { makeState, TICKET } from '../__fixtures__.js';
 import type { SessionState } from '../state/schema.js';
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 const HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];
 const FIXED_TIME = '2026-01-01T00:00:00.000Z';
@@ -304,7 +322,7 @@ describe('FlowGuard tool-level E2E', () => {
         );
       });
 
-      it('plan-to-implement segment: plan → validate → implement → archive', async () => {
+      it('plan-to-implement segment: plan → run_check → implement → archive', async () => {
         s = await boot(host, 'main');
 
         // Step 1: plan Mode A
@@ -329,7 +347,7 @@ describe('FlowGuard tool-level E2E', () => {
         expect(typeof r2).toBe('string');
         expect(r2).not.toContain('INTERNAL_ERROR');
 
-        // Step 3: validate — bootstrap at VALIDATION
+        // Step 3: run_check — bootstrap at VALIDATION with verificationCandidates
         st = await readState(s.sDir);
         const currentPlan = st!.plan!;
         await writeStateWithArtifacts(
@@ -338,24 +356,25 @@ describe('FlowGuard tool-level E2E', () => {
             ticket: TICKET,
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,
-            activeChecks: ['test_quality', 'rollback_safety'],
+            activeChecks: ['typecheck'],
+            verificationCandidates: [
+              {
+                kind: 'typecheck',
+                command: 'npx tsc --noEmit',
+                source: 'test',
+                confidence: 'high',
+                reason: 'E2E test candidate',
+              },
+            ],
           }),
         );
-        const rV = await validate.execute(
-          {
-            results: [
-              { checkId: 'test_quality', passed: true, detail: 'All tests pass' },
-              { checkId: 'rollback_safety', passed: true, detail: 'Safe to rollback' },
-            ],
-          },
-          s.tc,
-        );
+        const rV = await run_check.execute({ kind: 'typecheck' }, s.tc);
         expect(typeof rV).toBe('string');
         expect(rV).not.toContain('INTERNAL_ERROR');
 
         // Step 4: implement Mode A
         st = await readState(s.sDir);
-        // Bootstrap IMPLEMENTATION with evidence from validate
+        // Bootstrap IMPLEMENTATION with evidence from run_check
         await writeStateWithArtifacts(
           s.sDir,
           makeState('IMPLEMENTATION', {
@@ -363,7 +382,16 @@ describe('FlowGuard tool-level E2E', () => {
             plan: currentPlan,
             reviewDecision: st!.reviewDecision,
             validation: st!.validation,
-            activeChecks: ['test_quality', 'rollback_safety'],
+            activeChecks: ['typecheck'],
+            verificationCandidates: [
+              {
+                kind: 'typecheck',
+                command: 'npx tsc --noEmit',
+                source: 'test',
+                confidence: 'high',
+                reason: 'E2E test candidate',
+              },
+            ],
           }),
         );
         mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
@@ -400,7 +428,16 @@ describe('FlowGuard tool-level E2E', () => {
             reviewAssurance: st!.reviewAssurance,
             reviewDecision: st!.reviewDecision,
             validation: st!.validation,
-            activeChecks: ['test_quality', 'rollback_safety'],
+            activeChecks: ['typecheck'],
+            verificationCandidates: [
+              {
+                kind: 'typecheck',
+                command: 'npx tsc --noEmit',
+                source: 'test',
+                confidence: 'high',
+                reason: 'E2E test candidate',
+              },
+            ],
           }),
         );
         const rA = await archive.execute({}, s.tc);

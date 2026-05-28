@@ -22,7 +22,7 @@ import {
   TOOL_FLOWGUARD_HYDRATE,
   TOOL_FLOWGUARD_TICKET,
   TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_VALIDATE,
+  TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_REVIEW,
@@ -47,8 +47,8 @@ describe('tool-classification', () => {
       expect(getToolClassification(TOOL_FLOWGUARD_PLAN)).toBe('workflow');
     });
 
-    it('TOOL_FLOWGUARD_VALIDATE is workflow', () => {
-      expect(getToolClassification(TOOL_FLOWGUARD_VALIDATE)).toBe('workflow');
+    it('TOOL_FLOWGUARD_RUN_CHECK is workflow', () => {
+      expect(getToolClassification(TOOL_FLOWGUARD_RUN_CHECK)).toBe('workflow');
     });
 
     it('TOOL_FLOWGUARD_IMPLEMENT is workflow', () => {

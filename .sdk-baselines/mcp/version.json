@@ -14,7 +14,7 @@
     "flowguard_implement.json",
     "flowguard_architecture.json",
     "flowguard_decision.json",
-    "flowguard_validate.json",
+    "flowguard_run_check.json",
     "flowguard_ticket.json",
     "flowguard_review.json",
     "flowguard_abort_session.json",

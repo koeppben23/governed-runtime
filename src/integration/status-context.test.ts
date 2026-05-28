@@ -171,7 +171,11 @@ describe('blocker field mapping', () => {
   it('should have null reasonCode for auto-advance phases (no structured code in SSOT)', () => {
     const autoPhases = ['VALIDATION', 'IMPLEMENTATION', 'IMPL_REVIEW'] as const;
     for (const phase of autoPhases) {
-      const state = makeMinimalState(phase);
+      const state = {
+        ...makeMinimalState(phase),
+        // VALIDATION needs activeChecks to be non-empty, otherwise vacuous truth auto-advances
+        activeChecks: phase === 'VALIDATION' ? ['test'] : [],
+      };
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.blocker).not.toBeNull();

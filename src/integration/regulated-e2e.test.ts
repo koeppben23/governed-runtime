@@ -22,7 +22,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { status, hydrate, ticket, plan, decision, validate, implement } from './tools/index.js';
+import { status, hydrate, ticket, plan, decision, run_check, implement } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
@@ -54,6 +54,24 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 const actorMock = await import('../adapters/actor.js');
 
@@ -138,12 +156,15 @@ async function approveWithReviewer(id = 'regulated-reviewer'): Promise<void> {
 async function driveToEvidenceReview(): Promise<void> {
   await approveWithReviewer('plan-reviewer');
   expect(await phase()).toBe('VALIDATION');
-  await callOk(validate, {
-    results: [
-      { checkId: 'test_quality', passed: true, detail: 'OK' },
-      { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-    ],
-  });
+  // Discovery detects TypeScript → activeChecks=['typecheck']
+  // Run all active checks to pass VALIDATION
+  const dir = await sessDir();
+  const state = await readState(dir);
+  if (state && state.activeChecks.length > 0) {
+    for (const kind of state.activeChecks) {
+      await callOk(run_check, { kind });
+    }
+  }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(implement, { reviewVerdict: 'approve' });
@@ -199,14 +220,12 @@ describe('regulated-e2e critical path', () => {
     expect(await phase()).toBe('PLAN_REVIEW');
   });
 
-  it('blocks progression when required validation evidence is missing', async () => {
+  it('blocks run_check for a kind not in verificationCandidates', async () => {
     await bootstrapRegulatedPlanReview();
     await approveWithReviewer();
 
-    const result = await callBlocked(validate, {
-      results: [{ checkId: 'test_quality', passed: true, detail: 'Only one check supplied' }],
-    });
-    expect(result.code).toBe('MISSING_CHECKS');
+    const result = await callBlocked(run_check, { kind: 'security' });
+    expect(result.code).toBe('CHECK_KIND_NOT_AVAILABLE');
     expect(await phase()).toBe('VALIDATION');
   });
 

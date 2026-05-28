@@ -265,6 +265,8 @@ async function runRequiredDiscovery(
       allFiles: repoSignals.files,
       packageFiles: repoSignals.packageFiles,
       configFiles: repoSignals.configFiles,
+      packageFilePaths: repoSignals.packageFilePaths,
+      configFilePaths: repoSignals.configFilePaths,
     });
   } catch (err) {
     throwHydrateError(
@@ -353,12 +355,66 @@ function collectProfileCandidates(
     const profile = profileRegistryForResolution.get(pid);
     if (!profile?.detect || profile.id === selectedProfile?.id) continue;
     const score = profile.detect(detectionInput);
+    const evidence = buildProfileEvidence(profile, detectionInput);
     if (score > 0)
-      secondary.push({ id: profile.id, name: profile.name, confidence: score, evidence: [] });
-    else rejected.push({ id: profile.id, score: 0, reason: 'No matching signals' });
+      secondary.push({ id: profile.id, name: profile.name, confidence: score, evidence });
+    else
+      rejected.push({
+        id: profile.id,
+        score: 0,
+        reason:
+          evidence.length > 0
+            ? `Checked signals [${evidence.join(', ')}] — none matched`
+            : 'No matching signals',
+      });
   }
 
   return { secondary, rejected };
+}
+
+/**
+ * Build concrete evidence strings for a profile detection decision.
+ *
+ * Inspects the detection input for signals relevant to the profile's checks
+ * (files, package manifests, config files, discovered stack).
+ */
+function buildProfileEvidence(
+  profile: FlowGuardProfile,
+  detectionInput: { repoSignals: RepoSignals; discovery: DiscoveryResult },
+): string[] {
+  const evidence: string[] = [];
+  const { repoSignals, discovery } = detectionInput;
+  const profileId = profile.id.toLowerCase();
+
+  // Check for matching package files using a keyword-to-manifest map
+  const manifestSignals: Record<string, string[]> = {
+    java: ['pom.xml', 'build.gradle', 'build.gradle.kts'],
+    node: ['package.json'],
+    typescript: ['package.json'],
+    rust: ['Cargo.toml'],
+    go: ['go.mod'],
+    python: ['pyproject.toml', 'requirements.txt'],
+  };
+  for (const [keyword, manifests] of Object.entries(manifestSignals)) {
+    if (!profileId.includes(keyword)) continue;
+    for (const f of repoSignals.packageFiles) {
+      if (manifests.includes(f)) evidence.push(`packageFile:${f}`);
+    }
+  }
+
+  // Check for matching languages/frameworks in discovered stack
+  for (const lang of discovery.stack.languages) {
+    if (profileId.includes(lang.id.toLowerCase())) {
+      evidence.push(`language:${lang.id}`);
+    }
+  }
+  for (const fw of discovery.stack.frameworks) {
+    if (profileId.includes(fw.id.toLowerCase())) {
+      evidence.push(`framework:${fw.id}`);
+    }
+  }
+
+  return evidence;
 }
 
 function buildProfileResolution(
@@ -368,6 +424,9 @@ function buildProfileResolution(
   resolvedAt: string,
 ): ProfileResolution {
   const candidates = collectProfileCandidates(detectionInput, selectedProfile);
+  const primaryEvidence = selectedProfile
+    ? buildProfileEvidence(selectedProfile, detectionInput)
+    : [];
   return {
     schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
     resolvedAt,
@@ -375,14 +434,11 @@ function buildProfileResolution(
       id: selectedProfile?.id ?? 'baseline',
       name: selectedProfile?.name ?? 'Baseline FlowGuard',
       confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
-      evidence: [],
+      evidence: primaryEvidence,
     },
     secondary: candidates.secondary,
     rejected: candidates.rejected,
-    activeChecks: [
-      ...(config.profile.activeChecks ??
-        selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
-    ],
+    activeChecks: [...(config.profile.activeChecks ?? selectedProfile?.activeChecks ?? [])],
   };
 }
 

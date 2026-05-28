@@ -403,6 +403,15 @@ Discovery runs automatically on `/hydrate` and requires no user configuration. I
 
 Results are included in `discovery-snapshot.json` archives and used for profile resolution. Code surface signals are intentionally bounded and may be partial.
 
+**Fail-closed vs. collector-local degradation:**
+
+- `/hydrate` enforces a **fail-closed artifact contract**: the session cannot enter READY unless all four required artifacts (`discovery.json`, `profile-resolution.json`, `discovery-snapshot.json`, `profile-resolution-snapshot.json`) are persisted, and both `discoveryDigest` and `discoverySummary` are computed. If any artifact cannot be written, hydration fails with an explicit error.
+- Individual collectors degrade **locally**: if a collector times out or throws, its status is recorded as `'failed'` in the `diagnostics` array with structured error info (`errorCode`, `timedOut`, `degradedReason`). The overall discovery run still produces a result with safe defaults for the failed collector's section. This means discovery always completes, but the result may be partial.
+
+**Advisory verification authority:**
+
+Verification commands (test, lint, build, typecheck) are derived via `planVerificationCandidates` and surfaced as `verificationCandidates` in `flowguard_status`. This is the single canonical advisory verification source. The `validationHints` field in `DiscoveryResult` is a legacy intermediate signal retained for digest stability and must not be consumed for agent guidance.
+
 ### profile.defaultId
 
 **Type:** `string`

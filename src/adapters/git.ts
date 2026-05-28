@@ -351,6 +351,8 @@ export async function listRepoSignals(worktree: string): Promise<{
   files: string[];
   packageFiles: string[];
   configFiles: string[];
+  packageFilePaths: string[];
+  configFilePaths: string[];
 }> {
   let allFiles: string[] = [];
 
@@ -378,19 +380,24 @@ export async function listRepoSignals(worktree: string): Promise<{
   // Normalize paths
   allFiles = allFiles.map((f) => path.normalize(f));
 
-  // Categorize by basename
+  // Categorize by basename (basenames for backward compat, full paths for new consumers)
   const packageFiles: string[] = [];
   const configFiles: string[] = [];
+  const packageFilePaths: string[] = [];
+  const configFilePaths: string[] = [];
 
   for (const filePath of allFiles) {
     const basename = path.basename(filePath);
     if (PACKAGE_FILES.has(basename)) {
       packageFiles.push(basename);
+      packageFilePaths.push(filePath);
     } else if (basename.endsWith('.csproj') || basename.endsWith('.sln')) {
       packageFiles.push(basename);
+      packageFilePaths.push(filePath);
     }
     if (CONFIG_FILES.has(basename)) {
       configFiles.push(basename);
+      configFilePaths.push(filePath);
     }
   }
 
@@ -398,6 +405,8 @@ export async function listRepoSignals(worktree: string): Promise<{
     files: allFiles,
     packageFiles: [...new Set(packageFiles)],
     configFiles: [...new Set(configFiles)],
+    packageFilePaths,
+    configFilePaths,
   };
 }
 

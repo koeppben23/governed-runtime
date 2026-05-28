@@ -281,8 +281,8 @@ export const SessionState = z.object({
 
   /**
    * Active validation checks for this session.
-   * Open string set — profile registry validates at runtime.
-   * Base: [test_quality, rollback_safety]. Extended per profile.
+   * Derived from verificationCandidates at hydrate-time (unique kinds).
+   * Empty if no verification commands were discovered.
    */
   activeChecks: z.array(CheckId),
 

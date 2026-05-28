@@ -256,7 +256,8 @@ describe('hydrate rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.activeProfile?.id).toBe('baseline');
-        expect(result.state.activeChecks.length).toBeGreaterThan(0);
+        // activeChecks is derived from verificationCandidates (empty in unit test)
+        expect(result.state.activeChecks).toEqual([]);
       }
     });
 

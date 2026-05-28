@@ -63,7 +63,7 @@ describe('review rail', () => {
       const state = makeProgressedState('COMPLETE');
       const report = await executeReview(state, NOW);
       expect(report.validationSummary).toHaveLength(2);
-      expect(report.validationSummary[0]!.checkId).toBe('test_quality');
+      expect(report.validationSummary[0]!.checkId).toBe('test');
       expect(report.validationSummary[0]!.passed).toBe(true);
     });
 
@@ -133,7 +133,7 @@ describe('review rail', () => {
       const valFinding = report.findings.find((f) => f.category === 'validation');
       expect(valFinding).toBeDefined();
       expect(valFinding!.severity).toBe('error');
-      expect(valFinding!.message).toContain('test_quality');
+      expect(valFinding!.message).toContain('test');
       expect(report.overallStatus).toBe('issues');
     });
   });
@@ -287,8 +287,8 @@ describe('review rail', () => {
       const report = await executeReview(state, NOW);
       const failedCheck = report.validationSummary.find((v) => !v.passed);
       expect(failedCheck).toBeDefined();
-      expect(failedCheck!.checkId).toBe('test_quality');
-      expect(failedCheck!.detail).toBe('Missing tests');
+      expect(failedCheck!.checkId).toBe('test');
+      expect(failedCheck!.detail).toBe('Tests failed: 3 failing');
     });
 
     it('report does NOT mutate the input state', async () => {
@@ -370,7 +370,7 @@ describe('review rail', () => {
       const valFinding = report.findings.find((f) => f.category === 'validation');
       expect(valFinding).toBeDefined();
       expect(valFinding!.message).toContain('Failed checks');
-      expect(valFinding!.message).toContain('test_quality');
+      expect(valFinding!.message).toContain('test');
     });
 
     it('four-eyes NOT required when allowSelfApproval=true even if not satisfied', async () => {
@@ -502,7 +502,7 @@ describe('review rail', () => {
   describe('MUTATION: round 2 targeted survivors', () => {
     it('failed checks message uses comma-space separator (join format)', async () => {
       // Kill: join(', ') → join("")
-      // VALIDATION_FAILED has test_quality (failed) + rollback_safety (passed)
+      // VALIDATION_FAILED has test (failed) + lint (passed)
       // We need 2+ failed checks to test the separator
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),

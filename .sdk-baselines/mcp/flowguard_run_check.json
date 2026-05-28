@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_run_check",
+  "title": "flowguard_run_check",
+  "description": "Execute a verification check. FlowGuard runs the command from verificationCandidates and records cryptographic execution evidence.",
+  "type": "object",
+  "required": ["kind"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["lint", "typecheck", "test", "build", "format", "security", "coverage"],
+      "description": "Which verification kind to execute (e.g., \"lint\", \"test\", \"typecheck\", \"build\")."
+    }
+  },
+  "additionalProperties": false
+}

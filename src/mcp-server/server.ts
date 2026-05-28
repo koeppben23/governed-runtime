@@ -29,7 +29,7 @@ import { plan } from '../integration/tools/index.js';
 import { implement } from '../integration/tools/index.js';
 import { architecture } from '../integration/tools/index.js';
 import { decision } from '../integration/tools/index.js';
-import { validate } from '../integration/tools/index.js';
+import { run_check } from '../integration/tools/index.js';
 import { ticket } from '../integration/tools/index.js';
 import { review } from '../integration/tools/index.js';
 import { abort_session } from '../integration/tools/index.js';
@@ -46,7 +46,7 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   implement,
   architecture,
   decision,
-  validate,
+  run_check,
   ticket,
   review,
   abort_session,

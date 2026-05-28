@@ -164,6 +164,8 @@ export async function executeContinue(
 // ─── Phase-Specific Handlers ──────────────────────────────────────────────────
 
 /** Run all active validation checks. Records results in state.validation.
+ *  If no active checks exist, returns state unchanged (vacuous truth —
+ *  allValidationsPassed guard handles the empty case).
  *  If any check fails, clears selfReview and reviewDecision so the plan
  *  must be revised and re-approved (CHECK_FAILED → PLAN semantics). */
 async function runValidationChecks(
@@ -171,6 +173,9 @@ async function runValidationChecks(
   ctx: RailContext,
   executors: ContinueExecutors,
 ): Promise<SessionState> {
+  // Vacuous truth: no active checks → nothing to run, guard will pass
+  if (state.activeChecks.length === 0) return state;
+
   const results: ValidationResult[] = [];
 
   for (const checkId of state.activeChecks) {

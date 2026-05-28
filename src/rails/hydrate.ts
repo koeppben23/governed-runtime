@@ -224,8 +224,13 @@ export function executeHydrate(
     profile = defaultProfileRegistry.get('baseline');
   }
 
-  const activeChecks = pr.activeChecks ??
-    profile?.activeChecks?.slice() ?? ['test_quality', 'rollback_safety'];
+  // Derive activeChecks: explicit non-empty override > verificationCandidates-derived > empty
+  // rollback_safety is no longer a gate check — it's a review criterion.
+  // Note: empty array from profile means "derive from candidates" (not "no checks").
+  const activeChecks =
+    pr.activeChecks && pr.activeChecks.length > 0
+      ? pr.activeChecks
+      : deriveActiveChecksFromCandidates(input.session.verificationCandidates);
 
   const activeProfile = profile
     ? {
@@ -314,4 +319,23 @@ export function executeHydrate(
   const result = evaluate(newState, ctx.policy);
 
   return { kind: 'ok', state: newState, evalResult: result, transitions: [] };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Derive activeChecks from verificationCandidates.
+ *
+ * Each unique `kind` from the candidates becomes an active check ID.
+ * Only kinds that have a discovered command are included (which is all
+ * candidates, since verificationCandidates only contains entries with commands).
+ *
+ * Returns empty array if no candidates — VALIDATION phase is vacuously passed.
+ */
+function deriveActiveChecksFromCandidates(
+  candidates: VerificationCandidates | undefined,
+): string[] {
+  if (!candidates || candidates.length === 0) return [];
+  // Unique kinds, preserving discovery order (deterministic)
+  return [...new Set(candidates.map((c) => c.kind))];
 }

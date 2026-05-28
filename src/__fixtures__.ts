@@ -158,13 +158,57 @@ export const SELF_REVIEW_PENDING: SelfReviewLoop = {
 };
 
 export const VALIDATION_PASSED: ValidationResult[] = [
-  { checkId: 'test_quality', passed: true, detail: 'All tests pass', executedAt: FIXED_TIME },
-  { checkId: 'rollback_safety', passed: true, detail: 'Safe to rollback', executedAt: FIXED_TIME },
+  {
+    checkId: 'test',
+    passed: true,
+    detail: 'All tests pass',
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: 0,
+    executionMs: 1200,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  },
+  {
+    checkId: 'lint',
+    passed: true,
+    detail: 'No lint errors',
+    executedAt: FIXED_TIME,
+    kind: 'lint',
+    command: 'npm run lint',
+    exitCode: 0,
+    executionMs: 800,
+    outputDigest: 'b'.repeat(64),
+    timedOut: false,
+  },
 ];
 
 export const VALIDATION_FAILED: ValidationResult[] = [
-  { checkId: 'test_quality', passed: false, detail: 'Missing tests', executedAt: FIXED_TIME },
-  { checkId: 'rollback_safety', passed: true, detail: 'Safe to rollback', executedAt: FIXED_TIME },
+  {
+    checkId: 'test',
+    passed: false,
+    detail: 'Tests failed: 3 failing',
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: 1,
+    executionMs: 2000,
+    outputDigest: 'c'.repeat(64),
+    timedOut: false,
+  },
+  {
+    checkId: 'lint',
+    passed: true,
+    detail: 'No lint errors',
+    executedAt: FIXED_TIME,
+    kind: 'lint',
+    command: 'npm run lint',
+    exitCode: 0,
+    executionMs: 800,
+    outputDigest: 'd'.repeat(64),
+    timedOut: false,
+  },
 ];
 
 export const IMPL_EVIDENCE: ImplEvidence = {
@@ -235,7 +279,7 @@ export function makeState(
     reviewReportPath: null,
     nextAdrNumber: 1,
     activeProfile: null,
-    activeChecks: ['test_quality', 'rollback_safety'],
+    activeChecks: ['test', 'lint'],
     policySnapshot: POLICY_SNAPSHOT,
     initiatedBy: 'initiator-1',
     initiatedByIdentity: DECISION_IDENTITY_INITIATOR,

@@ -2,25 +2,19 @@
  * @module config/profile
  * @description FlowGuard profile — tech-stack-aware check configuration.
  *
- * Profiles declare which validation checks are active (activeChecks) and
- * optionally detect the right profile for a repository automatically.
+ * Profiles declare LLM instructions for tech stacks and support auto-detection.
  *
- * P10a: No heuristic check executors. FlowGuard does not execute validation.
- * The activeChecks list tells the agent WHAT to validate. Agents must run
- * real tooling (CLI commands, manual review, CI verification) and submit
- * actual results. FlowGuard gates the evidence — it does not pretend to
- * execute validation.
+ * activeChecks are now derived at hydrate-time from discovered verificationCandidates.
+ * Each unique `kind` from candidates becomes an active check ID.
+ * Profile activeChecks arrays are empty — the hydrate rail populates them
+ * from the discovery result.
  *
  * Extension point:
  * - Register custom profiles for specific tech stacks (Java, .NET, Python, etc.)
  * - Profiles can auto-detect based on repository signals (file patterns, config)
  * - LLM instructions can be specialized per profile
  *
- * The baseline profile provides two universal check IDs:
- * - test_quality: Verify test coverage and quality for changed code
- * - rollback_safety: Verify the implementation can be safely rolled back
- *
- * @version v1
+ * @version v2
  */
 
 import type { Phase } from '../state/schema.js';
@@ -109,13 +103,17 @@ export function extractByPhaseInstructions(
  *
  * Profiles use these signals to determine if they match the repo:
  * - files: all file paths in the repo (relative to root)
- * - packageFiles: package manager files (package.json, pom.xml, build.gradle, etc.)
- * - configFiles: config files (.eslintrc, tsconfig.json, Dockerfile, etc.)
+ * - packageFiles: package manager files (basenames, deduplicated)
+ * - configFiles: config files (basenames, deduplicated)
+ * - packageFilePaths: package manager files (full relative paths)
+ * - configFilePaths: config files (full relative paths)
  */
 export interface RepoSignals {
   readonly files: readonly string[];
   readonly packageFiles: readonly string[];
   readonly configFiles: readonly string[];
+  readonly packageFilePaths?: readonly string[];
+  readonly configFilePaths?: readonly string[];
 }
 
 /**
@@ -225,19 +223,15 @@ export class ProfileRegistry {
   }
 }
 
-// ─── Active Checks (shared across all built-in profiles) ────────────────────
-
-/**
- * Shared baseline active check IDs.
- * All built-in profiles use these two checks by default.
- * Tech-specific profiles may extend this list with additional checks.
- *
- * P10a: No heuristic executors. The activeChecks list tells the agent WHAT to
- * validate. The agent must run real tooling (CLI commands, manual review, CI
- * verification) and submit actual ValidationResults. FlowGuard gates the
- * evidence — it does not pretend to execute validation.
- */
-const BASELINE_ACTIVE_CHECKS: readonly string[] = ['test_quality', 'rollback_safety'];
+// ─── Active Checks ───────────────────────────────────────────────────────────
+//
+// activeChecks are no longer statically defined in profiles.
+// They are derived at hydrate-time from discovered verificationCandidates.
+// Each unique `kind` from candidates becomes an active check ID.
+// Profiles declare empty activeChecks — the hydrate rail populates them.
+//
+// rollback_safety is now a review criterion (profile instruction content),
+// NOT a gate check. test_quality is replaced by the discovered `test` kind.
 
 // ─── Baseline Profile ─────────────────────────────────────────────────────────
 
@@ -245,8 +239,7 @@ const BASELINE_ACTIVE_CHECKS: readonly string[] = ['test_quality', 'rollback_saf
  * The baseline FlowGuard profile.
  *
  * Universal profile that works for any tech stack.
- * Defines active validation checks (test_quality, rollback_safety) the agent
- * must execute with real tooling. P10a: no heuristic executors.
+ * activeChecks are empty — derived from verificationCandidates at hydrate-time.
  *
  * Auto-detection: always returns 0.1 (lowest priority).
  * Any tech-specific profile will score higher and take precedence.
@@ -254,7 +247,7 @@ const BASELINE_ACTIVE_CHECKS: readonly string[] = ['test_quality', 'rollback_saf
 export const baselineProfile: FlowGuardProfile = {
   id: 'baseline',
   name: 'Baseline FlowGuard',
-  activeChecks: BASELINE_ACTIVE_CHECKS,
+  activeChecks: [],
   detect: (_input) => 0.1,
   instructions: baselineRuleContent,
 };
@@ -268,12 +261,12 @@ export const baselineProfile: FlowGuardProfile = {
  * - pom.xml in packageFiles → Maven-based Java project
  * - build.gradle / build.gradle.kts in packageFiles → Gradle-based Java project
  *
- * Uses the same baseline active checks (test_quality, rollback_safety).
+ * activeChecks are empty — derived from verificationCandidates at hydrate-time.
  */
 export const javaProfile: FlowGuardProfile = {
   id: 'backend-java',
   name: 'Java / Spring Boot',
-  activeChecks: BASELINE_ACTIVE_CHECKS,
+  activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
     const hasJavaBuild = input.repoSignals.packageFiles.some(
       (f) => f === 'pom.xml' || f === 'build.gradle' || f === 'build.gradle.kts',
@@ -298,7 +291,7 @@ export const javaProfile: FlowGuardProfile = {
 export const angularProfile: FlowGuardProfile = {
   id: 'frontend-angular',
   name: 'Angular / Nx',
-  activeChecks: BASELINE_ACTIVE_CHECKS,
+  activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
     const hasAngular = input.repoSignals.configFiles.some(
       (f) => f === 'angular.json' || f === 'nx.json',
@@ -323,7 +316,7 @@ export const angularProfile: FlowGuardProfile = {
 export const typescriptProfile: FlowGuardProfile = {
   id: 'typescript',
   name: 'TypeScript / Node.js',
-  activeChecks: BASELINE_ACTIVE_CHECKS,
+  activeChecks: [],
   detect: (input: ProfileDetectionInput): number => {
     const hasTs = input.repoSignals.configFiles.some((f) => f === 'tsconfig.json');
     return hasTs ? 0.7 : 0;

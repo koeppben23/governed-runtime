@@ -107,6 +107,30 @@ export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
 export const CollectorStatusSchema = z.enum(['complete', 'partial', 'failed']);
 export type CollectorStatus = z.infer<typeof CollectorStatusSchema>;
 
+// ─── Collector Diagnostics ────────────────────────────────────────────────────
+
+/**
+ * Per-collector execution diagnostic — structured record of collector health.
+ *
+ * Makes collector-local degradation explicit and diagnosable without
+ * hiding failures behind silent defaults.
+ */
+export const CollectorDiagnosticSchema = z.object({
+  /** Collector name (e.g., "repo-metadata", "stack-detection"). */
+  name: z.string().min(1),
+  /** Final collector execution status. */
+  status: CollectorStatusSchema,
+  /** Wall-clock duration in milliseconds. */
+  durationMs: z.number().nonnegative(),
+  /** Error code when status is 'failed' (timeout message, error name, etc.). */
+  errorCode: z.string().optional(),
+  /** Whether the collector was terminated by timeout. */
+  timedOut: z.boolean(),
+  /** Human-readable reason for degraded/partial status. */
+  degradedReason: z.string().optional(),
+});
+export type CollectorDiagnostic = z.infer<typeof CollectorDiagnosticSchema>;
+
 // ─── Detected Item ────────────────────────────────────────────────────────────
 
 /**
@@ -237,6 +261,23 @@ export type SurfacesInfo = z.infer<typeof SurfacesInfoSchema>;
 
 // ─── Code Surface Analysis ────────────────────────────────────────────────────
 
+// ─── Read Outcome (structured file read/parse status) ─────────────────────────
+
+/**
+ * Structured outcome of a file read/parse operation.
+ *
+ * Used by collectors to record per-file read results instead of silently
+ * swallowing errors. Makes degradation diagnosable.
+ */
+export const ReadOutcomeSchema = z.enum([
+  'read_ok',
+  'not_found',
+  'denied',
+  'parse_failed',
+  'too_large',
+]);
+export type ReadOutcome = z.infer<typeof ReadOutcomeSchema>;
+
 /** A semantically detected code-surface signal. */
 export const CodeSurfaceSignalSchema = z.object({
   id: z.string().min(1),
@@ -258,6 +299,10 @@ export const CodeSurfaceBudgetSchema = z.object({
   maxBytesPerFile: z.number().int().positive(),
   maxTotalBytes: z.number().int().positive(),
   timedOut: z.boolean(),
+  /** Total source-file candidates before budget slice. */
+  totalSourceCandidates: z.number().int().nonnegative().optional(),
+  /** Whether budget exhaustion truncated the scan (true = partial due to budget). */
+  budgetExhausted: z.boolean().optional(),
 });
 export type CodeSurfaceBudget = z.infer<typeof CodeSurfaceBudgetSchema>;
 
@@ -269,6 +314,8 @@ export const CodeSurfacesInfoSchema = z.object({
   dataAccess: z.array(CodeSurfaceSignalSchema),
   integrations: z.array(CodeSurfaceSignalSchema),
   budget: CodeSurfaceBudgetSchema,
+  /** Per-file read outcome diagnostics (populated when reads degrade). */
+  readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
 });
 export type CodeSurfacesInfo = z.infer<typeof CodeSurfacesInfoSchema>;
 
@@ -339,14 +386,21 @@ export type ValidationHints = z.infer<typeof ValidationHintsSchema>;
 export const DiscoveryResultSchema = z.object({
   schemaVersion: z.literal(DISCOVERY_SCHEMA_VERSION),
   collectedAt: z.string().datetime(),
-  /** Per-collector execution status. */
+  /** Per-collector execution status (legacy flat map — derived from diagnostics). */
   collectors: z.record(z.string(), CollectorStatusSchema),
+  /** Per-collector structured diagnostics: timing, status, error info. */
+  diagnostics: z.array(CollectorDiagnosticSchema).optional(),
   repoMetadata: RepoMetadataSchema,
   stack: StackInfoSchema,
   topology: TopologyInfoSchema,
   surfaces: SurfacesInfoSchema,
   codeSurfaces: CodeSurfacesInfoSchema.optional(),
   domainSignals: DomainSignalsSchema,
+  /**
+   * Validation hints derived from stack + topology analysis.
+   * @deprecated Superseded by verificationCandidates (planVerificationCandidates output).
+   * Retained for discovery digest stability. Do not consume for agent guidance.
+   */
   validationHints: ValidationHintsSchema,
 });
 export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;
@@ -419,6 +473,10 @@ export interface CollectorInput {
   readonly packageFiles: readonly string[];
   /** Configuration files (basenames). */
   readonly configFiles: readonly string[];
+  /** Package/dependency manifest files (full relative paths from worktree root). */
+  readonly packageFilePaths?: readonly string[];
+  /** Configuration files (full relative paths from worktree root). */
+  readonly configFilePaths?: readonly string[];
   /**
    * Optional file reader for manifest content extraction.
    * Accepts a relative path from worktree root, returns file content or undefined.

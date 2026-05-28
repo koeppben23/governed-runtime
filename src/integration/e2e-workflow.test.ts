@@ -33,7 +33,7 @@ import {
   plan,
   decision,
   implement,
-  validate,
+  run_check,
   review,
   abort_session,
   archive,
@@ -74,8 +74,27 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
+// Mock the verification executor to avoid real subprocess execution in tests
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
+
 const gitMock = await import('../adapters/git.js');
 const actorMock = await import('../adapters/actor.js');
+const executorMock = await import('../verification/executor.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -132,6 +151,22 @@ async function getPhase(context: TestToolContext = ctx): Promise<string> {
 async function getSessDir(context: TestToolContext = ctx): Promise<string> {
   const fp = await computeFingerprint(context.worktree);
   return resolveSessionDir(fp.fingerprint, context.sessionID);
+}
+
+/**
+ * Drive through VALIDATION phase by running all active checks.
+ * The executor mock returns passing results (defined in vi.mock above).
+ * No-op if not in VALIDATION phase or if activeChecks is empty.
+ */
+async function passValidation(context: TestToolContext = ctx): Promise<void> {
+  const phase = await getPhase(context);
+  if (phase !== 'VALIDATION') return;
+  const sessDir = await getSessDir(context);
+  const state = await readState(sessDir);
+  if (!state || state.activeChecks.length === 0) return;
+  for (const kind of state.activeChecks) {
+    await callOk(run_check, { kind }, context);
+  }
 }
 
 // =============================================================================
@@ -196,17 +231,12 @@ describe('e2e-workflow', () => {
       // 4. Plan (Mode B: approve self-review)
       // Solo: maxSelfReviewIterations=1, so first approve should converge
       await callOk(plan, { reviewVerdict: 'approve' });
-      // Solo: auto-approves PLAN_REVIEW → advances to VALIDATION
+      // Solo: auto-approves PLAN_REVIEW → VALIDATION (discovery detects TypeScript → activeChecks=['typecheck'])
       const afterPlan = await getPhase();
       expect(afterPlan).toBe('VALIDATION');
 
-      // 5. Validate (all pass)
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'All tests pass' },
-          { checkId: 'rollback_safety', passed: true, detail: 'Safe' },
-        ],
-      });
+      // 5. Pass validation (executor mock always passes)
+      await passValidation();
       expect(await getPhase()).toBe('IMPLEMENTATION');
 
       // 6. Implement (Mode A: record changes)
@@ -225,7 +255,7 @@ describe('e2e-workflow', () => {
       expect(state!.ticket).not.toBeNull();
       expect(state!.plan).not.toBeNull();
       expect(state!.selfReview).not.toBeNull();
-      expect(state!.validation.length).toBe(2);
+      expect(state!.validation.length).toBeGreaterThan(0); // activeChecks passed via run_check
       expect(state!.implementation).not.toBeNull();
       expect(state!.implReview).not.toBeNull();
     });
@@ -249,16 +279,12 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
       // 4. Decision: approve plan
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → stops at VALIDATION
       await callOk(decision, { verdict: 'approve', rationale: 'Good plan' });
       expect(await getPhase()).toBe('VALIDATION');
 
-      // 5. Validate
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // 5. Pass validation
+      await passValidation();
       expect(await getPhase()).toBe('IMPLEMENTATION');
 
       // 6. Implement + review
@@ -316,20 +342,37 @@ describe('e2e-workflow', () => {
     });
 
     it('validation failure sends back to PLAN', async () => {
+      // Create package.json so discovery produces verificationCandidates
+      await fs.writeFile(
+        `${ws.tmpDir}/package.json`,
+        JSON.stringify({
+          name: 'test-workspace',
+          scripts: { test: 'echo test', lint: 'echo lint' },
+        }),
+      );
+
       // Solo workflow up to VALIDATION
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
       await callOk(plan, { reviewVerdict: 'approve' });
+      // With verificationCandidates, activeChecks is not empty → stops at VALIDATION
       expect(await getPhase()).toBe('VALIDATION');
 
-      // Fail validation
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: false, detail: 'Missing tests' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
+      // Fail the test check via executor mock
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'test',
+        command: 'echo test',
+        exitCode: 1,
+        passed: false,
+        executionMs: 100,
+        outputDigest: 'f'.repeat(64),
+        stdout: 'FAIL',
+        stderr: '',
+        timedOut: false,
+        startedAt: new Date().toISOString(),
       });
+      await callOk(run_check, { kind: 'test' });
       expect(await getPhase()).toBe('PLAN');
 
       // Can re-plan and re-validate
@@ -354,12 +397,8 @@ describe('e2e-workflow', () => {
         await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
@@ -398,12 +437,8 @@ describe('e2e-workflow', () => {
         await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
@@ -452,12 +487,8 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
       await callOk(plan, { reviewVerdict: 'approve' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       await callOk(implement, { reviewVerdict: 'approve' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -485,12 +516,8 @@ describe('e2e-workflow', () => {
       await callOk(plan, { reviewVerdict: 'approve' });
       phases.push(await getPhase()); // After self-review converge (solo auto-approve → VALIDATION)
 
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Pass validation (discovery detects TypeScript → activeChecks=['typecheck'])
+      await passValidation();
       phases.push(await getPhase()); // IMPLEMENTATION
 
       await callOk(implement, {});
@@ -630,12 +657,8 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Local repo task', source: 'user' });
       await callOk(plan, { planText: '## Local Plan' });
       await callOk(plan, { reviewVerdict: 'approve' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       await callOk(implement, { reviewVerdict: 'approve' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -651,12 +674,8 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Audit test', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
       await callOk(plan, { reviewVerdict: 'approve' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       await callOk(implement, { reviewVerdict: 'approve' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -702,12 +721,8 @@ describe('e2e-workflow', () => {
 
       // Complete the workflow
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
@@ -966,12 +981,8 @@ describe('e2e-workflow', () => {
         await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
+      await passValidation();
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
@@ -990,12 +1001,8 @@ describe('e2e-workflow', () => {
         await callOk(plan, { reviewVerdict: 'approve' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Good' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // VALIDATION: pass checks again
+      await passValidation();
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
@@ -1021,12 +1028,8 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Perf test', source: 'user' });
       await callOk(plan, { planText: '## Plan\nSimple implementation' });
       await callOk(plan, { reviewVerdict: 'approve' });
-      await callOk(validate, {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      });
+      // Pass validation
+      await passValidation();
       await callOk(implement, {});
       await callOk(implement, { reviewVerdict: 'approve' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -1042,16 +1045,8 @@ describe('e2e-workflow', () => {
         await callOk(ticket, { text: `Task ${i}`, source: 'user' }, ic);
         await callOk(plan, { planText: '## Plan' }, ic);
         await callOk(plan, { reviewVerdict: 'approve' }, ic);
-        await callOk(
-          validate,
-          {
-            results: [
-              { checkId: 'test_quality', passed: true, detail: 'OK' },
-              { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-            ],
-          },
-          ic,
-        );
+        // Pass validation
+        await passValidation(ic);
         await callOk(implement, {}, ic);
         await callOk(implement, { reviewVerdict: 'approve' }, ic);
         expect(await getPhase(ic)).toBe('COMPLETE');

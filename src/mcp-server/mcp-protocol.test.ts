@@ -211,7 +211,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_review',
       'flowguard_status',
       'flowguard_ticket',
-      'flowguard_validate',
+      'flowguard_run_check',
     ];
 
     // We expect 12 tools - check at least these core ones are present
@@ -288,7 +288,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_implement',
       'flowguard_architecture',
       'flowguard_decision',
-      'flowguard_validate',
+      'flowguard_run_check',
       'flowguard_ticket',
       'flowguard_review',
       'flowguard_abort_session',

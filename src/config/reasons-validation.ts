@@ -546,4 +546,30 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'If the cause is a corrupted mandate digest or template hash mismatch, re-hydrate the session before retrying',
     ],
   },
+
+  // ─── Verification Execution Reasons (flowguard_run_check) ───────────────────
+
+  {
+    code: 'CHECK_KIND_NOT_AVAILABLE',
+    category: 'input',
+    messageTemplate:
+      'Verification kind "{kind}" has no discovered command. Only kinds with discovered commands in verificationCandidates can be executed.',
+    recoverySteps: [
+      'Run flowguard_status to see available verificationCandidates',
+      'Only request kinds that have a discovered command',
+      'Re-run discovery if the expected kind should be available',
+    ],
+  },
+
+  {
+    code: 'CHECK_NOT_ACTIVE',
+    category: 'state',
+    messageTemplate:
+      'Check "{checkId}" is not in activeChecks for this session. Active checks: {activeChecks}.',
+    recoverySteps: [
+      'Run flowguard_status to see activeChecks',
+      'Only execute checks listed in activeChecks',
+      'Re-hydrate if the check list needs updating',
+    ],
+  },
 ];

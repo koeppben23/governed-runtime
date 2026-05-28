@@ -37,7 +37,7 @@ import {
   ticket,
   plan,
   decision,
-  validate,
+  run_check,
   implement,
   archive,
 } from './tools/index.js';
@@ -70,6 +70,24 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 const actorMock = await import('../adapters/actor.js');
 
@@ -135,16 +153,14 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
     } else if (lastPhase === 'PLAN') {
       await callOk(plan, { reviewVerdict: 'approve' }, context);
     } else if (lastPhase === 'VALIDATION') {
-      await callOk(
-        validate,
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'OK' },
-            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-          ],
-        },
-        context,
-      );
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+      const sd = await getSessDir(context);
+      const st = await readState(sd);
+      if (st && st.activeChecks.length > 0) {
+        for (const kind of st.activeChecks) {
+          await callOk(run_check, { kind }, context);
+        }
+      }
     } else if (lastPhase === 'IMPLEMENTATION') {
       await callOk(implement, {}, context);
     } else if (lastPhase === 'IMPL_REVIEW') {
@@ -208,12 +224,16 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(ticket, { text: 'Complete test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { reviewVerdict: 'approve' });
-    await callOk(validate, {
-      results: [
-        { checkId: 'test_quality', passed: true, detail: 'OK' },
-        { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-      ],
-    });
+    // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
+    {
+      const sd = await getSessDir();
+      const st = await readState(sd);
+      if (st && st.activeChecks.length > 0) {
+        for (const kind of st.activeChecks) {
+          await callOk(run_check, { kind });
+        }
+      }
+    }
     await callOk(implement, {});
 
     const result = parseToolResult(await status.execute({}, ctx));
@@ -262,12 +282,14 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { reviewVerdict: 'approve' });
-    await callOk(validate, {
-      results: [
-        { checkId: 'test_quality', passed: true, detail: 'OK' },
-        { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-      ],
-    });
+    // Pass validation via run_check (discovery detects TypeScript → activeChecks=['typecheck'])
+    const sd = await getSessDir();
+    const st = await readState(sd);
+    if (st && st.activeChecks.length > 0) {
+      for (const kind of st.activeChecks) {
+        await callOk(run_check, { kind });
+      }
+    }
     const result = parseToolResult(
       await decision.execute({ verdict: 'approve', rationale: 'At VALIDATION' }, ctx),
     );

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executePlan } from '../rails/plan.js';
 import { executeValidate } from '../rails/validate.js';
+import type { ValidateExecutors } from '../rails/validate.js';
 import { executeImplement } from '../rails/implement.js';
 import { executeContinue } from '../rails/continue.js';
 import { createTestContext } from '../testing.js';
@@ -17,6 +18,8 @@ import {
   IMPL_REVIEW_PENDING_RESULT,
   ARCHITECTURE_DECISION,
 } from '../__fixtures__.js';
+import type { SessionState } from '../state/schema.js';
+import type { ValidationResult } from '../state/evidence-validation.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();
@@ -155,13 +158,28 @@ describe('plan rail', () => {
 });
 
 describe('validate rail', () => {
-  const validateExecutors = {
-    runCheck: async (checkId: string) => ({
+  function makeValidationResult(
+    checkId: string,
+    passed: boolean,
+    detail: string,
+  ): ValidationResult {
+    return {
       checkId,
-      passed: true,
-      detail: `${checkId} passed`,
+      passed,
+      detail,
       executedAt: '2026-01-01T00:00:00.000Z',
-    }),
+      kind: checkId as ValidationResult['kind'],
+      command: `npm run ${checkId}`,
+      exitCode: passed ? 0 : 1,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      timedOut: false,
+    };
+  }
+
+  const validateExecutors: ValidateExecutors = {
+    runCheck: async (checkId: string, _state: SessionState) =>
+      makeValidationResult(checkId, true, `${checkId} passed`),
   };
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -185,11 +203,14 @@ describe('validate rail', () => {
       expect(result.kind).toBe('blocked');
     });
 
-    it('blocks with no active checks', async () => {
+    it('vacuous truth with no active checks → auto-advances (ok)', async () => {
       const state = makeState('VALIDATION', { activeChecks: [] });
       const result = await executeValidate(state, ctx, validateExecutors);
-      expect(result.kind).toBe('blocked');
-      if (result.kind === 'blocked') expect(result.code).toBe('NO_ACTIVE_CHECKS');
+      // v2: empty activeChecks = vacuous truth, returns ok (not blocked)
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.validation).toEqual([]);
+      }
     });
 
     it('blocks without plan', async () => {
@@ -203,13 +224,13 @@ describe('validate rail', () => {
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
     it('CHECK_FAILED → back to PLAN when a check fails', async () => {
-      const failExecutors = {
-        runCheck: async (checkId: string) => ({
-          checkId,
-          passed: checkId !== 'test_quality',
-          detail: checkId === 'test_quality' ? 'failed' : 'passed',
-          executedAt: '2026-01-01T00:00:00.000Z',
-        }),
+      const failExecutors: ValidateExecutors = {
+        runCheck: async (checkId: string, _state: SessionState) =>
+          makeValidationResult(
+            checkId,
+            checkId !== 'test',
+            checkId === 'test' ? 'failed' : 'passed',
+          ),
       };
       const state = makeProgressedState('VALIDATION');
       const result = await executeValidate(state, ctx, failExecutors);
@@ -224,15 +245,15 @@ describe('validate rail', () => {
   describe('EDGE', () => {
     it('runs checks in activeChecks order', async () => {
       const order: string[] = [];
-      const trackingExecutors = {
-        runCheck: async (checkId: string) => {
+      const trackingExecutors: ValidateExecutors = {
+        runCheck: async (checkId: string, _state: SessionState) => {
           order.push(checkId);
-          return { checkId, passed: true, detail: 'ok', executedAt: '2026-01-01T00:00:00.000Z' };
+          return makeValidationResult(checkId, true, 'ok');
         },
       };
       const state = makeProgressedState('VALIDATION');
       await executeValidate(state, ctx, trackingExecutors);
-      expect(order).toEqual(['test_quality', 'rollback_safety']);
+      expect(order).toEqual(['test', 'lint']);
     });
   });
 
@@ -342,11 +363,17 @@ describe('implement rail', () => {
 
 describe('continue rail', () => {
   const continueExecutors = {
-    runCheck: async (checkId: string) => ({
+    runCheck: async (checkId: string, _state: SessionState) => ({
       checkId,
       passed: true,
       detail: 'passed',
       executedAt: '2026-01-01T00:00:00.000Z',
+      kind: checkId as ValidationResult['kind'],
+      command: `npm run ${checkId}`,
+      exitCode: 0,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      timedOut: false,
     }),
     selfReview: async () => ({ verdict: 'approve' as const }),
     implReview: async () => ({ verdict: 'approve' as const }),
@@ -376,11 +403,17 @@ describe('continue rail', () => {
       const state = makeProgressedState('VALIDATION');
       const failingExecutors = {
         ...continueExecutors,
-        runCheck: async (checkId: string) => ({
+        runCheck: async (checkId: string, _state: SessionState) => ({
           checkId,
-          passed: checkId !== 'test_quality',
+          passed: checkId !== 'test',
           detail: 'check result',
           executedAt: '2026-01-01T00:00:00.000Z',
+          kind: checkId as ValidationResult['kind'],
+          command: `npm run ${checkId}`,
+          exitCode: checkId === 'test' ? 1 : 0,
+          executionMs: 100,
+          outputDigest: 'a'.repeat(64),
+          timedOut: false,
         }),
       };
       const result = await executeContinue(state, ctx, failingExecutors);
