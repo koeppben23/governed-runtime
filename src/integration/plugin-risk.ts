@@ -74,6 +74,26 @@ export function extractPathsFromPatch(diff: string): string[] {
     }
   }
 
+  // 2. Binary file diffs: "Binary files a/<path> and b/<path> differ"
+  const binaryPattern = /^Binary files a\/(.+?) and b\/\1 differ$/gm;
+  while ((match = binaryPattern.exec(diff)) !== null) {
+    const filePath = (match[1] ?? '').trim();
+    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
+      paths.add(filePath.replace(/\\/g, '/'));
+    }
+  }
+
+  // 3. diff --git headers: "diff --git a/<path> b/<path>"
+  const gitHeaderPattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
+  while ((match = gitHeaderPattern.exec(diff)) !== null) {
+    for (let i = 1; i <= 2; i++) {
+      const filePath = (match[i] ?? '').trim();
+      if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
+        paths.add(filePath.replace(/\\/g, '/'));
+      }
+    }
+  }
+
   return [...paths];
 }
 

@@ -205,6 +205,25 @@ describe('targetPathsForRisk', () => {
       const result = targetPathsForRisk('apply_patch', { diff: 123 }, () => '/repo');
       expect(result).toEqual([]);
     });
+
+    it('extracts paths from binary apply_patch diff', () => {
+      const diff = `diff --git a/image.png b/image.png
+Binary files a/image.png and b/image.png differ`;
+      const result = targetPathsForRisk('apply_patch', { diff }, () => '/repo');
+      expect(result).toContain('image.png');
+    });
+
+    it('extracts all paths from mixed text and binary apply_patch diff', () => {
+      const diff = `--- a/src/text.ts
++++ b/src/text.ts
+@@ -1,3 +1,4 @@
++const x = 1;
+diff --git a/assets/logo.png b/assets/logo.png
+Binary files a/assets/logo.png and b/assets/logo.png differ`;
+      const result = targetPathsForRisk('apply_patch', { diff }, () => '/repo');
+      expect(result).toContain('src/text.ts');
+      expect(result).toContain('assets/logo.png');
+    });
   });
 
   describe('bash command', () => {
@@ -352,6 +371,42 @@ describe('extractPathsFromPatch', () => {
     const diff = `--- a/src\\windows\\path.ts
 +++ b/src\\windows\\path.ts`;
     expect(extractPathsFromPatch(diff)).toEqual(['src/windows/path.ts']);
+  });
+
+  it('extracts paths from binary diff lines', () => {
+    const diff = `diff --git a/image.png b/image.png
+Binary files a/image.png and b/image.png differ`;
+    expect(extractPathsFromPatch(diff)).toEqual(['image.png']);
+  });
+
+  it('extracts paths from binary diff with directory prefix', () => {
+    const diff = `diff --git a/assets/logo.png b/assets/logo.png
+Binary files a/assets/logo.png and b/assets/logo.png differ`;
+    expect(extractPathsFromPatch(diff)).toEqual(['assets/logo.png']);
+  });
+
+  it('extracts paths from diff --git header (same path)', () => {
+    const diff = `diff --git a/src/file.ts b/src/file.ts`;
+    expect(extractPathsFromPatch(diff)).toEqual(['src/file.ts']);
+  });
+
+  it('extracts both sides from diff --git rename header', () => {
+    const diff = `diff --git a/old.png b/new.png`;
+    const result = extractPathsFromPatch(diff);
+    expect(result).toContain('old.png');
+    expect(result).toContain('new.png');
+  });
+
+  it('extracts all paths from mixed text and binary diff', () => {
+    const diff = `--- a/src/text.ts
++++ b/src/text.ts
+@@ -1,3 +1,4 @@
++const x = 1;
+diff --git a/assets/logo.png b/assets/logo.png
+Binary files a/assets/logo.png and b/assets/logo.png differ`;
+    const result = extractPathsFromPatch(diff);
+    expect(result).toContain('src/text.ts');
+    expect(result).toContain('assets/logo.png');
   });
 });
 
