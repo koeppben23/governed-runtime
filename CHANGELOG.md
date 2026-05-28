@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
-
 ### Changed
 
 - **Issue #310:** Hardened `/review url=...` HTTPS content loading with fail-closed
@@ -129,6 +125,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project governance contracts:** Added GitHub issue templates, PR template, project governance documentation, and drift guards requiring clean conventional branches, docs/changelog decisions, risk classification, verification evidence, and high-risk fail-closed coverage.
 
 ### Fixed
+
+- **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
 
 - **Issue #354:** Restore the PreToolUse stdout guard before propagating fatal
   errors so the outer fail-closed handler can always deliver `HOOK_FATAL_ERROR`
