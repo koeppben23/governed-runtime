@@ -653,6 +653,7 @@ describe('implement', () => {
       const afterReviewState = await readState(sessDir);
       expect(afterReviewState?.implementation).toBeNull();
       expect(afterReviewState?.implReview).toBeNull();
+      expect(afterReviewState?.reducedCeremony).toBeNull();
 
       const recordRaw = await implement.execute({}, ctx);
       const recordResult = parseToolResult(recordRaw);
