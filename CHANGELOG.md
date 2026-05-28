@@ -142,6 +142,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the state-clearing patterns in `applyStateClearingPattern` and the
   `REJECT_CLEAR`/`REJECT_CLEAR_FROM_PLAN` constants per the doc-table contract.
 
+- **Issue #357:** Fix `extractPathsFromBashCommand` sed and chmod patterns to
+  extract multiple files instead of only the first; add support for chmod
+  `+x`/`-w` shorthand without `[ugoa]` mode prefix.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports

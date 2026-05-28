@@ -259,6 +259,16 @@ describe('targetPathsForRisk', () => {
       expect(result).toContain('config.json');
     });
 
+    it('extracts sed -i multi-file targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -i 's/foo/bar/g' file1.txt file2.txt" },
+        () => '/repo',
+      );
+      expect(result).toContain('file1.txt');
+      expect(result).toContain('file2.txt');
+    });
+
     it('extracts chmod targets', () => {
       const result = targetPathsForRisk(
         'bash',
@@ -266,6 +276,35 @@ describe('targetPathsForRisk', () => {
         () => '/repo',
       );
       expect(result).toContain('scripts/deploy.sh');
+    });
+
+    it('extracts chmod multi-file targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'chmod 755 script1.sh script2.sh' },
+        () => '/repo',
+      );
+      expect(result).toContain('script1.sh');
+      expect(result).toContain('script2.sh');
+    });
+
+    it('extracts chmod +x shorthand targets', () => {
+      const result = targetPathsForRisk('bash', { command: 'chmod +x deploy.sh' }, () => '/repo');
+      expect(result).toContain('deploy.sh');
+    });
+
+    it('extracts chmod -r shorthand targets', () => {
+      const result = targetPathsForRisk('bash', { command: 'chmod -r deploy.sh' }, () => '/repo');
+      expect(result).toContain('deploy.sh');
+    });
+
+    it('extracts chmod -R 755 recursive targets', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: 'chmod -R 755 some/dir/' },
+        () => '/repo',
+      );
+      expect(result).toContain('some/dir/');
     });
 
     it('extracts git checkout -- targets', () => {
