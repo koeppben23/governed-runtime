@@ -77,28 +77,28 @@ export function installHookStdoutGuard(): HookStdoutGuard {
 
   return {
     async writeResponse(payload: string): Promise<void> {
-      restoreOriginal();
       return new Promise((resolve, reject) => {
         let settled = false;
         const finish = (err?: Error | null): void => {
           if (settled) return;
           settled = true;
-          process.stdout.off('error', onError);
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve();
+          restoreOriginal();
+          if (err) reject(err);
+          else resolve();
         };
-        const onError = (err: Error): void => finish(err);
+
         try {
-          process.stdout.once('error', onError);
-          const accepted = process.stdout.write(payload, (err?: Error | null) => finish(err));
-          if (!accepted) {
-            finish(new Error('stdout write returned false (backpressure)'));
-          }
+          // Write via originalWrite (captured at install time) to bypass the
+          // guard for the DENY payload. The callback is the sole delivery/error
+          // authority — even when write() returns false (backpressure), the
+          // callback fires on completion or failure. No resolution on 'drain'.
+          originalWrite(payload, (err?: Error | null) => finish(err));
         } catch (err) {
-          finish(err instanceof Error ? err : new Error(String(err)));
+          if (!settled) {
+            settled = true;
+            restoreOriginal();
+          }
+          reject(err instanceof Error ? err : new Error(String(err)));
         }
       });
     },

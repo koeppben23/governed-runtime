@@ -22,6 +22,7 @@ import {
 } from './shared/stdin-reader.js';
 import { DenyOutputError, formatDenyOutput, writeDeny, writeLog } from './shared/stdout-writer.js';
 import { detectPlatform } from './shared/platform-detect.js';
+import { installHookStdoutGuard } from './shared/stdout-guard.js';
 import {
   isMutatingHostTool,
   isHostToolAllowedInPhase,
@@ -378,6 +379,157 @@ describe('stdout-writer', () => {
       const longReason = 'x'.repeat(2000);
       const output = formatDenyOutput('PreToolUse', 'CODE', longReason);
       expect(output.hookSpecificOutput.permissionDecisionReason).toContain(longReason);
+    });
+  });
+});
+
+// ─── stdout-guard ─────────────────────────────────────────────────────────────
+
+describe('stdout-guard', () => {
+  describe('HAPPY', () => {
+    it('writes deny payload and restores guard on success', async () => {
+      const stdoutChunks: string[] = [];
+      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        chunk,
+        encodingOrCallback,
+        callback,
+      ) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+        stdoutChunks.push(buf.toString('utf8'));
+        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        if (cb) cb(null);
+        return true;
+      }) as typeof process.stdout.write);
+
+      const guard = installHookStdoutGuard();
+      const guardedWrite = process.stdout.write;
+      const payload = '{"deny":true}\n';
+      await guard.writeResponse(payload);
+
+      expect(stdoutChunks.join('')).toBe(payload);
+      // Guard restored — no longer the guardedWrite
+      expect(process.stdout.write).not.toBe(guardedWrite);
+      // Second restore is idempotent
+      guard.restore();
+      expect(process.stdout.write).not.toBe(guardedWrite);
+
+      originalMock.mockRestore();
+    });
+
+    it('captures spurious stdout and warns on stderr on restore', async () => {
+      const stderrChunks: string[] = [];
+      vi.spyOn(process.stderr, 'write').mockImplementation(((chunk) => {
+        stderrChunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+        return true;
+      }) as typeof process.stderr.write);
+      const stdoutMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        chunk,
+        encodingOrCallback,
+        callback,
+      ) => {
+        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        if (cb) cb(null);
+        return true;
+      }) as typeof process.stdout.write);
+
+      const guard = installHookStdoutGuard();
+      process.stdout.write('spurious log\n');
+      await guard.writeResponse('{"deny":true}\n');
+
+      expect(stderrChunks.some((c) => c.includes('spurious stdout'))).toBe(true);
+      expect(stderrChunks.some((c) => c.includes('spurious log'))).toBe(true);
+
+      vi.restoreAllMocks();
+    });
+  });
+
+  describe('BAD', () => {
+    it('rejects on callback EPIPE error and restores guard', async () => {
+      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        chunk,
+        encodingOrCallback,
+        callback,
+      ) => {
+        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        if (cb) cb(new Error('EPIPE'));
+        return true;
+      }) as typeof process.stdout.write);
+
+      const guard = installHookStdoutGuard();
+      const guardedWrite = process.stdout.write;
+      await expect(guard.writeResponse('{"deny":true}\n')).rejects.toThrow('EPIPE');
+
+      expect(process.stdout.write).not.toBe(guardedWrite);
+      originalMock.mockRestore();
+    });
+
+    it('rejects on synchronous throw and restores guard', async () => {
+      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(() => {
+        throw new Error('write broken');
+      });
+
+      const guard = installHookStdoutGuard();
+      const guardedWrite = process.stdout.write;
+      await expect(guard.writeResponse('{"deny":true}\n')).rejects.toThrow('write broken');
+
+      expect(process.stdout.write).not.toBe(guardedWrite);
+      originalMock.mockRestore();
+    });
+  });
+
+  describe('CORNER', () => {
+    it('backpressure with subsequent callback success resolves', async () => {
+      const stdoutChunks: string[] = [];
+      let writeCallback: ((err?: Error | null) => void) | null = null;
+      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        chunk,
+        encodingOrCallback,
+        callback,
+      ) => {
+        stdoutChunks.push(String(chunk));
+        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        writeCallback = cb as (err?: Error | null) => void;
+        return false;
+      }) as typeof process.stdout.write);
+
+      const guard = installHookStdoutGuard();
+      const guardedWrite = process.stdout.write;
+      const payload = '{"deny":true}\n';
+      const writePromise = guard.writeResponse(payload);
+
+      await expect(Promise.race([writePromise, Promise.resolve('pending')])).resolves.toBe(
+        'pending',
+      );
+
+      writeCallback!(null);
+      await writePromise;
+
+      expect(stdoutChunks.join('')).toBe(payload);
+      expect(process.stdout.write).not.toBe(guardedWrite);
+      originalMock.mockRestore();
+    });
+
+    it('backpressure with subsequent callback EPIPE rejects and restores guard', async () => {
+      let writeCallback: ((err?: Error | null) => void) | null = null;
+      const originalMock = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        chunk,
+        encodingOrCallback,
+        callback,
+      ) => {
+        const cb = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback;
+        writeCallback = cb as (err?: Error | null) => void;
+        return false;
+      }) as typeof process.stdout.write);
+
+      const guard = installHookStdoutGuard();
+      const guardedWrite = process.stdout.write;
+      const writePromise = guard.writeResponse('{"deny":true}\n');
+
+      writeCallback!(new Error('EPIPE'));
+      await expect(writePromise).rejects.toThrow('EPIPE');
+
+      expect(process.stdout.write).not.toBe(guardedWrite);
+      originalMock.mockRestore();
     });
   });
 });
