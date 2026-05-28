@@ -288,6 +288,47 @@ Binary files a/assets/logo.png and b/assets/logo.png differ`;
       expect(result).toContain('file2.txt');
     });
 
+    it('extracts sed -ni combined flags', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -ni 's/x/y/' file" },
+        () => '/repo',
+      );
+      expect(result).toContain('file');
+    });
+
+    it('extracts sed -Ei combined flags', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -Ei 's/x/y/' file" },
+        () => '/repo',
+      );
+      expect(result).toContain('file');
+    });
+
+    it('extracts sed with -n -i separate flags', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -n -i 's/x/y/' file" },
+        () => '/repo',
+      );
+      expect(result).toContain('file');
+    });
+
+    it('extracts sed -i.bak -n flags after -i token', () => {
+      const result = targetPathsForRisk(
+        'bash',
+        { command: "sed -i.bak -n 's/x/y/' file" },
+        () => '/repo',
+      );
+      expect(result).toContain('file');
+    });
+
+    it('returns empty for sed -n without -i (no in-place)', () => {
+      const result = targetPathsForRisk('bash', { command: "sed -n 's/x/y/' file" }, () => '/repo');
+      expect(result).toEqual([]);
+    });
+
     it('extracts chmod targets', () => {
       const result = targetPathsForRisk(
         'bash',

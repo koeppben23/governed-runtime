@@ -151,7 +151,12 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 5. sed -i: sed -i[suffix] <expr> <file...>
-  const sedPattern = /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g;
+  //     Combined flags (e.g. -ni, -Ei) and flags before/after the -i token.
+  //     alt 1: flags-before (no i) + -i[suffix] + flags-after (no i)  e.g. "-n -i.bak -r"
+  //     alt 2: one token with i embedded                                e.g. "-ni", "-Ei"
+  //     shared tail: extra flags after either alt                       e.g. "-ni -r"
+  const sedPattern =
+    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g;
   while ((match = sedPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {

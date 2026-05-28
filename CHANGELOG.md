@@ -150,6 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matching `Binary files a/<path> and b/<path> differ` lines and `diff --git`
   header lines, which git uses instead of `---`/`+++` for binary content.
 
+- **Issue #359:** Hardened `extractPathsFromBashCommand` sed pattern to
+  recognize combined flag groups like `-ni` and `-Ei` and preserve flags
+  appearing after the `-i` token.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports
