@@ -154,6 +154,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recognize combined flag groups like `-ni` and `-Ei` and preserve flags
   appearing after the `-i` token.
 
+- **Issue #360:** Removed dead `IMPL_REVIEW` branch from
+  `applyStateClearingPattern` (unreachable — `REVIEW_DECISION` not allowed at
+  `IMPL_REVIEW`). Added missing `reducedCeremony` clearing to the automated
+  implementation review `changes_requested` handler in `implement.ts`.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports

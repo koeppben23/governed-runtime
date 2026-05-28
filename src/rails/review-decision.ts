@@ -113,7 +113,7 @@ const ARCH_REJECT_CLEAR = {
  * Clearing rules (FlowGuard-critical):
  * - approve: keep everything (state flows forward)
  * - changes_requested at PLAN_REVIEW: clear selfReview (fresh review loop)
- * - changes_requested at IMPL_REVIEW: clear implReview + reducedCeremony (re-review)
+ * - changes_requested at IMPL_REVIEW: cleared by handleChangesRequestedReview in implement.ts
  * - changes_requested at EVIDENCE_REVIEW: clear impl + implReview + reducedCeremony (re-implement)
  * - changes_requested at ARCH_REVIEW: clear selfReview (fresh review loop)
  * - reject at PLAN_REVIEW/EVIDENCE_REVIEW: clear everything downstream of TICKET
@@ -144,9 +144,6 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
   // changes_requested
   if (state.phase === 'PLAN_REVIEW') {
     return { ...state, selfReview: null, reviewDecision: null };
-  }
-  if (state.phase === 'IMPL_REVIEW') {
-    return { ...state, implReview: null, reducedCeremony: null };
   }
   if (state.phase === 'EVIDENCE_REVIEW') {
     return {
