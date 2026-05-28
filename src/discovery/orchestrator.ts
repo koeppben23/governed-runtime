@@ -3,17 +3,17 @@
  * @description Discovery orchestrator — runs all collectors and assembles DiscoveryResult.
  *
  * Design:
- * - Each collector runs independently (Promise.allSettled)
+ * - Each collector runs independently (Promise.allSettled via collector-runner)
  * - Collector failure degrades that collector only (status: "failed")
  * - Partial results are allowed — the orchestrator never fails entirely
  * - Per-collector timeout budget (configurable, default 10s)
- * - Produces a complete DiscoveryResult with all sections populated
+ * - Produces a complete DiscoveryResult with per-collector diagnostics
  *
  * Also provides:
  * - extractDiscoverySummary(): extracts DiscoverySummary from DiscoveryResult
  * - computeDiscoveryDigest(): SHA-256 of canonical JSON for drift detection
  *
- * @version v1
+ * @version v2
  */
 
 import { createHash } from 'node:crypto';
@@ -21,6 +21,7 @@ import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
 import type {
+  CollectorDiagnostic,
   CollectorInput,
   CollectorStatus,
   DetectedStack,
@@ -42,6 +43,7 @@ import { collectSurfaces } from './collectors/surface-detection.js';
 import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
 import { collectDomainSignals } from './collectors/domain-signals.js';
 import { extractScopedStack } from './scoped-stack.js';
+import { runCollectorWithDiagnostics } from './collector-runner.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,90 +109,96 @@ async function runDiscoveryImpl(
     ? input
     : { ...input, readFile: createDefaultReadFile(input.worktreePath) };
 
-  // Run all collectors in parallel with timeout budget
-  const [metaResult, stackResult, topoResult, surfaceResult, codeSurfaceResult, domainResult] =
-    await Promise.allSettled([
-      withTimeout(collectRepoMetadata(enrichedInput), timeoutMs),
-      withTimeout(collectStack(enrichedInput), timeoutMs),
-      withTimeout(collectTopology(enrichedInput), timeoutMs),
-      withTimeout(collectSurfaces(enrichedInput), timeoutMs),
-      withTimeout(collectCodeSurfaces(enrichedInput), timeoutMs),
-      withTimeout(collectDomainSignals(enrichedInput), timeoutMs),
-    ]);
+  // Run all collectors in parallel with timeout budget and diagnostics
+  const [metaRun, stackRun, topoRun, surfaceRun, codeSurfaceRun, domainRun] = await Promise.all([
+    runCollectorWithDiagnostics('repo-metadata', collectRepoMetadata(enrichedInput), timeoutMs, {
+      defaultBranch: null,
+      headCommit: null,
+      isDirty: true,
+      worktreePath: input.worktreePath,
+      canonicalRemote: null,
+      fingerprint: input.fingerprint,
+    }),
+    runCollectorWithDiagnostics('stack-detection', collectStack(enrichedInput), timeoutMs, {
+      languages: [],
+      frameworks: [],
+      buildTools: [],
+      testFrameworks: [],
+      runtimes: [],
+      tools: [],
+      qualityTools: [],
+      databases: [],
+    }),
+    runCollectorWithDiagnostics('topology', collectTopology(enrichedInput), timeoutMs, {
+      kind: 'unknown' as const,
+      modules: [],
+      entryPoints: [],
+      rootConfigs: [],
+      ignorePaths: [],
+    }),
+    runCollectorWithDiagnostics('surface-detection', collectSurfaces(enrichedInput), timeoutMs, {
+      api: [],
+      persistence: [],
+      cicd: [],
+      security: [],
+      layers: [],
+    }),
+    runCollectorWithDiagnostics(
+      'code-surface-analysis',
+      collectCodeSurfaces(enrichedInput),
+      timeoutMs,
+      {
+        status: 'failed' as const,
+        endpoints: [],
+        authBoundaries: [],
+        dataAccess: [],
+        integrations: [],
+        budget: {
+          scannedFiles: 0,
+          scannedBytes: 0,
+          maxFiles: 200,
+          maxBytesPerFile: 64 * 1024,
+          maxTotalBytes: 2 * 1024 * 1024,
+          timedOut: false,
+        },
+      },
+    ),
+    runCollectorWithDiagnostics('domain-signals', collectDomainSignals(enrichedInput), timeoutMs, {
+      keywords: [],
+      glossarySources: [],
+    }),
+  ]);
 
-  // Extract results with safe defaults for failures
+  // Collect diagnostics
+  const diagnostics: CollectorDiagnostic[] = [
+    metaRun.diagnostic,
+    stackRun.diagnostic,
+    topoRun.diagnostic,
+    surfaceRun.diagnostic,
+    codeSurfaceRun.diagnostic,
+    domainRun.diagnostic,
+  ];
+
+  // Derive legacy collectors map from diagnostics
   const collectors: Record<string, CollectorStatus> = {};
-
-  const meta = extractResult(metaResult, 'repo-metadata', collectors, {
-    defaultBranch: null,
-    headCommit: null,
-    isDirty: true,
-    worktreePath: input.worktreePath,
-    canonicalRemote: null,
-    fingerprint: input.fingerprint,
-  });
-
-  const stack = extractResult(stackResult, 'stack-detection', collectors, {
-    languages: [],
-    frameworks: [],
-    buildTools: [],
-    testFrameworks: [],
-    runtimes: [],
-    tools: [],
-    qualityTools: [],
-    databases: [],
-  });
-
-  const topology = extractResult(topoResult, 'topology', collectors, {
-    kind: 'unknown' as const,
-    modules: [],
-    entryPoints: [],
-    rootConfigs: [],
-    ignorePaths: [],
-  });
-
-  const surfaces = extractResult(surfaceResult, 'surface-detection', collectors, {
-    api: [],
-    persistence: [],
-    cicd: [],
-    security: [],
-    layers: [],
-  });
-
-  const codeSurfaces = extractResult(codeSurfaceResult, 'code-surface-analysis', collectors, {
-    status: 'failed' as const,
-    endpoints: [],
-    authBoundaries: [],
-    dataAccess: [],
-    integrations: [],
-    budget: {
-      scannedFiles: 0,
-      scannedBytes: 0,
-      maxFiles: 200,
-      maxBytesPerFile: 64 * 1024,
-      maxTotalBytes: 2 * 1024 * 1024,
-      timedOut: false,
-    },
-  });
-
-  const domain = extractResult(domainResult, 'domain-signals', collectors, {
-    keywords: [],
-    glossarySources: [],
-  });
+  for (const diag of diagnostics) {
+    collectors[diag.name] = diag.status;
+  }
 
   // Derive validation hints from stack + topology
-  const validationHints = deriveValidationHints(stack, topology, input);
+  const validationHints = deriveValidationHints(stackRun.data, topoRun.data, input);
 
   return {
     schemaVersion: DISCOVERY_SCHEMA_VERSION,
     collectedAt: new Date().toISOString(),
     collectors,
-    repoMetadata: meta,
-    stack,
-    topology,
-    surfaces,
-    codeSurfaces,
-    domainSignals: domain,
+    diagnostics,
+    repoMetadata: metaRun.data,
+    stack: stackRun.data,
+    topology: topoRun.data,
+    surfaces: surfaceRun.data,
+    codeSurfaces: codeSurfaceRun.data,
+    domainSignals: domainRun.data,
     validationHints,
   };
 }
@@ -357,8 +365,8 @@ export function computeDiscoveryDigest(result: DiscoveryResult): string {
  * - Arrays: element order preserved (order is semantic), values canonicalized.
  * - Primitives: returned unchanged.
  *
- * This guarantees that two structurally equal values produce identical
- * JSON.stringify output regardless of original key insertion order.
+ * Guarantees two structurally equal values produce identical JSON.stringify
+ * output regardless of original key insertion order.
  */
 function canonicalize(value: unknown): unknown {
   if (value === null || value === undefined) return value;
@@ -368,7 +376,6 @@ function canonicalize(value: unknown): unknown {
     return value.map(canonicalize);
   }
 
-  // Object: sort keys lexicographically, recurse into values
   const sorted: Record<string, unknown> = {};
   for (const key of Object.keys(value).sort()) {
     sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
@@ -377,47 +384,10 @@ function canonicalize(value: unknown): unknown {
 }
 
 /**
- * Wrap a promise with a timeout.
- * Rejects with a timeout error if the promise doesn't resolve in time.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Collector timed out after ${ms}ms`)), ms);
-    promise
-      .then((v) => {
-        clearTimeout(timer);
-        resolve(v);
-      })
-      .catch((e) => {
-        clearTimeout(timer);
-        reject(e);
-      });
-  });
-}
-
-/**
- * Extract collector result or use default on failure.
- * Records collector status in the collectors map.
- */
-function extractResult<T>(
-  settled: PromiseSettledResult<{ status: CollectorStatus; data: T }>,
-  name: string,
-  collectors: Record<string, CollectorStatus>,
-  defaultData: T,
-): T {
-  if (settled.status === 'fulfilled') {
-    collectors[name] = settled.value.status;
-    return settled.value.data;
-  }
-  // Collector failed or timed out
-  collectors[name] = 'failed';
-  return defaultData;
-}
-
-/**
  * Derive validation hints from stack and topology analysis.
  *
- * Infers likely build/test/lint commands based on detected tools.
+ * @deprecated Internal derivation for discovery digest stability.
+ * Agent-facing verification commands come from planVerificationCandidates.
  */
 function deriveValidationHints(
   stack: StackInfo,

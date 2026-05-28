@@ -109,13 +109,17 @@ export function extractByPhaseInstructions(
  *
  * Profiles use these signals to determine if they match the repo:
  * - files: all file paths in the repo (relative to root)
- * - packageFiles: package manager files (package.json, pom.xml, build.gradle, etc.)
- * - configFiles: config files (.eslintrc, tsconfig.json, Dockerfile, etc.)
+ * - packageFiles: package manager files (basenames, deduplicated)
+ * - configFiles: config files (basenames, deduplicated)
+ * - packageFilePaths: package manager files (full relative paths)
+ * - configFilePaths: config files (full relative paths)
  */
 export interface RepoSignals {
   readonly files: readonly string[];
   readonly packageFiles: readonly string[];
   readonly configFiles: readonly string[];
+  readonly packageFilePaths?: readonly string[];
+  readonly configFilePaths?: readonly string[];
 }
 
 /**

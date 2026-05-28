@@ -6,6 +6,12 @@
  * signals (endpoints, auth boundaries, data access, external integrations).
  *
  * This collector is heuristic and confidence-based. It is not semantic truth.
+ *
+ * Scanning strategy:
+ * - Filters allFiles to source-extension candidates only
+ * - Sorts deterministically: shallow files first (fewer path segments), then alphabetical
+ * - Takes first MAX_FILES from sorted candidates
+ * - Reports `partial` based on source-candidate budget exhaustion, NOT total repo file count
  */
 
 import * as fs from 'node:fs/promises';
@@ -16,6 +22,7 @@ import type {
   CodeSurfaceSignal,
   CodeSurfacesInfo,
   EvidenceClass,
+  ReadOutcome,
 } from '../types.js';
 
 const MAX_FILES = 200;
@@ -142,18 +149,34 @@ export async function collectCodeSurfaces(
 }
 
 async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
-  const candidates = input.allFiles
-    .filter((f) => SOURCE_EXTENSIONS.has(path.extname(f).toLowerCase()))
-    .slice(0, MAX_FILES);
+  // Filter to source-extension candidates only, then sort deterministically
+  const allSourceCandidates = input.allFiles.filter((f) =>
+    SOURCE_EXTENSIONS.has(path.extname(f).toLowerCase()),
+  );
+
+  const totalSourceCandidates = allSourceCandidates.length;
+
+  // Deterministic sort: shallow files first (entry points), then alphabetical
+  const sorted = [...allSourceCandidates].sort((a, b) => {
+    const depthA = a.split(/[/\\]/).length;
+    const depthB = b.split(/[/\\]/).length;
+    if (depthA !== depthB) return depthA - depthB;
+    return a.localeCompare(b);
+  });
+
+  // Budget: partial if source candidates exceed MAX_FILES
+  const budgetExhausted = totalSourceCandidates > MAX_FILES;
+  const candidates = sorted.slice(0, MAX_FILES);
 
   const endpoints: CodeSurfaceSignal[] = [];
   const authBoundaries: CodeSurfaceSignal[] = [];
   const dataAccess: CodeSurfaceSignal[] = [];
   const integrations: CodeSurfaceSignal[] = [];
+  const readStatuses: Record<string, ReadOutcome> = {};
 
   let scannedFiles = 0;
   let scannedBytes = 0;
-  let degraded = input.allFiles.length > MAX_FILES;
+  let degraded = budgetExhausted;
 
   for (const relPath of candidates) {
     if (scannedBytes >= MAX_TOTAL_BYTES) {
@@ -165,12 +188,19 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
     let content: string;
     try {
       content = await fs.readFile(fullPath, 'utf-8');
-    } catch {
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'EACCES' || code === 'EPERM') {
+        readStatuses[relPath] = 'denied';
+      } else {
+        readStatuses[relPath] = 'not_found';
+      }
       degraded = true;
       continue;
     }
 
     if (Buffer.byteLength(content, 'utf-8') > MAX_BYTES_PER_FILE) {
+      readStatuses[relPath] = 'too_large';
       degraded = true;
       content = content.slice(0, MAX_BYTES_PER_FILE);
     }
@@ -183,12 +213,16 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
 
     scannedBytes += consumed;
     scannedFiles += 1;
+    readStatuses[relPath] = 'read_ok';
 
     detectSignals(content, relPath, ENDPOINT_RULES, endpoints);
     detectSignals(content, relPath, AUTH_RULES, authBoundaries);
     detectSignals(content, relPath, DATA_RULES, dataAccess);
     detectSignals(content, relPath, INTEGRATION_RULES, integrations);
   }
+
+  // Only include readStatuses if there were non-ok outcomes
+  const hasNonOkReads = Object.values(readStatuses).some((s) => s !== 'read_ok');
 
   return {
     status: degraded ? 'partial' : 'ok',
@@ -203,7 +237,10 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
       maxBytesPerFile: MAX_BYTES_PER_FILE,
       maxTotalBytes: MAX_TOTAL_BYTES,
       timedOut: false,
+      totalSourceCandidates,
+      budgetExhausted,
     },
+    ...(hasNonOkReads ? { readStatuses } : {}),
   };
 }
 
