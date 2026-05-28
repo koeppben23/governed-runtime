@@ -6,14 +6,14 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 
 ## Gap Summary
 
-| #   | Gap                                                                | Impact | Residual Risk                      | Affected Platforms |
-| --- | ------------------------------------------------------------------ | ------ | ---------------------------------- | ------------------ |
-| 1   | Tool Argument Mutation Is Host-Limited                             | LOW    | LOW                                | Claude Code, Codex |
-| 2   | Hook Latency (Process Spawn)                                       | MEDIUM | LOW (Claude Code) / MEDIUM (Codex) | Codex              |
-| 3   | Hook Timeout = Tool Proceeds                                       | HIGH   | HIGH                               | Claude Code, Codex |
-| 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM                             | Claude Code, Codex |
-| 5   | Compaction Context Is Hook-Gated                                   | LOW    | LOW                                | Codex              |
-| 6   | Codex Cloud Sandbox Deployment                                     | LOW    | LOW                                | Codex Cloud        |
+| #   | Gap                                                                | Impact | Residual Risk                  | Affected Platforms |
+| --- | ------------------------------------------------------------------ | ------ | ------------------------------ | ------------------ |
+| 1   | Tool Argument Mutation Is Host-Limited                             | LOW    | LOW                            | Claude Code, Codex |
+| 2   | Hook Latency (Process Spawn)                                       | MEDIUM | MEDIUM (default command hooks) | Claude Code, Codex |
+| 3   | Hook Timeout = Tool Proceeds                                       | HIGH   | HIGH                           | Claude Code, Codex |
+| 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM                         | Claude Code, Codex |
+| 5   | Compaction Context Is Hook-Gated                                   | LOW    | LOW                            | Codex              |
+| 6   | Codex Cloud Sandbox Deployment                                     | LOW    | LOW                            | Codex Cloud        |
 
 ## Enforcement Levels
 
@@ -63,19 +63,19 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 **Mitigation implemented**:
 
-1. **Claude Code**: Persistent HTTP hook server (`src/hooks/http-server.ts`) listens on `localhost:18462`. Sub-20ms response time. Configure via `"type": "http"` in `hooks.json`.
-2. **Codex**: Command hooks optimized for fast startup (minimal imports, single-file entry points, no dynamic require).
-3. **Both**: Session state cached in memory within HTTP server mode.
+1. **Claude Code default (command hooks)**: Process spawn hook (~100-200ms). Generated plugin config uses `"type": "command"` — HTTP hooks are **not** part of the default generated configuration. An HTTP hook server (`src/hooks/http-server.ts`) exists but requires external process management (systemd, Docker, manual start) and manual `"type": "http"` configuration in `hooks.json`.
+2. **Codex**: Command hooks optimized for fast startup (minimal imports, single-file entry points, no dynamic require). HTTP hooks not supported by Codex.
+3. **Session caching** (HTTP mode): Session state cached in memory when running in HTTP server mode (Claude Code only).
 
 **Code references**:
 
-- `src/hooks/http-server.ts` (351 LOC, persistent server)
-- `src/hooks/pre-tool-use.ts` (114 LOC, fast-path command hook)
+- `src/hooks/http-server.ts` (425 LOC, persistent server)
+- `src/hooks/pre-tool-use.ts` (158 LOC, fast-path command hook)
 
 **Residual Risk**:
 
-- Claude Code: LOW (HTTP hooks eliminate spawn overhead)
-- Codex: MEDIUM (~150-200ms added per tool call, unavoidable with command hooks)
+- Claude Code default (command hooks): MEDIUM (~100-200ms per call). LOW available only with optional externally managed HTTP hook server.
+- Codex: MEDIUM (~150-200ms per call, command hooks only — HTTP not supported).
 
 ---
 
@@ -93,16 +93,16 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Mitigation implemented**:
 
 1. **Aggressive timeouts**: PreToolUse hooks configured with 10s timeout (vs 600s platform default). Fast failure rather than hanging.
-2. **Fast execution**: Hook scripts complete in <50ms (command) or <20ms (HTTP). Timeout risk minimized.
-3. **Audit trail**: All hook decisions (allow/deny) are persisted to the audit trail. Timeout events are detectable post-hoc.
-4. **HTTP health monitoring**: Claude Code HTTP hooks include `/health` endpoint for liveness verification.
+2. **Fast execution**: Hook scripts complete in <50ms (command) or <20ms (optional HTTP mode). Timeout risk minimized.
+3. **Audit trail**: PostToolUse persists tool-call audit events to the JSONL audit trail. PreToolUse gate decisions and hook failures/timeouts are not persisted as dedicated JSONL audit events by default; they may only be visible through host or stderr logs or inferred from subsequent tool-call records.
+4. **HTTP health monitoring** (optional HTTP mode only): Claude Code HTTP hooks include `/health` endpoint for liveness verification.
 5. **Fail-closed on internal error**: Hook scripts catch all exceptions and emit deny — crashes produce explicit denials, not silent pass-through.
 
 **Code references**:
 
-- `src/templates/claude-code-plugin.ts` (timeout: 10000ms)
-- `src/templates/codex-plugin.ts` (timeout: 10000ms)
-- `src/hooks/http-server.ts:316-330` (fail-closed on handler error)
+- `src/templates/claude-code-plugin.ts` (timeout: 10s)
+- `src/templates/codex-plugin.ts` (timeout: 10s)
+- `src/hooks/http-server.ts:388-402` (fail-closed on handler error)
 
 **Residual Risk**: HIGH — This is a fundamental platform limitation. If the hook process is killed by the OS (OOM, SIGKILL) or the HTTP server crashes without restart, the platform will allow tool execution without governance. This is documented as "best-effort fail-closed" for out-of-process platforms.
 
@@ -133,7 +133,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Code references**:
 
 - `src/hooks/shared/obligation-tracker.ts` (escalation logic)
-- `src/hooks/post-tool-use.ts:80-87` (escalation integration)
+- `src/hooks/post-tool-use.ts:104-107` (escalation integration)
 - `src/hooks/shared/phase-gate.ts:isSubagentAuthorized()` (defense-in-depth)
 
 **Residual Risk**: MEDIUM — LLM may ignore reviewer instructions, or hook-gated hosts may fail open on hook failure. FlowGuard does not silently accept this: `host_task_required` still requires OpenCode host-visible plugin evidence, and Claude/Codex Mode B convergence is accepted only through validated `manual_attested` evidence bound to the active obligation, findings hash, session id, mandate digest, criteria version, and strict attestation.
