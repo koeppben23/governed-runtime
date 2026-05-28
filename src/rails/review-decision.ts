@@ -81,6 +81,7 @@ const REJECT_CLEAR = {
   validation: [] as ValidationResult[],
   implementation: null,
   implReview: null,
+  reviewDecision: null,
 };
 
 /**
@@ -94,6 +95,7 @@ const REJECT_CLEAR_FROM_PLAN = {
   validation: [] as ValidationResult[],
   implementation: null,
   implReview: null,
+  reviewDecision: null,
 };
 
 /**
@@ -141,13 +143,19 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
 
   // changes_requested
   if (state.phase === 'PLAN_REVIEW') {
-    return { ...state, selfReview: null };
+    return { ...state, selfReview: null, reviewDecision: null };
   }
   if (state.phase === 'IMPL_REVIEW') {
     return { ...state, implReview: null, reducedCeremony: null };
   }
   if (state.phase === 'EVIDENCE_REVIEW') {
-    return { ...state, implementation: null, implReview: null, reducedCeremony: null };
+    return {
+      ...state,
+      implementation: null,
+      implReview: null,
+      reducedCeremony: null,
+      reviewDecision: null,
+    };
   }
   if (state.phase === 'ARCH_REVIEW') {
     return { ...state, selfReview: null };
