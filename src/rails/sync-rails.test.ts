@@ -615,6 +615,7 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('PLAN');
         expect(result.state.selfReview).toBeNull(); // cleared for fresh loop
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
 
@@ -634,6 +635,7 @@ describe('review-decision rail', () => {
         expect(result.state.phase).toBe('TICKET');
         expect(result.state.plan).toBeNull();
         expect(result.state.selfReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
 
@@ -653,6 +655,7 @@ describe('review-decision rail', () => {
         expect(result.state.phase).toBe('IMPLEMENTATION');
         expect(result.state.implementation).toBeNull();
         expect(result.state.implReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
   });

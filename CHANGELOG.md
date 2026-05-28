@@ -137,6 +137,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `false`) defers to the callback without resolving on `drain`. Synchronous
   throw during `write()` also restores the guard before rejecting.
 
+- **Issue #356:** Fix stale `reviewDecision` persistence after
+  `changes_requested` or `reject` verdicts by adding `reviewDecision: null`
+  to the state-clearing patterns in `applyStateClearingPattern` and the
+  `REJECT_CLEAR`/`REJECT_CLEAR_FROM_PLAN` constants per the doc-table contract.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports

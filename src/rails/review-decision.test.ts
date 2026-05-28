@@ -98,6 +98,7 @@ describe('review-decision rail', () => {
     if (result.kind === 'ok') {
       expect(result.state.implementation).toBeNull();
       expect(result.state.implReview).toBeNull();
+      expect(result.state.reviewDecision).toBeNull();
     }
   });
 
@@ -426,6 +427,7 @@ describe('review-decision rail', () => {
       expect(result.state.implementation).toBeNull();
       expect(result.state.implReview).toBeNull();
       expect(result.state.reducedCeremony).toBeNull();
+      expect(result.state.reviewDecision).toBeNull();
     }
   });
 
@@ -493,6 +495,7 @@ describe('review-decision rail', () => {
     if (result.kind === 'ok') {
       expect(result.state.reducedCeremony).toBeNull();
       expect(result.state.implementation).toBeNull();
+      expect(result.state.reviewDecision).toBeNull();
     }
   });
 
@@ -770,6 +773,7 @@ describe('review-decision rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.selfReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
 
@@ -795,6 +799,7 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.implementation).toBeNull();
         expect(result.state.implReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
 
@@ -830,6 +835,7 @@ describe('review-decision rail', () => {
         expect(result.state.ticket).toBeNull();
         expect(result.state.plan).toBeNull();
         expect(result.state.selfReview).toBeNull();
+        expect(result.state.reviewDecision).toBeNull();
       }
     });
 
