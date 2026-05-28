@@ -27,8 +27,13 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '8c2caa5209d7416463536b1c8b0ea3eee78de5eedf9746f60410db06d58a0ee5',
+      'b4b460e0fd2575b450b774fb941f108248e0fa7637dcac5f1909025a044d0d7d',
     );
+  });
+
+  it('TOOL_WRAPPER exports run_check instead of removed validate tool', () => {
+    expect(TOOL_WRAPPER).toContain('run_check');
+    expect(TOOL_WRAPPER).not.toContain('  validate,');
   });
 
   it('PLUGIN_WRAPPER matches compiled output hash', () => {

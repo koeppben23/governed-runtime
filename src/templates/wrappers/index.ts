@@ -16,7 +16,7 @@ export {
   plan,
   decision,
   implement,
-  validate,
+  run_check,
   review,
   continue,
   abort_session,
